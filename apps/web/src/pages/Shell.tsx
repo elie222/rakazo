@@ -677,6 +677,17 @@ function SpaceShell() {
     integrationsOpen: overlay?.kind === "integrations",
     initialBotsLoaded,
   });
+  // Not while the shell is leaving: a roster with nothing anywhere is on its way to onboarding,
+  // and a reopened group chat is on its way to that group.
+  const showNewBotPrompt =
+    initialBotsLoaded &&
+    bots.length === 0 &&
+    !activeGroup &&
+    !routeChat?.groupId &&
+    (groups.length > 0 ||
+      archivedBots.length > 0 ||
+      archivedGroups.length > 0 ||
+      spaces.some((space) => space.hasContent));
   const shellReady =
     initialBotsLoaded &&
     (inGroup
@@ -1133,6 +1144,7 @@ function SpaceShell() {
             activeGroup={activeGroup}
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
+            meetingsEnabled={Boolean(bootstrapMe?.meetingsEnabled)}
             voiceReady={Boolean(voiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
@@ -1146,7 +1158,7 @@ function SpaceShell() {
               callBot(bot);
             }}
           />
-          {!active && !activeGroup && initialBotsLoaded ? (
+          {showNewBotPrompt ? (
             <div className="grid flex-1 place-items-center">
               <Button onClick={() => dialogs.setCreateBotOpen(true)}>
                 <Plus size={16} aria-hidden="true" />
@@ -1321,6 +1333,10 @@ function SpaceShell() {
               bot={active}
               computer={computer}
               computerOpen={computerOpen}
+              embeddedScreenUrl={panel === "settings" ? computerControls.embeddedScreenUrl : null}
+              screenFrameKey={computerState.screenFrameKey}
+              heldScreen={computerState.heldScreen}
+              screenFrameRef={computerState.setScreenFrame}
               computerScreenError={computerControls.computerScreenError}
               computerBooting={computerControls.computerBooting}
               booting={booting}
@@ -1403,7 +1419,6 @@ function SpaceShell() {
         }}
         routineEditorProps={routineEditorProps}
         openBot={openBot}
-        openCreatedBot={openCreatedBot}
         modelFocusRequest={modelFocusRequest}
         onClearBot={(bot) => dialogs.setClearTarget({ kind: "bot", chat: bot })}
       />
@@ -1442,7 +1457,11 @@ function SpaceShell() {
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
           messagingEnabled={messagingSurfaceEnabled}
           onConnectedAppsChange={setFooterLogos}
-          onOpenBot={openCreatedBot}
+          onOpenBot={(bot) => {
+            openCreatedBot(bot);
+            // As after any new bot: the Space's sections and counts come from the server.
+            void refreshBots().catch(() => undefined);
+          }}
         />
       </Suspense>
 
@@ -1459,7 +1478,6 @@ function SpaceShell() {
           removeSpace={removeSpace}
           leftSpace={leftSpace}
           refreshSpaces={() => refreshBots()}
-          openAgentImport={() => setPanel("import-agent")}
           alive={alive}
           user={session.data?.user}
           refetchSession={() => session.refetch({ query: { disableCookieCache: true } })}

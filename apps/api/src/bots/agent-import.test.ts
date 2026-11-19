@@ -189,18 +189,35 @@ describe("a Grok Bot's event routines", () => {
       ["Mail", { kind: "needs_setup", needs: [{ kind: "turn_on" }, { kind: "email_address" }] }],
     ]);
     expect(plan.routines[2]?.content).toBe("Trigger: slack\n\nHandle it.");
-    // Only the routine nothing here can start is left for the bot to set up by hand.
-    const note = plan.memory.find((item) => item.path === "grok-bot-routines.md");
-    expect(note?.content).toContain("## Elsewhere");
-    expect(note?.content).not.toContain("## Support");
+    // Only the routine nothing here can start is left over, and none of it goes to memory.
+    expect(plan.leftovers.map((item) => item.title)).toEqual(["Elsewhere"]);
+    expect(plan.memory).toEqual([]);
 
     const rows: unknown[] = [];
+    const posted: string[] = [];
     await createImportedBot(
       services({
         routineTriggers,
         routineRowData: (_actor, routine) => {
           rows.push(routine);
           return { ...routine } as never;
+        },
+        notifyThread: async () => undefined,
+        createBot: async (_actor, request) => {
+          const db = fakeDb() as Record<string, Record<string, (args: unknown) => unknown>>;
+          const tx = new Proxy(db, {
+            get: (target, name: string) =>
+              name === "message"
+                ? new Proxy(target.message!, {
+                    get: (model, method: string) => async (args: { data?: unknown }) => {
+                      if (method === "create") posted.push(JSON.stringify(args.data));
+                      return model[method]!(args);
+                    },
+                  })
+                : target[name],
+          });
+          await request.seed(tx as never, bot.id);
+          return bot;
         },
       }),
       actor,
@@ -212,9 +229,12 @@ describe("a Grok Bot's event routines", () => {
           memory: [],
           skills: [],
           routines: plan.routines.map((routine) => routine.id),
+          leftovers: plan.leftovers.map((item) => item.id),
         },
       }),
     );
+    // The leftover is posted in the new bot's chat; no turn starts until the owner writes.
+    expect(posted.filter((message) => message.includes("## Elsewhere"))).toHaveLength(1);
     expect(rows).toMatchObject([
       { name: "Hooks", active: false, crons: [], webhookEnabled: true },
       { name: "Pulls", active: false, githubEnabled: true },

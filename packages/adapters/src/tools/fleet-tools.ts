@@ -447,10 +447,6 @@ async function prepareChildInstructions(
   const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
   if (!child.thread) return refuse(NOT_FOUND);
-  // Checked before the card too, so a second edit never asks the owner for nothing.
-  if (await wroteInstructionsThisRun(deps.prisma, run, child.id)) {
-    return refuse(ALREADY_WROTE_INSTRUCTIONS);
-  }
   const current = await deps.prisma.bot.findUniqueOrThrow({
     where: { id: child.id },
     select: { instructions: true, instructionHistory: true },
@@ -837,7 +833,6 @@ export async function updateFleetGroup(
 }
 
 const CHILD_CHANGED = "child changed; read it again with list_fleet";
-const ALREADY_WROTE_INSTRUCTIONS = "You already changed this bot's instructions in this run.";
 
 /** `update_bot` with `bot_id`: the profile fields of another bot in the space. */
 export async function updateChildBot(
@@ -918,9 +913,6 @@ export async function setChildInstructions(
   const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
   if (!child.thread) return { error: NOT_FOUND };
-  if (await wroteInstructionsThisRun(deps.prisma, run, child.id)) {
-    return { error: ALREADY_WROTE_INSTRUCTIONS };
-  }
   const current = await deps.prisma.bot.findUniqueOrThrow({
     where: { id: child.id },
     select: { instructions: true, instructionHistory: true },
@@ -947,20 +939,6 @@ export async function setChildInstructions(
     throw error;
   }
   return { ok: true, botId: child.id, name: singleLine(child.name), length: instructions.length };
-}
-
-/**
- * One instruction write per child per run. The effect ledger outlives an approval pause,
- * so a resumed run still sees the write it made before.
- */
-async function wroteInstructionsThisRun(prisma: PrismaClient, run: FleetRun, childId: string) {
-  const effects = await prisma.externalEffect.findMany({
-    where: { runId: run.runId, kind: "set_child_instructions" },
-    select: { request: true, result: true },
-  });
-  return effects.some(
-    (effect) => asRecord(effect.request)?.botId === childId && asRecord(effect.result)?.ok === true,
-  );
 }
 
 /** Apply the approved model, checking the child and the model again: either may have changed. */

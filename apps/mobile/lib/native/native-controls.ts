@@ -34,8 +34,6 @@ export type NativeActionButtonProps = {
   selected?: boolean;
   /** Stretch to the container width. Defaults to true for primary and destructive. */
   fill?: boolean;
-  /** Label placement on Android; iOS keeps the system layout. Defaults to center. */
-  align?: "start" | "center";
   style?: StyleProp<ViewStyle>;
 } & (
   | { label: string; accessibilityLabel?: string; icon?: ComponentProps<typeof NativeSymbol> }

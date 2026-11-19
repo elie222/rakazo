@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.15",
+    "version": "1.0.16",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -94,6 +94,7 @@
       "./plugins/with-android-no-gwp-asan",
       "./plugins/with-agent-notifications",
       "./plugins/with-app-intents",
+      "./plugins/with-apple-watch",
       "expo-apple-authentication"
     ],
     "locales": {
@@ -146,6 +147,10 @@
           "experimental": {
             "ios": {
               "appExtensions": [
+                {
+                  "targetName": "RakazoWatch",
+                  "bundleIdentifier": "com.rakazo.app.watchkitapp"
+                },
                 {
                   "targetName": "RakazoWidgets",
                   "bundleIdentifier": "com.rakazo.app.widgets"

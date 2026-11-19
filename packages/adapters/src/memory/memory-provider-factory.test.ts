@@ -159,7 +159,9 @@ describe("SpaceMemoryProviderResolver", () => {
         signal: new AbortController().signal,
       },
     );
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:6767/memory/v4/search");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://localhost:6767/memory/ns/rakazo%3Abot-1/search",
+    );
   });
 
   it("disables ambiguous persisted URLs even when the deployment owner configured them", async () => {
@@ -260,7 +262,9 @@ describe("SpaceMemoryProviderResolver", () => {
       },
     );
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.supermemory.ai/v4/search");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.supermemory.ai/ns/rakazo%3Abot-1/search",
+    );
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });

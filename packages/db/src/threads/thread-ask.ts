@@ -42,6 +42,7 @@ import type { FinalizeRunResult } from "./events.js";
 import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
 import { readMessageBlocks } from "./message-blocks.js";
 import { createThreadMessageInTransaction, loadMessageAuthor } from "./messages.js";
+import { editOutgoingDraft } from "./outgoing-draft.js";
 import { createPendingSteeringRun, releaseUnreadHandovers } from "./thread-steering.js";
 
 export const STRATEGIC_INITIATIVE_NONCE_PREFIX = "strategic-initiative";
@@ -137,7 +138,16 @@ export interface AnswerRunInput {
   remember?: false;
   /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
   dismiss?: boolean;
+  /** Ends an approval card nobody answered in time, as a deny the run is told expired. */
+  expired?: boolean;
 }
+
+/** What a call whose approval card expired unanswered returns to the bot. */
+export const APPROVAL_EXPIRED_RESULT = {
+  error:
+    "Nobody answered the approval request in time, so this was not done. Don't retry in this run; mention it in your reply.",
+  expired: true,
+} as const;
 
 /** What request_secret returns to the bot once the user dismissed its card. */
 const DISMISSED_SECRET_RESULT = { ok: false, dismissed: true } as const;
@@ -247,6 +257,8 @@ async function commitAnswerRunInput(
   const dismissed = Boolean(input.dismiss);
   // A secret request can be turned down; every other card needs an answer.
   if (dismissed && (!secretAsk || input.answer)) return null;
+  const expired = Boolean(input.expired);
+  if (expired && (!approvalAsk || input.answer !== "deny")) return null;
   const secretRequest = {
     runId: input.runId,
     spaceId: input.spaceId,
@@ -279,6 +291,7 @@ async function commitAnswerRunInput(
     batchActions: Prisma.JsonValue;
   } | null = null;
   let editedInstructions: string | undefined;
+  let editedDraft: ReturnType<typeof editOutgoingDraft>;
   let approvalAnswer = input.answer;
   if (approvalAsk && pendingAsk.instructionUpdate && input.answer.startsWith("{")) {
     try {
@@ -298,6 +311,7 @@ async function commitAnswerRunInput(
   let approvalUserId: string | null = null;
 
   if (approvalAsk) {
+    if (pendingAsk.outgoingDraft && input.answer !== "deny") approvalAnswer = "allow";
     if (!pendingAsk.actions?.some((action) => action.id === approvalAnswer)) return null;
     approvalEffect = await tx.externalEffect.findFirst({
       where: {
@@ -308,6 +322,10 @@ async function commitAnswerRunInput(
       },
     });
     if (!approvalEffect) return null;
+    if (pendingAsk.outgoingDraft && approvalAnswer === "allow") {
+      editedDraft = editOutgoingDraft(approvalEffect, pendingAsk.outgoingDraft, input.answer);
+      if (!editedDraft) return null;
+    }
     if (pendingAsk.instructionUpdate) {
       if (
         approvalEffect.kind !== "update_bot" ||
@@ -407,7 +425,12 @@ async function commitAnswerRunInput(
     const allowed = approvalAnswer === "allow" || approvalAnswer === "always";
     await tx.externalEffect.update({
       where: { id: approvalEffect!.id },
-      data: { status: allowed ? "approved" : "denied" },
+      // An expired card carries a result, so a later call may ask again: nobody denied it.
+      data: {
+        status: allowed ? "approved" : "denied",
+        ...(editedDraft ? { request: editedDraft.request as Prisma.InputJsonValue } : {}),
+        ...(expired ? { result: APPROVAL_EXPIRED_RESULT } : {}),
+      },
     });
     // "Always" on a card for a request to a site allows that site, never every site the tool can
     // reach, and on a batch allows each action in it, never every action the batch tool can run.
@@ -486,7 +509,11 @@ async function commitAnswerRunInput(
             ? { answerMessageId: input.answerMessageId }
             : {}),
           ...(dismissed ? { dismissed: true as const } : {}),
+          ...(expired ? { expired: true as const } : {}),
           ...(input.remember === false ? { remembered: false as const } : {}),
+          ...(editedDraft && pendingAsk.outgoingDraft
+            ? { outgoingDraft: { ...pendingAsk.outgoingDraft, values: editedDraft.values } }
+            : {}),
           ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
             ? {
                 instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },

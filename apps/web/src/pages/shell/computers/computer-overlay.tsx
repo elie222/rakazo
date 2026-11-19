@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Bot, ComputerReleaseReason, ComputerStatus, TaughtSkill } from "@rakazo/contracts";
+import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
@@ -228,7 +229,7 @@ export function ComputerOverlay({
                     </Button>
                   </div>
                 ) : (
-                  computerLabel(computer?.mode, bot.name)
+                  computerPreviewPlaceholder(computer?.state, false)
                 ))}
             </div>
           )}
