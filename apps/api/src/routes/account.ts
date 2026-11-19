@@ -136,7 +136,7 @@ export function accountRoutes(ctx: RouterContext) {
       setSize: authed.cloudComputers.setSize.handler(async ({ context, input }) => {
         const billing = requireBilling(deps);
         await billing.setComputerSize(context.actor, input.computerId, input.size);
-        return billing.cloudComputers(context.actor);
+        return { ok: true as const };
       }),
     },
     billing: {

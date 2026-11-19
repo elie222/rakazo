@@ -636,8 +636,20 @@ test("computers settings set each cloud computer's size within the plan", async 
   );
   let computers = {
     computers: [
-      { id: "computer-team", scope: "team", botName: null, size: "standard" },
-      { id: "computer-private", scope: "dedicated", botName: "Researcher", size: "large" },
+      {
+        id: "computer-team",
+        scope: "team",
+        botName: null,
+        size: "standard",
+        savedSize: "standard",
+      },
+      {
+        id: "computer-private",
+        scope: "dedicated",
+        botName: "Researcher",
+        size: "large",
+        savedSize: "large",
+      },
     ],
     available: ["standard", "large"],
     canManage: true,
@@ -651,10 +663,12 @@ test("computers settings set each cloud computer's size within the plan", async 
     computers = {
       ...computers,
       computers: computers.computers.map((computer) =>
-        computer.id === "computer-team" ? { ...computer, size: "large" } : computer,
+        computer.id === "computer-team"
+          ? { ...computer, size: "large", savedSize: "large" }
+          : computer,
       ),
     };
-    await route.fulfill({ json: { json: computers } });
+    await route.fulfill({ json: { json: { ok: true } } });
   });
   await page.reload();
   const settings = await openUserSettings(page, "computer");
