@@ -55,6 +55,7 @@ import {
   McpApprovalCard,
 } from "./message-cards";
 import { MessageHoverActions } from "./message-hover-actions";
+import { RoutineEventRow } from "./routine-event-row";
 
 export const MessageView = memo(function MessageView({
   artifactTarget,
@@ -421,6 +422,7 @@ export const MessageView = memo(function MessageView({
               </div>
             );
           }
+          if (block.kind === "routine_event") return <RoutineEventRow key={i} block={block} />;
           if (block.kind === "meta") {
             return (
               <div
