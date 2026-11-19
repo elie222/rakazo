@@ -650,9 +650,7 @@ export class BoatSandboxProvider implements SandboxProvider {
   ): AsyncIterable<PortableFile | StreamedPortableFile> {
     const id = this.id(computer);
     await this.desktops.stopBrowsers(computer, context).catch((error: unknown) => {
-      const reason = diskFailure(
-        errorReasons(error instanceof Error ? error.message : String(error)),
-      );
+      const reason = diskFailure(error instanceof Error ? error.message : String(error));
       throw reason ? new WorkspaceSaveFailedError(reason, { cause: error }) : error;
     });
     // One archive, not a request per file: Boat rate limits every API call by IP, and a
@@ -675,7 +673,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       if (result.exitCode !== 0 || result.timedOut) {
         const failure = new Error(`could not archive Boat workspace (${commandStatus(result)})`);
-        const reason = result.timedOut ? "timed_out" : diskFailure(errorReasons(result.stderr));
+        const reason = result.timedOut ? "timed_out" : diskFailure(result.stderr);
         throw reason ? new WorkspaceSaveFailedError(reason, { cause: failure }) : failure;
       }
       const response = await this.signedDownload(
@@ -1511,12 +1509,17 @@ function systemDamaged(stderr: string): boolean {
   return BOAT_SYSTEM_DAMAGED.test(stderr);
 }
 
-/** The disk failure in a command's error reasons, read without the paths they name. */
-function diskFailure(reasons: string): "disk_full" | "disk_error" | undefined {
-  if (/\bNo space left on device\b/.test(reasons)) return "disk_full";
+/** The disk failure a command's error output reports, read from each line's reason, not its paths. */
+function diskFailure(output: string): "disk_full" | "disk_error" | undefined {
+  const reasons = output.split("\n").map((line) => line.slice(line.lastIndexOf(": ") + 2).trim());
+  if (reasons.includes("No space left on device")) return "disk_full";
   if (
-    /\b(?:Input\/output error|Transport endpoint is not connected|Read-only file system)\b/.test(
-      reasons,
+    reasons.some((reason) =>
+      [
+        "Input/output error",
+        "Transport endpoint is not connected",
+        "Read-only file system",
+      ].includes(reason),
     )
   )
     return "disk_error";

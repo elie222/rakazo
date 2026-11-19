@@ -2229,6 +2229,36 @@ describe("BoatSandboxProvider", () => {
     expect(error).not.toBeInstanceOf(WorkspaceSaveFailedError);
   });
 
+  it("reads a disk failure that follows other archive errors", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("archive=")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        stdout: "",
+        stderr: [
+          "tar: ./a: Cannot stat: Stale file handle",
+          "tar: ./b: Cannot open: Too many open files",
+          "tar: ./c: Cannot read: Bad message",
+          "gzip: stdout: No space left on device",
+          "",
+        ].join("\n"),
+        exitCode: 2,
+        timedOut: false,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    const error = await exportAll(provider, computer).catch((failure: Error) => failure);
+
+    expect(error).toMatchObject({ reason: "disk_full" });
+  });
+
   it.each([
     ["Input/output error", "disk_error"],
     ["Transport endpoint is not connected", "disk_error"],
