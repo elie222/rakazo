@@ -99,6 +99,7 @@ function reportHeight() {
 function reportSections(host: HTMLElement, anchor?: string, anchorOccurrence?: number) {
   let previous = "";
   let destination = anchor;
+  let scheduled = false;
   const report = () => {
     const headings = [...host.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading]")].slice(0, 80);
     const occurrences = new Map<string, number>();
@@ -129,12 +130,19 @@ function reportSections(host: HTMLElement, anchor?: string, anchorOccurrence?: n
       "*",
     );
   };
-  new MutationObserver(report).observe(host, {
-    childList: true,
-    characterData: true,
-    subtree: true,
-    attributes: true,
-  });
+  new MutationObserver(() => {
+    if (!previous) {
+      report();
+      return;
+    }
+    if (scheduled) return;
+    scheduled = true;
+    // A review picker can wait briefly for changes. Coalesce animations without missing a reveal.
+    setTimeout(() => {
+      scheduled = false;
+      report();
+    }, 100);
+  }).observe(host, { childList: true, characterData: true, subtree: true, attributes: true });
 }
 
 function mount(boot: PageBoot) {

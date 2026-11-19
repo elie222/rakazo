@@ -6,6 +6,7 @@ import { pageViewerCode } from "./compile.js";
 import { checkPageSource } from "./validate.js";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -64,7 +65,9 @@ it("reports repeated headings separately and finds a pending anchor after a reve
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   await import("./runtime.js");
   runInlineScripts();
-  vi.spyOn(Element.prototype, "getClientRects").mockImplementation(function (this: Element) {
+  const measure = vi.spyOn(Element.prototype, "getClientRects").mockImplementation(function (
+    this: Element,
+  ) {
     return { length: this.closest(".collapsed") ? 0 : 1 } as DOMRectList;
   });
   const scrolled = vi.fn();
@@ -95,8 +98,18 @@ it("reports repeated headings separately and finds a pending anchor after a reve
   );
   expect(scrolled).not.toHaveBeenCalled();
 
-  second!.parentElement!.classList.remove("collapsed");
-  await vi.waitFor(() => expect(scrolled).toHaveBeenCalledExactlyOnceWith(second));
+  vi.useFakeTimers();
+  measure.mockClear();
+  const wrapper = second!.parentElement!;
+  for (let frame = 0; frame < 5; frame++) {
+    wrapper.style.opacity = String(frame / 4);
+    await vi.advanceTimersByTimeAsync(16);
+  }
+  wrapper.classList.remove("collapsed");
+  expect(measure).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(measure).toHaveBeenCalledTimes(2);
+  expect(scrolled).toHaveBeenCalledExactlyOnceWith(second);
   expect(posted).toHaveBeenCalledWith(
     {
       type: "rakazo-page:sections",
