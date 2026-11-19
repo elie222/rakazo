@@ -27,10 +27,6 @@ import {
 } from "../../computers/computer-lifecycle.js";
 import { withComputerScreenAvailability } from "../../computers/screens/computer-screens.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
-import {
-  routineClaimWaitsForConversation,
-  startRoutineRunsWaitingOn,
-} from "../../routines/routine-conversation.js";
 import { VaultKeyUnavailableError } from "../../secrets/bot-secrets.js";
 import { returnHelperOutcome } from "../../tasks/background-helpers.js";
 import {
@@ -43,6 +39,7 @@ import type { ExecutorDeps } from "../executor/executor-deps.js";
 import type { TakeoverResumeCheckpoint } from "../turn/takeover-resume.js";
 import { continueRunClaimFence, TAKEOVER_RESUME_CHECKPOINTS } from "../turn/takeover-resume.js";
 import { wakeRun } from "../wakeups/wake-run.js";
+import { claimWaitsForChat, startRunsWaitingOnChat } from "./chat-wait.js";
 import { notifyRun } from "./run-notifications.js";
 
 /**
@@ -429,7 +426,7 @@ export async function claimRun(
             ...continueRunClaimFence(run),
             AND: [
               { OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] },
-              routineClaimWaitsForConversation(run, now),
+              claimWaitsForChat(run, now),
             ],
             OR: [
               { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
@@ -649,10 +646,7 @@ export async function finishRunAttempt(
     }
   }
   if (!deps.shutdownSignal?.aborted && !lease.handedBack) {
-    await bestEffort(
-      "start routine runs waiting on the chat",
-      startRoutineRunsWaitingOn(deps, run),
-    );
+    await bestEffort("start runs waiting on the chat", startRunsWaitingOnChat(deps, run));
   }
   if (deps.shutdownSignal?.aborted) {
     // A renewal still in flight must not treat this release as a lost lease.
