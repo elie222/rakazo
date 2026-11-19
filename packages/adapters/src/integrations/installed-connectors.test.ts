@@ -29,6 +29,22 @@ describe("MCP source presets", () => {
     });
   });
 
+  it("pins the AI/ML API preset to its exact MCP host whatever source the client sends", () => {
+    const preset = MCP_SOURCE_PRESETS.find((entry) => entry.id === "aimlapi");
+    expect(preset).toEqual({
+      id: "aimlapi",
+      name: "AI/ML API",
+      url: "https://mcp.aimlapi.com/mcp",
+      signIn: true,
+    });
+    for (const source of ["https://mcp.aimlapi.com.evil.test/mcp", "https://evil.test/mcp"]) {
+      expect(applyMcpSourcePreset(source, { preset: "aimlapi" })).toEqual({
+        source: "https://mcp.aimlapi.com/mcp",
+        config: { preset: "aimlapi", auth: { type: "bearer" } },
+      });
+    }
+  });
+
   it("stores an unknown preset id as custom", () => {
     expect(
       applyMcpSourcePreset("https://mine.example/mcp", { preset: "not-offered" }).config,

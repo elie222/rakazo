@@ -79,6 +79,8 @@ const McpAuthSchema = z
 export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
   // A self-hosted Executor serves the same endpoint at its own origin, so the URL stays editable.
   { id: "executor", name: "Executor", defaultUrl: "https://mcp.executor.sh/mcp", signIn: true },
+  // Model lookups and account checks are free; chat, generation and tool runs bill the account.
+  { id: "aimlapi", name: "AI/ML API", url: "https://mcp.aimlapi.com/mcp", signIn: true },
 ];
 
 /** Applies a preset named in an MCP install: its fixed URL and bearer auth, so clients send

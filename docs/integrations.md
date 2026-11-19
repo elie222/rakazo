@@ -30,6 +30,11 @@ The **+** in **Integrations** adds tools that aren't in the catalog:
 - **OpenAPI** and **GraphQL**: point at an API's description and the bot can call it.
 - **Executor**: a tool gateway you sign in to with your Executor account. For a self-hosted
   Executor, change the URL to its own `/mcp` address.
+- **AI/ML API**: AI/ML API's hosted MCP server (`https://mcp.aimlapi.com/mcp`), which you sign in to
+  with your AI/ML API account. It offers web, document and social data tools plus AI/ML API's
+  models. Looking up models and checking the account are free; chat, generation and tool runs are
+  billed to that account. To connect with an API key instead of signing in, add it as an
+  **MCP server** with a bearer token.
 - **From GitHub**: install a plugin from its repository. See [Build a plugin](./build-a-plugin.md).
 
 Choose an authentication method (**No auth**, **Bearer token** or **API key header**) and then
