@@ -24,7 +24,8 @@ function parseSavedServers(stored: string | null): SavedServer[] {
   let value: unknown;
   try {
     value = JSON.parse(stored);
-  } catch {
+  } catch (error) {
+    console.warn("Saved servers could not be parsed", error);
     return [];
   }
   if (!Array.isArray(value)) return [];
