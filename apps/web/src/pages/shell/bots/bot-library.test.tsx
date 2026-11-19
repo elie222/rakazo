@@ -55,7 +55,7 @@ let queryClient: QueryClient;
 
 function LocationProbe() {
   const location = useLocation();
-  return <span data-testid="location">{location.pathname}</span>;
+  return <span data-testid="location">{location.pathname + location.search}</span>;
 }
 
 async function render(items: LibraryItem[] = [], nextCursor: string | null = null) {
@@ -121,7 +121,9 @@ it("links the heading to all files when more remain", async () => {
   );
   if (!heading) throw new Error("Missing Files heading link");
   await act(async () => heading.click());
-  expect(container.querySelector('[data-testid="location"]')?.textContent).toBe("/app/artifacts");
+  expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
+    "/app/artifacts?bot=bot-1",
+  );
 });
 
 it("keeps the heading plain when these are all the files", async () => {

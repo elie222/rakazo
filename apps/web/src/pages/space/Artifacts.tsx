@@ -47,7 +47,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { IconTooltip } from "../../components/IconTooltip";
 import { VideoPreview } from "../../components/messages/ArtifactFileCard";
@@ -97,7 +97,20 @@ export function ArtifactsPage() {
   const navigate = useNavigate();
   const today = useRedrawAtMidnight();
   const { t } = useLingui();
-  const [activeBotId, setActiveBotId] = useState<string | null>(null);
+  // The bot filter is part of the URL, so a link to a bot's files keeps it after a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeBotId = searchParams.get("bot");
+  function setActiveBotId(botId: string | null) {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (botId) next.set("bot", botId);
+        else next.delete("bot");
+        return next;
+      },
+      { replace: true },
+    );
+  }
   const viewMode = viewModePreference.use();
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");

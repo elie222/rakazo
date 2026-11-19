@@ -192,6 +192,21 @@ it("opens the Artifacts screen and lists what listSpace returns", async () => {
   }
 });
 
+it("applies the bot filter named in the URL", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.listSpace.mockResolvedValue({ items: [], nextCursor: null });
+  const page = await renderArtifacts("/app/artifacts?bot=bot-9");
+  try {
+    expect(api.listSpace).toHaveBeenCalledWith(
+      expect.objectContaining({ botId: "bot-9" }),
+      expect.anything(),
+    );
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("keeps loading later pages when search hides the current snapshot", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.listSpace.mockImplementation(async (input: { cursor?: string }) => {

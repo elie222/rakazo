@@ -55,7 +55,7 @@ export function BotLibrary({
           files.data?.nextCursor ? (
             <button
               type="button"
-              onClick={() => navigate("/app/artifacts")}
+              onClick={() => navigate(`/app/artifacts?bot=${botId}`)}
               className="flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Trans>Files</Trans>
