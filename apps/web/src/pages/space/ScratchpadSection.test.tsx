@@ -74,7 +74,7 @@ it("hides the entire empty section", async () => {
   }
 });
 
-it("renders open and parked work without status chrome and removes a wrapped item", async () => {
+it("keeps parked work behind Show more, without status chrome, and removes a wrapped item", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const title =
     "Review the proposed settings and document the remaining decisions before the next design review";
@@ -94,6 +94,12 @@ it("renders open and parked work without status chrome and removes a wrapped ite
   const root = createRoot(container);
   try {
     await mount(root, "bot-fixture");
+    expect(container.textContent).not.toContain(title);
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((node) => node.textContent === "Show more")!
+        .click(),
+    );
     expect(container.querySelector('[aria-label="New open-work item"]')).toBeNull();
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Add open work"]')!.click(),

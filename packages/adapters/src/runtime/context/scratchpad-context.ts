@@ -7,6 +7,7 @@ import {
   SCRATCHPAD_CUT_HINT,
   SCRATCHPAD_PREAMBLE,
   scratchpadMoreItemsNote,
+  scratchpadParkedNote,
 } from "./scratchpad-context.prompt.js";
 
 const MAX_SCRATCHPAD_CONTEXT_BYTES = 4 * 1024;
@@ -19,12 +20,15 @@ export async function loadAgentScratchpadContext(
   input: { spaceId: string; botId: string },
   maxBytes = MAX_SCRATCHPAD_CONTEXT_BYTES,
 ): Promise<string | undefined> {
-  const items = await listScratchpadItems(deps, {
+  const unfinished = await listScratchpadItems(deps, {
     spaceId: input.spaceId,
     botId: input.botId,
     includeDone: false,
   });
-  if (items.length === 0) return undefined;
+  if (unfinished.length === 0) return undefined;
+  // Parked work is set aside: it is counted here and read on demand, so it never crowds out open work.
+  const items = unfinished.filter((item) => item.status !== "parked");
+  const parked = unfinished.length - items.length;
 
   const fixedBytes = byteLength(SCRATCHPAD_PREAMBLE) + byteLength(SCRATCHPAD_CLOSING);
   if (maxBytes <= fixedBytes)
@@ -36,7 +40,8 @@ export async function loadAgentScratchpadContext(
     tail: ` (id: ${escapePromptData(item.id)})`,
   }));
   const more =
-    items.length > MAX_OPEN_ITEMS ? scratchpadMoreItemsNote(items.length - MAX_OPEN_ITEMS) : "";
+    (items.length > MAX_OPEN_ITEMS ? scratchpadMoreItemsNote(items.length - MAX_OPEN_ITEMS) : "") +
+    (parked > 0 ? scratchpadParkedNote(parked) : "");
   const bodyBytes = maxBytes - fixedBytes;
   const withoutNotes = entries.map((entry) => entry.head + entry.tail).join("") + more;
   // Titles alone overflow: keep what fits, newest first.

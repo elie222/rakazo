@@ -53,6 +53,11 @@ export function ScratchpadSection({ botId }: { botId: string }) {
     },
   });
   const busy = change.pending;
+  // Parked work waits behind Show more, so what is still open leads the list.
+  const openItems = items.filter((item) => item.status !== "parked");
+  const shown = showAll
+    ? [...openItems, ...items.filter((item) => item.status === "parked")]
+    : openItems.slice(0, 5);
   const input = change.input;
   const error = change.error
     ? input && "title" in input
@@ -90,7 +95,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
         </Button>
       </SectionHeading>
       <div className="rounded-xl bg-muted/50 p-4">
-        {(showAll ? items : items.slice(0, 5)).map((item) => (
+        {shown.map((item) => (
           <div
             key={item.id}
             className="group -mx-2.5 flex items-start gap-2 rounded-lg px-2.5 py-2 hover:bg-accent/50"
@@ -104,7 +109,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             />
             <div className="min-w-0 flex-1">
               <div
-                className={`text-start text-body-lg ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
+                className={`text-start text-body-lg ${item.status === "done" ? "text-muted-foreground/80 line-through" : item.status === "parked" ? "text-muted-foreground" : "text-foreground"}`}
                 dir="auto"
               >
                 {item.title}
@@ -127,11 +132,11 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             </Button>
           </div>
         ))}
-        {items.length > 5 && !showAll ? (
+        {items.length > shown.length ? (
           <Button
             variant="ghost"
             size="sm"
-            className="mt-2 w-full text-muted-foreground"
+            className={`w-full text-muted-foreground ${shown.length ? "mt-2" : ""}`}
             onClick={() => setShowAll(true)}
           >
             <Trans>Show more</Trans>

@@ -137,6 +137,23 @@ describe("bot context cards", () => {
     expect(container.textContent).not.toContain(other);
   });
 
+  it("keeps parked work behind Show more", async () => {
+    rpc.mockResolvedValue([
+      { id: "parked", title: "Old idea", notes: "", status: "parked" },
+      ...work,
+    ]);
+    await render();
+    expect(container.textContent).toContain("Review draft");
+    expect(container.textContent).not.toContain("Old idea");
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Show more")!
+        .click(),
+    );
+    expect(container.textContent).toContain("Old idea");
+    expect(container.textContent).not.toContain("Show more");
+  });
+
   it.each(["work", "memory"] as const)("shows a failed %s load", async (section) => {
     rpc.mockRejectedValue(new Error("Request failed"));
     await render("bot-a", section);

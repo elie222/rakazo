@@ -12,7 +12,7 @@ describe("scratchpad prompt context", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("renders open items and excludes completed history", async () => {
+  it("renders open items, counts parked ones and excludes completed history", async () => {
     const findMany = vi.fn(async () => [
       {
         id: "a",
@@ -48,7 +48,10 @@ describe("scratchpad prompt context", () => {
     );
     expect(result).toContain("<scratchpad_open>");
     expect(result).toContain("[open] Ship scratchpad — link PR (id: a)");
-    expect(result).toContain("[parked] Parked idea (id: b)");
+    expect(result).not.toContain("Parked idea");
+    expect(result).toContain(
+      "(id: a)\n1 parked. Call scratchpad_list to see them.\n</scratchpad_open>",
+    );
     expect(result).toContain("not a scheduler");
     expect(result?.endsWith("</scratchpad_open>")).toBe(true);
     expect(result).not.toContain("[done]");

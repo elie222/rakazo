@@ -16,9 +16,15 @@ const STRATEGIC_INITIATIVE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // A failed check-in usually means the bot's model setup is broken; retrying daily only repeats it.
 const FAILED_CHECK_IN_BACKOFF_MS = 7 * STRATEGIC_INITIATIVE_INTERVAL_MS;
 const STALE_SCRATCHPAD_ITEM_MS = 12 * 60 * 60 * 1000;
+// Nobody has touched it through two weeks of check-ins, so it stops counting as open.
+const PARK_SCRATCHPAD_ITEM_MS = 14 * STRATEGIC_INITIATIVE_INTERVAL_MS;
 const MAX_ITEMS_IN_PROMPT = 5;
 const MAX_STALE_ITEMS_SCANNED = 50;
-const STRATEGIC_INITIATIVE_SAFE_TOOL_NAMES = new Set(["ask_user"]);
+const STRATEGIC_INITIATIVE_SAFE_TOOL_NAMES = new Set([
+  "ask_user",
+  "scratchpad_complete",
+  "scratchpad_update",
+]);
 
 type StrategicBot = {
   id: string;
@@ -27,6 +33,7 @@ type StrategicBot = {
   name: string;
   thread: { id: string } | null;
   scratchpadItems: Array<{
+    id: string;
     title: string;
     notes: string;
     updatedAt: Date;
@@ -100,7 +107,8 @@ export function createStrategicInitiativeReconciler(deps: {
 }
 
 /**
- * Daily strategic sweep: stale open scratchpad work gets one proactive check.
+ * Daily strategic sweep: stale open scratchpad work gets one proactive check, and work nobody
+ * has touched for two weeks is parked.
  *
  * The run is a routine-trigger turn so it may choose `NO_RESPONSE` when there is
  * nothing high-signal to report, instead of posting routine noise.
@@ -129,7 +137,7 @@ export async function reconcileStrategicInitiatives(deps: {
             status: "open",
             updatedAt: { lte: new Date(deps.now.getTime() - STALE_SCRATCHPAD_ITEM_MS) },
           },
-          select: { title: true, notes: true, updatedAt: true },
+          select: { id: true, title: true, notes: true, updatedAt: true },
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
           take: MAX_STALE_ITEMS_SCANNED,
         },
@@ -156,8 +164,25 @@ export async function reconcileStrategicInitiatives(deps: {
     for (const bot of bots) {
       // The free checks first, so a bot with nothing to plan costs no queries.
       if (!bot.thread) continue;
-      const scratchpadItems = bot.scratchpadItems
-        .filter((item) => !bot.routines.some((routine) => item.notes.includes(routine.id)))
+      const uncovered = bot.scratchpadItems.filter(
+        (item) => !bot.routines.some((routine) => item.notes.includes(routine.id)),
+      );
+      const parkBefore = new Date(deps.now.getTime() - PARK_SCRATCHPAD_ITEM_MS);
+      const forgotten = uncovered.filter((item) => item.updatedAt <= parkBefore);
+      if (forgotten.length > 0) {
+        // The age is part of the write, so an item touched since the read stays open.
+        await deps.prisma.scratchpadItem.updateMany({
+          where: {
+            id: { in: forgotten.map((item) => item.id) },
+            botId: bot.id,
+            status: "open",
+            updatedAt: { lte: parkBefore },
+          },
+          data: { status: "parked" },
+        });
+      }
+      const scratchpadItems = uncovered
+        .filter((item) => item.updatedAt > parkBefore)
         .slice(0, MAX_ITEMS_IN_PROMPT);
       if (scratchpadItems.length === 0) continue;
       const membership = await deps.prisma.spaceMember.findUnique({
@@ -185,7 +210,7 @@ export function isStrategicInitiativeRun(input: {
   return Boolean(nonce?.startsWith(`${STRATEGIC_INITIATIVE_NONCE_PREFIX}:`));
 }
 
-/** Strategic sweeps are read-mostly and user-facing: no autonomous side effects. */
+/** Strategic sweeps are user-facing: the only thing one may change is its own open-work list. */
 export function filterStrategicInitiativeTools<T extends { name: string }>(
   tools: readonly T[],
   input: { trigger: string; clientNonce: string | null | undefined },
