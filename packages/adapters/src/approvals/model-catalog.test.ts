@@ -20,6 +20,8 @@ it("keeps protocol IDs provider-scoped and publishes only declared catalog entri
       provider: "openrouter",
       id: "typesafe/jev-1.14",
       protocol: "decisions",
+      // The connection form offers zero data retention only where the catalog says it holds.
+      dataRetentionControl: true,
     }),
   ]);
 });
