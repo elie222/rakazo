@@ -155,6 +155,7 @@ export function useRoutineEditor({
               : `/api/v1/bots/${active.id}/webhook`,
           secret: routineWebhookSecret,
           configured: active.webhookConfigured || Boolean(routineWebhookSecret),
+          signature: active.webhookSignature ?? null,
         },
         githubPath:
           typeof window !== "undefined"
@@ -205,6 +206,28 @@ export function useRoutineEditor({
         onHideWebhook: () => {
           bumpWebhookKeyGeneration(active.id);
           hideWebhookSecret(active.id);
+        },
+        onSaveWebhookSignature: async (signature, secret) => {
+          const targetBotId = active.id;
+          const { webhookSignature } = await rpc.bots
+            .setWebhookSignature({ botId: targetBotId, signature, secret })
+            .catch((error: unknown) => {
+              throw new Error(webhookErrorText(error, t`Could not save the signing secret`));
+            });
+          setBots((current) =>
+            current.map((bot) => (bot.id === targetBotId ? { ...bot, webhookSignature } : bot)),
+          );
+        },
+        onClearWebhookSignature: async () => {
+          const targetBotId = active.id;
+          await rpc.bots.clearWebhookSignature({ botId: targetBotId }).catch((error: unknown) => {
+            throw new Error(webhookErrorText(error, t`Could not remove the signing secret`));
+          });
+          setBots((current) =>
+            current.map((bot) =>
+              bot.id === targetBotId ? { ...bot, webhookSignature: null } : bot,
+            ),
+          );
         },
         onSave: async () => {
           if (routineSavePending.current) return;

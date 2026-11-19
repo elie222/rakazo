@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Routine } from "@rakazo/contracts";
+import type { Routine, WebhookSignature } from "@rakazo/contracts";
 import { cronFromPreset } from "@rakazo/core";
 import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -40,13 +40,20 @@ export function RoutineEditor({
   onEnsureWebhook,
   onRevealWebhook,
   onHideWebhook,
+  onSaveWebhookSignature,
+  onClearWebhookSignature,
 }: {
   bot: { id: string; name: string };
   draft: RoutineDraftState;
   onChange: (next: RoutineDraftState) => void;
   editing: Routine | null;
   timezone: string;
-  webhook: { path: string; secret: string | null; configured: boolean };
+  webhook: {
+    path: string;
+    secret: string | null;
+    configured: boolean;
+    signature: WebhookSignature | null;
+  };
   githubPath: string;
   messageProviders: string[];
   saving: boolean;
@@ -60,6 +67,8 @@ export function RoutineEditor({
   onEnsureWebhook: () => Promise<void>;
   onRevealWebhook: () => Promise<void>;
   onHideWebhook: () => void;
+  onSaveWebhookSignature: (signature: WebhookSignature, secret: string) => Promise<void>;
+  onClearWebhookSignature: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const fieldId = useId();
@@ -206,6 +215,11 @@ export function RoutineEditor({
               onRotate={() => void onEnsureWebhook()}
               onReveal={revealWebhook}
               onHide={onHideWebhook}
+              signing={{
+                signature: webhook.signature,
+                onSave: onSaveWebhookSignature,
+                onClear: onClearWebhookSignature,
+              }}
             />
           ) : null}
 

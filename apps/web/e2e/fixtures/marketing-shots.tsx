@@ -185,7 +185,7 @@ function RoutineShot() {
         onChange={setDraft}
         editing={null}
         timezone="UTC"
-        webhook={{ path: "/hooks/demo", secret: null, configured: false }}
+        webhook={{ path: "/hooks/demo", secret: null, configured: false, signature: null }}
         githubPath=""
         messageProviders={[]}
         saving={false}
@@ -199,6 +199,8 @@ function RoutineShot() {
         onEnsureWebhook={async () => undefined}
         onRevealWebhook={async () => undefined}
         onHideWebhook={() => undefined}
+        onSaveWebhookSignature={async () => undefined}
+        onClearWebhookSignature={async () => undefined}
       />
     </main>
   );
