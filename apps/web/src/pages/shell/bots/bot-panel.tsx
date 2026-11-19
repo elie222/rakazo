@@ -39,6 +39,8 @@ import {
   ToolsGroup,
   VoiceRow,
 } from "./bot-settings-sections";
+import type { ComputerMoveFiles } from "./computer-move-dialog";
+import { ComputerMoveDialog } from "./computer-move-dialog";
 import { InstructionSettings } from "./instruction-settings";
 
 const ScratchpadSection = lazyComponent(() =>
@@ -94,6 +96,8 @@ export function BotSettings({
     avatarSet?: BotAvatarSet;
     notifyOnFinish?: boolean;
     computerMode?: ComputerMode;
+    /** With a changed `computerMode`: what was answered about the bot's files. */
+    computerFiles?: ComputerMoveFiles;
     autoSpeak?: boolean;
     fleetManagement?: boolean;
     crossSpaceCommunication?: boolean;
@@ -137,6 +141,9 @@ export function BotSettings({
   });
   const automaticRevision = useRef({ color: 0, avatarSet: 0, notifyOnFinish: 0 });
   const [computerMode, setComputerMode] = useState(bot.computerMode);
+  // The computer the switch asked for, until the question about the bot's files is answered.
+  const [computerMove, setComputerMove] = useState<ComputerMode | null>(null);
+  const computerFilesRef = useRef<ComputerMoveFiles>("leave");
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(
     bot.crossSpaceCommunication ?? true,
@@ -339,6 +346,7 @@ export function BotSettings({
           : {}),
         notifyOnFinish: nextNotify,
         computerMode,
+        computerFiles: computerFilesRef.current,
         autoSpeak,
         voiceId: voiceId || null,
         modelProvider: selected?.provider ?? null,
@@ -690,7 +698,7 @@ export function BotSettings({
                 label={<Trans>Own computer</Trans>}
                 checked={computerMode === "dedicated"}
                 disabled={saving}
-                onChange={(checked) => setComputerMode(checked ? "dedicated" : "team")}
+                onChange={(checked) => setComputerMove(checked ? "dedicated" : "team")}
               />
               {changed.readAloud ? (
                 <SwitchRow
@@ -773,6 +781,19 @@ export function BotSettings({
         </div>
         {error ? <p className="mt-2 text-body-sm text-destructive">{error}</p> : null}
       </div>
+      {computerMove ? (
+        <ComputerMoveDialog
+          botId={bot.id}
+          botName={bot.name}
+          mode={computerMove}
+          onCancel={() => setComputerMove(null)}
+          onChoose={(files) => {
+            computerFilesRef.current = files;
+            setComputerMode(computerMove);
+            setComputerMove(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

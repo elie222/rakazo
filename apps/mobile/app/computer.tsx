@@ -63,6 +63,7 @@ import {
   isComputerKeyboardReadyMessage,
   NATIVE_COMPUTER_KEYBOARD_BOOT,
 } from "../lib/computers/computer-keyboard";
+import { askComputerMoveFiles } from "../lib/computers/computer-move";
 import { useComputerBoot } from "../lib/computers/use-computer-boot";
 import { tabletopLayout } from "../lib/layout/fold-layout";
 import { useFoldRegions } from "../lib/layout/fold-regions";
@@ -402,6 +403,8 @@ export default function Computer() {
 
   async function setComputerMode(mode: ComputerMode) {
     if (!botId || !refreshController.isActive() || mode === computer?.mode) return;
+    const files = await askComputerMoveFiles({ botId, botName: name, mode });
+    if (!files || !refreshController.isActive()) return;
     const action = refreshController.beginAction();
     setSwitchingCount((count) => count + 1);
     setError(null);
@@ -413,7 +416,11 @@ export default function Computer() {
         });
       }
       if (!action.isActive()) return;
-      await rpc("bots/setComputer", { botId, mode }, { timeoutMs: COMPUTER_LIFECYCLE_TIMEOUT_MS });
+      await rpc(
+        "bots/setComputer",
+        { botId, mode, files },
+        { timeoutMs: COMPUTER_LIFECYCLE_TIMEOUT_MS },
+      );
       if (!action.isActive()) return;
       setComputer(null);
       setScreenUrl(null);

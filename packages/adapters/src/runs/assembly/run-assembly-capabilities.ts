@@ -26,7 +26,6 @@ import {
 import { resolveComputerRunModel } from "../../computers/computer-model-settings.js";
 import { checkpointRunComputerWorkspace } from "../../computers/computer-workspace.js";
 import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
-import { teamWorkspaceInstruction } from "../../computers/screens/computer-support.prompt.js";
 import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
 import { selectConfiguredModel } from "../../models/model-roles.js";
@@ -84,8 +83,8 @@ import {
   desktopGuardShellInstruction,
   dockerComputerToolInstruction,
   hostComputerInstruction,
-  PRIVATE_WORKSPACE_INSTRUCTION,
   persistentComputerInstruction,
+  workspaceInstruction,
 } from "./run-instructions.prompt.js";
 import { runReplyMode } from "./run-replies.prompt.js";
 import { createRunTrustLoaders } from "./run-trust.js";
@@ -898,9 +897,15 @@ export async function loadComputerInstructions(
   ]
     .filter(Boolean)
     .join(" ");
-  const workspaceInstruction =
-    computerMode === "team" ? teamWorkspaceInstruction(bot.id) : PRIVATE_WORKSPACE_INSTRUCTION;
-  return { hostEnvironment, computerInstruction, workspaceInstruction };
+  return {
+    hostEnvironment,
+    computerInstruction,
+    workspaceInstruction: workspaceInstruction({
+      mode: computerMode,
+      botId: bot.id,
+      runsOnUserMachine: sandboxKindCapabilities(computerKind).runsOnUserMachine,
+    }),
+  };
 }
 
 export type ComputerInstructions = Awaited<ReturnType<typeof loadComputerInstructions>>;

@@ -40,6 +40,8 @@ export * from "./cloud-agents/cloud-agent-provider-env.js";
 export * from "./cloud-agents/cloud-agent-service.js";
 export * from "./cloud-agents/cloud-agent-tools.js";
 export * from "./cloud-agents/cloud-agent-tools-select.js";
+export * from "./computers/computer-bring-files.js";
+export * from "./computers/computer-change-note.js";
 export * from "./computers/computer-disk.js";
 export * from "./computers/computer-idle.js";
 export * from "./computers/computer-lifecycle.js";

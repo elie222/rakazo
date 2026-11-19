@@ -47,6 +47,8 @@ import { loadSessionToken } from "../lib/api/session";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
+import type { ComputerMoveFiles } from "../lib/computers/computer-move";
+import { askComputerMoveFiles } from "../lib/computers/computer-move";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
 import { thinkingLevelLabel } from "../lib/models/thinking-level";
@@ -78,6 +80,8 @@ export default function BotSettingsScreen() {
   const [instructions, setInstructions] = useState("");
   const [color, setColor] = useState<string>(DEFAULT_BOT_AVATAR_COLOR);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
+  // What was answered about the bot's files when the computer was changed; sent with the save.
+  const computerFiles = useRef<ComputerMoveFiles>("leave");
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
@@ -292,6 +296,18 @@ export default function BotSettingsScreen() {
     if (focus === "model") setAdvancedOpen(true);
   }, [focus]);
 
+  /** Moving the bot asks about its files first; going back to its saved computer does not. */
+  async function chooseComputerMode(mode: ComputerMode) {
+    if (!bot || !botId || mode === bot.computerMode) {
+      setComputerMode(mode);
+      return;
+    }
+    const files = await askComputerMoveFiles({ botId, botName: bot.name, mode });
+    if (!files) return;
+    computerFiles.current = files;
+    setComputerMode(mode);
+  }
+
   function selectModel(key: string) {
     if (key === selectedModelKey) return;
     setModelKey(key);
@@ -443,7 +459,7 @@ export default function BotSettingsScreen() {
       if (computerMode !== bot.computerMode) {
         await rpc(
           "bots/setComputer",
-          { botId, mode: computerMode },
+          { botId, mode: computerMode, files: computerFiles.current },
           { timeoutMs: COMPUTER_LIFECYCLE_TIMEOUT_MS },
         );
         setBot((prev) => (prev ? { ...prev, computerMode } : prev));
@@ -650,7 +666,7 @@ export default function BotSettingsScreen() {
               <SettingsSwitch
                 label={t`Own computer`}
                 value={computerMode === "dedicated"}
-                onChange={(value) => setComputerMode(value ? "dedicated" : "team")}
+                onChange={(value) => void chooseComputerMode(value ? "dedicated" : "team")}
               />
               {computerMaintenanceRows}
             </SettingsGroup>

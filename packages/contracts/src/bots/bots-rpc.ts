@@ -74,7 +74,20 @@ export const botsRpc = {
         }),
       )
       .output(BotSchema),
-    setComputer: oc.input(z.object({ botId: Id, mode: ComputerModeSchema })).output(BotSchema),
+    setComputer: oc
+      .input(
+        z.object({
+          botId: Id,
+          mode: ComputerModeSchema,
+          /** Whether the bot's files are copied to the computer it moves to. Absent leaves them. */
+          files: z.enum(["bring", "leave"]).optional(),
+        }),
+      )
+      .output(BotSchema),
+    /** What moving the bot to `mode` would find there, for the question asked before the move. */
+    computerMove: oc
+      .input(z.object({ botId: Id, mode: ComputerModeSchema }))
+      .output(z.object({ replacesFiles: z.boolean() })),
     archive: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     restore: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     remove: oc

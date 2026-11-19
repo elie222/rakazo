@@ -309,6 +309,176 @@ describeJourneys("required product journeys", () => {
     }
   });
 
+  it("moving a bot between computers brings its files, replaces the older copy and tells it once", async () => {
+    const cookie = await signup(app, `switch-files-${stamp}@rakazo.test`, "Switch files");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Mover",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const onTeam = await prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      include: { computer: true },
+    });
+    const ctx = {
+      operationId: "fixture",
+      traceId: "fixture",
+      spaceId: onTeam.spaceId,
+      userId: onTeam.userId,
+      signal: new AbortController().signal,
+    };
+    const text = async (computer: NonNullable<typeof onTeam.computer>, file: string) =>
+      new TextDecoder().decode(await sandbox.readFile(toComputerRef(computer), file, ctx));
+    const notes = async () =>
+      (await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id })).messages.flatMap((message) =>
+        message.blocks.flatMap((block) =>
+          block.kind === "meta" && block.text?.startsWith("Your computer changed")
+            ? [block.text]
+            : [],
+        ),
+      );
+    const teamFile = `bots/${bot.id}/project/notes.md`;
+    await sandbox.writeFile(
+      toComputerRef(onTeam.computer!),
+      { path: teamFile, content: Buffer.from("made on the Team Computer") },
+      ctx,
+    );
+    expect(
+      await rpc(app, cookie, "bots/computerMove", { botId: bot.id, mode: "dedicated" }),
+    ).toEqual({ replacesFiles: false });
+
+    const moved = await rpc<Bot>(app, cookie, "bots/setComputer", {
+      botId: bot.id,
+      mode: "dedicated",
+      files: "bring",
+    });
+    expect(moved.computerMode).toBe("dedicated");
+    const onOwn = await prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      include: { computer: true },
+    });
+    expect(onOwn.computer!.state).toBe("running");
+    expect(await text(onOwn.computer!, "project/notes.md")).toBe("made on the Team Computer");
+    // The original stays where it was.
+    expect(await text(onTeam.computer!, teamFile)).toBe("made on the Team Computer");
+    expect(await notes()).toEqual([
+      "Your computer changed from the Team Computer to your own computer. Your files were copied over.",
+    ]);
+
+    await sandbox.writeFile(
+      toComputerRef(onOwn.computer!),
+      { path: "project/notes.md", content: Buffer.from("continued on its own computer") },
+      ctx,
+    );
+    expect(await rpc(app, cookie, "bots/computerMove", { botId: bot.id, mode: "team" })).toEqual({
+      replacesFiles: true,
+    });
+    await rpc<Bot>(app, cookie, "bots/setComputer", {
+      botId: bot.id,
+      mode: "team",
+      files: "bring",
+    });
+    const backOnTeam = await prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      include: { computer: true },
+    });
+    expect(backOnTeam.computerId).toBe(onTeam.computerId);
+    expect(await text(backOnTeam.computer!, teamFile)).toBe("continued on its own computer");
+    expect(await notes()).toEqual([
+      "Your computer changed from the Team Computer to your own computer. Your files were copied over.",
+      "Your computer changed from your own computer to the Team Computer. Your files were copied over.",
+    ]);
+
+    // Start empty moves the bot and leaves every file where it was.
+    await sandbox.writeFile(
+      toComputerRef(backOnTeam.computer!),
+      { path: teamFile, content: Buffer.from("newest, left on the Team Computer") },
+      ctx,
+    );
+    await rpc<Bot>(app, cookie, "bots/setComputer", {
+      botId: bot.id,
+      mode: "dedicated",
+      files: "leave",
+    });
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const emptyStart = await prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      include: { computer: true },
+    });
+    expect(await text(emptyStart.computer!, "project/notes.md")).toBe(
+      "continued on its own computer",
+    );
+    expect((await notes()).at(-1)).toBe(
+      "Your computer changed from the Team Computer to your own computer. Your files stayed on the Team Computer.",
+    );
+  });
+
+  it("a bot stays on the computer that has its files when they cannot be brought", async () => {
+    const cookie = await signup(app, `switch-failed-${stamp}@rakazo.test`, "Switch failed");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Stayer",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    await waitForDatabase(
+      async () =>
+        (await prisma.run.count({
+          where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+        })) === 0,
+    );
+    await rpc(app, cookie, "computer/boot", { botId: bot.id });
+    const onTeam = await prisma.bot.findUniqueOrThrow({
+      where: { id: bot.id },
+      include: { computer: true },
+    });
+    await sandbox.writeFile(
+      toComputerRef(onTeam.computer!),
+      { path: `bots/${bot.id}/notes.md`, content: Buffer.from("work") },
+      {
+        operationId: "fixture",
+        traceId: "fixture",
+        spaceId: onTeam.spaceId,
+        userId: onTeam.userId,
+        signal: new AbortController().signal,
+      },
+    );
+    const spy = vi
+      .spyOn(sandbox, "importWorkspace")
+      .mockRejectedValue(new Error("the computer refused the files"));
+    try {
+      const switched = await app.request("/rpc/bots/setComputer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ json: { botId: bot.id, mode: "dedicated", files: "bring" } }),
+      });
+      expect(switched.status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
+    const after = await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } });
+    expect(after.computerId).toBe(onTeam.computerId);
+    expect(after.computerSwitching).toBe(false);
+    const snap = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
+    expect(
+      snap.messages.some((message) =>
+        message.blocks.some(
+          (block) => block.kind === "meta" && block.text?.startsWith("Your computer changed"),
+        ),
+      ),
+    ).toBe(false);
+  });
+
   it("updating a computer the user has taken over hands control back first", async () => {
     const cookie = await signup(app, `maintenance-control-${stamp}@rakazo.test`, "Maintenance");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

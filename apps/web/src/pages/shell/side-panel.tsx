@@ -148,11 +148,12 @@ export function ShellSidePanel({
               computer={computerPanel}
               routines={routineList}
               focusModel={modelFocusRequest}
-              onSave={async ({ computerMode, ...patch }) => {
+              onSave={async ({ computerMode, computerFiles, ...patch }) => {
                 if (computerMode !== undefined && computerMode !== active.computerMode) {
                   await rpc.bots.setComputer({
                     botId: active.id,
                     mode: computerMode,
+                    files: computerFiles,
                   });
                 }
                 const updated = await rpc.bots.update({ botId: active.id, ...patch });

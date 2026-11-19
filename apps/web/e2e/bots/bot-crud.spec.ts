@@ -186,6 +186,23 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     await expect(settings.getByRole("switch", { name, exact: true })).toHaveCount(0);
   await expect(settings.getByLabel("Disable a tool")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "bot-settings-sections-advanced");
+  // Moving the bot to another computer asks about its files first; dismissing it moves nothing.
+  const ownComputer = settings.getByRole("switch", { name: "Own computer", exact: true });
+  await ownComputer.click();
+  const computerMove = page.getByRole("alertdialog");
+  await expect(
+    computerMove.getByRole("heading", { name: /^Bring .+'s files from the Team Computer\?$/ }),
+  ).toBeVisible();
+  await expect(
+    computerMove.getByRole("button", { name: "Bring files", exact: true }),
+  ).toBeVisible();
+  await expect(
+    computerMove.getByRole("button", { name: "Start empty", exact: true }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "bot-computer-move-prompt");
+  await page.keyboard.press("Escape");
+  await expect(computerMove).toHaveCount(0);
+  await expect(ownComputer).not.toBeChecked();
   await rpc(page, "scratchpad/create", {
     botId: deletedBotPath.split("/").at(-1),
     title: "First fixture task",

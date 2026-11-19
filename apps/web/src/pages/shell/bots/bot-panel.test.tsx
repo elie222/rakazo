@@ -22,6 +22,7 @@ vi.mock("../../../lib/query/rpc", () => {
       list: vi.fn(async () => []),
       // This server receives no email, so the panel offers no address.
       emailAddress: vi.fn(async () => null),
+      computerMove: vi.fn(async () => ({ replacesFiles: false })),
     },
     voice: { voices: vi.fn().mockResolvedValue([]) },
     models: {
@@ -111,6 +112,19 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
       <button type="button" role="option" data-value={value} onClick={onSelect} {...props} />
     ),
     ListSearchInput: () => null,
+    AlertDialog: ({ children }: { children: ReactNode }) => (
+      <div role="alertdialog">{children}</div>
+    ),
+    AlertDialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    AlertDialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    AlertDialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    AlertDialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+    AlertDialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+    AlertDialogAction: ({
+      variant: _variant,
+      autoFocus: _autoFocus,
+      ...props
+    }: ComponentProps<"button"> & { variant?: string }) => <button type="button" {...props} />,
   };
 });
 vi.mock("../../../components/pages/PagesList", () => ({ PagesList: () => null }));
@@ -482,15 +496,53 @@ describe("BotSettings model autosave", () => {
     expect(onSave).toHaveBeenCalledTimes(2);
   });
 
-  it("saves Own computer at once and puts back a refused change", async () => {
+  const ownComputer = () =>
+    container.querySelector<HTMLButtonElement>('button[id$="-own-computer"]')!;
+  const moveDialog = () => container.querySelector<HTMLElement>('[role="alertdialog"]');
+  const answer = (label: string) =>
+    [...moveDialog()!.querySelectorAll("button")].find((node) => node.textContent === label)!;
+
+  it("asks about the bot's files before Own computer saves, and puts back a refused change", async () => {
     await render();
-    const toggle = () => container.querySelector<HTMLButtonElement>('button[id$="-own-computer"]')!;
-    await act(async () => toggle().click());
-    expect(onSave.mock.lastCall?.[0]).toMatchObject({ computerMode: "dedicated" });
+    await act(async () => ownComputer().click());
+    expect(moveDialog()?.querySelector("h2")?.textContent).toBe(
+      "Bring Ada's files from the Team Computer?",
+    );
+    expect(moveDialog()?.querySelector("p")).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(ownComputer().getAttribute("aria-checked")).toBe("false");
+    await act(async () => answer("Bring files").click());
+    expect(moveDialog()).toBeNull();
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({
+      computerMode: "dedicated",
+      computerFiles: "bring",
+    });
     onSave.mockRejectedValueOnce(new Error("offline"));
-    await act(async () => toggle().click());
-    expect(onSave.mock.lastCall?.[0]).toMatchObject({ computerMode: "team" });
-    expect(toggle().getAttribute("aria-checked")).toBe("true");
+    await act(async () => ownComputer().click());
+    expect(moveDialog()?.querySelector("h2")?.textContent).toBe(
+      "Bring Ada's files from its own computer?",
+    );
+    await act(async () => answer("Start empty").click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({
+      computerMode: "team",
+      computerFiles: "leave",
+    });
+    expect(ownComputer().getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("says when bringing the files replaces an older copy", async () => {
+    vi.mocked(rpc.bots.computerMove).mockResolvedValueOnce({ replacesFiles: true });
+    await render();
+    await act(async () => ownComputer().click());
+    await vi.waitFor(() =>
+      expect(moveDialog()?.querySelector("p")?.textContent).toBe(
+        "They replace the older files on its own computer.",
+      ),
+    );
+    expect(rpc.bots.computerMove).toHaveBeenLastCalledWith(
+      { botId: "bot-1", mode: "dedicated" },
+      expect.anything(),
+    );
   });
 });
 
