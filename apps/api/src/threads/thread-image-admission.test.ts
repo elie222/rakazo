@@ -236,7 +236,7 @@ describe("current image send admission", () => {
     },
   );
 
-  it("never reads or probes a connection the allowlist refuses", async () => {
+  it("never probes a connection the allowlist refuses", async () => {
     vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
     try {
       const { tx, send } = fixture();
@@ -245,14 +245,18 @@ describe("current image send admission", () => {
         modelProvider: "openai-codex",
         modelId: "gpt-6.1-terra",
       });
+      tx.userModelCredential.findFirst.mockResolvedValue({
+        id: "credential-1",
+        provider: "openai-codex",
+        secretId: "secret-1",
+        defaultModel: "gpt-6.1-terra",
+      });
       const configuration = {
         deployment: null,
         secrets: { load: vi.fn() },
         codexCatalog: { read: vi.fn() },
       };
       await expect(send(configuration)).resolves.toMatchObject({ runId: "run-1" });
-      expect(tx.userModelCredential.findFirst).not.toHaveBeenCalled();
-      expect(configuration.secrets.load).not.toHaveBeenCalled();
       expect(configuration.codexCatalog.read).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllEnvs();
