@@ -22,7 +22,7 @@ import {
 import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
-import { handleRpcError, logUnexpectedRpcError } from "./rpc-errors.js";
+import { handleHttpError, handleRpcError, logUnexpectedRpcError } from "./rpc-errors.js";
 
 describe("logUnexpectedRpcError", () => {
   afterEach(() => {
@@ -463,5 +463,31 @@ describe("handleRpcError with a client error its thrower already logged", () => 
       level: "error",
       message: "rpc computer/save failed",
     });
+  });
+});
+
+describe("handleHttpError with a client error its thrower already logged", () => {
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+
+  it("answers its status and completes the request as a warning", async () => {
+    const sink = createTestSink();
+    const logger = createLogger({ service: "rakazo-api", sinks: [sink] });
+    installLogger(logger);
+    const app = new Hono();
+    app.use("*", requestLogging(logger));
+    app.onError(handleHttpError);
+    app.post("/inbound", () => {
+      const outage = new ClientError("SERVICE_UNAVAILABLE", "Try again in a moment.");
+      warnExpectedFailure("store unavailable", outage);
+      throw outage;
+    });
+
+    const response = await app.request("/inbound", { method: "POST" });
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "Try again in a moment." });
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
   });
 });

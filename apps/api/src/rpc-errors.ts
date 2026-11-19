@@ -41,7 +41,8 @@ export function requestHitDatabaseOutage(): boolean {
 
 /**
  * Hono's default prints the stack and answers 500. Requests already log their failure, and a
- * database outage answers 503 so clients try again.
+ * database outage answers 503 so clients try again, as does a client error its thrower already
+ * logged as an outage.
  */
 export function handleHttpError(error: Error, c: Context): Response {
   if (error instanceof HTTPException) return error.getResponse();
@@ -49,6 +50,10 @@ export function handleHttpError(error: Error, c: Context): Response {
     return c.text("Service Unavailable", 503, {
       "Retry-After": String(DATABASE_RETRY_AFTER_SECONDS),
     });
+  if (error instanceof ClientError && wasReportedError(error)) {
+    markExpectedFailure();
+    return c.json({ error: error.message }, clientErrorStatus(error.kind));
+  }
   return c.text("Internal Server Error", 500);
 }
 
