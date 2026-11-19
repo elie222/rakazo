@@ -302,8 +302,12 @@ export class S3ObjectStorage implements ObjectStorage {
           }),
         ),
       );
-      if (Errors?.length)
-        throw new Error(`Object storage could not delete ${Errors.length} objects`);
+      if (Errors?.length) {
+        const failure = new Error(`Object storage could not delete ${Errors.length} objects`);
+        // Throttling or a server error on any object is an outage too.
+        const passing = Errors.find((entry) => entry.Code && PASSING_NAMES.has(entry.Code));
+        throw passing ? storageOutage(Object.assign(failure, { name: passing.Code })) : failure;
+      }
     }
   }
 }

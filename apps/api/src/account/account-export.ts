@@ -96,9 +96,8 @@ export function zipStream(
         } catch (error) {
           if (error === failure || (!cancelled && !options.signal?.aborted)) {
             // An outage was already logged as a warning where the store failed.
-            if (error instanceof ObjectStorageUnavailableError)
-              getLogger().warn("account.export.failed", { error });
-            else getLogger().error("account.export.failed", error);
+            if (!(error instanceof ObjectStorageUnavailableError))
+              getLogger().error("account.export.failed", error);
             throw error;
           }
           getLogger().warn("account.export.aborted", {

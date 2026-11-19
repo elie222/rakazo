@@ -67,6 +67,11 @@ function fakeS3() {
     requests.push(
       `${req.method} ${key ? "object" : "bucket"}${named.length ? `?${named.join("&")}` : ""}`,
     );
+    if (bucket === "partly-busy-bucket" && req.method === "POST" && query.has("delete"))
+      return send(
+        200,
+        "<DeleteResult><Error><Key>k</Key><Code>SlowDown</Code><Message>Reduce your rate</Message></Error></DeleteResult>",
+      );
     if (bucket === "busy-bucket")
       return send(503, "<Error><Code>SlowDown</Code><Message>Reduce your rate</Message></Error>");
     if (bucket !== "test-bucket") return send(404, "<Error><Code>NoSuchBucket</Code></Error>");
@@ -284,6 +289,12 @@ describe("S3ObjectStorage outages", () => {
     } finally {
       installLogger(previous);
     }
+  });
+
+  it("answers a deletion the store throttled object by object as an outage", async () => {
+    await expect(storage("", "partly-busy-bucket").delete(["k"])).rejects.toBeInstanceOf(
+      ObjectStorageUnavailableError,
+    );
   });
 
   it("leaves a request the store refuses as it was", async () => {
