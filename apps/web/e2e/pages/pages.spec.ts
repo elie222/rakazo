@@ -1127,6 +1127,16 @@ test("specific people review a version and lose access when removed", async ({
     await captureScreenshot(page, testInfo, "page-specific-people");
     const detail = await rpc<{ shareUrl: string }>(page, "pages/get", { pageId, link: true });
 
+    const listRequest = "**/rpc/pageReviews/list";
+    await reviewer.route(listRequest, (route) => route.fulfill({ status: 503 }));
+    await reviewer.goto(new URL("/review", detail.shareUrl).href);
+    const retry = reviewer.getByRole("button", { name: "Try again", exact: true });
+    await expect(retry).toBeVisible();
+    await captureScreenshot(reviewer, testInfo, "shared-pages-retry");
+    await reviewer.unroute(listRequest);
+    await retry.click();
+    await expect(reviewer.getByRole("link", { name: title, exact: true })).toBeVisible();
+
     await reviewer.goto(detail.shareUrl);
     await expect(
       pageFrame(reviewer, title).getByRole("heading", { name: "Release readiness", exact: true }),

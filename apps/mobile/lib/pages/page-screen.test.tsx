@@ -21,6 +21,7 @@ const host = vi.hoisted(() => ({
   headerAction: undefined as { label: string; onPress: () => void } | undefined,
   reviewSections: [] as PageSectionAnchor[],
   documentReady: undefined as Promise<void> | undefined,
+  sharedListFails: false,
   page: {
     id: "page-1",
     title: "Plan",
@@ -33,6 +34,7 @@ const host = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   ActivityIndicator: () => null,
   Platform: { OS: "android" },
+  ScrollView: ({ children }: { children?: ReactNode }) => createElement("div", {}, children),
   Text: ({ children }: { children?: ReactNode }) => createElement("p", {}, children),
   View: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => {
     if (props.onTouchStart) host.touch = props as typeof host.touch;
@@ -109,6 +111,10 @@ vi.mock("../api/api", () => ({
       };
     if (proc === "pageReviews/draft") return { code: input.requestId };
     if (proc === "pageReviews/publish") throw new Error("Draft could not publish");
+    if (proc === "pageReviews/list") {
+      if (host.sharedListFails) throw new Error("Shared Pages could not load");
+      return { items: [{ id: "page-1", title: "Shared plan" }], nextCursor: null };
+    }
     throw new Error(`unexpected ${proc}`);
   }),
 }));
@@ -162,6 +168,7 @@ vi.mock("./pages", async (original) => ({
 
 const { default: PageScreen } = await import("../../app/page");
 const { default: PageReviewScreen } = await import("../../app/page-review");
+const { default: SharedPagesScreen } = await import("../../app/shared-pages");
 const { queryClient } = await import("../query/query");
 const { takePageReply } = await import("./pages");
 
@@ -438,6 +445,27 @@ it("keeps a publish error scoped to the draft whose save failed", async () => {
     await press("second draft");
     expect(container.textContent).not.toContain("Draft could not publish");
   } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("retries a failed shared Pages list without leaving the screen", async () => {
+  queryClient.clear();
+  host.sharedListFails = true;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(SharedPagesScreen)));
+    await act(flush);
+    expect(container.textContent).toContain("Shared Pages could not load");
+    const retry = container.querySelector<HTMLButtonElement>('button[aria-label="Try again"]');
+    expect(retry).not.toBeNull();
+    host.sharedListFails = false;
+    await act(async () => retry!.click());
+    await act(flush);
+    expect(container.textContent).toBe("Shared plan");
+  } finally {
+    host.sharedListFails = false;
     await act(async () => root.unmount());
   }
 });

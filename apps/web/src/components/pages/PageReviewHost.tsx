@@ -247,7 +247,16 @@ function SharedPages({ onClose }: { onClose: () => void }) {
           <Trans>Pages shared with you</Trans>
         </DialogTitle>
         {pages.isError ? (
-          <p role="alert">{errorText(pages.error)}</p>
+          <div className="flex flex-col items-start gap-2">
+            <p role="alert">{errorText(pages.error)}</p>
+            <Button
+              variant="outline"
+              disabled={pages.isFetching}
+              onClick={() => void pages.refetch()}
+            >
+              <Trans>Try again</Trans>
+            </Button>
+          </div>
         ) : pages.isPending ? (
           <Spinner />
         ) : items.length === 0 ? (
@@ -269,7 +278,7 @@ function SharedPages({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
         )}
-        {pages.hasNextPage ? (
+        {!pages.isError && pages.hasNextPage ? (
           <Button
             variant="outline"
             disabled={pages.isFetchingNextPage}

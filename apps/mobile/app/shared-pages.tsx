@@ -6,6 +6,7 @@ import { SettingsGroup, SettingsRow } from "../components/settings/settings-grou
 import { errorText } from "../lib/api/user-error";
 import { useMobileTokens } from "../lib/native/native";
 import { useScreenHeader } from "../lib/navigation/screen-header";
+import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import { usePageReviewSignals } from "../lib/pages/page-review-reads";
 import { targetRpcQuery } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
@@ -25,9 +26,12 @@ export default function SharedPagesScreen() {
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
       {list.isPending ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
       {list.error ? (
-        <Text accessibilityRole="alert" style={[styles.message, { color: tokens.destructive }]}>
-          {errorText(list.error)}
-        </Text>
+        <PageLoadFailure
+          error={list.error}
+          fallback={errorText(list.error)}
+          retrying={list.isFetching}
+          onRetry={() => void list.refetch()}
+        />
       ) : null}
       {list.isSuccess && !items.length ? (
         <Text
