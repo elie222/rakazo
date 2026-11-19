@@ -14,9 +14,15 @@ describe("modelDisconnectWarning", () => {
     expect(modelDisconnectWarning(null)).toBe("");
   });
 
-  it("says the main model choice is cleared, ahead of another choice it also serves", () => {
-    expect(modelDisconnectWarning({ ...unused, mainModel: true, otherChoice: true })).toBe(
+  it("says the main model choice is cleared", () => {
+    expect(modelDisconnectWarning({ ...unused, mainModel: true })).toBe(
       "Your main model choice is cleared, and connecting again does not bring it back.",
+    );
+  });
+
+  it("names both when it serves the main model and another choice", () => {
+    expect(modelDisconnectWarning({ ...unused, mainModel: true, otherChoice: true })).toBe(
+      "Your main model choice and others that use it are cleared, and connecting again does not bring them back.",
     );
   });
 

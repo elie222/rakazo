@@ -169,36 +169,40 @@ export async function modelDisconnectPreview(
     ],
   };
   const position = { role: true, position: true } as const;
-  const named = { select: { name: true }, orderBy: { name: "asc" } } as const;
+  // Only the first names are sent, so only those are read; the total is counted.
+  const named = {
+    select: { name: true },
+    orderBy: { name: "asc" },
+    take: MAX_MODEL_DISCONNECT_NAMES,
+  } as const;
   const pinned = { userId: actor.userId, modelProvider: provider };
+  const bots = { ...pinned, archivedAt: null };
+  const routines = { ...pinned, active: true, bot: { archivedAt: null } };
   // A connection is the account's, so its uses are read in every Space it serves.
-  const [accountRoles, spaceRoles, bots, routines] = await runAsSystem(
-    "what disconnecting a model connection takes with it",
-    () =>
+  const [accountRoles, spaceRoles, botNames, routineNames, botCount, routineCount] =
+    await runAsSystem("what disconnecting a model connection takes with it", () =>
       Promise.all([
         deps.prisma.userModelRoleChoice.findMany({ where: roles, select: position }),
         deps.prisma.spaceModelRoleChoice.findMany({
           where: { ...roles, spaceMember: { settingOverrides: { some: { setting: "models" } } } },
           select: position,
         }),
-        last ? deps.prisma.bot.findMany({ where: { ...pinned, archivedAt: null }, ...named }) : [],
-        last
-          ? deps.prisma.routine.findMany({
-              where: { ...pinned, active: true, bot: { archivedAt: null } },
-              ...named,
-            })
-          : [],
+        last ? deps.prisma.bot.findMany({ where: bots, ...named }) : [],
+        last ? deps.prisma.routine.findMany({ where: routines, ...named }) : [],
+        last ? deps.prisma.bot.count({ where: bots }) : 0,
+        last ? deps.prisma.routine.count({ where: routines }) : 0,
       ]),
-  );
+    );
   const served = [...accountRoles, ...spaceRoles];
   const runsMain = (row: { role: string; position: number }) =>
     row.role === "main" && row.position === 0;
-  const names = [...new Set([...bots, ...routines].map((row) => row.name))];
+  // A name is shown once; the total counts every bot and routine, same-named ones included.
+  const names = [...new Set([...botNames, ...routineNames].map((row) => row.name))];
   return {
     mainModel: served.some(runsMain),
     otherChoice: served.some((row) => !runsMain(row)),
     usedBy: names.slice(0, MAX_MODEL_DISCONNECT_NAMES),
-    usedByTotal: names.length,
+    usedByTotal: botCount + routineCount,
   };
 }
 

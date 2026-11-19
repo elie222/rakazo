@@ -13,7 +13,15 @@ const SHOWN = 3;
 export function modelDisconnectWarning(preview: ModelDisconnectPreview | null): string {
   if (!preview) return "";
   const parts: string[] = [];
-  if (preview.mainModel) {
+  if (preview.mainModel && preview.otherChoice) {
+    parts.push(
+      i18n._({
+        id: "Your main model choice and others that use it are cleared, and connecting again does not bring them back.",
+        message:
+          "Your main model choice and others that use it are cleared, and connecting again does not bring them back.",
+      }),
+    );
+  } else if (preview.mainModel) {
     parts.push(
       i18n._({
         id: "Your main model choice is cleared, and connecting again does not bring it back.",

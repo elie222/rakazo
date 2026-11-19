@@ -26,8 +26,11 @@ function fixture(input: {
     },
     userModelRoleChoice: { findMany: vi.fn(async () => input.accountRoles ?? []) },
     spaceModelRoleChoice: { findMany: vi.fn(async () => input.spaceRoles ?? []) },
-    bot: { findMany: named(input.bots) },
-    routine: { findMany: named(input.routines) },
+    bot: { findMany: named(input.bots), count: vi.fn(async () => input.bots?.length ?? 0) },
+    routine: {
+      findMany: named(input.routines),
+      count: vi.fn(async () => input.routines?.length ?? 0),
+    },
   };
   const preview = (credentialId: string) =>
     modelDisconnectPreview({ prisma } as unknown as RouterDeps, actor, {
@@ -50,7 +53,8 @@ describe("modelDisconnectPreview", () => {
       mainModel: true,
       otherChoice: false,
       usedBy: ["Inbox", "Scout", "Morning digest"],
-      usedByTotal: 3,
+      // The routine named like a bot is shown once and still counted.
+      usedByTotal: 4,
     });
     // The legacy rows without a funding pin ran on the last connection, so they count too.
     expect(prisma.userModelRoleChoice.findMany).toHaveBeenCalledWith(
@@ -63,6 +67,7 @@ describe("modelDisconnectPreview", () => {
     expect(prisma.bot.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { userId: "user-1", modelProvider: "provider-a", archivedAt: null },
+        take: 50,
       }),
     );
     // A routine that is switched off has no runs to stop.
