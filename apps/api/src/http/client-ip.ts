@@ -2,10 +2,10 @@ import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { BlockList, isIP } from "node:net";
 import { networkInterfaces } from "node:os";
-import { getConnInfo } from "@hono/node-server/conninfo";
 import { CLIENT_IP_HEADER } from "@rakazo/auth";
 import { withSecurityRequest } from "@rakazo/db";
 import type { Context, MiddlewareHandler } from "hono";
+import { socketPeer } from "./socket-peer.js";
 
 export interface ClientIpConfig {
   /** Reverse proxies allowed to report the client address: IPs, CIDR ranges, or hostnames. */
@@ -160,15 +160,6 @@ export function clientIpMiddleware(resolver: ClientIpResolver, header: string): 
 
 export function requestClientIp(c: Context): string | undefined {
   return c.get(CLIENT_IP_KEY) as string | undefined;
-}
-
-function socketPeer(c: Context): string | undefined {
-  try {
-    return getConnInfo(c).remote.address;
-  } catch {
-    // In-process requests (tests, app.request) have no socket.
-    return undefined;
-  }
 }
 
 /** The request Better Auth sees: its one IP header carries the resolved address and nothing else. */

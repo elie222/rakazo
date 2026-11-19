@@ -47,6 +47,10 @@ export function embeddableScreenUrl(url: string | null): string | null {
     if (parsed.pathname.startsWith("/novnc/")) {
       return `${page.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
+    // Any other URL on this page's own origin would be framed same-origin. Only the proxy and the
+    // embedded screen page are documents this app frames from itself; anything else is refused
+    // rather than trusted because a provider named a path.
+    if (parsed.origin === page.origin) return null;
     const local = isLocalhostOrLoopbackIp(parsed.hostname);
     const pagePort = page.port || (page.protocol === "https:" ? "443" : "80");
     if (local && parsed.port && parsed.port !== pagePort) {
@@ -58,7 +62,8 @@ export function embeddableScreenUrl(url: string | null): string | null {
   }
 }
 
-export function screenIframeSandbox(url: string | null) {
+/** The sandbox a proxied screen page needs, or undefined when the URL is not one of ours. */
+function proxiedScreenSandbox(url: string | null) {
   if (!url) return undefined;
   try {
     const pathname = new URL(url, window.location.href).pathname;
@@ -68,6 +73,15 @@ export function screenIframeSandbox(url: string | null) {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Every framed screen is sandboxed. Our own pages run with an opaque origin; a provider's page on
+ * another origin keeps its own (embeddableScreenUrl never frames one on this origin).
+ */
+export function screenIframeSandbox(url: string | null) {
+  if (!url) return undefined;
+  return proxiedScreenSandbox(url) ?? "allow-scripts allow-same-origin allow-pointer-lock";
 }
 
 /** Deduplicate only the boot request; callers can still take over and refresh. */
@@ -109,7 +123,7 @@ export function screenFrames(
 
 /** Only pages the web proxy serves carry the shim that reports their state to the app. */
 export function isProxiedScreenUrl(url: string | null): url is string {
-  return screenIframeSandbox(url) !== undefined;
+  return proxiedScreenSandbox(url) !== undefined;
 }
 
 /** How long a framed screen may stay silent before the app treats it as not loaded. */
