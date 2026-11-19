@@ -54,6 +54,7 @@ describe("mobile i18n", () => {
     ["ru", "Аккаунт", "Удалить Scout?"],
     ["de", "Konto", "Scout löschen?"],
     ["pl", "Konto", "Usunąć Scout?"],
+    ["th", "บัญชี", "ลบ Scout ไหม?"],
   ] as const)(
     "translates from the shared %s catalog and keeps interpolations",
     async (locale, account, del) => {
@@ -203,10 +204,11 @@ describe("plural rules without Intl.PluralRules", () => {
     expect(pluralCategory("ru", count)).toBe(form);
   });
 
-  it("reads Chinese and Japanese as one form and English-like languages as one or other", async () => {
+  it("reads Chinese, Japanese and Thai as one form and English-like languages as one or other", async () => {
     const { pluralCategory } = await import("./plural-rules");
     expect(pluralCategory("zh-CN", 1)).toBe("other");
     expect(pluralCategory("ja", 3)).toBe("other");
+    expect(pluralCategory("th", 3)).toBe("other");
     expect(pluralCategory("de", 1)).toBe("one");
     expect(pluralCategory("es", 2)).toBe("other");
   });
