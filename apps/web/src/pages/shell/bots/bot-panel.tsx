@@ -131,10 +131,7 @@ export function BotSettings({
     // Files change from outside the panel; arriving on the tab reads them fresh instead of
     // showing whatever the first visit loaded.
     if (value === "library") {
-      void queryClient.invalidateQueries({
-        predicate: ({ queryKey: [path] }) =>
-          Array.isArray(path) && path.join(".").endsWith("artifacts.listSpace"),
-      });
+      void queryClient.invalidateQueries({ queryKey: queries.artifacts.listSpace.key() });
     }
   }
   // A model deep link opens Settings, then focuses the model once Settings is shown: a control
