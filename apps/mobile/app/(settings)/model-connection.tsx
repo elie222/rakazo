@@ -1,6 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { useTimeout } from "@rakazo/chat-ui/hooks";
+import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
@@ -13,15 +13,11 @@ import {
 } from "@rakazo/contracts";
 import {
   compatibleConnectionReady,
-  compatibleModelDiscovery,
   compatibleModelRows,
   connectionFormFields,
   connectionFormModelId,
   connectionModels,
-  createModelProbe,
   dataRetentionDirty,
-  initialModelProbeState,
-  MODEL_DISCOVERY_DELAY_MS,
   modelConnectionFormSecrets,
   modelConnectRequest,
   sameCompatibleModelEndpoint,
@@ -103,18 +99,40 @@ export default function ModelConnection() {
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
-  const [probeError, setProbeError] = useState<string | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
-  const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const resetOpenAiCompatibleProbe = useCallback(() => {
-    modelProbe.reset();
-    setProbeError(null);
-  }, [modelProbe]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "disconnect" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  const credential = credentials.find((entry) => entry.id === credentialId);
+  const focused = useIsFocused();
+  const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const endpointPreset =
+    provider === OPENAI_COMPATIBLE_PROVIDER_ID
+      ? matchCompatibleEndpointPreset(
+          compatibleEndpointPresets(catalog),
+          request?.baseUrl ?? credential?.baseUrl,
+        )
+      : undefined;
+  const {
+    discoverModels,
+    modelProbe,
+    probeError,
+    probeModels,
+    probing,
+    resetOpenAiCompatibleProbe,
+  } = useCompatibleModelDiscovery(
+    focused && isOpenAiCompatible
+      ? { baseUrl, apiKey, apiProtocol, headerRows, preset: endpointPreset, credential }
+      : null,
+    {
+      request: (input) =>
+        rpc("models/probeOpenAiCompatible", input, { timeoutMs: MODEL_CONNECT_TIMEOUT_MS }),
+      onModels: (models) => setModelId((current) => current.trim() || models[0] || ""),
+      errorMessage: (err) => connectionErrorText(err, t`Could not reach this model server`),
+    },
+  );
 
   const meRef = useRef<MobileMe | null>(null);
   meRef.current = me;
@@ -196,7 +214,6 @@ export default function ModelConnection() {
 
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  const credential = credentials.find((entry) => entry.id === credentialId);
   const {
     oauth,
     pasteCode,
@@ -262,18 +279,10 @@ export default function ModelConnection() {
   );
 
   const providerName = selected?.providerName ?? selected?.provider ?? "";
-  const endpointPreset =
-    provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? matchCompatibleEndpointPreset(
-          compatibleEndpointPresets(catalog),
-          request?.baseUrl ?? credential?.baseUrl,
-        )
-      : undefined;
   const selectedProviderLabel = credential
     ? connectionDisplayName(credential, providerName)
     : (endpointPreset?.name ?? providerName);
   useScreenHeader({ title: selectedProviderLabel || undefined });
-  const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
     selected?.routingFields,
     {
@@ -313,8 +322,7 @@ export default function ModelConnection() {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
-    if (baseUrl.trim() === nextBaseUrl.trim() || sameCompatibleModelEndpoint(baseUrl, nextBaseUrl))
-      return;
+    if (sameCompatibleModelEndpoint(baseUrl, nextBaseUrl)) return;
     // A typed key belongs to the endpoint it was entered for.
     if (baseUrl.trim()) setApiKey("");
     setHeaderRows(null);
@@ -349,38 +357,6 @@ export default function ModelConnection() {
       modelConnectionFormSecrets({ apiKey, headerRows }),
     );
   }
-
-  const focused = useIsFocused();
-  const discovery =
-    focused && isOpenAiCompatible
-      ? compatibleModelDiscovery({
-          baseUrl,
-          apiKey,
-          apiProtocol,
-          headerRows,
-          preset: endpointPreset,
-          credential,
-        })
-      : null;
-  function discoverModels() {
-    if (!discovery) return;
-    setProbeError(null);
-    void modelProbe.probe({
-      baseUrl: discovery.baseUrl,
-      apiKey: discovery.apiKey ?? "",
-      request: () =>
-        rpc("models/probeOpenAiCompatible", discovery, { timeoutMs: MODEL_CONNECT_TIMEOUT_MS }),
-      onSuccess: (models) => setModelId((current) => current.trim() || models[0] || ""),
-      onError: (err) =>
-        setProbeError(connectionErrorText(err, t`Could not reach this model server`)),
-    });
-  }
-
-  useTimeout(
-    discoverModels,
-    discovery ? (endpointPreset?.publicModels ? 0 : MODEL_DISCOVERY_DELAY_MS) : null,
-    JSON.stringify([headerRows, discovery]),
-  );
 
   async function disconnectCredential() {
     if (!selected || !credential) return;

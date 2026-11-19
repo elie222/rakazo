@@ -10,6 +10,7 @@ export const MODEL_DISCOVERY_DELAY_MS = 450;
 
 /** A key can survive an edit only when it still targets the same endpoint. */
 export function sameCompatibleModelEndpoint(previous: string, next: string): boolean {
+  if (previous.trim() === next.trim()) return true;
   try {
     return savedCompatibleEndpointMatches(next, normalizeOpenAiCompatibleBaseUrl(previous));
   } catch {
@@ -39,7 +40,7 @@ export function compatibleModelDiscovery(input: {
       apiKey,
       apiProtocol,
       headers: modelHeadersInput(headerRows),
-      credentialId: saved?.id,
+      credentialId: preset?.publicModels ? undefined : saved?.id,
     };
   } catch {
     return null;

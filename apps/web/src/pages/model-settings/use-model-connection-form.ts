@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { useTimeout } from "@rakazo/chat-ui/hooks";
+import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type {
   ModelApiProtocol,
   ModelCredential,
@@ -14,16 +14,12 @@ import {
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
 import {
-  compatibleModelDiscovery,
-  createModelProbe,
-  initialModelProbeState,
-  MODEL_DISCOVERY_DELAY_MS,
   modelConnectionFormSecrets,
   sameCompatibleModelEndpoint,
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import type { RpcClient } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
@@ -61,14 +57,6 @@ export function useModelConnectionForm({
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
-  const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
-  const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const [probeError, setProbeError] = useState<string | null>(null);
-  function resetOpenAiCompatibleProbe() {
-    modelProbe.reset();
-    setProbeError(null);
-  }
-  useEffect(() => modelProbe.invalidate, [modelProbe]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const modelsForProvider = useMemo(
@@ -121,8 +109,7 @@ export function useModelConnectionForm({
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
-    if (baseUrl.trim() === nextBaseUrl.trim() || sameCompatibleModelEndpoint(baseUrl, nextBaseUrl))
-      return;
+    if (sameCompatibleModelEndpoint(baseUrl, nextBaseUrl)) return;
     // A typed key belongs to the endpoint it was entered for.
     if (baseUrl.trim()) setApiKey("");
     setHeaderRows(null);
@@ -157,38 +144,21 @@ export function useModelConnectionForm({
   const endpointPreset = isOpenAiCompatible
     ? matchCompatibleEndpointPreset(endpointPresets, presetBaseUrl ?? credential?.baseUrl)
     : undefined;
-  const discovery = isOpenAiCompatible
-    ? compatibleModelDiscovery({
-        baseUrl,
-        apiKey,
-        apiProtocol,
-        headerRows,
-        preset: endpointPreset,
-        credential,
-      })
-    : null;
-  function discoverModels() {
-    if (!discovery) return;
-    setProbeError(null);
-    void modelProbe.probe({
-      baseUrl: discovery.baseUrl,
-      apiKey: discovery.apiKey ?? "",
-      request: () => rpc.models.probeOpenAiCompatible(discovery),
-      onSuccess: (models) => {
+  const discovery = useCompatibleModelDiscovery(
+    isOpenAiCompatible
+      ? { baseUrl, apiKey, apiProtocol, headerRows, preset: endpointPreset, credential }
+      : null,
+    {
+      request: (input) => rpc.models.probeOpenAiCompatible(input),
+      onModels: (models) => {
         const current = modelIdRef.current.trim();
         setModelId(current || models[0] || "");
         onModelsFound?.(models, current);
       },
-      onError: (err) =>
-        setProbeError(connectionErrorText(err, t`Could not reach this model server`)),
-    });
-  }
-
-  useTimeout(
-    discoverModels,
-    discovery ? (endpointPreset?.publicModels ? 0 : MODEL_DISCOVERY_DELAY_MS) : null,
-    JSON.stringify([headerRows, discovery]),
+      errorMessage: (err) => connectionErrorText(err, t`Could not reach this model server`),
+    },
   );
+  const { resetOpenAiCompatibleProbe } = discovery;
 
   return {
     accountId,
@@ -197,7 +167,7 @@ export function useModelConnectionForm({
     applyFields,
     baseUrl,
     connectionErrorText,
-    discoverModels,
+    ...discovery,
     routingReady,
     enabledModelIds,
     endpointPreset,
@@ -212,15 +182,10 @@ export function useModelConnectionForm({
     needsProject,
     isOpenAiCompatible,
     modelId,
-    modelProbe,
     modelsForProvider,
     notice,
     openConnection,
-    probeError,
-    probeModels,
-    probing,
     provider,
-    resetOpenAiCompatibleProbe,
     selected,
     setAccountId,
     setApiKey,
