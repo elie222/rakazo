@@ -99,7 +99,7 @@ for unit in rakazo-backup.service rakazo-backup.timer; do
   sudo curl -fsSL "$base/systemd/$unit" -o "/etc/systemd/system/$unit"
 done
 sudo install -d -m 700 /etc/rakazo
-printf 'RAKAZO_DEPLOY_DIR=%s\n' "$PWD" | sudo tee -a /etc/rakazo/backup.env >/dev/null
+printf '\nRAKAZO_DEPLOY_DIR=%s\n' "$PWD" | sudo tee -a /etc/rakazo/backup.env >/dev/null
 sudo chmod 600 /etc/rakazo/backup.env
 sudo systemctl daemon-reload
 sudo systemctl enable --now rakazo-backup.timer
@@ -107,10 +107,12 @@ sudo systemctl start rakazo-backup.service
 ```
 
 Run it from the deployment directory. The deployment directory is added to
-`/etc/rakazo/backup.env` without replacing settings already there. The last command takes the first backup now, so a
-misconfiguration shows at once in `journalctl -u rakazo-backup.service`. The restore steps below
-apply with your own Compose file and volume names; this stack runs Postgres 16, so the drill needs
-`pg_restore` 16 or newer.
+`/etc/rakazo/backup.env` on a line of its own, without replacing settings already there. The
+last command takes the first backup now, so a misconfiguration shows at once in
+`journalctl -u rakazo-backup.service`. The restore steps below apply with your own Compose file
+and volume names. Their drill script is not part of this install: fetch it where you keep the
+identity file with `curl -fsSLO "$base/compose/backup-drill.sh"` and run it as
+`bash backup-drill.sh`. This stack runs Postgres 16, so the drill needs `pg_restore` 16 or newer.
 
 For a dedicated backup disk, mount it persistently and bind its `backups` directory onto
 `/var/backups` in `/etc/fstab`. Add `x-systemd.requires-mounts-for=/mnt/your-backup-volume` to the bind
