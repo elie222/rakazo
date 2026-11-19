@@ -162,11 +162,11 @@ describe("autoReviewTimeoutMs", () => {
 });
 
 describe("autoReviewMinConfidence", () => {
-  it("defaults to 0.5 and clamps out of range", () => {
-    expect(autoReviewMinConfidence({})).toBe(0.5);
+  it("is unset by default and ignores values out of range", () => {
+    expect(autoReviewMinConfidence({})).toBeUndefined();
     expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0.8" })).toBe(0.8);
-    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "2" })).toBe(0.5);
-    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "nope" })).toBe(0.5);
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "2" })).toBeUndefined();
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "nope" })).toBeUndefined();
   });
 });
 

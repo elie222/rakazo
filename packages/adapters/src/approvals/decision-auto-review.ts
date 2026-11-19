@@ -20,6 +20,8 @@ import {
   MAX_OWNER_WORDS_CHARS,
   truncateReviewText,
 } from "./auto-review.prompt.js";
+import { passConfidenceFloor } from "./decision-models.js";
+import type { DecisionCalibration } from "./model-descriptor.js";
 
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
@@ -30,6 +32,8 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
       provider: DecisionProvider;
       providerId: string;
       model: string;
+      calibration: DecisionCalibration;
+      /** The operator's floor on the model's own confidence, instead of its calibration. */
       minConfidence?: number;
       timeoutMs?: number;
     },
@@ -92,7 +96,10 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
         return { decision: "error", model, reason: "Checker returned no decision." };
       if (
         typeof answer.confidence !== "number" ||
-        answer.confidence < (this.options.minConfidence ?? autoReviewMinConfidence())
+        answer.confidence <
+          (this.options.minConfidence ??
+            autoReviewMinConfidence() ??
+            passConfidenceFloor(this.options.calibration))
       )
         // An unsure checker asks like any other ask: a reason saying so tells the person nothing.
         return { decision: "ask", model };

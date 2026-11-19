@@ -874,8 +874,12 @@ async function reviewToolCall(
       ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
       ...(await reviewOwnerContext(ctx, reviewArgs, !ownerWordsOnly)),
     };
+    // The usage names the reviewed action, so a run's reviews are counted and priced one by one.
+    const operationId = applied
+      ? `auto-review:${runId}:${applied.effect.id}`
+      : `auto-review:${runId}`;
     const reviewContext: AdapterContext = {
-      operationId: `auto-review:${runId}`,
+      operationId,
       traceId: `auto-review:${runId}`,
       spaceId: run.spaceId,
       userId: run.userId,
@@ -892,6 +896,7 @@ async function reviewToolCall(
           userId: run.userId,
           botId: bot.id,
           threadId: thread.id,
+          operationId,
         },
         {
           injectedReview,
