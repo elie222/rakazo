@@ -3,7 +3,10 @@ import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
   finishRoutineHandover,
   parseRoutineWatch,
+  postRoutineNotice,
   RoutineWatchError,
+  routineEditChange,
+  routineEdited,
   stableStringify,
   validateRoutineWatch,
   wakeRun,
@@ -90,6 +93,13 @@ export function routinesRoutes(ctx: RouterContext) {
           data: routineRowData(context.actor, input, routineNextRunAt(input)),
         });
         await announceRoutine(context.actor, bot, row);
+        await postRoutineNotice(deps, {
+          spaceId: context.actor.spaceId,
+          threadId: row.threadId ?? bot.thread?.id,
+          botId: bot.id,
+          change: "created",
+          name: row.name,
+        });
         return mapRoutine(row);
       }),
       update: authed.routines.update.handler(async ({ context, input }) => {
@@ -258,6 +268,8 @@ export function routinesRoutes(ctx: RouterContext) {
               crons: input.crons,
               timezone: input.timezone,
               active: input.active,
+              // An explicit on or off is the member's own choice, so a restore must not undo it.
+              ...(input.active !== undefined ? { resumeOnRestore: false } : {}),
               notify: input.notify,
               // What a watch read is not the owner's words, so it never runs as a turn in the chat.
               inChat: watch ? false : input.inChat,
@@ -324,6 +336,15 @@ export function routinesRoutes(ctx: RouterContext) {
             await deps.jobs.cancel(routineJobKey(row.id));
           }
         }
+        if (routineEdited(existing, row)) {
+          await postRoutineNotice(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: existing.threadId ?? bot.thread?.id,
+            botId: bot.id,
+            change: routineEditChange(existing, row),
+            name: row.name,
+          });
+        }
         return mapRoutine(row);
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
@@ -334,6 +355,13 @@ export function routinesRoutes(ctx: RouterContext) {
         if (!existing) throw new IsolationError();
         await deps.prisma.routine.delete({ where: { id: existing.id } });
         await deps.jobs.cancel(routineJobKey(existing.id));
+        await postRoutineNotice(deps, {
+          spaceId: context.actor.spaceId,
+          threadId: existing.threadId,
+          botId: existing.botId,
+          change: "deleted",
+          name: existing.name,
+        });
         return { ok: true as const };
       }),
       testRun: authed.routines.testRun.handler(async ({ context, input }) => {

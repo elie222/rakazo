@@ -1,6 +1,10 @@
 import { ORPCError } from "@orpc/server";
 import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
-import { findConnectedModelCredential, validateConnectedModelChoice } from "@rakazo/adapters";
+import {
+  assertModelProviderAllowed,
+  findConnectedModelCredential,
+  validateConnectedModelChoice,
+} from "@rakazo/adapters";
 import type { Actor, ModelDisconnectPreview } from "@rakazo/contracts";
 import {
   MAX_MODEL_DISCONNECT_NAMES,
@@ -214,6 +218,7 @@ export async function assertRoutineModel(
   codexCatalog: CodexLiveCatalog,
 ) {
   if (!model.modelProvider || !model.modelId) return;
+  assertModelProviderAllowed(model.modelProvider);
   const message = await validateConnectedModelChoice(
     deps.prisma,
     deps.secrets,

@@ -2674,7 +2674,11 @@ def run(argv: list[str]) -> int:
             # The new tab is already on the site: navigating it again would go unseen by the request log
             # it has only just started.
             opened = True
-        browser.use_tab(target)
+        # A check of screen presses only reads the tab over CDP: a slow agent-browser must not fail it, since
+        # a failed check asks. Only a click's ref needs agent-browser's session on the tab.
+        refs = args.get("actions") if isinstance(args.get("actions"), list) else []
+        if command != "purchase_check" or any(isinstance(step, dict) and step.get("kind") == "click" for step in refs):
+            browser.use_tab(target)
         page = PageBrowser(port, target, browser)
         if downloads:
             session = client.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
@@ -2738,7 +2742,8 @@ def run(argv: list[str]) -> int:
                 saved = downloads.finish()
             except Exception:
                 saved = [{"error": DOWNLOAD_FAILED}]
-        dialog = page.dialog() if page else None
+        # A purchase check presses nothing, an alert's OK included, and a failed one always fails, which asks.
+        dialog = page.dialog() if page and command != "purchase_check" else None
         failure = page.dialog_result(dialog, {}) if page and dialog else {
             "ok": False, "error": str(exc), "fallback": "computer_act", "uncertain": command == "act" and connected}
         print(json.dumps({**failure, **({"downloads": saved} if saved else {})}))

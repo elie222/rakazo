@@ -18,6 +18,7 @@ import {
   connectionFormModelId,
   connectionModels,
   createModelProbe,
+  dataRetentionDirty,
   initialModelProbeState,
   modelConnectionFormSecrets,
   modelConnectRequest,
@@ -43,6 +44,7 @@ import { ConnectionModelList } from "../../components/models/connection-model-li
 import { DisclosureRow } from "../../components/models/model-connection-fields";
 import { createModelsStyles } from "../../components/models/model-connection-styles";
 import { NativeActionButton } from "../../components/native/native-action-button";
+import { SettingsGroup, SettingsSwitch } from "../../components/settings/settings-group";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { useSubscriptionSignIn } from "../../lib/auth/use-subscription-sign-in";
@@ -99,6 +101,7 @@ export default function ModelConnection() {
   const [gatewayId, setGatewayId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [region, setRegion] = useState("global");
+  const [zeroDataRetention, setZeroDataRetention] = useState(false);
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
@@ -181,6 +184,7 @@ export default function ModelConnection() {
       setGatewayId(fields.gatewayId);
       setProjectId(fields.projectId ?? "");
       setRegion(fields.region ?? "global");
+      setZeroDataRetention(fields.zeroDataRetention ?? false);
       return nextMe;
     },
     [request, rpc, t],
@@ -299,8 +303,11 @@ export default function ModelConnection() {
     credential,
     keyRequired: Boolean(endpointPreset),
   });
-  const gatewayDirty = modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential);
-  const gatewayOnlySave = needsRouting && Boolean(credential) && !apiKey.trim();
+  const retentionDirty =
+    selected !== undefined && dataRetentionDirty(selected, zeroDataRetention, credential);
+  const gatewayDirty =
+    modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential) || retentionDirty;
+  const gatewayOnlySave = (needsRouting || retentionDirty) && Boolean(credential) && !apiKey.trim();
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
@@ -406,6 +413,7 @@ export default function ModelConnection() {
         gatewayId,
         projectId,
         region,
+        zeroDataRetention,
       },
       selected,
       credential,
@@ -723,6 +731,19 @@ export default function ModelConnection() {
                   value={apiKey}
                 />
               </>
+            ) : null}
+            {selected.dataRetentionControl ? (
+              <SettingsGroup>
+                <SettingsSwitch
+                  label={t`Zero data retention`}
+                  value={zeroDataRetention}
+                  disabled={busy}
+                  onChange={(value) => {
+                    setZeroDataRetention(value);
+                    clearFeedback();
+                  }}
+                />
+              </SettingsGroup>
             ) : null}
 
             <NativeActionButton

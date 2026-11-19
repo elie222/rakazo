@@ -123,6 +123,28 @@ describe("PlanLimitsReader", () => {
 });
 
 describe("readMemberPlanLimits", () => {
+  it("never reads a sign-in to a provider the allowlist leaves out", async () => {
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openai-codex");
+    try {
+      const findMany = vi.fn(async () => []);
+      const reader = new PlanLimitsReader((async () => json(claudeBody)) as typeof fetch);
+      await readMemberPlanLimits(
+        { userModelCredential: { findMany }, secret: { findMany: vi.fn() } } as never,
+        { load: vi.fn() },
+        "u1",
+        reader,
+        () => undefined,
+      );
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: "u1", provider: { in: ["openai-codex"] } },
+        }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("lists subscription sign-ins and skips API keys and connections to reconnect", async () => {
     const rows = [
       { id: "c1", provider: "anthropic", label: "me@example.com", secretId: "s1" },

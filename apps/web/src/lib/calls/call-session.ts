@@ -4,7 +4,9 @@ import type { CallExchange } from "@rakazo/core";
 import {
   CALL_FAREWELL_TIMEOUT_MS,
   callClientNonce,
+  callRunStatus,
   callTurn,
+  createCallReplySpeech,
   createCallSendTracker,
   createInterimBargeIn,
   errorStatus,
@@ -13,14 +15,17 @@ import {
   isCallBargeIn,
   isFarewell,
   isRunTerminalEvent,
+  isRunWorking,
   isSecretAskBlock,
   isThreadSnapshotEvent,
   newClientId,
   pendingCallSecretAsk,
+  progressMessageId,
   reduceThreadSnapshot,
   runThreadSubscription,
   speechFromBlocks,
   spokenMemory,
+  withBotSpeech,
 } from "@rakazo/core";
 import { getGlobalBroadcastChannel } from "better-auth/client";
 import { useSyncExternalStore } from "react";
@@ -56,7 +61,6 @@ export interface CallState {
   exchanges: CallExchange[];
 }
 
-const RUN_ACTIVE = ["running", "queued", "leased"];
 /**
  * Quiet gap between the last audio frame and opening the microphone.
  * ponytail: one fixed delay for every room and output device; make it adaptive only
@@ -97,6 +101,10 @@ let feed: {
 } | null = null;
 /** Every bot message already spoken this call: a streaming message updates many times. */
 const spokenMessageIds = new Set<string>();
+/** The reply's sentences already said while its run was still writing it. */
+const replySpeech = createCallReplySpeech();
+/** The run whose reply is being said as it is written; null once that reply is whole. */
+let streamRunId: string | null = null;
 let unsubSpeech: (() => void) | null = null;
 let unsubDictation: (() => void) | null = null;
 let hangUpAfterReply = false;
@@ -121,6 +129,7 @@ const interim = createInterimBargeIn(() => {
   // Never resume the cut-off message, and keep the idle it emits from reopening the mic.
   bargedIn = true;
   speaker.stop();
+  sealStream();
   set({ phase: "listening", caption: "" });
 });
 const watchers = new Set<() => void>();
@@ -165,6 +174,8 @@ export function startCall(call: {
   callId = call.answered?.callId ?? newClientId();
   transcribe = call.transcribe;
   spokenMemory.clear();
+  replySpeech.clear();
+  streamRunId = null;
   interim.clear();
   micOpen = false;
   bargedIn = false;
@@ -200,7 +211,10 @@ export function startCall(call: {
       void openMic();
     } else if (speech.status === "idle" && state.phase !== "listening" && !bargedIn) {
       set({ caption: "" });
-      guardThenListen();
+      // Everything written so far was said, but the run is still writing: wait for the rest
+      // with the microphone as it was while speaking.
+      if (replyStillWritten()) set({ phase: "thinking" });
+      else guardThenListen();
     }
     if (speech.error) set({ caption: speech.error });
   });
@@ -307,6 +321,8 @@ function dropCall(): void {
   thread = null;
   spokenMessageIds.clear();
   spokenMemory.clear();
+  replySpeech.clear();
+  streamRunId = null;
   if (state) {
     state = null;
     emit();
@@ -508,6 +524,9 @@ function speakFarewell(payload: Record<string, unknown>) {
   const farewell = typeof payload.farewell === "string" ? payload.farewell.trim() : "";
   const messageId = typeof payload.messageId === "string" ? payload.messageId : undefined;
   if (messageId) spokenMessageIds.add(messageId);
+  // A reply still being said, as it is written or after it landed, ends before the goodbye.
+  const afterReply = streamRunId !== null || speaker.isSpeaking();
+  sealStream();
   // Nothing to say: hang up instead of waiting out the fallback.
   if (!farewell) {
     endCall();
@@ -516,7 +535,8 @@ function speakFarewell(payload: Record<string, unknown>) {
   awaitingReply = false;
   set({ exchanges: [...state.exchanges, { role: "bot", text: farewell }], heard: "" });
   spokenMemory.remember(farewell);
-  void speaker.speak(farewell, { botId: state.botId, messageId, callId });
+  const options = { botId: state.botId, messageId, callId };
+  void (afterReply ? speaker.queue(farewell, options) : speaker.speak(farewell, options));
 }
 
 function commit(next: ThreadSnapshot | null) {
@@ -598,10 +618,14 @@ async function handleTranscript(text: string) {
   // Dictation stopped itself to deliver this final.
   micOpen = false;
   if (!text.trim()) {
-    void listen();
+    // Between sentences of a reply still being written the turn stays the bot's.
+    if (replyStillWritten()) void openMic();
+    else void listen();
     return;
   }
-  if (state.phase === "speaking") {
+  // Between sentences of a reply still being written counts as over it: a backchannel or the
+  // reply's echo must not become a turn.
+  if (state.phase === "speaking" || replyStillWritten()) {
     if (!isCallBargeIn(text)) {
       set({ heard: "" });
       void openMic();
@@ -610,6 +634,7 @@ async function handleTranscript(text: string) {
     // The caller talked over the reply: cut the audio, and never resume that message.
     bargedIn = true;
     speaker.stop();
+    sealStream();
     set({ phase: "thinking", caption: "" });
   }
   dictation.stop("submit");
@@ -619,6 +644,8 @@ async function handleTranscript(text: string) {
     void listen();
     return;
   }
+  // The caller's turn: a reply said as it was written ended with it.
+  streamRunId = null;
   const turn = callTurn(thread, text);
   if (turn.kind === "enter_code") {
     set({ heard: "", caption: t`Hang up, then enter the code on screen.` });
@@ -724,6 +751,7 @@ function reactToThread() {
   // card keeps its live progress message after the card; that is not a reply.
   const turnIndex = messages.findLastIndex((message) => message.role === "user");
   const replyRunId = approvalRunId ?? awaitedRunId;
+  speakAsWritten(replyRunId, messages);
   const lastBot = messages
     .slice(turnIndex + 1)
     .findLast(
@@ -744,18 +772,32 @@ function reactToThread() {
       // its run writes next.
       approvalRunId = approvalAsk ? (lastBot.runId ?? null) : null;
       awaitingReply = approvalRunId !== null;
-      set({ exchanges: [...state.exchanges, { role: "bot", text }], heard: "" });
+      // What was already said while the run wrote it is not said again.
+      const streamed = Boolean(lastBot.runId && lastBot.runId === streamRunId);
+      if (streamed) streamRunId = null;
+      const rest = lastBot.runId ? replySpeech.finish(lastBot.runId, text, lastBot.id) : text;
+      // What still plays of it is this message now, so tapping the message stops it.
+      if (streamed) speaker.relabel(lastBot.id);
+      set({
+        heard: "",
+        ...(rest ? { exchanges: withBotSpeech(state.exchanges, rest, streamed) } : {}),
+      });
       spokenMemory.remember(text);
-      void speaker.speak(
-        secretAsk
-          ? `${text}. ${t`Hang up first, then enter the code on screen.`}`
-          : approvalAsk
-            ? `${text}. ${t`Approve or deny it on screen.`}`
-            : ask
-              ? `${text}. ${t`Say yes or no, or answer in a sentence.`}`
-              : text,
-        { botId, messageId: lastBot.id, callId },
-      );
+      const instruction = secretAsk
+        ? t`Hang up first, then enter the code on screen.`
+        : approvalAsk
+          ? t`Approve or deny it on screen.`
+          : ask
+            ? t`Say yes or no, or answer in a sentence.`
+            : "";
+      const said = instruction ? (rest ? `${rest}. ${instruction}` : instruction) : rest;
+      const options = { botId, messageId: lastBot.id, callId };
+      // The rest follows the sentences still playing; with nothing left, the turn ends once
+      // they have played.
+      if (!said) {
+        if (!speaker.isSpeaking()) guardThenListen();
+      } else if (streamed) void speaker.queue(said, options);
+      else void speaker.speak(said, options);
       return;
     }
     if (!runActive(thread)) {
@@ -774,6 +816,42 @@ function reactToThread() {
 }
 
 /**
+ * Says each finished sentence of the reply while its run is still writing it, when the server
+ * marks that text as the reply. Without the mark, the reply is said once it is whole.
+ */
+function speakAsWritten(runId: string | null, messages: readonly ThreadMessage[]) {
+  if (!state || !runId || !awaitingReply || !runWorking(runId)) return;
+  const sentences = replySpeech.take(messages, runId);
+  if (!sentences) return;
+  const continues = streamRunId === runId;
+  streamRunId = runId;
+  set({ exchanges: withBotSpeech(state.exchanges, sentences, continues), heard: "" });
+  spokenMemory.remember(sentences);
+  // Until the reply lands as a message, the live message on screen is what is being read.
+  void speaker
+    .queue(sentences, { botId: state.botId, messageId: progressMessageId({ runId }), callId })
+    .then(() => {
+      // A failed clip may have gone unheard: the finished reply is said whole instead.
+      if (speaker.state.error) replySpeech.forget(runId);
+    });
+}
+
+/** The caller cut in: nothing more of the reply being written is said until it is whole. */
+function sealStream() {
+  if (streamRunId) replySpeech.seal(thread?.messages ?? [], streamRunId);
+  streamRunId = null;
+}
+
+/** A reply is being said as it is written, and its run is still writing it. */
+function replyStillWritten() {
+  return streamRunId !== null && runWorking(streamRunId);
+}
+
+function runWorking(runId: string) {
+  return !finishedRunIds.has(runId) && isRunWorking(callRunStatus(thread, runId));
+}
+
+/**
  * A reply is only whole once its own run stopped. Speaking a message the run is
  * still streaming clips it, and later updates of the same id never get a turn.
  */
@@ -781,9 +859,9 @@ function replyFinished(message: ThreadMessage) {
   const run = thread?.activeRuns?.find((run) => run.id === message.runId) ?? thread?.run;
   if (!run) return true;
   if (message.runId && message.runId !== run.id) return true;
-  return !RUN_ACTIVE.includes(run.status);
+  return !isRunWorking(run.status);
 }
 
 function runActive(snapshot: ThreadSnapshot | null) {
-  return Boolean(snapshot?.run && RUN_ACTIVE.includes(snapshot.run.status));
+  return isRunWorking(snapshot?.run?.status);
 }

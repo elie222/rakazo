@@ -27,7 +27,8 @@ import {
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
-  auditLogOrganization,
+  auditLogAccess,
+  auditLogScope,
   commitBotUpdate,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
@@ -303,10 +304,10 @@ export function accountRoutes(ctx: RouterContext) {
     },
     audit: {
       events: authed.audit.events.handler(async ({ context, input }) => {
-        const organizationId = await auditLogOrganization(deps.prisma, context.actor);
-        if (!organizationId) throw new ORPCError("FORBIDDEN");
+        const access = await auditLogAccess(deps.prisma, context.actor);
+        if (!access) throw new ORPCError("FORBIDDEN");
         return runAsSystem("read the organization's audit log", () =>
-          listAuditEvents(deps.prisma, organizationId, input),
+          listAuditEvents(deps.prisma, access.organizationId, auditLogScope(access, input)),
         );
       }),
     },
