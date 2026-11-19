@@ -260,6 +260,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/probeCatalog"],
       ["models/rename"],
       ["models/saveModelSettings"],
+      ["models/disconnectPreview"],
       ["models/disconnect"],
       ["spaces/list"],
       ["meetingCalendar/status", { botId: "missing-bot" }],

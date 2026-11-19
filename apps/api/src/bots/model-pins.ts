@@ -5,9 +5,13 @@ import {
   findConnectedModelCredential,
   validateConnectedModelChoice,
 } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
-import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
-import { modelRoleTarget, runAsSystem } from "@rakazo/db";
+import type { Actor, ModelDisconnectPreview } from "@rakazo/contracts";
+import {
+  MAX_MODEL_DISCONNECT_NAMES,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  usableModelId,
+} from "@rakazo/contracts";
+import { modelCredentialProviderFilter, modelRoleTarget, runAsSystem } from "@rakazo/db";
 import type { RouterDeps } from "../router.js";
 
 /**
@@ -136,6 +140,76 @@ export async function assertCompatibleDefaultChange(
     },
     () => true,
   );
+}
+
+/**
+ * What disconnecting one connection takes with it. The main and backup choices it serves are
+ * deleted with it, in the account's models and in every Space that has its own, and connecting
+ * again does not bring them back. The member's bots and active routines set to the provider are
+ * named only when this is the provider's last connection. With another one left, which of them
+ * it serves depends on that connection's models, so none is named rather than guessed.
+ */
+export async function modelDisconnectPreview(
+  deps: RouterDeps,
+  actor: Actor,
+  input: { provider: string; credentialId: string },
+): Promise<ModelDisconnectPreview> {
+  const provider = modelCredentialProviderFilter(input.provider);
+  const connections = await deps.prisma.userModelCredential.findMany({
+    where: { userId: actor.userId, provider },
+    select: { id: true },
+  });
+  if (!connections.some((row) => row.id === input.credentialId)) {
+    return { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
+  }
+  const last = connections.length === 1;
+  // The rows `models.disconnect` deletes, less a Space's saved choices that are not in use
+  // because the Space follows the account's models: a warning about those would name a main
+  // model that is not the one running.
+  const roles = {
+    userId: actor.userId,
+    provider,
+    OR: [
+      { credentialId: input.credentialId },
+      ...(last ? [{ credentialId: null, creditOfferingId: null }] : []),
+    ],
+  };
+  const position = { role: true, position: true } as const;
+  // Only the first names are sent, so only those are read; the total is counted.
+  const named = {
+    select: { name: true },
+    orderBy: { name: "asc" },
+    take: MAX_MODEL_DISCONNECT_NAMES,
+  } as const;
+  const pinned = { userId: actor.userId, modelProvider: provider };
+  const bots = { ...pinned, archivedAt: null };
+  const routines = { ...pinned, active: true, bot: { archivedAt: null } };
+  // A connection is the account's, so its uses are read in every Space it serves.
+  const [accountRoles, spaceRoles, botNames, routineNames, botCount, routineCount] =
+    await runAsSystem("what disconnecting a model connection takes with it", () =>
+      Promise.all([
+        deps.prisma.userModelRoleChoice.findMany({ where: roles, select: position }),
+        deps.prisma.spaceModelRoleChoice.findMany({
+          where: { ...roles, spaceMember: { settingOverrides: { some: { setting: "models" } } } },
+          select: position,
+        }),
+        last ? deps.prisma.bot.findMany({ where: bots, ...named }) : [],
+        last ? deps.prisma.routine.findMany({ where: routines, ...named }) : [],
+        last ? deps.prisma.bot.count({ where: bots }) : 0,
+        last ? deps.prisma.routine.count({ where: routines }) : 0,
+      ]),
+    );
+  const served = [...accountRoles, ...spaceRoles];
+  const runsMain = (row: { role: string; position: number }) =>
+    row.role === "main" && row.position === 0;
+  // A name is shown once; the total counts every bot and routine, same-named ones included.
+  const names = [...new Set([...botNames, ...routineNames].map((row) => row.name))];
+  return {
+    mainModel: served.some(runsMain),
+    otherChoice: served.some((row) => !runsMain(row)),
+    usedBy: names.slice(0, MAX_MODEL_DISCONNECT_NAMES),
+    usedByTotal: botCount + routineCount,
+  };
 }
 
 /** A routine may only name a model the space has connected. */
