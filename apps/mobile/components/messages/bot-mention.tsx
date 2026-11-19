@@ -56,31 +56,26 @@ export function BotMention({
 export function MessageMentions({
   mentions,
   colorOf,
-  avatarSetOf,
-  tokens,
   onOpenBot,
   children,
 }: {
   mentions: readonly ChildBotBlock[];
   colorOf: (botId: string) => string | undefined;
-  avatarSetOf?: (botId: string) => BotAvatarSet | undefined;
-  tokens: ColorTokens;
   onOpenBot: (botId: string, name: string) => void;
   children: ReactNode;
 }) {
-  const render = (id: string) => {
+  const mentionLink = (id: string) => {
     const block = mentions.find((mention) => mention.botId === id);
-    return block ? (
-      <BotMention
-        block={block}
-        color={colorOf(id)}
-        avatarSet={avatarSetOf?.(id)}
-        tokens={tokens}
-        onOpenBot={onOpenBot}
-      />
-    ) : undefined;
+    const color = colorOf(id);
+    if (block?.status !== "created" || !color) return undefined;
+    return {
+      color: resolvePersonaColorDef(id, color).hex,
+      open: () => onOpenBot(block.botId, block.name),
+    };
   };
   return (
-    <MessageMentionsContext.Provider value={render}>{children}</MessageMentionsContext.Provider>
+    <MessageMentionsContext.Provider value={mentionLink}>
+      {children}
+    </MessageMentionsContext.Provider>
   );
 }

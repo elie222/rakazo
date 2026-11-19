@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import type {
   ApnsVoipConfig,
   MessagingEnvironmentValues,
@@ -14,6 +15,7 @@ import {
   resolveSandboxProvider,
   sandboxProviderOptionsFromEnv,
   secretStoreOptionsFromEnv,
+  workspaceSaveLimits,
 } from "@rakazo/adapters";
 import type { OidcConfig, SocialAuthConfig } from "@rakazo/auth";
 import { socialAuthFromFields } from "@rakazo/auth";
@@ -29,6 +31,8 @@ import {
   resolveSupervisorToken,
 } from "@rakazo/core/node/secrets-guard";
 import { getLogger, monitoringPseudonymSecret } from "@rakazo/logging";
+import type { DeploymentVoice } from "./voice/deployment-config.js";
+import { deploymentVoiceFromEnv } from "./voice/deployment-config.js";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
@@ -36,6 +40,7 @@ export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapt
 const DEFAULT_WEB_ORIGIN = "http://127.0.0.1:5173";
 
 export interface AppEnv extends MessagingEnvironmentValues {
+  deploymentVoice?: DeploymentVoice;
   passwordAuth?: boolean;
   /** Opt-in Have I Been Pwned check for new passwords. Default off: it calls an outside service. */
   breachedPasswordCheck?: boolean;
@@ -85,6 +90,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  /** What one computer save may copy; the worker reads the same setting. */
+  workspaceSaveLimits: WorkspaceExportLimits;
   maxAttachmentsPerMessage: number;
   /** Bot replies longer than this are read aloud as a summary; unset reads every reply in full. */
   voiceSummaryMinChars: number | undefined;
@@ -274,7 +281,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    workspaceSaveLimits: workspaceSaveLimits(source),
     maxAttachmentsPerMessage: attachmentCountFromEnv(source),
+    deploymentVoice: deploymentVoiceFromEnv(
+      source.DEPLOYMENT_VOICE,
+      source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
+    ),
     voiceSummaryMinChars: voiceSummaryMinCharsFromEnv(source.VOICE_SUMMARY_MIN_CHARS),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:

@@ -1,6 +1,11 @@
 import type { AppEmulator, AppFault } from "../../apps/app-emulator.js";
 import type { FilesEmulator } from "../../apps/files.js";
 import { fileId } from "../../apps/files.js";
+import type { MailEmulator } from "../../apps/mail.js";
+import { address, mailThreadId } from "../../apps/mail.js";
+import type { NotesEmulator } from "../../apps/notes.js";
+import { noteId } from "../../apps/notes.js";
+import type { Criterion, EvalCase, Evidence } from "../cases.js";
 import {
   DANA,
   STUDIO_FIXTURE_VERSION,
@@ -8,16 +13,11 @@ import {
   studioFiles,
   studioMail,
   studioNotes,
-} from "../../apps/fixtures/studio.js";
-import type { MailEmulator } from "../../apps/mail.js";
-import { address, mailThreadId } from "../../apps/mail.js";
-import type { NotesEmulator } from "../../apps/notes.js";
-import { noteId } from "../../apps/notes.js";
-import type { Criterion, EvalCase, Evidence } from "../cases.js";
+} from "../fixtures/studio.js";
 import type { JudgeInput } from "../judge.js";
 
 /** Multi-step work across emulated mail, file storage and notes services connected over MCP. */
-export const APPS_FIXTURE_VERSION = `apps-v2+${STUDIO_FIXTURE_VERSION}`;
+export const APPS_FIXTURE_VERSION = `apps-v3+${STUDIO_FIXTURE_VERSION}`;
 
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
 function app<T extends AppEmulator>(e: Evidence, kind: string) {

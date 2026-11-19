@@ -21,6 +21,7 @@ export function ConnectionControls({
   codeCopied,
   connectKey,
   copyOAuthCode,
+  reportSignInStep,
   credential,
   gatewayId,
   projectId,
@@ -60,6 +61,7 @@ export function ConnectionControls({
   | "codeCopied"
   | "connectKey"
   | "copyOAuthCode"
+  | "reportSignInStep"
   | "credential"
   | "gatewayId"
   | "projectId"
@@ -112,6 +114,7 @@ export function ConnectionControls({
                       Sign in at{" "}
                       <a
                         href={oauth.verificationUri}
+                        onClick={() => reportSignInStep("page_opened")}
                         target="_blank"
                         rel="noreferrer"
                         className="text-foreground underline"
@@ -156,6 +159,7 @@ export function ConnectionControls({
                         Open{" "}
                         <a
                           href={oauth.verificationUri}
+                          onClick={() => reportSignInStep("page_opened")}
                           target="_blank"
                           rel="noreferrer"
                           className="text-foreground underline"
@@ -169,6 +173,7 @@ export function ConnectionControls({
                         A sign-in tab opened at{" "}
                         <a
                           href={oauth.verificationUri}
+                          onClick={() => reportSignInStep("page_opened")}
                           target="_blank"
                           rel="noreferrer"
                           className="text-foreground underline"
@@ -260,7 +265,8 @@ export function ConnectionControls({
                   }
                   autoComplete="off"
                   spellCheck={false}
-                  className="mt-2 h-10 text-foreground"
+                  size="lg"
+                  className="mt-2 text-foreground"
                 />
               </label>
               {needsGateway || needsProject ? (
@@ -277,7 +283,8 @@ export function ConnectionControls({
                     }
                     autoComplete="off"
                     spellCheck={false}
-                    className="mt-2 h-10 text-foreground"
+                    size="lg"
+                    className="mt-2 text-foreground"
                   />
                 </label>
               ) : null}
@@ -302,7 +309,8 @@ export function ConnectionControls({
                 placeholder={credential?.hasKey ? t`Paste a replacement key` : "sk-…"}
                 type="password"
                 autoComplete="new-password"
-                className="mt-2 h-10 text-foreground"
+                size="lg"
+                className="mt-2 text-foreground"
               />
             </label>
           ) : null}
@@ -395,7 +403,8 @@ export function CompatibleKeyControls({
           }
           type="password"
           autoComplete="new-password"
-          className="mt-2 h-10 text-foreground"
+          size="lg"
+          className="mt-2 text-foreground"
         />
       </CompatibleKeyField>
       <Button

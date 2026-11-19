@@ -39,6 +39,7 @@ import {
   tryRetireModelCredential,
   XAI_OAUTH_PROVIDER,
 } from "./pi-oauth.js";
+import type { PiOAuthEnded } from "./pi-oauth-ended.js";
 
 const oauthCred = (overrides: Partial<OAuthCredential> = {}): OAuthCredential => ({
   type: "oauth",
@@ -2334,6 +2335,7 @@ describe("PiOAuthLogins across API processes", () => {
         findFirst: vi.fn(
           async ({ where }: { where: Record<string, unknown> }) => matching(where)[0] ?? null,
         ),
+        findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) => matching(where)),
         updateMany: vi.fn(
           async ({ where, data }: { where: Record<string, unknown>; data: Partial<Row> }) => {
             const found = matching(where);
@@ -2363,18 +2365,22 @@ describe("PiOAuthLogins across API processes", () => {
   }
 
   /** One API process with a pasted-code provider: its own memory, the shared store. */
-  function apiProcess(store: HandoffStore) {
+  function apiProcess(store: HandoffStore, ended: PiOAuthEnded[] = []) {
     const seen: Array<{ verifier?: string; code: string }> = [];
-    const logins = new PiOAuthLogins<string>(async (_provider, _type, interaction, options) => {
-      interaction.notify({
-        type: "auth_url",
-        url: "https://claude.ai/oauth/authorize?code=true",
-        instructions: "open",
-      });
-      const code = await interaction.prompt({ type: "manual_code", message: "paste" });
-      seen.push({ verifier: options?.verifier, code });
-      return oauthCred({ access: `exchanged-${code}` });
-    }, store);
+    const logins = new PiOAuthLogins<string>(
+      async (_provider, _type, interaction, options) => {
+        interaction.notify({
+          type: "auth_url",
+          url: "https://claude.ai/oauth/authorize?code=true",
+          instructions: "open",
+        });
+        const code = await interaction.prompt({ type: "manual_code", message: "paste" });
+        seen.push({ verifier: options?.verifier, code });
+        return oauthCred({ access: `exchanged-${code}` });
+      },
+      store,
+      (end) => ended.push(end),
+    );
     return { logins, seen };
   }
 
@@ -2505,8 +2511,56 @@ describe("PiOAuthLogins across API processes", () => {
         leaseExpiresAt: null,
         createdAt: { gte: expect.any(Date) },
       },
-      select: { ciphertext: true },
+      select: expect.objectContaining({ ciphertext: true }),
     });
+  });
+
+  it("reports a sign-in another process cancels once, and not again when it runs out", async () => {
+    vi.useFakeTimers();
+    const { store } = handoffStore();
+    const ended: PiOAuthEnded[] = [];
+    const measure = { surface: "web", attempt: 4 };
+    const started = await apiProcess(store, ended).logins.begin({
+      ...member,
+      provider: "anthropic",
+      persist: keep,
+      measure,
+    });
+    const other = apiProcess(store, ended);
+
+    expect(await other.logins.pendingSignIn(started.loginId, member)).toMatchObject({
+      mode: "auth-url",
+      measure,
+    });
+    await other.logins.cancel(started.loginId, member);
+    await other.logins.cancel(started.loginId, member);
+    // The process that began it still holds the sign-in until its own clock runs out.
+    await vi.advanceTimersByTimeAsync(started.expiresInSeconds * 1000);
+
+    expect(ended).toEqual([
+      expect.objectContaining({
+        provider: "anthropic",
+        mode: "auth-url",
+        measure,
+        reason: "cancelled",
+      }),
+    ]);
+  });
+
+  it("reports a stored sign-in nobody finished in time as timed out", async () => {
+    vi.useFakeTimers();
+    const { rows, store } = handoffStore();
+    const ended: PiOAuthEnded[] = [];
+    const started = await apiProcess(store, ended).logins.begin({
+      ...member,
+      provider: "anthropic",
+      persist: keep,
+    });
+
+    await vi.advanceTimersByTimeAsync(started.expiresInSeconds * 1000);
+
+    expect(ended.map((end) => end.reason)).toEqual(["timed_out"]);
+    expect(rows.has(started.loginId)).toBe(false);
   });
 
   it("does not resume an expired sign-in", async () => {

@@ -29,6 +29,7 @@ export function IntegrationDetail({
   onRename,
   onRevoke,
   onConnect,
+  onOpenChatApp,
 }: {
   item: ConnectionCatalogItem;
   accounts: Connection[];
@@ -44,6 +45,7 @@ export function IntegrationDetail({
   onRename: (row: Connection) => void;
   onRevoke: (row: Connection) => void;
   onConnect: () => void;
+  onOpenChatApp: () => void;
 }) {
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
@@ -147,6 +149,11 @@ export function IntegrationDetail({
           </View>
         ) : null}
       </View>
+      {item.chatApp ? (
+        <Text accessibilityRole="link" onPress={onOpenChatApp} style={styles.inlineLink}>
+          {t`Chat from ${ph({ name: item.name })}`}
+        </Text>
+      ) : null}
     </View>
   );
 }

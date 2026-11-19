@@ -82,7 +82,10 @@ export async function startMessagingRuntime({
         {
           prisma,
           secrets,
-          env: { mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint },
+          env: {
+            mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
+            deploymentVoice: env.deploymentVoice,
+          },
         },
         { spaceId, userId },
         { audio, mimeType, signal },

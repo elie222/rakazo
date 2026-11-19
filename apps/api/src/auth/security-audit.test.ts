@@ -28,6 +28,19 @@ describe("procedureSecurityEvent", () => {
     });
   });
 
+  it("records an MCP server added by connecting it, with the bot it is for", () => {
+    const event = procedureSecurityEvent(
+      ["mcp", "servers", "connect"],
+      { name: "Tracker", endpoint: "https://mcp.tracker.example.test/mcp", botId: "bot-1" },
+      actor,
+    );
+    expect(event?.metadata).toEqual({
+      procedure: "mcp.servers.connect",
+      kind: "mcp",
+      botId: "bot-1",
+    });
+  });
+
   it("keeps secret names but never secret values", () => {
     const event = procedureSecurityEvent(
       ["botSecrets", "put"],

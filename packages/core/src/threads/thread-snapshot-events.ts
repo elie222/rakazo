@@ -384,6 +384,7 @@ function runFromStartedEvent(
   const trigger = event.payload?.trigger;
   const routineId = event.payload?.routineId;
   const routineName = event.payload?.routineName;
+  const userId = event.payload?.userId;
   return {
     ...previous,
     id: runId,
@@ -397,6 +398,7 @@ function runFromStartedEvent(
         : (previous?.trigger ?? "user"),
     routineId: typeof routineId === "string" ? routineId : (previous?.routineId ?? null),
     ...(typeof routineName === "string" ? { routineName } : {}),
+    ...(typeof userId === "string" ? { userId } : {}),
     modelProvider: previous?.modelProvider ?? null,
     modelId: previous?.modelId ?? null,
     error: null,

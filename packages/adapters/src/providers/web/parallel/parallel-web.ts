@@ -9,7 +9,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { z } from "zod";
-import { combineSignals } from "../../../connectors/connector-safety.js";
+import { combineSignals } from "../../../integrations/connector-safety.js";
 import type { RemoteTransportDependencies } from "../../../mcp/remote-mcp.js";
 import { callRemoteMcpTool } from "../../../mcp/remote-mcp.js";
 import {

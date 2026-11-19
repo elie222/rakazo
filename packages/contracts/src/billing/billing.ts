@@ -13,7 +13,7 @@ export const RETIRED_MODEL_CREDIT_AMOUNTS = [1000, 50000] as const;
  */
 export const SANDBOX_HOURLY_COST_MICROS = 200_000;
 /** What a trial may spend on computers, in cents; ending the trial early starts the full allowance. */
-export const TRIAL_SANDBOX_ALLOWANCE_CENTS = 200;
+export const TRIAL_SANDBOX_ALLOWANCE_CENTS = 300;
 /** The share of a monthly credit plan an organization may also spend on computers. */
 export const CREDITS_SANDBOX_ALLOWANCE_PERCENT = 20;
 
@@ -197,6 +197,15 @@ export function modelCreditsUsd(status: BillingStatus | null | undefined): numbe
   if (!status) return null;
   const balance = status.balanceUsd ?? 0;
   return status.funding === "credits" || balance > 0 ? balance : null;
+}
+
+/** A subscription that stopped for want of a payment: it resumes from the billing portal. */
+export function paymentOverdue(status: BillingStatus): boolean {
+  return (
+    !status.access &&
+    status.hasCustomer &&
+    (status.state === "past_due" || status.state === "unpaid" || status.state === "paused")
+  );
 }
 
 /** A trial set to cancel, which gets no computer hours until it is renewed. */

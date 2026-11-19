@@ -7,7 +7,7 @@ import { argumentGiven } from "../../../bots/update-bot-patch.js";
 import {
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
-} from "../../openai-tool-parameters.js";
+} from "../../../models/endpoints/openai-tool-parameters.js";
 
 export function parametersFor(tool: ConnectorTool) {
   const builtin = builtinParameters(tool);
@@ -83,6 +83,9 @@ function builtinParameters(tool: ConnectorTool) {
     return Type.Object({
       command: Type.String(),
       cwd: Type.Optional(Type.String()),
+      ...(tool.name === "user_computer_shell"
+        ? { computerId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })) }
+        : {}),
     });
   }
   if (tool.name === "run_subagent") {

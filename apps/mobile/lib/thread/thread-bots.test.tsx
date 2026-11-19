@@ -7,12 +7,18 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rpc } from "../api/api";
 import type { MobileBot, MobileGroup } from "../api/mobile-types";
+import { loadSavedInbox } from "../inbox/saved-chats";
+import { queryClient } from "../query/query";
 import { useThreadBots } from "./thread-bots";
 
 const router = vi.hoisted(() => ({ setParams: vi.fn() }));
 vi.mock("expo-router", () => ({ useRouter: () => router }));
 vi.mock("../api/api", () => ({ rpc: vi.fn() }));
 vi.mock("../inbox/saved-chats", () => ({ loadSavedInbox: vi.fn(async () => null) }));
+vi.mock("../query/query", async () => {
+  const { QueryClient } = await import("@tanstack/react-query");
+  return { queryClient: new QueryClient(), rpcQuery: (proc: string) => ({ queryKey: [proc] }) };
+});
 
 const group = (id: string, name: string) => ({ id, name }) as MobileGroup;
 
@@ -30,6 +36,7 @@ describe("thread roster refresh", () => {
   }
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient.clear();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     root = createRoot(document.createElement("div"));
     vi.mocked(rpc).mockImplementation(async () => []);
@@ -54,6 +61,68 @@ describe("thread roster refresh", () => {
       ]);
     },
   );
+
+  it("starts from the roster the last chat loaded and keeps it when the refresh matches", async () => {
+    const bots = [{ id: "bot-1", name: "Bot" }] as MobileBot[];
+    vi.mocked(rpc).mockImplementation(async (method) =>
+      method === "bots/list" ? structuredClone(bots) : [],
+    );
+    await act(async () => root.render(createElement(Thread, { botId: "bot-1" })));
+    await act(async () => {
+      await state.refreshMentionBots();
+    });
+    act(() => root.unmount());
+    root = createRoot(document.createElement("div"));
+
+    await act(async () => root.render(createElement(Thread, { botId: "bot-2" })));
+    const shown = state.mentionBots;
+    expect(shown).toEqual(bots);
+    expect(state.rosterLoaded).toBe(false);
+    await act(async () => {
+      await state.refreshMentionBots();
+    });
+    expect(state.mentionBots).toBe(shown);
+    expect(state.rosterLoaded).toBe(true);
+  });
+
+  it("keeps the newest roster in the cache when an older refresh answers last", async () => {
+    const older = deferred<MobileBot[]>();
+    const newer = deferred<MobileBot[]>();
+    const pending = [older, newer];
+    vi.mocked(rpc).mockImplementation(async (method) =>
+      method === "bots/list" ? pending.shift()!.promise : [],
+    );
+    await act(async () => root.render(createElement(Thread, { botId: "bot-1" })));
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    act(() => {
+      first = state.refreshMentionBots();
+      second = state.refreshMentionBots();
+    });
+    await act(async () => {
+      newer.resolve([{ id: "bot-1", name: "Newest" }] as MobileBot[]);
+      await second;
+      older.resolve([{ id: "bot-1", name: "Stale" }] as MobileBot[]);
+      await first;
+    });
+
+    expect(queryClient.getQueryData(["bots/list"])).toEqual([{ id: "bot-1", name: "Newest" }]);
+  });
+
+  it("uses the saved inbox offline even when a cached roster seeded the chat", async () => {
+    queryClient.setQueryData(["bots/list"], [{ id: "bot-1", name: "Cached" }] as MobileBot[]);
+    const saved = [
+      { id: "bot-1", name: "Cached" },
+      { id: "bot-2", name: "New" },
+    ] as MobileBot[];
+    vi.mocked(loadSavedInbox).mockResolvedValueOnce({ bots: saved } as never);
+    vi.mocked(rpc).mockRejectedValue(new Error("offline"));
+    await act(async () => root.render(createElement(Thread, { botId: "bot-2" })));
+    await act(async () => {
+      await state.refreshMentionBots();
+    });
+    expect(state.mentionBots).toEqual(saved);
+  });
 
   it("refreshes the group title and mention roster when returning from settings", async () => {
     let groups = [group("group-1", "Old name")];

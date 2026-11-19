@@ -35,6 +35,9 @@ be loopback or resolve to private addresses (a Compose service name, an RFC1918 
 address, or a `.internal` name such as Railway's private network); Rakazo pins the resolved
 address for every request. Space members use the saved connection without seeing its key.
 
+A self-hosted Supermemory server must be v0.0.9 or later; run `supermemory-server upgrade` on
+older servers.
+
 For [Honcho](https://github.com/plastic-labs/honcho), enable `AUTH_USE_AUTH` on the Honcho
 server and use an admin JWT from its `scripts/generate_jwt.py --admin` as the key, so each Space
 gets its own workspace. A workspace-scoped JWT works when you enter that workspace. Honcho needs

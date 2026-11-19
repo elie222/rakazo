@@ -10,16 +10,16 @@ import {
   activityPreview,
   activityStatusLabel,
   formatActivityRelativeTime,
-} from "../../lib/home/activity";
-import type { SpaceActivityStatus } from "../../lib/home/use-space-activity";
+} from "../../lib/inbox/activity";
 import type { InboxRowAction } from "../../lib/inbox/inbox-swipe";
 import { inboxRowActionList } from "../../lib/inbox/inbox-swipe";
+import type { SpaceActivityStatus } from "../../lib/inbox/use-space-activity";
 import { useThemedStyles } from "../../lib/native/native";
 import { BotAvatar } from "../bots/bot-avatar";
 import { GroupAvatar } from "../bots/group-avatar";
-import { createHomeStyles } from "./home-styles";
 import type { RowMenuProps } from "./inbox-rows";
 import { ChatSwipe, ConversationRow, FALLBACK_COLOR, SectionToggle } from "./inbox-rows";
+import { createInboxStyles } from "./inbox-styles";
 
 type SwipeTarget = { kind: "bot"; chat: MobileBot } | { kind: "group"; chat: MobileGroup };
 type RowActions = { actions: InboxRowAction[]; onAction: (action: InboxRowAction) => void };
@@ -49,7 +49,7 @@ export function ActivitySection({
   openChat: (href: Href) => void;
   swipe?: ActivitySwipe;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
   const groupsById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups]);
@@ -212,7 +212,7 @@ function Fold({
   onToggle: () => void;
   children: ReactNode;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   return (
     <View>
       <View style={styles.sectionHeadingRow}>

@@ -1,7 +1,10 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
-import { CLAUDE_CODE_PROVIDER_ID, claudeCodeModel } from "../cli-models/claude-code/provider.js";
+import {
+  CLAUDE_CODE_PROVIDER_ID,
+  claudeCodeModel,
+} from "../providers/cli-model/claude-code/provider.js";
 import { liveModelSibling, withLiveImageInput } from "../runtime/pi/models/pi-live-model.js";
 import { registerLocalProvider } from "../runtime/pi/models/pi-local-provider.js";
 import { applyPiModelCompatibility } from "../runtime/pi/models/pi-model-compat.js";

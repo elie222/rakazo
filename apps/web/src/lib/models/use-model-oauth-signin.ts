@@ -1,7 +1,17 @@
-import type { ModelOAuthBegin, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  AnalyticsModelSignInStep,
+  ModelOAuthBegin,
+  SettingsScope,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
-import { desktopBridge, oauthStateOf, onDesktopOAuthCallback } from "../platform/desktop";
+import {
+  analyticsSurface,
+  desktopBridge,
+  oauthStateOf,
+  onDesktopOAuthCallback,
+} from "../platform/desktop";
 import { useSpaceRpc } from "../query/space-rpc";
 import { errorText } from "../query/user-error";
 import { waitForModelOAuth } from "./model-auth";
@@ -39,12 +49,25 @@ export function useModelOAuthSignIn(options: {
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
   const oauthCaptureRef = useRef<(() => void) | null>(null);
+  const reportedStepsRef = useRef(new Set<string>());
   const onFinishedRef = useRef(onFinished);
   const onErrorRef = useRef(onError);
   const onClearErrorRef = useRef(onClearError);
   onFinishedRef.current = onFinished;
   onErrorRef.current = onError;
   onClearErrorRef.current = onClearError;
+
+  /** Tells the server a step only this app sees, once per sign-in. A caller that waits
+   *  before reporting names the sign-in it began with, so a newer one never inherits it. */
+  function reportSignInStep(
+    step: AnalyticsModelSignInStep,
+    loginId: string | null = oauthLoginIdRef.current,
+  ) {
+    const key = `${loginId}:${step}`;
+    if (!loginId || reportedStepsRef.current.has(key)) return;
+    reportedStepsRef.current.add(key);
+    void rpc.analytics.modelSignInStep({ loginId, step }).catch(() => undefined);
+  }
 
   function releaseOAuthCapture(expected?: (() => void) | null) {
     if (expected !== undefined && oauthCaptureRef.current !== expected) return;
@@ -147,6 +170,7 @@ export function useModelOAuthSignIn(options: {
           label: begin.label,
           // Desktop receives the loopback redirect; a browser tab cannot, so it gets a code page.
           codePage: !desktopBridge(),
+          surface: analyticsSurface(),
         },
         { signal: controller.signal },
       );
@@ -176,6 +200,7 @@ export function useModelOAuthSignIn(options: {
         };
         await browserAuth.open(started.verificationUri);
         if (controller.signal.aborted) return;
+        reportSignInStep("page_opened", started.loginId);
       } else {
         // noopener returns null even when the tab opens. Detach a blank tab
         // before navigating so the handle can distinguish a blocked popup.
@@ -188,6 +213,7 @@ export function useModelOAuthSignIn(options: {
           link.rel = "noreferrer";
           popup.document.body.append(link);
           link.click();
+          reportSignInStep("page_opened");
         } else {
           setPopupBlocked(true);
         }
@@ -218,6 +244,7 @@ export function useModelOAuthSignIn(options: {
     oauthPending,
     popupBlocked,
     cancelOAuthAttempt,
+    reportSignInStep,
     startSubscriptionSignIn,
     submitOAuthCode,
   };

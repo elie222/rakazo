@@ -13,7 +13,10 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, Purchase } from "@rakazo/db";
 import { fakeSpendingPrisma } from "../billing/fake-spending.js";
-import { readStripeChargeChallenge, stripeChargeAuthorization } from "./mpp-stripe.js";
+import {
+  readStripeChargeChallenge,
+  stripeChargeAuthorization,
+} from "../providers/payment-wallet/link/mpp-stripe.js";
 
 export const FAKE_PAY_TOKEN = "fake_pay_token_secret";
 export const FAKE_SHARED_PAYMENT_TOKEN = "spt_fake_secret";

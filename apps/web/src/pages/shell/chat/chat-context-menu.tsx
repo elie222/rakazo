@@ -10,7 +10,7 @@ import type { SnoozeChat } from "../sidebar/use-chat-snooze";
 import type { useChatRead } from "./use-chat-read";
 
 const BotContextMenu = lazyOverlay(() =>
-  import("../../BotContextMenu").then((module) => module.BotContextMenu),
+  import("./bot-context-menu").then((module) => module.BotContextMenu),
 );
 
 type ChatRead = ReturnType<typeof useChatRead>;

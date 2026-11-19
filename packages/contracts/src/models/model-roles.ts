@@ -10,7 +10,11 @@ export const ModelRoleChoiceSchema = ModelBackupChoiceSchema.extend({
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
   /** The connection this row runs on; omitted rows use the provider's connection or the deployment's. */
   credentialId: Id.optional(),
-});
+  creditOfferingId: Id.optional(),
+}).refine(
+  (choice) => !(choice.credentialId && choice.creditOfferingId),
+  "Choose one funding connection",
+);
 export type ModelRoleChoice = z.infer<typeof ModelRoleChoiceSchema>;
 export const ModelRoleSettingsSchema = z.object({
   primary: ModelRoleChoiceSchema.nullable(),

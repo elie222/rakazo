@@ -24,24 +24,26 @@ import {
 } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
-import { sensitiveQueryParameter } from "../connectors/connector-http.js";
-import { combineSignals } from "../connectors/connector-safety.js";
-import { composioToolBatch } from "../providers/integration/composio/composio-batch.js";
-import { credentialDigest } from "../shared/credential-digest.js";
-import type { ResolvedAddress, ResolveHostname } from "../web/network-address.js";
+import { sensitiveQueryParameter } from "../integrations/connector-http.js";
+import { combineSignals } from "../integrations/connector-safety.js";
+import type { ResolvedAddress, ResolveHostname } from "../network/network-address.js";
 import {
   createAddressCheckedLookup,
   egressRefused,
   withPinnedDnsLookup,
-} from "../web/network-address.js";
-import { createCheckedProxyDispatcher } from "../web/proxy-dispatcher.js";
-import { dispatcherFetch, fetchPairedWithDispatcher } from "../web/undici-fetch.js";
+} from "../network/network-address.js";
+import { createCheckedProxyDispatcher } from "../network/proxy-dispatcher.js";
+import { dispatcherFetch, fetchPairedWithDispatcher } from "../network/undici-fetch.js";
+import { composioMcpToolFields } from "../providers/integration/composio/composio-batch.js";
+import { credentialDigest } from "../secrets/credential-digest.js";
+import { mcpToolAppResourceUri, mcpToolVisibleToModel } from "./mcp-app.js";
+import type { McpCallAsker } from "./mcp-elicitation.js";
 import {
-  MCP_APP_CLIENT_CAPABILITIES,
-  mcpToolAppResourceUri,
-  mcpToolVisibleToModel,
-} from "./mcp-app.js";
-import { createMcpClient } from "./mcp-output-schema.js";
+  callMcpToolAsking,
+  MCP_ANSWER_ALLOWANCE_MS,
+  McpElicitationRouter,
+  newRemoteMcpClient,
+} from "./mcp-elicitation.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import { withoutDuplicatedStructuredText } from "./mcp-structured-text.js";
 
@@ -49,16 +51,22 @@ const DEFAULT_MAX_MCP_TOOLS = 250;
 const DEFAULT_MAX_MCP_PAGES = 20;
 const MCP_TIMEOUT_MS = 30_000;
 /** How long a tool call may go without an answer or a progress report. Real calls (a
- * search across mail folders, a document export, a gateway running a program) take
- * minutes; connecting and listing stay short. Below the HTTP client's default
- * five-minute header wait, so this timeout fires first. */
-export const MCP_TOOL_TIMEOUT_MS = 4 * 60_000;
+ * search across mail folders, a document export, a gateway running a program for up to
+ * five minutes without reporting progress) take minutes; connecting and listing stay short. */
+export const MCP_TOOL_TIMEOUT_MS = 6 * 60_000;
 /** Progress restarts the wait, but never past this. The run's own cancellation still
  * ends a call at any time. */
 export const MCP_TOOL_MAX_TOTAL_MS = 15 * 60_000;
+/** The HTTP client's own waits (five minutes by default) sit past every MCP wait above, the
+ * time a person may spend answering the server's questions included, so those decide when a call
+ * ends and the client only catches a connection nobody closes. */
+export const MCP_HTTP_TIMEOUTS = {
+  headersTimeout: MCP_TOOL_MAX_TOTAL_MS + MCP_ANSWER_ALLOWANCE_MS + 60_000,
+  bodyTimeout: MCP_TOOL_MAX_TOTAL_MS + MCP_ANSWER_ALLOWANCE_MS + 60_000,
+} as const;
 const MAX_RESULT_BYTES = 1_000_000;
 
-export type { ResolveHostname } from "../web/network-address.js";
+export type { ResolveHostname } from "../network/network-address.js";
 
 export interface RemoteUrlPolicy {
   /** Deployment-owner escape for loopback / LAN / Docker-network endpoints. Default off. */
@@ -86,6 +94,10 @@ export interface RemoteMcpOptions extends RemoteTransportDependencies, RemoteUrl
   /** Let tool calls wait minutes (`MCP_TOOL_TIMEOUT_MS`, renewed by progress up to
    * `MCP_TOOL_MAX_TOTAL_MS`), for sources whose tools do long work. Otherwise 30 seconds. */
   longToolCalls?: boolean;
+  /** Tell the server it may ask the person questions mid-call (form elicitation). */
+  elicitation?: boolean;
+  /** Who a call's questions go to; without an `ask` they are declined. */
+  asker?: McpCallAsker;
 }
 
 /** A reusable Streamable HTTP session failed below the protocol: the guarded
@@ -126,11 +138,12 @@ const resolveHostname: ResolveHostname = (hostname) =>
  * and app routing differ by caller. */
 export function mcpToolFields(
   tool: Tool,
-): Pick<ConnectorTool, "inputSchema" | "readOnly" | "batch"> {
+  endpoint?: string | null,
+): Pick<ConnectorTool, "inputSchema" | "readOnly" | "batch" | "outgoingDraft"> {
   return {
     inputSchema: tool.inputSchema as Record<string, unknown>,
     readOnly: tool.annotations?.readOnlyHint,
-    batch: composioToolBatch(tool.name),
+    ...composioMcpToolFields(tool.name, endpoint),
   };
 }
 
@@ -139,18 +152,17 @@ export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<Con
     (await listMcpTools(client, { signal, timeout: MCP_TIMEOUT_MS })).tools.map((tool) => ({
       name: tool.name,
       description: tool.description ?? tool.title ?? tool.name,
-      ...mcpToolFields(tool),
+      ...mcpToolFields(tool, options.endpoint),
       appResourceUri: mcpToolAppResourceUri(tool),
     }));
   return withScopedMcpClient(options, list);
 }
 
-function newMcpClient(): Client {
-  return createMcpClient(
-    { name: "rakazo", version: "0.1.0" },
-    { capabilities: MCP_APP_CLIENT_CAPABILITIES },
-  );
-}
+type McpRun<T> = (
+  client: Client,
+  signal: AbortSignal | undefined,
+  router: McpElicitationRouter | undefined,
+) => Promise<T>;
 
 function positiveIntegerOrDefault(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -190,8 +202,10 @@ export async function callRemoteMcpTool(
   const long = options.longToolCalls === true;
   return withScopedMcpClient(
     options,
-    (client, signal) => callMcpTool(client, signal, toolName, args, long, projectResult),
-    long ? MCP_TOOL_MAX_TOTAL_MS : MCP_TIMEOUT_MS,
+    (client, signal, router) =>
+      callMcpTool(client, signal, router, options.asker, toolName, args, long, projectResult),
+    // A long call keeps its own clock, which leaves out the time a person spends answering.
+    long ? null : MCP_TIMEOUT_MS,
   );
 }
 
@@ -209,24 +223,25 @@ export async function readRemoteMcpResource(
 async function callMcpTool(
   client: Client,
   signal: AbortSignal | undefined,
+  router: McpElicitationRouter | undefined,
+  asker: McpCallAsker | undefined,
   toolName: string,
   args: Record<string, unknown>,
   long: boolean,
   projectResult?: (result: unknown) => unknown,
 ): Promise<unknown> {
-  const wait: RequestOptions = long
-    ? {
-        timeout: MCP_TOOL_TIMEOUT_MS,
-        // A progress handler is what asks the server for progress reports at all.
-        onprogress: () => undefined,
-        resetTimeoutOnProgress: true,
-        maxTotalTimeout: MCP_TOOL_MAX_TOTAL_MS,
-      }
-    : { timeout: MCP_TIMEOUT_MS };
-  const result = await client.callTool({ name: toolName, arguments: args }, undefined, {
-    signal,
-    ...wait,
-  });
+  const result =
+    long || router
+      ? await callMcpToolAsking(client, router ?? new McpElicitationRouter(), toolName, args, {
+          signal,
+          idleMs: long ? MCP_TOOL_TIMEOUT_MS : MCP_TIMEOUT_MS,
+          totalMs: long ? MCP_TOOL_MAX_TOTAL_MS : MCP_TIMEOUT_MS,
+          asker,
+        })
+      : await client.callTool({ name: toolName, arguments: args }, undefined, {
+          signal,
+          timeout: MCP_TIMEOUT_MS,
+        });
   const isError = result.isError === true;
   const envelope = {
     content: withoutDuplicatedStructuredText(result.content, result.structuredContent, isError),
@@ -240,11 +255,12 @@ async function callMcpTool(
 }
 
 /** One client per call, or the run-scoped session when `options` carries one.
- * `deadlineMs` bounds the whole operation; each request also has its own timeout. */
+ * `deadlineMs` bounds the whole operation; each request also has its own timeout. `null` leaves
+ * the bound to the request's own clock. */
 function withScopedMcpClient<T>(
   options: RemoteMcpOptions,
-  run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
-  deadlineMs = MCP_TIMEOUT_MS,
+  run: McpRun<T>,
+  deadlineMs: number | null = MCP_TIMEOUT_MS,
 ): Promise<T> {
   if (options.sessionPool && options.sessionScope !== undefined) {
     return options.sessionPool.withSession(
@@ -258,8 +274,8 @@ function withScopedMcpClient<T>(
 
 async function withRemoteMcpClient<T>(
   options: RemoteMcpOptions,
-  run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
-  deadlineMs: number,
+  run: McpRun<T>,
+  deadlineMs: number | null,
 ): Promise<T> {
   const policy = { allowPrivateEndpoint: options.allowPrivateEndpoint };
   const endpoint = await assertSafeRemoteUrl(
@@ -267,11 +283,16 @@ async function withRemoteMcpClient<T>(
     options.resolveHostname ?? resolveHostname,
     policy,
   );
-  const signal = combineSignals(options.signal, AbortSignal.timeout(deadlineMs));
+  const signal = combineSignals(
+    options.signal,
+    deadlineMs === null ? undefined : AbortSignal.timeout(deadlineMs),
+  );
   const safeFetch = createSafeRemoteFetch(
     options.fetch,
     options.resolveHostname ?? resolveHostname,
     policy,
+    undefined,
+    MCP_HTTP_TIMEOUTS,
   );
   const transport = new StreamableHTTPClientTransport(endpoint, {
     requestInit: {
@@ -281,10 +302,11 @@ async function withRemoteMcpClient<T>(
     },
     fetch: async (input, init) => limitMcpResponseBody(await safeFetch(input, init), init?.headers),
   });
-  const client = newMcpClient();
+  const router = options.elicitation ? new McpElicitationRouter() : undefined;
+  const client = newRemoteMcpClient(router);
   try {
     await client.connect(transport, { signal, timeout: MCP_TIMEOUT_MS });
-    return await run(client, signal);
+    return await run(client, signal, router);
   } finally {
     await client.close().catch(() => undefined);
     await safeFetch.close().catch(() => undefined);
@@ -309,6 +331,8 @@ type ScopedMcpSession = {
   connectionClosed: boolean;
   /** The run this session belongs to, matched by `endRun`. */
   runId?: string;
+  /** Present when the session told the server it may ask questions mid-call. */
+  elicitation?: McpElicitationRouter;
 };
 
 /** Sessions one Streamable HTTP server-side state can rely on, shared by every
@@ -332,8 +356,8 @@ export class RemoteMcpSessionCache {
 
   async withSession<T>(
     options: RemoteMcpOptions & { sessionScope: string },
-    run: (client: Client, signal: AbortSignal | undefined) => Promise<T>,
-    deadlineMs = MCP_TIMEOUT_MS,
+    run: McpRun<T>,
+    deadlineMs: number | null = MCP_TIMEOUT_MS,
   ): Promise<T> {
     const key = remoteMcpSessionKey(options);
     for (let attempt = 0; ; attempt += 1) {
@@ -341,13 +365,16 @@ export class RemoteMcpSessionCache {
       session.inFlight += 1;
       const controller = new AbortController();
       const deadlineReason = new DOMException("Timed out", "TimeoutError");
-      const deadline = setTimeout(() => controller.abort(deadlineReason), deadlineMs);
+      const deadline =
+        deadlineMs === null
+          ? undefined
+          : setTimeout(() => controller.abort(deadlineReason), deadlineMs);
       const onAbort = () => controller.abort(options.signal?.reason);
       if (options.signal?.aborted) onAbort();
       else options.signal?.addEventListener("abort", onAbort, { once: true });
       const signal = controller.signal;
       try {
-        return await run(session.client, signal);
+        return await run(session.client, signal, session.elicitation);
       } catch (error) {
         // The server rejected the session id before running the request, so a
         // fresh session can replay it once without doubling a write. Closing the
@@ -458,6 +485,8 @@ export class RemoteMcpSessionCache {
       options.fetch,
       options.resolveHostname ?? resolveHostname,
       policy,
+      undefined,
+      MCP_HTTP_TIMEOUTS,
     );
     const transport = new StreamableHTTPClientTransport(endpoint, {
       requestInit: {
@@ -478,8 +507,10 @@ export class RemoteMcpSessionCache {
         return limitMcpResponseBody(response, init?.headers);
       },
     });
-    const client = newMcpClient();
+    const elicitation = options.elicitation ? new McpElicitationRouter() : undefined;
+    const client = newRemoteMcpClient(elicitation);
     const session: ScopedMcpSession = {
+      elicitation,
       key,
       client,
       transport,
@@ -536,6 +567,7 @@ function remoteMcpSessionKey(options: RemoteMcpOptions & { sessionScope: string 
     options.sessionScope,
     options.endpoint,
     options.allowPrivateEndpoint === true,
+    options.elicitation === true,
     credentialDigest(JSON.stringify(options.headers ?? {})),
   ]);
 }
@@ -646,9 +678,14 @@ export function createSafeRemoteFetch(
   policy: RemoteUrlPolicy = {},
   /** Called once the destination is checked, just before the request is sent; a throw stops it. */
   beforeSend?: () => void,
+  /** The HTTP client's waits for headers and between body chunks; its defaults otherwise. */
+  responseTimeouts?: { headersTimeout: number; bodyTimeout: number },
 ): SafeRemoteFetch {
-  const dispatcher = createCheckedProxyDispatcher(resolve, (addresses, hostname) =>
-    assertSafeRemoteAddresses(addresses, hostname, policy),
+  const dispatcher = createCheckedProxyDispatcher(
+    resolve,
+    (addresses, hostname) => assertSafeRemoteAddresses(addresses, hostname, policy),
+    undefined,
+    responseTimeouts,
   );
   // Injected fetches are not given this Agent; they keep the original hostname
   // for TLS/SNI and pin TCP to the already-validated address through dns.lookup.
@@ -939,7 +976,9 @@ function isMcpWaitTimeout(error: unknown): boolean {
   if (!(error instanceof McpError) || error.code !== ErrorCode.RequestTimeout) return false;
   const data = error.data;
   return (
-    typeof data === "object" && data !== null && ("timeout" in data || "maxTotalTimeout" in data)
+    typeof data === "object" &&
+    data !== null &&
+    ("timeout" in data || "maxTotalTimeout" in data || "ceiling" in data)
   );
 }
 

@@ -56,6 +56,8 @@ const NOT_PASSED: Record<string, string> = {
   NODE_USE_ENV_PROXY:
     "Node's own proxy switch, read to match it; Compose sends proxied traffic through HTTP_PROXY",
   NODE_OPTIONS: "Node's own startup flags, read to match its proxy switch; never set by Compose",
+  NODE_TLS_REJECT_UNAUTHORIZED:
+    "Node's own switch, read so a hostname CONNECT stays off while verification is disabled",
   AWS_KMS_PROFILE: "for maintainer laptops; servers use AWS_KMS_ACCESS_KEY_ID and its secret",
   GIT_SHA: "baked into the image at build time; a pass-through entry would unset it",
   SHELL: "host shell for the desktop computer, which only the Electron app runs",
@@ -101,6 +103,7 @@ const INDIRECT = {
   shared: [
     // core/secrets-guard.ts resolves these by name.
     "SANDBOX_SUPERVISOR_TOKEN",
+    "MEETING_SIGNING_KEY",
     // pi-local-provider.ts reads these through a small helper.
     "RAKAZO_LOCAL_CONTEXT_WINDOW",
     "RAKAZO_LOCAL_MAX_TOKENS",

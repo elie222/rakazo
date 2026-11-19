@@ -1,7 +1,7 @@
+import { truncateUtf8 } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
-import { truncateUtf8 } from "../../../shared/utf8.js";
-import type { LocalServiceConnection } from "../../../web/local-service-endpoint.js";
-import { fetchLocalService } from "../../../web/local-service-endpoint.js";
+import type { LocalServiceConnection } from "../../../network/local-service-endpoint.js";
+import { fetchLocalService } from "../../../network/local-service-endpoint.js";
 import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 export const HONCHO_CLOUD_BASE_URL = "https://api.honcho.dev";

@@ -242,7 +242,7 @@ export function startCall(call: {
     });
     spokenMemory.remember(opening);
     openingPending = true;
-    void speaker.speak(opening, { botId: call.botId }).catch(() => {
+    void speaker.speak(opening, { botId: call.botId, callId }).catch(() => {
       if (callId !== ringingCallId) return;
       openingPending = false;
       void listen();
@@ -516,7 +516,7 @@ function speakFarewell(payload: Record<string, unknown>) {
   awaitingReply = false;
   set({ exchanges: [...state.exchanges, { role: "bot", text: farewell }], heard: "" });
   spokenMemory.remember(farewell);
-  void speaker.speak(farewell, { botId: state.botId, messageId });
+  void speaker.speak(farewell, { botId: state.botId, messageId, callId });
 }
 
 function commit(next: ThreadSnapshot | null) {
@@ -582,6 +582,7 @@ async function openMic() {
   try {
     await dictation.listen({
       mode: "endpoint",
+      callId,
       transcribe,
       onFinal: (text) => void handleTranscript(text),
     });
@@ -753,7 +754,7 @@ function reactToThread() {
             : ask
               ? `${text}. ${t`Say yes or no, or answer in a sentence.`}`
               : text,
-        { botId, messageId: lastBot.id },
+        { botId, messageId: lastBot.id, callId },
       );
       return;
     }

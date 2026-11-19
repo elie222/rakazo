@@ -1,7 +1,7 @@
 import type { AgentUsage, ModelUsageLookup } from "@rakazo/adapter-kit";
 import type * as Db from "@rakazo/db";
 import type { PrismaClient } from "@rakazo/db";
-import { recordUsage } from "@rakazo/db";
+import { recordModelCreditReceipt, recordUsage } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createModelCreditReconciler } from "./model-credit-reconciler.js";
@@ -9,6 +9,7 @@ import { createModelCreditReconciler } from "./model-credit-reconciler.js";
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<typeof Db>()),
   recordUsage: vi.fn(),
+  recordModelCreditReceipt: vi.fn(),
 }));
 
 function harness(call: Record<string, unknown>, run: Record<string, unknown> | null = null) {
@@ -70,9 +71,180 @@ const reconcile = (
 const charged = () => vi.mocked(recordUsage).mock.calls[0]?.[1];
 
 describe("model credit reconciler", () => {
-  beforeEach(() => vi.mocked(recordUsage).mockReset());
+  beforeEach(() => {
+    vi.mocked(recordUsage).mockReset();
+    vi.mocked(recordModelCreditReceipt).mockReset();
+  });
   afterEach(() => {
     installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
+  });
+
+  const tariff = {
+    id: "original-offering",
+    connectionId: "original-connection",
+    provider: "fake",
+    modelId: "fake-model",
+    price: { input: 2, output: 10, cacheRead: 0, cacheWrite: 0 },
+  };
+  const pendingTariff = {
+    inputTokens: null,
+    outputTokens: null,
+    costUsd: null,
+    usageSource: "pending",
+    pricingVersion: `deployment-tariff:${tariff.id}`,
+    pricingSnapshot: {
+      ...tariff.price,
+      creditOfferingId: tariff.id,
+      connectionId: tariff.connectionId,
+    },
+  };
+  it.each([0, 9])(
+    "recovers a crashed call at its saved tariff rather than the upstream bill (%s)",
+    async (upstreamCost) => {
+      const { prisma, updateMany } = harness({
+        ...baseCall,
+        usage: pendingTariff,
+        providerRequestId: "gen-fixture",
+      });
+      const legacy = lookup(vi.fn());
+      const find = vi.fn(async () => ({
+        inputTokens: 100000,
+        outputTokens: 5000,
+        costUsd: upstreamCost,
+        costSource: "provider-reported",
+      }));
+      const resolve = vi.fn(async () => lookup(find));
+      await createModelCreditReconciler({ prisma, lookup: legacy, lookupForOffering: resolve })();
+      expect(resolve).toHaveBeenCalledWith(tariff);
+      expect(legacy.lookupUsage).not.toHaveBeenCalled();
+      expect(find).toHaveBeenCalledWith("gen-fixture");
+      expect(charged()).toMatchObject({
+        costUsd: 0.25,
+        costSource: "deployment-tariff",
+        pricingSnapshot: pendingTariff.pricingSnapshot,
+      });
+      expect(recordModelCreditReceipt).toHaveBeenCalledWith(
+        prisma,
+        baseCall.id,
+        expect.objectContaining({ costUsd: 0.25 }),
+      );
+      expect(vi.mocked(recordModelCreditReceipt).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(recordUsage).mock.invocationCallOrder[0]!,
+      );
+      expect(updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: { reconciliationState: "complete", nextReconcileAt: null },
+        }),
+      );
+    },
+  );
+  it.each([false, true])(
+    "keeps a live run's pending tariff hold out of manual review (partial lookup=%s)",
+    async (partialLookup) => {
+      const { prisma, updateMany } = harness(
+        {
+          ...baseCall,
+          usage: pendingTariff,
+          providerRequestId: "gen-fixture",
+          reconciliationAttempts: 5,
+        },
+        { status: "running", leaseExpiresAt: new Date(1000), error: null },
+      );
+      await createModelCreditReconciler({
+        prisma,
+        now: () => new Date(0),
+        lookupForOffering: partialLookup
+          ? async () =>
+              lookup(async () => ({ inputTokens: 100000, outputTokens: null, costUsd: 0 }))
+          : undefined,
+      })();
+      expect(prisma.run.findUnique).toHaveBeenCalled();
+      expect(recordUsage).not.toHaveBeenCalled();
+      expect(updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            reconciliationState: "pending",
+            nextReconcileAt: expect.any(Date),
+          }),
+        }),
+      );
+    },
+  );
+  it.each(["expired", "completed"])(
+    "flags a pending tariff only after its run is no longer active: %s",
+    async (state) => {
+      const { prisma, updateMany } = harness(
+        { ...baseCall, usage: pendingTariff, reconciliationAttempts: 5 },
+        {
+          status: state === "completed" ? "completed" : "running",
+          leaseExpiresAt: new Date(1000),
+          error: null,
+        },
+      );
+      await createModelCreditReconciler({
+        prisma,
+        now: () => new Date(state === "expired" ? 2000 : 0),
+      })();
+      expect(recordUsage).not.toHaveBeenCalled();
+      expect(updateMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: { reconciliationState: "needs_review", nextReconcileAt: null },
+        }),
+      );
+    },
+  );
+
+  it.each([
+    "no-lookup",
+    "missing-counts",
+    "wrong-provider",
+    "bad-snapshot",
+    "receipt-write-failed",
+  ])("keeps a tariff hold without complete recovery evidence: %s", async (reason) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+    const usage =
+      reason === "bad-snapshot"
+        ? { ...pendingTariff, pricingSnapshot: { connectionId: "original-connection" } }
+        : pendingTariff;
+    const { prisma, updateMany } = harness({
+      ...baseCall,
+      usage,
+      providerRequestId: "gen-fixture",
+      reconciliationAttempts: 5,
+    });
+    if (reason === "receipt-write-failed")
+      vi.mocked(recordModelCreditReceipt).mockRejectedValueOnce(new Error("storage unavailable"));
+    const find = vi.fn(async () => ({
+      inputTokens: 100000,
+      outputTokens: reason === "missing-counts" ? null : 5000,
+      costUsd: 0,
+      costSource: "provider-reported",
+    }));
+    const resolve = vi.fn(async () =>
+      reason === "no-lookup"
+        ? undefined
+        : { provider: reason === "wrong-provider" ? "other" : "fake", lookupUsage: find },
+    );
+    const legacy = lookup(vi.fn());
+    await createModelCreditReconciler({
+      prisma,
+      lookup: reason === "missing-counts" ? undefined : legacy,
+      lookupForOffering: resolve,
+    })();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "Model credit hold requires review",
+        canLookUpUsage: ["missing-counts", "receipt-write-failed"].includes(reason),
+      }),
+    );
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(legacy.lookupUsage).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: { reconciliationState: "needs_review", nextReconcileAt: null },
+      }),
+    );
   });
 
   it("charges the provider's cost for a stopped call when its lookup finds one", async () => {

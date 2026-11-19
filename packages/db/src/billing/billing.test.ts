@@ -10,6 +10,8 @@ describe("model access", () => {
     { mode: "byok", balanceMicros: 0n, byokFreeUntil: later, status: null, access: true },
     { mode: "byok", balanceMicros: 0n, byokFreeUntil: now, status: null, access: false },
     { mode: "byok", balanceMicros: 0n, byokFreeUntil: null, status: "active", access: true },
+    // A failed charge ends access until it is settled.
+    { mode: "byok", balanceMicros: 0n, byokFreeUntil: null, status: "past_due", access: false },
     // A top-up does not pay for running your own key.
     { mode: "byok", balanceMicros: 5n, byokFreeUntil: null, status: null, access: false },
     { mode: "credits", balanceMicros: 5n, byokFreeUntil: null, status: null, access: true },

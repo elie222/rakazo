@@ -19,7 +19,7 @@ import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { pageMutationOptions } from "../../lib/pages/page-actions";
 import { useOpenPage } from "../../lib/pages/pages";
 import { useSpaceQueries } from "../../lib/query/query";
-import { DeleteItemDialog } from "../../pages/shell/dialogs";
+import { DeleteItemDialog } from "../../pages/shell/create-delete-dialogs";
 
 /** Enough to fill the panel; Show more brings the next batch. */
 const PAGE_SIZE = 20;

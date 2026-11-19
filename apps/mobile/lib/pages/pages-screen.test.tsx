@@ -85,7 +85,7 @@ vi.mock("../../components/native/native-action-button", () => ({
     createElement("button", { type: "button", onClick: onPress }, label),
 }));
 vi.mock("../../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
-vi.mock("../home/activity", () => ({ formatActivityRelativeTime: () => "now" }));
+vi.mock("../inbox/activity", () => ({ formatActivityRelativeTime: () => "now" }));
 vi.mock("../native/native", () => ({
   native: {},
   useMobileTokens: () => ({}),

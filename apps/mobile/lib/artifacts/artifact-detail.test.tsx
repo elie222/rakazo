@@ -23,7 +23,7 @@ vi.mock("expo-secure-store", () => ({
   getItemAsync: async () => null,
   setItemAsync: async () => {},
 }));
-vi.mock("../home/activity", () => ({ formatActivityRelativeTime: () => "now" }));
+vi.mock("../inbox/activity", () => ({ formatActivityRelativeTime: () => "now" }));
 vi.mock("../notifications/live-notifications", () => ({}));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ artifactId: state.id }),
@@ -62,7 +62,9 @@ vi.mock("react-native", () => {
 vi.mock("@rakazo/chat-ui/native", () => ({ ChatMarkdown: () => null }));
 vi.mock("../../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../../components/media/pdf-preview", () => ({ PdfPreview: () => null }));
-vi.mock("../../components/media/sandboxed-html-preview", () => ({ SandboxedHtmlPreview: () => null }));
+vi.mock("../../components/media/sandboxed-html-preview", () => ({
+  SandboxedHtmlPreview: () => null,
+}));
 vi.mock("../../components/media/video-preview", () => ({ VideoPreview: () => null }));
 vi.mock("./artifacts", () => ({
   listArtifactVersions: async (id: string) => [{ id }],

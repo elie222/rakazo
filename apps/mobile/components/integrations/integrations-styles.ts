@@ -56,6 +56,7 @@ export function createIntegrationsStyles() {
     grow: { flex: 1, gap: 3, minWidth: 0 },
     title: { color: native.label, fontSize: 15, fontWeight: "600" },
     secondary: { color: native.secondaryLabel, fontSize: 13 },
+    inlineLink: { color: native.label, fontSize: 13, textDecorationLine: "underline" },
     pressed: { backgroundColor: native.fillPressed },
     categoryPicker: { alignSelf: "flex-start" },
     sectionHeader: {
