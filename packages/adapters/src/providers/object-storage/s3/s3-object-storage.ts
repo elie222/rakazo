@@ -81,7 +81,7 @@ export function objectStorageRequestHandler(idleMs = IDLE_SOCKET_TIMEOUT_MS) {
   return { httpAgent: new IdleHttpAgent(options), httpsAgent: new IdleHttpsAgent(options) };
 }
 
-const PASSING_STATUSES = new Set([500, 502, 503, 504]);
+const PASSING_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const PASSING_NAMES = new Set([
   "SlowDown",
   "ServiceUnavailable",

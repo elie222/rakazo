@@ -322,6 +322,7 @@ describe("S3ObjectStorage outages", () => {
     expect(isPassingStorageFailure(withCode("ECONNRESET"))).toBe(true);
     expect(isPassingStorageFailure(withStatus("BadGateway", 502))).toBe(true);
     expect(isPassingStorageFailure(withStatus("ServiceUnavailable", 503))).toBe(true);
+    expect(isPassingStorageFailure(withStatus("TooManyRequests", 429))).toBe(true);
     expect(isPassingStorageFailure(withStatus("AccessDenied", 403))).toBe(false);
     expect(isPassingStorageFailure(withStatus("NoSuchKey", 404))).toBe(false);
     expect(isPassingStorageFailure(withCode("ENOENT"))).toBe(false);
