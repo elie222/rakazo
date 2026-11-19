@@ -490,12 +490,12 @@ export function BotSettings({
   const headerButtons = (
     <Button
       variant="ghost"
-      size="icon-sm"
+      size="icon"
       className="text-muted-foreground"
       aria-label={t`Close panel`}
       onClick={onClose}
     >
-      <X size={16} strokeWidth={1.8} />
+      <X className="size-4.5" strokeWidth={1.75} />
     </Button>
   );
 
@@ -505,12 +505,12 @@ export function BotSettings({
         <div className="mb-4 flex items-center justify-between">
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             className="text-muted-foreground"
             aria-label={t`Back`}
             onClick={() => onViewChange?.("settings")}
           >
-            <ChevronLeft className="rtl:rotate-180" />
+            <ChevronLeft className="size-4.5 rtl:rotate-180" strokeWidth={1.75} />
           </Button>
           <div className="text-body-lg font-medium text-foreground">
             {view === "routines" ? <Trans>Routines</Trans> : <Trans>Pages</Trans>}
@@ -528,13 +528,13 @@ export function BotSettings({
               render={
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   className="text-muted-foreground"
                   aria-label={t`More actions`}
                 />
               }
             >
-              <MoreHorizontal size={16} strokeWidth={1.8} />
+              <MoreHorizontal className="size-4.5" strokeWidth={1.75} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               {email && !email.address && !claimingEmail ? (

@@ -3067,7 +3067,7 @@ describe("Boat computer snapshot", () => {
     });
     expect(api.creates).toEqual([{ ttlSeconds: 1800, noEnv: true }]);
     const commands = command.mock.calls.map(([request]) => request.commandRequest.command);
-    expect(commands.some((line) => line.includes("apt-get install"))).toBe(true);
+    expect(commands.some((line) => /apt-get .*install/.test(line))).toBe(true);
     expect(commands.some((line) => line.includes("xdpyinfo -display :99"))).toBe(true);
     expect(commands.join("\n")).not.toContain("RAKAZO_BOT_ID");
 
