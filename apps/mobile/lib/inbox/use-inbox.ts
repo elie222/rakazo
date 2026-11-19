@@ -123,7 +123,7 @@ export function useInbox(spaceActionRef: RefObject<{ busy: boolean; recoveryId: 
       setLoadFailure(null);
       if (needsFirstBot(navigation)) {
         setCreatingFirstBot(true);
-        void askFirstBot(`${apiBase}:${nextMe.userId}:${navigation.current.id}`, () =>
+        void askFirstBot(`${apiBase}:${generation}:${nextMe.userId}:${navigation.current.id}`, () =>
           rpc("onboarding/firstBot"),
         )
           .then(async (botId) => {

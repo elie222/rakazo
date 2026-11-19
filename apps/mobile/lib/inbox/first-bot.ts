@@ -23,7 +23,7 @@ export function needsFirstBot(navigation: Navigation): boolean {
 }
 
 /**
- * Asks once per account, server and Space, again after a failure that may pass. Resolves to the bot
+ * Asks once per session, server and Space, again after a failure that may pass. Resolves to the bot
  * the server made or found, or null when it made none or refused (a server that predates it); the
  * inbox then stays as it is.
  */

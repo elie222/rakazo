@@ -35,7 +35,11 @@ export async function ensureFirstBot(
   deps: FirstBotDeps,
   actor: Actor,
 ): Promise<{ botId: string | null }> {
-  const botId = (await existingFirstBot(deps.prisma, actor)) ?? (await createFirstBot(deps, actor));
+  const botId =
+    (await existingFirstBot(deps.prisma, actor)) ??
+    (await createFirstBot(deps, actor)) ??
+    // Another tab or device may have made Chief between the two reads, so its history is Chief.
+    (await existingFirstBot(deps.prisma, actor));
   if (!botId) return { botId: null };
   // A failed card leaves Chief usable; the person can type to it.
   await bestEffort("first bot focus prompt", deps.promptFocus(actor, botId));

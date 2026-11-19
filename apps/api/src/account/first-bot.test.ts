@@ -103,6 +103,16 @@ describe("ensureFirstBot", () => {
     ).toBe(true);
   });
 
+  it("finds the Chief another call made between its two reads", async () => {
+    const { deps, run } = fixture({ bot: { id: "chief-other" } });
+    deps.prisma.bot.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "chief-other", spawnKey: FIRST_BOT_SPAWN_KEY }]);
+    await expect(run()).resolves.toEqual({ botId: "chief-other" });
+    expect(deps.createBot).not.toHaveBeenCalled();
+    expect(deps.promptFocus).toHaveBeenCalledWith(actor, "chief-other");
+  });
+
   it("still opens Chief when greeting it fails", async () => {
     const { deps, run } = fixture();
     deps.introduce.mockRejectedValue(new Error("queue down"));
