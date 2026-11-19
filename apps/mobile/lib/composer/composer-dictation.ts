@@ -6,7 +6,7 @@ import {
   VOICE_RESPONSE_TIMEOUT_MS,
 } from "@rakazo/core";
 import { useNavigation, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, AppState } from "react-native";
 import { captureApiRequestContext, rpc } from "../api/api";
 import { currentSessionGeneration } from "../api/session";
@@ -49,6 +49,8 @@ type Session = {
   transcribing: boolean;
   /** The app is in the background while setup is still running. */
   hidden: boolean;
+  /** Runs once the words are in, when the session ends without a cancel or a failure. */
+  afterWords?: () => void;
 };
 
 /**
@@ -74,6 +76,18 @@ export function useComposerDictation({
   const session = useRef<Session | null>(null);
   const onWordsRef = useRef(onWords);
   onWordsRef.current = onWords;
+  const levelListeners = useRef(new Set<(level: number) => void>());
+  function reportLevel(mine: Session, level: number) {
+    if (session.current !== mine) return;
+    for (const listener of levelListeners.current) listener(level);
+  }
+  /** Follows the microphone's loudness from 0 to 1 while it is open. */
+  const onLevel = useCallback((listener: (level: number) => void) => {
+    levelListeners.current.add(listener);
+    return () => {
+      levelListeners.current.delete(listener);
+    };
+  }, []);
 
   function end(mine: Session) {
     if (session.current !== mine) return false;
@@ -182,7 +196,9 @@ export function useComposerDictation({
         stopped.abort();
         markTranscribing(mine);
       };
-      const clip = await recordClip(mine.cancel.signal, stopped.signal);
+      const clip = await recordClip(mine.cancel.signal, stopped.signal, (level) =>
+        reportLevel(mine, level),
+      );
       if (session.current !== mine) return;
       // A sign-in to another account meanwhile must not send this audio with the old session.
       if (requestContext.sessionGeneration !== currentSessionGeneration()) {
@@ -211,6 +227,7 @@ export function useComposerDictation({
       }
       if (!end(mine) || requestContext.sessionGeneration !== currentSessionGeneration()) return;
       if (text.trim()) onWordsRef.current(text.trim(), true);
+      mine.afterWords?.();
       return;
     }
     const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
@@ -229,12 +246,17 @@ export function useComposerDictation({
       onInterim: (text) => {
         if (session.current === mine) onWordsRef.current(text);
       },
+      onLevel: (level) => reportLevel(mine, level),
       onFinal: (text) => {
-        if (end(mine)) onWordsRef.current(text);
+        if (!end(mine)) return;
+        onWordsRef.current(text);
+        mine.afterWords?.();
       },
       // Hearing nothing is not an error; a recognizer that broke is.
       onGiveUp: (reason) => {
-        if (end(mine) && reason === "failed") Alert.alert(t`Could not dictate`, t`Try again.`);
+        if (!end(mine)) return;
+        if (reason === "failed") Alert.alert(t`Could not dictate`, t`Try again.`);
+        else mine.afterWords?.();
       },
     });
     if (stopRequested && session.current === mine) dictation.finishListening();
@@ -263,5 +285,19 @@ export function useComposerDictation({
     });
   }
 
-  return { status, toggle, cancel };
+  /** Stops listening and keeps the words, then runs `then` once they are in. */
+  function finish(then: () => void) {
+    const mine = session.current;
+    if (!mine) return;
+    if (mine.live) {
+      mine.afterWords = then;
+      mine.finish();
+      return;
+    }
+    // Before the mic opens there are no words to wait for: drop the setup and go on.
+    cancel();
+    then();
+  }
+
+  return { status, toggle, finish, cancel, onLevel };
 }
