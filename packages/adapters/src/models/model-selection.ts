@@ -245,49 +245,32 @@ export async function modelCredentialAuthKindsForSpace(
       )
     : [];
   const hosted = hostedProvider && managedProviders.includes(hostedProvider);
-  const [allCredentials, allPreferences] = await Promise.all([
-    prisma.userModelCredential.findMany({
-      where: { userId: scope.userId },
-      select: {
-        id: true,
-        provider: true,
-        secretId: true,
-        updatedAt: true,
-        createdAt: true,
+  // Start with connections so a concurrent detach can only leave an empty list of preferences.
+  const accountRows = await prisma.userModelCredential.findMany({
+    where: { userId: scope.userId },
+    select: {
+      id: true,
+      provider: true,
+      secretId: true,
+      updatedAt: true,
+      createdAt: true,
+      userPreferences: {
+        select: { modelId: true, thinkingLevel: true, updatedAt: true },
       },
-    }),
-    prisma.userModelPreference.findMany({
-      where: { userId: scope.userId },
-      select: {
-        modelId: true,
-        thinkingLevel: true,
-        updatedAt: true,
-        credential: {
-          select: {
-            id: true,
-            provider: true,
-            secretId: true,
-            updatedAt: true,
-            createdAt: true,
-          },
-        },
-      },
-    }),
-  ]);
-  // A refused provider is not read at all, so its secret is never loaded and an unavailable
-  // store cannot fail the catalog for the providers this deployment still offers.
-  const credentials =
+    },
+  });
+  // Filter refused providers before loading secrets for catalog choices.
+  const rows =
     allowlist === null
-      ? allCredentials
-      : allCredentials.filter((row) => modelProviderAllowed(allowlist, row.provider));
-  const preferences =
-    allowlist === null
-      ? allPreferences
-      : allPreferences.filter((row) => modelProviderAllowed(allowlist, row.credential.provider));
-  const connectedProviders = new Set([
-    ...credentials.map((credential) => canonicalPiProviderId(credential.provider)),
-    ...preferences.map((preference) => canonicalPiProviderId(preference.credential.provider)),
-  ]);
+      ? accountRows
+      : accountRows.filter((row) => modelProviderAllowed(allowlist, row.provider));
+  const credentials = rows.map(({ userPreferences, ...credential }) => credential);
+  const preferences = rows.flatMap(({ userPreferences, ...credential }) =>
+    userPreferences.map((preference) => ({ ...preference, credential })),
+  );
+  const connectedProviders = new Set(
+    credentials.map((credential) => canonicalPiProviderId(credential.provider)),
+  );
   const selections: Array<{
     provider: string;
     modelId: string;
