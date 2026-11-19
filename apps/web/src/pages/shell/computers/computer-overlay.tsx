@@ -5,6 +5,7 @@ import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SaveScreenshotButton } from "../../../components/computers/SaveScreenshotButton";
 import { TeachCaptureOverlay } from "../../../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../../../components/teach/TeachComputerOverlay";
@@ -77,6 +78,24 @@ export function ComputerOverlay({
   // The picture is taken on the server from the running computer, so it does not wait for the frame
   // to connect; a user's own machine has no screen here to take.
   const canSaveScreenshot = !runsOnUserMachine(computer) && computer?.state === "running";
+  const [promptControl, setPromptControl] = useState(false);
+  const promptTimer = useRef<number | null>(null);
+  const canUseScreen = !hasControl && !recordingSkill && computer?.state === "running";
+
+  useEffect(
+    () => () => {
+      if (promptTimer.current != null) window.clearTimeout(promptTimer.current);
+    },
+    [],
+  );
+
+  function promptTakeControl() {
+    if (!canUseScreen) return;
+    setPromptControl(true);
+    if (promptTimer.current != null) window.clearTimeout(promptTimer.current);
+    promptTimer.current = window.setTimeout(() => setPromptControl(false), 1800);
+  }
+
   return (
     <div className="fixed inset-0 z-30 bg-background">
       <div
@@ -153,6 +172,12 @@ export function ComputerOverlay({
                 variant="outline"
                 size="sm"
                 disabled={booting}
+                data-testid="computer-take-control"
+                className={
+                  promptControl
+                    ? "animate-pulse shadow-[0_0_0_3px_var(--ring)] ring-2 ring-ring ring-offset-2 ring-offset-background"
+                    : undefined
+                }
                 onClick={() => void onTakeControl()}
               >
                 <Trans>Take control</Trans>
@@ -190,7 +215,7 @@ export function ComputerOverlay({
             {sendError}
           </div>
         ) : null}
-        <div className="relative min-h-0 flex-1 bg-background">
+        <div className="relative min-h-0 flex-1 bg-background [container-type:size]">
           {runsOnUserMachine(computer) ? (
             <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-body text-muted-foreground/80" />
           ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
@@ -211,6 +236,21 @@ export function ComputerOverlay({
                   }}
                 />
               ))}
+              {canUseScreen && computer.screenWidth && computer.screenHeight ? (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                  <div
+                    data-testid="computer-screen-hit"
+                    className="pointer-events-auto"
+                    style={{
+                      aspectRatio: `${computer.screenWidth} / ${computer.screenHeight}`,
+                      width: `min(100cqw, calc(100cqh * ${computer.screenWidth} / ${computer.screenHeight}))`,
+                      height: `min(100cqh, calc(100cqw * ${computer.screenHeight} / ${computer.screenWidth}))`,
+                    }}
+                    onPointerDown={promptTakeControl}
+                    onWheel={promptTakeControl}
+                  />
+                </div>
+              ) : null}
               {bot ? (
                 <TeachCaptureOverlay
                   botId={bot.id}

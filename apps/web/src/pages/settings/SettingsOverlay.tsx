@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, XIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PlanUsage } from "../../components/billing/PlanUsage";
 import {
@@ -24,11 +24,7 @@ import {
 } from "../../components/computers/ComputerDeviceSettings";
 import { computersAreUnavailable } from "../../components/computers/ComputersUnavailableHint";
 import { ApprovalRulesSettings } from "../../components/settings/ApprovalRulesSettings";
-import {
-  SETTINGS_CONTENT_WIDTH,
-  SettingsGroup,
-  SettingsRow,
-} from "../../components/settings/SettingsRows";
+import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { VaultSettings } from "../../components/vault/VaultSettings";
 import { canChooseOwnComputer } from "../../lib/computers/computer-sandbox";
 import { desktopBridge } from "../../lib/platform/desktop";
@@ -293,10 +289,24 @@ export function SettingsOverlay({
         initialFocus={() =>
           section === "usage" ? (usageRef.current ?? panelRef.current) : panelRef.current
         }
-        className="flex h-[min(760px,calc(100%-2rem))] max-h-[calc(100%-2rem)] w-[min(1080px,calc(100%-2rem))] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-h-[calc(100%-5rem)] sm:max-w-[1080px]"
+        overlayClassName="bg-background data-open:animate-none"
+        className="inset-0 top-0 left-0 flex h-dvh max-h-none w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none bg-background p-0 ring-0 data-open:animate-none sm:max-h-none sm:max-w-none"
       >
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 md:contents">
+          <div className="flex shrink-0 flex-col border-b border-border md:w-60 md:border-e md:border-b-0 md:bg-sidebar lg:w-64 xl:w-72">
+            <div className="flex items-center px-2 pt-2 md:px-3 md:pt-4">
+              <DialogClose
+                aria-label={closeLabel}
+                disabled={panelBusy}
+                render={
+                  <Button variant="ghost" size="sm" className="gap-1 px-2 text-muted-foreground" />
+                }
+              >
+                <ChevronLeft className="rtl:rotate-180" />
+                <span>{t`Back`}</span>
+              </DialogClose>
+            </div>
+            <div className="flex min-w-0 items-center gap-1 px-2 pt-2 pb-2 md:min-h-0 md:flex-1 md:flex-col md:items-stretch md:px-3 md:pt-6 md:pb-4">
             {/* Reserve arrow space so showing controls does not change the overflow measurement. */}
             <Button
               variant="ghost"
@@ -312,7 +322,7 @@ export function SettingsOverlay({
               ref={setNav}
               data-testid="settings-nav"
               aria-label={t`Settings`}
-              className="flex min-w-0 flex-1 flex-row gap-1 overflow-x-auto py-3 md:w-[200px] md:shrink-0 md:flex-none md:flex-col md:overflow-y-auto md:border-e md:border-border md:bg-sidebar md:px-3 md:py-4"
+              className="flex min-w-0 flex-1 flex-row gap-1 overflow-x-auto py-2 md:w-full md:flex-col md:overflow-y-auto md:py-2"
             >
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -348,51 +358,10 @@ export function SettingsOverlay({
             >
               <ChevronRight className="rtl:rotate-180" />
             </Button>
+            </div>
           </div>
 
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div
-              data-testid="settings-header"
-              className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-6 pb-5 pt-6 sm:px-8 sm:pt-7"
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                {section === "space" ? (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="-ms-2 shrink-0"
-                    aria-label={t`Back`}
-                    disabled={panelBusy}
-                    onClick={() => onSectionChange("general")}
-                  >
-                    <ChevronLeft className="rtl:rotate-180" />
-                  </Button>
-                ) : null}
-                <div className="min-w-0">
-                  <DialogTitle className="break-words text-heading2 font-medium text-foreground">
-                    {sectionTitle}
-                  </DialogTitle>
-                  {sectionDescription ? (
-                    <DialogDescription className="mt-1 text-body text-muted-foreground">
-                      {sectionDescription}
-                    </DialogDescription>
-                  ) : null}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {section === "organization" && organizationPage === "main" ? (
-                  <OrganizationOptionsMenu onActivityLog={() => setOrganizationPage("log")} />
-                ) : null}
-                <DialogClose
-                  aria-label={closeLabel}
-                  disabled={panelBusy}
-                  render={<Button variant="ghost" size="icon-sm" />}
-                >
-                  <XIcon />
-                </DialogClose>
-              </div>
-            </div>
-
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
             <SpaceRpcProvider spaceId={spaceId}>
               <div
                 key={spaceId ?? "selected"}
@@ -400,17 +369,50 @@ export function SettingsOverlay({
                 className={`min-h-0 flex-1 ${
                   section === "memory"
                     ? "flex flex-col overflow-hidden"
-                    : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
+                    : "rk-scroll overflow-y-auto overscroll-contain"
                 }`}
               >
-                {/* Memory scrolls its own body and applies the same width there; Usage's table needs the room. */}
                 <div
-                  className={
-                    section === "memory" || section === "usage"
-                      ? "contents"
-                      : SETTINGS_CONTENT_WIDTH
-                  }
+                  className={`mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 pt-3 pb-24 sm:px-6 md:px-8 md:pt-10 lg:px-12 xl:px-16 ${
+                    section === "memory" ? "min-h-0 flex-1" : ""
+                  }`}
                 >
+                  {section !== "usage" ? (
+                    <div
+                      data-testid="settings-header"
+                      className={`flex items-start justify-between gap-4 ${
+                        section === "memory" ? "shrink-0" : ""
+                      }`}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        {section === "space" ? (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="-ms-2 shrink-0"
+                            aria-label={t`Back`}
+                            disabled={panelBusy}
+                            onClick={() => onSectionChange("general")}
+                          >
+                            <ChevronLeft className="rtl:rotate-180" />
+                          </Button>
+                        ) : null}
+                        <div className="min-w-0">
+                          <DialogTitle className="break-words text-heading2 font-medium text-foreground">
+                            {sectionTitle}
+                          </DialogTitle>
+                          {sectionDescription ? (
+                            <DialogDescription className="mt-1 text-body text-muted-foreground">
+                              {sectionDescription}
+                            </DialogDescription>
+                          ) : null}
+                        </div>
+                      </div>
+                      {section === "organization" && organizationPage === "main" ? (
+                        <OrganizationOptionsMenu onActivityLog={() => setOrganizationPage("log")} />
+                      ) : null}
+                    </div>
+                  ) : null}
                   {section === "general" ? (
                     <div className="space-y-8">
                       <GeneralSettingsPanels
@@ -476,6 +478,9 @@ export function SettingsOverlay({
                   ) : null}
                   {section === "usage" ? (
                     <>
+                      <DialogTitle className="text-heading2 font-medium text-foreground">
+                        {sectionTitle}
+                      </DialogTitle>
                       <PlanUsage />
                       <UsageSettingsPanel panelRef={usageRef} />
                     </>

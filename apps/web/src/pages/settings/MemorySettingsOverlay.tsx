@@ -167,8 +167,12 @@ export function MemorySettingsOverlay({
         </div>
       ) : null}
 
-      <div className="rk-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
-        <div className={`space-y-5 ${SETTINGS_CONTENT_WIDTH}`}>
+      <div
+        className={`rk-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain ${
+          embedded ? "" : "px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
+        }`}
+      >
+        <div className={embedded ? "space-y-5" : `mx-auto w-full space-y-5 ${SETTINGS_CONTENT_WIDTH}`}>
           {error ? (
             <p role="alert" className="text-body-sm text-destructive">
               {error}

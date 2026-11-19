@@ -25,6 +25,9 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   Tooltip: (await importOriginal<typeof UiWeb>()).Tooltip,
   TooltipTrigger: (await importOriginal<typeof UiWeb>()).TooltipTrigger,
   TooltipContent: (await importOriginal<typeof UiWeb>()).TooltipContent,
+  Popover: (await importOriginal<typeof UiWeb>()).Popover,
+  PopoverTrigger: (await importOriginal<typeof UiWeb>()).PopoverTrigger,
+  PopoverContent: (await importOriginal<typeof UiWeb>()).PopoverContent,
   SectionHeading: (await importOriginal<typeof UiWeb>()).SectionHeading,
   ToggleGroup: (await importOriginal<typeof UiWeb>()).ToggleGroup,
   ToggleGroupItem: (await importOriginal<typeof UiWeb>()).ToggleGroupItem,
@@ -190,7 +193,7 @@ it("shows every bot's usage first, then narrows it by bot, model and date range"
       "1. Unlisted model",
     ]);
 
-    await panel.pick("7 days");
+    await panel.pick("7d");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({
       range: "7d",
       botId: "bot-a",
@@ -211,7 +214,7 @@ it("goes back to all bots when the chosen bot has no usage in the new range", as
       ...usageFor(input),
       bots: [{ id: "bot-a", name: "Alpha", deleted: false, runs: 2, ...point(3, 400, 0.04) }],
     }));
-    await panel.pick("Today");
+    await panel.pick("1d");
     expect(panel.chosen("Bot")).toBe("All bots");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({ range: "today" });
   } finally {
@@ -225,8 +228,9 @@ it("does not show the previous selection's numbers while the next one loads", as
     expect(panel.totals()).toEqual(["3", "467", "$0.04"]);
     const pending = deferred<unknown>();
     breakdown.fetch.mockImplementation(() => pending.promise);
-    await panel.pick("Today");
-    expect(panel.totals()).toEqual(["—", "—", "—"]);
+    await panel.pick("1d");
+    expect(panel.totals().join("")).not.toContain("467");
+    expect(panel.container.querySelectorAll("[data-slot=skeleton]").length).toBeGreaterThan(0);
     expect(panel.container.textContent).toContain("Loading usage…");
     // The filters stay usable from the last result.
     expect(await panel.options("Bot")).toEqual(["All bots", "Alpha", "Old bot (deleted)"]);
@@ -244,7 +248,7 @@ it("says the request failed instead of showing zero spend", async () => {
     await panel.choose("Bot", "Alpha");
     await panel.choose("Model", "2. Unlisted model");
     breakdown.fetch.mockRejectedValue(new Error("offline"));
-    await panel.pick("Today");
+    await panel.pick("1d");
     expect(panel.chosen("Bot")).toBe("Alpha");
     expect(panel.chosen("Model")).toBe("2. Unlisted model");
     expect(panel.totals()).toEqual(["—", "—", "—"]);
@@ -266,7 +270,7 @@ it("tells apart a model name that two providers share", async () => {
         { provider: "alpha", model: "solo" },
       ],
     }));
-    await panel.pick("7 days");
+    await panel.pick("7d");
     expect(await panel.options("Model")).toEqual([
       "All models",
       "1. Unlisted model",

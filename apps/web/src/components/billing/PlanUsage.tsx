@@ -98,7 +98,7 @@ export function PlanUsage() {
   const { plans, creditsUsd } = usePlanUsage();
   if (!plans.length && creditsUsd === null) return null;
   return (
-    <div className="mb-3 rounded-xl border border-border">
+    <div className="rounded-[12px] bg-card shadow-[0_0_0_1px_var(--border)]">
       <PlanUsageRows />
     </div>
   );

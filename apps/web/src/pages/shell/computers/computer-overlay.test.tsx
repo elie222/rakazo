@@ -134,6 +134,48 @@ it("offers Start for an asleep computer", async () => {
   expect(startButton()).toBeDefined();
 });
 
+it("highlights Take control when the screen is used without control", async () => {
+  await act(async () => {
+    root.render(
+      <ComputerOverlay
+        bot={bot}
+        computer={computer("running")}
+        computerViewport={null}
+        recordingSkill={null}
+        teachBusy={false}
+        hasControl={false}
+        composerRunning={false}
+        sending={false}
+        booting={false}
+        sendError={null}
+        embeddedScreenUrl="https://screen.example/view"
+        screenFrameRef={() => undefined}
+        computerScreenError={null}
+        computerBooting={null}
+        onStopTeaching={() => undefined}
+        onStopRun={() => undefined}
+        onRelease={async () => undefined}
+        onTakeControl={() => undefined}
+        onStart={() => undefined}
+        onRefreshTeaching={async () => undefined}
+        onClose={() => undefined}
+      />,
+    );
+  });
+  const button = container.querySelector("[data-testid=computer-take-control]");
+  const screen = container.querySelector("[data-testid=computer-screen-hit]");
+  const around = container.querySelector(".relative.min-h-0.flex-1");
+  expect(button?.className).not.toContain("ring-ring");
+  await act(async () => {
+    around?.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+  });
+  expect(button?.className).not.toContain("ring-ring");
+  await act(async () => {
+    screen?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  expect(button?.className).toContain("ring-ring");
+});
+
 it("says sign-ins are shared while someone in a shared space has control", async () => {
   const note = () => container.querySelector('[data-testid="computer-shared-browser"]');
   await render("running", vi.fn(), { hasControl: true, shared: true });

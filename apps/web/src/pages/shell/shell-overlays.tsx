@@ -10,6 +10,7 @@ import { parseLabs } from "@rakazo/contracts";
 import type { connectedAppMarks } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import type { RefObject } from "react";
+import { Suspense } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import { setLabs } from "../../lib/bootstrap";
 import { invalidateVoiceConsent } from "../../lib/calls/voice-consent";
@@ -19,9 +20,23 @@ import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
 import { FALLBACK_BOT_COLOR } from "./chat/chat-shared";
 import type { ShellOverlay } from "./shell-overlay-url";
 
-const SettingsOverlay = lazyOverlay(() =>
-  import("../settings/SettingsOverlay").then((module) => module.SettingsOverlay),
-);
+const loadSettingsOverlay = () =>
+  import("../settings/SettingsOverlay").then((module) => module.SettingsOverlay);
+const SettingsOverlay = lazyOverlay(loadSettingsOverlay);
+// A settings link should start its chunk with the shell, so the chat is not what paints first.
+if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("settings")) {
+  void loadSettingsOverlay();
+}
+
+/** Covers the chat while the settings chunk arrives, using the same frame settings opens into. */
+function SettingsOpening() {
+  return (
+    <div className="fixed inset-0 z-50 flex bg-background" aria-busy="true">
+      <div className="hidden shrink-0 border-e border-border bg-sidebar md:block md:w-60 lg:w-64 xl:w-72" />
+      <div className="min-w-0 flex-1" />
+    </div>
+  );
+}
 const PeerMessagesOverlay = lazyOverlay(() =>
   import("../settings/PeerMessagesOverlay").then((module) => module.PeerMessagesOverlay),
 );
@@ -174,6 +189,7 @@ export function SettingsOverlays({
   return (
     <>
       {overlay?.kind === "settings" && showSettings ? (
+        <Suspense fallback={<SettingsOpening />}>
         <SettingsOverlay
           shellRpc={rpc}
           space={settingsSpace}
@@ -255,6 +271,7 @@ export function SettingsOverlays({
           }}
           onClose={() => setOverlay(null)}
         />
+        </Suspense>
       ) : null}
       {peerConversation && active ? (
         <PeerMessagesOverlay
