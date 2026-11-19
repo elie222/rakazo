@@ -251,25 +251,15 @@ const UNSUPPORTED_REASONING_EFFORT =
 const REASONING_EFFORT_CHOICES =
   /\breasoning_effort\b[\s\S]{0,120}?\b(?:one of|supported values)\b\s*(?:are|:)?\s*([^.}"]*)/i;
 
-/** Responses-style errors put the parameter after the message containing its choices. */
+/** Responses-style errors name the parameter in a `param` field after the message instead. */
+const REASONING_EFFORT_PARAM = /"param"\s*:\s*"reasoning[._]effort"/;
+const EFFORT_CHOICES = /\b(?:one of|supported values)\b\s*(?:are|:)?\s*([^.}"]*)/i;
+
 function reasoningEffortChoices(message: string): string | undefined {
-  const named = message.match(REASONING_EFFORT_CHOICES)?.[1];
-  if (named) return named;
-  const start = message.indexOf("{");
-  if (start < 0) return undefined;
-  let body: unknown;
-  try {
-    body = JSON.parse(message.slice(start));
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-    return undefined;
-  }
-  if (!body || typeof body !== "object") return undefined;
-  const detail = "error" in body ? body.error : body;
-  if (!detail || typeof detail !== "object" || !("param" in detail)) return undefined;
-  if (detail.param !== "reasoning.effort" && detail.param !== "reasoning_effort") return undefined;
-  if (!("message" in detail) || typeof detail.message !== "string") return undefined;
-  return detail.message.match(/\b(?:supported values|one of)\b\s*(?:are|:)?\s*([^.}"]*)/i)?.[1];
+  return (
+    message.match(REASONING_EFFORT_CHOICES)?.[1] ||
+    (REASONING_EFFORT_PARAM.test(message) ? message.match(EFFORT_CHOICES)?.[1] : undefined)
+  );
 }
 
 /**
