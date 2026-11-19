@@ -27,9 +27,10 @@ export type FirstBotDeps = {
 };
 
 /**
- * The actor's Space's first-run bot. Reuses the Chief already there; otherwise creates one only in
- * a Space that has never held a chat. Bots, groups and deleted bots all count, so a person who
- * archived or deleted their bots gets an empty Space with a New bot button instead of a new Chief.
+ * The actor's Space's first-run bot. Reuses the Chief already there; otherwise creates one only
+ * for a person none of whose own Spaces has ever held a chat. Bots, groups and deleted bots all count,
+ * so a person who archived or deleted their bots, or who adds a Space later, gets an empty Space
+ * with a New bot button instead of a new Chief.
  */
 export async function ensureFirstBot(
   deps: FirstBotDeps,
@@ -60,7 +61,14 @@ async function existingFirstBot(prisma: PrismaClient, actor: Actor): Promise<str
 }
 
 async function createFirstBot(deps: FirstBotDeps, actor: Actor): Promise<string | null> {
-  const where = { spaceId: actor.spaceId };
+  // Chief welcomes a new account, not a new Space: a chat in any Space the person made means they
+  // have been here before, so a Space or organization they add later starts empty. Spaces they
+  // were invited to do not count, so a new invitee still gets their own Chief.
+  const created = await deps.prisma.space.findMany({
+    where: { createdByUserId: actor.userId },
+    select: { id: true },
+  });
+  const where = { spaceId: { in: [actor.spaceId, ...created.map((space) => space.id)] } };
   const select = { id: true } as const;
   const history = await Promise.all([
     deps.prisma.bot.findFirst({ where, select }),
