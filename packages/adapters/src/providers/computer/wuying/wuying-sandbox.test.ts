@@ -8,6 +8,7 @@ import {
   assertSandboxWorkspaceContract,
   provisionPrepared,
 } from "../../../computers/sandbox/sandbox-test-support.js";
+import { WorkspaceDirectoryError } from "../../../computers/screens/computer-support.js";
 import { psLiteral, quoteWindowsArgument, windowsKeyChord } from "./wuying-sandbox.js";
 import { FAKE_PROFILE, FakeWuyingDesktop } from "./wuying-sandbox.test-support.js";
 
@@ -49,6 +50,17 @@ describe("WuyingSandboxProvider", () => {
     const note = { path: "notes/result.txt", content: new TextEncoder().encode("portable") };
     await provider.writeFile(computer, note, ctx);
     await assertSandboxReadLimit(provider, computer, ctx, note);
+  });
+
+  it("reports an invalid Windows directory before calling the gateway", async () => {
+    const desktop = new FakeWuyingDesktop();
+    const provider = desktop.provider();
+    const computer = await provisionPrepared(provider, { botId: "portable", homePath: "/h" }, ctx);
+    const calls = desktop.calls.length;
+    await expect(provider.listFiles(computer, "notes?", ctx)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
+    expect(desktop.calls).toHaveLength(calls);
   });
 
   it("keeps each computer's home in its own folder under the user profile", async () => {

@@ -72,8 +72,8 @@ export class WorkspacePathError extends Error {
 
 /** The provider could not open the directory requested by listFiles. */
 export class WorkspaceDirectoryError extends WorkspacePathError {
-  constructor() {
-    super("Could not list the workspace directory");
+  constructor(message = "Could not list the workspace directory") {
+    super(message);
     this.name = "WorkspaceDirectoryError";
   }
 }

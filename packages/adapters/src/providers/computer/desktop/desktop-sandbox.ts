@@ -365,19 +365,16 @@ export class DesktopSandboxProvider implements SandboxProvider {
   ): Promise<ComputerFileEntry[]> {
     const box = this.requiredBox(computer);
     const relative = normalizeWorkspacePath(directory);
-    const entries = await readWorkspaceDirectory(box.home, relative);
+    const names = await readWorkspaceDirectory(box.home, relative);
     const listed = await Promise.all(
-      entries.map(async (entry) => {
+      names.map(async (name) => {
+        const childPath = relative ? `${relative}/${name}` : name;
         // A link that dangles or leaves the workspace is skipped, as in walkDesktopWorkspace.
-        const child = await localWorkspaceTarget(
-          box.home,
-          relative ? `${relative}/${entry.name}` : entry.name,
-          true,
-        ).catch(() => null);
+        const child = await localWorkspaceTarget(box.home, childPath, true).catch(() => null);
         if (!child) return null;
         const info = await stat(child);
         return {
-          path: normalizeWorkspacePath(relative ? `${relative}/${entry.name}` : entry.name),
+          path: normalizeWorkspacePath(childPath),
           kind: info.isDirectory() ? ("dir" as const) : ("file" as const),
           size: info.size,
           ...(info.isFile() && info.mode & 0o100 ? { executable: true } : {}),
@@ -501,7 +498,8 @@ export class DesktopSandboxProvider implements SandboxProvider {
 async function readWorkspaceDirectory(home: string, relative: string) {
   try {
     const target = await localWorkspaceTarget(home, relative, true);
-    return await readdir(target, { withFileTypes: true });
+    // Read names only. Resolving a Dirent can stat a child that has already disappeared.
+    return await readdir(target);
   } catch (error) {
     if (
       error instanceof WorkspacePathError ||

@@ -32,6 +32,7 @@ import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.
 import {
   boundedComputerActions,
   computerObservation,
+  WorkspaceDirectoryError,
   WorkspacePathError,
 } from "../../../computers/screens/computer-support.js";
 import { McpSession } from "../../../mcp/mcp-transport.js";
@@ -872,7 +873,13 @@ export class WuyingSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeDesktopWorkspacePath(directory, "win32");
+    let relative: string;
+    try {
+      relative = normalizeDesktopWorkspacePath(directory, "win32");
+    } catch (error) {
+      if (error instanceof WorkspacePathError) throw new WorkspaceDirectoryError(error.message);
+      throw error;
+    }
     const target = await this.target(computer, relative, context.signal);
     const executables = await this.executables(computer, context.signal);
     return (await this.list(target, context.signal)).flatMap((entry) => {
