@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotOrganizeModal } from "../components/inbox/bot-organize-modal";
 import { ActivitySection } from "../components/inbox/inbox-activity";
 import { InboxErrorState } from "../components/inbox/inbox-error-state";
+import { InboxFooter } from "../components/inbox/inbox-footer";
 import { InboxHeader } from "../components/inbox/inbox-header";
 import {
   InboxListFooter,
@@ -921,6 +922,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           </View>
         </CompactRowsContext.Provider>
       </SelectedChatContext.Provider>
+      {embedded && !onShareSelect && me ? (
+        <InboxFooter initial={initials} columnInsets={columnInsets} />
+      ) : null}
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}

@@ -1,6 +1,6 @@
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { expect, it } from "vitest";
-import { connectedAppMarks } from "./connected-apps";
+import { connectedAppMarks } from "./connected-apps.js";
 
 const catalog: ConnectionCatalogItem[] = [
   {

@@ -52,23 +52,26 @@ export function chatRouteHeader(
   };
 }
 
-/** Beside the chat list, the chat's left button shows or hides the list instead of going back. */
+/**
+ * Beside the chat list, the list carries its own hide button; once hidden, the chat's left
+ * button brings it back instead of going back.
+ */
 export function threadHeaderLeft({
   split,
   inboxHidden,
   foldActive,
   color,
 }: ChatSplit & { color: string }): NativeStackNavigationOptions {
-  if (!split || foldActive) {
+  if (!split || foldActive || !inboxHidden) {
     // Folding back takes the list away, so the chat gets its back button again. Folded like
-    // a book, the list stays beside the chat, so it needs neither.
+    // a book, or with the list on show, the chat needs neither.
     return {
       headerBackVisible: !split,
       headerLeft: undefined,
       ...(iosAtLeast(26) ? { unstable_headerLeftItems: () => [] } : {}),
     };
   }
-  const label = inboxHidden ? t`Show chats` : t`Hide chats`;
+  const label = t`Show chats`;
   return {
     headerBackVisible: false,
     ...(iosAtLeast(26)
@@ -78,25 +81,25 @@ export function threadHeaderLeft({
               type: "button" as const,
               label,
               icon: { type: "sfSymbol" as const, name: "sidebar.left" },
-              onPress: () => setInboxHidden(!inboxHidden),
+              onPress: () => setInboxHidden(false),
             },
           ],
         }
       : {}),
-    headerLeft: () => (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        hitSlop={8}
-        onPress={() => setInboxHidden(!inboxHidden)}
-      >
-        <NativeSymbol
-          ios={inboxHidden ? "sidebar.left" : "arrow.up.left.and.arrow.down.right"}
-          android={inboxHidden ? "contract-outline" : "expand-outline"}
-          size={21}
-          color={color}
-        />
-      </Pressable>
-    ),
+    headerLeft: () => <ShowChatsButton color={color} />,
   };
+}
+
+/** Brings the hidden chat list back. */
+export function ShowChatsButton({ color }: { color?: string }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t`Show chats`}
+      hitSlop={8}
+      onPress={() => setInboxHidden(false)}
+    >
+      <NativeSymbol ios="sidebar.left" android="contract-outline" size={21} color={color} />
+    </Pressable>
+  );
 }
