@@ -50,12 +50,14 @@ describe("memory provider descriptors", () => {
       "serenity",
       "honcho",
       "hindsight",
+      "mnemoverse",
     ]);
     expect(descriptors.map((entry) => entry.displayName)).toEqual([
       "Supermemory",
       "Serenity",
       "Honcho",
       "Hindsight",
+      "Mnemoverse",
     ]);
   });
 
@@ -129,6 +131,7 @@ describe("memory provider descriptors", () => {
     expect(label("hindsight", { mode: "local", baseUrl: "http://10.0.0.8:8888" })).toBe(
       "Self-hosted (http://10.0.0.8:8888)",
     );
+    expect(label("mnemoverse", {})).toBe("Mnemoverse");
     expect(label("not-in-this-build", {})).toBeUndefined();
   });
 
