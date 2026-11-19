@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { objectItems } from "./items.js";
 import { useWords } from "./labels.js";
 
@@ -236,15 +236,50 @@ export function Diagram({
   const arrow = `rk-arrow-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const words = useWords();
   const horizontal = direction === "horizontal";
-  const links = objectItems(edges);
-  const layout = layoutDiagram(
-    objectItems(nodes),
-    links,
-    horizontal,
-    links.some((edge) => edge.label),
-  );
-  if (!layout.nodes.length) return null;
+  const layout = useMemo(() => {
+    const links = objectItems(edges);
+    return layoutDiagram(
+      objectItems(nodes),
+      links,
+      horizontal,
+      links.some((edge) => edge.label),
+    );
+  }, [edges, horizontal, nodes]);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [labelOverflow, setLabelOverflow] = useState({ left: 0, right: 0 });
   const pad = 2;
+  const hasEdgeLabels = layout.edges.some(({ edge }) => edge.label);
+
+  useLayoutEffect(() => {
+    const svg = svgRef.current;
+    if (horizontal || !svg || !layout.edges.some(({ edge }) => edge.label)) return;
+    const measure = () => {
+      let left = -pad;
+      let right = layout.width + pad;
+      // The SVG box excludes the 5px paint stroke. Round out to keep that outline visible too.
+      for (const label of svg.querySelectorAll<SVGTextElement>(".rk-diagram-edge-label")) {
+        const box = label.getBBox?.();
+        if (!box?.width) continue;
+        left = Math.min(left, Math.floor(box.x - 2.5));
+        right = Math.max(right, Math.ceil(box.x + box.width + 2.5));
+      }
+      const extraLeft = -pad - left;
+      const extraRight = right - layout.width - pad;
+      setLabelOverflow((current) =>
+        current.left === extraLeft && current.right === extraRight
+          ? current
+          : { left: extraLeft, right: extraRight },
+      );
+    };
+    measure();
+    const fonts = svg.ownerDocument.fonts;
+    fonts?.addEventListener("loadingdone", measure);
+    return () => fonts?.removeEventListener("loadingdone", measure);
+  }, [horizontal, layout]);
+
+  if (!layout.nodes.length) return null;
+  const overflow = !horizontal && hasEdgeLabels ? labelOverflow : { left: 0, right: 0 };
+  const width = layout.width + pad * 2 + overflow.left + overflow.right;
   const name = (id: string) => layout.nodes.find((node) => node.id === id)?.label ?? id;
   const description = [
     layout.nodes.map((node) => node.label).join(", "),
@@ -259,12 +294,13 @@ export function Diagram({
   return (
     <div className="rk-diagram">
       <svg
+        ref={svgRef}
         role="img"
-        viewBox={`${-pad} ${-pad} ${layout.width + pad * 2} ${layout.height + pad * 2}`}
+        viewBox={`${-pad - overflow.left} ${-pad} ${width} ${layout.height + pad * 2}`}
         // Below 85% its text gets too small to read, so a narrow column scrolls it instead.
         style={{
-          maxWidth: layout.width + pad * 2,
-          minWidth: Math.round((layout.width + pad * 2) * 0.85),
+          maxWidth: width,
+          minWidth: Math.round(width * 0.85),
         }}
       >
         <title>{description}</title>
