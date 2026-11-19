@@ -897,6 +897,7 @@ async function reviewToolCall(
           botId: bot.id,
           threadId: thread.id,
           operationId,
+          effectId: applied?.effect.id,
         },
         {
           injectedReview,
