@@ -3,9 +3,14 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
-import { EncryptedSecretStore, ScriptedAgentRuntime } from "@rakazo/adapters";
+import {
+  EncryptedSecretStore,
+  listPiCatalog,
+  pageRevisionJob,
+  ScriptedAgentRuntime,
+} from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
-import type { PageDetail, PageSummary, ThreadSnapshot } from "@rakazo/contracts";
+import type { AiConsentStatus, PageDetail, PageSummary, ThreadSnapshot } from "@rakazo/contracts";
 import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { deletePageShareSecrets } from "@rakazo/db";
@@ -14,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { BotIntroHarness } from "../discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
+import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
 import { asSystem } from "../system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
@@ -55,6 +61,7 @@ describePages("pages", () => {
       dataDir: mkdtempSync(path.join(tmpdir(), "rakazo-pages-")),
       sandboxProvider: "fake",
       agentRuntime: "scripted",
+      modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
       runtime: new PageTestRuntime(),
     });
     app = handles.app;
@@ -361,6 +368,99 @@ describePages("pages", () => {
     ).toBe(404);
     await rpc(app, owner, "pages/setVisibility", { ...input, visibility: "private" });
     expect(await rpc(app, reviewer, "pageReviews/list")).toEqual({ items: [], nextCursor: null });
+  });
+
+  it("requires the requesting account's Page consent, including at background dispatch", async () => {
+    const email = `consent-reviewer-${stamp}@example.test`;
+    const owner = await signup(app, `consent-author-${stamp}@example.test`, "Author");
+    const reviewer = await signup(app, email, "Reviewer");
+    const { id: reviewerId } = await me(app, reviewer);
+    await db().user.update({ where: { id: reviewerId }, data: { emailVerified: true } });
+    const bot = await createBot(app, owner, "Consent bot");
+    const source = page("Consent fixture");
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Consent", source })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    await rpc(app, owner, "models/connect", {
+      provider: "openrouter",
+      apiKey: "test-key-not-a-real-secret",
+      label: "Fixture model",
+      modelId: "scripted",
+    });
+    await db().bot.update({
+      where: { id: bot.id },
+      data: { modelProvider: "openrouter", modelId: "scripted" },
+    });
+    await rpc(app, owner, "pages/setVisibility", { pageId, visibility: "people" });
+    const grant = await rpc<{ id: string }>(app, owner, "pageReviews/grant", { pageId, email });
+    const { id: commentId } = await rpc<{ id: string }>(app, reviewer, "pageReviews/comment", {
+      pageId,
+      submissionId: randomUUID(),
+      version: 1,
+      section: "Consent fixture",
+      body: "Clarify the plan.",
+    });
+
+    const ask = (cookie: string) =>
+      raw(app, cookie, "pageReviews/askRevision", { pageId, commentId });
+    const status = (cookie: string) =>
+      rpc<AiConsentStatus>(app, cookie, "aiConsent/status", { pageId, uses: ["model"] });
+    const allow = async (cookie: string) => {
+      const disclosed = await status(cookie);
+      expect(disclosed.recipients).toEqual([
+        expect.objectContaining({ name: "OpenRouter", use: "model", allowed: false }),
+      ]);
+      return rpc<AiConsentStatus>(app, cookie, "aiConsent/allow", {
+        pageId,
+        scope: disclosed.scope,
+        version: disclosed.version,
+        keys: [disclosed.recipients[0]!.key],
+      });
+    };
+    expect((await ask(owner)).status).toBe(403);
+    expect((await ask(reviewer)).status).toBe(403);
+    await allow(owner);
+    await rpc(app, owner, "aiConsent/revoke", { key: null });
+    expect((await ask(owner)).status).toBe(403);
+    await allow(reviewer);
+    const stored = await db().aiDataConsent.findFirstOrThrow({ where: { userId: reviewerId } });
+    expect(stored.spaceId).not.toBe(
+      (await db().page.findUniqueOrThrow({ where: { id: pageId } })).spaceId,
+    );
+    await rpc(app, reviewer, "aiConsent/revoke", { key: null });
+    expect((await ask(reviewer)).status).toBe(403);
+
+    const revision = await db().pageRevisionRequest.create({
+      data: {
+        commentId,
+        requesterId: reviewerId,
+        consentSpaceId: stored.spaceId,
+        grantId: grant.id,
+      },
+    });
+    const dispatched = revisionCalls.mock.calls.length;
+    await jobs.enqueue(pageRevisionJob(revision.id));
+    const requestStatus = async () =>
+      (await db().pageRevisionRequest.findUniqueOrThrow({ where: { id: revision.id } })).status;
+    await vi.waitFor(async () => expect(await requestStatus()).toBe("failed"));
+    expect(revisionCalls).toHaveBeenCalledTimes(dispatched);
+
+    await allow(reviewer);
+    revisionCalls.mockResolvedValueOnce(page("Consented revision"));
+    expect(
+      (
+        await raw(app, reviewer, "pageReviews/askRevision", {
+          pageId,
+          commentId,
+          retryOf: revision.id,
+        })
+      ).status,
+    ).toBe(200);
+    await vi.waitFor(async () => {
+      const retry = await db().pageRevisionRequest.findUnique({ where: { retryOf: revision.id } });
+      expect(retry?.status).toBe("ready");
+    });
   });
 
   it("limits reviewer comments and drafts while reserving an allowance for the owner", async () => {

@@ -1136,8 +1136,29 @@ test("specific people review a version and lose access when removed", async ({
       .fill("Add the rollout date.");
     await reviewer.getByRole("button", { name: "Post comment" }).click();
     await expect(reviewer.getByText("Add the rollout date.", { exact: true })).toBeVisible();
-    await expect(reviewer.getByRole("button", { name: "Ask bot to revise" })).toBeVisible();
+    const askBot = reviewer.getByRole("button", { name: "Ask bot to revise" });
+    await expect(askBot).toBeVisible();
     await captureScreenshot(reviewer, testInfo, "page-review-comment");
+
+    await rpc(page, "models/connect", {
+      provider: "openai",
+      apiKey: "test-key-not-a-real-secret",
+      modelId: "gpt-6-sol",
+    });
+    await rpc(page, "bots/update", {
+      botId: activeBotId(page),
+      modelProvider: "openai",
+      modelId: "gpt-6-sol",
+    });
+    await askBot.click();
+    const consent = reviewer.getByRole("alertdialog", { name: "Share data with OpenAI?" });
+    await expect(consent).toBeVisible();
+    await expect(
+      consent.getByText("The page and selected comment are sent to draft a revision."),
+    ).toBeVisible();
+    await captureScreenshot(reviewer, testInfo, "page-review-ai-consent");
+    await consent.getByRole("button", { name: "Cancel" }).click();
+    await expect(consent).toBeHidden();
 
     await shareButton.click();
     await expect(share).toBeHidden();

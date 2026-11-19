@@ -20,6 +20,7 @@ export function aiDataDisclosure(use: AiDataUse): string {
 export function promptAiConsent(
   recipient: AiRecipient,
   privacyUrl = AI_PRIVACY_URL,
+  disclosure = aiDataDisclosure(recipient.use),
 ): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
@@ -86,11 +87,7 @@ export function promptAiConsent(
       let privacyPolicyPressed = false;
       Alert.alert(
         t`Share data with ${ph({ name: recipient.name })}?`,
-        [
-          recipient.detail,
-          aiDataDisclosure(recipient.use),
-          t`You can turn this off in Account → AI data sharing.`,
-        ]
+        [recipient.detail, disclosure, t`You can turn this off in Account → AI data sharing.`]
           .filter(Boolean)
           .join("\n\n"),
         [

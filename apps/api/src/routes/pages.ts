@@ -1,4 +1,6 @@
+import { AI_CONSENT_REQUIRED } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
+import { aiConsentStatus } from "../account/ai-consent.js";
 import {
   addPageComment,
   getPageGrants,
@@ -54,9 +56,12 @@ export function pagesRoutes(ctx: RouterContext) {
       resolve: authed.pageReviews.resolve.handler(({ context, input }) =>
         resolvePageComment(deps, context.actor, input),
       ),
-      askRevision: authed.pageReviews.askRevision.handler(({ context, input }) => {
+      askRevision: authed.pageReviews.askRevision.handler(async ({ context, input }) => {
         if (!deps.pageRevisions)
           throw new ClientError("SERVICE_UNAVAILABLE", "Page revisions are unavailable");
+        const consent = await aiConsentStatus(deps, context.actor, { pageId: input.pageId });
+        if (consent.recipients.some((recipient) => !recipient.allowed))
+          throw new ClientError("FORBIDDEN", AI_CONSENT_REQUIRED, "AI_CONSENT_REQUIRED");
         return askPageRevision({ ...deps, start: deps.pageRevisions.start }, context.actor, input);
       }),
       draft: authed.pageReviews.draft.handler(({ context, input }) =>

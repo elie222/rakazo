@@ -7,7 +7,8 @@ import {
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { IsolationError, signalPage } from "@rakazo/db";
+import { canPageRequestRevision, IsolationError, signalPage } from "@rakazo/db";
+import type { RouterDeps } from "../router.js";
 import { readPageReview, StalePageReviewError, writePageReview } from "./page-collaboration.js";
 
 type DraftInput = { pageId: string; requestId: string };
@@ -17,6 +18,16 @@ const MAX_OWNER_REQUESTS_PER_DAY = 10;
 const MAX_SHARED_REQUESTS_PER_DAY = 5;
 const MAX_REQUESTS_PER_REVIEWER_PER_DAY = 3;
 const DAY_MS = 86_400_000;
+
+export async function getPageRevisionRecipient(deps: RouterDeps, actor: Actor, pageId: string) {
+  if (!deps.pageRevisions)
+    throw new ClientError("SERVICE_UNAVAILABLE", "Page revisions are unavailable");
+  const scope = await readPageReview(deps.prisma, actor, pageId, async (tx, { page }) => {
+    if (!page.bot || !(await canPageRequestRevision(tx, page))) throw new IsolationError();
+    return { spaceId: page.spaceId, userId: page.userId, botId: page.bot.id };
+  });
+  return deps.pageRevisions.recipient(pageId, scope);
+}
 
 export async function askPageRevision(
   {
@@ -108,6 +119,7 @@ export async function askPageRevision(
         commentId,
         retryOf,
         requesterId: actor.userId,
+        consentSpaceId: actor.spaceId,
         grantId: grant?.id,
         // Writes are serialized per page. Distinguish the latest even when two writes share a millisecond.
         createdAt: new Date(Math.max(Date.now(), (previous?.createdAt.getTime() ?? 0) + 1)),

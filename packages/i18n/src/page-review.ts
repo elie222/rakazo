@@ -1,6 +1,10 @@
 import { ph, t } from "@lingui/core/macro";
 import type { PageComment } from "@rakazo/contracts";
 
+export function pageRevisionDataDisclosure() {
+  return t`The page and selected comment are sent to draft a revision.`;
+}
+
 export function pageCommentStatusLabel(comment: PageComment, currentVersion: number) {
   const review = comment.revision;
   if (review?.status === "published" && typeof review.resultVersion === "number")

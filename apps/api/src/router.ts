@@ -14,6 +14,7 @@ import type {
   CloudAgentConnection,
   CodexLiveCatalog,
   ConnectorRegistry,
+  createPageRevisions,
   FaviconResolver,
   IntegrationProviderSettings,
   McpConnector,
@@ -92,7 +93,7 @@ export interface RouterDeps {
   ticketChanges: TicketChangeNotifier;
   auth: Auth;
   jobs: JobPublisher;
-  pageRevisions?: { start(requestId: string): void };
+  pageRevisions?: Pick<ReturnType<typeof createPageRevisions>, "start" | "recipient">;
   sandbox: SandboxProvider;
   memory: MemoryStore;
   memoryProviders: MemoryProviderResolver;

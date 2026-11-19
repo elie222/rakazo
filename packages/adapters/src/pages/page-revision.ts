@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type {
   AgentRunRequest,
   AgentRuntime,
@@ -6,6 +6,7 @@ import type {
   BackgroundJobAttempt,
   JobPublisher,
 } from "@rakazo/adapter-kit";
+import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
 import { containsSecret, deadlineSignal, withAbort } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -23,6 +24,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { checkPageSource } from "@rakazo/page-kit/validate";
+import { aiRecipient } from "../models/ai-consent.js";
 import { PAGE_REVISION_INSTRUCTIONS, pageRevisionPrompt } from "./page-revision.prompt.js";
 
 const MODEL_TIMEOUT = 90_000;
@@ -44,6 +46,7 @@ const revisionKey = (id: string) => `page-revision:${id}`;
 const requestSelect = {
   id: true,
   requesterId: true,
+  consentSpaceId: true,
   grantId: true,
   status: true,
   comment: {
@@ -67,6 +70,21 @@ const requestSelect = {
 } satisfies Prisma.PageRevisionRequestSelect;
 
 type Request = Prisma.PageRevisionRequestGetPayload<{ select: typeof requestSelect }>;
+
+function pageRevisionRecipient(pageId: string, model: AgentRunRequest["model"]) {
+  const recipient = aiRecipient({
+    provider: model.provider,
+    modelId: model.id,
+    baseUrl: model.baseUrl,
+    use: "model",
+    hideEndpoint: true,
+  });
+  if (!recipient) return null;
+  const key = createHash("sha256")
+    .update(JSON.stringify(["page-revision", pageId, recipient.key]))
+    .digest("hex");
+  return { ...recipient, key };
+}
 
 export async function pageRevisionAuthorized(tx: Prisma.TransactionClient, row: Request) {
   const { comment, requesterId, grantId } = row;
@@ -134,17 +152,39 @@ export function createPageRevisions(deps: Dependencies) {
               const scope = { spaceId: page.spaceId, userId: page.userId, botId: page.bot.id };
               try {
                 draft = await runAsTenant(scope, () =>
-                  generateDraft(deps, scope, requestId, source.source, comment, lease.signal, () =>
-                    runAsSystem(
-                      "recheck the page revision grant before model dispatch",
-                      async () => {
-                        const fresh = await read();
-                        return (
-                          fresh?.status === "pending" &&
-                          (await pageRevisionAuthorized(prisma, fresh))
-                        );
-                      },
-                    ),
+                  generateDraft(
+                    deps,
+                    scope,
+                    requestId,
+                    source.source,
+                    comment,
+                    lease.signal,
+                    (model) =>
+                      runAsSystem(
+                        "recheck page access and AI consent before model dispatch",
+                        async () => {
+                          const fresh = await read();
+                          if (
+                            fresh?.status !== "pending" ||
+                            !(await pageRevisionAuthorized(prisma, fresh))
+                          )
+                            return false;
+                          const recipient = pageRevisionRecipient(page.id, model);
+                          if (!recipient) return true;
+                          if (!fresh.consentSpaceId) return false;
+                          return Boolean(
+                            await prisma.aiDataConsent.findFirst({
+                              where: {
+                                userId: fresh.requesterId,
+                                spaceId: fresh.consentSpaceId,
+                                recipientKey: recipient.key,
+                                version: AI_DISCLOSURE_VERSION,
+                              },
+                              select: { recipientKey: true },
+                            }),
+                          );
+                        },
+                      ),
                   ),
                 );
               } catch (error) {
@@ -182,6 +222,11 @@ export function createPageRevisions(deps: Dependencies) {
 
   return {
     work,
+    async recipient(pageId: string, scope: Parameters<Dependencies["resolveModel"]>[0]) {
+      return runAsTenant(scope, async () =>
+        pageRevisionRecipient(pageId, await deps.resolveModel(scope)),
+      );
+    },
     start(requestId: string) {
       // The committed Graphile job covers a crash. The caller's process starts the model now.
       void bestEffort(
@@ -207,12 +252,12 @@ async function generateDraft(
   source: string,
   comment: { section: string; body: string },
   parentSignal: AbortSignal,
-  authorized: () => Promise<boolean>,
+  authorized: (model: AgentRunRequest["model"]) => Promise<boolean>,
 ) {
   const signal = deadlineSignal(MODEL_TIMEOUT, parentSignal);
   if (deps.billingEnabled && !(await memberHasModelAccess(deps.prisma, scope))) return;
   const model = await withAbort(deps.resolveModel(scope), signal);
-  if (!(await authorized())) return;
+  if (!(await authorized(model))) return;
   signal.throwIfAborted();
   const id = `${revisionKey(requestId)}:${randomUUID()}`;
   const onUsage: NonNullable<AgentRunRequest["onUsage"]> = async (event) => {

@@ -1,10 +1,16 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageComment, PageReview } from "@rakazo/contracts";
-import { canPostPageComment, newClientId, pageCommentActions } from "@rakazo/core";
+import {
+  canPostPageComment,
+  ensureAiDataConsent,
+  newClientId,
+  pageCommentActions,
+} from "@rakazo/core";
 import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
 import { Button, Input, OptionSelect, Spinner, Textarea } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { promptDataConsent } from "../../lib/calls/voice-consent";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
 
@@ -49,8 +55,15 @@ export function PageReviewComments({
       const commentId = action.id;
       if (action.kind === "resolve")
         return rpc.pageReviews.resolve({ pageId, commentId, resolved: action.resolved });
-      if (action.kind === "ask")
+      if (action.kind === "ask") {
+        await ensureAiDataConsent({
+          uses: ["model"],
+          status: () => rpc.aiConsent.status({ pageId, uses: ["model"] }),
+          prompt: promptDataConsent,
+          allow: (input) => rpc.aiConsent.allow({ ...input, pageId }),
+        });
         return rpc.pageReviews.askRevision({ pageId, commentId, retryOf: action.retryOf });
+      }
       await rpc.pageReviews.comment({
         pageId,
         submissionId: commentId,

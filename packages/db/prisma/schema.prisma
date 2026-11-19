@@ -2105,6 +2105,8 @@ model PageRevisionRequest {
   retryOf     String? @unique
   comment     PageComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
   requesterId String
+  /// The requester's Space whose AI-sharing permission covers this request.
+  consentSpaceId String?
   /// The exact grant at submission. A later grant does not reinstate work from this one.
   grantId     String?
   status      String @default("pending")

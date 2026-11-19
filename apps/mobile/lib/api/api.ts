@@ -13,6 +13,7 @@ import {
   readBoundedJsonResponse,
   withAbort,
 } from "@rakazo/core";
+import { pageRevisionDataDisclosure } from "@rakazo/i18n/page-review";
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
 import { followSelectedSpace, selectedSpaceChanged } from "../billing/referral";
@@ -683,17 +684,22 @@ async function request(
   const uses = aiDataUsesForProcedure(proc, body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
-  for (const consentTarget of aiConsentTargets(body)) {
+  for (const consentTarget of aiConsentTargets(body, proc)) {
     await ensureAiDataConsent({
       uses,
       status: () =>
         rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
-      prompt: promptAiConsent,
+      prompt: consentTarget.pageId
+        ? (recipient, privacyUrl) =>
+            promptAiConsent(recipient, privacyUrl, pageRevisionDataDisclosure())
+        : promptAiConsent,
       allow: (input) =>
         allowPromptedAiConsent(
-          consentTarget.settingsScope
-            ? { ...input, settingsScope: consentTarget.settingsScope }
-            : input,
+          consentTarget.pageId
+            ? { ...input, pageId: consentTarget.pageId }
+            : consentTarget.settingsScope
+              ? { ...input, settingsScope: consentTarget.settingsScope }
+              : input,
           consentContext,
         ),
       coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
