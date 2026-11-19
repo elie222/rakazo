@@ -1,3 +1,4 @@
+import { getLogger, serializeError } from "@rakazo/logging";
 import type { Criterion, EvalCase, Evidence } from "./cases.js";
 import type { EvalJudge } from "./judge.js";
 import type { FailureCategory, TrialResult } from "./report.js";
@@ -114,19 +115,24 @@ function currentCriteria(scenario: EvalCase, trial: TrialResult): Criterion[] | 
   if (!trial.evidence) return null;
   try {
     return scenario.grade(restoreEvidence(trial.evidence) as Evidence);
-  } catch {
+  } catch (error) {
+    getLogger().warn("A stored eval trial could not be graded by its case; it will be rerun", {
+      caseId: scenario.id,
+      trial: trial.trial,
+      error: serializeError(error),
+    });
     return null;
   }
 }
 
-/** Whether a stored trial can be graded again: it reached grading and kept what it was graded on. */
+/** Whether a stored trial can be graded again: a trial that kept its evidence reached grading. */
 export function regradable(scenario: EvalCase, trial: TrialResult) {
-  return !trial.criteria.length || currentCriteria(scenario, trial) !== null;
+  return trial.evidence ? currentCriteria(scenario, trial) !== null : !trial.criteria.length;
 }
 
 /** Whether the current case's deterministic criteria give the trial the verdicts it was stored with. */
 export function gradedAsStored(scenario: EvalCase, trial: TrialResult) {
-  if (!trial.criteria.length) return true;
+  if (!trial.evidence) return true;
   const stored = trial.criteria.filter((c) => c.id !== SEMANTIC_OUTCOME);
   return JSON.stringify(currentCriteria(scenario, trial)) === JSON.stringify(stored);
 }
@@ -142,7 +148,7 @@ export async function regradeTrial(
   timeoutMs: number,
 ): Promise<TrialResult> {
   const result = structuredClone(stored);
-  if (!stored.criteria.length || !stored.evidence) return result;
+  if (!stored.evidence) return result;
   const evidence = restoreEvidence(stored.evidence) as Evidence;
   const grading = { judge, deadline: Date.now() + timeoutMs, secrets: [] };
   result.criteria = scenario.grade(evidence);

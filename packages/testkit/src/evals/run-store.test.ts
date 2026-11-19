@@ -330,7 +330,11 @@ describe("run store", () => {
       s.plan({ scenario: plain, trials: 3, strategy: "current", fingerprint: "f9", judge: null }),
     ).toEqual({ kind: "run" });
     // A trial that failed before grading needs no evidence: no judge ever saw it.
-    s.save(report([trial(1, { status: "failed", category: "agent", criteria: [] })]));
+    s.save(
+      report([
+        trial(1, { status: "failed", category: "agent", criteria: [], evidence: undefined }),
+      ]),
+    );
     expect(plan(s)).toMatchObject({ kind: "reuse", trials: [{ trial: 1 }] });
   });
 
@@ -424,7 +428,13 @@ describe("regrading a stored trial", () => {
       reason: "Outcome criteria failed",
       criteria: [{ id: "answered", pass: false }],
     });
-    const early = trial(2, { status: "failed", category: "product", criteria: [], reason: "x" });
+    const early = trial(2, {
+      status: "failed",
+      category: "product",
+      criteria: [],
+      reason: "x",
+      evidence: undefined,
+    });
     expect(await regradeTrial(scenario, early, judge, 1000)).toEqual(early);
     expect(judge).not.toHaveBeenCalled();
   });
@@ -451,6 +461,28 @@ describe("regrading a stored trial", () => {
     expect(JSON.stringify(evidenceSnapshot({ key: "sk-live123 and k1" }, ["k1"]))).toBe(
       '{"key":"[redacted] and [redacted]"}',
     );
+  });
+
+  it("grades a trial that had no criteria and gives checks back the dates they were graded on", async () => {
+    const judge = vi.fn<EvalJudge>(async () => ({ pass: true, reason: "fine" }));
+    const dated: EvalCase = {
+      ...scenario,
+      judge: undefined,
+      observe: undefined,
+      grade: (e) => [
+        { id: "clock", pass: (e as unknown as { now: Date }).now.getTime() === 1_000 },
+      ],
+    };
+    const empty = trial(1, {
+      status: "failed",
+      category: "agent",
+      criteria: [],
+      evidence: evidenceSnapshot({ now: new Date(1_000) }, []),
+    });
+    expect(await regradeTrial(dated, empty, judge, 1000)).toMatchObject({
+      status: "passed",
+      criteria: [{ id: "clock", pass: true }],
+    });
   });
 
   it("labels a regraded failure the way the run did", async () => {
