@@ -25,6 +25,7 @@ import type { ChatTarget } from "../../../lib/query/query";
 import { lastChatKey, queryClient, seedOnLeave, spaceSeedKey } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { errorText } from "../../../lib/query/user-error";
+import { firstBotDeclined } from "../../../lib/spaces/first-bot-declined";
 import { useEventListener } from "../../../lib/use-event-listener";
 import type { ThreadState } from "../chat/use-thread-state";
 import type { useShellNavigation } from "../use-shell-navigation";
@@ -138,7 +139,8 @@ export function useSpaceRoster({
         archived?.length === 0 &&
         groupList.length === 0 &&
         archivedGroupList?.length === 0 &&
-        !navigation.spaces.some((space) => space.hasContent)
+        !navigation.spaces.some((space) => space.hasContent) &&
+        !firstBotDeclined(navigation.current.id)
       ) {
         // Only the very first bot everywhere needs onboarding. An empty
         // current space with content elsewhere stays in the app so the
@@ -416,7 +418,8 @@ export function useSpaceBootstrap({
           bootstrap.archivedBots.length === 0 &&
           groupList.length === 0 &&
           bootstrap.archivedGroups.length === 0 &&
-          !bootstrap.spaces.some((space) => space.hasContent)
+          !bootstrap.spaces.some((space) => space.hasContent) &&
+          !firstBotDeclined(bootstrap.me.spaceId)
         ) {
           navigate("/onboarding", { replace: true });
           return;
