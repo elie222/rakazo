@@ -1223,7 +1223,7 @@ export async function updateScheduleFromTool(
   if (routineEdited(existing, saved)) {
     await postRoutineNotice(deps, {
       spaceId: input.spaceId,
-      threadId: existing.threadId ?? input.threadId,
+      threadId: existing.threadId,
       botId: input.botId,
       change: routineEditChange(existing, saved),
       name: saved.name,
@@ -1337,7 +1337,7 @@ export async function cancelScheduleFromTool(
   await deps.jobs.cancel(routineJobKey(existing.id));
   await postRoutineNotice(deps, {
     spaceId: input.spaceId,
-    threadId: existing.threadId ?? input.threadId,
+    threadId: existing.threadId,
     botId: input.botId,
     change: "deleted",
     name: existing.name,
