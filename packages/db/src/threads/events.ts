@@ -442,7 +442,16 @@ export async function sendUserMessage(
         },
       },
     });
-    if (!message) return null;
+    if (!message) {
+      const pruned = await prisma.prunedMessageNonce.findUnique({
+        where: {
+          threadId_clientNonce: { threadId: input.threadId, clientNonce: input.clientNonce },
+        },
+      });
+      return pruned
+        ? { messageId: pruned.messageId, seq: pruned.seq, taskId: null, runId: null }
+        : null;
+    }
     const created = await prisma.run.findFirst({
       where: { sourceMessageId: message.id },
       orderBy: { createdAt: "asc" },

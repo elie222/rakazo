@@ -1163,6 +1163,7 @@ model Thread {
   historyCompactionRetryAfterSeq Int?
   reads                       ThreadRead[]
   messages                    Message[]
+  prunedMessageNonces         PrunedMessageNonce[]
   events                      Event[]
   tasks                       Task[]
   runs                        Run[]
@@ -1228,6 +1229,20 @@ model Message {
   @@index([searchTokens], type: Gin)
   // Partial index messages_tool_work_idx (bot replies that used tools) is created in SQL.
   @@map("messages")
+}
+
+/// The send nonce of a message that history retention deleted, so a replayed signed delivery
+/// still finds it was handled. Holds no message content.
+model PrunedMessageNonce {
+  threadId    String
+  thread      Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  clientNonce String
+  messageId   String
+  seq         Int
+  createdAt   DateTime @default(now())
+
+  @@id([threadId, clientNonce])
+  @@map("pruned_message_nonces")
 }
 
 model Event {
