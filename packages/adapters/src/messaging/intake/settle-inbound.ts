@@ -96,6 +96,37 @@ export function filesNotReceivedReply(
 
 type Payload = BackgroundJobPayloads["messaging.inbound_settle"];
 
+/** The reply an owner's "stop" records; its row also marks when the stop came. */
+export function ownerStopKey(identityId: string, handle: string): string {
+  return `${ownerStopPrefix(identityId)}${handle}`;
+}
+
+function ownerStopPrefix(identityId: string): string {
+  return `command:stop:${identityId}:`;
+}
+
+/**
+ * Whether the owner sent "stop" on this line after `since` (epoch ms): a message that arrived
+ * before it still joins the chat when it settles, but starts no turn. Read when the message
+ * settles, so it holds wherever the stop and the message arrived.
+ */
+export async function stoppedSince(
+  prisma: PrismaClient,
+  identityId: string,
+  since: number,
+): Promise<boolean> {
+  const stop = await prisma.messagingOutbound.findFirst({
+    where: {
+      identityId,
+      // One in the same millisecond counts: a turn it was meant to stop is the worse mistake.
+      createdAt: { gte: new Date(since) },
+      idempotencyKey: { startsWith: ownerStopPrefix(identityId) },
+    },
+    select: { id: true },
+  });
+  return stop !== null;
+}
+
 /** The settle job's text, bound to its job and sender so a copy anywhere else fails to open. */
 function settleTextLocation(
   job: Pick<Payload, "provider" | "handle" | "identityId">,
@@ -176,6 +207,12 @@ async function settleMessage(deps: SettleDeps, payload: Payload): Promise<void> 
   });
   // Unlinked since, or the person was deactivated: nobody to deliver to.
   if (!identity || (await accountDeactivated(deps.prisma, identity.userId))) return;
+  // Re-linked to another bot since it arrived: it was not written to this one, and its text is
+  // sealed under the Space it was sent to.
+  if (identity.spaceId !== payload.spaceId || identity.botId !== payload.botId) {
+    getLogger().info("messaging inbound dropped", { reason: "sender re-linked" });
+    return;
+  }
   const thread = await deps.prisma.thread.findFirst({
     where: { botId: identity.botId },
     select: { id: true },
@@ -225,6 +262,7 @@ async function settleMessage(deps: SettleDeps, payload: Payload): Promise<void> 
     select: { id: true },
   });
   if (!routed) {
+    const quiet = await stoppedSince(deps.prisma, identity.id, payload.receivedAt);
     const body = [text, ...missing].filter(Boolean).join("\n");
     try {
       const sent = await deps.events.sendUserMessage({
@@ -241,9 +279,9 @@ async function settleMessage(deps: SettleDeps, payload: Payload): Promise<void> 
         trigger: "messaging",
         clientNonce: messagingMessageClientNonce(provider, handle),
         // A stop sent after it: the message joins the chat and starts no turn.
-        ...(payload.quiet ? { createRun: false } : {}),
+        ...(quiet ? { createRun: false } : {}),
       });
-      if (sent.runId && !payload.quiet) await wakeRun(deps.jobs, sent.runId);
+      if (sent.runId && !quiet) await wakeRun(deps.jobs, sent.runId);
     } catch (error) {
       // A Space being deleted takes no messages; retrying would only fail again.
       if (!(error instanceof SpaceDeletionInProgressError)) throw error;

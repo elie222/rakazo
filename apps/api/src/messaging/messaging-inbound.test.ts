@@ -315,13 +315,22 @@ function createDeps(
         async ({
           where,
         }: {
-          where: { identityId: string; kind: string; status?: { in: string[] } };
+          where: {
+            identityId: string;
+            kind?: string;
+            status?: { in: string[] };
+            idempotencyKey?: { startsWith: string };
+            createdAt?: { gte: Date };
+          };
         }) =>
           outboundRows
             .filter(
               (row) =>
                 row.identityId === where.identityId &&
-                row.kind === where.kind &&
+                (!where.kind || row.kind === where.kind) &&
+                (!where.idempotencyKey ||
+                  (row.idempotencyKey as string).startsWith(where.idempotencyKey.startsWith)) &&
+                (!where.createdAt || (row.createdAt as Date) >= where.createdAt.gte) &&
                 (!where.status ||
                   where.status.in.includes((row.status as string | undefined) ?? "pending")),
             )
@@ -1292,6 +1301,9 @@ describe("createMessagingInboundHandler DM routing", () => {
         provider: "sendblue",
         handle: "handle-1",
         identityId: "mi-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        receivedAt: expect.any(Number),
         text: "",
         attachments: [{ name: "photo.jpg", mimeType: "image/jpeg", size: 42 }],
       },
@@ -1591,6 +1603,30 @@ describe("createMessagingInboundHandler DM routing", () => {
     ]);
     expect(handedOff(deps)[0]!.payload).not.toHaveProperty("follower");
     expect(deps.releaseFollowersIn).not.toHaveBeenCalled();
+  });
+
+  it("leaves the job of a message being handed to the bot alone through a shutdown", async () => {
+    const deps = createDeps({
+      storeAttachment: vi.fn(async () => ({
+        id: "artifact-1",
+        name: "photo.jpg",
+        mimeType: "image/jpeg",
+        size: 42,
+      })),
+    });
+    const posting = deferred<{ messageId: string; runId: null; seq: number }>();
+    deps.sendUserMessage.mockReturnValueOnce(posting.promise);
+    const handler = createMessagingInboundHandler(deps);
+    await handler(photoEvent);
+    await vi.waitFor(() => expect(deps.sendUserMessage).toHaveBeenCalledOnce());
+
+    // Making its job due now could post it a second time beside what is being posted here.
+    await handler.prepareHandOff();
+    await handler.handOffPending();
+    expect(handedOff(deps)).toEqual([]);
+
+    posting.resolve({ messageId: "msg-1", runId: null, seq: 3 });
+    await vi.waitFor(() => expect(deps.cancelIn).toHaveBeenCalledOnce());
   });
 
   it("ends a redelivered message's own leftover job once it is delivered at once", async () => {
@@ -2631,16 +2667,8 @@ describe("createMessagingInboundHandler owner commands", () => {
     await handle({ ...dmEvent, handle: "handle-2", content: "stop" });
     // The stop does not wait for the file to finish downloading.
     expect(cancelRuns).toHaveBeenCalledOnce();
-    // Its backup job, should it settle the message instead, starts no turn either: written again
-    // under its key, as due as it was.
-    const [, recorded] = deps.enqueueIn.mock.calls[0]! as [
-      unknown,
-      BackgroundJob & { name: "messaging.inbound_settle" },
-    ];
-    expect(deps.enqueue).toHaveBeenCalledExactlyOnceWith({
-      ...recorded,
-      payload: { ...recorded.payload, quiet: true },
-    });
+    // Its backup job is left as it was: whichever path settles it reads the stop then.
+    expect(deps.enqueue).not.toHaveBeenCalled();
 
     download.resolve();
     await settled(deps);
@@ -2648,7 +2676,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ clientNonce: "messaging:sendblue:handle-1", createRun: false }),
     );
-    expect(deps.enqueue).toHaveBeenCalledOnce();
+    expect(deps.enqueue).not.toHaveBeenCalled();
 
     // What the owner sends after the stop starts a turn as usual.
     deps.sendUserMessage.mockResolvedValue({ messageId: "msg-3", runId: "run-1", seq: 4 });
@@ -2656,34 +2684,6 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
     expect(deps.sendUserMessage.mock.lastCall![0]).toMatchObject({ trigger: "webhook" });
     expect(deps.sendUserMessage.mock.lastCall![0]).not.toHaveProperty("createRun");
-  });
-
-  it("keeps a message a stop quieted quiet when it goes to its backup job", async () => {
-    const download = deferred();
-    const storeAttachment = vi.fn(async () => {
-      await download.promise;
-      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
-    });
-    const deps = createDeps({ storeAttachment });
-    Object.assign(deps.prisma.thread, {
-      findFirstOrThrow: vi.fn(async () => ({ id: "thread-1" })),
-    });
-    Object.assign(deps.txMock.run, { updateManyAndReturn: vi.fn(async () => []) });
-    Object.assign(deps.txMock, {
-      steeringMessage: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    });
-    deps.sendUserMessage.mockRejectedValueOnce(new Error("database unavailable"));
-    const handle = createMessagingInboundHandler(deps);
-    await handle(photoEvent);
-    await handle({ ...dmEvent, handle: "handle-2", content: "stop" });
-
-    download.resolve();
-    await vi.waitFor(() =>
-      expect(
-        handedOff(deps).filter((job) => job.availableAt!.getTime() <= Date.now()),
-      ).toHaveLength(1),
-    );
-    expect(handedOff(deps).map((job) => job.payload.quiet)).toEqual([true, true]);
   });
 
   it("answers a stop once, even when the provider redelivers it", async () => {

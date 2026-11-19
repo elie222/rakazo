@@ -70,6 +70,9 @@ const payloadSchemas = {
     provider: z.string().min(1),
     handle: z.string().min(1),
     identityId: z.string().min(1),
+    spaceId: z.string().min(1),
+    botId: z.string().min(1),
+    receivedAt: z.number().int().nonnegative(),
     text: z.string(),
     attachments: z
       .array(
@@ -80,7 +83,6 @@ const payloadSchemas = {
         }),
       )
       .max(MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS),
-    quiet: z.boolean().optional(),
     follower: z.boolean().optional(),
   }),
   "messaging.reply": z.object({ runId: z.string().min(1) }),

@@ -17,7 +17,9 @@ import {
   messagingAttachmentClientNonce,
   messagingMessageClientNonce,
   messagingWakeIdempotencyKey,
+  ownerStopKey,
   sealSettleText,
+  stoppedSince,
   wakeRun,
 } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
@@ -176,7 +178,10 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
       graceOver.abort();
       intake.handingOff = undefined;
       // One at a time, so a kill partway leaves no later message due before an earlier one.
-      for (const arrival of shutdown.arrivals) await handOffToJob(deps, intake, arrival);
+      for (const arrival of shutdown.arrivals) {
+        // One being handed to the bot here ends its own job, or hands it off if that fails.
+        if (!arrival.delivering) await handOffToJob(deps, intake, arrival);
+      }
     },
   });
 }
@@ -237,13 +242,13 @@ type Shutdown = {
   last: Map<string, number>;
 };
 
-/**
- * One direct message from its arrival here. An owner's "stop" makes the messages that arrived
- * before it `quiet`: they still reach the chat, but start no turn the stop was meant to prevent.
- */
+/** One direct message from its arrival here. */
 type Arrival = {
   sender: string;
-  quiet: boolean;
+  /** When it arrived; an owner's "stop" after this keeps it from starting a turn. */
+  receivedAt: number;
+  /** Being handed to the bot here, so a shutdown leaves its job alone. */
+  delivering?: boolean;
   /** Its backup job once recorded, until the message settles here. */
   job?: SettleJob;
   /** Its downloads, once they started. */
@@ -324,7 +329,7 @@ function arrivalAfter(sender: string, previous: Arrival | undefined): Arrival {
   const recordTurn = previous?.recorded ?? Promise.resolve();
   return {
     sender,
-    quiet: false,
+    receivedAt: Date.now(),
     writes: Promise.resolve(),
     recordTurn,
     endRecordTurn,
@@ -384,12 +389,8 @@ async function prepareDirectEvent(
     if (command === "stop") {
       // Only a bare "stop" is the command; one carrying media is delivered as a message.
       if (attachments.length === 0 && !event.mediaUrl) {
-        // It acts at once. What the owner sent before it still reaches the chat, but starts
-        // nothing, also when its backup job settles it.
-        const pending = intake.pending.get(arrival.sender) ?? [];
-        const earlier = pending.slice(0, pending.indexOf(arrival));
-        for (const message of earlier) message.quiet = true;
-        await Promise.all(earlier.map((message) => recordQuiet(deps, message)));
+        // It acts at once. What the owner sent before it still reaches the chat when it settles,
+        // but starts nothing (see `stoppedSince`).
         await stopOwnerWork(deps, existing, event);
         return null;
       }
@@ -429,7 +430,7 @@ async function prepareDirectEvent(
     });
   }
 
-  const receivedAt = Date.now();
+  const { receivedAt } = arrival;
   const deadline = receivedAt + DIRECT_MESSAGE_SETTLE_BUDGET_MS;
   // Earlier messages of theirs may still be with their backup jobs, after a failure here, a
   // restart, or on another instance: this one follows them there rather than overtaking them.
@@ -441,7 +442,7 @@ async function prepareDirectEvent(
     return {
       inline: true,
       run: async () => {
-        await deliverDirectMessage(deps, ids, event, text, NO_MEDIA, arrival);
+        await deliverDirectMessage(deps, ids, event, text, NO_MEDIA, false);
         // A redelivery of a message that once went to its backup job: that job has nothing left
         // to do, and must not hold the sender's next messages back. The message is posted
         // already, so a failure here must not fail its webhook; the job then runs as recorded.
@@ -463,10 +464,14 @@ async function prepareDirectEvent(
       existing?.id ??
       (await deps.prisma.messagingIdentity.findUniqueOrThrow({ where, select: { id: true } })).id;
     const job = { provider: event.provider, handle: event.handle, identityId };
+    // The Space and bot it was sent to; the job drops it if the sender re-linked meanwhile.
     // The job keeps what the person wrote, sealed, and never the media link that rides along. It
     // names every file, those past the cap too, so it can say what became of each.
     const payload: SettlePayload = {
       ...job,
+      spaceId: ids.spaceId,
+      botId: ids.botId,
+      receivedAt,
       text: await sealSettleText(deps.prisma, ids.spaceId, job, event.content),
       attachments: attachments
         .slice(0, MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS)
@@ -475,7 +480,6 @@ async function prepareDirectEvent(
           mimeType,
           ...(size !== undefined && Number.isSafeInteger(size) && size >= 0 ? { size } : {}),
         })),
-      ...(arrival.quiet ? { quiet: true } : {}),
     };
     const dueAt = settleJobDueAt(receivedAt);
     // After the jobs of the sender's earlier messages here, though this one's lookups may finish
@@ -487,8 +491,6 @@ async function prepareDirectEvent(
       arrival.endRecordTurn();
     }
     arrival.job = { payload, dueAt: dueAt.getTime() };
-    // A stop may have quieted it while its job was being recorded.
-    await recordQuiet(deps, arrival);
     // Arriving during a shutdown, it is its backup job's, after the sender's earlier messages.
     if (intake.closing) {
       intake.settling.delete(message);
@@ -542,7 +544,14 @@ async function settleDirectMessage(
     // A shutdown hands the message to its backup job instead.
     if (intake.closing) return;
     if ("error" in outcome) throw outcome.error;
-    const unavailable = await deliverDirectMessage(deps, ids, event, text, outcome.stored, arrival);
+    const quiet = arrival.job
+      ? await stoppedSince(deps.prisma, arrival.job.payload.identityId, arrival.receivedAt)
+      : false;
+    if (intake.closing) return;
+    // From here the message is this path's: a shutdown must not also make its job due, which
+    // could post it a second time beside a message routine's run.
+    arrival.delivering = true;
+    const unavailable = await deliverDirectMessage(deps, ids, event, text, outcome.stored, quiet);
     const lane = await writeJob(arrival, async (job) => {
       const lane = { identityId: job.payload.identityId };
       await deps.prisma.$transaction(async (tx) => {
@@ -642,7 +651,6 @@ function handOffToJob(
     const { follower: _was, ...rest } = job.payload;
     const payload: SettlePayload = {
       ...rest,
-      ...(arrival.quiet ? { quiet: true } : {}),
       // Due later than now only to wait for the jobs ahead of it, which make it due as they settle.
       ...(dueAt > now ? { follower: true } : {}),
     };
@@ -685,7 +693,7 @@ function dueByShutdown(
   arrival: Arrival,
 ): Promise<void> {
   const job = arrival.job;
-  if (!job) return Promise.resolve();
+  if (!job || arrival.delivering) return Promise.resolve();
   const after = shutdown.last.get(arrival.sender) ?? intake.handedOff.get(arrival.sender);
   const dueAt = Math.max(shutdown.dueBy, after === undefined ? 0 : after + 1);
   if (job.dueAt <= dueAt || job.payload.follower) {
@@ -702,17 +710,6 @@ function dueByShutdown(
       settleJobAt(deps.jobs, payload, new Date(current.dueAt)),
     );
     current.payload = payload;
-  }).then(() => undefined);
-}
-
-/** A stop quieted the message: its backup job, as due as it was, starts no turn either. */
-function recordQuiet(deps: MessagingInboundDeps, arrival: Arrival): Promise<void> {
-  if (!arrival.quiet || !arrival.job || arrival.job.payload.quiet) return Promise.resolve();
-  return writeJob(arrival, async (job) => {
-    if (job.payload.quiet) return;
-    const payload = { ...job.payload, quiet: true };
-    await writeSettleJob(deps, payload, job.dueAt);
-    job.payload = payload;
   }).then(() => undefined);
 }
 
@@ -754,7 +751,8 @@ async function deliverDirectMessage(
   event: MessagingInboundMessage,
   text: string,
   stored: StoredMedia,
-  { quiet }: Arrival,
+  /** An owner's "stop" came after it: it joins the chat but starts nothing. */
+  quiet: boolean,
 ): Promise<string[]> {
   // Message-trigger routines own the delivery when configured. Do not also
   // start a normal messaging continue for the same inbound handle.
@@ -1106,7 +1104,7 @@ async function stopOwnerWork(
     where: { botId: identity.botId },
     select: { id: true },
   });
-  const key = `command:stop:${identity.id}:${event.handle}`;
+  const key = ownerStopKey(identity.id, event.handle);
   const target = { kind: "bot", botId: identity.botId, threadId: thread.id } as const;
   const stop = await deps.prisma.$transaction(async (tx) => {
     const receipt = await deps.delivery.recordIn(tx, { identityId: identity.id }, [

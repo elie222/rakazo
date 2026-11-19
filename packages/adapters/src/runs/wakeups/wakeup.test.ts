@@ -55,6 +55,7 @@ function handlers(): BackgroundJobHandlers {
 }
 
 const LAST_ATTEMPT = { number: 1, max: 1 };
+const WHERE = { spaceId: "space-1", botId: "bot-1", receivedAt: 0 };
 
 describe("InMemoryJobQueue", () => {
   afterEach(() => vi.useRealTimers());
@@ -113,7 +114,7 @@ describe("InMemoryJobQueue", () => {
     await queue.start(target);
     const settle = (handle: string, identityId: string, dueAt: Date) =>
       messagingInboundSettleJob(
-        { provider: "chat", handle, identityId, text: "", attachments: [] },
+        { provider: "chat", handle, identityId, ...WHERE, text: "", attachments: [] },
         dueAt,
       );
     const none = { until: null, own: false };
@@ -161,6 +162,9 @@ describe("InMemoryJobQueue", () => {
           provider: "chat",
           handle,
           identityId: "identity-1",
+          spaceId: "space-1",
+          botId: "bot-1",
+          receivedAt: 0,
           text: "",
           attachments: [],
           ...(follower ? { follower: true } : {}),
@@ -201,6 +205,9 @@ describe("InMemoryJobQueue", () => {
           provider: "chat",
           handle,
           identityId: "identity-1",
+          spaceId: "space-1",
+          botId: "bot-1",
+          receivedAt: 0,
           text: "",
           attachments: [],
           ...(follower ? { follower: true } : {}),

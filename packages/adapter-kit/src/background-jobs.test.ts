@@ -126,6 +126,9 @@ describe("background job contracts", () => {
       provider: "chat",
       handle: "message:1",
       identityId: "identity-1",
+      spaceId: "space-1",
+      botId: "bot-1",
+      receivedAt: due.getTime(),
       text: "make a short of these",
       attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
     };
@@ -149,20 +152,21 @@ describe("background job contracts", () => {
     ).toThrow();
   });
 
-  it("reads settle payloads with and without the file sizes and quiet flag", () => {
+  it("reads settle payloads with and without the file sizes", () => {
     const earlier = {
       provider: "chat",
       handle: "message:1",
       identityId: "identity-1",
+      spaceId: "space-1",
+      botId: "bot-1",
+      receivedAt: 0,
       text: "",
       attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
     };
-    // The previous release queued these; they still parse as they were.
     expect(parseBackgroundJob("messaging.inbound_settle", earlier).payload).toStrictEqual(earlier);
     const current = {
       ...earlier,
       attachments: [{ name: "clip.mov", mimeType: "video/quicktime", size: 42 }],
-      quiet: true,
     };
     expect(parseBackgroundJob("messaging.inbound_settle", current).payload).toStrictEqual(current);
     const file = { name: "photo.jpg", mimeType: "image/jpeg" };

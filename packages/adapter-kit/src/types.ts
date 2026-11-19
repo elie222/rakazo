@@ -1032,11 +1032,14 @@ export interface BackgroundJobPayloads {
     provider: string;
     handle: string;
     identityId: string;
+    /** The Space and bot it was sent to; a sender who re-linked since has it dropped. */
+    spaceId: string;
+    botId: string;
+    /** When it arrived (epoch ms): an owner's "stop" after this keeps it from starting a turn. */
+    receivedAt: number;
     text: string;
     /** Every file of the message in order, with the size its chat app reported when it did. */
     attachments: { name: string; mimeType: string; size?: number }[];
-    /** An owner's "stop" came after it: the message joins the chat but starts no turn. */
-    quiet?: boolean;
     /**
      * Due late only to settle after the sender's jobs ahead of it: whichever path settles the one
      * ahead makes it due now.

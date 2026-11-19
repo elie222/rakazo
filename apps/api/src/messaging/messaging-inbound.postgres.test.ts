@@ -5,6 +5,7 @@ import {
   GraphileJobPublisher,
   MessagingDelivery,
   messagingAttachmentClientNonce,
+  ownerStopKey,
   sealSettleText,
   settleInboundMessage,
 } from "@rakazo/adapters";
@@ -20,6 +21,13 @@ import {
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createMessagingInboundHandler } from "./messaging-inbound.js";
+
+/** Where a settle job's message was sent, and when it arrived. */
+const sentTo = (target: { spaceId: string; botId: string }) => ({
+  spaceId: target.spaceId,
+  botId: target.botId,
+  receivedAt: Date.now(),
+});
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(databaseUrl);
@@ -521,7 +529,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
       artifacts: { get: vi.fn() },
     });
     const handle = `in-${randomUUID()}`;
-    const job = { provider: "test", handle, identityId: identity.id };
+    const job = { provider: "test", handle, identityId: identity.id, ...sentTo(identity) };
     const text = await runAsSystem("seal the settle text", () =>
       sealSettleText(db.prisma, identity.spaceId, job, "make a short of these"),
     );
@@ -593,7 +601,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
         clientNonce: messagingAttachmentClientNonce("test", handle, 0),
       },
     });
-    const job = { provider: "test", handle, identityId: identity.id };
+    const job = { provider: "test", handle, identityId: identity.id, ...sentTo(identity) };
     const payload = {
       ...job,
       text: await runAsSystem("seal the settle text", () =>
@@ -644,7 +652,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
       artifacts: { get: vi.fn() },
     });
     const handle = `in-${randomUUID()}`;
-    const job = { provider: "test", handle, identityId: identity.id };
+    const job = { provider: "test", handle, identityId: identity.id, ...sentTo(identity) };
     const payload = {
       ...job,
       text: await runAsSystem("seal the settle text", () =>
@@ -701,7 +709,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
     ).toEqual([{ body: "Some files couldn't be received." }]);
   });
 
-  it("settle job posts a message a stop quieted without starting a turn", async () => {
+  it("settle job posts a message sent before a stop without starting a turn", async () => {
     const delivery = new MessagingDelivery({
       prisma: db.prisma,
       messaging: { platforms: () => [], sendToThread: vi.fn() } as unknown as MessagingSurface,
@@ -710,18 +718,25 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
       artifacts: { get: vi.fn() },
     });
     const handle = `in-${randomUUID()}`;
-    const job = { provider: "test", handle, identityId: identity.id };
+    const job = { provider: "test", handle, identityId: identity.id, ...sentTo(identity) };
     const runsBefore = await system.run.count({ where: { botId: identity.botId } });
+    // The owner sent "stop" after the message arrived.
+    const receivedAt = Date.now() - 60_000;
+    await runAsTenant(identity, () =>
+      delivery.record({ identityId: identity.id }, [
+        {
+          idempotencyKey: ownerStopKey(identity.id, `stop-${handle}`),
+          kind: "dm",
+          identityId: identity.id,
+          body: "Nothing is running.",
+        },
+      ]),
+    );
     jobs.enqueue.mockClear();
     await runAsTenant(identity, () =>
       settleInboundMessage(
         { prisma: db.prisma, events: createThreadEvents(db.prisma), jobs, delivery },
-        {
-          ...job,
-          text: "here is the clip",
-          attachments: [],
-          quiet: true,
-        },
+        { ...job, receivedAt, text: "here is the clip", attachments: [] },
       ),
     );
 
@@ -733,6 +748,35 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
     ).toEqual([{ blocks: [{ kind: "text", text: "here is the clip" }], runId: null }]);
     expect(await system.run.count({ where: { botId: identity.botId } })).toBe(runsBefore);
     expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("settle job drops a message whose sender re-linked to another bot since", async () => {
+    const record = vi.fn();
+    const handle = `in-${randomUUID()}`;
+    await runAsTenant(identity, () =>
+      settleInboundMessage(
+        {
+          prisma: db.prisma,
+          events: createThreadEvents(db.prisma),
+          jobs,
+          delivery: { record },
+        },
+        {
+          provider: "test",
+          handle,
+          identityId: identity.id,
+          ...sentTo(identity),
+          botId: "a-bot-it-left",
+          text: "here is the clip",
+          attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
+        },
+      ),
+    );
+
+    expect(await system.message.count({ where: { clientNonce: `messaging:test:${handle}` } })).toBe(
+      0,
+    );
+    expect(record).not.toHaveBeenCalled();
   });
 
   it("puts a text behind its sender's message that only a backup job still holds", async () => {
@@ -759,6 +803,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
             provider: "test",
             handle: earlier,
             identityId: identity.id,
+            ...sentTo(identity),
             text: "",
             attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
           },
@@ -852,6 +897,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
       provider: "test",
       handle,
       identityId: identity.id,
+      ...sentTo(identity),
       text: "",
       attachments: [],
       ...(follower ? { follower: true } : {}),
@@ -959,6 +1005,7 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
             provider: "test",
             handle: behind,
             identityId: identity.id,
+            ...sentTo(identity),
             text: "",
             attachments: [],
             follower: true,
@@ -1001,7 +1048,14 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
       // Another instance's message, still settling there when this one arrives here.
       await publisher.enqueue(
         messagingInboundSettleJob(
-          { provider: "test", handle: ahead, identityId: identity.id, text: "", attachments: [] },
+          {
+            provider: "test",
+            handle: ahead,
+            identityId: identity.id,
+            ...sentTo(identity),
+            text: "",
+            attachments: [],
+          },
           new Date(Date.now() + 60 * 60_000),
         ),
       );
@@ -1082,7 +1136,14 @@ describe.skipIf(!enabled)("settling a direct message after a restart (PostgreSQL
     try {
       await publisher.enqueue(
         messagingInboundSettleJob(
-          { provider: "test", handle: ahead, identityId: identity.id, text: "", attachments: [] },
+          {
+            provider: "test",
+            handle: ahead,
+            identityId: identity.id,
+            ...sentTo(identity),
+            text: "",
+            attachments: [],
+          },
           queuedAt,
         ),
       );
