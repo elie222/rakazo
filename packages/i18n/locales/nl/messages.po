@@ -247,6 +247,10 @@ msgstr "{count, plural, one {# bericht met {peer}} other {# berichten met {peer}
 msgid "{count, plural, one {# row} other {# rows}}"
 msgstr "{count, plural, one {# rij} other {# rijen}}"
 
+#: apps/mobile/components/thread/selection-bar.tsx
+msgid "{count, plural, one {# selected} other {# selected}}"
+msgstr ""
+
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
 msgstr "{count} agents aan het werk"
@@ -1037,6 +1041,11 @@ msgstr "Actief: {name}"
 #: apps/web/src/pages/shell/sidebar/sidebar-header.tsx
 msgid "Activity"
 msgstr "Activiteit"
+
+#: apps/web/src/components/audit/AuditLog.tsx
+#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+msgid "Activity log"
+msgstr ""
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -2238,6 +2247,7 @@ msgstr "Kan afbeeldingen niet lezen"
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/mobile/components/thread/message-row.tsx
 #: apps/mobile/components/thread/quote-sheet.tsx
+#: apps/mobile/components/thread/selection-bar.tsx
 #: apps/mobile/components/ui/name-dialog-compose.tsx
 #: apps/mobile/components/ui/name-dialog.tsx
 #: apps/mobile/components/vault/confirm-identity.tsx
@@ -3190,6 +3200,7 @@ msgstr "Gekopieerd"
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/cards/run-error-sheet.tsx
 #: apps/mobile/components/thread/message-row.tsx
+#: apps/mobile/components/thread/selection-bar.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -3593,6 +3604,10 @@ msgstr "{name} downloaden mislukt. Probeer het opnieuw."
 msgid "Could not enable tools"
 msgstr "Tools inschakelen mislukt"
 
+#: apps/web/src/components/audit/AuditLog.tsx
+msgid "Could not export the log."
+msgstr ""
+
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
 msgstr "Aanmelden afronden mislukt"
@@ -3799,6 +3814,10 @@ msgstr "Sjablonen laden mislukt"
 #: apps/mobile/app/computer.tsx
 msgid "Could not load the desktop. This device cannot reach the screen URL."
 msgstr "De desktop kon niet worden geladen. Dit apparaat kan de scherm-URL niet bereiken."
+
+#: apps/web/src/components/audit/AuditLog.tsx
+msgid "Could not load the log."
+msgstr ""
 
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -4504,6 +4523,11 @@ msgstr "Maak je account aan"
 msgid "Created"
 msgstr "Aangemaakt"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Created routine \"{name}\""
+msgstr ""
+
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-group.tsx
 #: apps/mobile/app/new-organization.tsx
@@ -4879,6 +4903,11 @@ msgstr "Verwijderd"
 msgid "Deleted bot"
 msgstr "Verwijderde bot"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Deleted routine \"{name}\""
+msgstr ""
+
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -4978,6 +5007,11 @@ msgstr "Een tool uitschakelen"
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Disabled"
 msgstr "Uitgeschakeld"
+
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Disabled routine \"{name}\""
+msgstr ""
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
@@ -5273,6 +5307,11 @@ msgstr "Ingesloten"
 msgid "Enable {0}"
 msgstr "{0} inschakelen"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Enabled routine \"{name}\""
+msgstr ""
+
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
 msgstr "Eindgebruiker-ID"
@@ -5515,6 +5554,7 @@ msgid "Expiry"
 msgstr "Vervaldatum"
 
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Export"
@@ -6609,6 +6649,7 @@ msgstr "Live werkstatus"
 msgid "Load earlier messages"
 msgstr "Eerdere berichten laden"
 
+#: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Load more"
 msgstr "Meer laden"
@@ -8144,6 +8185,10 @@ msgstr "Organisatie"
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Organization API key"
 msgstr "Organisatie-API-sleutel"
+
+#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+msgid "Organization options"
+msgstr ""
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -9796,6 +9841,11 @@ msgstr "Beveiligingscode"
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Select a bot"
 msgstr "Selecteer een bot"
+
+#: apps/mobile/components/calls/VoiceChatCard.tsx
+#: apps/mobile/components/thread/message-row.tsx
+msgid "Select messages"
+msgstr ""
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
@@ -11767,6 +11817,11 @@ msgstr "Werk je server bij om AI-gegevensdeling in deze mobiele versie te gebrui
 msgid "Updated below"
 msgstr "Hieronder bijgewerkt"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Updated routine \"{name}\""
+msgstr ""
+
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Updates"
 msgstr "Updates"
@@ -12553,6 +12608,11 @@ msgstr "Je spraakaanbieder heeft geen tegoed meer."
 #: apps/web/src/lib/query/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Je spraakaanbieder heeft de sleutel geweigerd."
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/pages/model-settings/connection-controls.tsx
+msgid "Zero data retention"
+msgstr ""
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
