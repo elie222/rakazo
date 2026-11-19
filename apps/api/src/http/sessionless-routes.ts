@@ -62,5 +62,6 @@ export const SESSIONLESS_ROUTES: Readonly<Record<string, string>> = {
   "GET /api/dev/emails": "public in development only: mail the loopback-only emulator captured",
   "GET /health": "public: liveness, a constant body",
   "GET /ready": "public: readiness, no deployment details",
-  "GET /internal/health": "operators on the API port: 404 for a request the public proxy forwarded",
+  "GET /internal/health":
+    "operators on the deployment's own network: 404 for a public or proxy-forwarded caller",
 };
