@@ -9,6 +9,7 @@ const labels: Record<MessageMenuSymbol, string> = {
   quote: "Quote",
   speak: "Speak message",
   select: "Select text",
+  selectMessages: "Select messages",
   unread: "Mark as unread",
 };
 
@@ -89,6 +90,27 @@ describe("message context menu", () => {
         }),
       ),
     ).not.toContain("unread");
+  });
+
+  it("offers Select messages after Select text, and only when asked", () => {
+    const menu = buildMessageContextMenu({
+      labels,
+      reactions,
+      include: { quote: false, react: false, speak: false, select: true, selectMessages: true },
+    });
+    expect(ids(menu.find((entry) => entry.id === "secondary")?.subactions ?? [])).toEqual([
+      "select",
+      "selectMessages",
+    ]);
+    expect(
+      ids(
+        buildMessageContextMenu({
+          labels,
+          reactions,
+          include: { quote: false, react: false, speak: false, select: true },
+        }),
+      ),
+    ).not.toContain("selectMessages");
   });
 
   it("reads a reaction id back out of a menu event", () => {
