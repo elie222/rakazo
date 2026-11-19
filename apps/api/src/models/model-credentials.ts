@@ -16,6 +16,7 @@ import {
   parseModelSecret,
   prepareAllowedThinkingLevels as prepareModelThinkingLevels,
   providerCatalogCache,
+  releaseRoutineBackoffs,
   resolveCodexOAuthDefaultModel,
   updateStoredModelSecret,
   validateModelAuthAvailability,
@@ -51,10 +52,12 @@ import {
   modelCredentialProviderFilter,
   modelRoleTarget,
   Prisma,
+  runAsSystem,
   saveModelPreference,
   withTransactionRetry,
   writeModelRole,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { assertNoDanglingModelPins } from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
 import type { RouterDeps } from "../router.js";
@@ -332,6 +335,17 @@ export async function persistModelCredential(
     }),
   );
   (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(input.provider));
+  // The connection is the account's, so the routines it held are released in every Space.
+  // Not awaited: the save is done, and an account with many held routines must not wait on them.
+  void bestEffort(
+    "release routines held for a refused model account",
+    runAsSystem("release routines held for a refused model account", () =>
+      releaseRoutineBackoffs(
+        { prisma: deps.prisma, jobs: deps.jobs, events: deps.events },
+        actor.userId,
+      ),
+    ),
+  );
   return modelCredentialDto(cred, input.plaintext);
 }
 

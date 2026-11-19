@@ -2508,7 +2508,7 @@ describe("createRunExecutor", () => {
 
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: "routine-1", active: true },
-      data: { active: false, nextRunAt: null },
+      data: { active: false, nextRunAt: null, resumeOnRestore: true },
     });
     expect($transaction).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();

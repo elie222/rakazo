@@ -844,6 +844,7 @@ describe("bot restore computer quota", () => {
     const prisma = {
       bot: botApi,
       computer,
+      routine: { findMany: vi.fn(async () => []) },
       $queryRaw,
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({ $queryRaw, computer, bot: botApi }),

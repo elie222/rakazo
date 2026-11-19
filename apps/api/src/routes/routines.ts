@@ -258,6 +258,8 @@ export function routinesRoutes(ctx: RouterContext) {
               crons: input.crons,
               timezone: input.timezone,
               active: input.active,
+              // An explicit on or off is the member's own choice, so a restore must not undo it.
+              ...(input.active !== undefined ? { resumeOnRestore: false } : {}),
               notify: input.notify,
               // What a watch read is not the owner's words, so it never runs as a turn in the chat.
               inChat: watch ? false : input.inChat,
