@@ -7,7 +7,11 @@ import type * as ComputerLifecycleModule from "../../computers/computer-lifecycl
 import { PINNED_COMPUTER_MODEL_LOST_RUN_ERROR } from "../../computers/computer-model-settings.js";
 import type * as ModelRolesModule from "../../models/model-roles.js";
 import type * as ModelSelectionModule from "../../models/model-selection.js";
-import { findConnectedModelCredential } from "../../models/model-selection.js";
+import {
+  findConnectedModelCredential,
+  UnavailableModelForAuthError,
+} from "../../models/model-selection.js";
+import { PausedTurnModelUnlistedError } from "../lifecycle/run-lifecycle.js";
 import type * as RunModelModule from "../turn/run-model.js";
 import { createRunExecutor } from "./executor.js";
 
@@ -694,6 +698,18 @@ it("ends the paused turn when its saved model's provider is disconnected", async
   );
   expect(fake.stream).not.toHaveBeenCalled();
   expect(f.browserAct).not.toHaveBeenCalled();
+});
+it("ends the paused turn with the unlisted-model message when the connection drops the model", async () => {
+  const f = await paused();
+  f.effect.status = "approved";
+  vi.mocked(resolveConnectedRunModel).mockRejectedValueOnce(
+    new UnavailableModelForAuthError("Unknown model for that provider"),
+  );
+  await f.run();
+  expect(f.finalizeRun).toHaveBeenLastCalledWith(
+    expect.objectContaining({ error: new PausedTurnModelUnlistedError().message }),
+  );
+  expect(fake.stream).not.toHaveBeenCalled();
 });
 it("retries without an error report while the saved model is not in its catalog", async () => {
   const f = await paused();

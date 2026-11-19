@@ -98,11 +98,14 @@ export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold
         savedComputerMode,
       );
     } catch (error) {
+      const unlisted = error instanceof Error && error.message === UNKNOWN_PROVIDER_MODEL;
       // A paused turn whose model or account is gone cannot resume; retrying will not help.
-      if (isLostPinnedModel(error)) pinnedComputerFailure = PINNED_COMPUTER_MODEL_LOST_RUN_ERROR;
+      if (isLostPinnedModel(error))
+        pinnedComputerFailure = unlisted
+          ? new PausedTurnModelUnlistedError().message
+          : PINNED_COMPUTER_MODEL_LOST_RUN_ERROR;
       // A failed catalog read reports this too, so setup tries again before giving up.
-      else if (error instanceof Error && error.message === UNKNOWN_PROVIDER_MODEL)
-        throw new PausedTurnModelUnlistedError();
+      else if (unlisted) throw new PausedTurnModelUnlistedError();
       else throw error;
     }
   }
