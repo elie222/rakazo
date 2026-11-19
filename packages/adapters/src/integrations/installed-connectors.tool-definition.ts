@@ -9,12 +9,15 @@ export function unavailableInstalledTool(
   reason: string,
 ): ConnectorTool {
   const brief = reason.length > 400 ? `${reason.slice(0, 400)}...` : reason;
+  // Short enough that the name still fits a 64-character tool name once two installs with
+  // the same name are told apart by an install id prefix.
   const slug =
     install.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 40) || install.kind;
+      .replace(/^_+/, "")
+      .slice(0, 13)
+      .replace(/_+$/, "") || install.kind;
   return {
     name: `${slug}__unavailable`,
     description: `The installed source "${catalogGroup}" is available to you but could not be reached right now, so none of its tools can be used on this turn. Reason: ${brief}. Tell the user it is temporarily unavailable rather than saying it is not installed. Calling this tool only returns an error.`,

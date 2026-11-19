@@ -2473,6 +2473,27 @@ describe("an installed source whose tools cannot be listed", () => {
     expect(events[0]?.message).toContain('"Team Gateway" could not list its tools');
   });
 
+  it("keeps two unavailable sources with one name within the tool name limit", async () => {
+    const installs = ["k1", "k2"].map((suffix) => ({
+      ...mcpInstall,
+      id: `c0000000000000000000000${suffix}`,
+      name: "Customer Relationship Gateway",
+    }));
+    const lister = new InstalledConnectorProvider(
+      { capabilityInstall: { findMany: vi.fn().mockResolvedValue(installs) } } as never,
+      {} as never,
+      {
+        fetch: (async () => new Response(null, { status: 503 })) as typeof globalThis.fetch,
+        resolveHostname: publicResolver,
+      },
+    );
+
+    const names = (await lister.discoverTools(context())).map((tool) => tool.name);
+
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) expect(name.length).toBeLessThanOrEqual(64);
+  });
+
   it("lists the real tools again once the source answers", async () => {
     const { provider, state } = gateway();
     await provider.discoverTools(context());
