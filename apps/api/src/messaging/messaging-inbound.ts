@@ -172,7 +172,12 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
       await shutdown.recorded;
       const graceOver = new AbortController();
       await Promise.race([
-        Promise.allSettled(shutdown.arrivals.map((arrival) => arrival.media)),
+        // A message being handed to the bot here finishes that within the grace too.
+        Promise.allSettled(
+          shutdown.arrivals.map((arrival) =>
+            arrival.delivering ? arrival.settled : arrival.media,
+          ),
+        ),
         abortableDelay(Math.max(0, shutdown.graceEnds - Date.now()), graceOver.signal),
       ]);
       graceOver.abort();
@@ -252,6 +257,8 @@ type Arrival = {
   receivedAt: number;
   /** Being handed to the bot here, so a shutdown leaves its job alone. */
   delivering?: boolean;
+  /** Its turn in its sender's queue, over once it settled here or went to its job. */
+  settled?: Promise<void>;
   /** Its backup job once recorded, until the message settles here. */
   job?: SettleJob;
   /** Its downloads, once they started. */
@@ -321,6 +328,10 @@ async function handleDirectEvent(
       }
     }
   });
+  arrival.settled = settled.then(
+    () => undefined,
+    () => undefined,
+  );
   const settle = await prepared;
   if (settle?.inline) await settled;
 }

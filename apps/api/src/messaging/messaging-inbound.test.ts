@@ -1607,7 +1607,7 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(deps.releaseFollowersIn).not.toHaveBeenCalled();
   });
 
-  it("leaves the job of a message being handed to the bot alone through a shutdown", async () => {
+  it("lets a message being handed to the bot finish through a shutdown, its job left alone", async () => {
     const deps = createDeps({
       storeAttachment: vi.fn(async () => ({
         id: "artifact-1",
@@ -1622,13 +1622,16 @@ describe("createMessagingInboundHandler DM routing", () => {
     await handler(photoEvent);
     await vi.waitFor(() => expect(deps.sendUserMessage).toHaveBeenCalledOnce());
 
-    // Making its job due now could post it a second time beside what is being posted here.
+    // Making its job due now could post it a second time beside what is being posted here; the
+    // shutdown waits for the posting instead, within its grace.
     await handler.prepareHandOff();
-    await handler.handOffPending();
-    expect(handedOff(deps)).toEqual([]);
-
+    const stopping = handler.handOffPending();
+    await flush();
+    expect(deps.cancelIn).not.toHaveBeenCalled();
     posting.resolve({ messageId: "msg-1", runId: null, seq: 3 });
-    await vi.waitFor(() => expect(deps.cancelIn).toHaveBeenCalledOnce());
+    await stopping;
+    expect(deps.cancelIn).toHaveBeenCalledOnce();
+    expect(handedOff(deps)).toEqual([]);
   });
 
   it("ends a redelivered message's own leftover job once it is delivered at once", async () => {
