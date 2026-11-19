@@ -113,19 +113,17 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
         readMnemoverse(this.connection, query, domain, request.limit, context.signal),
       ),
     );
-    const failures: string[] = [];
-    const failedDomains: Array<{ domain: string; error: string }> = [];
+    const failed: Array<{ domain: string; error: string }> = [];
     const byAtom = new Map<string, SemanticMemoryResult>();
     for (const [index, response] of responses.entries()) {
+      const domain = domains[index]!;
       if (!response.ok) {
-        failures.push(response.error);
-        failedDomains.push({ domain: domains[index]!, error: response.error });
+        failed.push({ domain, error: response.error });
         continue;
       }
       for (const item of response.value) {
         // Only what the requested domain holds belongs to this bot, whatever the service sends back.
-        const requested = domains[index];
-        if (item.domain !== requested) continue;
+        if (item.domain !== domain) continue;
         byAtom.set(item.atomId, {
           memory: item.content,
           score: item.relevance,
@@ -136,11 +134,11 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
       }
     }
     // One namespace answering is enough to recall from; none answering is a failure.
-    if (failures.length === responses.length) return { ok: false, error: failures.join("; ") };
-    if (failures.length > 0) {
-      getLogger().warn("Mnemoverse recall is missing a domain that did not answer", {
-        failed: failedDomains,
-      });
+    if (failed.length === domains.length) {
+      return { ok: false, error: failed.map((entry) => entry.error).join("; ") };
+    }
+    if (failed.length > 0) {
+      getLogger().warn("Mnemoverse recall is missing a domain that did not answer", { failed });
     }
     const value = [...byAtom.values()].sort((a, b) => b.score - a.score).slice(0, request.limit);
     return { ok: true, value };
@@ -152,13 +150,12 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
   ): Promise<SemanticMemoryResponse> {
     // Compaction summaries stay in Rakazo; Mnemoverse holds durable facts only.
     if (request.source.kind === "history") return { ok: true, value: undefined };
-    const write = await writeMnemoverse(
+    return writeMnemoverse(
       this.connection,
       request.content,
       saveDomain(request.scope, request.botId, context.spaceId),
       context.signal,
     );
-    return write;
   }
 
   async purgeHistory(

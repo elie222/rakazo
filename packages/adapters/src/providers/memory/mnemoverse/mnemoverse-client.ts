@@ -1,4 +1,4 @@
-import { deadlineSignal, ResponseTooLargeError, withAbort } from "@rakazo/core";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { readBodyCapped } from "../../../web/web-ssrf.js";
 
@@ -72,11 +72,6 @@ async function request(
         status: response.status,
         error: `Mnemoverse ${action} failed: ${response.status}`,
       };
-    }
-    const declared = Number(response.headers.get("content-length") ?? 0);
-    if (Number.isFinite(declared) && declared > MAX_MNEMOVERSE_RESPONSE_BYTES) {
-      await discardBody(response, signal);
-      throw new ResponseTooLargeError("Mnemoverse response is too large.");
     }
     const bytes = await readBodyCapped(response, MAX_MNEMOVERSE_RESPONSE_BYTES, signal);
     // A success with no body carries nothing to read. A read or write then fails below, because
@@ -152,9 +147,9 @@ export async function readMnemoverse(
 }
 
 /**
- * A write answers 200 with `stored: false` and `reason: "exact_duplicate"` when a byte-identical
- * memory already sits in that domain: that is saved, so a retry after a lost reply succeeds. Any
- * other `stored: false` wrote nothing and is a failure.
+ * A write answers 200 with `stored: false` and `reason: "exact_duplicate"` when the account admits
+ * by exact content and a byte-identical memory already sits in that domain: that is saved. Any other
+ * `stored: false` wrote nothing. Its other reasons are prose, so they are only quoted, never matched.
  */
 export async function writeMnemoverse(
   config: MnemoverseConnectionConfig,
@@ -213,7 +208,7 @@ export async function getMnemoverseAtomDomain(
   return { ok: true, value: domain };
 }
 
-/** An atom that is already gone counts as deleted, so a retry or a race is safe. */
+/** Deleting an atom that is already gone answers 200 with `deleted: 0`, so a retry or a race is safe. */
 export async function deleteMnemoverseAtom(
   config: MnemoverseConnectionConfig,
   atomId: string,
@@ -226,6 +221,5 @@ export async function deleteMnemoverseAtom(
     `/memory/atoms/${encodeURIComponent(atomId)}`,
     { signal },
   );
-  if (reply.ok || reply.status === 404) return { ok: true, value: undefined };
-  return { ok: false, error: reply.error };
+  return reply.ok ? { ok: true, value: undefined } : { ok: false, error: reply.error };
 }

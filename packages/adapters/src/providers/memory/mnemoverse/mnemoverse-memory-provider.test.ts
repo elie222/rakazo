@@ -519,15 +519,7 @@ describe("Mnemoverse forget", () => {
 
   it("counts a delete as done when the atom is already gone", async () => {
     mnemoverse([{ id: ATOM_A, domain: BOT, content: "x" }], {
-      [`DELETE /memory/atoms/${ATOM_A}`]: () =>
-        Response.json({ code: "NOT_FOUND" }, { status: 404 }),
-    });
-    expect((await forget(ATOM_A)).ok).toBe(true);
-  });
-
-  it("counts a delete as done when the success reply has no body", async () => {
-    mnemoverse([{ id: ATOM_A, domain: BOT, content: "x" }], {
-      [`DELETE /memory/atoms/${ATOM_A}`]: () => new Response(null, { status: 204 }),
+      [`DELETE /memory/atoms/${ATOM_A}`]: () => Response.json({ deleted: 0 }),
     });
     expect((await forget(ATOM_A)).ok).toBe(true);
   });
