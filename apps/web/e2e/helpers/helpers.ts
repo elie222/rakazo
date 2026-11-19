@@ -143,6 +143,8 @@ export async function openBotPanel(page: Page) {
     }
     await expect(profile).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
+  // The panel can be open on another tab; "open" always leaves it on its first page.
+  await page.getByTestId("bot-tab-details").click();
 }
 
 /** Opens the bot panel and switches to its Settings tab (model, switches, description, tools). */
