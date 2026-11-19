@@ -7,6 +7,17 @@ import { cardName } from "../tools/fleet-tools.js";
 /** The page tools a click that pays can go through. */
 export const PURCHASE_CHECKED_TOOLS: ReadonlySet<string> = new Set(["browser_act", "computer_act"]);
 
+export const PURCHASE_CHECK_FAILED_MESSAGE =
+  "Page could not be checked; action not performed. Use browser_navigate or open a new tab with the browser tool instead of keyboard address-bar shortcuts.";
+
+/** Thrown when a purchase check starts and then fails (timeout, unreadable page). */
+export class PurchaseCheckFailedError extends Error {
+  override readonly name = "PurchaseCheckFailedError";
+  constructor(message = PURCHASE_CHECK_FAILED_MESSAGE) {
+    super(message);
+  }
+}
+
 /**
  * The purchase a person approves: carried in the persisted request, so a replay presses exactly
  * the clicks approved, on the site approved. `steps` are indexes into the call's actions, none
@@ -211,16 +222,97 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
     : undefined;
 }
 
+const LOCAL_PREVIEW_URL =
+  /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?([/?#][\x21-\x7E]*)?$/i;
+
+const ADDRESS_BAR_ENTER = /^(return|kp_enter|enter|iso_enter|linefeed)$/i;
+const CONTROL_KEY = new Set(["ctrl", "control"]);
+const OMNIBOX_LETTER = new Set(["l", "t"]);
+
+function keyParts(value: unknown): string[] {
+  return String(value ?? "")
+    .split("+")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function modifierParts(step: Record<string, unknown>): string[] {
+  return (Array.isArray(step.modifiers) ? step.modifiers.map(String) : [])
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Bare Enter/Return, with no modifiers: submitting the address bar. */
+function isEnterKey(step: Record<string, unknown>): boolean {
+  return (
+    String(step.kind) === "key" &&
+    modifierParts(step).length === 0 &&
+    keyParts(step.key).length === 1 &&
+    ADDRESS_BAR_ENTER.test(keyParts(step.key)[0] ?? "")
+  );
+}
+
+/**
+ * Ctrl+L or Ctrl+T with no other modifiers: the address bar or a new tab.
+ * Control must be down before the letter is pressed: in the Linux sandbox, xcapture
+ * emits the key chord in the given order, so `l+ctrl` types L without Control.
+ * `modifiers` are pressed first, so `{ key: "l", modifiers: ["ctrl"] }` is fine.
+ */
+function isOmniboxShortcut(step: Record<string, unknown>): boolean {
+  if (String(step.kind) !== "key") return false;
+  const chord = keyParts(step.key);
+  const modifiers = modifierParts(step);
+  if (modifiers.some((part) => !CONTROL_KEY.has(part))) return false;
+  const letters = chord.filter((part) => OMNIBOX_LETTER.has(part));
+  const extras = chord.filter((part) => !OMNIBOX_LETTER.has(part) && !CONTROL_KEY.has(part));
+  if (letters.length !== 1 || extras.length !== 0) return false;
+  const ctrlInChord = chord.findIndex((part) => CONTROL_KEY.has(part));
+  const letterAt = chord.findIndex((part) => OMNIBOX_LETTER.has(part));
+  if (ctrlInChord === -1) return modifiers.length > 0 && chord.length === 1;
+  return ctrlInChord < letterAt;
+}
+
+function isLocalPreviewUrl(text: string): boolean {
+  if (!text || text.includes("@") || text.includes("\\") || /[^\x21-\x7E]/.test(text)) return false;
+  return LOCAL_PREVIEW_URL.test(text);
+}
+
+/**
+ * Ctrl+L or Ctrl+T, a typed 127.0.0.1/localhost URL, then Enter: a local preview, not a checkout.
+ * Those navigations skip the purchase probe so a hung unrelated tab cannot raise a payment card.
+ */
+export function isLocalAddressBarNavigation(name: string, args: Record<string, unknown>): boolean {
+  if (name !== "computer_act") return false;
+  const actions = Array.isArray(args.actions) ? args.actions : [];
+  if (actions.length !== 3) return false;
+  const steps = actions.map((raw) =>
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {},
+  );
+  const open = steps[0];
+  const typed = steps[1];
+  const submit = steps[2];
+  if (!open || !typed || !submit) return false;
+  return (
+    isOmniboxShortcut(open) &&
+    String(typed.kind) === "type" &&
+    isLocalPreviewUrl(String(typed.text ?? "")) &&
+    isEnterKey(submit)
+  );
+}
+
 /**
  * Ask the page browser whether this call's clicks, or its click or key on the screen, would complete
  * a purchase. A browser that cannot tell (an older computer image, no page open) answers none, and
  * browser_act still refuses an unapproved purchase click itself when its browser knows how.
+ * When the check starts and then fails, this throws PurchaseCheckFailedError: nothing is pressed
+ * and no payment card is shown.
  */
 export async function detectPurchase(
   ctx: RunContext,
   name: string,
   args: Record<string, unknown>,
 ): Promise<PurchaseApproval | undefined> {
+  if (isLocalAddressBarNavigation(name, args)) return undefined;
   const probe = purchaseProbe(name, args);
   const { browser } = ctx.providers;
   if (!probe || !browser.purchaseCheck || !ctx.computer.pageBrowserAllowed) return undefined;
@@ -245,10 +337,13 @@ export async function detectPurchase(
     ));
   } catch (error) {
     ctx.context.signal.throwIfAborted();
-    getLogger().warn("purchase check failed, asking", {
-      errorName: error instanceof Error ? error.name : typeof error,
+    if (!(error instanceof PurchaseCheckFailedError)) throw error;
+    getLogger().warn("purchase check failed, refusing", {
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
     });
-    found = { ...unchecked, steps: [] };
+    throw error;
   }
   if (!found) return undefined;
   // Page text is stored with the approval: a value the run must keep secret never goes with it, not even
