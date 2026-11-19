@@ -166,7 +166,10 @@ export function mountGithubWebhookRoute(
     // Reject oversized bodies before target lookup so size limits do not reveal active bots.
     // The signature covers the bytes GitHub sent, so keep them: decoding first would let a
     // body that is not valid UTF-8 change between what was signed and what is verified.
-    const raw = await readBoundedBytes(c.req.raw, WEBHOOK_MAX_BODY_BYTES);
+    // It runs before authentication, so it must not allocate from an unauthenticated length.
+    const raw = await readBoundedBytes(c.req.raw, WEBHOOK_MAX_BODY_BYTES, undefined, {
+      preallocateFromContentLength: false,
+    });
     if (raw === null) {
       return c.json({ error: "Payload too large" }, 413);
     }
