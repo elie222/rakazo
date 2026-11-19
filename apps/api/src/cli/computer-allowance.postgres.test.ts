@@ -39,7 +39,6 @@ dbTests("operator computer allowance command", { timeout: 120_000 }, () => {
     try {
       const { stdout } = await command("grant", organizationId, "12.50");
       expect(stdout).toContain("(extra granted: $12.50)");
-      expect(stdout).toMatch(/Standard computer hours left: \d/);
       expect((await command("status", organizationId)).stdout).toContain("(extra granted: $12.50)");
     } finally {
       await prisma.organization.delete({ where: { id: organizationId } });

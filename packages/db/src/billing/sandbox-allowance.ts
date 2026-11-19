@@ -91,8 +91,18 @@ export async function sandboxAllowancePlan(
     });
     if (granted._sum.creditCents && granted._min.appliedAt) {
       const since = granted._min.appliedAt;
-      // Grants from a paid plan's earlier periods already reset; its last period's still count.
-      const lastPeriod = billing?.currentPeriodStartsAt;
+      // Grants from a paid plan's earlier periods already reset; its last period's still count. A
+      // yearly plan's period is the month that began on its last anniversary before it ended.
+      const periodStartsAt = billing?.currentPeriodStartsAt;
+      const lastPeriod =
+        periodStartsAt && billing?.byokInterval === "year"
+          ? latestMonthlyAnniversary(
+              periodStartsAt,
+              billing.currentPeriodEndsAt && billing.currentPeriodEndsAt < now
+                ? billing.currentPeriodEndsAt
+                : now,
+            )
+          : periodStartsAt;
       const extraCents = await grantedAllowanceCents(
         prisma,
         organizationId,

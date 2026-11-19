@@ -103,7 +103,7 @@ node dist/cli/computer-allowance.js grant <organization-id> 10
 node dist/cli/computer-allowance.js status <organization-id>
 ```
 
-Both print the period's allowance, the extra granted, and the Standard computer hours left.
+Both print the period's allowance, the extra granted, and when it resets. Billing shows the hours left.
 
 ## Accounting
 

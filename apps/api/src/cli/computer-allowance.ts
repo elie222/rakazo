@@ -1,23 +1,6 @@
 // Operator control: computer-allowance.js grant <organization-id> <extra-usd> | status <organization-id>
-import {
-  contentKeyProviderFromEnv,
-  sandboxHoursLeft,
-  sandboxKindCapabilities,
-  unwrapEnvFromKeyManager,
-} from "@rakazo/adapters";
-import {
-  ComputerSizeSchema,
-  SANDBOX_HOURLY_COST_MICROS,
-  SANDBOX_SIZE_HOURLY_COST_MICROS,
-} from "@rakazo/contracts";
-import {
-  createDb,
-  grantComputerAllowance,
-  MICROS_PER_DOLLAR,
-  runAsSystem,
-  sandboxAllowancePlan,
-  sandboxRunHours,
-} from "@rakazo/db";
+import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import { createDb, grantComputerAllowance, runAsSystem, sandboxAllowancePlan } from "@rakazo/db";
 import { loadEnv } from "../env.js";
 
 const [action, organizationId, dollars, ...extra] = process.argv.slice(2);
@@ -49,34 +32,19 @@ try {
       select: { id: true },
     });
     if (!organization) throw new Error("No organization has that id");
-    let now = new Date();
-    let plan = await sandboxAllowancePlan(prisma, organizationId, now);
+    let plan = await sandboxAllowancePlan(prisma, organizationId, new Date());
     if (!plan) {
       process.stdout.write("Computers are not limited on this deployment.\n");
       return;
     }
     if (action === "grant") {
       await grantComputerAllowance(prisma, organizationId, amountCents!);
-      now = new Date();
-      plan = (await sandboxAllowancePlan(prisma, organizationId, now))!;
+      plan = (await sandboxAllowancePlan(prisma, organizationId, new Date()))!;
     }
-    // Counts every run off the user's own machine; providers that do not bill may count less.
-    const runs = await sandboxRunHours(prisma, organizationId, plan.since, now);
-    const usedMicros = runs.reduce((sum, run) => {
-      if (sandboxKindCapabilities(run.kind).runsOnUserMachine) return sum;
-      const size = ComputerSizeSchema.safeParse(run.size).data;
-      return (
-        sum +
-        run.hours * (size ? SANDBOX_SIZE_HOURLY_COST_MICROS[size] : SANDBOX_HOURLY_COST_MICROS)
-      );
-    }, 0);
+    // Hours left are what Billing shows; it prices runs with the provider, which this cannot.
     const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-    const hoursLeft = sandboxHoursLeft(
-      { limitMicros: (plan.limitCents * MICROS_PER_DOLLAR) / 100, usedMicros },
-      SANDBOX_SIZE_HOURLY_COST_MICROS.standard,
-    );
     process.stdout.write(
-      `Allowance this period: ${usd(plan.limitCents)} (extra granted: ${usd(plan.extraCents)})\nPeriod began: ${plan.since.toISOString()}\nResets: ${plan.resetsAt?.toISOString() ?? "no scheduled reset"}\nStandard computer hours left: ${hoursLeft}\n`,
+      `Allowance this period: ${usd(plan.limitCents)} (extra granted: ${usd(plan.extraCents)})\nPeriod began: ${plan.since.toISOString()}\nResets: ${plan.resetsAt?.toISOString() ?? "no scheduled reset"}\n`,
     );
   });
 } finally {
