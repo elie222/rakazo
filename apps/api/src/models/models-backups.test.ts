@@ -56,6 +56,26 @@ describe("model catalog offered to pickers", () => {
       catalog.mockRestore();
     }
   });
+  it("marks the operator's local server models managed", async () => {
+    const local = {
+      ...listPiCatalog().find((entry) => entry.provider === "anthropic")!,
+      provider: adapters.LOCAL_PROVIDER_ID,
+      id: "qwen3.8-flash",
+    };
+    const catalog = vi
+      .spyOn(adapters, "listAvailablePiCatalog")
+      .mockReturnValue([...listPiCatalog(), local]);
+    try {
+      const { call } = setup();
+      const { response } = await call("models/forRole", { role: "main" });
+      const { json } = (await response.json()) as {
+        json: Array<{ provider: string; managed?: boolean }>;
+      };
+      expect(json.find((entry) => entry.provider === local.provider)?.managed).toBe(true);
+    } finally {
+      catalog.mockRestore();
+    }
+  });
 });
 
 describe("model backup settings API", () => {

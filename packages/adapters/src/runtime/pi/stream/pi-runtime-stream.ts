@@ -11,6 +11,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import { fetchPairedWithDispatcher } from "../../../network/undici-fetch.js";
+import { LOCAL_PROVIDER_ID } from "../models/pi-local-provider-id.js";
 import { codexComputeResidency } from "../models/pi-oauth.js";
 import {
   modelStreamIdleTimeoutMs,
@@ -302,7 +303,8 @@ export function reliableStreamOptions(
 
   // OpenCode Go/Zen require a sticky x-opencode-session header (affinity + some
   // models 400 without it). Pi 0.85.1 does not attach that header on its own.
-  if (isOpenCodeProvider(model.provider)) {
+  // A local server may be a proxy that forwards to OpenCode Go, so it gets the header too.
+  if (isOpenCodeProvider(model.provider) || model.provider === LOCAL_PROVIDER_ID) {
     const sessionId = next.sessionId?.trim() || randomUUID();
     next = {
       ...next,

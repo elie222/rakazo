@@ -215,6 +215,7 @@ export * from "./runtime/pi/models/pi-codex-catalog.js";
 export * from "./runtime/pi/models/pi-credentials.js";
 export * from "./runtime/pi/models/pi-live-catalog.js";
 export * from "./runtime/pi/models/pi-live-model.js";
+export { LOCAL_PROVIDER_ID } from "./runtime/pi/models/pi-local-provider-id.js";
 export * from "./runtime/pi/models/pi-models.js";
 export * from "./runtime/pi/models/pi-oauth.js";
 export type {

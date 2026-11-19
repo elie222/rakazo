@@ -127,6 +127,13 @@ describe("Pi runtime transport", () => {
     },
   );
 
+  it("attaches the OpenCode session header for a local server, which may proxy OpenCode Go", () => {
+    const model = { provider: "local", api: "openai-completions" } as Model<Api>;
+    const result = reliableStreamOptions(model, { sessionId: "thread-1:bot-1" });
+
+    expect(result.headers?.["x-opencode-session"]).toBe("thread-1:bot-1");
+  });
+
   it("generates an OpenCode session id when the agent did not provide one", () => {
     const model = { provider: "opencode-go", api: "openai-completions" } as Model<Api>;
     const result = reliableStreamOptions(model, { transport: "auto" });
