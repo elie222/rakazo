@@ -1,8 +1,10 @@
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { dispatcherFetch, PiAgentRuntime } from "@rakazo/adapters";
 import type { ModelConnectInput } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { startModelEmulator } from "../model-emulator.js";
 import type { EvalCase, Evidence } from "./cases.js";
 import {
   canonicalModelRequest,
@@ -13,6 +15,7 @@ import {
 } from "./fingerprint.js";
 import { regradeTrial } from "./grading.js";
 import type { EvalJudge } from "./judge.js";
+import { SpendBudget } from "./measurement.js";
 import type { TrialResult } from "./report.js";
 import { emptyTrial, evidenceSnapshot } from "./report.js";
 import type { StoredReport } from "./run-store.js";
@@ -24,6 +27,14 @@ const connection: ModelConnectInput = {
   apiKey: "fixture-key",
   label: "Eval model",
   maxTokens: 4096,
+};
+const pricing = {
+  source: "fixture",
+  version: "v1",
+  input: 1,
+  output: 2,
+  cacheRead: 0.1,
+  cacheWrite: 3,
 };
 const scenario: EvalCase = {
   id: "lease",
@@ -86,6 +97,11 @@ describe("run fingerprint", () => {
       fingerprint({ scenario: { ...scenario, steps: [{ ask: "Remind me on Friday" }] } })
         ? base
         : "differs",
+      // A date planted in a case's content is the case's own, so it is not normalized away.
+      fingerprint({ scenario: { ...scenario, fixtureData: { body: "Due 2026-11-20" } } }) ===
+      fingerprint({ scenario: { ...scenario, fixtureData: { body: "Due 2026-11-27" } } })
+        ? base
+        : "differs",
       fingerprint({ strategy: "retrieval" }),
       fingerprint({ replyMode: "messages" }),
       fingerprint({ maxToolCalls: 8 }),
@@ -134,6 +150,51 @@ describe("run fingerprint", () => {
     await pass("http://model.test/v1", { method: "POST", body: request("c1", "2026-11-13") });
     expect(upstream).toHaveBeenCalledTimes(4);
   });
+
+  it("charges the spend cap nothing for requests a stand-in run refuses", async () => {
+    const server = await startModelEmulator({ steps: [] });
+    // One reservation (4,096 output tokens at this rate) is most of the cap.
+    const budget = new SpendBudget(5, { ...pricing, output: 1000 });
+    let refused = false;
+    const reserve = (call: { inputTokensEstimate: number; maxOutputTokens: number | null }) =>
+      budget.reserve(call.inputTokensEstimate, call.maxOutputTokens);
+    // The same refusal and settlement the eval CLI wires into a stand-in run.
+    const run = new PiAgentRuntime({
+      modelFetch: firstRequestFetch(dispatcherFetch, server.model.id, () => {
+        refused = true;
+        return budget.refuse();
+      }),
+      modelCallObserver: {
+        beforeCall: (call) => {
+          if (refused) throw new Error("Stored trials replace this run");
+          return reserve(call);
+        },
+        afterCall: (id, usage) => budget.settleUsage(id, usage),
+      },
+    }).run({
+      botId: "bot",
+      threadId: "thread",
+      runId: "run",
+      prompt: "What notice does the lease need?",
+      instructions: "Answer briefly.",
+      history: [],
+      contextStrategy: "current",
+      model: { ...server.model, contextWindow: 128000, maxTokens: 4096 },
+      tools: [],
+      executeTool: async () => undefined,
+    });
+    try {
+      await expect(async () => {
+        for await (const _event of run);
+      }).rejects.toThrow("Stored trials replace this run");
+      expect(server.requests).toHaveLength(0);
+      expect(budget.usedUsd).toBe(0);
+      expect(budget.reservedUsd).toBe(0);
+      expect(() => reserve({ inputTokensEstimate: 1000, maxOutputTokens: 4096 })).not.toThrow();
+    } finally {
+      await server.close();
+    }
+  }, 20_000);
 });
 
 const evidence = (text: string) =>

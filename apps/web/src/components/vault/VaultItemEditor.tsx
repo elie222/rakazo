@@ -33,7 +33,7 @@ import {
 import type { ComponentProps, ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import type { AgentAccess } from "../integrations/agent-access";
-import { SettingsPageHeader } from "../SettingsPageHeader";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
 import { LoginFieldsInput } from "./LoginFieldsInput";
 import { VaultItemAccess } from "./VaultItemAccess";

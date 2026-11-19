@@ -9,7 +9,7 @@ import type {
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
-import { egressRefused } from "../../../network-address.js";
+import { egressRefused } from "../../../network/network-address.js";
 import type { SerenityConnectionConfig, SerenityNetworkDependencies } from "./serenity-client.js";
 import {
   classifySerenityEndpointTrust,

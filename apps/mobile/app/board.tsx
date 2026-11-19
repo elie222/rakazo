@@ -3,13 +3,13 @@ import type { Ticket, TicketStatus } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { BoardList } from "../components/board-list";
-import { LoadFailure } from "../components/load-failure";
-import { rpc } from "../lib/api";
-import { boardSections } from "../lib/board";
-import { native, useThemedStyles } from "../lib/native";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { LoadFailure } from "../components/ui/load-failure";
+import { rpc } from "../lib/api/api";
+import { errorText } from "../lib/api/user-error";
+import { boardSections } from "../lib/board/board";
+import { BoardList } from "../lib/board/board-list";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native, useThemedStyles } from "../lib/native/native";
 
 /** The Space's ticket board: every column, with the status changed in place. */
 export default function BoardScreen() {

@@ -1,4 +1,4 @@
-import type { SettingsComputerProvider } from "../../../computer-provider-descriptor.js";
+import type { SettingsComputerProvider } from "../../../computers/computer-provider-descriptor.js";
 
 export const computerProviderRegistry: readonly SettingsComputerProvider[] = [
   {

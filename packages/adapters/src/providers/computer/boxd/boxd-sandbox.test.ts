@@ -3,12 +3,12 @@ import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-
 import { SandboxRateLimitError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   assertSandboxWorkspaceContract,
   MachineRecords,
   settleMachineCleanup,
-} from "../../../sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
 import type { BoxdSandboxClient } from "./boxd-sandbox.js";
 import { BOXD_COMPUTER_SNAPSHOT, BoxdSandboxProvider } from "./boxd-sandbox.js";
 import { BOXD_WORKSPACE, FakeBoxd, fakeBoxdProvider } from "./boxd-sandbox.test-support.js";

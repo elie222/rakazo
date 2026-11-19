@@ -85,4 +85,10 @@ export const NL_MESSAGES: Record<string, string> = {
     "{inviter} heeft je uitgenodigd om lid te worden van {space} op Rakazo.",
   "Join {space}": "Word lid van {space}",
   "This invitation expires in 7 days.": "Deze uitnodiging verloopt over 7 dagen.",
+  "Connect a model to start using Rakazo": "Verbind een model om Rakazo te gaan gebruiken",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Je Rakazo-abonnement is gestart, maar je bots kunnen pas antwoorden als er een model is verbonden.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "Log in met je abonnement op {subscriptions} of plak een API-sleutel.",
+  "Connect a model": "Model verbinden",
 };

@@ -1,5 +1,5 @@
 import { parse as parseShellCommand } from "shell-quote";
-import { sandboxKindCapabilities } from "../../../sandbox-kind-capabilities.js";
+import { sandboxKindCapabilities } from "../../../computers/sandbox/sandbox-kind-capabilities.js";
 import { desktopGuardRefusalMessage } from "./desktop-command-guard.prompt.js";
 import {
   braceExpansionHazard,
@@ -8,6 +8,7 @@ import {
   heredocBodyHazard,
   isFileWriteRedirect,
   isHeredocDataSinkPipeline,
+  isHeredocScriptPipeline,
   isShellOrSourceCommand,
   nextHeredocCwd,
   normalizeWrittenPath,
@@ -53,7 +54,7 @@ type PendingHeredoc = {
  * Drop comments and quoted heredoc bodies, and substitute literal assignments.
  * Returns a short refusal when the command is dynamic in a way the later
  * tokenizer cannot see (quotes hiding a substitution, a heredoc that is not
- * data for cat or tee, a quoted body that names a lifecycle command, a shell,
+ * data for cat or tee or a quoted script for an interpreter, a quoted body that names a lifecycle command, a shell,
  * source, sudo, or busybox after that heredoc, a later command that runs a
  * path that heredoc wrote, source of anything but a
  * literal activate path, or a write that can plant that activate script).
@@ -324,7 +325,10 @@ function prepareDesktopGuardCommand(source: string): PreparedDesktopCommand {
         index += 1;
         continue;
       }
-      if (pending.some((heredoc) => !isHeredocDataSinkPipeline(heredoc.names ?? []))) {
+      const readable = (heredoc: PendingHeredoc) =>
+        isHeredocDataSinkPipeline(heredoc.names ?? []) ||
+        (heredoc.quoted && isHeredocScriptPipeline(heredoc.names ?? []));
+      if (!pending.every(readable)) {
         return { reason: "heredoc" };
       }
       let cursor = index + 1;
@@ -333,6 +337,13 @@ function prepareDesktopGuardCommand(source: string): PreparedDesktopCommand {
         if (!body) return { reason: "heredoc" };
         if (heredoc.quoted) {
           if (quotedHeredocLifecycleHazard(body.content)) return { reason: "heredoc" };
+          // Code passes names as strings and lists, which the shell-word scan does not see.
+          if (
+            !isHeredocDataSinkPipeline(heredoc.names ?? []) &&
+            namesProtectedTarget(body.content)
+          ) {
+            return { reason: "heredoc" };
+          }
           if (quotedHeredocBodyIsDynamic(body.content)) heredocDynamic = true;
         } else {
           const hazard = heredocBodyHazard(body.content);

@@ -8,9 +8,14 @@ import type {
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
 import { JSDOM } from "jsdom";
-import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "../../../web-limits.js";
-import type { ResolveHostname } from "../../../web-ssrf.js";
-import { fetchSafeWebText } from "../../../web-ssrf.js";
+import {
+  clampMaxChars,
+  clampMaxResults,
+  clampOffset,
+  pageWindow,
+} from "../../../web/web-limits.js";
+import type { ResolveHostname } from "../../../web/web-ssrf.js";
+import { fetchSafeWebText } from "../../../web/web-ssrf.js";
 
 export {
   clampMaxChars,
@@ -20,7 +25,7 @@ export {
   MAX_WEB_FETCH_MAX_CHARS,
   MAX_WEB_SEARCH_RESULTS,
   MIN_WEB_FETCH_MAX_CHARS,
-} from "../../../web-limits.js";
+} from "../../../web/web-limits.js";
 
 const DEFAULT_SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/";
 
@@ -192,8 +197,11 @@ function extractWithReadability(html: string, url: string): { title: string; tex
   }
 }
 
-/** Visible text of an HTML document: entities decoded, scripts and styles dropped, blocks on lines. */
-export function htmlToPlainText(html: string): string {
+/** Read visible text before and after removing elements selected by the caller. */
+export function htmlTextWithOmissions(
+  html: string,
+  omitSelector: string,
+): { text: string; filteredText: string } {
   // JSDOM runs no scripts and loads nothing unless asked to.
   const { document } = new JSDOM(html).window;
   for (const element of document.querySelectorAll("head, script, style, template")) {
@@ -203,7 +211,11 @@ export function htmlToPlainText(html: string): string {
   for (const element of document.querySelectorAll("p, div, li, tr, h1, h2, h3, h4, h5, h6")) {
     element.append("\n");
   }
-  return normalizeArticleText(document.body?.textContent ?? "");
+  const text = normalizeArticleText(document.body?.textContent ?? "");
+  const omitted = document.querySelectorAll(omitSelector);
+  if (!omitted.length) return { text, filteredText: text };
+  for (const element of omitted) element.remove();
+  return { text, filteredText: normalizeArticleText(document.body?.textContent ?? "") };
 }
 
 // These scans give the same result as the obvious regexes (/<title[^>]*>([\s\S]*?)<\/title>/i,

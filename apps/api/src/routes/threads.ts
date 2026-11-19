@@ -14,6 +14,7 @@ import {
 import type { Prisma } from "@rakazo/db";
 import {
   AnswerTooLongError,
+  answerToolQuestion,
   appendEventInTransaction,
   createExternalConversationRepos,
   createThreadMessageInTransaction,
@@ -25,37 +26,41 @@ import {
   touchGroupUpdatedAt,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
-import { answerComputerRequest } from "../computer-control.js";
-import { HANG_UP_PROMPT } from "../hidden-turns.prompt.js";
+import { bestEffort, getLogger } from "@rakazo/logging";
+import { HANG_UP_PROMPT } from "../bots/hidden-turns.prompt.js";
+import { assertTeachingSendAllowed } from "../bots/taught-skills.js";
+import { answerComputerRequest } from "../computers/computer-control.js";
 import type { RouterDeps } from "../router.js";
-import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
-import { assertTeachingSendAllowed } from "../taught-skills.js";
-import { purgeClearedThreadMemory } from "../thread-memory.js";
+import {
+  createRoutineTestRun,
+  routineTestRunNonce,
+  routineTestTarget,
+} from "../routines/routines.js";
+import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
 import {
   isBackgroundRun,
   isPeerRun,
   loadMessagePage,
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
-} from "../thread-message-pages.js";
-import { reactToThreadMessage } from "../thread-reactions.js";
+} from "../threads/thread-message-pages.js";
+import { reactToThreadMessage } from "../threads/thread-reactions.js";
 import {
   markThreadRead,
   markThreadUnreadFrom,
   setThreadSnooze,
   setThreadUnreadState,
-} from "../thread-read-state.js";
-import { threadSnapshot } from "../thread-snapshot.js";
-import { isStopMessage, stopThreadRuns } from "../thread-stop.js";
-import type { ThreadTarget } from "../thread-target.js";
+} from "../threads/thread-read-state.js";
+import { threadSnapshot } from "../threads/thread-snapshot.js";
+import { isStopMessage, stopThreadRuns } from "../threads/thread-stop.js";
+import type { ThreadTarget } from "../threads/thread-target.js";
 import {
   replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,
   sendThreadMessage,
   threadHead,
-} from "../thread-target.js";
+} from "../threads/thread-target.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,
@@ -615,6 +620,25 @@ export function threadsRoutes(ctx: RouterContext) {
           });
         }
         await wakeRun(deps.jobs, input.runId);
+        return { ok: true as const };
+      }),
+      answerToolQuestion: authed.threads.answerToolQuestion.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const committed = await answerToolQuestion(deps.prisma, {
+          spaceId: context.actor.spaceId,
+          threadId: target.threadId,
+          messageId: input.messageId,
+          userId: context.actor.userId,
+          action: input.action,
+          values: input.values,
+        });
+        // The call waiting on this card hears it through the thread's events, wherever it runs.
+        // The answer is saved: a missed signal only delays it to the waiting call's re-read.
+        if (committed)
+          await bestEffort(
+            "tool question notify",
+            deps.events.notify(committed.threadId, committed.seq),
+          );
         return { ok: true as const };
       }),
       markRead: authed.threads.markRead.handler(async ({ context, input }) => {

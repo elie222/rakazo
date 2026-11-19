@@ -4,12 +4,12 @@ import type { Socket } from "node:net";
 import type { Duplex, Readable } from "node:stream";
 import type * as S3Sdk from "@aws-sdk/client-s3";
 import type { ObjectStorage } from "@rakazo/adapter-kit";
-import type { ObjectStorageConnection } from "../../../object-storage-common.js";
+import type { ObjectStorageConnection } from "../../../storage/object-storage-common.js";
 import {
   objectStorageConnectionFromEnv,
   PART_BYTES,
   parts,
-} from "../../../object-storage-common.js";
+} from "../../../storage/object-storage-common.js";
 
 const DELETE_BATCH = 1000;
 /**

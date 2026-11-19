@@ -21,60 +21,68 @@ import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { readableGutters } from "../../lib/adaptive-layout";
-import { useAppForeground } from "../../lib/app-foreground";
-import { mobileTokens } from "../../lib/appearance";
-import type { MobileArtifactTarget } from "../../lib/artifact-open";
-import { CallKeyboardContext } from "../../lib/call-keyboard-context";
-import { useCallSession } from "../../lib/call-session";
-import { composerDraftScope } from "../../lib/composer-draft";
-import { useContentBottomInset } from "../../lib/content-bottom-inset";
-import { cronLabels } from "../../lib/cron";
-import { useUiLocale } from "../../lib/i18n";
-import { useThemedStyles } from "../../lib/native";
-import { useChatOnScreen } from "../../lib/page-card-detail";
-import { rpcQuery } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { useInboxBot } from "../../lib/search-inbox";
-import { useSplitView } from "../../lib/split-view";
-import { useIncomingShareImport, useThreadAttachments } from "../../lib/thread-attachments";
-import { useThreadBots } from "../../lib/thread-bots";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
+import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
+import { useCallSession } from "../../lib/calls/call-session";
+import { composerDraftScope } from "../../lib/composer/composer-draft";
+import { useComposerModel } from "../../lib/composer/composer-model";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { readableGutters } from "../../lib/layout/adaptive-layout";
+import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
+import { useSplitView } from "../../lib/layout/split-view";
+import { useThemedStyles } from "../../lib/native/native";
+import { NewestPageCards } from "../../lib/pages/page-card";
+import { useChatOnScreen } from "../../lib/pages/page-card-detail";
+import { useAppForeground } from "../../lib/platform/app-foreground";
+import { rpcQuery } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { cronLabels } from "../../lib/routines/cron";
+import { useInboxBot } from "../../lib/search/search-inbox";
 import {
   THREAD_HEADER_PILL_BOTTOM_INSET,
   threadColumnPadding,
   threadHeaderClearance,
   threadHeaderFloats,
-} from "../../lib/thread-edges";
-import { useThreadFeedback } from "../../lib/thread-feedback";
-import { useThreadFocus } from "../../lib/thread-focus";
-import { useThreadSnapshot } from "../../lib/thread-history";
-import { threadKeyboardAvoidance } from "../../lib/thread-keyboard-offset";
-import { useThreadListScroll } from "../../lib/thread-list-scroll";
-import { useThreadMentionCatalog } from "../../lib/thread-mention-catalog";
-import { botDisplayName } from "../../lib/thread-message-text";
-import { useThreadPaging } from "../../lib/thread-paging";
-import { useThreadRead } from "../../lib/thread-read";
+} from "../../lib/thread/scroll/thread-edges";
+import { threadKeyboardAvoidance } from "../../lib/thread/scroll/thread-keyboard-offset";
+import { useThreadListScroll } from "../../lib/thread/scroll/thread-list-scroll";
 import {
   isOwnThreadMessage,
   latestArrivalMessage,
   latestThreadRowKey,
-} from "../../lib/thread-scroll";
-import { useThreadSend } from "../../lib/thread-send";
-import { threadGroupMembers } from "../../lib/thread-snapshot";
-import { useThreadSync } from "../../lib/thread-sync";
-import { useThreadTranscript } from "../../lib/thread-transcript";
-import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "../../lib/thread-voice";
-import { liveEndRunError } from "../../lib/thread-window";
-import { FailedSendBubble } from "../failed-send-bubble";
-import { NewestPageCards } from "../pages/page-card";
-import { RunErrorSheet } from "../run-error-sheet";
-import { SelectTextSheet } from "../select-text-sheet";
-import { ThreadComposer } from "../thread-composer";
-import { ThreadErrorNotice, ThreadFetchErrorNotice } from "../thread-error-notice";
-import { createThreadHeaderStyles } from "../thread-header-styles";
+} from "../../lib/thread/scroll/thread-scroll";
+import {
+  useIncomingShareImport,
+  useThreadAttachments,
+} from "../../lib/thread/send/thread-attachments";
+import { useThreadFeedback } from "../../lib/thread/send/thread-feedback";
+import { useThreadSend } from "../../lib/thread/send/thread-send";
+import { useThreadBots } from "../../lib/thread/thread-bots";
+import { useThreadFocus } from "../../lib/thread/thread-focus";
+import { useThreadSnapshot } from "../../lib/thread/thread-history";
+import { useThreadMentionCatalog } from "../../lib/thread/thread-mention-catalog";
+import { botDisplayName } from "../../lib/thread/thread-message-text";
+import { useThreadPaging } from "../../lib/thread/thread-paging";
+import { useThreadRead } from "../../lib/thread/thread-read";
+import { threadGroupMembers } from "../../lib/thread/thread-snapshot";
+import { useThreadSync } from "../../lib/thread/thread-sync";
+import { useThreadTranscript } from "../../lib/thread/thread-transcript";
+import {
+  useAutoSpeakReply,
+  useSpeakMessages,
+  useThreadVoiceCall,
+} from "../../lib/thread/thread-voice";
+import { liveEndRunError } from "../../lib/thread/thread-window";
+import { RunErrorSheet } from "../cards/run-error-sheet";
+import { ThreadComposer } from "../composer/thread-composer";
+import { SelectTextSheet } from "../messages/select-text-sheet";
+import { FailedSendBubble } from "./failed-send-bubble";
+import { createThreadHeaderStyles } from "./header/thread-header-styles";
 import { QuoteSheet } from "./quote-sheet";
 import { ThreadComposerDock } from "./thread-composer-dock";
 import { ThreadEdgeFade } from "./thread-edge-fade";
+import { ThreadErrorNotice, ThreadFetchErrorNotice } from "./thread-error-notice";
 import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
@@ -169,13 +177,19 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const uploadConfig = useScreenQuery(rpcQuery("me"), { onForeground: false }).data;
   const needsModel = uploadConfig?.needsModel;
 
-  const { mentionBots, mentionBotsRef, mentionGroups, refreshMentionBots, refreshMentionRoster } =
-    useThreadBots({
-      botId,
-      groupId,
-      name,
-      activeBotId,
-    });
+  const {
+    mentionBots,
+    mentionBotsRef,
+    mentionGroups,
+    rosterLoaded,
+    refreshMentionBots,
+    refreshMentionRoster,
+  } = useThreadBots({
+    botId,
+    groupId,
+    name,
+    activeBotId,
+  });
   const {
     routines: mentionRoutines,
     connectors: mentionConnectors,
@@ -246,9 +260,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       mentionRoutines,
     ],
   );
-  const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
+  const currentBot =
+    botId && rosterLoaded ? mentionBots.find((bot) => bot.id === botId) : undefined;
   // Until the chat's own roster arrives, the bot as the inbox last loaded it.
   const inboxBot = useInboxBot(botId);
+  const composerModel = useComposerModel(inGroup ? undefined : botId);
   const titleBot = currentBot ?? inboxBot;
   // Without a name yet (a notification can leave it out), the title shows a placeholder.
   const titleName = currentBot?.name ?? name ?? inboxBot?.name;
@@ -267,9 +283,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const activityLine = liveActivityLine(snap?.messages ?? []);
   const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));
   const userBubble = useMemo(
-    () =>
-      !inGroup && currentBot ? chatUserBubbleColors(currentBot.color, currentBot.id) : undefined,
-    [inGroup, currentBot?.color, currentBot?.id],
+    () => (!inGroup && titleBot ? chatUserBubbleColors(titleBot.color, titleBot.id) : undefined),
+    [inGroup, titleBot?.color, titleBot?.id],
   );
   const activeGroupBots = useMemo(() => {
     if (!inGroup) return [];
@@ -661,6 +676,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               startVoiceCall={startVoiceCall}
               onSlashAction={composer.runSlashAction}
               onEmptied={composer.composerEmptied}
+              model={composerModel}
             />
           </ThreadComposerDock>
         </View>

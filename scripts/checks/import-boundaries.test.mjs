@@ -528,7 +528,7 @@ test("flags a static import of a package that server code loads with import()", 
     source("apps/web/src/table.tsx", 'import { draw } from "charts";'),
     // A type query loads nothing, so it does not make "pg" a lazily loaded package.
     source("packages/db/src/pool.ts", 'type Pg = typeof import("pg");'),
-    source("packages/db/src/client.ts", 'import { Pool } from "pg";'),
+    source("packages/db/src/database/client.ts", 'import { Pool } from "pg";'),
   ];
   assert.deepEqual(findEagerImports(sources).map(entry), [
     "packages/adapters/src/eager.ts -> @vendor/sdk",

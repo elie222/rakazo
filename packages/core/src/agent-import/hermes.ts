@@ -1,7 +1,7 @@
 import type { AgentImportFile } from "@rakazo/contracts";
-import type { AgentImportParse, SkillFiles } from "./shared.js";
-import { byPath, fileMap, instructionItem, memoryItem, skillItems } from "./shared.js";
 import { isHermesDefault } from "./stock.js";
+import type { AgentImportParse, SkillFiles } from "./types.js";
+import { byPath, fileMap, instructionItem, memoryItem, skillItems } from "./types.js";
 
 export const HERMES_INSTRUCTION_FILES = [
   ["SOUL.md", "persona"],

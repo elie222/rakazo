@@ -17,6 +17,7 @@ import {
   useGlobalSearchParams,
   usePathname,
   useRouter,
+  useSegments,
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -27,18 +28,18 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-g
 import { KeyboardAvoidingView, KeyboardProvider } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AppErrorBoundary } from "../components/app-error-boundary";
-import { CallCard } from "../components/CallCard";
-import { chatRouteHeader } from "../components/chat-route-header";
-import { CodeCopyButton } from "../components/code-copy-button";
-import { ComputerUpdateProgress } from "../components/computer-update-progress";
-import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
-import { IncomingCall } from "../components/IncomingCall";
-import { MermaidDiagram } from "../components/mermaid-diagram";
-import { MessageMenuHost } from "../components/message-action-menu";
-import { MessageActionSheetHost } from "../components/message-action-sheet-host";
-import { NativeSymbol } from "../components/native-symbol";
-import { VoicePlayerBar } from "../components/voice-player-bar";
+import { CallCard } from "../components/calls/CallCard";
+import { IncomingCall } from "../components/calls/IncomingCall";
+import { VoicePlayerBar } from "../components/calls/voice-player-bar";
+import { ComputerUpdateProgress } from "../components/computers/computer-update-progress";
+import { CodeCopyButton } from "../components/messages/code-copy-button";
+import { MermaidDiagram } from "../components/messages/mermaid-diagram";
+import { MessageMenuHost } from "../components/messages/message-action-menu";
+import { MessageActionSheetHost } from "../components/messages/message-action-sheet-host";
+import { floatingHeaderOptions, glassHeaderOptions } from "../components/native/glass-title";
+import { NativeSymbol } from "../components/native/native-symbol";
+import { chatRouteHeader } from "../components/thread/header/chat-route-header";
+import { AppErrorBoundary } from "../components/ui/app-error-boundary";
 import {
   currentApiBase,
   rpc,
@@ -46,45 +47,31 @@ import {
   subscribeAiConsentGranted,
   subscribeApiBase,
   subscribeSessionRejected,
-} from "../lib/api";
-import { loadApiBase } from "../lib/api-server";
-import { clearAppBadge } from "../lib/app-badge";
-import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
-import { replaceWithSignIn } from "../lib/auth-routing";
-import { AvatarScreenFocus } from "../lib/avatar-life";
-import { CallKeyboardContext } from "../lib/call-keyboard-context";
-import { useCallActive } from "../lib/call-session";
-import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
-import { loadHapticsPreference } from "../lib/haptics";
-import { bootstrapI18n } from "../lib/i18n";
-import { startIncomingCalls } from "../lib/incoming-calls";
-import { clearLastBot } from "../lib/last-bot";
-import { loadLinkFavicon } from "../lib/link-favicons";
-import {
-  configureForegroundNotifications,
-  resumeLiveNotifications,
-} from "../lib/live-notifications";
-import { OpenPageContext } from "../lib/message-mentions";
-import { setMobileMonitoringScreen } from "../lib/monitoring";
-import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
-import { useNavigatorMounted } from "../lib/navigator-mounted";
-import { useNotificationResponses } from "../lib/open-notification";
-import { clearQueries, resetRpcQueries } from "../lib/query";
-import { useReferral } from "../lib/referral";
-import {
-  getCachedRemoteImagesEnabled,
-  loadRemoteImagesPreference,
-  subscribeRemoteImages,
-} from "../lib/remote-images-preference";
-import { loadResponseStreamingPreference } from "../lib/response-streaming";
-import { clearSavedChats } from "../lib/saved-chats";
+  subscribeSpaceSelection,
+} from "../lib/api/api";
+import { loadApiBase } from "../lib/api/api-server";
+import { installClientUpdates, watchForegroundUpdates } from "../lib/api/client-update";
 import {
   currentReadySessionGeneration,
+  currentSessionGeneration,
   loadSessionToken,
   registerSessionDiskCache,
+  sessionOnlyInMemory,
   subscribeSessionGeneration,
-} from "../lib/session";
-import { InboxBesideContext } from "../lib/side-insets";
+} from "../lib/api/session";
+import { loadAppearancePreference, mobileTokens } from "../lib/appearance/appearance";
+import { capTextScaling } from "../lib/appearance/text-scale";
+import { replaceWithSignIn } from "../lib/auth/auth-routing";
+import { useReferral } from "../lib/billing/referral";
+import { AvatarScreenFocus } from "../lib/bots/avatar-life";
+import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
+import { useCallActive } from "../lib/calls/call-session";
+import { startIncomingCalls } from "../lib/calls/incoming-calls";
+import { loadComposerModelPickerPreference } from "../lib/composer/composer-model-picker-preference";
+import { bootstrapI18n } from "../lib/i18n/i18n";
+import { clearLastBot } from "../lib/inbox/last-bot";
+import { clearSavedChats } from "../lib/inbox/saved-chats";
+import { InboxBesideContext } from "../lib/layout/side-insets";
 import {
   chooseInboxWidth,
   closesSplitPane,
@@ -92,20 +79,39 @@ import {
   loadInboxWidth,
   setInboxHidden,
   useSplitView,
-} from "../lib/split-view";
+} from "../lib/layout/split-view";
+import { loadLinkFavicon } from "../lib/messages/link-favicons";
+import { OpenPageContext } from "../lib/messages/message-mentions";
+import { loadHapticsPreference } from "../lib/native/haptics";
+import { native, useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { useNavigatorMounted } from "../lib/navigation/navigator-mounted";
+import { clearAppBadge } from "../lib/notifications/app-badge";
+import {
+  configureForegroundNotifications,
+  resumeLiveNotifications,
+} from "../lib/notifications/live-notifications";
+import { useNotificationResponses } from "../lib/notifications/open-notification";
+import { invalidateWatchChat } from "../lib/notifications/watch-chat";
+import { startWorkActivities } from "../lib/notifications/work-activity";
+import { setMobileMonitoringScreen } from "../lib/platform/monitoring";
 import {
   completeMobileStartup,
   markMobileStartupMounted,
   trackMobileStartup,
-} from "../lib/startup";
-import { capTextScaling } from "../lib/text-scale";
+} from "../lib/platform/startup";
+import {
+  getCachedRemoteImagesEnabled,
+  loadRemoteImagesPreference,
+  subscribeRemoteImages,
+} from "../lib/preferences/remote-images-preference";
+import { loadResponseStreamingPreference } from "../lib/preferences/response-streaming";
+import { clearQueries, resetRpcQueries } from "../lib/query/query";
 import {
   loadTrustedLinkSites,
   trustLinkSite,
   useTrustedLinkSites,
-} from "../lib/trusted-link-sites";
-import { startUnsentSends } from "../lib/unsent-sends";
-import { startWorkActivities } from "../lib/work-activity";
+} from "../lib/settings/trusted-link-sites";
+import { startUnsentSends } from "../lib/thread/send/unsent-sends";
 import { InboxPane } from "./index";
 
 // Before anything renders: text grows with the iOS text size only up to a fixed maximum.
@@ -129,6 +135,7 @@ const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer"
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
 function SplitFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const segments = useSegments();
   const router = useRouter();
   const params = useGlobalSearchParams();
   const routeKey = JSON.stringify([pathname, params]);
@@ -143,7 +150,11 @@ function SplitFrame({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (home) setInboxHidden(false);
   }, [home]);
-  const showsInbox = split && (home || inboxShown) && !FULL_WINDOW_ROUTES.has(pathname);
+  // iOS presents settings as a sheet over the window; Android pushes them as a page, which
+  // takes the whole window rather than sitting beside the chat list.
+  const settingsPage = Platform.OS !== "ios" && segments[0] === "(settings)";
+  const showsInbox =
+    split && (home || inboxShown) && !FULL_WINDOW_ROUTES.has(pathname) && !settingsPage;
   // Dragging resizes the list natively; the width is kept when the finger lifts.
   const paneWidth = useSharedValue(inboxWidth);
   const dragStart = useRef(inboxWidth);
@@ -290,6 +301,29 @@ function LayoutContent() {
   const [ready, setReady] = useState(false);
   useNavigatorMounted(ready);
   useNotificationResponses(ready);
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    let active = true;
+    const unsubscribeSpace = subscribeSpaceSelection(() =>
+      invalidateWatchChat("space", selectedSpaceId() ?? ""),
+    );
+    const unsubscribe = subscribeSessionGeneration(() => {
+      invalidateWatchChat("sessionUnavailable");
+      const generation = currentSessionGeneration();
+      if (generation !== currentReadySessionGeneration()) return;
+      void loadSessionToken().then((token) => {
+        // The native relay reads durable credentials only. A failed wipe or in-memory fallback
+        // must never re-enable an earlier bearer from the iPhone's Keychain.
+        if (active && token && generation === currentSessionGeneration() && !sessionOnlyInMemory())
+          invalidateWatchChat("sessionReady");
+      });
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+      unsubscribeSpace();
+    };
+  }, []);
   const callSession = useSyncExternalStore(
     subscribeSessionGeneration,
     currentReadySessionGeneration,
@@ -375,6 +409,7 @@ function LayoutContent() {
         ),
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
+        trackMobileStartup("modelPicker", loadComposerModelPickerPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
       ]).catch(() => undefined),
       trackMobileStartup("language", bootstrapI18n()).catch(() => undefined),
@@ -566,11 +601,29 @@ function LayoutContent() {
                         options={glassHeaderOptions(t`Group settings`)}
                       />
                       <Stack.Screen name="bot-profile" options={glassHeaderOptions(t`Profile`)} />
+                      <Stack.Screen name="meetings" options={glassHeaderOptions(t`Meetings`)} />
+                      <Stack.Screen
+                        name="meeting-calendar"
+                        options={glassHeaderOptions(t`Auto-join`)}
+                      />
+                      <Stack.Screen
+                        name="meeting-transcript"
+                        options={glassHeaderOptions(t`Transcript`)}
+                      />
                       <Stack.Screen
                         name="bot-settings"
                         options={glassHeaderOptions(t`Chat settings`)}
                       />
                       <Stack.Screen name="bot-model" options={glassHeaderOptions(t`Model`)} />
+                      <Stack.Screen
+                        name="chat-model"
+                        options={{
+                          ...glassHeaderOptions(t`Model`),
+                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
+                          sheetAllowedDetents: [0.6, 1],
+                          sheetGrabberVisible: true,
+                        }}
+                      />
                       <Stack.Screen
                         name="thread"
                         options={({ route }) => ({

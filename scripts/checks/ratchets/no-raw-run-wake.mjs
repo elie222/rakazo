@@ -6,7 +6,7 @@ export const include = ["{apps,packages}/**/*.{ts,tsx,mts}"];
 export const exclude = [
   "**/*.{test,spec}.*",
   "packages/adapter-kit/src/background-jobs.ts",
-  "packages/adapters/src/wake-run.ts",
+  "packages/adapters/src/runs/wakeups/wake-run.ts",
 ];
 
 export const pattern = /\brunContinueJob\(/g;

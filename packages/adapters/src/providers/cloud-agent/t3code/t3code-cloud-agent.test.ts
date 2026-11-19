@@ -1,8 +1,11 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { cloudAgentsEnabled, createCloudAgentConnection } from "../../../cloud-agent-factory.js";
-import { resolveCloudAgentProvider } from "../../../cloud-agent-provider-env.js";
+import {
+  cloudAgentsEnabled,
+  createCloudAgentConnection,
+} from "../../../cloud-agents/cloud-agent-factory.js";
+import { resolveCloudAgentProvider } from "../../../cloud-agents/cloud-agent-provider-env.js";
 import { T3CodeCloudAgentProvider } from "./t3code-cloud-agent.js";
 import { link, SECRET_BODY, T3_TOKEN, T3McpEmulator } from "./t3code-mcp-emulator.test-support.js";
 
@@ -207,6 +210,31 @@ describe("T3 Code adapter over its MCP wire emulator (offline)", () => {
       vi.setSystemTime(Date.now() + 61_000);
       expect((await provider.get(busy.id, ctx, queued.latestRunId)).status).toBe("running");
       expect(queues()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads the newest run without a tracked run id and never drops a held run", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { emulator, provider } = create();
+      const first = await provider.launch(
+        {
+          idempotencyKey: "untracked",
+          prompt: "Task",
+          repository: "https://github.com/example/demo",
+        },
+        ctx,
+      );
+      await provider.cancel(first.id, ctx, first.latestRunId);
+      const held = await provider.reply(first.id, { prompt: "Started elsewhere" }, ctx);
+      vi.setSystemTime(Date.now() + 61_000);
+      // The poll worker reads this way before it sends a follow-up, to learn the newest run.
+      expect((await provider.get(first.id, ctx)).latestRunId).toBe(held.latestRunId);
+      expect((await provider.get(first.id, ctx)).latestRunId).toBe(held.latestRunId);
+      expect(emulator.calls.filter((call) => call.tool === "t3_queue")).toEqual([]);
+      expect(emulator.threads.get(first.id)!.runs.at(-1)!.status).not.toBe("cancelled");
     } finally {
       vi.useRealTimers();
     }

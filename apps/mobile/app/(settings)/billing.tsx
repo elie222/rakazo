@@ -15,25 +15,31 @@ import {
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
+import { computerUsageDetails } from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { selectedSpaceId } from "../../lib/api";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { selectedSpaceId } from "../../lib/api/api";
 import {
   currentPlan,
   openBillingPage,
   ownKeySubscriptionCents,
   planEndsAt,
-} from "../../lib/billing";
-import { dateLocaleForUi } from "../../lib/i18n";
-import type { SaveSend } from "../../lib/query";
-import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
-import { rememberReferral } from "../../lib/referral";
-import { useScreenQuery } from "../../lib/screen-query";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
-import type { SettingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
+} from "../../lib/billing/billing";
+import { rememberReferral } from "../../lib/billing/referral";
+import { dateLocaleForUi } from "../../lib/i18n/i18n";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { analyticsSurface } from "../../lib/native/analytics-surface";
+import type { SaveSend } from "../../lib/query/query";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import type { SettingsTarget } from "../../lib/query/settings-target";
+import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(dateLocaleForUi(), {
@@ -56,6 +62,11 @@ export default function BillingScreen() {
   const statusRead = formRead(rpcQuery("billing/status", undefined, space));
   const statusQuery = useScreenQuery(statusRead);
   const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
+  const [showComputerUsage, setShowComputerUsage] = useState(false);
+  const usageRead = rpcQuery("billing/computerUsage", undefined, space);
+  const computerUsage = useScreenQuery(usageRead, {
+    enabled: showComputerUsage && status?.canManage === true && status.computerHoursLeft != null,
+  });
   useEffect(() => {
     if (!status) return;
     rememberReferral(space ?? null, status.referral);
@@ -72,6 +83,7 @@ export default function BillingScreen() {
   }, [readError, errorUpdatedAt, t]);
   const change = useSave({
     target,
+    stale: [usageRead.queryKey],
     save: async (work: (send: SaveSend) => Promise<BillingStatus | undefined>, send) => {
       const next = await work(send);
       if (next) await writeSaved(queryClient, statusRead.queryKey, () => next);
@@ -86,6 +98,10 @@ export default function BillingScreen() {
   const pending = change.pending;
   const action = change.run;
   if (!status) return null;
+  const usageDetails =
+    status.canManage && showComputerUsage
+      ? computerUsageDetails(computerUsage, dateLocaleForUi())
+      : null;
 
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
@@ -247,6 +263,18 @@ export default function BillingScreen() {
           {status.computerHoursResetAt ? (
             <SettingsRow title={t`Resets`} value={formatDate(status.computerHoursResetAt)} />
           ) : null}
+          {status.canManage ? (
+            <SettingsRow
+              title={t`Hours by computer`}
+              chevron={showComputerUsage ? "down" : "right"}
+              accessibilityState={{ expanded: showComputerUsage }}
+              onPress={() => setShowComputerUsage((open) => !open)}
+            />
+          ) : null}
+          {usageDetails?.rows.map((row) => (
+            <SettingsRow key={row.id} title={row.label} value={row.hours} />
+          ))}
+          {usageDetails?.message ? <SettingsRow title={usageDetails.message} /> : null}
           {endTrial ? (
             <SettingsRow
               title={t`Start plan now`}
@@ -378,7 +406,10 @@ export default function BillingScreen() {
               disabled={pending || !status.creditPurchasesEnabled}
               onPress={() =>
                 action(async (send) => {
-                  await send("billing/selectFunding", { funding: "credits" });
+                  await send("billing/selectFunding", {
+                    funding: "credits",
+                    surface: analyticsSurface(),
+                  });
                   router.replace("/models");
                   return undefined;
                 })

@@ -17,9 +17,9 @@ import {
   isOneShotRoutineCrons,
 } from "@rakazo/core";
 import { IsolationError, isRecordNotFound, Prisma } from "@rakazo/db";
-import { assertEmailTrigger } from "../bot-email-address.js";
-import { assertRoutineModel } from "../model-pins.js";
-import { listRoutineRuns } from "../routine-runs.js";
+import { assertRoutineModel } from "../bots/model-pins.js";
+import { assertEmailTrigger } from "../email/bot-email-address.js";
+import { listRoutineRuns } from "../routines/routine-runs.js";
 import {
   assertRoutineSchedule,
   createRoutineTestRun,
@@ -31,7 +31,7 @@ import {
   routineRowData,
   routineTestRunNonce,
   routineTestTarget,
-} from "../routines.js";
+} from "../routines/routines.js";
 import type { RouterContext } from "./context.js";
 
 /** A watch the caller wrote that cannot be checked is theirs to fix; anything else is a fault. */
@@ -259,6 +259,8 @@ export function routinesRoutes(ctx: RouterContext) {
               timezone: input.timezone,
               active: input.active,
               notify: input.notify,
+              // What a watch read is not the owner's words, so it never runs as a turn in the chat.
+              inChat: watch ? false : input.inChat,
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
