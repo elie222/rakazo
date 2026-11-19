@@ -59,6 +59,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
       "onAppear",
       "onDisappear",
       "onGeometryChange",
+      "onScrollPhaseChange",
       "refreshable",
       "scrollContentBackground",
     ].map((name) => [name, modifier(name)]),
