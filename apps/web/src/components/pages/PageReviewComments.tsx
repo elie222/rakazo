@@ -1,10 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageComment, PageReview } from "@rakazo/contracts";
+import type { PageCommentSubmission } from "@rakazo/core";
 import {
   canPostPageComment,
   ensureAiDataConsent,
-  newClientId,
   pageCommentActions,
+  pageCommentSubmission,
 } from "@rakazo/core";
 import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
 import {
@@ -20,7 +21,7 @@ import {
 } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Ellipsis } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { promptDataConsent } from "../../lib/calls/voice-consent";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
@@ -28,7 +29,7 @@ import { errorText } from "../../lib/query/user-error";
 type CommentAction =
   | { kind: "resolve"; id: string; resolved: boolean }
   | { kind: "ask"; id: string; retryOf?: string }
-  | { kind: "add"; id: string; section: string; body: string };
+  | ({ kind: "add" } & PageCommentSubmission);
 
 export function PageReviewComments({
   page,
@@ -45,13 +46,12 @@ export function PageReviewComments({
   const queries = useSpaceQueries();
   const [section, setSection] = useState("");
   const [body, setBody] = useState("");
-  const [id, setId] = useState(newClientId);
+  const lastSubmission = useRef<PageCommentSubmission>(undefined);
   const [composingVersion, setComposingVersion] = useState(page.version);
   if (composingVersion !== page.version) {
     setComposingVersion(page.version);
     setSection("");
     setBody("");
-    setId(newClientId());
   }
   const comments = useInfiniteQuery(
     queries.pageReviews.comments.infiniteOptions({
@@ -63,9 +63,8 @@ export function PageReviewComments({
   const save = useSave({
     save: async (action: CommentAction, rpc) => {
       const pageId = page.id;
-      const commentId = action.id;
       if (action.kind === "resolve")
-        return rpc.pageReviews.resolve({ pageId, commentId, resolved: action.resolved });
+        return rpc.pageReviews.resolve({ pageId, commentId: action.id, resolved: action.resolved });
       if (action.kind === "ask") {
         await ensureAiDataConsent({
           uses: ["model"],
@@ -73,12 +72,16 @@ export function PageReviewComments({
           prompt: promptDataConsent,
           allow: (input) => rpc.aiConsent.allow({ ...input, pageId }),
         });
-        return rpc.pageReviews.askRevision({ pageId, commentId, retryOf: action.retryOf });
+        return rpc.pageReviews.askRevision({
+          pageId,
+          commentId: action.id,
+          retryOf: action.retryOf,
+        });
       }
       await rpc.pageReviews.comment({
         pageId,
-        submissionId: commentId,
-        version: page.version,
+        submissionId: action.submissionId,
+        version: action.version,
         section: action.section,
         body: action.body,
       });
@@ -87,7 +90,7 @@ export function PageReviewComments({
     onSaved: (_, action) => {
       if (action.kind === "add") {
         setBody("");
-        setId(newClientId());
+        lastSubmission.current = undefined;
       }
     },
   });
@@ -102,7 +105,13 @@ export function PageReviewComments({
           className="flex flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            if (canPost) save.run({ kind: "add", id, section: section.trim(), body: body.trim() });
+            if (!canPost) return;
+            const submission = pageCommentSubmission(
+              { version: page.version, section, body },
+              lastSubmission.current,
+            );
+            lastSubmission.current = submission;
+            save.run({ kind: "add", ...submission });
           }}
         >
           {sections.length ? (

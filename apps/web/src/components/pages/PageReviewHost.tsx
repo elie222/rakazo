@@ -184,7 +184,7 @@ function ReviewControls({
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           aria-label={t`Comments`}
-          className="grid size-9 place-items-center rounded-full border hover:bg-accent"
+          render={<Button variant="outline" size="icon-lg" className="rounded-full" />}
         >
           <MessageSquare className="size-4" />
         </PopoverTrigger>

@@ -1,9 +1,10 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PageComment, PageReview } from "@rakazo/contracts";
-import { canPostPageComment, newClientId, pageCommentActions } from "@rakazo/core";
+import type { PageCommentSubmission } from "@rakazo/core";
+import { canPostPageComment, pageCommentActions, pageCommentSubmission } from "@rakazo/core";
 import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   SettingsGroup,
@@ -19,7 +20,7 @@ import { ACCOUNT_SETTINGS } from "../query/settings-target";
 type CommentAction =
   | { kind: "resolve"; id: string; resolved: boolean }
   | { kind: "ask"; id: string; retryOf?: string }
-  | { kind: "add"; id: string; section: string; body: string };
+  | ({ kind: "add" } & PageCommentSubmission);
 
 export function PageReviewComments({
   page,
@@ -39,14 +40,13 @@ export function PageReviewComments({
   const [cursor, setCursor] = useState<string>();
   const [section, setSection] = useState("");
   const [body, setBody] = useState("");
-  const [id, setId] = useState(newClientId);
+  const lastSubmission = useRef<PageCommentSubmission>(undefined);
   const [choosingSection, setChoosingSection] = useState(false);
   const [composingVersion, setComposingVersion] = useState(page.version);
   if (composingVersion !== page.version) {
     setComposingVersion(page.version);
     setSection("");
     setBody("");
-    setId(newClientId());
     setChoosingSection(false);
   }
   const pageId = page.id;
@@ -55,17 +55,24 @@ export function PageReviewComments({
   const save = useSave({
     target: ACCOUNT_SETTINGS,
     save: async (action: CommentAction, send) => {
-      const commentId = action.id;
       if (action.kind === "ask")
-        return send("pageReviews/askRevision", { pageId, commentId, retryOf: action.retryOf });
+        return send("pageReviews/askRevision", {
+          pageId,
+          commentId: action.id,
+          retryOf: action.retryOf,
+        });
       if (action.kind === "resolve")
-        return send("pageReviews/resolve", { pageId, commentId, resolved: action.resolved });
+        return send("pageReviews/resolve", {
+          pageId,
+          commentId: action.id,
+          resolved: action.resolved,
+        });
       await send("pageReviews/comment", {
         pageId,
-        submissionId: commentId,
+        submissionId: action.submissionId,
         body: action.body,
         section: action.section,
-        version: page.version,
+        version: action.version,
       });
     },
     // Match every cursor for this page, including the newest comments shown after posting.
@@ -73,7 +80,7 @@ export function PageReviewComments({
     onSaved: (_, action) => {
       if (action.kind === "add") {
         setBody("");
-        setId(newClientId());
+        lastSubmission.current = undefined;
         setCursor(undefined);
       }
     },
@@ -140,9 +147,14 @@ export function PageReviewComments({
             title={t`Post comment`}
             prominent
             disabled={save.pending || !canPostPageComment(sections, section, body)}
-            onPress={() =>
-              save.run({ kind: "add", id, section: section.trim(), body: body.trim() })
-            }
+            onPress={() => {
+              const submission = pageCommentSubmission(
+                { version: page.version, section, body },
+                lastSubmission.current,
+              );
+              lastSubmission.current = submission;
+              save.run({ kind: "add", ...submission });
+            }}
           />
         </SettingsGroup>
       ) : (
