@@ -17,6 +17,7 @@ import {
   useGlobalSearchParams,
   usePathname,
   useRouter,
+  useSegments,
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -76,7 +77,6 @@ import {
   closesSplitPane,
   inboxPaneWidth,
   loadInboxWidth,
-  setInboxHidden,
   useSplitView,
 } from "../lib/layout/split-view";
 import { loadLinkFavicon } from "../lib/messages/link-favicons";
@@ -134,6 +134,7 @@ const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer"
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
 function SplitFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const segments = useSegments();
   const router = useRouter();
   const params = useGlobalSearchParams();
   const routeKey = JSON.stringify([pathname, params]);
@@ -144,11 +145,10 @@ function SplitFrame({ children }: { children: ReactNode }) {
   }, [routeKey]);
   const { split, inboxShown, inboxWidth, foldGap, foldActive, windowWidth } = useSplitView();
   const tokens = useMobileTokens();
-  const home = pathname === "/";
-  useEffect(() => {
-    if (home) setInboxHidden(false);
-  }, [home]);
-  const showsInbox = split && (home || inboxShown) && !FULL_WINDOW_ROUTES.has(pathname);
+  // iOS presents settings as a sheet over the window; Android pushes them as a page, which
+  // takes the whole window rather than sitting beside the chat list.
+  const settingsPage = Platform.OS !== "ios" && segments[0] === "(settings)";
+  const showsInbox = split && inboxShown && !FULL_WINDOW_ROUTES.has(pathname) && !settingsPage;
   // Dragging resizes the list natively; the width is kept when the finger lifts.
   const paneWidth = useSharedValue(inboxWidth);
   const dragStart = useRef(inboxWidth);
@@ -173,12 +173,7 @@ function SplitFrame({ children }: { children: ReactNode }) {
   return (
     <View style={{ flex: 1, flexDirection: "row" }}>
       {showsInbox ? (
-        <Animated.View
-          style={[
-            paneStyle,
-            { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: tokens.border },
-          ]}
-        >
+        <Animated.View style={paneStyle}>
           <InboxPane
             onSelectSpace={(spaceId) => {
               if (closesSplitPane(pathname, paneSpace.current, spaceId)) {
@@ -194,7 +189,8 @@ function SplitFrame({ children }: { children: ReactNode }) {
       </View>
       {showsInbox && !foldActive ? (
         <GestureDetector gesture={resize}>
-          {/* Drawn last and wider than the line, over both panes, so it is easy to grab. */}
+          {/* The divider line resizes the list: drawn last, with a grab area wider than the line
+              over both panes, so it is easy to grab without a handle on show. */}
           <Animated.View
             accessible={false}
             collapsable={false}
@@ -205,20 +201,13 @@ function SplitFrame({ children }: { children: ReactNode }) {
                 bottom: 0,
                 width: DIVIDER_GRAB_WIDTH,
                 alignItems: "center",
-                justifyContent: "center",
                 backgroundColor: "transparent",
               },
               handleStyle,
             ]}
           >
             <View
-              style={{
-                width: 5,
-                height: 40,
-                borderRadius: 3,
-                backgroundColor: tokens.mutedForeground,
-                opacity: 0.6,
-              }}
+              style={{ flex: 1, width: StyleSheet.hairlineWidth, backgroundColor: tokens.border }}
             />
           </Animated.View>
         </GestureDetector>

@@ -65,6 +65,8 @@ export function useSpaceRoster({
   const savingBotOrderRef = useRef(false);
   const [botSections, setBotSections] = useState<BotSection[]>(seed?.botSections ?? []);
   const [spaces, setSpaces] = useState<Space[]>(seed?.spaces ?? []);
+  // Until the server says otherwise, an account with nothing in sight is treated as new.
+  const [firstBotDue, setFirstBotDue] = useState(true);
   const [archivedBots, setArchivedBots] = useState<Bot[]>(seed?.archivedBots ?? []);
   const [archivedGroups, setArchivedGroups] = useState<Group[]>(seed?.archivedGroups ?? []);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(Boolean(seed));
@@ -128,6 +130,7 @@ export function useSpaceRoster({
       setBotSections((previous) => replaceEqualDeep(previous, sections));
       setGroups((previous) => replaceEqualDeep(previous, groupList));
       setSpaces((previous) => replaceEqualDeep(previous, navigation.spaces));
+      setFirstBotDue(navigation.firstBotDue !== false);
       setInitialBotsLoaded(true);
       botsRefreshApplied.current = request;
       const route = liveRoute();
@@ -138,11 +141,13 @@ export function useSpaceRoster({
         archived?.length === 0 &&
         groupList.length === 0 &&
         archivedGroupList?.length === 0 &&
-        !navigation.spaces.some((space) => space.hasContent)
+        !navigation.spaces.some((space) => space.hasContent) &&
+        navigation.firstBotDue !== false
       ) {
-        // Only the very first bot everywhere needs onboarding. An empty
-        // current space with content elsewhere stays in the app so the
-        // space can be switched to or deleted instead of trapping the user.
+        // Only the very first bot everywhere needs onboarding, which the server
+        // says: an empty space beside used ones, or in a new organization of
+        // someone who has chatted before, stays in the app so it can be
+        // switched from, filled or deleted instead of trapping the user.
         navigate("/onboarding", { replace: true });
         return;
       }
@@ -232,6 +237,8 @@ export function useSpaceRoster({
     botSections,
     spaces,
     setSpaces,
+    firstBotDue,
+    setFirstBotDue,
     archivedBots,
     setArchivedBots,
     archivedGroups,
@@ -303,6 +310,7 @@ export function useSpaceBootstrap({
     setArchivedGroups,
     spaces,
     setSpaces,
+    setFirstBotDue,
     setInitialBotsLoaded,
     setInitialLoadFailed,
     bootstrapMe,
@@ -327,7 +335,7 @@ export function useSpaceBootstrap({
     }
   }
   const seedStateRef = useRef<
-    | (Omit<AppBootstrap, "thread" | "routines" | "me"> & {
+    | (Omit<AppBootstrap, "thread" | "routines" | "me" | "firstBotDue"> & {
         me?: Me | null;
         chat: ChatTarget | undefined;
       })
@@ -380,6 +388,7 @@ export function useSpaceBootstrap({
           setArchivedGroups(bootstrap.archivedGroups);
           setGroups(groupList);
           setSpaces(bootstrap.spaces);
+          setFirstBotDue(bootstrap.firstBotDue !== false);
           setInitialBotsLoaded(true);
         }
         // A seeded shell already loads its chat live; this older copy must not replace it.
@@ -416,7 +425,8 @@ export function useSpaceBootstrap({
           bootstrap.archivedBots.length === 0 &&
           groupList.length === 0 &&
           bootstrap.archivedGroups.length === 0 &&
-          !bootstrap.spaces.some((space) => space.hasContent)
+          !bootstrap.spaces.some((space) => space.hasContent) &&
+          bootstrap.firstBotDue !== false
         ) {
           navigate("/onboarding", { replace: true });
           return;

@@ -110,7 +110,7 @@ const planTerms = {
  * The mails of a person's lifecycle sequence. One job sends each, no two within a day of each
  * other, and each at most once per person.
  */
-export const LIFECYCLE_EMAIL_KINDS = ["model-connection"] as const;
+export const LIFECYCLE_EMAIL_KINDS = ["model-connection", "agent-import"] as const;
 export const LifecycleEmailKind = z.enum(LIFECYCLE_EMAIL_KINDS);
 export type LifecycleEmailKind = z.infer<typeof LifecycleEmailKind>;
 
@@ -157,6 +157,17 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
       name: z.literal("model_connect_failed"),
       ...modelConnect,
       errorKind: AnalyticsErrorKind,
+    })
+    .strict(),
+  // An app connection turning connected. Only an id from the fixed integrations catalog, checked
+  // by the caller; never the account or its name.
+  z
+    .object({
+      name: z.literal("tool_connected"),
+      app: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
+        .optional(),
     })
     .strict(),
   // A manual edit in bot settings; which setting only, never its value.

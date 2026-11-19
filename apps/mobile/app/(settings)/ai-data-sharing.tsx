@@ -53,7 +53,7 @@ export default function AiDataSharing() {
           ? await send("aiConsent/revoke", { key: null })
           : !ask.allowed
             ? await send("aiConsent/revoke", { key: ask.recipient.key })
-            : (await promptAiConsent(ask.recipient, status.privacyUrl))
+            : (await promptAiConsent(ask.recipient))
               ? await send("aiConsent/allow", {
                   scope: status.scope,
                   version: status.version,

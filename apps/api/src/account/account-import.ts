@@ -7,7 +7,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { normalizeWorkspacePath, resolveBotWorkspacePath } from "@rakazo/adapters";
+import {
+  carriedBotModelPin,
+  carriedRoutineModelPin,
+  normalizeWorkspacePath,
+  resolveBotWorkspacePath,
+} from "@rakazo/adapters";
 import type {
   AccountExportManifest,
   AccountExportRecord,
@@ -784,9 +789,7 @@ class AccountImporter implements ArchiveSink {
             // What a watch read is not the owner's words, so it never runs as a turn in the chat.
             inChat: record.inChat && !record.watch,
             messageProvider: record.messageProvider,
-            modelProvider: record.modelProvider,
-            modelId: record.modelId,
-            thinkingLevel: record.thinkingLevel,
+            ...carriedRoutineModelPin(record),
             watch: jsonValue(record.watch),
             createdAt: new Date(record.createdAt),
           },
@@ -894,9 +897,7 @@ class AccountImporter implements ArchiveSink {
       avatarSet: resolveBotAvatarSet(record.avatarSet),
       // Bot ids pick the avatar shape; keep the look the bot had.
       avatarFamily: organicAvatarFamily(record.id),
-      modelProvider: record.modelProvider,
-      modelId: record.modelId,
-      thinkingLevel: record.thinkingLevel,
+      ...carriedBotModelPin(record),
       disabledBuiltinTools: record.disabledBuiltinTools,
       seed: async (tx, botId) => {
         await tx.bot.update({

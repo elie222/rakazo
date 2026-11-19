@@ -10,6 +10,11 @@ pick a **Provider** and add its **API key**:
 - **ElevenLabs**, **OpenAI**, **Fish Audio** and **xAI** can speak and transcribe. If xAI is
   connected in **Models**, with a SuperGrok or X Premium sign-in or a key, leave the **API key**
   empty to use that connection.
+- **OpenRouter** speaks and transcribes with models from many providers. If OpenRouter is
+  connected in **Models**, leave the **API key** empty to use that connection. **Speech model**
+  suggests the models OpenRouter lists, and each model has its own voices. A model that returns
+  only raw audio is converted to WAV, so it still plays. Speech is billed on your OpenRouter
+  account; Rakazo does not track that spend.
 - **Cartesia** speaks only.
 - **Self-hosted** uses your own OpenAI-compatible speech server, such as Kokoro or Whisper. Enter its
   **Server URL**. If another server transcribes, enter it as **Transcription server URL**, with its own
@@ -50,4 +55,4 @@ The mobile app uses your phone's own speech recognition and voices for calls. Pi
 
 ## Join a meeting
 
-Open **Meetings** in a bot chat to send the bot to a Zoom or Google Meet call and get a speaker-labeled transcript. See [Meeting bots](./self-host-meetings.md) for server setup.
+Open **Meetings** in a bot chat to send the bot to Zoom, Google Meet, or a Microsoft Teams work meeting and get a speaker-labeled transcript. See [Meetings](./meetings.md) to join a call, find the transcript, and ask about it.

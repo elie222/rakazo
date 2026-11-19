@@ -493,6 +493,7 @@ import {
   approvalPausedToolResult,
   terminatingToolResult,
 } from "../../../approvals/approval-effect.js";
+import { MCP_IMAGE_ATTACHED } from "../../../mcp/mcp-result-images.prompt.js";
 import {
   midTaskMessageFromPrompt,
   midTaskMessagePrompt,
@@ -608,6 +609,34 @@ describe("Pi connector tool dispatch", () => {
       args: { collection: "notes", title: "Result", body: "Done" },
     };
     delete process.env.MAX_TOOL_CALLS_PER_TURN;
+  });
+
+  it("preserves an explicit computer id through shell argument preparation", async () => {
+    fakeAgentState.invoke = {
+      name: "user_computer_shell",
+      args: { command: "pwd", computerId: "device-2" },
+    };
+    const executeTool = vi.fn(async () => ({ code: 0 }));
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "computer-target",
+        prompt: "Check the selected computer",
+        instructions: "Follow the user's instructions.",
+        history: [],
+        tools: [builtinAgentTools.find((tool) => tool.name === "user_computer_shell")!],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      { signal: new AbortController().signal },
+    )) {
+    }
+    expect(executeTool).toHaveBeenCalledOnce();
+    expect(executeTool.mock.calls[0]?.slice(0, 2)).toEqual([
+      "user_computer_shell",
+      { command: "pwd", computerId: "device-2" },
+    ]);
   });
 
   it("injects durable steering at Pi's next safe turn boundary", async () => {
@@ -2545,6 +2574,65 @@ describe("Pi connector tool dispatch", () => {
     expect(result.content[0]).toEqual({ type: "text", text: first });
     expect(result.content[1]).toEqual(image);
     expect(result.content[2]).toEqual({ type: "text", text: "bbbbb…" });
+  });
+
+  it("gives an MCP tool's image to the model as an image instead of cutting it into the text", async () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(60_000, 7),
+    ]).toString("base64");
+    fakeAgentState.invoke = { name: "mcp__showcase__render_preview", args: { page: 1 } };
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "mcp-image",
+        prompt: "show me the preview",
+        instructions: "Look at the preview before describing it.",
+        history: [],
+        tools: [
+          {
+            name: "mcp__showcase__render_preview",
+            description: "Render a page preview",
+            inputSchema: { type: "object", properties: { page: { type: "number" } } },
+          },
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({
+          content: [
+            { type: "text", text: "Preview of page 1" },
+            { type: "image", data: png, mimeType: "image/png" },
+          ],
+          isError: false,
+        })),
+      },
+      {
+        operationId: "mcp-image",
+        traceId: "mcp-image",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust so the fake agent executes the tool.
+    }
+
+    const result = fakeAgentState.toolResult as {
+      content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+      details: unknown;
+    };
+    const summary = {
+      content: [
+        { type: "text", text: "Preview of page 1" },
+        { type: "image", data: MCP_IMAGE_ATTACHED, mimeType: "image/png" },
+      ],
+      isError: false,
+    };
+    expect(JSON.parse(result.content[0]!.text!)).toEqual(summary);
+    expect(result.content[1]).toEqual({ type: "image", data: png, mimeType: "image/png" });
+    expect(result.details).toEqual(summary);
   });
 
   it("delivers a skill read larger than the tool result bound verbatim", async () => {

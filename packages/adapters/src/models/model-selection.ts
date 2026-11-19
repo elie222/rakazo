@@ -53,6 +53,11 @@ import {
 } from "./endpoints/openai-compatible-url.js";
 import type { modelCredentialDto } from "./model-connect.js";
 import { compatibleModelThinkingLevels } from "./model-connect.js";
+import {
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "./model-provider-allowlist.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
@@ -223,6 +228,7 @@ export async function modelCredentialAuthKindsForSpace(
   scope: Pick<Actor, "userId" | "spaceId">,
   hostedProvider?: string,
 ): Promise<SpaceCatalogAuth> {
+  const allowlist = modelProviderAllowlist();
   const providers =
     modelCreditOfferings()?.offerings.map((entry) => entry.provider) ??
     (hostedProvider ? [hostedProvider] : []);
@@ -233,42 +239,38 @@ export async function modelCredentialAuthKindsForSpace(
             (await hasHostedModelCredits(prisma, scope, provider)) ? provider : null,
           ),
         )
-      ).filter((provider): provider is string => provider !== null)
+      ).filter(
+        (provider): provider is string =>
+          provider !== null && modelProviderAllowed(allowlist, provider),
+      )
     : [];
   const hosted = hostedProvider && managedProviders.includes(hostedProvider);
-  const [credentials, preferences] = await Promise.all([
-    prisma.userModelCredential.findMany({
-      where: { userId: scope.userId },
-      select: {
-        id: true,
-        provider: true,
-        secretId: true,
-        updatedAt: true,
-        createdAt: true,
+  // Start with connections so a concurrent detach can only leave an empty list of preferences.
+  const accountRows = await prisma.userModelCredential.findMany({
+    where: { userId: scope.userId },
+    select: {
+      id: true,
+      provider: true,
+      secretId: true,
+      updatedAt: true,
+      createdAt: true,
+      userPreferences: {
+        select: { modelId: true, thinkingLevel: true, updatedAt: true },
       },
-    }),
-    prisma.userModelPreference.findMany({
-      where: { userId: scope.userId },
-      select: {
-        modelId: true,
-        thinkingLevel: true,
-        updatedAt: true,
-        credential: {
-          select: {
-            id: true,
-            provider: true,
-            secretId: true,
-            updatedAt: true,
-            createdAt: true,
-          },
-        },
-      },
-    }),
-  ]);
-  const connectedProviders = new Set([
-    ...credentials.map((credential) => canonicalPiProviderId(credential.provider)),
-    ...preferences.map((preference) => canonicalPiProviderId(preference.credential.provider)),
-  ]);
+    },
+  });
+  // Filter refused providers before loading secrets for catalog choices.
+  const rows =
+    allowlist === null
+      ? accountRows
+      : accountRows.filter((row) => modelProviderAllowed(allowlist, row.provider));
+  const credentials = rows.map(({ userPreferences, ...credential }) => credential);
+  const preferences = rows.flatMap(({ userPreferences, ...credential }) =>
+    userPreferences.map((preference) => ({ ...preference, credential })),
+  );
+  const connectedProviders = new Set(
+    credentials.map((credential) => canonicalPiProviderId(credential.provider)),
+  );
   const selections: Array<{
     provider: string;
     modelId: string;
@@ -793,6 +795,9 @@ export async function validateBotModelChange(
   const { provider, model } = input;
   const changing = provider !== input.current?.provider || model !== input.current?.model;
   if (changing && provider && model) {
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+      return { ok: false, error: MODEL_PROVIDER_NOT_ALLOWED_ERROR };
+    }
     const hosted =
       Boolean(deps.hostedProvider) && (await hasHostedModelCredits(deps.prisma, scope, provider));
     const credential = hosted

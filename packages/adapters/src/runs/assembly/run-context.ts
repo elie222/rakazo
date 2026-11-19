@@ -257,6 +257,7 @@ export interface RunComputerContext {
 
 export interface RunSource {
   ownerStartedRun: boolean;
+  meetingChat: boolean;
   messagingChannelRun: boolean;
   channelId: string | undefined;
   historySearchBeforeSeq: number;

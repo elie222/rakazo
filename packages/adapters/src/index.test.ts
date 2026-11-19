@@ -305,5 +305,18 @@ describe("builtin tools", () => {
         .filter((name) => serviceNames.includes(name));
     expect(services({})).toEqual([]);
     expect(services({ paidServicesEnabled: true })).toEqual(serviceNames);
+    expect(enabled).not.toContain("read_meeting_transcript");
+    expect(
+      selectBuiltinToolsForRun({ ...options, meetingTranscriptsAvailable: true }).map(
+        (tool) => tool.name,
+      ),
+    ).toContain("read_meeting_transcript");
+    expect(
+      selectBuiltinToolsForRun({
+        ...options,
+        meetingTranscriptsAvailable: true,
+        disabledBuiltinTools: ["read_meeting_transcript"],
+      }).map((tool) => tool.name),
+    ).not.toContain("read_meeting_transcript");
   });
 });

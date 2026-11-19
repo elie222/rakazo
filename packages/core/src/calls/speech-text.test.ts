@@ -3,8 +3,10 @@ import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import {
   narrateTool,
+  sentenceKey,
   speakable,
   speechFromBlocks,
+  splitSentences,
   spokenDecision,
   toUtterances,
 } from "./speech-text.js";
@@ -283,6 +285,49 @@ describe("toUtterances", () => {
   it("is empty for text that speaks to nothing", () => {
     expect(toUtterances("```\ncode only\n```")).not.toContain("code only");
     expect(toUtterances("")).toEqual([]);
+  });
+});
+
+describe("splitSentences", () => {
+  it("keeps every sentence on its own, however short", () => {
+    expect(splitSentences("Yes. The whole suite is green. Ship it?")).toEqual([
+      "Yes.",
+      "The whole suite is green.",
+      "Ship it?",
+    ]);
+  });
+
+  it("does not cut at abbreviations or decimals", () => {
+    expect(splitSentences("I asked Dr. Lee about v2.5 e.g. the beta. Done.")).toEqual([
+      "I asked Dr. Lee about v2.5 e.g. the beta.",
+      "Done.",
+    ]);
+  });
+
+  it("speaks markdown, so lines and headings end sentences and code is named", () => {
+    expect(splitSentences("## Plan\n- Fix it\n- **Ship** it\n\n```ts\nx.y();\n```")).toEqual([
+      "Plan.",
+      "Fix it.",
+      "Ship it.",
+      "(a TypeScript code block)",
+    ]);
+  });
+
+  it("leaves an unfinished sentence as the last piece", () => {
+    expect(splitSentences("Booked for Friday. The hotel is")).toEqual([
+      "Booked for Friday.",
+      "The hotel is",
+    ]);
+    expect(splitSentences("")).toEqual([]);
+  });
+});
+
+describe("sentenceKey", () => {
+  it("matches a sentence however it is marked up or punctuated", () => {
+    expect(sentenceKey("**Done.")).toBe(sentenceKey("Done."));
+    expect(sentenceKey("All set, Ada!")).toBe("allsetada");
+    expect(sentenceKey("Ça marche.")).toBe("çamarche");
+    expect(sentenceKey("...")).toBe("");
   });
 });
 

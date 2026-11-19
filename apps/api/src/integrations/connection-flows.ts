@@ -28,6 +28,7 @@ import { IsolationError, ProviderTransactionBusyError, recordSecurityEvent } fro
 import { getLogger } from "@rakazo/logging";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import type { RouterDeps } from "../router.js";
+import { recordToolConnected } from "./tool-connect-analytics.js";
 
 function isAmbiguousRemoteRevokeFailure(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -287,6 +288,7 @@ export async function beginConnection(
   }
   if (!auth.authorizationUrl) {
     await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
+    recordToolConnected(deps.analytics, context.actor.userId, row);
   }
   return { connectionId: row.id, authorizationUrl: auth.authorizationUrl };
 }
@@ -550,6 +552,7 @@ export async function completeConnection(
     await recordSecurityEvent(
       connectionCreatedEvent("connections.complete", row.id, context.actor),
     );
+    recordToolConnected(deps.analytics, context.actor.userId, row);
   }
   return {
     id: row.id,

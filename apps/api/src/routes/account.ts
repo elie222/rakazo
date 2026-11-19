@@ -27,7 +27,8 @@ import {
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
-  auditLogOrganization,
+  auditLogAccess,
+  auditLogScope,
   commitBotUpdate,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
@@ -303,10 +304,10 @@ export function accountRoutes(ctx: RouterContext) {
     },
     audit: {
       events: authed.audit.events.handler(async ({ context, input }) => {
-        const organizationId = await auditLogOrganization(deps.prisma, context.actor);
-        if (!organizationId) throw new ORPCError("FORBIDDEN");
+        const access = await auditLogAccess(deps.prisma, context.actor);
+        if (!access) throw new ORPCError("FORBIDDEN");
         return runAsSystem("read the organization's audit log", () =>
-          listAuditEvents(deps.prisma, organizationId, input),
+          listAuditEvents(deps.prisma, access.organizationId, auditLogScope(access, input)),
         );
       }),
     },
@@ -640,7 +641,7 @@ export function accountRoutes(ctx: RouterContext) {
         return toVoiceStatus(cred);
       }),
       setSpeechModel: authed.voice.setSpeechModel.handler(async ({ context, input }) =>
-        updateVoiceSpeechModel(deps, context.actor, input),
+        updateVoiceSpeechModel(deps, context.actor, { ...input, signal: context.signal }),
       ),
       voices: authed.voice.voices.handler(async ({ context, input }) => {
         // A named provider lists its voices even before the copy has a default voice.
@@ -658,7 +659,23 @@ export function accountRoutes(ctx: RouterContext) {
         return withVoiceConnection(row.cred.provider, row.linked, () =>
           provider.listVoices(row.apiKey, voiceContext(context.actor, context.signal), {
             language: input.language,
+            model: row.cred.speechModel || undefined,
           }),
+        );
+      }),
+      models: authed.voice.models.handler(async ({ context, input }) => {
+        const row = await loadVoiceCredential(
+          deps,
+          context.actor,
+          input.provider,
+          input.scope,
+          context.signal,
+        );
+        if (!row) return [];
+        const provider = await voiceProviderFor(deps, row.cred.provider);
+        if (!provider.listModels) return [];
+        return withVoiceConnection(row.cred.provider, row.linked, () =>
+          provider.listModels!(row.apiKey, voiceContext(context.actor, context.signal)),
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>

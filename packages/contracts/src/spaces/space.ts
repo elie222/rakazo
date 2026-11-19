@@ -119,6 +119,12 @@ export const SpaceNavigationSchema = z.object({
     botSections: z.array(BotSectionSchema),
   }),
   spaces: z.array(SpaceSchema),
+  /**
+   * The server would still make this person their first bot: nothing in these Spaces, and no chat
+   * in any Space they made. Clients send an empty account to onboarding only then. A server that
+   * predates it leaves it out, and clients decide from `hasContent` as before.
+   */
+  firstBotDue: z.boolean().default(true),
 });
 export type SpaceNavigation = z.infer<typeof SpaceNavigationSchema>;
 
@@ -138,6 +144,7 @@ export const SpaceChangeKind = z.enum([
   "runs",
   "routines",
   "meetings",
+  "artifacts",
   "meetingCalendar",
 ]);
 export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;
