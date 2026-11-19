@@ -1887,33 +1887,35 @@ PURCHASE_HELPERS = r"""
       named, el.getAttribute("aria-label"), el.getAttribute("title")].map(tidy).filter(Boolean);
   }
   // A phrase compares without its case, outer punctuation or icons.
-  const phrase = (text) => text.toLowerCase().replace(/^[^\p{L}\p{N}$€£₪¥]+|[^\p{L}\p{N})]+$/gu, "");
-  const CURRENCY = "[$€£₪¥]|usd|eur|gbp|ils|nis";
+  const phrase = (text) => text.toLowerCase().replace(/^[^\p{L}\p{N}$€£₪¥฿]+|[^\p{L}\p{N})]+$/gu, "");
+  const CURRENCY = "[$€£₪¥฿]|usd|eur|gbp|ils|nis|thb|sgd|s\\$";
   const SPENDS = `${CURRENCY}|\\d`;
   // The last step of an order. Each starts the phrase, so "to checkout", "continue to payment", "add to
   // cart", "pay later" and a lone "confirm" or "continue" are not final steps.
   const FINAL_STEP = [
-    new RegExp(`^(?:pay(?: securely)?(?: now)?|pay now securely|pay (?:with|using|by|via) .+|pay (?:${SPENDS}).*)$`),
+    new RegExp(`^(?:pay(?: securely)?(?: now)?|pay now securely|pay (?:${SPENDS}).*)$`),
     /^make (?:a |the |my )?payment\b/,
     new RegExp(`^send (?:money|payment|funds|(?:${CURRENCY})\\s?\\d.*)`),
     /^confirm (?:the |your |my )?(?:transfer|payment|bid|purchase)\b/,
     /^commit to buy\b/,
     /^request to book\b/,
     /^place (?:a |the |your |my )?bid\b/,
-    // "Buy", "Buy now", "Buy it", "Buy this", "Buy $5"; not "Buy gift cards".
-    new RegExp(`^buy(?: now| it| this| it now)?$|^buy (?:${SPENDS})`),
-    /^purchase\b(?! (?:history|orders?|details|options|agreement|terms))/,
+    // "Buy $5" names its price and stays a final step; a bare "Buy", "Buy now", "Buy it" only
+    // opens a checkout on many shops (Shopee, Lazada), so the bare forms are in CONTEXTUAL_STEP.
+    // Not "Buy gift cards".
+    new RegExp(`^buy (?:${SPENDS})`),
     /^place (?:your |my |the )?order\b/,
     /^(?:complete|finish|finalize|confirm|submit|review and place) (?:your |my |the )?(?:order|purchase|booking|reservation|payment|checkout)\b/,
     /^(?:confirm|agree|accept|authori[sz]e) (?:and|&) (?:pay|book|purchase|order)\b/,
     /^authori[sz]e payment\b/,
     /^(?:book|order|reserve) and pay\b/,
-    // "Book now" and "Order now" often only open a checkout: a final step when the label has an amount.
-    new RegExp(`^(?:book|order|reserve) now\\b.*(?:${SPENDS})`),
     new RegExp(`^(?:subscribe|donate|upgrade|start (?:my )?(?:free )?(?:trial|subscription)).*(?:${SPENDS})`),
     /^(?:שלם|שלמו|תשלום עכשיו|אישור (?:והזמנה|הזמנה|תשלום|רכישה|ותשלום)|ביצוע (?:הזמנה|תשלום|רכישה)|קנה|קנו|רכוש|רכשו)(?:\s|$)/,
     // "הזמן" and "להזמנה" also open a booking page or a meeting: a final step with an amount.
     new RegExp(`^(?:הזמן|הזמינו|להזמנה)(?:\\s|$).*(?:${SPENDS})`),
+    // Thai: "pay" and "confirm payment/order" complete a payment. A bare ซื้อ/สั่งซื้อ only opens
+    // a checkout on Thai shops, so those are in CONTEXTUAL_STEP below.
+    /^(?:ชำระเงิน|จ่ายเงิน|ยืนยันการชำระเงิน|ยืนยันคำสั่งซื้อ|ยืนยันและชำระเงิน)(?:\s|$)/,
   ];
   // "Pay bill", "Pay invoice": a final step only for a control that submits a form or sits in a card form,
   // so a plan toggle such as "Pay monthly" asks nothing.
@@ -1927,14 +1929,28 @@ PURCHASE_HELPERS = r"""
     const form = el.form || el.closest("form");
     return Boolean(form) && (submittedForm(el) !== null || [...form.elements].some(cardLike));
   };
+  // Wording that completes a purchase on some sites and only opens a checkout or picks a
+  // payment method on others: a bare "Buy now" (Shopee, Lazada), a "Pay with ..." method row,
+  // an "Order now" beside a price, a bare "Purchase", Thai ซื้อ/สั่งซื้อ. It counts as a final
+  // step only with payment context: the control submits a form or sits in a form holding card
+  // fields, or the page itself shows card fields. (Owner patch 2026-11-19.)
+  const CONTEXTUAL_STEP = [
+    new RegExp(`^pay (?:with|using|by|via) .+$`),
+    new RegExp(`^buy(?: now| it| this| it now)?$`),
+    /^purchase\b(?! (?:history|orders?|details|options|agreement|terms))/,
+    new RegExp(`^(?:book|order|reserve) now\\b.*(?:${SPENDS})`),
+    /^(?:ซื้อเลย|ซื้อสินค้า|สั่งซื้อสินค้า|สั่งซื้อ|ซื้อ)(?:\s|$)/,
+  ];
+  const inPaymentContext = (el) => Boolean(el) && (inPaymentForm(el) || pageCards().length > 0);
   const isFinalStep = (words, el) => words.some((word) => FINAL_STEP.some((pattern) => pattern.test(phrase(word)))
+    || (inPaymentContext(el) && CONTEXTUAL_STEP.some((pattern) => pattern.test(phrase(word))))
     || (el && PAY_WORD.test(phrase(word)) && inPaymentForm(el)));
   // Controls on a payment page that never pay.
-  const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note)|add to (?:cart|basket|bag))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל|הוסף לסל|הוספה לסל)(?:\s|$)/;
+  const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note)|add to (?:cart|basket|bag))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל|הוסף לסל|הוספה לסל)(?:\s|$)|^(?:หยิบใส่รถเข็น|เพิ่มลงรถเข็น|ใส่รถเข็น)(?:\s|$)/;
   // A number may group its thousands with spaces, as in "1 234,56 €".
   const NUMBER = "\\d(?:[\\d.,]|[ \\u00a0\\u202f](?=\\d{3}))*";
-  const MONEY = new RegExp(`(?:[$€£₪¥]\\s?${NUMBER}|${NUMBER}\\s?(?:[$€£₪¥]|USD|EUR|GBP|ILS|NIS|ש"ח|ש״ח)|(?:USD|EUR|GBP|ILS|NIS)\\s?${NUMBER})`, "gi");
-  const TOTAL = /(?<!sub)total|amount due|balance due|to pay|you pay|סה[״"'׳]?כ|סך[\s-]*הכל|לתשלום/i;
+  const MONEY = new RegExp(`(?:[$€£₪¥฿]\\s?${NUMBER}|${NUMBER}\\s?(?:[$€£₪¥฿]|USD|EUR|GBP|ILS|NIS|THB|SGD|ש"ח|ש״ח)|(?:USD|EUR|GBP|ILS|NIS|THB|SGD)\\s?${NUMBER}|S\\$\\s?${NUMBER}|${NUMBER}\\s?S\\$)`, "gi");
+  const TOTAL = /(?<!sub)total|amount due|balance due|to pay|you pay|סה[״"'׳]?כ|סך[\s-]*הכל|לתשלום|ยอดรวม|รวมทั้งสิ้น|ยอดชำระ|ยอดที่ต้องชำระ/i;
   const moneyIn = (text, last) => {
     const found = String(text).match(MONEY);
     return found ? found[last ? found.length - 1 : 0].replace(/[.,\s]+$/, "").slice(0, 40) : "";
