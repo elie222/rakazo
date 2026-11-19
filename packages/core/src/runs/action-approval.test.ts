@@ -18,7 +18,7 @@ import {
   isSecretAskBlock,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
-  ownComputerActionNeedsReview,
+  ownComputerActionReview,
   planActionGate,
   receiptItems,
   repeatsDeniedAction,
@@ -989,48 +989,75 @@ describe("savedContextWriteNeedsReview", () => {
   });
 });
 
-describe("ownComputerActionNeedsReview", () => {
+describe("ownComputerActionReview", () => {
   const yes = async () => true;
   const no = async () => false;
-  const review = (name: string, args: Record<string, unknown>, tainted = yes, siteGiven = no) =>
-    ownComputerActionNeedsReview(name, args, { tainted, siteGiven });
+  const review = (name: string, args: Record<string, unknown>, tainted = yes, pageSiteGiven = no) =>
+    ownComputerActionReview(name, args, { tainted, pageSiteGiven });
 
   it.each([
-    ["shell", { command: "ls" }],
-    ["browser_act", { actions: [] }],
-    ["computer_act", { actions: [] }],
-    ["launch_app", { application: "Mail", uri: "mailto:a@example.com?body=notes" }],
-    ["open_path", { path: "mailto:a@example.com?body=notes" }],
-  ])("reviews %s only once outside content entered the run", async (name, args) => {
-    await expect(review(name, args)).resolves.toBe(true);
-    await expect(review(name, args, no)).resolves.toBe(false);
-  });
+    ["shell", { command: "ls" }, "command"],
+    [
+      "browser_act",
+      {
+        actions: [
+          { kind: "click", ref: "e1" },
+          { kind: "fill", ref: "e2", text: "x" },
+        ],
+      },
+      "page",
+    ],
+    ["browser_act", { actions: [{ kind: "upload", ref: "e2", paths: ["a.pdf"] }] }, "page"],
+    ["browser_navigate", { url: "https://collect.example.net/?d=1" }, "page"],
+    ["open_path", { path: "https://collect.example.net/?d=1" }, "page"],
+    ["computer_act", { actions: [{ kind: "type", text: "notes" }] }, "input"],
+    [
+      "computer_act",
+      { actions: [{ kind: "focus", application: "Mail", uri: "mailto:a@example.com" }] },
+      "input",
+    ],
+    ["launch_app", { application: "Mail", uri: "mailto:a@example.com?body=notes" }, "input"],
+  ])(
+    "reviews %s that could send something only once outside content entered the run",
+    async (name, args, kind) => {
+      await expect(review(name, args)).resolves.toBe(kind);
+      await expect(review(name, args, no)).resolves.toBeUndefined();
+    },
+  );
 
   it.each([
-    ["browser_navigate", { url: "https://collect.example.net/?d=1" }],
-    ["open_path", { path: "https://collect.example.net/?d=1" }],
-  ])("reviews %s only on a site the run was not given", async (name, args) => {
-    await expect(review(name, args)).resolves.toBe(true);
-    await expect(review(name, args, yes, yes)).resolves.toBe(false);
-    await expect(review(name, args, no)).resolves.toBe(false);
+    ["browser_act", { actions: [{ kind: "fill", ref: "e2", text: "Porto" }] }],
+    ["browser_navigate", { url: "https://shop.example.com/orders" }],
+    ["open_path", { path: "https://shop.example.com/orders" }],
+  ])("leaves %s on a site the run was given alone", async (name, args) => {
+    await expect(review(name, args, yes, yes)).resolves.toBeUndefined();
   });
 
-  it("leaves opening a workspace file or an app without a URI alone", async () => {
+  it("leaves calls that send nothing the bot chose alone, without checking the run", async () => {
     let checked = false;
     const check = async () => {
       checked = true;
       return true;
     };
     for (const [name, args] of [
+      ["browser_act", { actions: [{ kind: "click", ref: "e1" }] }],
+      [
+        "computer_act",
+        {
+          actions: [
+            { kind: "click", x: 1, y: 2 },
+            { kind: "key", key: "Return" },
+          ],
+        },
+      ],
+      ["computer_act", { actions: [{ kind: "type", text: "  " }] }],
       ["open_path", { path: "reports/q4.pdf" }],
       ["open_path", { path: "C:\\Users\\bot\\notes.txt" }],
       ["launch_app", { application: "Calculator" }],
       ["write_file", { path: "a.txt" }],
-      ["read_file", { path: "a.txt" }],
       ["browser_snapshot", {}],
-      ["computer_observe", {}],
     ] as const) {
-      await expect(review(name, args, check, check)).resolves.toBe(false);
+      await expect(review(name, args, check, check)).resolves.toBeUndefined();
     }
     expect(checked).toBe(false);
   });

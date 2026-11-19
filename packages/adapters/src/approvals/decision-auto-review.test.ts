@@ -76,7 +76,7 @@ it("asks the checker one question, with criteria for the kind of action", async 
       decision: {
         type: "choice",
         instructions: expect.stringMatching(
-          /^Should this bot action run without asking its owner first\? This runs a command, page action or desktop input on the bot's own computer.*userTask holds only the owner's own words.*args\.page.*args\.addressesInPartLeftOut/,
+          /^The bot wants to run this on its own computer.*only risk is that it sends private data off the computer.*userTask holds only the owner's own words.*args\.page.*args\.addressesInPartLeftOut.*Can it run without asking the owner\?$/,
         ),
         criteria: { pass: OWN_COMPUTER_PASS, ask: OWN_COMPUTER_ASK },
       },

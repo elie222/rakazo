@@ -10,7 +10,7 @@ import {
   humanizeToolName,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
-  ownComputerActionNeedsReview,
+  ownComputerActionReview,
   planActionGate,
   repeatsDeniedAction,
   resolveActionApprovalForTools,
@@ -248,17 +248,24 @@ export async function gateToolCall(
   const savedContextWriteReviewed = await savedContextWriteNeedsReview(name, () =>
     isRunTainted(ctx),
   );
-  // Opening a page sends its whole URL to the site, like a fetch, so it is judged like one.
-  const pageUrl =
-    name === "browser_navigate" || name === "open_path"
-      ? normalizedHttpUrl(String((name === "open_path" ? args.path : args.url) ?? ""))
-      : undefined;
+  // The page a call opens, or types into: opening one sends its whole URL to the site, like a
+  // fetch, and typing sends the text to the site of the page the browser last reported.
+  const opensPage = name === "browser_navigate" || name === "open_path";
+  const pageTarget =
+    name === "open_path"
+      ? args.path
+      : name === "browser_navigate"
+        ? args.url
+        : name === "browser_act"
+          ? ctx.state.pageUrl
+          : undefined;
+  const pageUrl = typeof pageTarget === "string" ? normalizedHttpUrl(pageTarget) : undefined;
   const pageSite = pageUrl ? urlSite(pageUrl) : undefined;
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   // Only the approval model reads this, so only Auto looks for outside content here.
-  const ownComputerActionReviewed = await ownComputerActionNeedsReview(name, args, {
+  const ownComputerReview = await ownComputerActionReview(name, args, {
     tainted: async () => mode === "auto" && (await isRunTainted(ctx)),
-    siteGiven: async () =>
+    pageSiteGiven: async () =>
       pageUrl !== undefined &&
       pageSite !== undefined &&
       outboundSiteGate({
@@ -269,12 +276,13 @@ export async function gateToolCall(
         rules: await ctx.trust.loadApprovalRules(),
       }) === "allow",
   });
-  // A page on a new site is judged on its URL alone, as a fetch is, when the URL is short enough to
-  // show whole; a longer one is judged with the call's other arguments, under their size limit.
+  // A page opened on a new site is judged on its URL alone, as a fetch is, when the URL is short
+  // enough to show whole; a longer one is judged with the call's other arguments, under their limit.
   const newPageUrl =
-    ownComputerActionReviewed && pageSite && pageUrl!.length <= MAX_FETCH_URL_LENGTH
+    ownComputerReview && opensPage && pageSite && pageUrl!.length <= MAX_FETCH_URL_LENGTH
       ? pageUrl
       : undefined;
+  const ownComputerActionReviewed = ownComputerReview !== undefined;
   // Outside text only ever informs the approval model: these go to it in Auto, and nowhere else.
   const reviewOnly =
     connectorReadGated ||

@@ -5366,36 +5366,55 @@ describe("Auto Review of actions on the bot's own computer after outside content
     expect(browser.opened).toEqual([]);
   });
 
-  it("judges a page action with the page it acts on", async () => {
+  it("judges typing into a page on a site the run was not given, with the page it acts on", async () => {
     reviewMock.mockResolvedValue({ decision: "ask", reason: "Sends notes away", model: "mock" });
     const browser = pageBrowser();
     const f = fixture({
       builtin: true,
       autoReview: true,
       sourceRole: "user",
-      prompt: "Read the post at https://forum.example.org/t/42 and tell me what it says.",
+      prompt: "Summarize the firmware thread on forum.example.org.",
       browser: browser.provider,
     });
     f.claimedOutsideSteering(true);
-    const actions = [
+    const typed = [
       { kind: "fill", ref: "e3", text: "Owner's private notes" },
       { kind: "click", ref: "e4" },
     ];
     f.setCalls([
+      // The owner named this site: opening it, clicking and typing there are not reviewed.
       {
         name: "browser_navigate",
-        args: { url: "https://forum.example.org/t/42?page=2" },
+        args: { url: "https://forum.example.org/t/42" },
         executionId: "call-1",
       },
-      { name: "browser_act", args: { actions }, executionId: "call-2" },
+      { name: "browser_act", args: { actions: typed }, executionId: "call-2" },
+      // Another site only the page linked: clicking there sends nothing the bot chose.
+      {
+        name: "browser_navigate",
+        args: { url: "https://notes-sync.example.net/" },
+        executionId: "call-3",
+      },
+      {
+        name: "browser_act",
+        args: { actions: [{ kind: "click", ref: "e9" }] },
+        executionId: "call-4",
+      },
+      { name: "browser_act", args: { actions: typed }, executionId: "call-5" },
     ]);
+    reviewMock.mockResolvedValueOnce({ decision: "pass", reason: "Plain URL", model: "mock" });
     await f.run();
-    expect(reviewMock).toHaveBeenCalledOnce();
-    expect(reviewRequest()).toMatchObject({
-      toolName: "browser_act",
-      args: { actions, page: "https://forum.example.org" },
+    const requests = (reviewMock.mock.calls as unknown as [Record<string, unknown>][]).map(
+      ([request]) => request,
+    );
+    expect(requests.map((request) => request.toolName)).toEqual([
+      "browser_navigate",
+      "browser_act",
+    ]);
+    expect(requests[1]).toMatchObject({
+      args: { actions: typed, page: "https://notes-sync.example.net" },
       ownComputerAction: true,
     });
-    expect(isApprovalPausedResult(f.results[1])).toBe(true);
+    expect(isApprovalPausedResult(f.results[4])).toBe(true);
   });
 });

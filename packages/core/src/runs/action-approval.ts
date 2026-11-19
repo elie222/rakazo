@@ -359,38 +359,66 @@ export async function savedContextWriteNeedsReview(
   );
 }
 
-const OWN_COMPUTER_ACTION_TOOLS = new Set([
-  "shell",
-  "browser_act",
-  "browser_navigate",
-  "computer_act",
-  "open_path",
-  "launch_app",
-]);
-/** Tools that open a page; a page on a site the run was given is not reviewed. */
-const PAGE_OPENING_TOOLS = new Set(["browser_navigate", "open_path"]);
 /** A scheme of two letters or more, so a drive letter is not taken for one. */
 const URI_SCHEME = /^[a-z][a-z0-9+.-]+:/i;
+/** Page actions that put text or files the bot chose into the page. */
+const PAGE_TYPING_KINDS = new Set(["fill", "type", "upload"]);
+
+function actionsOf(args: Record<string, unknown>): Record<string, unknown>[] {
+  return Array.isArray(args.actions)
+    ? args.actions.filter(
+        (action): action is Record<string, unknown> => !!action && typeof action === "object",
+      )
+    : [];
+}
 
 /**
- * A command, page action or desktop input on the bot's own computer is checked by the approval
- * model in Auto once outside text entered the run (see isRunTainted): text the bot read could have
- * asked it to send data out with `curl`, a form or a URL. Like every taint check it only informs
- * the review; Ask and Never ask treat the call as they treat any other. Opening a workspace file,
- * or an app without a URI, sends nothing. Opening a page is checked only on a site the run was not
- * given (`siteGiven`, see outboundSiteGate), as a fetch is. The predicates are only checked for
- * these tools.
+ * What a call on the bot's own computer could send off it, which the approval model checks in Auto
+ * once outside text entered the run (see isRunTainted): "command" for a shell command, which can
+ * reach anything; "page" for a page opened, or typed or uploaded into, on a site the run was not
+ * given (`pageSiteGiven`, see outboundSiteGate); "input" for desktop typing or an app opened with a
+ * URI. Clicks, keys, scrolling and opening a file or app send nothing the bot chose, so they get
+ * nothing. Like every taint check it only informs the review; Ask and Never ask treat the call as
+ * they treat any other. The predicates are only checked for calls that could send something.
  */
-export async function ownComputerActionNeedsReview(
+export async function ownComputerActionReview(
   toolName: string,
   args: Record<string, unknown>,
-  checks: { tainted: () => Promise<boolean>; siteGiven: () => Promise<boolean> },
-): Promise<boolean> {
-  if (!OWN_COMPUTER_ACTION_TOOLS.has(toolName)) return false;
-  if (toolName === "open_path" && !URI_SCHEME.test(String(args.path ?? "").trim())) return false;
-  if (toolName === "launch_app" && !String(args.uri ?? "").trim()) return false;
-  if (!(await checks.tainted())) return false;
-  return !PAGE_OPENING_TOOLS.has(toolName) || !(await checks.siteGiven());
+  checks: { tainted: () => Promise<boolean>; pageSiteGiven: () => Promise<boolean> },
+): Promise<"command" | "page" | "input" | undefined> {
+  const kind = whatCouldLeave(toolName, args);
+  if (!kind || !(await checks.tainted())) return undefined;
+  return kind === "page" && (await checks.pageSiteGiven()) ? undefined : kind;
+}
+
+function whatCouldLeave(
+  toolName: string,
+  args: Record<string, unknown>,
+): "command" | "page" | "input" | undefined {
+  switch (toolName) {
+    case "shell":
+      return "command";
+    case "browser_navigate":
+      return "page";
+    case "open_path":
+      return URI_SCHEME.test(String(args.path ?? "").trim()) ? "page" : undefined;
+    case "browser_act":
+      return actionsOf(args).some((action) => PAGE_TYPING_KINDS.has(String(action.kind)))
+        ? "page"
+        : undefined;
+    case "computer_act":
+      return actionsOf(args).some(
+        (action) =>
+          (action.kind === "type" && String(action.text ?? "").trim()) ||
+          String(action.uri ?? "").trim(),
+      )
+        ? "input"
+        : undefined;
+    case "launch_app":
+      return String(args.uri ?? "").trim() ? "input" : undefined;
+    default:
+      return undefined;
+  }
 }
 
 /**

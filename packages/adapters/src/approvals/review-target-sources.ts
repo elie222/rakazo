@@ -1,5 +1,5 @@
 import { BACKGROUND_HELPER_TRIGGER, HELPER_RESULT_TRIGGER } from "@rakazo/core";
-import { hostSite, httpUrlsInText, sitesInText, urlSite } from "@rakazo/core/egress";
+import { sitesInText, urlSite } from "@rakazo/core/egress";
 
 /**
  * Where an action's targets came from, worked out by the server rather than asked of the reviewer.
@@ -32,21 +32,6 @@ const normalize = (text: string) => text.normalize("NFKC").toLowerCase().replace
 
 type Target = { value: string; site?: string };
 
-/** The host an address goes to: after its scheme and any user, before a port or path. */
-function addressHost(address: string): string | undefined {
-  const authority = address
-    .replace(/…$/, "")
-    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
-    .split(/[/?#]/, 1)[0]!;
-  const host = authority.slice(authority.lastIndexOf("@") + 1).split(":", 1)[0]!;
-  return host ? httpUrlHost(host) : undefined;
-}
-
-/** A host name in the form a URL gives it (lower case, ASCII), or nothing for a non-host. */
-function httpUrlHost(host: string): string | undefined {
-  return URL.canParse(`http://${host}`) ? new URL(`http://${host}`).hostname : undefined;
-}
-
 /** The targets in a call's arguments, normalized for comparison. A URL's target is its host. */
 export function actionTargets(args: Record<string, unknown>): Target[] {
   const targets = new Map<string, Target>();
@@ -63,19 +48,6 @@ export function actionTargets(args: Record<string, unknown>): Target[] {
         add({ value: String(node) });
     } else if (typeof node === "string" && node.trim() && !FREE_TEXT_KEY.test(key)) {
       const value = node.trim();
-      // What a cut command names in the part left out: a URL, `user@host`, an IP or a host name.
-      if (key === "addressesInPartLeftOut") {
-        const host = addressHost(value);
-        const site = host ? hostSite(host) : undefined;
-        if (host && site && host.includes(".")) add({ value: host, site });
-        return;
-      }
-      // A command line reaches every site its links name.
-      if (key === "command")
-        for (const url of httpUrlsInText(value)) {
-          const site = urlSite(url);
-          if (site) add({ value: new URL(url).hostname, site });
-        }
       const site = urlSite(value);
       const emails = value.includes("@")
         ? value
