@@ -37,9 +37,21 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
         <Trans>Run history</Trans>
       </SectionHeading>
       {history.isError ? (
-        <p role="alert" className="mt-2 text-body text-destructive">
-          <Trans>Could not load run history</Trans>
-        </p>
+        <div className="mt-2">
+          <p role="alert" className="text-body text-destructive">
+            <Trans>Could not load run history</Trans>
+          </p>
+          {!history.isFetchNextPageError ? (
+            <Button
+              variant="text"
+              disabled={history.isFetching}
+              onClick={() => void history.refetch({ cancelRefetch: false })}
+              className="mt-1 font-normal"
+            >
+              <Trans>Try again</Trans>
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       {runs === null ? (
         history.isPending ? (
