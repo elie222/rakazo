@@ -92,6 +92,7 @@ export interface RouterDeps {
   ticketChanges: TicketChangeNotifier;
   auth: Auth;
   jobs: JobPublisher;
+  pageRevisions?: { start(requestId: string): void };
   sandbox: SandboxProvider;
   memory: MemoryStore;
   memoryProviders: MemoryProviderResolver;

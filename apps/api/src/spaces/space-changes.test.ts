@@ -1,5 +1,6 @@
 import { createRouterClient } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
+import { pageChangesScope } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
@@ -35,6 +36,29 @@ describe("notifications.subscribe space change signals", () => {
       expect((await iterator.next()).value).toEqual({ type: "runs" });
       expect((await iterator.next()).value).toEqual({ type: "routines" });
       expect(followSpaceChanges).toHaveBeenCalledWith(actor.spaceId, expect.any(AbortSignal));
+    } finally {
+      controller.abort();
+    }
+  });
+
+  it("delivers page signals only on the signed-in account's topic", async () => {
+    const controller = new AbortController();
+    const followSpaceChanges = vi.fn(async function* (scope: string) {
+      if (scope === actor.spaceId || scope === pageChangesScope(actor.userId)) {
+        yield "pages" as const;
+      }
+    });
+    const client = createRouterClient(
+      createRouter({ events: { followChatAlerts, followSpaceChanges } } as unknown as RouterDeps),
+      { context: { actor, signal: controller.signal } },
+    );
+    try {
+      const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toEqual({ type: "pages" });
+      expect(followSpaceChanges).toHaveBeenCalledWith(
+        pageChangesScope(actor.userId),
+        expect.any(AbortSignal),
+      );
     } finally {
       controller.abort();
     }

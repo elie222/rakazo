@@ -15,7 +15,14 @@ import { PageLanguage } from "./kit/labels.js";
 import { PAGE_STYLES } from "./kit/styles.js";
 
 /** What the host's boot script passes to `RakazoPage.mount`; `code` comes from `pageViewerCode`. */
-type PageBoot = { code: string; theme: "light" | "dark"; errorTitle: string; lang?: string };
+type PageBoot = {
+  code: string;
+  theme: "light" | "dark";
+  errorTitle: string;
+  lang?: string;
+  review?: boolean;
+  reviewAnchor?: string;
+};
 
 type PageFactory = (exports: { default?: unknown }, ...globals: unknown[]) => void;
 
@@ -86,11 +93,41 @@ function reportHeight() {
   new ResizeObserver(post).observe(document.body);
 }
 
+/** Section names are display data from this rendered revision. */
+function reportSections(host: HTMLElement, anchor?: string) {
+  let previous = "";
+  let destination = anchor;
+  const report = () => {
+    const headings = [...host.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading]")]
+      .slice(0, 80)
+      .filter((heading) => heading.getClientRects().length > 0);
+    const labels = headings.map((heading) =>
+      heading.textContent?.replace(/\s+/g, " ").trim().slice(0, 200),
+    );
+    const index = destination === undefined ? -1 : labels.indexOf(destination);
+    if (index >= 0) {
+      headings[index]?.scrollIntoView();
+      destination = undefined;
+    }
+    const sections = labels.filter(Boolean);
+    const next = JSON.stringify(sections);
+    if (next === previous) return;
+    previous = next;
+    window.parent?.postMessage({ type: "rakazo-page:sections", sections }, "*");
+  };
+  new MutationObserver(report).observe(host, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+}
+
 function mount(boot: PageBoot) {
   document.documentElement.dataset.theme = boot.theme === "light" ? "light" : "dark";
   reportHeight();
   const host =
     document.getElementById("root") ?? document.body.appendChild(document.createElement("div"));
+  if (boot.review) reportSections(host, boot.reviewAnchor);
   const root = createRoot(host);
   let Page: ComponentType;
   try {

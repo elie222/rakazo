@@ -39,6 +39,11 @@ addEventListener("message", (event) => {
       parent.postMessage({ type: data.type, id: data.id, text: data.text, gesture: fresh }, "*");
     } else if (data && data.type === "rakazo-page:height" && Number.isFinite(data.height)) {
       parent.postMessage({ type: data.type, height: data.height }, "*");
+    } else if (data && data.type === "rakazo-page:sections" && Array.isArray(data.sections)) {
+      const sections = data.sections.slice(0, 80)
+        .filter((section) => typeof section === "string")
+        .map((section) => section.slice(0, 200));
+      parent.postMessage({ type: data.type, sections }, "*");
     }
     return;
   }

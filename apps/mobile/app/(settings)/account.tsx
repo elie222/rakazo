@@ -242,6 +242,11 @@ export default function Account() {
       href: "/artifacts",
       icon: { ios: "folder", android: "folder-outline" },
     },
+    {
+      title: t`Pages shared with you`,
+      href: "/shared-pages",
+      icon: { ios: "doc.on.doc", android: "documents-outline" },
+    },
     ...(hasLab(me?.labs, "board")
       ? [
           {

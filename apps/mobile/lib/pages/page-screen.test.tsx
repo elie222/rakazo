@@ -43,6 +43,7 @@ vi.mock("expo-clipboard", () => ({
   },
 }));
 vi.mock("expo-router", () => ({
+  useFocusEffect: () => {},
   useLocalSearchParams: () => ({ pageId: "page-1" }),
   useRouter: () => ({
     back: () => host.went.push("back"),
@@ -310,10 +311,16 @@ it("closes and shares the page with the native icon buttons", async () => {
     ]),
   ).toEqual([
     ["Close", "xmark close", ""],
+    ["Review page", "bubble chatbubble-outline", ""],
     ["Share", "square.and.arrow.up share-outline", ""],
   ]);
   await act(async () => buttons[0]!.click());
   await act(async () => buttons[1]!.click());
-  expect(host.went).toEqual(["back", { pathname: "/page-share", params: { pageId: "page-1" } }]);
+  await act(async () => buttons[2]!.click());
+  expect(host.went).toEqual([
+    "back",
+    { pathname: "/page-review", params: { pageId: "page-1" } },
+    { pathname: "/page-share", params: { pageId: "page-1" } },
+  ]);
   await act(async () => root.unmount());
 });

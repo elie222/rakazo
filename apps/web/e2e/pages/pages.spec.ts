@@ -1069,3 +1069,81 @@ test("a page acts for its reader only after a click in it, never on load or from
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("key 1");
 });
+
+test("specific people review a version and lose access when removed", async ({
+  page,
+  browser,
+  baseURL,
+}, testInfo) => {
+  const stamp = Date.now();
+  const reviewerEmail = `reviewer-${stamp}@example.test`;
+  const reviewerContext = await browser.newContext({ baseURL, reducedMotion: "reduce" });
+  try {
+    const reviewer = await reviewerContext.newPage();
+    await signup(reviewer, reviewerEmail, "password12", "Reviewer");
+    const emailApi = process.env.API_URL ?? "http://127.0.0.1:3110";
+    let verificationLink: string | undefined;
+    await expect
+      .poll(async () => {
+        const response = await reviewer.request.get(`${emailApi}/__e2e/emails`);
+        const emails = (await response.json()) as Array<{ to: string; text: string }>;
+        verificationLink = emails
+          .filter(({ to }) => to === reviewerEmail)
+          .flatMap(({ text }) => text.match(/https?:\/\/\S+/g) ?? [])
+          .find((url) => new URL(url).pathname === "/api/auth/verify-email");
+        return Boolean(verificationLink);
+      })
+      .toBe(true);
+    expect((await reviewer.request.get(verificationLink!)).ok()).toBe(true);
+
+    await signup(page, `author-${stamp}@example.test`, "password12", "Author");
+    await completeOnboarding(page);
+    const title = "Weekly review";
+    const source = `export default function Report() {
+      return <Page title="Weekly review"><Section heading="Release readiness">
+        <Text>All checks are complete.</Text>
+      </Section></Page>;
+    }`;
+    await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+    await page.getByRole("button", { name: `Open ${title}` }).click({ timeout: 30_000 });
+    const pageId = new URL(page.url()).searchParams.get("page")!;
+    await page.getByRole("button", { name: "Share", exact: true }).click();
+    const share = page.getByTestId("page-share");
+    await share.getByRole("radio", { name: "Specific people" }).click();
+    await share.getByRole("textbox", { name: "Account email" }).fill(reviewerEmail);
+    await share.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(share.getByText(reviewerEmail, { exact: true })).toBeVisible();
+    await expect(share.getByRole("button", { name: "Copy review link" })).toBeVisible();
+    await captureScreenshot(page, testInfo, "page-specific-people");
+    const detail = await rpc<{ shareUrl: string }>(page, "pages/get", { pageId, link: true });
+
+    await reviewer.goto(detail.shareUrl);
+    await expect(
+      pageFrame(reviewer, title).getByRole("heading", { name: "Release readiness" }),
+    ).toBeVisible();
+    await reviewer.getByRole("button", { name: "Comments", exact: true }).click();
+    await reviewer.getByRole("combobox", { name: "Section", exact: true }).click();
+    await reviewer.getByRole("option", { name: "Release readiness" }).click();
+    await reviewer
+      .getByRole("textbox", { name: "Comment", exact: true })
+      .fill("Add the rollout date.");
+    await reviewer.getByRole("button", { name: "Post comment" }).click();
+    await expect(reviewer.getByText("Add the rollout date.", { exact: true })).toBeVisible();
+    await expect(reviewer.getByRole("button", { name: "Ask bot to revise" })).toBeVisible();
+    await captureScreenshot(reviewer, testInfo, "page-review-comment");
+
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Review page" }).click();
+    await page.getByRole("button", { name: "Comments", exact: true }).click();
+    await expect(page.getByText("Add the rollout date.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Resolve", exact: true }).click();
+    await expect(reviewer.getByRole("button", { name: "Reopen", exact: true })).toBeVisible();
+    await page.goBack();
+    await page.getByRole("button", { name: "Share", exact: true }).click();
+    await share.getByRole("button", { name: `Remove access for ${reviewerEmail}` }).click();
+    await expect(reviewer.getByText("This page isn't available", { exact: true })).toBeVisible();
+    await expect(reviewer.locator(`iframe[title="${title}"]`)).toHaveCount(0);
+  } finally {
+    await reviewerContext.close();
+  }
+});

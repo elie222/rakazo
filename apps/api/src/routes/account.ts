@@ -40,6 +40,7 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
+  pageChangesScope,
   removeApprovalRule,
   runAsSystem,
   runAsTenant,
@@ -410,16 +411,27 @@ export function accountRoutes(ctx: RouterContext) {
         };
         const spaceChanges = async function* (
           signal: AbortSignal,
-          calendar = false,
+          kind: "space" | "calendar" | "pages" = "space",
         ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
-          if (!followSpaceChanges || (calendar && !deps.meetingCalendar)) return;
-          const scope = calendar ? meetingCalendarScope(spaceId, userId) : spaceId;
+          if (!followSpaceChanges || (kind === "calendar" && !deps.meetingCalendar)) return;
+          const scope =
+            kind === "calendar"
+              ? meetingCalendarScope(spaceId, userId)
+              : kind === "pages"
+                ? pageChangesScope(userId)
+                : spaceId;
           // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
           // failure costs one reconnect every half minute rather than a tight loop.
           try {
             for await (const spaceChange of followSpaceChanges(scope, signal)) {
-              if ((spaceChange === "meetingCalendar") === calendar) yield { spaceChange };
+              const scopeKind =
+                spaceChange === "meetingCalendar"
+                  ? "calendar"
+                  : spaceChange === "pages"
+                    ? "pages"
+                    : "space";
+              if (scopeKind === kind) yield { spaceChange };
             }
           } catch (error) {
             await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
@@ -443,7 +455,8 @@ export function accountRoutes(ctx: RouterContext) {
             followChatAlerts(userId, spaceId, signal),
             rosterChanges(signal),
             spaceChanges(signal),
-            spaceChanges(signal, true),
+            spaceChanges(signal, "calendar"),
+            spaceChanges(signal, "pages"),
             organizationChanges(signal),
           ),
         );

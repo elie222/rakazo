@@ -25,6 +25,8 @@ model User {
   meetingSessions MeetingSession[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
+  pageGrants PageGrant[]
+  pageComments PageComment[]
   id                          String                       @id
   name                        String
   email                       String
@@ -2039,6 +2041,8 @@ model Page {
   /// Set when the page's content or title changes; pinning or sharing it is not an update.
   updatedAt      DateTime      @default(now())
   versions       PageVersion[]
+  grants         PageGrant[]
+  comments       PageComment[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2059,6 +2063,53 @@ model PageVersion {
 
   @@unique([pageId, version])
   @@map("page_versions")
+}
+
+model PageGrant {
+  id           String @id @default(cuid())
+  pageId       String
+  page         Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstVersion Int
+
+  @@unique([pageId, userId])
+  @@index([userId, pageId])
+  @@map("page_grants")
+}
+
+model PageComment {
+  id         String @id @default(cuid())
+  pageId     String
+  page       Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  version    Int
+  section    String
+  body       String
+  createdAt  DateTime @default(now())
+  resolvedAt DateTime?
+  request    PageRevisionRequest?
+
+  @@index([pageId, createdAt, id])
+  @@map("page_comments")
+}
+
+model PageRevisionRequest {
+  id          String @id @default(cuid())
+  commentId   String @unique
+  comment     PageComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  requesterId String
+  /// The exact grant at submission. A later grant does not reinstate work from this one.
+  grantId     String?
+  status      String @default("pending")
+  createdAt   DateTime @default(now())
+  draftSource String?
+  draftCode   String?
+  resultVersion Int?
+
+  @@index([grantId])
+  @@map("page_revision_requests")
 }
 
 model UsageRecord {

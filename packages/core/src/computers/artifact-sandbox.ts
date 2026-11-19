@@ -41,6 +41,8 @@ export function pageViewerDocument(input: {
   touch?: boolean;
   /** The host can put a page's reply in a chat composer beside it; public pages have none. */
   reply?: boolean;
+  review?: boolean;
+  reviewAnchor?: string;
   /** Pixels the host covers at the bottom (a docked composer); bottom bars and the end clear it. */
   bottomInset?: number;
   /** The reader's app language, for the kit's own words when the page does not set `lang`. */
@@ -51,6 +53,8 @@ export function pageViewerDocument(input: {
     theme: input.theme,
     errorTitle: input.errorTitle,
     lang: input.lang,
+    review: input.review || undefined,
+    reviewAnchor: input.review ? input.reviewAnchor : undefined,
   }).replace(/</g, "\\u003c");
   const inset =
     input.bottomInset !== undefined && Number.isFinite(input.bottomInset) && input.bottomInset > 0
@@ -108,4 +112,23 @@ export function pageLinkRequest(data: unknown): string | null {
 /** The answer a page's copy button waits for. */
 export function pageCopyResult(id: string, ok: boolean) {
   return { type: "rakazo-page:copied", id, ok };
+}
+
+/** Untrusted labels from the shown frame, used only as choices in the host's comment form. */
+export function pageReviewSections(message: unknown): string[] | undefined {
+  if (
+    !message ||
+    typeof message !== "object" ||
+    !("type" in message) ||
+    message.type !== "rakazo-page:sections" ||
+    !("sections" in message) ||
+    !Array.isArray(message.sections)
+  )
+    return undefined;
+  const labels = message.sections.slice(0, 80).flatMap((label: unknown) => {
+    if (typeof label !== "string") return [];
+    const text = label.slice(0, 200).replace(/\s+/g, " ").trim();
+    return text ? [text] : [];
+  });
+  return [...new Set(labels)];
 }

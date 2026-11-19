@@ -33,6 +33,7 @@ export function PageView({
   share,
   composer,
   onReply,
+  onSections,
   returnFocus,
   compact = false,
   notice = null,
@@ -48,6 +49,7 @@ export function PageView({
   composer?: ReactNode;
   /** Takes a page's reply text into the docked composer. */
   onReply?: (text: unknown) => void;
+  onSections?: (sections: string[]) => void;
   /** Puts focus back on close; false tells the dialog it is done. */
   returnFocus?: () => boolean;
   /** Touch screens get larger round controls. */
@@ -102,7 +104,9 @@ export function PageView({
           !next &&
           details.reason === "escape-key" &&
           target instanceof Element &&
-          target.closest('[data-slot="popover-content"], [data-slot="dropdown-menu-content"]')
+          target.closest(
+            '[data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="select-content"]',
+          )
         ) {
           details.cancel();
           return;
@@ -194,6 +198,7 @@ export function PageView({
                       title={title}
                       interactive
                       onReply={onReply}
+                      onSections={onSections}
                       onHeight={onDrawn}
                     />
                   </div>

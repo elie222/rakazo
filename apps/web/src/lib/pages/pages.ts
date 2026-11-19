@@ -70,6 +70,8 @@ export function usePageDocument(
   reply = false,
   /** Pixels a composer docked over the page's bottom covers. */
   bottomInset = 0,
+  review = false,
+  reviewAnchor?: string,
 ): { document: string | null; failed: boolean; retry: () => void } {
   const { t, i18n } = useLingui();
   const theme = useAppTheme();
@@ -92,9 +94,22 @@ export function usePageDocument(
             touch,
             reply,
             bottomInset,
+            review,
+            reviewAnchor,
             lang: i18n.locale,
           }),
-    [runtime.data, code, theme, errorTitle, surface, touch, reply, bottomInset, i18n.locale],
+    [
+      runtime.data,
+      code,
+      theme,
+      errorTitle,
+      surface,
+      touch,
+      reply,
+      bottomInset,
+      review,
+      i18n.locale,
+    ],
   );
   const { refetch } = runtime;
   const retry = useCallback(() => void refetch(), [refetch]);

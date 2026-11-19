@@ -8,6 +8,7 @@ export * from "./account/sessions.js";
 export * from "./artifacts/artifact-versions.js";
 export * from "./artifacts/board.js";
 export * from "./artifacts/board-live.js";
+export * from "./artifacts/page-collaboration.js";
 export * from "./artifacts/page-shares.js";
 export * from "./billing/billing.js";
 export * from "./billing/model-credit-cap.js";

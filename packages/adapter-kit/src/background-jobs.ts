@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 
 const payloadSchemas = {
+  "page.revise": z.object({ requestId: z.string().min(1) }),
   "run.continue": z.object({ runId: z.string().min(1) }),
   "routine.wakeup": z.object({
     routineId: z.string().min(1),

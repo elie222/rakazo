@@ -55,6 +55,9 @@ import { SlackInstallCallbackPage } from "./pages/integrations/SlackInstallCallb
 import { SharedPagePage } from "./pages/SharedPage";
 import { ShellPage } from "./pages/Shell";
 
+const PageReviewHost = lazyComponent(() =>
+  import("./components/pages/PageReviewHost").then((module) => module.default),
+);
 const AuthPage = lazyComponent(() => import("./pages/auth/Auth").then((module) => module.AuthPage));
 const PasswordResetPage = lazyComponent(() =>
   import("./pages/auth/Auth").then((module) => module.PasswordResetPage),
@@ -231,6 +234,16 @@ function SessionApp() {
               />
               <Route path="/reset-password" element={<PasswordResetPage />} />
               <Route path="/p/:slugToken" element={<SharedPagePage />} />
+              <Route
+                path="/review/:pageId?"
+                element={
+                  user ? (
+                    <PageReviewHost />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
               <Route
                 path={MCP_OAUTH_CALLBACK_PATH}
                 element={
