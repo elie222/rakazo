@@ -579,7 +579,14 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   let changedTo: unknown = null;
   await page.route("**/rpc/billing/changeTier", async (route) => {
     changedTo = route.request().postDataJSON()?.json?.tier;
-    status = { ...status, byokPriceCents: 4900, byokAnnualPriceCents: 46800, byokTier: "pro" };
+    status = {
+      ...status,
+      byokPriceCents: 4900,
+      byokAnnualPriceCents: 46800,
+      byokTier: "pro",
+      computerHoursLeft: 400,
+      computerSizeSettings: { size: "standard", available: ["standard", "large"] },
+    };
     await route.fulfill({ json: { json: status } });
   });
   await page.reload();
@@ -599,6 +606,23 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   await expect.poll(() => changedTo).toBe("pro");
   await expect(plan.getByText("$49 / month", { exact: true })).toBeVisible();
   await expect(plan.getByText("8 vCPU, 16 GB, 100 computer hours a month")).toBeVisible();
+  await page.route("**/rpc/billing/setComputerSize", async (route) => {
+    expect(route.request().postDataJSON()?.json).toEqual({ size: "large" });
+    status = {
+      ...status,
+      computerHoursLeft: 200,
+      computerSizeSettings: { size: "large", available: ["standard", "large"] },
+    };
+    await route.fulfill({ json: { json: status } });
+  });
+  const size = settings.getByRole("combobox", { name: "Computer size" });
+  await expect(size).toHaveText("Standard");
+  await size.click();
+  await expect(page.getByRole("option", { name: "Large · 2× usage" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-computer-size");
+  await page.getByRole("option", { name: "Large · 2× usage" }).click();
+  await expect(size).toHaveText("Large · 2× usage");
+  await expect(settings.getByText("200", { exact: true })).toBeVisible();
 });
 
 test("yearly billing shows the monthly computer reset separately from renewal", async ({

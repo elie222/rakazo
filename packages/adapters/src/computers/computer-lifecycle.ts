@@ -592,6 +592,8 @@ export async function provisionComputer(
     const continued =
       existing.state === "running" && existing.runningSince && !ref.started && !replacement;
     const runningSince = continued ? existing.runningSince! : new Date();
+    const sizing =
+      !continued && ref.size ? { runningSize: ref.size, runningSizeSince: runningSince } : {};
     // One write stores the machine and leaves "booting", and the same transaction drops the
     // record that would delete the machine later: from here the computer answers for it.
     const activated = await deps.prisma.$transaction(async (tx) => {
@@ -610,6 +612,7 @@ export async function provisionComputer(
           kind: ref.kind,
           restorePending: false,
           runningSince,
+          ...sizing,
           ...(!reconnecting
             ? {
                 controlHolder: activeControl ? "user" : controlHolder,
@@ -640,7 +643,7 @@ export async function provisionComputer(
     // or lost at the provider without us.
     await recordComputerRunStart(
       deps.prisma,
-      { ...existing, kind: ref.kind, providerRef: ref.providerRef },
+      { ...existing, ...sizing, kind: ref.kind, providerRef: ref.providerRef },
       runningSince,
       existing.state === "running" ? "gone" : "reconciled",
     );

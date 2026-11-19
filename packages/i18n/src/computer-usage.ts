@@ -1,4 +1,17 @@
 import { i18n } from "@lingui/core";
+import { t } from "@lingui/core/macro";
+import type { ComputerSize } from "@rakazo/contracts";
+
+export function computerSizeLabel(size: ComputerSize, withUsage = false): string {
+  switch (size) {
+    case "standard":
+      return t`Standard`;
+    case "large":
+      return withUsage ? t`Large · 2× usage` : t`Large`;
+    case "xlarge":
+      return withUsage ? t`Extra large · 4× usage` : t`Extra large`;
+  }
+}
 
 type UsageRead = {
   isError: boolean;

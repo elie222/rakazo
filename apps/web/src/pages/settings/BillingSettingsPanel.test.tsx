@@ -152,6 +152,7 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   });
 
   // Another tab selects another organization while this panel stays open.
+  await vi.waitFor(() => expect(container.textContent).toContain("Hours by computer"));
   localStorage.setItem("rakazo:space-id", "space-b");
   act(() => {
     window.dispatchEvent(new StorageEvent("storage", { key: "rakazo:space-id" }));
@@ -199,6 +200,7 @@ it("acts on the window's space when another tab switched before the panel opened
     spaceId: "space-a",
   });
 
+  await vi.waitFor(() => expect(container.textContent).toContain("Start plan now"));
   await act(async () => {
     button(container, "Start plan now").click();
   });
@@ -241,6 +243,7 @@ it("opens the billing portal of the window's space, and says so when it cannot",
     await flush();
   });
 
+  await vi.waitFor(() => expect(container.textContent).toContain("Manage"));
   await act(async () => {
     button(container, "Manage").click();
     await flush();

@@ -11,14 +11,15 @@ amounts. Monthly credits expire at the end of their service period; one-time top
 The hosted computer is included in both paths, and monthly credits include the own-key plan.
 
 `BYOK_TIERS` in `@rakazo/contracts` sets the own-key plan's tiers: Standard, Pro and Max, each with
-a monthly and yearly price, a monthly computer allowance and a computer size. New organizations
+a monthly and yearly price, a monthly computer allowance and a maximum computer size. New organizations
 start on Standard; existing subscribers keep the price they signed up at. A `null` Standard monthly
 price makes the plan free, hides the other tiers, and ends paid own-key subscriptions at their
 period end; a `null` yearly price offers that tier monthly only, and a `null` monthly price on Pro
 or Max hides it. Billing reads a plan's tier from its price's lookup key, which Rakazo creates as
 `rakazo_byok_<tier>_<monthly|yearly>_<cents>` (Standard's keys name no tier), so keep those keys
-on any price you create by hand. Before selling a tier, make sure the sandbox account can run its
-computer size; a computer that cannot start at its size starts at its current one.
+on any price you create by hand. Computers default to Standard and apply the organization's
+selection on the next start. Before selling a tier, make sure the sandbox account can run its
+larger sizes. If a computer cannot resize, it starts at its current size.
 
 Subscribers can change tier from Billing at the same interval, and monthly subscribers can switch
 to yearly, which charges the yearly price less the unused part of the month. A tier change charges

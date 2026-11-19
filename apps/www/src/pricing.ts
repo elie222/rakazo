@@ -6,6 +6,7 @@ import {
   CREDITS_SANDBOX_ALLOWANCE_PERCENT,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
+  SANDBOX_SIZE_HOURLY_COST_MICROS,
   sandboxAllowanceHours,
   TRIAL_DAYS,
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
@@ -34,7 +35,7 @@ export type PricingPlan = {
 
 /** Whole bot computer hours an allowance in cents buys. */
 function computerHours(cents: number) {
-  return Math.floor(sandboxAllowanceHours(cents));
+  return Math.floor(sandboxAllowanceHours(cents, SANDBOX_SIZE_HOURLY_COST_MICROS.standard));
 }
 
 /** What each computer size is good for, in plain words. */
@@ -151,9 +152,13 @@ const STANDARD_VCPUS = COMPUTER_SIZE_SPECS[STANDARD.computerSize].vcpus;
 function tierComputerCell(tier: (typeof TIERS)[number]): PricingCell {
   const usage = tier.hours / STANDARD_HOURS;
   const power = COMPUTER_SIZE_SPECS[tier.computerSize].vcpus / STANDARD_VCPUS;
+  const hoursAtMaxSize = Math.floor(
+    (tier.hours * SANDBOX_SIZE_HOURLY_COST_MICROS.standard) /
+      SANDBOX_SIZE_HOURLY_COST_MICROS[tier.computerSize],
+  );
   return {
-    label: usage === 1 ? "Included" : `${usage}× the usage\n${power}× the power`,
-    detail: `${computerDetail(`${tier.hours} hours`, tier.computerSize)}. ${COMPUTER_TIME_NOTE}`,
+    label: usage === 1 ? "Included" : `${usage}× the usage\nUp to ${power}× the vCPUs`,
+    detail: `${tier.hours} Standard hours a month. ${computerDetail(`${hoursAtMaxSize} hours at the maximum size`, tier.computerSize)}. ${COMPUTER_TIME_NOTE}`,
   };
 }
 

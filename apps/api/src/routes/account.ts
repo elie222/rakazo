@@ -160,6 +160,11 @@ export function accountRoutes(ctx: RouterContext) {
       computerUsage: authed.billing.computerUsage.handler(async ({ context }) =>
         requireBilling(deps).computerUsage(context.actor),
       ),
+      setComputerSize: authed.billing.setComputerSize.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        await billing.setComputerSize(context.actor, input.size);
+        return billing.status(context.actor);
+      }),
       refresh: authed.billing.refresh.handler(async ({ context }) => {
         const billing = requireBilling(deps);
         await billing.syncForActor(context.actor);

@@ -2,7 +2,9 @@ import type { ByokTier, ComputerSize } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   ByokTierSchema,
+  ComputerSizeSchema,
   CREDITS_SANDBOX_ALLOWANCE_PERCENT,
+  computerSizesUpTo,
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "../database/client.js";
@@ -122,9 +124,8 @@ export async function sandboxAllowancePlan(
 }
 
 /**
- * The machine size a Space's computers start at: its organization's own-key tier's size, and
- * standard on credits. A computer moves to this size when it next starts or resumes, so a plan
- * change reaches running computers on their next resume.
+ * The selected size applies on the next start. If a plan changes or the stored choice is
+ * unavailable, use Standard until an owner selects an available size.
  */
 export async function planComputerSize(
   prisma: Pick<PrismaClient, "space">,
@@ -136,13 +137,33 @@ export async function planComputerSize(
       organization: {
         select: {
           modelCredits: { select: { mode: true } },
+          computerSize: true,
           billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
         },
       },
     },
   });
-  const tier = byokTierOf(space?.organization.modelCredits?.mode, space?.organization.billing);
-  return tier ? BYOK_TIERS[tier].computerSize : "standard";
+  return computerSizeSettings(space?.organization).size;
+}
+
+export function computerSizeSettings(
+  organization:
+    | {
+        computerSize: string;
+        modelCredits: { mode: string | null } | null;
+        billing: {
+          status: string | null;
+          byokTier: string | null;
+          byokPriceCents: number | null;
+        } | null;
+      }
+    | null
+    | undefined,
+) {
+  const tier = byokTierOf(organization?.modelCredits?.mode, organization?.billing);
+  const available = computerSizesUpTo(tier ? BYOK_TIERS[tier].computerSize : "standard");
+  const size = ComputerSizeSchema.catch("standard").parse(organization?.computerSize);
+  return { size: available.includes(size) ? size : ("standard" as const), available };
 }
 
 /** Months between two UTC calendar months, without rounding partial months. */
@@ -180,13 +201,13 @@ export async function sandboxRunHours(
   organizationId: string,
   since: Date,
   now = new Date(),
-): Promise<Array<{ kind: string; hours: number }>> {
+): Promise<Array<{ kind: string; size: string | null; hours: number }>> {
   // The allowance is per organization, so it counts the computers of all its Spaces.
   return runAsSystem("computer allowance across an organization's Spaces", () =>
-    prisma.$queryRaw<Array<{ kind: string; hours: number }>>(Prisma.sql`
-      SELECT "kind", SUM("seconds")::float8 / 3600 AS "hours"
+    prisma.$queryRaw<Array<{ kind: string; size: string | null; hours: number }>>(Prisma.sql`
+      SELECT "kind", "size", SUM("seconds")::float8 / 3600 AS "hours"
       FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
-      GROUP BY "kind"`),
+      GROUP BY "kind", "size"`),
   );
 }
 
@@ -197,16 +218,18 @@ export function sandboxRunHoursByComputer(
   now: Date,
 ) {
   return runAsSystem("computer usage across an organization's Spaces", () =>
-    prisma.$queryRaw<Array<{ computerId: string; kind: string; hours: number }>>(Prisma.sql`
-      SELECT "computerId", "kind", SUM("seconds")::float8 / 3600 AS "hours"
+    prisma.$queryRaw<
+      Array<{ computerId: string; kind: string; size: string | null; hours: number }>
+    >(Prisma.sql`
+      SELECT "computerId", "kind", "size", SUM("seconds")::float8 / 3600 AS "hours"
       FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
-      GROUP BY "computerId", "kind"`),
+      GROUP BY "computerId", "kind", "size"`),
   );
 }
 
 function sandboxRunWindow(organizationId: string, since: Date, now: Date) {
   return Prisma.sql`
-    SELECT r."computerId", r."kind", EXTRACT(EPOCH FROM (
+    SELECT r."computerId", r."kind", r."size", EXTRACT(EPOCH FROM (
         LEAST(COALESCE(r."endedAt", ${now}::timestamp(3)), ${now}::timestamp(3))
         - GREATEST(r."startedAt", ${since}::timestamp(3))
       )) AS "seconds"

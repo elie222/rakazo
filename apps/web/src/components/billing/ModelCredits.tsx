@@ -59,6 +59,7 @@ import { rpc } from "../../lib/query/rpc";
 import { AccountMenu } from "../account/AccountMenu";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { InfoTooltip } from "../InfoTooltip";
+import { ComputerSizeSetting } from "./ComputerSizeSetting";
 import { ComputerUsage } from "./ComputerUsage";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
@@ -127,6 +128,8 @@ function useTierComputer() {
   return (offer: TierOffer) => {
     const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
     const hours = offer.computerHours;
+    if (offer.computerSizeChoice)
+      return t`Up to ${vcpus} vCPU and ${memoryGb} GB, ${hours} Standard computer hours a month`;
     return t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
   };
 }
@@ -280,11 +283,15 @@ function TierPlans({
   const power = (offer: TierOffer, base: TierOffer) => {
     const times =
       COMPUTER_SIZE_SPECS[offer.computerSize].vcpus / COMPUTER_SIZE_SPECS[base.computerSize].vcpus;
-    return t`A ${times}× more powerful computer for your bot`;
+    return offer.computerSizeChoice
+      ? t`Up to ${times}× the vCPUs`
+      : t`A ${times}× more powerful computer for your bot`;
   };
   const powerDetail = (offer: TierOffer, base: TierOffer) => {
     const { memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
     const usage = Math.round(offer.computerHours / base.computerHours);
+    if (offer.computerSizeChoice)
+      return t`Up to ${memoryGb} GB of RAM and ${usage}× the Standard computer hours of ${base.name}.`;
     return t`${memoryGb} GB of RAM and ${usage}× the computer time of ${base.name}. Time counts only while your bot uses its computer.`;
   };
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
@@ -854,7 +861,14 @@ export function ModelCreditsSettings({
               </Trans>
             </p>
           ) : null}
-          {status.canManage ? <ComputerUsage /> : null}
+          {status.canManage &&
+          status.computerSizeSettings &&
+          status.computerSizeSettings.available.length > 1 ? (
+            <ComputerSizeSetting settings={status.computerSizeSettings} />
+          ) : null}
+          {status.canManage ? (
+            <ComputerUsage standardHours={Boolean(status.computerSizeSettings)} />
+          ) : null}
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">
