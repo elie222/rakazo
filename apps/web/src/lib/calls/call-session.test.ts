@@ -638,9 +638,12 @@ describe("call session", () => {
     );
   });
 
-  it("ends a card with no full stop of its own before the instruction", async () => {
+  it.each([
+    ["Pick a plan", "Pick a plan. "],
+    ["Keep “Launch?”", "Keep “Launch?” "],
+  ])("joins the card %s and the instruction with one ending", async (text, start) => {
     const choice = askMessage("choice-1", {
-      text: "Pick a plan",
+      text,
       actions: [
         { id: "allow", label: "Allow once" },
         { id: "deny", label: "Deny" },
@@ -652,7 +655,7 @@ describe("call session", () => {
     );
     await heard("pick for me");
     expect(speak).toHaveBeenCalledWith(
-      "Pick a plan. Say yes or no, or answer in a sentence.",
+      `${start}Say yes or no, or answer in a sentence.`,
       expect.objectContaining({ messageId: "choice-1" }),
     );
   });

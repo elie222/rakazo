@@ -868,5 +868,5 @@ function runActive(snapshot: ThreadSnapshot | null) {
 
 /** One sentence after another, with a full stop only where the first has no ending of its own. */
 function thenSay(first: string, next: string): string {
-  return /[.!?…]["')\]]*\s*$/.test(first) ? `${first.trimEnd()} ${next}` : `${first}. ${next}`;
+  return /[.!?…]["'”’)\]]*\s*$/.test(first) ? `${first.trimEnd()} ${next}` : `${first}. ${next}`;
 }
