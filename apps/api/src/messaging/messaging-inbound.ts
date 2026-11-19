@@ -597,7 +597,10 @@ async function settleDirectMessage(
       arrival.job = undefined;
       return lane;
     });
-    if (lane && unavailable.length > 0) await deps.delivery.send([lane]);
+    // The notice is recorded with its own backup, so a failed send here is retried there.
+    if (lane && unavailable.length > 0) {
+      await bestEffort("send the files-not-received notice", deps.delivery.send([lane]));
+    }
   } catch (error) {
     // The job drops a message for a Space being deleted, as this path would.
     if (!(error instanceof SpaceDeletionInProgressError)) {
