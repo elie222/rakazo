@@ -1532,7 +1532,7 @@ function SpaceShell() {
     </BotsSidebarLayout>
   );
 
-  // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
+  // Render nothing until the first bot list lands so the chat chrome does not flash a bot-less state.
   return (
     <SpaceRpcProvider spaceId={shellSpaceId}>
       {initialBotsLoaded || initialLoadFailed ? (
