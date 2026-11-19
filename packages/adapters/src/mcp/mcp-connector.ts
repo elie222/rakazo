@@ -158,7 +158,9 @@ const UNREACHABLE_CODES = new Set([
 function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined {
   if (depth > 5 || !(error instanceof Error)) return undefined;
   if (error instanceof McpConnectFailure) return error.expected;
-  if (error instanceof McpDiscoveryTimeoutError) return "unreachable";
+  // The credential changed again after the one reconnect; the next try reads the new one.
+  if (error instanceof McpDiscoveryTimeoutError || error instanceof McpSecretChangedError)
+    return "unreachable";
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
   if (error instanceof StreamableHTTPError) {

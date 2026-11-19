@@ -302,8 +302,14 @@ describe("MCP connector session cache", () => {
         signal: new AbortController().signal,
       };
       const close = vi.spyOn(McpSession.prototype, "close");
+      const error = vi.spyOn(getLogger(), "error");
       try {
         const tools = await connector.discoverTools(context);
+        expect(error).not.toHaveBeenCalledWith(
+          "mcp.discovery.failed",
+          expect.anything(),
+          expect.anything(),
+        );
         expect(state.initializations).toBe(lostSessions > 0 ? 3 : 2);
         expect(state.calls).toEqual([]);
         if (repeated || lostSessions > 1) {
@@ -317,6 +323,7 @@ describe("MCP connector session cache", () => {
       } finally {
         await connector.close();
         close.mockRestore();
+        error.mockRestore();
       }
     },
   );
@@ -2357,6 +2364,7 @@ describe("MCP connector session cache", () => {
         } as never,
         { network: TEST_NETWORK },
       );
+      const error = vi.spyOn(getLogger(), "error");
       try {
         const tools = await connector.discoverTools({
           spaceId: "w1",
@@ -2366,6 +2374,11 @@ describe("MCP connector session cache", () => {
         } as never);
         if (rotatesAgain) {
           expect(tools).toEqual(unavailableOnly());
+          expect(error).not.toHaveBeenCalledWith(
+            "mcp.discovery.failed",
+            expect.anything(),
+            expect.anything(),
+          );
           expect(state.initializations).toBe(2);
           return;
         }
@@ -2382,6 +2395,7 @@ describe("MCP connector session cache", () => {
         expect(again.map((tool) => tool.name)).toContain("mcp__demo__echo");
         expect(state.initializations).toBe(2);
       } finally {
+        error.mockRestore();
         await connector.close();
       }
     },
