@@ -105,11 +105,49 @@ it("allows another retry after the retry fails", async () => {
   expect(rpc).toHaveBeenCalledTimes(3);
 });
 
-it("keeps the empty state after a successful empty load", async () => {
-  rpc.mockResolvedValueOnce({ tickets: [] });
+it("refreshes an empty board to show the first ticket without leaving", async () => {
+  const refresh = deferred<{ tickets: Ticket[] }>();
+  rpc.mockResolvedValueOnce({ tickets: [] }).mockReturnValueOnce(refresh.promise);
   await render();
-  expect(host.textContent).toBe("No tickets yet.");
+  expect(host.textContent).toContain("No tickets yet.");
   expect(button("Retry")).toBeUndefined();
+  expect(button("Refresh")).toBeDefined();
+  expect(rpc).toHaveBeenCalledTimes(1);
+
+  await act(async () => button("Refresh")?.click());
+  expect(rpc).toHaveBeenCalledTimes(2);
+  expect(rpc).toHaveBeenLastCalledWith("tickets/list", {});
+  expect(host.querySelector('[role="progressbar"]')).not.toBeNull();
+  expect(button("Refresh")).toBeUndefined();
+
+  await act(async () => refresh.resolve({ tickets: [ticket] }));
+  expect(host.textContent).toContain("Example ticket");
+  expect(host.textContent).not.toContain("No tickets yet.");
+});
+
+it("keeps refresh on a still-empty board and retry after a failed refresh", async () => {
+  rpc
+    .mockResolvedValueOnce({ tickets: [] })
+    .mockResolvedValueOnce({ tickets: [] })
+    .mockRejectedValueOnce(new Error("Offline"))
+    .mockResolvedValueOnce({ tickets: [] });
+  await render();
+
+  await act(async () => button("Refresh")?.click());
+  expect(host.textContent).toContain("No tickets yet.");
+  expect(button("Refresh")).toBeDefined();
+  expect(button("Retry")).toBeUndefined();
+
+  await act(async () => button("Refresh")?.click());
+  expect(host.textContent).toContain("Offline");
+  expect(button("Refresh")).toBeUndefined();
+  expect(button("Retry")).toBeDefined();
+
+  await act(async () => button("Retry")?.click());
+  expect(host.textContent).toContain("No tickets yet.");
+  expect(button("Refresh")).toBeDefined();
+  expect(button("Retry")).toBeUndefined();
+  expect(rpc).toHaveBeenCalledTimes(4);
 });
 
 it("keeps existing tickets available when a refresh fails", async () => {
