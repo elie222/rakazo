@@ -2,6 +2,7 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { RakazoDesktop } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -87,14 +88,16 @@ function desktopWith(device: NonNullable<RakazoDesktop["device"]>) {
 }
 
 /** The web build compiles macros onto the real hook, which throws without this provider. */
-function renderSettings() {
-  return act(async () =>
+async function renderSettings() {
+  await act(async () =>
     root.render(
       <I18nProvider i18n={i18n}>
         <ComputerDeviceSettings />
       </I18nProvider>,
     ),
   );
+  // The device list arrives through the query cache, which notifies on a timer.
+  await act(flush);
 }
 
 it("stays hidden without any computer", async () => {

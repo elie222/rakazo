@@ -102,6 +102,25 @@ export const ComputerProviderUpdateSchema = z.object({
 });
 export type ComputerProviderUpdate = z.infer<typeof ComputerProviderUpdateSchema>;
 
+/**
+ * The Space's cloud computers whose size can be chosen. `available` is what the plan allows;
+ * the larger sizes still show so an owner can see where an upgrade leads.
+ */
+export const CloudComputersSchema = z.object({
+  computers: z.array(
+    z.object({
+      id: Id,
+      scope: ComputerModeSchema,
+      botName: z.string().nullable(),
+      size: ComputerSizeSchema,
+    }),
+  ),
+  available: z.array(ComputerSizeSchema),
+  /** Size changes what the organization's hours buy, so only who manages billing makes them. */
+  canManage: z.boolean(),
+});
+export type CloudComputers = z.infer<typeof CloudComputersSchema>;
+
 /** The vCPUs and memory each computer size provides. */
 export const COMPUTER_SIZE_SPECS: Record<ComputerSize, { vcpus: number; memoryGb: number }> = {
   standard: { vcpus: 4, memoryGb: 8 },

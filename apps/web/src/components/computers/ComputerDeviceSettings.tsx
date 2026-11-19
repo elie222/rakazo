@@ -2,11 +2,12 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import { Button, Label, Switch } from "@rakazo/ui-web";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { listUserDevices, removeUserDevice } from "../../lib/auth/user-devices";
 import { desktopBridge } from "../../lib/platform/desktop";
-import { useSave } from "../../lib/query/query";
+import { useQueryUserId, useSave } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { SettingsGroup, SettingsRow } from "../settings/SettingsRows";
 
@@ -38,27 +39,39 @@ function plainHttpDesktop(desktop: RakazoDesktop | undefined): boolean {
   return secureHttpOrigin(window.location.origin) === null;
 }
 
+/** The computers paired to this account; devices belong to the user, not to a Space. */
+export function userDevicesQuery(userId: string | null) {
+  return queryOptions({
+    queryKey: [`user:${userId ?? ""}`, "userDevices"],
+    queryFn: (): Promise<UserDeviceSummary[]> => listUserDevices(),
+  });
+}
+
+/** Whether this window can offer itself as a computer, before asking the app. */
+export function desktopOffersThisComputer(): boolean {
+  const desktop = desktopBridge();
+  return Boolean(desktop?.device || desktop?.computer?.managesHostChoice);
+}
+
 export function ComputerDeviceSettings() {
   const { t } = useLingui();
   const desktop = desktopBridge();
   const plainHttp = plainHttpDesktop(desktop);
-  const [devices, setDevices] = useState<UserDeviceSummary[]>([]);
+  const queryClient = useQueryClient();
+  const devicesQuery = userDevicesQuery(useQueryUserId());
+  const devices = useQuery(devicesQuery).data ?? [];
   const [thisComputer, setThisComputer] = useState<ThisComputer | null>(null);
   const switchId = useId();
 
-  const load = useCallback(async () => {
-    const [listed, local] = await Promise.all([
-      listUserDevices().catch(() => null),
-      // A failed profile read keeps the last known switch rather than hiding it.
-      thisComputerAccess(desktop).catch(() => undefined),
-    ]);
-    if (listed) setDevices(listed);
+  const loadThisComputer = useCallback(async () => {
+    // A failed profile read keeps the last known switch rather than hiding it.
+    const local = await thisComputerAccess(desktop).catch(() => undefined);
     if (local !== undefined) setThisComputer(local);
   }, [desktop]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void loadThisComputer();
+  }, [loadThisComputer]);
 
   // Neither change goes through the API: one is the desktop app's, the other a device route.
   const change = useSave({
@@ -66,7 +79,10 @@ export function ComputerDeviceSettings() {
       try {
         await action();
       } finally {
-        await load();
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey }),
+          loadThisComputer(),
+        ]);
       }
     },
   });
@@ -75,7 +91,7 @@ export function ComputerDeviceSettings() {
   if (devices.length === 0 && !thisComputer && !plainHttp) return null;
 
   return (
-    <SettingsGroup title={<Trans>Computers</Trans>} data-testid="computer-devices">
+    <SettingsGroup title={<Trans>Paired computers</Trans>} data-testid="computer-devices">
       {plainHttp ? (
         <p className="px-4 py-3 text-body-sm text-muted-foreground">
           <Trans>Plain HTTP does not pair this computer. Use HTTPS, or a loopback server.</Trans>

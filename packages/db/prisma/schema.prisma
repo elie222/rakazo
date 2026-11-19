@@ -479,7 +479,6 @@ model Organization {
   logo         String?
   createdAt    DateTime
   metadata     String?
-  computerSize String @default("standard")
   members      Member[]
   invitations  Invitation[]
   spaces       Space[]
@@ -1907,6 +1906,8 @@ model Computer {
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
+  /// The size it starts at next, within its organization's plan.
+  size                    String                   @default("standard")
   /// The size used for billing and the stretch it applies to.
   runningSize             String?
   runningSizeSince        DateTime?

@@ -482,24 +482,25 @@ describe("plan computer size", () => {
     computerSize = "standard",
   ) {
     const prisma = {
-      space: {
+      computer: {
         findUnique: vi.fn().mockResolvedValue({
-          organization: {
-            computerSize,
-            modelCredits: mode ? { mode } : null,
-            billing: billing && { byokPriceCents: null, ...billing },
+          size: computerSize,
+          space: {
+            organization: {
+              modelCredits: mode ? { mode } : null,
+              billing: billing && { byokPriceCents: null, ...billing },
+            },
           },
         }),
       },
     };
-    return planComputerSize(prisma as unknown as PrismaClient, "space");
+    return planComputerSize(prisma as unknown as PrismaClient, "computer");
   }
 
-  it("defaults to Standard, and honors an explicit choice within the plan's size limit", async () => {
+  it("defaults to Standard, and honors the computer's choice within the plan's size limit", async () => {
     expect(await sizeFor("byok", { status: "active", byokTier: "pro" })).toBe("standard");
     expect(await sizeFor("byok", { status: "active", byokTier: "max" })).toBe("standard");
     expect(await sizeFor("byok", { status: "active", byokTier: "pro" }, "large")).toBe("large");
-    expect(await sizeFor("byok", { status: "active", byokTier: "pro" }, "xlarge")).toBe("standard");
     expect(await sizeFor("byok", { status: "trialing", byokTier: "max" }, "xlarge")).toBe("xlarge");
     expect(await sizeFor("byok", { status: "active", byokTier: "standard" })).toBe("standard");
     expect(
@@ -509,6 +510,13 @@ describe("plan computer size", () => {
         "xlarge",
       ),
     ).toBe("xlarge");
+  });
+
+  it("runs a size above the plan at the largest size it allows", async () => {
+    expect(await sizeFor("byok", { status: "active", byokTier: "pro" }, "xlarge")).toBe("large");
+    expect(await sizeFor("byok", { status: "canceled", byokTier: "max" }, "xlarge")).toBe(
+      "standard",
+    );
   });
 
   it("keeps credits, lapsed plans and plans without a tier standard", async () => {

@@ -81,6 +81,22 @@ export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>)
 }
 
 /**
+ * A read of the signed-in user's own data that is not an rpc, cached once per session like
+ * `accountRpcQuery`. An answer that arrives after the session changed is refused.
+ */
+export function accountQuery<T>(name: string, read: () => Promise<T>) {
+  const scope = sessionScope();
+  const queryKey = [...scope, name] as unknown as DataTag<QueryKey, T, Error>;
+  const queryFn: QueryFunction<T> = async () => {
+    const answer = await read();
+    if (sessionScope().join("\n") !== scope.join("\n"))
+      throw new Error(t`Something went wrong. Try again.`);
+    return answer;
+  };
+  return { queryKey, queryFn };
+}
+
+/**
  * One rpc read of what a settings screen edits: the named Space's copy, or the account's, which is
  * the same whichever Space is selected.
  */

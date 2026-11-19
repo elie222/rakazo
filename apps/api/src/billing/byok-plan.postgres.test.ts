@@ -236,18 +236,36 @@ dbTests("own-key plan", () => {
       byokPriceCents: BYOK_TIERS.pro.annualPriceCents,
       byokInterval: "year",
     });
-    expect(await planComputerSize(prisma, spaceId)).toBe("standard");
+    const computer = await prisma.computer.create({
+      data: {
+        spaceId,
+        userId,
+        scope: "team",
+        scopeKey: `byok-team-${stamp}`,
+        homeKey: `byok-home-${stamp}`,
+        kind: "boat",
+      },
+    });
+    expect(await planComputerSize(prisma, computer.id)).toBe("standard");
     const sized = createBillingService({
       prisma,
       provider,
       sandbox: { describe: () => ({ id: "boat" }) } as SandboxProvider,
       webOrigin: "https://example.test",
     });
-    await expect(sized.setComputerSize(actor, "xlarge")).rejects.toMatchObject({
+    await expect(sized.cloudComputers(actor)).resolves.toEqual({
+      computers: [{ id: computer.id, scope: "team", botName: null, size: "standard" }],
+      available: ["standard", "large"],
+      canManage: true,
+    });
+    await expect(sized.setComputerSize(actor, computer.id, "xlarge")).rejects.toMatchObject({
       message: "Your plan does not include this computer size",
     });
-    await sized.setComputerSize(actor, "large");
-    expect(await planComputerSize(prisma, spaceId)).toBe("large");
+    await expect(sized.setComputerSize(actor, "missing", "large")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await sized.setComputerSize(actor, computer.id, "large");
+    expect(await planComputerSize(prisma, computer.id)).toBe("large");
 
     await expect(service.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
     await service.changeTier(actor, "max");
@@ -256,18 +274,22 @@ dbTests("own-key plan", () => {
       byokPriceCents: BYOK_TIERS.max.annualPriceCents,
       byokInterval: "year",
     });
-    expect(await planComputerSize(prisma, spaceId)).toBe("large");
-    await sized.setComputerSize(actor, "xlarge");
-    expect(await planComputerSize(prisma, spaceId)).toBe("xlarge");
-    await service.changeTier(actor, "standard");
+    expect(await planComputerSize(prisma, computer.id)).toBe("large");
+    await sized.setComputerSize(actor, computer.id, "xlarge");
+    expect(await planComputerSize(prisma, computer.id)).toBe("xlarge");
+    await service.changeTier(actor, "pro");
     await expect(service.status(actor)).resolves.toMatchObject({
-      byokTier: "standard",
-      byokPriceCents: BYOK_TIERS.standard.annualPriceCents,
+      byokTier: "pro",
+      byokPriceCents: BYOK_TIERS.pro.annualPriceCents,
     });
-    expect(await planComputerSize(prisma, spaceId)).toBe("standard");
+    // Above the new plan's limit, the computer runs at the largest size the plan allows.
+    expect(await planComputerSize(prisma, computer.id)).toBe("large");
+    await expect(sized.cloudComputers(actor)).resolves.toMatchObject({
+      computers: [{ id: computer.id, size: "large" }],
+    });
 
     await service.changeTier(actor, "max");
-    expect(await planComputerSize(prisma, spaceId)).toBe("standard");
+    expect(await planComputerSize(prisma, computer.id)).toBe("xlarge");
 
     // A plan set to cancel stays as it is.
     provider.subscriptions.at(-1)!.cancelAtPeriodEnd = true;

@@ -39,7 +39,7 @@ test("settings identifies the computer bound to bots among two connected compute
         }),
       );
     }
-    const settings = await openUserSettings(page);
+    const settings = await openUserSettings(page, "computer");
     const computers = settings.getByTestId("computer-devices");
     await expect(computers.getByText("Bound to bots", { exact: true })).toHaveCount(1);
     await expect(computers.getByText("Laptop").locator("..")).toHaveText("LaptopBound to bots");

@@ -123,47 +123,50 @@ export async function sandboxAllowancePlan(
   return { limitCents, since, resetsAt };
 }
 
-/**
- * The selected size applies on the next start. If a plan changes or the stored choice is
- * unavailable, use Standard until an owner selects an available size.
- */
-export async function planComputerSize(
-  prisma: Pick<PrismaClient, "space">,
-  spaceId: string,
-): Promise<ComputerSize> {
-  const space = await prisma.space.findUnique({
-    where: { id: spaceId },
-    select: {
-      organization: {
-        select: {
-          modelCredits: { select: { mode: true } },
-          computerSize: true,
-          billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
-        },
-      },
-    },
-  });
-  return computerSizeSettings(space?.organization).size;
+/** What `allowedComputerSizes` reads from an organization. */
+export const COMPUTER_SIZE_PLAN_SELECT = {
+  modelCredits: { select: { mode: true } },
+  billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
+} as const;
+
+type ComputerSizePlan =
+  | {
+      modelCredits: { mode: string | null } | null;
+      billing: {
+        status: string | null;
+        byokTier: string | null;
+        byokPriceCents: number | null;
+      } | null;
+    }
+  | null
+  | undefined;
+
+/** The sizes an organization's plan lets its computers run at, smallest first. */
+export function allowedComputerSizes(organization: ComputerSizePlan): ComputerSize[] {
+  const tier = byokTierOf(organization?.modelCredits?.mode, organization?.billing);
+  return computerSizesUpTo(tier ? BYOK_TIERS[tier].computerSize : "standard");
 }
 
-export function computerSizeSettings(
-  organization:
-    | {
-        computerSize: string;
-        modelCredits: { mode: string | null } | null;
-        billing: {
-          status: string | null;
-          byokTier: string | null;
-          byokPriceCents: number | null;
-        } | null;
-      }
-    | null
-    | undefined,
-) {
-  const tier = byokTierOf(organization?.modelCredits?.mode, organization?.billing);
-  const available = computerSizesUpTo(tier ? BYOK_TIERS[tier].computerSize : "standard");
-  const size = ComputerSizeSchema.catch("standard").parse(organization?.computerSize);
-  return { size: available.includes(size) ? size : ("standard" as const), available };
+/** A stored size the plan no longer allows runs at the largest size it does allow. */
+export function effectiveComputerSize(stored: string, allowed: readonly ComputerSize[]) {
+  const size = ComputerSizeSchema.catch("standard").parse(stored);
+  return allowed.includes(size) ? size : (allowed.at(-1) ?? "standard");
+}
+
+/** The size the computer starts at next: its own choice, within its organization's plan. */
+export async function planComputerSize(
+  prisma: Pick<PrismaClient, "computer">,
+  computerId: string,
+): Promise<ComputerSize> {
+  const computer = await prisma.computer.findUnique({
+    where: { id: computerId },
+    select: {
+      size: true,
+      space: { select: { organization: { select: COMPUTER_SIZE_PLAN_SELECT } } },
+    },
+  });
+  if (!computer) return "standard";
+  return effectiveComputerSize(computer.size, allowedComputerSizes(computer.space.organization));
 }
 
 /** Months between two UTC calendar months, without rounding partial months. */
