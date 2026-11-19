@@ -38,6 +38,12 @@ describe("modelDisconnectWarning", () => {
     ).toBe("These use it and may stop until it is connected again: Inbox, Morning digest.");
   });
 
+  it("counts a bot and a routine that share the one name shown", () => {
+    expect(modelDisconnectWarning({ ...unused, usedBy: ["Inbox"], usedByTotal: 2 })).toBe(
+      "These use it and may stop until it is connected again: Inbox and 1 more.",
+    );
+  });
+
   it("names the first three and counts the rest from the total, not from the names sent", () => {
     expect(
       modelDisconnectWarning({

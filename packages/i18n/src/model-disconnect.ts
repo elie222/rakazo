@@ -38,9 +38,11 @@ export function modelDisconnectWarning(preview: ModelDisconnectPreview | null): 
     );
   }
   if (preview.usedBy.length > 0) {
-    const names = preview.usedBy.slice(0, SHOWN).join(", ");
-    // Counted from the server's total: the names it sends are only the first of them.
-    const more = Math.max(preview.usedByTotal, preview.usedBy.length) - SHOWN;
+    const shown = preview.usedBy.slice(0, SHOWN);
+    const names = shown.join(", ");
+    // Counted from the server's total, less the names shown: it sends only the first names, and
+    // a name several bots or routines share once.
+    const more = Math.max(preview.usedByTotal, preview.usedBy.length) - shown.length;
     parts.push(
       more > 0
         ? i18n._({
