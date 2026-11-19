@@ -75,6 +75,7 @@ auditConfig:
 
 patchedDependencies:
   dockerode@5.0.1: patches/dockerode@5.0.1.patch
+  expo-speech@58.0.4: patches/expo-speech@58.0.4.patch
   fflate@0.8.3: patches/fflate@0.8.3.patch
 
 # Dependency install scripts run only when listed true. The false entries are
