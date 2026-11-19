@@ -514,6 +514,11 @@ export function browserCloseProgram() {
 
 /** Exit status of a browser stop that found a browser open on the profile again. */
 export const BROWSER_STILL_RUNNING_EXIT = 76;
+/**
+ * The screen did not come up this time: its display, browser, or viewer did not start, or the
+ * computer lacks the viewer tools until it is prepared. Asking again later can succeed.
+ */
+export const SCREEN_NOT_READY_EXIT = 77;
 
 export function stopBrowserCommand(screenId: string, env = DEFAULT_DESKTOP_ENV) {
   return stopBrowserProfileCommand(
@@ -764,8 +769,8 @@ export function prepareBrowserProfileCommand(screenId: string, env = DEFAULT_DES
 
 function proxyEnvironmentCommand() {
   return [
-    'if command -v websockify >/dev/null 2>&1; then proxy=$(command -v websockify); elif [ -x /opt/noVNC/utils/websockify/run ]; then proxy=/opt/noVNC/utils/websockify/run; else echo "websockify is required" >&2; exit 1; fi',
-    'if [ -d /usr/share/novnc ]; then web=/usr/share/novnc; elif [ -d /opt/noVNC ]; then web=/opt/noVNC; else echo "noVNC is required" >&2; exit 1; fi',
+    `if command -v websockify >/dev/null 2>&1; then proxy=$(command -v websockify); elif [ -x /opt/noVNC/utils/websockify/run ]; then proxy=/opt/noVNC/utils/websockify/run; else echo "websockify is required" >&2; exit ${SCREEN_NOT_READY_EXIT}; fi`,
+    `if [ -d /usr/share/novnc ]; then web=/usr/share/novnc; elif [ -d /opt/noVNC ]; then web=/opt/noVNC; else echo "noVNC is required" >&2; exit ${SCREEN_NOT_READY_EXIT}; fi`,
   ].join("\n");
 }
 
@@ -797,7 +802,7 @@ function renderEnsureScreenCommand(
           `  rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber}`,
           `  nohup Xvfb ${layout.display} -screen 0 1280x800x24 -ac +extension RANDR +render -noreset -nolisten tcp 8>&- 9>&- </dev/null >${log}-xvfb.log 2>&1 &`,
           `  for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && break; sleep 0.1; done`,
-          `  if ! xdpyinfo -display ${layout.display} >/dev/null 2>&1; then echo 'computer display did not start' >&2; tail -c 2000 ${log}-xvfb.log >&2 || true; exit 1; fi`,
+          `  if ! xdpyinfo -display ${layout.display} >/dev/null 2>&1; then echo 'computer display did not start' >&2; tail -c 2000 ${log}-xvfb.log >&2 || true; exit ${SCREEN_NOT_READY_EXIT}; fi`,
           `  if [ -f /etc/rakazo/fluxbox/init ]; then cp /etc/rakazo/fluxbox/init ${fluxHome}/.fluxbox/init; else printf "session.screen0.toolbar.visible: false\\n" >${fluxHome}/.fluxbox/init; fi`,
           `  cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
           `  printf '\\nsession.menuFile: %s\\n' ${fluxHome}/.fluxbox/menu >>${fluxHome}/.fluxbox/init`,
@@ -869,12 +874,12 @@ function renderEnsureScreenCommand(
     `if ! browser_running || ! (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1; then`,
     `  echo "computer browser CDP not ready on ${layout.debugPort} (running=$(browser_running && echo yes || echo no))" >&2`,
     `  tail -c 4000 ${log}-browser.log >&2 || true`,
-    "  exit 1",
+    `  exit ${SCREEN_NOT_READY_EXIT}`,
     "fi",
     ...setupView,
     `for i in $(seq 1 50); do (echo >/dev/tcp/${gatewayProbeHost(layout.bindHost)}/${layout.viewPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
     "echo 'screen view port did not open' >&2",
-    "exit 1",
+    `exit ${SCREEN_NOT_READY_EXIT}`,
   ].join("\n");
 }
 
