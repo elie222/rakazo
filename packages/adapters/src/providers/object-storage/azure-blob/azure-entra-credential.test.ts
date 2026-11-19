@@ -84,6 +84,7 @@ describe("entraAuthFromEnv", () => {
     ).toThrow(/OBJECT_STORAGE_CERTIFICATE could not be read/);
     const directory = mkdtempSync(join(tmpdir(), "entra-"));
     try {
+      const mismatched = `${certificate.split("-----BEGIN PRIVATE KEY-----")[0]}${generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "sec1", format: "pem" })}`;
       const cases: [string, string][] = [
         ["no PEM at all", "not a certificate"],
         ["headers without bodies", "-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----"],
@@ -95,6 +96,7 @@ describe("entraAuthFromEnv", () => {
           "garbage inside valid-looking headers",
           `-----BEGIN CERTIFICATE-----\nnot base64 at all\n-----END CERTIFICATE-----\n${generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "sec1", format: "pem" })}`,
         ],
+        ["a certificate paired with another key", mismatched],
         [
           "a password-protected key",
           `${certificate.split("-----BEGIN PRIVATE KEY-----")[0]}-----BEGIN ENCRYPTED PRIVATE KEY-----\nnot really\n-----END ENCRYPTED PRIVATE KEY-----\n`,
@@ -111,7 +113,7 @@ describe("entraAuthFromEnv", () => {
               OBJECT_STORAGE_CERTIFICATE: path,
             }),
           name,
-        ).toThrow(/PEM bundle|password-protected|not usable/);
+        ).toThrow(/PEM bundle|password-protected|not usable|do not pair/);
       }
     } finally {
       rmSync(directory, { recursive: true, force: true });

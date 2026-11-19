@@ -1,4 +1,4 @@
-import { createPrivateKey, X509Certificate } from "node:crypto";
+import { createPrivateKey, createPublicKey, X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 /**
@@ -28,6 +28,19 @@ export interface EntraTokenCredential {
 
 const KINDS =
   '"account-key", "client-secret", "client-certificate", "federated-identity" or "managed-identity"';
+
+/**
+ * An Entra kind selected while another protocol is active must not be silently ignored: the S3
+ * backend would sign its requests with whatever the settings hold. Only the Azure module knows
+ * what an Entra kind is, so the shared factory forwards here. Storage turned off (no bucket)
+ * ignores every setting, as before.
+ */
+export function refuseEntraAuthUnderOtherProtocol(env: NodeJS.ProcessEnv, protocol: string): void {
+  if (protocol === "azure-blob") return;
+  const auth = env.OBJECT_STORAGE_AUTH?.trim().toLowerCase() || "account-key";
+  if (auth !== "account-key" && env.OBJECT_STORAGE_BUCKET?.trim())
+    throw new Error("OBJECT_STORAGE_AUTH needs OBJECT_STORAGE_PROTOCOL=azure-blob");
+}
 
 /**
  * Reads and checks the certificate here, while the settings are parsed, so a missing file, a
@@ -60,10 +73,16 @@ function certificateBundle(value: string): string {
       "OBJECT_STORAGE_CERTIFICATE holds a password-protected key; export it without a passphrase",
     );
   try {
-    // Prove both blocks parse, so garbage inside valid-looking headers also fails here.
-    new X509Certificate(certificate);
-    createPrivateKey(certificate);
+    // Prove both blocks parse and pair, so garbage inside valid-looking headers and a key from
+    // another certificate (a rotation mix-up) also fail here.
+    const parsed = new X509Certificate(certificate);
+    const key = createPrivateKey(certificate);
+    const fromCertificate = parsed.publicKey.export({ type: "spki", format: "der" });
+    const fromKey = createPublicKey(key).export({ type: "spki", format: "der" });
+    if (!fromCertificate.equals(fromKey))
+      throw new Error("OBJECT_STORAGE_CERTIFICATE's certificate and private key do not pair");
   } catch (error) {
+    if (error instanceof Error && error.message.includes("do not pair")) throw error;
     throw new Error(`OBJECT_STORAGE_CERTIFICATE is not usable: ${(error as Error).message}`);
   }
   return certificate;

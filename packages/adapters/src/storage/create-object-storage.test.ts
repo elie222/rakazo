@@ -52,4 +52,13 @@ describe("createObjectStorage", () => {
       S3ObjectStorage,
     );
   });
+
+  it("ignores the auth kind when storage is off", () => {
+    expect(
+      createObjectStorage({
+        OBJECT_STORAGE_PROTOCOL: "s3",
+        OBJECT_STORAGE_AUTH: "managed-identity",
+      }),
+    ).toBeUndefined();
+  });
 });
