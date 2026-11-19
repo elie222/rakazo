@@ -109,4 +109,8 @@ tags:
 - assertVisible: 'Keyboard lifecycle check\nSecond line'
 - assertVisible: "Send"
 - takeScreenshot: "keyboard-signed-in-again"
+- longPressOn: "Message Researcher"
+- tapOn: "Select all"
+- eraseText: 1
+- assertNotVisible: 'Keyboard lifecycle check\nSecond line'
 - hideKeyboard
