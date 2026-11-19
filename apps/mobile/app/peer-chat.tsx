@@ -16,20 +16,20 @@ import {
   Text,
   View,
 } from "react-native";
-import { glassHeaderOptions } from "../components/glass-title";
-import { InlineImageAttachment } from "../components/inline-image-attachment";
-import { NativeActionButton } from "../components/native-action-button";
-import { NewestPageCards, PageCard } from "../components/pages/page-card";
-import { SheetCloseButton } from "../components/sheet-close-button";
-import { mobileTokens } from "../lib/appearance";
-import { openMobileArtifact } from "../lib/artifact-open";
-import { isInlineImageBlock } from "../lib/inline-image";
-import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
-import { useChatOnScreen } from "../lib/page-card-detail";
-import { queryClient, rpcQuery } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { InlineImageAttachment } from "../components/media/inline-image-attachment";
+import { glassHeaderOptions } from "../components/native/glass-title";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { SheetCloseButton } from "../components/native/sheet-close-button";
+import { errorText } from "../lib/api/user-error";
+import { mobileTokens } from "../lib/appearance/appearance";
+import { openMobileArtifact } from "../lib/artifacts/artifact-open";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { isInlineImageBlock } from "../lib/messages/inline-image";
+import { native, useResolvedAppearance, useThemedStyles } from "../lib/native/native";
+import { NewestPageCards, PageCard } from "../lib/pages/page-card";
+import { useChatOnScreen } from "../lib/pages/page-card-detail";
+import { queryClient, rpcQuery } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 
 /** View-only bot-to-bot exchange, opened from a Messaged / Message from chip in a bot's chat. */
 export default function PeerChat() {

@@ -1,7 +1,7 @@
 {
   "apps/mobile/app/(settings)/account.tsx": 5,
   "apps/mobile/app/(settings)/archived-bots.tsx": 3,
-  "apps/mobile/app/(settings)/integrations.tsx": 17,
+  "apps/mobile/app/(settings)/integrations.tsx": 16,
   "apps/mobile/app/(settings)/model-connection.tsx": 7,
   "apps/mobile/app/(settings)/profile.tsx": 2,
   "apps/mobile/app/(settings)/signup-survey.tsx": 1,
@@ -15,8 +15,8 @@
   "apps/mobile/app/computer.tsx": 7,
   "apps/mobile/app/pages.tsx": 1,
   "apps/mobile/app/routine.tsx": 1,
-  "apps/mobile/components/AppConnectCard.tsx": 3,
   "apps/mobile/components/account-model-role-settings.tsx": 1,
+  "apps/mobile/components/cards/AppConnectCard.tsx": 3,
   "apps/mobile/components/execution-settings.tsx": 3,
-  "apps/mobile/components/model-role-settings.tsx": 1
+  "apps/mobile/components/models/model-role-settings.tsx": 1
 }

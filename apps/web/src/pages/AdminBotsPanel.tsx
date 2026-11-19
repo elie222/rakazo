@@ -21,9 +21,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Star, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { BotMarketplaceDetail } from "../components/bot-marketplace/bot-marketplace-detail";
-import { useSpaceQueries } from "../lib/query";
-import { rpc } from "../lib/rpc";
-import { errorText } from "../lib/user-error";
+import { useSpaceQueries } from "../lib/query/query";
+import { rpc } from "../lib/query/rpc";
+import { errorText } from "../lib/query/user-error";
 
 type StatusTab = "all" | MarketplaceBotStatus;
 

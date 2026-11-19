@@ -16,12 +16,12 @@ import {
   RunHistoryWriteError,
 } from "@rakazo/db";
 import { executionStartSchema } from "@rakazo/native-runtime/wire";
-import { returnBotMessageOutcome } from "../bot-messages.js";
-import { provisionComputer } from "../computer-lifecycle.js";
-import type { ExecutorDeps } from "../executor-deps.js";
-import { enqueueSteeringContinuation, failRunBeforeTurn } from "../run-lifecycle.js";
-import { persistMessageInTransaction } from "../run-messages.js";
-import { attachWorkspaceFileToThread } from "../thread-artifacts.js";
+import { returnBotMessageOutcome } from "./../messaging/bot-messages.js";
+import { provisionComputer } from "./../computers/computer-lifecycle.js";
+import type { ExecutorDeps } from "./../runs/executor/executor-deps.js";
+import { enqueueSteeringContinuation, failRunBeforeTurn } from "./../runs/lifecycle/run-lifecycle.js";
+import { persistMessageInTransaction } from "./../runs/assembly/run-messages.js";
+import { attachWorkspaceFileToThread } from "./../storage/thread-artifacts.js";
 import { updateNativeInteraction } from "./answers.js";
 import { executeNativeBridgeTool } from "./bridge.js";
 import { executionConnectionClient } from "./connection.js";

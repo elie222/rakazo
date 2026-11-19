@@ -1,6 +1,6 @@
 import type { Exec, V1Pod } from "@kubernetes/client-node";
 import { vi } from "vitest";
-import { execComputerShell } from "../../../exec-computer.test-support.js";
+import { execComputerShell } from "../../../computers/sandbox/exec-computer.test-support.js";
 import type { KubernetesSandboxSdk } from "./kubernetes-sandbox.js";
 import { KubernetesSandboxProvider } from "./kubernetes-sandbox.js";
 

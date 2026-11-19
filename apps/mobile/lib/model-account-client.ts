@@ -1,7 +1,7 @@
 import { createModelAccountClient } from "@rakazo/core";
-import { authHeaders, currentApiBase } from "./api";
-import { fetchServer } from "./server-headers";
-import { currentSessionGeneration } from "./session";
+import { authHeaders, currentApiBase } from "./api/api";
+import { fetchServer } from "./api/server-headers";
+import { currentSessionGeneration } from "./api/session";
 
 export function modelAccountClient() {
   const base = currentApiBase();

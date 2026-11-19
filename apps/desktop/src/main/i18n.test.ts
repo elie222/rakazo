@@ -17,7 +17,7 @@ import {
 } from "./i18n.js";
 import { ES_MESSAGES } from "./locales/es.js";
 import { PL_MESSAGES } from "./locales/pl.js";
-import { readUiLocale, writeUiLocale } from "./setup-store.js";
+import { readUiLocale, writeUiLocale } from "./setup/setup-store.js";
 
 const srcDir = path.resolve(import.meta.dirname, "..");
 /** Product and vendor names the setup page shows as they are. */

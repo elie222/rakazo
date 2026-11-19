@@ -13,9 +13,9 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { wrapJobPayload } from "@rakazo/logging";
-import { cancelComputerRunWork, scheduleComputerSleep } from "../computer-idle.js";
-import { toComputerRef } from "../computer-support.js";
-import { persistMessageInTransaction } from "../run-messages.js";
+import { cancelComputerRunWork, scheduleComputerSleep } from "./../computers/computer-idle.js";
+import { toComputerRef } from "./../computers/screens/computer-support.js";
+import { persistMessageInTransaction } from "./../runs/assembly/run-messages.js";
 import { answerNativeInteraction, updateNativeInteraction } from "./answers.js";
 
 const LEASE_MS = 90_000;

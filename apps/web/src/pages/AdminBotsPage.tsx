@@ -4,9 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { Link, Navigate } from "react-router-dom";
 import { PageLoading } from "../components/PageLoading";
-import { useSpaceQueries } from "../lib/query";
+import { WindowChrome } from "../components/WindowChrome";
+import { useSpaceQueries } from "../lib/query/query";
 import { AdminBotsPanel } from "./AdminBotsPanel";
-import { WindowChrome } from "./WindowChrome";
 
 export function AdminBotsPage() {
   const { t } = useLingui();

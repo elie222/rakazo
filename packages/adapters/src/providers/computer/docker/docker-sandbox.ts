@@ -28,18 +28,21 @@ import { cancelResponseBody, ResponseTooLargeError, requestDeadline } from "@rak
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
-import { ComputerScreenUnavailableError } from "../../../computer-screens.js";
+import { sandboxCommandArgv } from "../../../computers/sandbox/sandbox-command-environment.js";
+import {
+  isSandboxGoneError,
+  sandboxNotFoundError,
+} from "../../../computers/sandbox/sandbox-errors.js";
+import { ComputerScreenUnavailableError } from "../../../computers/screens/computer-screens.js";
 import {
   boundedComputerActions,
   clampRounded,
   computerObservation,
   normalizeWorkspacePath,
   workspaceCwd,
-} from "../../../computer-support.js";
-import { sandboxCommandArgv } from "../../../sandbox-command-environment.js";
-import { isSandboxGoneError, sandboxNotFoundError } from "../../../sandbox-errors.js";
-import { readBodyCapped, withAbort } from "../../../web-ssrf.js";
-import { shouldSkipPortableWorkspaceFile } from "../../../workspace-save-policy.js";
+} from "../../../computers/screens/computer-support.js";
+import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
+import { readBodyCapped, withAbort } from "../../../web/web-ssrf.js";
 
 export const MAX_SANDBOX_ERROR_RESPONSE_BYTES = 8 * 1024;
 export const MAX_SANDBOX_SUCCESS_RESPONSE_BYTES = 16 * 1024 * 1024;

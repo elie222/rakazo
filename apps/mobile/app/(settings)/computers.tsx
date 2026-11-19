@@ -11,13 +11,13 @@ import {
   Text,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { mobileTokens } from "../../lib/appearance";
-import { native, useThemedStyles } from "../../lib/native";
-import { useSideInsets } from "../../lib/side-insets";
-import { listUserDevices, removeUserDevice } from "../../lib/user-devices";
-import { errorText } from "../../lib/user-error";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { listUserDevices, removeUserDevice } from "../../lib/account/user-devices";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
 
 export default function ComputersSettings() {
   const sideInsets = useSideInsets();

@@ -20,8 +20,8 @@ import {
   referenceTransferSchema,
   uploadCreativeReferences,
 } from "./creative-references.js";
-import { persistMessageInTransaction } from "./run-messages.js";
-import { attachWorkspaceFileToThread } from "./thread-artifacts.js";
+import { persistMessageInTransaction } from "./runs/assembly/run-messages.js";
+import { attachWorkspaceFileToThread } from "./storage/thread-artifacts.js";
 
 const KIND = "creative_job";
 // Older API replicas cannot consume a reference intent as a text-only creation.

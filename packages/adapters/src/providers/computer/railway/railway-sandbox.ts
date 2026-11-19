@@ -23,29 +23,35 @@ import type * as Railway from "railway";
 import type { ConnectOptions, Sandbox, SandboxStatus } from "railway";
 import WebSocket from "ws";
 import { z } from "zod";
-import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computer-idle.js";
-import { computerProxyPrepareEnv, PREPARE_COMPUTER_PROXY } from "../../../computer-proxy.js";
+import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computers/computer-idle.js";
+import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../computers/sandbox/sandbox-cleanup.js";
+import { sandboxCommandArgv } from "../../../computers/sandbox/sandbox-command-environment.js";
+import { abortedCommandEvents } from "../../../computers/sandbox/sandbox-command-events.js";
+import {
+  computerProxyPrepareEnv,
+  PREPARE_COMPUTER_PROXY,
+} from "../../../computers/screens/computer-proxy.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
   workspaceCwd,
   workspacePath,
-} from "../../../computer-support.js";
-import { PortableFileBatcher } from "../../../computer-workspace.js";
+} from "../../../computers/screens/computer-support.js";
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
-} from "../../../linux-desktop.js";
-import { deleteUnreferencedMachine, recordUnreferencedMachine } from "../../../sandbox-cleanup.js";
-import { sandboxCommandArgv } from "../../../sandbox-command-environment.js";
-import { abortedCommandEvents } from "../../../sandbox-command-events.js";
-import { readBodyCapped } from "../../../web-ssrf.js";
+} from "../../../computers/screens/linux-desktop.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindCommand,
-} from "../../../workspace-save-policy.js";
+} from "../../../storage/workspace-save-policy.js";
+import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const DISPLAY_START = 1;
 const WORKSPACE = "/home/rakazo";

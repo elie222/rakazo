@@ -2,7 +2,7 @@ import type { SettingsScope } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { PageLoading } from "../../components/PageLoading";
-import { errorText } from "../../lib/user-error";
+import { errorText } from "../../lib/query/user-error";
 import { ModelAccountSettings } from "./ModelAccountSettings";
 import { modelAccountConfigQuery } from "./queries";
 

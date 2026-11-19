@@ -1,7 +1,7 @@
 import type { AdapterContext, CommandRequest, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, expect, it, vi } from "vitest";
-import { createRunSandbox } from "../host-aware-sandbox.js";
+import { createRunSandbox } from "./../computers/sandbox/host-aware-sandbox.js";
 import { readComputerInitializationGrant } from "./initialization-auth.js";
 import { createInitializedRunSandbox } from "./sandbox.js";
 

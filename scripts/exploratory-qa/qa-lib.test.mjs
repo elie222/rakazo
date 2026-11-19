@@ -125,6 +125,32 @@ test("a fingerprint written by the model is not taken for ours", () => {
   assert.deepEqual([...fingerprintsIn([{ body }])], [fingerprint(bug)]);
 });
 
+test("an issue edited below its fingerprint is still recognized", () => {
+  const body = `${issueBody(bug, links)}\n\nSeen again on mobile.`;
+  assert.deepEqual([...fingerprintsIn([{ body }])], [fingerprint(bug)]);
+});
+
+test("a marker quoted in any code a person adds is not taken for a filed bug", () => {
+  const other = fingerprint({ ...bug, key: "pinned-chats-hidden" });
+  const marker = `<!-- exploratory-qa-fingerprint: ${other} -->`;
+  const body = `${issueBody(bug, links)}\n\nSee \`${marker}\` and:\n\n\`\`\`html\n${marker}\n\`\`\``;
+  assert.deepEqual([...fingerprintsIn([{ body }])], [fingerprint(bug)]);
+});
+
+test("a long key read back from its issue matches the issue's fingerprint", () => {
+  const key = `${"pinned-chats-".repeat(8)}hidden`;
+  const shown = /\*\*Bug key:\*\* `([^`]+)`/.exec(issueBody({ ...bug, key }, links))[1];
+  assert.equal(fingerprint({ ...bug, key: shown }), fingerprint({ ...bug, key }));
+});
+
+test("keys that differ only past 60 characters are different bugs", () => {
+  const long = "x".repeat(60);
+  assert.notEqual(
+    fingerprint({ ...bug, key: `${long}-sidebar` }),
+    fingerprint({ ...bug, key: `${long}-composer` }),
+  );
+});
+
 test("one issue per bug: open issues and repeats are skipped, and the run is capped", () => {
   const open = [{ title: "x", body: issueBody(bug, links) }];
   const other = { ...bug, key: "pinned-chats-hidden" };

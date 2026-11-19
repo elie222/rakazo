@@ -5,19 +5,19 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ModelRoleSettings } from "../../components/account-model-role-settings";
-import { LoadFailure } from "../../components/load-failure";
 import { ModelAccount } from "../../components/model-account";
-import { SpaceBotsModel } from "../../components/space-bots-model";
+import { SpaceBotsModel } from "../../components/settings/space-bots-model";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { errorText } from "../../lib/api/user-error";
+import { useSideInsets } from "../../lib/layout/side-insets";
 import { modelAccountStatusQuery } from "../../lib/model-account-client";
 import { useI18n } from "../../lib/model-account-i18n";
-import type { ModelPickerRequest } from "../../lib/model-picker-selection";
-import { closeModelPicker, openModelPicker } from "../../lib/model-picker-selection";
-import { native } from "../../lib/native";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { settingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
+import type { ModelPickerRequest } from "../../lib/models/model-picker-selection";
+import { closeModelPicker, openModelPicker } from "../../lib/models/model-picker-selection";
+import { native } from "../../lib/native/native";
+import { queryClient, rpcQuery } from "../../lib/query/query";
+import { settingsTarget } from "../../lib/query/settings-target";
 import { useAccountAuthorizationReturn } from "../../lib/use-account-authorization-return";
-import { errorText } from "../../lib/user-error";
 
 export default function ModelAccountPage() {
   const params = useLocalSearchParams<{ spaceId?: string }>();

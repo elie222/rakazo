@@ -6,20 +6,24 @@ import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, View } from "react-native";
-import { LoadFailure } from "../../components/load-failure";
-import { MenuPickerMenu } from "../../components/menu-picker";
-import { TextFieldDialog } from "../../components/name-dialog";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { formatActivityRelativeTime } from "../../lib/activity";
-import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
-import { native } from "../../lib/native";
-import { accountRpcQuery, formRead, queryClient, useSave } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { spendingSpentSummary } from "../../lib/spending-limit";
-import { errorText } from "../../lib/user-error";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { MenuPickerMenu } from "../../components/ui/menu-picker";
+import { TextFieldDialog } from "../../components/ui/name-dialog";
+import { spendingSpentSummary } from "../../lib/account/spending-limit";
+import { errorText } from "../../lib/api/user-error";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { formatActivityRelativeTime } from "../../lib/inbox/activity";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native } from "../../lib/native/native";
+import { accountRpcQuery, formRead, queryClient, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 
 /** The most the user's bots may spend, across every bot and Space. */
 export default function SpendingLimitSettings() {

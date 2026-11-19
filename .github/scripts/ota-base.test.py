@@ -396,7 +396,7 @@ class OtaBaseStepTests(OtaBaseTestCase):
             ({"packages/logging/src/monitoring.ts": "export const m = 1;\n"}, "publish=true", eligible),
             ({icon: "{}\n"}, "publish=false", icon),
             ({tokens: "export const a = 3;\n", SWIFT_FILE: "import UIKit\n"}, "publish=false", SWIFT_FILE),
-            ({"packages/db/src/client.ts": "export const db = 1;\n"}, "publish=false", "No mobile OTA needed"),
+            ({"packages/db/src/database/client.ts": "export const db = 1;\n"}, "publish=false", "No mobile OTA needed"),
         ):
             with self.subTest(files=sorted(files)):
                 published = self.repo.head

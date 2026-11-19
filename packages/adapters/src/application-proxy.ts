@@ -10,9 +10,9 @@ import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { runAsTenant } from "@rakazo/db";
 import { z } from "zod";
 import type { ApplicationServices, ConnectedApplication } from "./configured-apps.js";
-import { connectedContext } from "./connection-context.js";
-import { readBoundedText } from "./connector-http.js";
-import { ConnectorRegistry } from "./connector-registry.js";
+import { connectedContext } from "./integrations/connection-context.js";
+import { readBoundedText } from "./integrations/connector-http.js";
+import { ConnectorRegistry } from "./integrations/connector-registry.js";
 
 const MAX_BYTES = 1_000_000;
 const id = z.string().min(1).max(200);

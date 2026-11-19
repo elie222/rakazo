@@ -1,6 +1,6 @@
 import { translate as translateCatalog } from "@rakazo/core";
 import { useCallback } from "react";
-import { useI18n as useAppI18n } from "./i18n";
+import { useI18n as useAppI18n } from "./i18n/i18n";
 import { MODEL_ACCOUNT_MESSAGES } from "./model-account-messages";
 
 export function useI18n() {

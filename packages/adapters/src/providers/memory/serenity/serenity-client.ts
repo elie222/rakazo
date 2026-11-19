@@ -13,14 +13,14 @@ import {
   combineSignals,
   redactConnectorPayload,
   sanitizeConnectorError,
-} from "../../../connector-safety.js";
-import { createMcpClient } from "../../../mcp-output-schema.js";
-import type { ResolvedAddress, ResolveHostname } from "../../../network-address.js";
-import { createAddressCheckedLookup } from "../../../network-address.js";
-import type { RemoteTransportDependencies, SafeRemoteFetch } from "../../../remote-mcp.js";
-import { createSafeRemoteFetch } from "../../../remote-mcp.js";
-import { fetchPairedWithDispatcher } from "../../../undici-fetch.js";
-import { isBlockedHostname } from "../../../web-ssrf.js";
+} from "../../../integrations/connector-safety.js";
+import { createMcpClient } from "../../../mcp/mcp-output-schema.js";
+import type { RemoteTransportDependencies, SafeRemoteFetch } from "../../../mcp/remote-mcp.js";
+import { createSafeRemoteFetch } from "../../../mcp/remote-mcp.js";
+import type { ResolvedAddress, ResolveHostname } from "../../../network/network-address.js";
+import { createAddressCheckedLookup } from "../../../network/network-address.js";
+import { fetchPairedWithDispatcher } from "../../../network/undici-fetch.js";
+import { isBlockedHostname } from "../../../web/web-ssrf.js";
 
 const SERENITY_TIMEOUT_MS = 15_000;
 const SERENITY_TERMINATE_TIMEOUT_MS = 2_000;

@@ -2,7 +2,7 @@ import { createRouterClient } from "@orpc/server";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { expect, it, vi } from "vitest";
-import { ConnectorRegistry } from "../../../packages/adapters/src/connector-registry.js";
+import { ConnectorRegistry } from "../../../packages/adapters/src/integrations/connector-registry.js";
 import { creativeFixture } from "../../../packages/adapters/src/creative.test-support.js";
 import type { RouterDeps } from "./router.js";
 import { createRouter } from "./router.js";

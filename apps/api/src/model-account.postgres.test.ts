@@ -9,7 +9,7 @@ import type { Auth } from "@rakazo/auth";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveModelKey } from "../../../packages/adapters/src/run-model.js";
+import { resolveModelKey } from "../../../packages/adapters/src/runs/turn/run-model.js";
 import { modelAccountRoutes } from "./model-account.js";
 
 const databaseUrl = process.env.DATABASE_URL;

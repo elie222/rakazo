@@ -6,9 +6,9 @@ import {
   marketplaceBotTemplate,
 } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import type { AgentImportServices } from "./agent-import.js";
-import { requestDigest } from "./agent-import.js";
-import { createBotFromTemplateDefinition } from "./bot-templates.js";
+import type { AgentImportServices } from "./bots/agent-import.js";
+import { requestDigest } from "./bots/agent-import.js";
+import { createBotFromTemplateDefinition } from "./bots/bot-templates.js";
 import { botMarketplaceRoutes } from "./routes/bot-marketplace.js";
 import type { RouterContext } from "./routes/context.js";
 

@@ -2,11 +2,12 @@ import type { ToolkitConnectionState } from "@composio/core";
 import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
-import { collectPages, filterCatalog } from "../../../connector-catalog.js";
-import { ConnectorRegistry } from "../../../connector-registry.js";
-import { DestinationEmulator } from "../../../destination-emulator.js";
+import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
+import { ConnectorRegistry } from "../../../integrations/connector-registry.js";
+import { DestinationEmulator } from "../../../webhooks/destination-emulator.js";
 import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
+  AUTHORIZATION_WINDOW_MS,
   asConnectorTools,
   ComposioConnector,
   collectLogIds,
@@ -21,6 +22,7 @@ import {
   pickReusableConnection,
   planLiveConnectionSync,
   sanitizeIntegrationError,
+  toolkitDisplayName,
   withSharedAccessHint,
 } from "./composio-connector.js";
 
@@ -273,11 +275,18 @@ describe("composio tool mapping", () => {
       { type: "function", function: { name: "COMPOSIO_MULTI_EXECUTE_TOOL" } },
       { slug: "COMPOSIO_SEARCH_TOOLS" },
     ]);
-    expect(tools.map((tool) => tool.batch)).toEqual([
-      { items: "tools", action: "tool_slug", arguments: "arguments" },
-      { items: "tools", action: "tool_slug", arguments: "arguments" },
-      undefined,
-    ]);
+    for (const tool of tools.slice(0, 2)) {
+      expect(tool.batch).toMatchObject({
+        items: "tools",
+        action: "tool_slug",
+        arguments: "arguments",
+        outgoingDrafts: {
+          GMAIL_SEND_EMAIL: { kind: "email" },
+          SLACK_SEND_MESSAGE: { kind: "message" },
+        },
+      });
+    }
+    expect(tools[2]?.batch).toBeUndefined();
   });
 
   it("retains provider route metadata independently of the tool name", async () => {
@@ -1532,6 +1541,49 @@ describe("composio tool mapping", () => {
     ).toEqual({ connectIds: ["row-gh"], revokeIds: [] });
   });
 
+  it("connects the attempt whose own account is signed in, not an earlier abandoned one", () => {
+    const attempt = (id: string, providerRef: string | null, minutesAgo: number) => ({
+      id,
+      provider: "gmail",
+      status: "pending",
+      displayName: "Gmail",
+      providerRef,
+      updatedAt: new Date(Date.UTC(2026, 0, 1, 12, -minutesAgo)),
+    });
+    const now = Date.UTC(2026, 0, 1, 12);
+    const rows = [attempt("first", "ca_expired", 30), attempt("retry", "ca_live", 20)];
+    expect(planLiveConnectionSync(rows, ["gmail"], now, ["ca_live"])).toEqual({
+      connectIds: ["retry"],
+      revokeIds: ["first"],
+    });
+    // The person finished the first page after starting a second.
+    expect(planLiveConnectionSync(rows, ["gmail"], now, ["ca_expired"]).connectIds).toEqual([
+      "first",
+    ]);
+    // Without the account list, the latest attempt is the likelier one.
+    expect(planLiveConnectionSync(rows, ["gmail"], now).connectIds).toEqual(["retry"]);
+    // The live account belongs to neither attempt, so neither row may claim it.
+    expect(planLiveConnectionSync(rows, ["gmail"], now, ["ca_other"]).connectIds).toEqual([]);
+    // Beside a connected account, an attempt past the authorization window is cleared, and
+    // one whose own sign-in finished is connected as another account.
+    const beside = [{ ...attempt("done", "ca_live", 60), status: "connected" }];
+    expect(
+      planLiveConnectionSync([...beside, attempt("stale", "ca_expired", 30)], ["gmail"], now, [
+        "ca_live",
+      ]).revokeIds,
+    ).toEqual(["stale"]);
+    expect(
+      planLiveConnectionSync([...beside, attempt("second", "ca_second", 30)], ["gmail"], now, [
+        "ca_live",
+        "ca_second",
+      ]),
+    ).toEqual({ connectIds: ["second"], revokeIds: [] });
+    // A row saved before its sign-in answered holds no account and is still recovered.
+    expect(
+      planLiveConnectionSync([attempt("first", null, 30)], ["gmail"], now, ["ca_other"]).connectIds,
+    ).toEqual(["first"]);
+  });
+
   it("only fetches live Composio slugs when a Rakazo row is still pending or errored", () => {
     expect(needsLivePluginSync([{ status: "connected" }, { status: "revoked" }])).toBe(false);
     expect(needsLivePluginSync([{ status: "pending" }])).toBe(true);
@@ -1626,6 +1678,40 @@ describe("composio tool mapping", () => {
     });
   });
 
+  it("leaves a sign-in that may still be open in the browser, and revokes it once it has expired", () => {
+    const now = Date.parse("2026-01-01T12:00:00Z");
+    const began = (minutesAgo: number) => new Date(now - minutesAgo * 60_000);
+    const rows = [
+      {
+        id: "row-open",
+        provider: "slack",
+        status: "pending",
+        displayName: "Slack",
+        updatedAt: began(3),
+      },
+      {
+        id: "row-expired",
+        provider: "outlook",
+        status: "pending",
+        displayName: "Outlook",
+        updatedAt: began(AUTHORIZATION_WINDOW_MS / 60_000),
+      },
+      {
+        id: "row-failed",
+        provider: "gmail",
+        status: "error",
+        displayName: "Gmail",
+        updatedAt: began(3),
+      },
+    ];
+    expect(planLiveConnectionSync(rows, [], now)).toEqual({
+      connectIds: [],
+      revokeIds: ["row-expired", "row-failed"],
+    });
+    // Finished meanwhile: the same row connects.
+    expect(planLiveConnectionSync(rows, ["slack"], now).connectIds).toEqual(["row-open"]);
+  });
+
   it("clears failed additional-account error rows while keeping in-flight pendings", () => {
     expect(
       planLiveConnectionSync(
@@ -1657,6 +1743,12 @@ describe("composio tool mapping", () => {
       connectIds: [],
       revokeIds: ["row-err"],
     });
+  });
+
+  it("names the business-only messaging toolkit for what it signs in to", () => {
+    expect(toolkitDisplayName({ slug: "WHATSAPP", name: "WhatsApp" })).toBe("WhatsApp Business");
+    expect(toolkitDisplayName({ slug: "GITHUB", name: "GitHub" })).toBe("GitHub");
+    expect(toolkitDisplayName({ slug: "constructor", name: "Constructor" })).toBe("Constructor");
   });
 
   it("filters the catalog by name or slug", () => {

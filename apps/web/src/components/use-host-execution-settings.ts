@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { desktopBridge } from "../lib/desktop";
-import { useQueryUserId, useSpaceQueries } from "../lib/query";
+import { desktopBridge } from "../lib/platform/desktop";
+import { useQueryUserId, useSpaceQueries } from "../lib/query/query";
 
 /** Device choices stay outside the bot's server configuration. */
 export function useHostExecutionSettings(botId: string) {

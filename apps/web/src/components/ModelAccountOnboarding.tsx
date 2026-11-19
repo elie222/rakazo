@@ -2,7 +2,7 @@ import { Trans } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
 import { lazy, Suspense, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { rpc } from "../lib/rpc";
+import { rpc } from "../lib/query/rpc";
 import { AccountI18n } from "../pages/model-account/AccountI18n";
 
 const AccountModelSettings = lazy(() =>

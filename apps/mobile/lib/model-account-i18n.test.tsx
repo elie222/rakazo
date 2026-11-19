@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { activateUiLocale } from "./i18n";
+import { activateUiLocale } from "./i18n/i18n";
 import { useI18n } from "./model-account-i18n";
 
 it("keeps translation callbacks stable until the locale changes and preserves shared messages", async () => {

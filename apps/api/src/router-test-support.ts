@@ -3,7 +3,7 @@ import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor, Bot } from "@rakazo/contracts";
 import { vi } from "vitest";
-import { withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
+import { withModelRoles } from "../../../packages/adapters/src/models/model-roles.test-support.js";
 import type { RouterDeps } from "./router.js";
 import {
   createRouter as createRouterWith,
@@ -11,7 +11,10 @@ import {
 } from "./router.js";
 import { handleRpcError } from "./rpc-errors.js";
 
-export { mainRole, withModelRoles } from "../../../packages/adapters/src/testing/model-roles.js";
+export {
+  mainRole,
+  withModelRoles,
+} from "../../../packages/adapters/src/models/model-roles.test-support.js";
 
 const withRoleDeps = (deps: RouterDeps) => {
   withModelRoles(deps.prisma);

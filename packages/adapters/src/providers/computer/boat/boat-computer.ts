@@ -1,4 +1,4 @@
-import type { ComputerProviderDefinition } from "../../../computer-provider-descriptor.js";
+import type { ComputerProviderDefinition } from "../../../computers/computer-provider-descriptor.js";
 
 export const boatComputer: ComputerProviderDefinition = {
   capabilities: {
@@ -10,6 +10,7 @@ export const boatComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    readStoppedFiles: true,
   },
   env: {
     boatApiKey: { name: "BOAT_API_KEY", required: true },

@@ -2,7 +2,7 @@ import { setupI18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { i18n } from "../../lib/i18n";
+import { i18n } from "../../lib/locale/i18n";
 
 type Messages = Parameters<typeof i18n.load>[1];
 const loaders = import.meta.glob<{ messages: Messages }>("./locales/*/messages.po");

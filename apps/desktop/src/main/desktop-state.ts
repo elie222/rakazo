@@ -1,10 +1,10 @@
 import type { DesktopSetup } from "@rakazo/contracts";
 import type { BrowserWindow } from "electron";
-import type { AppTarget } from "./app-frame.js";
-import type { DesktopUpdateController } from "./auto-update.js";
-import type { prepareHostComputer } from "./host-computer.js";
-import type { StackController } from "./local-stack.js";
-import type { UserDeviceAccess } from "./user-device.js";
+import type { UserDeviceAccess } from "./auth/user-device.js";
+import type { prepareHostComputer } from "./this-computer/host-computer.js";
+import type { StackController } from "./this-computer/local-stack.js";
+import type { DesktopUpdateController } from "./updates/auto-update.js";
+import type { AppTarget } from "./windows/app-frame.js";
 
 /** Window, setup, and service state shared by the main process modules. */
 export const desktop = {

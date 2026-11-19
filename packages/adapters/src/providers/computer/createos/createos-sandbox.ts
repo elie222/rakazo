@@ -25,8 +25,20 @@ import {
   quiesceBrowserProfilesCommand,
 } from "@rakazo/core/node/desktop-runtime";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
-import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computer-idle.js";
-import { screenSessionKey } from "../../../computer-screens.js";
+import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computers/computer-idle.js";
+import { PORTABLE_TRANSFER_BATCH_BYTES } from "../../../computers/computer-workspace.js";
+import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../computers/sandbox/sandbox-cleanup.js";
+import { sandboxCommandArgv } from "../../../computers/sandbox/sandbox-command-environment.js";
+import {
+  abortedCommandEvents,
+  timedOutCommandEvents,
+} from "../../../computers/sandbox/sandbox-command-events.js";
+import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
+import { shellExportScript } from "../../../computers/sandbox/sandbox-shell-environment.js";
+import { screenSessionKey } from "../../../computers/screens/computer-screens.js";
 import {
   boundedComputerActions,
   clampRounded,
@@ -35,15 +47,9 @@ import {
   shellQuote,
   workspaceCwd,
   workspacePath,
-} from "../../../computer-support.js";
-import { PORTABLE_TRANSFER_BATCH_BYTES } from "../../../computer-workspace.js";
-import { deleteUnreferencedMachine, recordUnreferencedMachine } from "../../../sandbox-cleanup.js";
-import { sandboxCommandArgv } from "../../../sandbox-command-environment.js";
-import { abortedCommandEvents, timedOutCommandEvents } from "../../../sandbox-command-events.js";
-import { sandboxNotFoundError } from "../../../sandbox-errors.js";
-import { shellExportScript } from "../../../sandbox-shell-environment.js";
-import { readBodyCapped } from "../../../web-ssrf.js";
-import { shouldSkipPortableWorkspaceFile } from "../../../workspace-save-policy.js";
+} from "../../../computers/screens/computer-support.js";
+import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
+import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const CREATEOS_WORKSPACE = "/home/desktop/rakazo-home";
 const CREATEOS_BROWSER_PROFILES = `${CREATEOS_WORKSPACE}/.browser-profiles`;

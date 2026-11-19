@@ -2,8 +2,8 @@ import { DesktopHarness, hostIpcSchemas } from "@rakazo/adapters/host-harness";
 import type { BrowserWindow } from "electron";
 import { app, dialog, net } from "electron";
 import { t } from "./i18n.js";
-import type { IpcCaller } from "./ipc.js";
-import { handleIpc } from "./ipc.js";
+import type { IpcCaller } from "./ipc/ipc.js";
+import { handleIpc } from "./ipc/ipc.js";
 
 /** Electron supplies trusted IPC, session cookies, native consent and quit ordering. */
 export function prepareDesktopHarness(options: {

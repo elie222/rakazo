@@ -1,8 +1,8 @@
 import { createAdapterContext } from "@rakazo/adapter-kit";
 import type { Run } from "@rakazo/db";
 import { bridgeInputSchemas } from "@rakazo/native-runtime/bridge-tools";
-import { messageBot } from "../bot-messages.js";
-import type { ExecutorDeps } from "../executor-deps.js";
+import { messageBot } from "./../messaging/bot-messages.js";
+import type { ExecutorDeps } from "./../runs/executor/executor-deps.js";
 
 /** Native observations never enter here. The process broker asks for each effect's approval. */
 export async function executeNativeBridgeTool(

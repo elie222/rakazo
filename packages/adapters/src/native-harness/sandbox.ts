@@ -1,4 +1,4 @@
-import { createRunSandbox } from "../host-aware-sandbox.js";
+import { createRunSandbox } from "./../computers/sandbox/host-aware-sandbox.js";
 import type { ComputerInitializationConnection } from "./computer-initialization.js";
 
 /** Compose optional user model initialization after the generic computer provider is selected. */

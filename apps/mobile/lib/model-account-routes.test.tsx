@@ -28,7 +28,7 @@ vi.mock("expo-router", () => ({
 }));
 
 import { ModelAccountRoutes } from "../components/model-account-routes";
-import { closeModelConnection, openModelConnection } from "./model-connection-request";
+import { closeModelConnection, openModelConnection } from "./models/model-connection-request";
 
 afterEach(() => {
   document.body.innerHTML = "";

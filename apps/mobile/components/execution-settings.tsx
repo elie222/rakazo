@@ -4,9 +4,9 @@ import { BotExecutionSchema, ExecutionConnectionSchema } from "@rakazo/contracts
 import type { ComponentProps } from "react";
 import { useEffect, useState } from "react";
 import { Alert } from "react-native";
-import { captureApiRequestContext, rpc } from "../lib/api";
-import { MenuPicker } from "./menu-picker";
-import { SettingsGroup, SettingsRow } from "./settings-group";
+import { captureApiRequestContext, rpc } from "../lib/api/api";
+import { SettingsGroup, SettingsRow } from "./settings/settings-group";
+import { MenuPicker } from "./ui/menu-picker";
 
 export function ExecutionSettings({
   botId,

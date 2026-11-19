@@ -24,10 +24,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { MouseEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { authClient } from "../lib/auth";
-import { desktopBridge } from "../lib/desktop";
-import { cancelSsoFlow, runSsoFlow } from "../lib/sso-flow";
-import { authErrorText } from "../lib/user-error";
+import { authClient } from "../lib/auth/auth";
+import { cancelSsoFlow, runSsoFlow } from "../lib/auth/sso-flow";
+import { desktopBridge } from "../lib/platform/desktop";
+import { authErrorText } from "../lib/query/user-error";
 import { AccountI18n } from "../pages/model-account/AccountI18n";
 import { AUTHORIZATION_RETURN_PARAM } from "../pages/model-account/use-authorization-return";
 

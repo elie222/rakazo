@@ -39,6 +39,10 @@ export const ES_MESSAGES: Record<string, string> = {
   "Bring All to Front": "Traer todo al frente",
 
   // Updates
+  "Checking for Updates…": "Buscando actualizaciones…",
+  "Downloading Update…": "Descargando actualización…",
+  "Restart to Update…": "Reiniciar para actualizar…",
+  "Downloading Rakazo {version}…": "Descargando BotONE {version}…",
   "Rakazo {version} is ready to install.": "BotONE {version} está listo para instalarse.",
   Restart: "Reiniciar",
   Later: "Más tarde",
@@ -242,5 +246,12 @@ export const ES_MESSAGES: Record<string, string> = {
     "Docker está instalado pero no se está ejecutando. Inicia el servicio de Docker para continuar.",
   "Rakazo stopped unexpectedly.": "BotONE se detuvo de forma inesperada.",
   Reload: "Recargar",
-  "Rakazo Cloud": "BotONE Cloud",
+  "Mac app control": "Control de apps del Mac",
+  "Set up Mac app control": "Configurar el control de apps del Mac",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
+    "Los comandos ya funcionan. Para usar apps, permite a BotONE acceder a Accesibilidad y Grabación de pantalla en Ajustes del Sistema y reinicia BotONE.",
+  "Open System Settings": "Abrir Ajustes del Sistema",
+  "Restart Rakazo": "Reiniciar BotONE",
+  "Not Now": "Ahora no",
+  "Restart Rakazo to finish setup": "Reinicia BotONE para finalizar la configuración",
 };

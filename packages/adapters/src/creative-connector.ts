@@ -10,7 +10,7 @@ import { appConnectCard } from "@rakazo/core";
 import { recordSecurityEvent } from "@rakazo/db";
 import { z } from "zod";
 import type { UserAccessCredential } from "./configured-apps.js";
-import { scopeConnectorTools } from "./connector-accounts.js";
+import { scopeConnectorTools } from "./integrations/connector-accounts.js";
 import type { CreativeCapabilities } from "./creative-contracts.js";
 import { creativeKindSchema, creativeToolInputSchema } from "./creative-contracts.js";
 import { CREATIVE_APP_INSTRUCTIONS } from "./creative-instructions.js";
@@ -18,7 +18,7 @@ import type { CreativeJobsDeps } from "./creative-jobs.js";
 import { CreativeJobs } from "./creative-jobs.js";
 import type { CreativeConnectionConfig, CreativeProvider } from "./creative-provider.js";
 import { CreativeServiceError } from "./creative-provider.js";
-import { TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
+import { TOOL_RESULT_TEXT_LIMIT } from "./runtime/pi/pi-runtime-limits.js";
 
 export type UserAccessCredentialReader = (userId: string) => Promise<UserAccessCredential | null>;
 const ID = "creative";

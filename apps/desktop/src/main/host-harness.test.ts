@@ -4,8 +4,8 @@ import type { BrowserWindow, WebContents } from "electron";
 import { app, dialog, net } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prepareDesktopHarness } from "./host-harness.js";
-import type { IpcCaller } from "./ipc.js";
-import { handleIpc } from "./ipc.js";
+import type { IpcCaller } from "./ipc/ipc.js";
+import { handleIpc } from "./ipc/ipc.js";
 
 const harness = vi.hoisted(() => ({
   profiles: vi.fn(),

@@ -29,7 +29,7 @@ vi.mock("../pages/model-account/ModelAccountSettings", () => ({
   ),
 }));
 
-import { rpc } from "../lib/rpc";
+import { rpc } from "../lib/query/rpc";
 import { ModelAccountOnboarding } from "./ModelAccountOnboarding";
 
 afterEach(() => {

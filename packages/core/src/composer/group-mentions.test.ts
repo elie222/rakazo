@@ -1,0 +1,465 @@
+import { describe, expect, it } from "vitest";
+import { pageReply } from "../messages/page-links.js";
+import {
+  hasMentionToken,
+  inferHandoffTargetBotId,
+  inferHandoffTargetName,
+  memberName,
+  mentionedGroupBotIds,
+  resolveGroupTargetBotIds,
+} from "./group-mentions.js";
+
+const members = [
+  { id: "a", name: "BotA" },
+  { id: "b", name: "BotB" },
+  { id: "c", name: "Writer" },
+];
+
+describe("hasMentionToken", () => {
+  it("requires a boundary after the complete member name", () => {
+    expect(hasMentionToken("Ask @Ann to review", "Ann")).toBe(true);
+    expect(hasMentionToken("Ask @Ann, then continue", "Ann")).toBe(true);
+    expect(hasMentionToken("Ask @Anna to review", "Ann")).toBe(false);
+    expect(hasMentionToken("name@Ann", "Ann")).toBe(false);
+    expect(hasMentionToken("contact@everyone", "everyone")).toBe(false);
+  });
+
+  it("supports multi-word and Unicode member names", () => {
+    expect(hasMentionToken("Ask @Research Writer and @Éditeur", "Research Writer")).toBe(true);
+    expect(hasMentionToken("Ask @Research Writer and @Éditeur", "Éditeur")).toBe(true);
+  });
+
+  it("ends a name where Chinese, Japanese or Korean text runs on", () => {
+    expect(hasMentionToken("@Writer你看下", "Writer")).toBe(true);
+    expect(hasMentionToken("请@Writer看下", "Writer")).toBe(true);
+    expect(hasMentionToken("@Writerさん", "Writer")).toBe(true);
+    expect(hasMentionToken("@Writer님", "Writer")).toBe(true);
+  });
+});
+
+describe("resolveGroupTargetBotIds", () => {
+  it("returns mentioned bots from text", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@BotA gather sources. @BotB summarize.",
+        members,
+      }),
+    ).toEqual(["a", "b"]);
+  });
+
+  it("returns all members for @everyone", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@everyone please review",
+        members,
+      }),
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  it("merges explicit mentions", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "hello",
+        members,
+        explicitMentions: ["b"],
+      }),
+    ).toEqual(["b"]);
+  });
+
+  it.each([undefined, ["review"]])(
+    "prefers the complete multi-word name with explicit mentions %j",
+    (explicitMentions) => {
+      expect(
+        resolveGroupTargetBotIds({
+          text: "@Design Review please review",
+          members: [
+            { id: "design", name: "Design" },
+            { id: "review", name: "Design Review" },
+          ],
+          explicitMentions,
+        }),
+      ).toEqual(["review"]);
+    },
+  );
+
+  it.each([undefined, ["helper"]])(
+    "does not broadcast a longer member name with explicit mentions %j",
+    (explicitMentions) => {
+      expect(
+        resolveGroupTargetBotIds({
+          text: "@EVERYONE Helper please review",
+          members: [...members, { id: "helper", name: "Everyone Helper" }],
+          explicitMentions,
+        }),
+      ).toEqual(["helper"]);
+    },
+  );
+
+  it.each(["@Design and @Design Review", "@Design Review and @Design"])(
+    "keeps separately written prefix mentions in %s",
+    (text) => {
+      expect(
+        resolveGroupTargetBotIds({
+          text,
+          members: [
+            { id: "design", name: "Design" },
+            { id: "review", name: "Design Review" },
+          ],
+        }),
+      ).toEqual(["design", "review"]);
+    },
+  );
+
+  it("keeps an explicit prefix bot alongside a longer text mention", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@Design Review please review",
+        members: [
+          { id: "design", name: "Design" },
+          { id: "review", name: "Design Review" },
+        ],
+        explicitMentions: ["design"],
+      }),
+    ).toEqual(["design", "review"]);
+  });
+
+  it.each(["@Everyone Helper and @everyone", "@everyone and @Everyone Helper"])(
+    "keeps an actual broadcast in %s",
+    (text) => {
+      const roster = [...members, { id: "helper", name: "Everyone Helper" }];
+      expect(resolveGroupTargetBotIds({ text, members: roster })).toEqual([
+        "a",
+        "b",
+        "c",
+        "helper",
+      ]);
+    },
+  );
+
+  it("matches literal punctuation and Unicode names without overlapping prefixes", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "(@design.review), @ÉQUIPE (UX) and @ſupport team.",
+        members: [
+          { id: "default", name: "Default" },
+          { id: "design", name: "Design" },
+          { id: "review", name: "Design.Review" },
+          { id: "equipe", name: "Équipe" },
+          { id: "ux", name: " Équipe (UX) " },
+          { id: "support", name: "Support Team" },
+        ],
+      }),
+    ).toEqual(["review", "ux", "support"]);
+  });
+
+  it("keeps all members with the same complete name", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@Design Review",
+        members: [
+          { id: "design", name: "Design" },
+          { id: "review1", name: " Design Review " },
+          { id: "review2", name: "design review" },
+          { id: "blank", name: " " },
+        ],
+      }),
+    ).toEqual(["review1", "review2"]);
+  });
+
+  it.each([
+    ["@Équipe (UX)@Writer please review", ["ux", "writer"]],
+    ["@Équipe (UX)@everyone please review", ["default", "ux", "writer"]],
+  ])("keeps adjacent mentions in %s", (text, expected) => {
+    expect(
+      resolveGroupTargetBotIds({
+        text,
+        members: [
+          { id: "default", name: "Default" },
+          { id: "ux", name: "Équipe (UX)" },
+          { id: "writer", name: "Writer" },
+        ],
+      }),
+    ).toEqual(expected);
+  });
+
+  it("preserves reserved everyone precedence over an identically named member", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@everyone",
+        members: [...members, { id: "everyone", name: "Everyone" }],
+      }),
+    ).toEqual(["a", "b", "c", "everyone"]);
+  });
+
+  it("ignores embedded and incomplete tokens before reaching everyone", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "contact@everyone name@Writer @Writer-more @Writer2",
+        members,
+      }),
+    ).toEqual(["a", "b", "c"]);
+    expect(resolveGroupTargetBotIds({ text: "@everyone", members: [] })).toEqual([]);
+  });
+
+  it("matches multi-word and Unicode names without prefix collisions", () => {
+    const namedMembers = [
+      { id: "research", name: "Research Writer" },
+      { id: "edit", name: "Éditeur" },
+      { id: "ann", name: "Ann" },
+      { id: "anna", name: "Anna" },
+    ];
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@Research Writer compare this with @Éditeur and @Anna.",
+        members: namedMembers,
+      }),
+    ).toEqual(["research", "edit", "anna"]);
+  });
+
+  it("ignores explicit mentions for bots that are not group members", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "hello",
+        members,
+        explicitMentions: ["b", "outsider"],
+      }),
+    ).toEqual(["b"]);
+  });
+
+  it("reaches every member when unmentioned", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "hello team",
+        members,
+      }),
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  it("reaches every member when only a non-member is mentioned", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "hello @Outsider",
+        members,
+        explicitMentions: ["outsider"],
+      }),
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  it("reaches only the mentioned members, not the rest", () => {
+    expect(resolveGroupTargetBotIds({ text: "@BotB what do you think?", members })).toEqual(["b"]);
+    expect(
+      resolveGroupTargetBotIds({
+        text: "what do you think?",
+        members,
+        explicitMentions: ["c"],
+      }),
+    ).toEqual(["c"]);
+  });
+});
+
+describe("mentionedGroupBotIds", () => {
+  it("is empty when the message names nobody", () => {
+    expect(mentionedGroupBotIds({ text: "hello team", members })).toEqual([]);
+  });
+
+  it("names the members a message addresses", () => {
+    expect(mentionedGroupBotIds({ text: "@BotA and @Writer", members })).toEqual(["a", "c"]);
+    expect(mentionedGroupBotIds({ text: "@everyone", members })).toEqual(["a", "b", "c"]);
+  });
+
+  it.each(["@all can you check?", "Thanks @ALL.", "@所有人 明天有提醒吗", "请@所有人看下"])(
+    "reads %s as everyone",
+    (text) => {
+      expect(mentionedGroupBotIds({ text, members })).toEqual(["a", "b", "c"]);
+    },
+  );
+
+  it.each(["foo@all.com", "@allison", "@all-hands", "@alles"])(
+    "does not read %s as everyone",
+    (text) => {
+      expect(mentionedGroupBotIds({ text, members })).toEqual([]);
+    },
+  );
+
+  it("reads @all as a member named All, and @everyone still as everyone", () => {
+    const roster = [...members, { id: "all", name: "All" }, { id: "hands", name: "All Hands" }];
+    expect(mentionedGroupBotIds({ text: "@All hi", members: roster })).toEqual(["all"]);
+    expect(
+      mentionedGroupBotIds({ text: "@All hi", members: roster, explicitMentions: ["all"] }),
+    ).toEqual(["all"]);
+    expect(mentionedGroupBotIds({ text: "@All Hands sync", members: roster })).toEqual(["hands"]);
+    expect(mentionedGroupBotIds({ text: "@所有人", members: roster })).toHaveLength(5);
+    expect(mentionedGroupBotIds({ text: "@everyone", members: roster })).toHaveLength(5);
+  });
+
+  it("reads @所有人 as a member named 所有人", () => {
+    const roster = [...members, { id: "zh", name: "所有人" }];
+    expect(mentionedGroupBotIds({ text: "@所有人 看下", members: roster })).toEqual(["zh"]);
+    expect(mentionedGroupBotIds({ text: "@所有人看下", members: roster })).toEqual([]);
+    expect(mentionedGroupBotIds({ text: "@all", members: roster })).toHaveLength(4);
+  });
+
+  it.each([
+    "https://example.test/@all",
+    "https://example.test/你好@all",
+    "看 www.example.test/文档@所有人 吧",
+    "npm i @all/pkg",
+    "npm i @all/_private",
+    "npm i @all/-pkg",
+    "```\nping @all",
+    "see:\n\n    ping @all\n",
+    "\tping @所有人",
+    "dev+@all",
+    "看 x.com/你好@all",
+    "github.com/文档@所有人",
+    "~~~\nping @all\n~~~",
+    "~~~\nping @all",
+    "```\ncode ``` still code, @all\n```",
+    "张三@all.com",
+    "@@all",
+    "run `@all` here",
+    "```\nping @所有人\n```",
+    "  ~~~\n@all\n  ~~~",
+    "  ```\n@all",
+    " ~~~\n@所有人\n ~~~",
+    "`` `@all` ``",
+    "``ping @all``",
+    "C:\\Users\\@all",
+    "C:\\Users\\@all\\docs",
+  ])("does not read @all or @所有人 in a link, address or code: %s", (text) => {
+    expect(mentionedGroupBotIds({ text, members })).toEqual([]);
+  });
+
+  it.each(["`x` @所有人 `y`", "`a` @all `b`", "``a`` @all ``b``", "cc:@all", "Re:@所有人"])(
+    "reads @all between two code spans: %s",
+    (text) => {
+      expect(mentionedGroupBotIds({ text, members })).toEqual(["a", "b", "c"]);
+    },
+  );
+
+  it.each(["[@all](https://x.com) for details", "see [@所有人 的文档](https://x.com/doc)"])(
+    "does not read @all in a link's label: %s",
+    (text) => {
+      expect(mentionedGroupBotIds({ text, members })).toEqual([]);
+    },
+  );
+
+  it("does not read @all in the title of a page the message is about, but does after it", () => {
+    const page = pageReply("can you check this?", [], { id: "pg_1", title: "Notes for @all [v2]" });
+    expect(mentionedGroupBotIds({ text: page.text, members })).toEqual([]);
+    const addressed = pageReply("@all please review", [], { id: "pg_1", title: "Plan @所有人" });
+    expect(mentionedGroupBotIds({ text: addressed.text, members })).toEqual(["a", "b", "c"]);
+  });
+
+  it("still reads @all at the end of a sentence, next to code or after a link", () => {
+    expect(mentionedGroupBotIds({ text: "Thanks @all.", members })).toEqual(["a", "b", "c"]);
+    expect(mentionedGroupBotIds({ text: "@all。", members })).toEqual(["a", "b", "c"]);
+    for (const text of [
+      "详见https://x.com/doc，@所有人 请看",
+      "https://x.com/a。@all",
+      "steps:\n- one\n    - @all please review",
+      "first line\n    @all too",
+      "Use ``` for examples; @all please review",
+      "请在1.5/2.0版本里测试@所有人",
+      "[docs](https://x.com/a)@all",
+    ])
+      expect(mentionedGroupBotIds({ text, members })).toEqual(["a", "b", "c"]);
+    expect(mentionedGroupBotIds({ text: "https://example.test 请@all看下", members })).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(mentionedGroupBotIds({ text: "`npm test` @all: see above", members })).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
+  // Code and links are found once per message: rescanning them for each @all took about a minute.
+  it("reads a long message of @all, code and links", () => {
+    const text = "@all `x` https://x.test/@all ".repeat(20_000);
+    expect(mentionedGroupBotIds({ text, members })).toEqual(["a", "b", "c"]);
+  });
+
+  it.each([
+    "@Writer/@Editor",
+    "Done.@Writer",
+    "好的.@Writer",
+    "1.@Writer",
+    "ok...@Writer",
+    "a:@Writer",
+    "cc:@Writer",
+    "@Writer.Please",
+    "@Writer.你看下",
+    "`@Writer`",
+  ])("reads %s as before for member names", (text) => {
+    const roster = [...members, { id: "e", name: "Editor" }];
+    const expected = text.includes("@Editor") ? ["c", "e"] : ["c"];
+    expect(mentionedGroupBotIds({ text, members: roster })).toEqual(expected);
+  });
+
+  it.each(["@everyone.Thanks", "`@everyone`", "x.com/@everyone"])(
+    "reads %s as everyone, as before",
+    (text) => {
+      expect(mentionedGroupBotIds({ text, members })).toEqual(["a", "b", "c"]);
+    },
+  );
+
+  it("lets a name run straight into Chinese, Japanese or Korean text", () => {
+    expect(mentionedGroupBotIds({ text: "@Writer你看下", members })).toEqual(["c"]);
+    expect(mentionedGroupBotIds({ text: "@BotAさん、@BotB님", members })).toEqual(["a", "b"]);
+    expect(mentionedGroupBotIds({ text: "@Writers look", members })).toEqual([]);
+  });
+
+  it("does not read a Chinese name as the start of a longer one", () => {
+    const wang = { id: "w", name: "王" };
+    const wangwu = { id: "ww", name: "王五" };
+    expect(mentionedGroupBotIds({ text: "@王五", members: [wang] })).toEqual([]);
+    expect(mentionedGroupBotIds({ text: "@王 你看下", members: [wang] })).toEqual(["w"]);
+    expect(mentionedGroupBotIds({ text: "@王，你看下", members: [wang] })).toEqual(["w"]);
+    expect(mentionedGroupBotIds({ text: "@王五 看下", members: [wang, wangwu] })).toEqual(["ww"]);
+    const su = { id: "s", name: "スー" };
+    expect(mentionedGroupBotIds({ text: "@スーパー見て", members: [su] })).toEqual([]);
+    expect(mentionedGroupBotIds({ text: "@スー 見て", members: [su] })).toEqual(["s"]);
+  });
+});
+
+describe("inferHandoffTargetName", () => {
+  it("picks Writer when BotA is also mentioned", () => {
+    expect(inferHandoffTargetName("@BotA hand this to Writer for the draft")).toBe("Writer");
+  });
+});
+
+describe("inferHandoffTargetBotId", () => {
+  it("recognizes hand this to Writer", () => {
+    expect(inferHandoffTargetBotId("hand this to Writer for the draft", members)).toBe("c");
+  });
+
+  it("recognizes @Writer take the draft", () => {
+    expect(inferHandoffTargetBotId("@Writer take the draft", members)).toBe("c");
+  });
+
+  it("resolves Writer from mixed mention prompt", () => {
+    expect(inferHandoffTargetBotId("@BotA hand this to Writer for the draft", members)).toBe("c");
+  });
+
+  it("resolves multi-word handoff targets", () => {
+    expect(
+      inferHandoffTargetBotId("hand this to Research Writer for the draft", [
+        ...members,
+        { id: "research", name: "Research Writer" },
+      ]),
+    ).toBe("research");
+  });
+});
+
+describe("memberName", () => {
+  it("finds a member's roster name by bot id", () => {
+    const members = [{ botId: "b1", name: "Chief" }];
+    expect(memberName(members, "b1")).toBe("Chief");
+    expect(memberName(members, "b2")).toBeUndefined();
+    expect(memberName(members, undefined)).toBeUndefined();
+    expect(memberName(undefined, "b1")).toBeUndefined();
+  });
+});
