@@ -175,13 +175,9 @@ export async function autoReviewCheckerProvider(
     });
   if (decision) {
     const reviewer = decisionReviewer(decision, checker.model, callObserver);
-    // Only the included reviewer runs a deployment's trial model, on the same operator key.
-    const shadow =
-      included && deploymentKey
-        ? autoReviewShadowModel(decision, {
-            zeroDataRetention: Boolean(judgeKey?.zeroDataRetention),
-          })
-        : undefined;
+    // Only the included reviewer runs a deployment's trial model, on the same operator key and
+    // built like it, so it is sent under the same data retention rule.
+    const shadow = included && deploymentKey ? autoReviewShadowModel(decision) : undefined;
     if (!shadow) return reviewer;
     return new ShadowedAutoReviewProvider({
       primary: reviewer,

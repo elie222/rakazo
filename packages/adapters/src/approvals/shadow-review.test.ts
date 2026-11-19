@@ -151,16 +151,15 @@ const env = {
 };
 
 it("names a trial model only when the deployment sets one of the same host's other models", () => {
-  const plain = { zeroDataRetention: false };
-  expect(autoReviewShadowModel(openRouterDecisionModel, plain, env)).toBe(
+  expect(autoReviewShadowModel(openRouterDecisionModel, env)).toBe(
     openRouterMicrosoftDecisionModel,
   );
   expect(
-    autoReviewShadowModel(openRouterDecisionModel, plain, { OPENROUTER_API_KEY: "fake" }),
+    autoReviewShadowModel(openRouterDecisionModel, { OPENROUTER_API_KEY: "fake" }),
   ).toBeUndefined();
   for (const id of [openRouterDecisionModel.id, "jev-latest", "unknown/model"]) {
     expect(
-      autoReviewShadowModel(openRouterDecisionModel, plain, {
+      autoReviewShadowModel(openRouterDecisionModel, {
         ...env,
         RAKAZO_AUTO_REVIEW_SHADOW_MODEL: id,
       }),
@@ -168,28 +167,14 @@ it("names a trial model only when the deployment sets one of the same host's oth
   }
 });
 
-it("samples reviews at the deployment's rate", () => {
-  const plain = { zeroDataRetention: false };
-  const half = { ...env, RAKAZO_AUTO_REVIEW_SHADOW_SAMPLE_RATE: "0.5" };
-  expect(autoReviewShadowModel(openRouterDecisionModel, plain, half, () => 0.4)).toBeDefined();
-  expect(autoReviewShadowModel(openRouterDecisionModel, plain, half, () => 0.6)).toBeUndefined();
-  const none = { ...env, RAKAZO_AUTO_REVIEW_SHADOW_SAMPLE_RATE: "0" };
-  expect(autoReviewShadowModel(openRouterDecisionModel, plain, none, () => 0)).toBeUndefined();
-});
-
-it("runs no trial model that cannot keep the deciding reviewer's data retention rule", () => {
-  const restricted = { zeroDataRetention: true };
-  expect(autoReviewShadowModel(openRouterDecisionModel, restricted, env)).toBe(
-    openRouterMicrosoftDecisionModel,
-  );
-  const control = openRouterMicrosoftDecisionModel.dataRetentionControl;
-  openRouterMicrosoftDecisionModel.dataRetentionControl = undefined;
-  try {
-    expect(autoReviewShadowModel(openRouterDecisionModel, restricted, env)).toBeUndefined();
-    expect(
-      autoReviewShadowModel(openRouterDecisionModel, { zeroDataRetention: false }, env),
-    ).toBeDefined();
-  } finally {
-    openRouterMicrosoftDecisionModel.dataRetentionControl = control;
-  }
+it("samples reviews at the deployment's rate, and runs none at a rate it cannot read", () => {
+  const at = (rate: string, draw: number) =>
+    autoReviewShadowModel(
+      openRouterDecisionModel,
+      { ...env, RAKAZO_AUTO_REVIEW_SHADOW_SAMPLE_RATE: rate },
+      () => draw,
+    );
+  expect(at("0.5", 0.4)).toBeDefined();
+  expect(at("0.5", 0.6)).toBeUndefined();
+  for (const rate of ["0", "5", "10%", "-1"]) expect(at(rate, 0)).toBeUndefined();
 });

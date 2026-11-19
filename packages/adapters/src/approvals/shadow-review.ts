@@ -16,12 +16,11 @@ import type { DecisionModelDescriptor } from "./model-descriptor.js";
 
 /**
  * The decision model a deployment is trialling beside `primary`, its included reviewer, for this
- * review. It must be another model of the same host on the same operator key, and keep the same
- * data retention rule; `RAKAZO_AUTO_REVIEW_SHADOW_SAMPLE_RATE` (0 to 1, default 1) samples reviews.
+ * review. It must be another model of the same host on the same operator key, so its request goes
+ * where the primary's does; `RAKAZO_AUTO_REVIEW_SHADOW_SAMPLE_RATE` (0 to 1, default 1) samples.
  */
 export function autoReviewShadowModel(
   primary: DecisionModelDescriptor,
-  options: { zeroDataRetention: boolean },
   env: NodeJS.ProcessEnv = process.env,
   sample: () => number = Math.random,
 ): DecisionModelDescriptor | undefined {
@@ -30,7 +29,6 @@ export function autoReviewShadowModel(
   const shadow = decisionModel(primary.provider, id);
   if (!shadow || shadow === primary) return undefined;
   if (shadow.deploymentApiKey(env) !== primary.deploymentApiKey(env)) return undefined;
-  if (options.zeroDataRetention && !shadow.dataRetentionControl) return undefined;
   return sample() < shadowSampleRate(env) ? shadow : undefined;
 }
 
@@ -38,7 +36,8 @@ function shadowSampleRate(env: NodeJS.ProcessEnv): number {
   const raw = env.RAKAZO_AUTO_REVIEW_SHADOW_SAMPLE_RATE?.trim();
   if (!raw) return 1;
   const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 1;
+  // A rate that cannot be read runs no trial rather than trialling every review.
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0;
 }
 
 type TimedVerdict = DecisionVerdict & { latencyMs: number };

@@ -71,21 +71,27 @@ name it on the API and worker processes:
 
 ```dotenv
 RAKAZO_AUTO_REVIEW_SHADOW_MODEL=microsoft/microsoft-decision-1.1
-# Optional share of reviews to trial, 0 to 1 (default 1).
+# Optional share of reviews to trial, 0 to 1 (default 1); any other value runs no trial.
 RAKAZO_AUTO_REVIEW_SHADOW_SAMPLE_RATE=1
 ```
 
 It runs only beside the included reviewer, only for another model of the same host that the same
-deployment key reaches, and never where its host could not keep the data retention rule the
-included reviewer runs under. It starts with the real review, has its own timeout, stops with the
+deployment key reaches, and its request is sent under the same data retention rule as the
+included reviewer's. It starts with the real review, has its own timeout, stops with the
 run, and never delays or changes the decision. Each trial records an `approval.shadow_reviewed`
 audit event naming the reviewed effect, both verdicts, their pass probabilities and latencies; its
 cost is operator usage whose `operationId` starts with `shadow:`. Unset, nothing runs.
 
 This read-only query compares the two, and for actions the included reviewer asked about, what the
-person answered:
+person answered. A review retried after a cancelled run counts once, at its latest trial:
 
 ```sql
+WITH s AS (
+  SELECT DISTINCT ON (COALESCE(metadata->>'effectId', id)) *
+  FROM audit_events
+  WHERE action = 'approval.shadow_reviewed' AND "createdAt" > now() - interval '7 days'
+  ORDER BY COALESCE(metadata->>'effectId', id), "createdAt" DESC
+)
 SELECT
   s.metadata->>'decision' AS decision,
   s.metadata->>'shadowDecision' AS shadow_decision,
@@ -99,10 +105,8 @@ SELECT
   count(*) AS reviews,
   round(avg((s.metadata->>'latencyMs')::numeric)) AS latency_ms,
   round(avg((s.metadata->>'shadowLatencyMs')::numeric)) AS shadow_latency_ms
-FROM audit_events s
+FROM s
 LEFT JOIN external_effects e ON e.id = s.metadata->>'effectId'
-WHERE s.action = 'approval.shadow_reviewed'
-  AND s."createdAt" > now() - interval '7 days'
 GROUP BY 1, 2, 3
 ORDER BY 1, 2, 3;
 ```
