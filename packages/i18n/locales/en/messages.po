@@ -96,6 +96,12 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} connection"
 
+#. placeholder {0}: draft.source
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+msgid "{0} draft"
+msgstr "{0} draft"
+
 #. placeholder {0}: parts.amount
 #: apps/web/src/components/messages/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -240,6 +246,10 @@ msgstr "{count, plural, one {# message with {peer}} other {# messages with {peer
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
 msgstr "{count, plural, one {# row} other {# rows}}"
+
+#: apps/mobile/components/thread/selection-bar.tsx
+msgid "{count, plural, one {# selected} other {# selected}}"
+msgstr "{count, plural, one {# selected} other {# selected}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
@@ -433,6 +443,10 @@ msgstr "{name} (same name as a built-in skill)"
 msgid "{name} (unsupported type)"
 msgstr "{name} (unsupported type)"
 
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "{name} {part}"
+msgstr "{name} {part}"
+
 #: apps/mobile/lib/inbox/activity.ts
 #: apps/web/src/lib/activity-list-filters.ts
 msgid "{name} asked"
@@ -494,6 +508,10 @@ msgstr "{names} keep their own model"
 #: apps/web/src/pages/model-settings/space-bots-model.tsx
 msgid "{names} keeps its own model"
 msgstr "{names} keeps its own model"
+
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "{picked} of {total}"
+msgstr "{picked} of {total}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
@@ -694,6 +712,10 @@ msgstr "{summary} Your backup models also failed."
 #: apps/web/src/pages/space/ActivityList.tsx
 msgid "{title}, {label}"
 msgstr "{title}, {label}"
+
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "{title}, {status}"
+msgstr "{title}, {status}"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "{title}, saved as {savedAs}"
@@ -925,6 +947,15 @@ msgstr "About {kb} KB of memory no longer reaches the bot."
 msgid "About {label}"
 msgstr "About {label}"
 
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "About you"
+msgstr "About you"
+
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
+msgid "Accept"
+msgstr "Accept"
+
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "Access key ID"
 msgstr "Access key ID"
@@ -1010,6 +1041,11 @@ msgstr "Active: {name}"
 #: apps/web/src/pages/shell/sidebar/sidebar-header.tsx
 msgid "Activity"
 msgstr "Activity"
+
+#: apps/web/src/components/audit/AuditLog.tsx
+#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+msgid "Activity log"
+msgstr "Activity log"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -1498,6 +1534,11 @@ msgstr "Another agent"
 msgid "Another assistant"
 msgstr "Another assistant"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Another bot"
+msgstr "Another bot"
+
 #: apps/mobile/components/calls/IncomingCall.tsx
 #: apps/mobile/lib/calls/incoming-calls.ts
 msgid "Answer"
@@ -1635,6 +1676,8 @@ msgstr "Approve or deny it on screen."
 msgid "Approve this server to let your agent use its tools."
 msgstr "Approve this server to let your agent use its tools."
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 msgid "Approved"
 msgstr "Approved"
@@ -1775,11 +1818,6 @@ msgstr "Authorization parameters (optional)"
 msgid "Authorization server"
 msgstr "Authorization server"
 
-#: apps/mobile/components/cards/AppConnectCard.tsx
-#: apps/web/src/pages/shell/chat/message-cards.tsx
-msgid "Authorization timed out. Please try again."
-msgstr "Authorization timed out. Please try again."
-
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Authorize"
 msgstr "Authorize"
@@ -1792,6 +1830,13 @@ msgstr "Authorize this server so agents can use its tools. A popup opens."
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Auto"
 msgstr "Auto"
+
+#: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Auto-join"
+msgstr "Auto-join"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -1819,10 +1864,6 @@ msgstr "Available to shell commands as {commandVariable}"
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Avatar Studio"
 msgstr "Avatar Studio"
-
-#: apps/web/src/pages/shell/computers/computer-panel.tsx
-msgid "Awake"
-msgstr "Awake"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/new-group.tsx
@@ -1857,6 +1898,10 @@ msgstr "Back or forward"
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "Back to chat"
+
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Back to meetings"
+msgstr "Back to meetings"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/auth/Auth.tsx
@@ -1934,9 +1979,8 @@ msgstr "Blocked"
 msgid "Board"
 msgstr "Board"
 
-#: apps/mobile/lib/computers/computer.ts
-#: apps/web/src/pages/shell/computers/computer-view.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
+#: packages/i18n/src/computer-preview.ts
 msgid "Booting live desktop…"
 msgstr "Booting live desktop…"
 
@@ -1995,6 +2039,10 @@ msgstr "Bot models"
 msgid "Bot screen"
 msgstr "Bot screen"
 
+#: apps/web/src/pages/shell/computers/computer-panel.tsx
+msgid "Bot screen preview"
+msgstr "Bot screen preview"
+
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Bot style"
@@ -2051,6 +2099,10 @@ msgstr "Bots with their own computer and browser"
 msgid "Bots with their own model"
 msgstr "Bots with their own model"
 
+#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
+msgid "Bound to bots"
+msgstr "Bound to bots"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Brain label"
 msgstr "Brain label"
@@ -2074,6 +2126,24 @@ msgstr "Built-in"
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Button “{button}” · read from the page, not checked"
 msgstr "Button “{button}” · read from the page, not checked"
+
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Calendar options"
+msgstr "Calendar options"
+
+#: apps/mobile/app/meeting-calendar.tsx
+msgid "Calendar scheduling is unavailable."
+msgstr "Calendar scheduling is unavailable."
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/lib/integrations/meeting-calendar-connect.ts
+msgid "Calendar sign-in did not complete."
+msgstr "Calendar sign-in did not complete."
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/lib/integrations/meeting-calendar-connect.ts
+msgid "Calendar sign-in is temporarily unavailable."
+msgstr "Calendar sign-in is temporarily unavailable."
 
 #: apps/mobile/components/composer/thread-composer.tsx
 #: apps/web/src/pages/shell/chat/chat-header.tsx
@@ -2155,6 +2225,8 @@ msgstr "Can't read images"
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/index.tsx
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/mobile/app/meeting-transcript.tsx
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-space.tsx
 #: apps/mobile/app/pages.tsx
@@ -2175,6 +2247,7 @@ msgstr "Can't read images"
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/mobile/components/thread/message-row.tsx
 #: apps/mobile/components/thread/quote-sheet.tsx
+#: apps/mobile/components/thread/selection-bar.tsx
 #: apps/mobile/components/ui/name-dialog-compose.tsx
 #: apps/mobile/components/ui/name-dialog.tsx
 #: apps/mobile/components/vault/confirm-identity.tsx
@@ -2203,18 +2276,19 @@ msgstr "Can't read images"
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Cancel"
 msgstr "Cancel"
+
+#: apps/mobile/components/composer/dictation-bar.tsx
+msgid "Cancel dictation"
+msgstr "Cancel dictation"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
 msgid "Cancel invitation"
 msgstr "Cancel invitation"
-
-#: apps/web/src/pages/shell/bots/agent-import.tsx
-msgid "Cancel new bot"
-msgstr "Cancel new bot"
 
 #: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Cancel new group"
@@ -2423,6 +2497,10 @@ msgstr "Checking connection…"
 msgid "Checking…"
 msgstr "Checking…"
 
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Choose"
+msgstr "Choose"
+
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
 msgstr "Choose a bot shape, color, or upload an image"
@@ -2466,6 +2544,15 @@ msgstr "Choose folder"
 #: apps/web/src/components/billing/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr "Choose how to use Rakazo"
+
+#: apps/web/src/pages/shell/bots/agent-import.tsx
+msgid "Choose your {home} folder, or a backup of it."
+msgstr "Choose your {home} folder, or a backup of it."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Choosing a join option shares transcripts with this Space."
+msgstr "Choosing a join option shares transcripts with this Space."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -2548,6 +2635,7 @@ msgstr "Clearing…"
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/settings/PeerMessagesOverlay.tsx
+#: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -2732,9 +2820,8 @@ msgstr "Completed"
 msgid "Computer"
 msgstr "Computer"
 
-#: apps/mobile/lib/computers/computer.ts
-#: apps/web/src/pages/shell/computers/computer-view.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
+#: packages/i18n/src/computer-preview.ts
 msgid "Computer failed to boot"
 msgstr "Computer failed to boot"
 
@@ -2752,17 +2839,16 @@ msgstr "Computer is {percent}% full"
 msgid "Computer is asleep"
 msgstr "Computer is asleep"
 
-#: apps/web/src/pages/shell/computers/computer-view.tsx
+#: packages/i18n/src/computer-preview.ts
 msgid "Computer is asleep. Open it to wake."
 msgstr "Computer is asleep. Open it to wake."
 
-#: apps/mobile/lib/computers/computer.ts
+#: packages/i18n/src/computer-preview.ts
 msgid "Computer is asleep. Take control to wake it."
 msgstr "Computer is asleep. Take control to wake it."
 
-#: apps/mobile/lib/computers/computer.ts
 #: apps/web/src/pages/shell/computers/computer-overlay.tsx
-#: apps/web/src/pages/shell/computers/computer-view.tsx
+#: packages/i18n/src/computer-preview.ts
 msgid "Computer is stopped"
 msgstr "Computer is stopped"
 
@@ -2840,6 +2926,13 @@ msgstr "Confirm the URL is reachable from this browser session, then test again.
 msgid "Connect"
 msgstr "Connect"
 
+#. placeholder {0}: data.calendarLabel
+#. placeholder {0}: list.data.calendarLabel
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Connect {0}"
+msgstr "Connect {0}"
+
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
@@ -2856,7 +2949,9 @@ msgstr "Connect {selectedProviderName}"
 msgid "Connect a chat app"
 msgstr "Connect a chat app"
 
+#: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/app/chat-model.tsx
+#: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/shell/chat/chat-model-picker.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
@@ -2950,6 +3045,20 @@ msgstr "Connected {0}."
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 msgid "Connected."
 msgstr "Connected."
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Connecting calendar…"
+msgstr "Connecting calendar…"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Connecting shares calendar access with the meeting service. You choose which meetings your bot joins."
+msgstr "Connecting shares calendar access with the meeting service. You choose which meetings your bot joins."
+
+#: packages/i18n/src/computer-preview.ts
+msgid "Connecting to the screen…"
+msgstr "Connecting to the screen…"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3071,6 +3180,7 @@ msgstr "Conversations, names, memories, searches and bot and Space IDs are sent 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/messages/code-copy-button.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
+#: apps/web/src/components/messages/ArtifactFileCard.tsx
 #: apps/web/src/components/messages/markdown-copy.tsx
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
@@ -3082,6 +3192,7 @@ msgstr "Conversations, names, memories, searches and bot and Space IDs are sent 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+#: apps/web/src/pages/space/Artifacts.tsx
 msgid "Copied"
 msgstr "Copied"
 
@@ -3089,6 +3200,7 @@ msgstr "Copied"
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/cards/run-error-sheet.tsx
 #: apps/mobile/components/thread/message-row.tsx
+#: apps/mobile/components/thread/selection-bar.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -3096,6 +3208,11 @@ msgstr "Copied"
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Copy"
 msgstr "Copy"
+
+#. placeholder {0}: state.artifact.name
+#: apps/web/src/pages/space/Artifacts.tsx
+msgid "Copy {0}"
+msgstr "Copy {0}"
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -3107,6 +3224,10 @@ msgstr "Copy {address}"
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Copy {label}"
 msgstr "Copy {label}"
+
+#: apps/web/src/components/messages/ArtifactFileCard.tsx
+msgid "Copy {name}"
+msgstr "Copy {name}"
 
 #: apps/mobile/components/messages/code-copy-button.tsx
 #: apps/mobile/components/thread/message-row.tsx
@@ -3431,6 +3552,10 @@ msgstr "Could not delete this artifact"
 msgid "Could not delete this artifact."
 msgstr "Could not delete this artifact."
 
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Could not delete transcript"
+msgstr "Could not delete transcript"
+
 #: apps/mobile/lib/composer/composer-dictation.ts
 msgid "Could not dictate"
 msgstr "Could not dictate"
@@ -3478,6 +3603,10 @@ msgstr "Could not download {name}. Try again."
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Could not enable tools"
 msgstr "Could not enable tools"
+
+#: apps/web/src/components/audit/AuditLog.tsx
+msgid "Could not export the log."
+msgstr "Could not export the log."
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
@@ -3567,10 +3696,20 @@ msgstr "Could not load bots. Reload to try again."
 msgid "Could not load bots. Reload to try again."
 msgstr "Could not load bots. Reload to try again."
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Could not load calendar"
+msgstr "Could not load calendar"
+
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/components/inbox/inbox-error-state.tsx
 msgid "Could not load chats"
 msgstr "Could not load chats"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Could not load computer hours"
+msgstr "Could not load computer hours"
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "Could not load computer settings"
@@ -3676,6 +3815,10 @@ msgstr "Could not load templates"
 msgid "Could not load the desktop. This device cannot reach the screen URL."
 msgstr "Could not load the desktop. This device cannot reach the screen URL."
 
+#: apps/web/src/components/audit/AuditLog.tsx
+msgid "Could not load the log."
+msgstr "Could not load the log."
+
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Could not load this artifact."
@@ -3694,6 +3837,10 @@ msgstr "Could not load this file."
 #: apps/mobile/app/page.tsx
 msgid "Could not load this page."
 msgstr "Could not load this page."
+
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Could not load transcript"
+msgstr "Could not load transcript"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Could not load usage."
@@ -3749,6 +3896,10 @@ msgstr "Could not open message"
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Could not open the bot"
 msgstr "Could not open the bot"
+
+#: apps/mobile/app/meeting-transcript.tsx
+msgid "Could not open the transcript"
+msgstr "Could not open the transcript"
 
 #: apps/mobile/components/media/pdf-preview.tsx
 msgid "Could not open this PDF."
@@ -3860,6 +4011,10 @@ msgstr "Could not remove the credential"
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "Could not remove the item"
 msgstr "Could not remove the item"
+
+#: apps/mobile/app/server.tsx
+msgid "Could not remove the server"
+msgstr "Could not remove the server"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
@@ -4064,6 +4219,11 @@ msgstr "Could not share invite link"
 msgid "Could not share this artifact"
 msgstr "Could not share this artifact"
 
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Could not share transcript"
+msgstr "Could not share transcript"
+
 #: apps/web/src/components/vault/VaultSettings.tsx
 msgid "Could not show the credential"
 msgstr "Could not show the credential"
@@ -4116,8 +4276,10 @@ msgstr "Could not start teaching"
 msgid "Could not submit answer"
 msgstr "Could not submit answer"
 
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
 msgid "Could not submit this answer"
 msgstr "Could not submit this answer"
 
@@ -4170,6 +4332,11 @@ msgstr "Could not update billing"
 msgid "Could not update bot access"
 msgstr "Could not update bot access"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Could not update calendar"
+msgstr "Could not update calendar"
+
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
@@ -4181,6 +4348,11 @@ msgstr "Could not update chat"
 #: apps/web/src/components/computers/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
 msgstr "Could not update computer"
+
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Could not update meetings"
+msgstr "Could not update meetings"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/lib/account/account-name-editor.ts
@@ -4252,6 +4424,11 @@ msgstr "Couldn't refresh — showing the last loaded messages."
 msgid "Couldn't start the computer"
 msgstr "Couldn't start the computer"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+msgid "Couldn’t submit the draft"
+msgstr "Couldn’t submit the draft"
+
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Couldn't update bot style"
@@ -4289,7 +4466,7 @@ msgstr "Country"
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/mobile/lib/inbox/use-inbox-header.ts
 #: apps/web/src/components/spaces/CreateOrganizationDialog.tsx
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-header.tsx
@@ -4346,12 +4523,17 @@ msgstr "Create your account"
 msgid "Created"
 msgstr "Created"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Created routine \"{name}\""
+msgstr "Created routine \"{name}\""
+
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-group.tsx
 #: apps/mobile/app/new-organization.tsx
 #: apps/mobile/app/new-space.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Creating…"
@@ -4499,11 +4681,18 @@ msgstr "days"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/components/calls/IncomingCall.tsx
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
 #: apps/mobile/lib/calls/incoming-calls.ts
 #: apps/web/src/components/call/IncomingCall.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "Decline"
+
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
+msgid "Declined"
+msgstr "Declined"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
@@ -4549,6 +4738,7 @@ msgstr "Default scope"
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/app/index.tsx
+#: apps/mobile/app/meeting-transcript.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
@@ -4680,6 +4870,16 @@ msgstr "Delete this routine?"
 msgid "Delete this Space's credentials?"
 msgstr "Delete this Space's credentials?"
 
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Delete this transcript?"
+msgstr "Delete this transcript?"
+
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Delete transcript"
+msgstr "Delete transcript"
+
 #: apps/mobile/components/settings/account-deletion.tsx
 msgid "Delete your account?"
 msgstr "Delete your account?"
@@ -4703,6 +4903,11 @@ msgstr "Deleted"
 msgid "Deleted bot"
 msgstr "Deleted bot"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Deleted routine \"{name}\""
+msgstr "Deleted routine \"{name}\""
+
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -4725,7 +4930,6 @@ msgstr "Denied"
 msgid "Deny"
 msgstr "Deny"
 
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/Board.tsx
 msgid "Description"
 msgstr "Description"
@@ -4804,7 +5008,14 @@ msgstr "Disable a tool"
 msgid "Disabled"
 msgstr "Disabled"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Disabled routine \"{name}\""
+msgstr "Disabled routine \"{name}\""
+
 #: apps/mobile/app/(settings)/memory-note.tsx
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 msgid "Discard"
 msgstr "Discard"
 
@@ -4816,10 +5027,16 @@ msgstr "Discard changes?"
 msgid "Discard recording"
 msgstr "Discard recording"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+msgid "Discarded"
+msgstr "Discarded"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/(settings)/wallet.tsx
+#: apps/mobile/app/meeting-calendar.tsx
 #: apps/mobile/components/models/model-providers.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
@@ -4841,6 +5058,16 @@ msgstr "Disconnect {disconnectName}?"
 msgid "Disconnect {name}?"
 msgstr "Disconnect {name}?"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Disconnect calendar"
+msgstr "Disconnect calendar"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Disconnect calendar?"
+msgstr "Disconnect calendar?"
+
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Disconnect Self-hosted"
@@ -4853,6 +5080,11 @@ msgstr "Disconnected {disconnectName}."
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Disconnected {provider}."
 msgstr "Disconnected {provider}."
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Disconnecting calendar…"
+msgstr "Disconnecting calendar…"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -5075,6 +5307,11 @@ msgstr "Embedded"
 msgid "Enable {0}"
 msgstr "Enable {0}"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Enabled routine \"{name}\""
+msgstr "Enabled routine \"{name}\""
+
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
 msgstr "End user ID"
@@ -5288,6 +5525,15 @@ msgstr "Expand table"
 msgid "expired"
 msgstr "expired"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
+#: apps/mobile/components/thread/message-bubble.tsx
+#: apps/web/src/components/messages/AskCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
+msgid "Expired"
+msgstr "Expired"
+
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -5308,6 +5554,7 @@ msgid "Expiry"
 msgstr "Expiry"
 
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Export"
@@ -5594,6 +5841,11 @@ msgstr "Get an email address"
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "Get notified when this Bot finishes or needs input"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Get permission to record and share the transcript with this Space."
+msgstr "Get permission to record and share the transcript with this Space."
+
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Get the mobile app"
 msgstr "Get the mobile app"
@@ -5634,10 +5886,6 @@ msgstr "Granting…"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 msgid "GraphQL endpoint"
 msgstr "GraphQL endpoint"
-
-#: apps/web/src/pages/shell/bots/agent-import.tsx
-msgid "Grok Bot"
-msgstr "Grok Bot"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
@@ -5835,6 +6083,11 @@ msgstr "hour"
 msgid "hours"
 msgstr "hours"
 
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/billing/ComputerUsage.tsx
+msgid "Hours by computer"
+msgstr "Hours by computer"
+
 #: apps/mobile/app/(settings)/signup-survey.tsx
 #: apps/web/src/components/account/SignupSurvey.tsx
 msgid "How big is your team?"
@@ -5930,6 +6183,7 @@ msgid "Import"
 msgstr "Import"
 
 #: apps/web/src/components/settings/AccountDataSettings.tsx
+#: apps/web/src/pages/shell/bots/agent-import-dialog.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Import an agent"
 msgstr "Import an agent"
@@ -5953,6 +6207,11 @@ msgstr "In progress"
 #: apps/web/src/pages/space/ticket-status.ts
 msgid "In review"
 msgstr "In review"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "In the meeting"
+msgstr "In the meeting"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -6165,6 +6424,26 @@ msgstr "Join {organizationName}"
 msgid "Join {spaceName}"
 msgstr "Join {spaceName}"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Join meeting"
+msgstr "Join meeting"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Join this meeting"
+msgstr "Join this meeting"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Join this series"
+msgstr "Join this series"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Joining…"
+msgstr "Joining…"
+
 #: apps/mobile/components/thread/thread-list-controls.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
 msgid "Jump to latest"
@@ -6287,10 +6566,20 @@ msgstr "Leave {0}?"
 msgid "Leave {name}?"
 msgstr "Leave {name}?"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Leave meeting"
+msgstr "Leave meeting"
+
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/spaces/SpaceMembersSettings.tsx
 msgid "Leave space"
 msgstr "Leave space"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Leaving…"
+msgstr "Leaving…"
 
 #: apps/mobile/components/computers/computer-keyboard-bar.tsx
 msgid "Left"
@@ -6360,6 +6649,7 @@ msgstr "Live working status"
 msgid "Load earlier messages"
 msgstr "Load earlier messages"
 
+#: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Load more"
 msgstr "Load more"
@@ -6378,6 +6668,10 @@ msgstr "Load web images automatically"
 msgid "Loading activity…"
 msgstr "Loading activity…"
 
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Loading calendar…"
+msgstr "Loading calendar…"
+
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 #: apps/mobile/components/media/inline-image-attachment.tsx
 msgid "Loading image…"
@@ -6386,6 +6680,11 @@ msgstr "Loading image…"
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Loading integrations…"
 msgstr "Loading integrations…"
+
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Loading meetings…"
+msgstr "Loading meetings…"
 
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Loading memory settings…"
@@ -6406,6 +6705,11 @@ msgstr "Loading preview…"
 #: apps/mobile/components/integrations/integration-detail.tsx
 msgid "Loading tools…"
 msgstr "Loading tools…"
+
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Loading transcript…"
+msgstr "Loading transcript…"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Loading usage…"
@@ -6440,8 +6744,10 @@ msgstr "Loading voice providers…"
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 #: apps/web/src/pages/routines/RoutineRunHistory.tsx
 #: apps/web/src/pages/settings/PeerMessagesOverlay.tsx
+#: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
+#: packages/i18n/src/computer-usage.ts
 msgid "Loading…"
 msgstr "Loading…"
 
@@ -6642,6 +6948,34 @@ msgstr "Medium"
 msgid "Medium"
 msgstr "Medium"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Meeting ended"
+msgstr "Meeting ended"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Meeting failed"
+msgstr "Meeting failed"
+
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Meeting joins are unavailable."
+msgstr "Meeting joins are unavailable."
+
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Meeting link"
+msgstr "Meeting link"
+
+#: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/bot-profile.tsx
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/chat/chat-header.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Meetings"
+msgstr "Meetings"
+
 #: apps/mobile/lib/bots/identity-display.ts
 #: apps/web/src/lib/bots/identity-display.ts
 msgid "Member"
@@ -6705,8 +7039,10 @@ msgstr "Mentions OpenClaw features"
 msgid "Mentions: {mentions}"
 msgstr "Mentions: {mentions}"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/lib/search/search-sheet.ts
 #: apps/mobile/lib/thread/thread-message-text.ts
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/pages/shell/chat/chat-shared.ts
 #: apps/web/src/pages/shell/composer/composer.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
@@ -7278,8 +7614,14 @@ msgstr "No bots"
 msgid "No bots match"
 msgstr "No bots match"
 
+#: packages/i18n/src/computer-usage.ts
+msgid "No computer hours used yet"
+msgstr "No computer hours used yet"
+
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "No longer active"
 msgstr "No longer active"
@@ -7430,6 +7772,11 @@ msgstr "No tools available."
 msgid "No trigger"
 msgstr "No trigger"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "No upcoming meetings"
+msgstr "No upcoming meetings"
+
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "No usage for this selection."
 msgstr "No usage for this selection."
@@ -7441,9 +7788,11 @@ msgstr "No website and password columns found."
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
 #: apps/mobile/components/settings/spending-limit-row.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr "None"
@@ -7674,6 +8023,10 @@ msgstr "Only the bot's creator can set its webhook key."
 msgid "Only the owner of this account can choose a plan."
 msgstr "Only the owner of this account can choose a plan."
 
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "Only this bot"
+msgstr "Only this bot"
+
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -7795,10 +8148,6 @@ msgstr "OpenAI-compatible server URL"
 msgid "OpenAPI JSON"
 msgstr "OpenAPI JSON"
 
-#: apps/web/src/pages/shell/bots/agent-import.tsx
-msgid "OpenClaw or Hermes"
-msgstr "OpenClaw or Hermes"
-
 #: apps/web/src/components/pages/DownloadPdfButton.tsx
 msgid "Opens your browser's print dialog. Choose Save as PDF as the destination."
 msgstr "Opens your browser's print dialog. Choose Save as PDF as the destination."
@@ -7816,10 +8165,6 @@ msgstr "Optional"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Optional header value"
 msgstr "Optional header value"
-
-#: apps/mobile/components/settings/social-sign-in-buttons.tsx
-msgid "or"
-msgstr "or"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
@@ -7840,6 +8185,10 @@ msgstr "Organization"
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Organization API key"
 msgstr "Organization API key"
+
+#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+msgid "Organization options"
+msgstr "Organization options"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -7864,6 +8213,10 @@ msgstr "OTA {id}"
 #: apps/mobile/lib/platform/app-version.ts
 msgid "OTA {id}, {date}"
 msgstr "OTA {id}, {date}"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Other computers"
+msgstr "Other computers"
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/components/models/FoundModelPicker.tsx
@@ -8215,10 +8568,16 @@ msgstr "PR reviewer"
 msgid "Preferences"
 msgstr "Preferences"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Preparing transcript…"
+msgstr "Preparing transcript…"
+
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/pages/plugins/github-import.tsx
+#: apps/web/src/pages/space/Artifacts.tsx
 msgid "Preview"
 msgstr "Preview"
 
@@ -8264,6 +8623,10 @@ msgstr "Privacy policy"
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Private"
 msgstr "Private"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Private Computer"
+msgstr "Private Computer"
 
 #: apps/web/src/pages/shell/bots/bot-picker.tsx
 msgid "Private workspace with its own bots and groups."
@@ -8425,10 +8788,19 @@ msgstr "Received"
 msgid "Recent"
 msgstr "Recent"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Recent meetings"
+msgstr "Recent meetings"
+
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Recent payments"
 msgstr "Recent payments"
+
+#: apps/mobile/app/server.tsx
+msgid "Recent servers"
+msgstr "Recent servers"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Recommended"
@@ -8591,6 +8963,7 @@ msgstr "Remote MCP server"
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/vault.tsx
+#: apps/mobile/app/server.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
@@ -9316,6 +9689,11 @@ msgstr "Say yes or no, or answer in a sentence."
 msgid "Schedule delayed"
 msgstr "Schedule delayed"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Scheduled"
+msgstr "Scheduled"
+
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Scheduled routines"
 msgstr "Scheduled routines"
@@ -9464,15 +9842,27 @@ msgstr "Security code"
 msgid "Select a bot"
 msgstr "Select a bot"
 
+#: apps/mobile/components/calls/VoiceChatCard.tsx
+#: apps/mobile/components/thread/message-row.tsx
+msgid "Select messages"
+msgstr "Select messages"
+
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
 msgstr "Select text"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Selected"
+msgstr "Selected"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Self-hosted"
 msgstr "Self-hosted"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/composer/thread-composer.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Send"
 msgstr "Send"
@@ -9516,6 +9906,14 @@ msgstr "Send recording"
 msgid "Send reset link"
 msgstr "Send reset link"
 
+#: apps/web/src/pages/shell/bots/agent-import.tsx
+msgid "Send this prompt to {assistantName}"
+msgstr "Send this prompt to {assistantName}"
+
+#: apps/web/src/pages/shell/bots/agent-import.tsx
+msgid "Send this prompt to your assistant"
+msgstr "Send this prompt to your assistant"
+
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Send with Enter"
 msgstr "Send with Enter"
@@ -9527,9 +9925,11 @@ msgstr "Send with Enter"
 msgid "Sending…"
 msgstr "Sending…"
 
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
 msgid "Sent"
 msgstr "Sent"
 
@@ -9662,6 +10062,11 @@ msgstr "Share link"
 #: apps/mobile/app/share.tsx
 msgid "Share to"
 msgstr "Share to"
+
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Share transcript with Space"
+msgstr "Share transcript with Space"
 
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 msgid "Share voice data with {name}?"
@@ -9796,10 +10201,6 @@ msgid "Sign in at <0>{0}</0>, then paste the code here."
 msgstr "Sign in at <0>{0}</0>, then paste the code here."
 
 #: apps/mobile/app/sign-in.tsx
-msgid "Sign in to continue to Rakazo"
-msgstr "Sign in to continue to Rakazo"
-
-#: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Sign in to Rakazo"
@@ -9912,10 +10313,6 @@ msgstr "Skill {position}"
 msgid "Skills"
 msgstr "Skills"
 
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
-msgid "Skills join the library all your bots share."
-msgstr "Skills join the library all your bots share."
-
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/new-group.tsx
 #: apps/mobile/components/cards/ComputerCard.tsx
@@ -9928,9 +10325,19 @@ msgstr "Skip"
 msgid "Skip or deploy key"
 msgstr "Skip or deploy key"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Skip this meeting"
+msgstr "Skip this meeting"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Skip unrelated memories"
 msgstr "Skip unrelated memories"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Skipped"
+msgstr "Skipped"
 
 #: apps/mobile/components/cards/ComputerCard.tsx
 #: apps/web/src/components/computers/ComputerCard.tsx
@@ -10067,6 +10474,11 @@ msgstr "Space created"
 #: apps/web/src/pages/shell/composer/composer-model-picker.tsx
 msgid "Space default"
 msgstr "Space default"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Space limit reached"
+msgstr "Space limit reached"
 
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Spaces"
@@ -10214,9 +10626,14 @@ msgstr "Steps"
 msgid "Stop"
 msgstr "Stop"
 
-#: apps/mobile/components/composer/thread-composer.tsx
+#: apps/mobile/components/composer/dictation-bar.tsx
 msgid "Stop dictating"
 msgstr "Stop dictating"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Stop joining this series"
+msgstr "Stop joining this series"
 
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Stop speaking"
@@ -10250,6 +10667,11 @@ msgstr "Stream replies"
 #: apps/web/src/lib/bots/identity-display.ts
 msgid "subagent"
 msgstr "subagent"
+
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+msgid "Subject"
+msgstr "Subject"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -10417,6 +10839,7 @@ msgstr "Team"
 
 #: apps/mobile/lib/computers/computer.ts
 #: apps/web/src/pages/shell/computers/computer-view.tsx
+#: packages/i18n/src/computer-usage.ts
 msgid "Team Computer"
 msgstr "Team Computer"
 
@@ -10612,6 +11035,11 @@ msgstr "The server had a problem. Try again in a moment."
 msgid "The shared link stops working"
 msgstr "The shared link stops working"
 
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "The transcript will be removed from Rakazo."
+msgstr "The transcript will be removed from Rakazo."
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "The unused difference is credited to your next invoice."
@@ -10682,10 +11110,6 @@ msgstr "This authenticator key can't be read."
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "This backup could not be read."
-
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
-msgid "This bot"
-msgstr "This bot"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -10990,6 +11414,8 @@ msgstr "Timing may differ"
 msgid "Title"
 msgstr "Title"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 msgid "To"
 msgstr "To"
@@ -11085,10 +11511,22 @@ msgstr "Total"
 msgid "Transcribing…"
 msgstr "Transcribing…"
 
+#: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/meeting-transcript.tsx
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "Transcript"
 msgstr "Transcript"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Transcript ready"
+msgstr "Transcript ready"
+
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Transcript turns"
+msgstr "Transcript turns"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -11142,6 +11580,8 @@ msgstr "Trusted sites"
 
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/computer.tsx
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/mobile/app/meetings.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/app/peer-chat.tsx
 #: apps/mobile/app/routines.tsx
@@ -11155,6 +11595,7 @@ msgstr "Trusted sites"
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/onboarding/first-bot.tsx
 #: apps/web/src/pages/SharedPage.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "Try again"
@@ -11169,6 +11610,7 @@ msgstr "Try again"
 #: apps/mobile/app/board.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/index.tsx
+#: apps/mobile/app/meeting-calendar.tsx
 #: apps/mobile/app/new-organization.tsx
 #: apps/mobile/app/peer-chat.tsx
 #: apps/mobile/app/routine.tsx
@@ -11299,6 +11741,11 @@ msgstr "Unsnooze {0}"
 msgid "Unsupported file type: {0}"
 msgstr "Unsupported file type: {0}"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Untitled meeting"
+msgstr "Untitled meeting"
+
 #: apps/mobile/components/computers/computer-keyboard-bar.tsx
 msgid "Up"
 msgstr "Up"
@@ -11311,6 +11758,11 @@ msgstr "Up to {limit} sites."
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
 msgstr "Up to date"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Upcoming meetings"
+msgstr "Upcoming meetings"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/lib/api/client-update.ts
@@ -11342,6 +11794,10 @@ msgstr "Update instructions?"
 msgid "Update progress"
 msgstr "Update progress"
 
+#: apps/web/src/lib/integrations/meeting-calendar-connect.ts
+msgid "Update Rakazo to connect your calendar from the desktop app."
+msgstr "Update Rakazo to connect your calendar from the desktop app."
+
 #: apps/mobile/lib/api/client-update.ts
 #: apps/web/src/lib/platform/client-update.ts
 msgid "Update required"
@@ -11360,6 +11816,11 @@ msgstr "Update your server to use AI data sharing in this mobile version."
 #: apps/mobile/lib/pages/page-card.tsx
 msgid "Updated below"
 msgstr "Updated below"
+
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Updated routine \"{name}\""
+msgstr "Updated routine \"{name}\""
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Updates"
@@ -11629,6 +12090,11 @@ msgstr "View all"
 msgid "View source"
 msgstr "View source"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "View transcript"
+msgstr "View transcript"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -11657,6 +12123,11 @@ msgstr "Voice request timed out."
 #: apps/web/src/lib/models/model-connection-preflight.ts
 msgid "Wait a moment and test again."
 msgstr "Wait a moment and test again."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Waiting for admission"
+msgstr "Waiting for admission"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Waiting for sign-in — the code expires in about {minutes} minutes."
@@ -11740,6 +12211,7 @@ msgid "Welcome back"
 msgstr "Welcome back"
 
 #: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/account/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
 msgstr "Welcome to Rakazo"
@@ -11760,6 +12232,10 @@ msgstr "What do you most want Rakazo to help with?"
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "What do you want me on first?"
 msgstr "What do you want me on first?"
+
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "What it remembers"
+msgstr "What it remembers"
 
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "What result will you demonstrate?"
@@ -12000,6 +12476,11 @@ msgstr "Your Anthropic"
 msgid "Your apps"
 msgstr "Your apps"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Your bot will be removed from upcoming meetings on this calendar."
+msgstr "Your bot will be removed from upcoming meetings on this calendar."
+
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
 msgstr "Your card is charged {annualPrice} today, less the unused part of this month."
@@ -12127,6 +12608,11 @@ msgstr "Your voice provider is out of credit."
 #: apps/web/src/lib/query/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "Your voice provider key was rejected."
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/pages/model-settings/connection-controls.tsx
+msgid "Zero data retention"
+msgstr "Zero data retention"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx

@@ -41,4 +41,5 @@ export const AppLocaleSchema = z.enum([
   "nl",
   "ja",
   "pl",
+  "th",
 ]);

@@ -19,7 +19,14 @@ import {
   modelCreditOfferings,
 } from "../../../model-credits/offerings.js";
 import { cloudflareRoutingFields } from "../../../models/endpoints/cloudflare-ai-gateway.js";
-import { COMPATIBLE_ENDPOINT_PRESETS } from "../../../models/endpoints/openai-compatible-url.js";
+import {
+  COMPATIBLE_ENDPOINT_PRESETS,
+  compatibleEndpointPresetsFor,
+} from "../../../models/endpoints/openai-compatible-url.js";
+import {
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../../../models/model-provider-allowlist.js";
 import { modelProviderDefinition } from "../../../models/model-provider-registry.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "../pi-runtime-limits.js";
 import { maximumModelCallCost } from "../usage/pi-usage.js";
@@ -58,6 +65,7 @@ export type PiCatalogEntry = {
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
   routingFields?: ModelRoutingField[];
+  dataRetentionControl?: true;
   endpointPresets?: CompatibleEndpointPreset[];
   live?: true;
 };
@@ -213,8 +221,24 @@ function pinnedCatalogProbeBaseUrl(
 
 export function listPiCatalog(): PiCatalogEntry[] {
   cachedCatalog ??= buildPiCatalog();
-  return cachedCatalog;
+  const allowlist = modelProviderAllowlist();
+  if (allowlist === null) return cachedCatalog;
+  // Built once per distinct list, not once per call: the catalog filters run per entry.
+  const key = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST?.trim() ?? "";
+  if (filteredCatalogKey === key) return filteredCatalogEntries ?? cachedCatalog;
+  const entries = cachedCatalog.flatMap((entry) => {
+    if (!modelProviderAllowed(allowlist, entry.provider)) return [];
+    return entry.endpointPresets
+      ? [{ ...entry, endpointPresets: compatibleEndpointPresetsFor(allowlist) }]
+      : [entry];
+  });
+  filteredCatalogKey = key;
+  filteredCatalogEntries = entries;
+  return entries;
 }
+
+let filteredCatalogKey: string | undefined;
+let filteredCatalogEntries: PiCatalogEntry[] | undefined;
 
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
@@ -284,6 +308,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
             }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
         ...(routingFields ? { routingFields } : {}),
+        ...(definition?.dataRetentionControl ? { dataRetentionControl: true as const } : {}),
       });
     }
   }
@@ -306,6 +331,9 @@ function buildPiCatalog(): PiCatalogEntry[] {
       reasoning: true,
       thinkingLevels: ["off", "minimal", "low", "medium", "high"],
       ...(catalogProbeBaseUrls.has("openrouter") ? { catalogProbe: true } : {}),
+      ...(modelProviderDefinition("openrouter")?.dataRetentionControl
+        ? { dataRetentionControl: true as const }
+        : {}),
     });
   }
 

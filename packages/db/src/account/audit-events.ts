@@ -18,6 +18,7 @@ import { parsePositiveInteger } from "../database/client.js";
 import { JsonObject, readJsonColumn, warnJsonColumnOnce } from "../database/json-column.js";
 import { runAsSystem } from "../database/row-security.js";
 import { IsolationError } from "../database/scope.js";
+import { organizationRole } from "../spaces/organization-members.js";
 import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
 
 type AuditEventDb = Pick<PrismaClient, "auditEvent" | "space" | "user" | "member">;
@@ -222,21 +223,33 @@ function bounded(value: string | null | undefined, max: number): string | null {
   return value ? value.slice(0, max) : null;
 }
 
-/** The memberships that may read the audit log of the organization that owns this space. */
-function auditLogReaderWhere(spaceId: string): Prisma.MemberWhereInput {
-  return { role: { in: ["owner", "admin"] }, organization: { spaces: { some: { id: spaceId } } } };
-}
-
-/** The organization whose audit log this actor may read, if any. */
-export async function auditLogOrganization(
+/**
+ * The organization whose audit log this actor may read, and whose events. Owners and admins read
+ * everyone's (`actorId` null); another full member reads only what they did themselves.
+ */
+export async function auditLogAccess(
   db: Pick<PrismaClient, "member">,
   actor: { userId: string; spaceId: string },
-): Promise<string | null> {
+): Promise<{ organizationId: string; actorId: string | null } | null> {
   const member = await db.member.findFirst({
-    where: { userId: actor.userId, ...auditLogReaderWhere(actor.spaceId) },
-    select: { organizationId: true },
+    where: {
+      userId: actor.userId,
+      role: { not: GUEST_ROLE },
+      organization: { spaces: { some: { id: actor.spaceId } } },
+    },
+    select: { organizationId: true, role: true },
   });
-  return member?.organizationId ?? null;
+  if (!member) return null;
+  const everyone = organizationRole(member.role) !== "member";
+  return { organizationId: member.organizationId, actorId: everyone ? null : actor.userId };
+}
+
+/** The filter with the reader's own limit applied over whatever they asked for. */
+export function auditLogScope<T extends AuditEventFilter>(
+  access: { actorId: string | null },
+  filter: T,
+): T {
+  return access.actorId ? { ...filter, actorId: access.actorId } : filter;
 }
 
 function filterWhere(

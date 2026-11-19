@@ -449,3 +449,59 @@ it("names a decision reviewer built without a key as an authentication failure",
   );
   expect(result).toMatchObject({ decision: "error", reason: "Checker could not authenticate." });
 });
+
+const checkerDeps = {
+  prisma: {},
+  secretStore: {},
+  runtime: { describe: () => ({ capabilities: { scripted: false } }), run: vi.fn() },
+} as unknown as ExecutorDeps;
+
+it("refuses a decision-model checker on a connection that restricts data retention", async () => {
+  vi.mocked(resolveModelKey).mockResolvedValueOnce({
+    apiKey: "fixture-model-key",
+    zeroDataRetention: true,
+  } as Awaited<ReturnType<typeof resolveModelKey>>);
+  await expect(
+    autoReviewCheckerProvider(
+      checkerDeps,
+      reviewScope,
+      { memberChecker: true, registerSecrets: vi.fn() },
+      { provider: "openrouter", model: "typesafe/jev-1.14" },
+    ),
+  ).rejects.toMatchObject({
+    code: "DATA_RETENTION_UNSUPPORTED",
+    message: expect.stringContaining("cannot restrict data retention"),
+  });
+});
+
+it("still builds a decision-model checker when data retention is not restricted", async () => {
+  await expect(
+    autoReviewCheckerProvider(
+      checkerDeps,
+      reviewScope,
+      { memberChecker: true, registerSecrets: vi.fn() },
+      { provider: "openrouter", model: "typesafe/jev-1.14" },
+    ),
+  ).resolves.toBeDefined();
+});
+
+it("passes the data retention choice to a language-model checker", async () => {
+  const run = vi.fn(async function* (_request: AgentRunRequest) {
+    yield { type: "done", text: '{"decision":"ask","reason":"Requires review."}' };
+  });
+  vi.mocked(resolveModelKey).mockResolvedValueOnce({
+    apiKey: "fixture-model-key",
+    zeroDataRetention: true,
+  } as Awaited<ReturnType<typeof resolveModelKey>>);
+  const provider = await autoReviewCheckerProvider(
+    {
+      ...checkerDeps,
+      runtime: { describe: () => ({ capabilities: { scripted: false } }), run },
+    } as unknown as ExecutorDeps,
+    reviewScope,
+    { memberChecker: true, registerSecrets: vi.fn() },
+    { provider: "openrouter", model: "example/model" },
+  );
+  await provider.review(reviewRequest, reviewContext);
+  expect(run.mock.calls[0]?.[0].model).toMatchObject({ zeroDataRetention: true });
+});

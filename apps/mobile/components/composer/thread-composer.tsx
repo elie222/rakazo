@@ -33,7 +33,6 @@ import type { Ref } from "react";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { TextInputInstance, ViewStyle } from "react-native";
 import {
-  ActivityIndicator,
   AppState,
   Pressable,
   ScrollView,
@@ -52,6 +51,7 @@ import { BotAvatar } from "../bots/bot-avatar";
 import { GlassSurface } from "../native/glass-surface";
 import { NativeSymbol } from "../native/native-symbol";
 import { ModelChip, TrailingControls } from "./composer-model-chip";
+import { DictationBar } from "./dictation-bar";
 
 type NativeEdit = {
   beforeText: string;
@@ -142,7 +142,6 @@ export function ThreadComposer({
   const [emptyRowHeight, setEmptyRowHeight] = useState<number>();
   // Text past one line moves the model, dictation and send to a row under it until the box empties.
   const [wrapped, setWrapped] = useState(false);
-  const stacked = Boolean(model) && wrapped;
   const draftRef = useRef(saved.text);
   const nativeSelection = useRef({ start: saved.text.length, end: saved.text.length });
   const completedSelection = useRef<number | null>(null);
@@ -190,12 +189,26 @@ export function ThreadComposer({
     setSlashQuery(null);
   }
   const dictation = useComposerDictation({ disabled: onCall, onWords: showDictation });
+  const recording = dictation.status !== "idle";
   function toggleDictation() {
     if (dictation.status === "idle") {
       dictatedBase.current = draftRef.current;
       dictated.current = draftRef.current;
     }
     dictation.toggle();
+  }
+  /** Drops the recording and any words it already put in the box. */
+  function discardDictation() {
+    const base = dictatedBase.current;
+    dictation.cancel();
+    if (base !== null && draftRef.current === dictated.current) showDictation("");
+    dictatedBase.current = null;
+  }
+  // Send during dictation stops it first and sends once its words are in.
+  const [sendAfterDictation, setSendAfterDictation] = useState(false);
+  function sendOrFinish() {
+    if (recording) dictation.finish(() => setSendAfterDictation(true));
+    else void send();
   }
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
   // Set while the composer holds text that storage does not have yet.
@@ -433,12 +446,48 @@ export function ThreadComposer({
   // button centre on it: the bar can grow past 44 (font scale, Android text metrics), and a fixed
   // bottom margin would leave them high.
   const lineHeight = Math.max(44, emptyRowHeight ?? 22 + 22 * textScale);
+  // While dictating, the recording controls take a row under the text.
+  const stacked = recording || (Boolean(model) && wrapped);
   // Lines the controls up with a single line of text; under the text they center on each other.
   const pillInset = stacked ? 0 : (lineHeight - composerPillStyle.height) / 2;
 
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
-  // Sending resets the box, which would drop a clip still recording or words still being transcribed.
-  const sendBlocked = sending || !canSend || dictation.status !== "idle";
+  useEffect(() => {
+    if (!sendAfterDictation || recording) return;
+    setSendAfterDictation(false);
+    if (canSend) void send();
+  }, [sendAfterDictation, recording]);
+  // Sending resets the box, so words still being transcribed wait; send while the mic is open
+  // stops it and sends once its words are in.
+  const sendBlocked =
+    sending ||
+    sendAfterDictation ||
+    dictation.status === "transcribing" ||
+    (!canSend && dictation.status === "idle");
+
+  const sendButton = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t`Send`}
+      disabled={sendBlocked}
+      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+      onPress={sendOrFinish}
+      style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
+    >
+      <GlassSurface
+        tint={tokens.primary}
+        style={composerPillStyle}
+        fallbackStyle={{ backgroundColor: tokens.primary }}
+      >
+        <NativeSymbol
+          ios="arrow.up"
+          android="arrow-up"
+          size={15}
+          color={tokens.primaryForeground}
+        />
+      </GlassSurface>
+    </Pressable>
+  );
 
   return (
     <>
@@ -812,92 +861,73 @@ export function ThreadComposer({
               </TextInput>
             </Pressable>
           </View>
-          <TrailingControls stacked={stacked}>
-            {model ? (
-              <ModelChip
-                model={model}
-                // A mark beside the text; its name and thinking once the controls sit under it.
-                full={stacked}
-                style={{ marginBottom: pillInset }}
-              />
-            ) : null}
-            {onCall ? null : (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={dictation.status === "idle" ? t`Dictate` : t`Stop dictating`}
-                disabled={dictation.status === "transcribing"}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                onPress={toggleDictation}
-                style={{ marginBottom: pillInset }}
-              >
-                <GlassSurface
-                  tint={dictation.status === "idle" ? undefined : tokens.foreground}
-                  style={composerPillStyle}
-                  fallbackStyle={{
-                    backgroundColor: dictation.status === "idle" ? tokens.muted : tokens.foreground,
-                  }}
+          {dictation.status !== "idle" ? (
+            <DictationBar
+              status={dictation.status}
+              onLevel={dictation.onLevel}
+              onCancel={discardDictation}
+              onStop={toggleDictation}
+              pillStyle={composerPillStyle}
+            >
+              {sendButton}
+            </DictationBar>
+          ) : (
+            <TrailingControls stacked={stacked}>
+              {model ? (
+                <ModelChip
+                  model={model}
+                  // A mark beside the text; its name and thinking once the controls sit under it.
+                  full={stacked}
+                  style={{ marginBottom: pillInset }}
+                />
+              ) : null}
+              {onCall ? null : (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t`Dictate`}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  onPress={toggleDictation}
+                  style={{ marginBottom: pillInset }}
                 >
-                  {dictation.status === "transcribing" ? (
-                    <ActivityIndicator size="small" color={tokens.background} />
-                  ) : (
+                  <GlassSurface
+                    style={composerPillStyle}
+                    fallbackStyle={{ backgroundColor: tokens.muted }}
+                  >
                     <NativeSymbol
-                      ios={dictation.status === "listening" ? "mic.fill" : "mic"}
-                      android={dictation.status === "listening" ? "mic" : "mic-outline"}
+                      ios="mic"
+                      android="mic-outline"
                       size={15}
-                      color={
-                        dictation.status === "idle" ? tokens.mutedForeground : tokens.background
-                      }
+                      color={tokens.mutedForeground}
                     />
-                  )}
-                </GlassSurface>
-              </Pressable>
-            )}
-            {/* No call while dictation still owns the microphone or its words are on the way. */}
-            {!canSend && botId && !onCall && dictation.status === "idle" ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t`Call`}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                onPress={() => void startVoiceCall()}
-                style={{ marginBottom: pillInset }}
-              >
-                <GlassSurface
-                  tint={tokens.primary}
-                  style={composerPillStyle}
-                  fallbackStyle={{ backgroundColor: tokens.primary }}
+                  </GlassSurface>
+                </Pressable>
+              )}
+              {!canSend && botId && !onCall ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t`Call`}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  onPress={() => void startVoiceCall()}
+                  style={{ marginBottom: pillInset }}
                 >
-                  <NativeSymbol
-                    ios="waveform"
-                    android="pulse-outline"
-                    size={15}
-                    color={tokens.primaryForeground}
-                  />
-                </GlassSurface>
-              </Pressable>
-            ) : (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t`Send`}
-                disabled={sendBlocked}
-                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                onPress={() => void send()}
-                style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
-              >
-                <GlassSurface
-                  tint={tokens.primary}
-                  style={composerPillStyle}
-                  fallbackStyle={{ backgroundColor: tokens.primary }}
-                >
-                  <NativeSymbol
-                    ios="arrow.up"
-                    android="arrow-up"
-                    size={15}
-                    color={tokens.primaryForeground}
-                  />
-                </GlassSurface>
-              </Pressable>
-            )}
-          </TrailingControls>
+                  <GlassSurface
+                    tint={tokens.primary}
+                    style={composerPillStyle}
+                    fallbackStyle={{ backgroundColor: tokens.primary }}
+                  >
+                    <NativeSymbol
+                      ios="waveform"
+                      android="pulse-outline"
+                      size={15}
+                      color={tokens.primaryForeground}
+                    />
+                  </GlassSurface>
+                </Pressable>
+              ) : (
+                sendButton
+              )}
+            </TrailingControls>
+          )}
         </GlassSurface>
       </View>
     </>

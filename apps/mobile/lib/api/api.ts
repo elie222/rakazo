@@ -24,7 +24,7 @@ import {
 } from "../bots/logo-avatar-activity";
 import { resumeLiveNotifications } from "../notifications/live-notifications";
 import { reportMobileError } from "../platform/monitoring";
-import { promptAiConsent } from "../settings/ai-consent";
+import { promptAiConsent, promptPageRevisionConsent } from "../settings/ai-consent";
 import { clearUnsentSends } from "../thread/send/thread-feedback";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
@@ -688,9 +688,7 @@ async function request(
       uses,
       status: () =>
         rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
-      prompt: consentTarget.pageId
-        ? (recipient, privacyUrl) => promptAiConsent(recipient, privacyUrl, "pageRevision")
-        : promptAiConsent,
+      prompt: consentTarget.pageId ? promptPageRevisionConsent : promptAiConsent,
       allow: (input) =>
         allowPromptedAiConsent(
           consentTarget.pageId

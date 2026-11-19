@@ -78,7 +78,6 @@ type Request = Prisma.PageRevisionRequestGetPayload<{ select: typeof requestSele
 function pageRevisionRecipient(pageId: string, model: AgentRunRequest["model"]) {
   const recipient = aiRecipient({
     provider: model.provider,
-    modelId: model.id,
     baseUrl: model.baseUrl,
     use: "model",
   });

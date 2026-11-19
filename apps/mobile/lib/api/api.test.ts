@@ -2,7 +2,10 @@ import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { getArtifactById } from "../artifacts/artifacts";
 
-vi.mock("../settings/ai-consent", () => ({ promptAiConsent: vi.fn() }));
+vi.mock("../settings/ai-consent", () => ({
+  promptAiConsent: vi.fn(),
+  promptPageRevisionConsent: vi.fn(),
+}));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import type { RpcInput } from "@rakazo/contracts";
@@ -12,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listUserDevices, removeUserDevice } from "../account/user-devices";
 import { changePassword } from "../auth/api-auth.js";
 import { resumeLiveNotifications } from "../notifications/live-notifications.js";
-import { promptAiConsent } from "../settings/ai-consent";
+import { promptAiConsent, promptPageRevisionConsent } from "../settings/ai-consent";
 import type { UnsentDisk } from "../thread/send/thread-feedback.js";
 import { configureUnsentSends } from "../thread/send/thread-feedback.js";
 import {
@@ -586,7 +589,7 @@ describe("mobile API requests", () => {
       }),
     );
     const input = { pageId: "page-a", commentId: "comment-a" };
-    vi.mocked(promptAiConsent).mockResolvedValueOnce(false);
+    vi.mocked(promptPageRevisionConsent).mockResolvedValueOnce(false);
     await expect(rpc("pageReviews/askRevision", input)).rejects.toThrow("AI data sharing");
     const status = {
       path: "/rpc/aiConsent/status",
@@ -595,7 +598,7 @@ describe("mobile API requests", () => {
     expect(calls).toEqual([status]);
     calls.length = 0;
 
-    vi.mocked(promptAiConsent).mockResolvedValueOnce(true);
+    vi.mocked(promptPageRevisionConsent).mockResolvedValueOnce(true);
     await expect(rpc("pageReviews/askRevision", input)).resolves.toEqual({ ok: true });
     expect(calls).toEqual([
       status,

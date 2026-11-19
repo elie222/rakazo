@@ -198,7 +198,8 @@ export function SkillsDialog({
             aria-label={t`Search skills`}
             placeholder={t`Search skills`}
             maxLength={200}
-            className="mb-5 h-11 rounded-xl"
+            size="xl"
+            className="mb-5"
           />
           {catalog.isPending ? (
             <div className="grid place-items-center py-10">
