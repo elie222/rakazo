@@ -540,16 +540,24 @@ export class ComposioConnector implements ComposioProvider {
     } catch (error) {
       if (!isStaleConnectedAccountError(error) || Object.keys(connectedAccounts).length === 0)
         throw error;
-      // The account list was unavailable, so a deleted account slipped through: those apps
-      // need a reconnect, and the rest still get a session.
-      const stale = Object.keys(connectedAccounts);
+      // The account list was unavailable, so a deleted account slipped through. Drop the
+      // accounts the refusal names (all of them when it names none): an app left with no
+      // account needs a reconnect, and the rest still get a session.
+      const named = staleAccountIds(error);
+      const kept: Record<string, string[]> = {};
+      const stale: string[] = [];
+      for (const [toolkit, ids] of Object.entries(connectedAccounts)) {
+        const live = named.size > 0 ? ids.filter((id) => !named.has(id)) : [];
+        if (live.length > 0) kept[toolkit] = live;
+        else stale.push(toolkit);
+      }
       getLogger().warn("composio connected accounts need reconnect", {
         "composio.toolkits": stale.join(","),
       });
       const remaining = toolkits.filter((toolkit) => !stale.includes(toolkit));
       const allStale = [...reconnect, ...stale];
       if (remaining.length === 0) return { reconnect: allStale, connectedAccounts: {} };
-      return this.executeSession(userId, remaining, allStale, {});
+      return this.executeSession(userId, remaining, allStale, kept);
     }
   }
 
@@ -738,8 +746,8 @@ export class ComposioConnector implements ComposioProvider {
       if (!session) return [];
       return asConnectorTools(await session.tools());
     } catch (error) {
-      // An outage or a cancelled run hides the tools for this turn only.
-      if (!context.signal.aborted && !isComposioOutage(error)) throw error;
+      // An outage or a cancelled request hides the tools for this turn only.
+      if (!isComposioOutage(error)) throw error;
       getLogger().warn("composio tool discovery unavailable", {
         error: sanitizeIntegrationError(error),
       });
@@ -1060,6 +1068,12 @@ function isStaleConnectedAccountError(error: unknown): boolean {
     candidate.status === 400 &&
     candidate.details?.slug === "ToolRouterV2_InvalidConnectedAccountIds"
   );
+}
+
+/** The connected account ids a stale-account refusal names. */
+function staleAccountIds(error: unknown): Set<string> {
+  const message = (error as { details?: { message?: unknown } }).details?.message;
+  return new Set(typeof message === "string" ? (message.match(/\bca_[A-Za-z0-9_-]+/g) ?? []) : []);
 }
 
 function isComposioNotFoundError(error: unknown): boolean {
