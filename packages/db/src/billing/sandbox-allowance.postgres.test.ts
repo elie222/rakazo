@@ -182,8 +182,37 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
       expect(
         await sandboxAllowancePlan(prisma, organizationId, new Date("2026-06-05T00:00:00Z")),
       ).toMatchObject({ limitCents: 1_000, extraCents: 1_000, resetsAt: null });
+
+      // Once the plan lapses into granted credit, grants from its paid periods stay spent.
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          status: "canceled",
+          cancelAtPeriodEnd: false,
+          byokTier: null,
+          byokPriceCents: null,
+          creditAmountCents: null,
+          currentPeriodStartsAt: new Date("2026-07-01T00:00:00.000Z"),
+          currentPeriodEndsAt: new Date("2026-08-01T00:00:00.000Z"),
+        },
+      });
+      await prisma.accessGrant.create({
+        data: {
+          email: `pool-${organizationId}@rakazo.test`,
+          organizationId,
+          creditCents: 5_000,
+          appliedAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      });
+      await prisma.computerAllowanceGrant.create({
+        data: { organizationId, amountCents: 300, createdAt: new Date("2026-08-02T00:00:00Z") },
+      });
+      expect(
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-08-05T00:00:00Z")),
+      ).toMatchObject({ limitCents: 1_000 + 300, extraCents: 300 });
     } finally {
       await prisma.billingAccount.deleteMany({ where: { organizationId } });
+      await prisma.accessGrant.deleteMany({ where: { organizationId } });
       if (settings)
         await prisma.deploymentSettings.update({ where: { id: "default" }, data: settings });
       else await prisma.deploymentSettings.delete({ where: { id: "default" } });
