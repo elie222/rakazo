@@ -64,6 +64,14 @@ describe("entraAuthFromEnv", () => {
       clientId: "principal",
       certificate: certificate.trim(),
     });
+    // A bundle exported or edited on Windows keeps CRLF endings; it must parse all the same.
+    expect(() =>
+      entraAuthFromEnv({
+        OBJECT_STORAGE_AUTH: "client-certificate",
+        ...principal,
+        OBJECT_STORAGE_CERTIFICATE: certificate.split("\n").join("\r\n"),
+      }),
+    ).not.toThrow();
   });
 
   it("fails at startup when the certificate is missing or malformed", () => {

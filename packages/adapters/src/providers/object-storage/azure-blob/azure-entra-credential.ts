@@ -37,8 +37,10 @@ const KINDS =
 function certificateBundle(value: string): string {
   let certificate: string;
   try {
-    // A PEM bundle inline, or a path to one.
-    certificate = (value.includes("-----BEGIN") ? value : readFileSync(value, "utf8")).trim();
+    // A PEM bundle inline, or a path to one. Windows edits leave CRLF line endings, which
+    // node's parsers and the SDK accept; normalize so the delimiter checks see them too.
+    const raw = value.includes("-----BEGIN") ? value : readFileSync(value, "utf8");
+    certificate = raw.replace(/\r\n/g, "\n").trim();
   } catch (error) {
     throw new Error(`OBJECT_STORAGE_CERTIFICATE could not be read: ${(error as Error).message}`);
   }

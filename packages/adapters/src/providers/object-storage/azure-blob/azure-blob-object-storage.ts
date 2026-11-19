@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type * as AzureSdk from "@azure/storage-blob";
 import type { ObjectStorage } from "@rakazo/adapter-kit";
+import {
+  objectStorageTargetFromEnv,
+  PART_BYTES,
+  parts,
+} from "../../../storage/object-storage-common.js";
 import type { EntraAuthConfig } from "./azure-entra-credential.js";
 import { entraAuthFromEnv, entraCredential } from "./azure-entra-credential.js";
-import { objectStorageTargetFromEnv, PART_BYTES, parts } from "../../../storage/object-storage-common.js";
 
 /** Bounds each request attempt, from sending it to receiving its response headers. */
 const TRY_TIMEOUT_MS = 120_000;

@@ -150,7 +150,11 @@ const entraFake = fakeBlobService(
 );
 let entraEndpoint = "";
 
+/** The TLS state the fake's self-signed certificate turned off, restored after the file's tests. */
+let tlsChecks: string | undefined;
+
 beforeAll(async () => {
+  tlsChecks = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   await new Promise<void>((resolve) => fake.server.listen(0, "127.0.0.1", resolve));
   endpoint = `http://127.0.0.1:${(fake.server.address() as AddressInfo).port}/devstoreaccount1`;
@@ -159,6 +163,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Restore TLS verification for whatever runs after this file, even in a shared worker.
+  if (tlsChecks === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  else process.env.NODE_TLS_REJECT_UNAUTHORIZED = tlsChecks;
   await new Promise((resolve) => fake.server.close(resolve));
   await new Promise((resolve) => entraFake.server.close(resolve));
 });
