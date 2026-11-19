@@ -183,6 +183,7 @@ export function modelsForRequest(
       apiProtocol: request.model.apiProtocol,
       headers: request.model.headers,
       allowPrivate: request.model.allowPrivateEndpoint,
+      allowHttp: request.model.allowHttpEndpoint,
       reasoning: request.model.reasoning,
       acceptsImages: request.model.acceptsImages,
       maxTokens: request.model.maxTokens,

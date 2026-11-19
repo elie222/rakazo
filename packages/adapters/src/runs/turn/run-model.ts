@@ -31,6 +31,7 @@ import {
   cloudflareProviderEnv,
 } from "../../models/endpoints/cloudflare-ai-gateway.js";
 import { assertAllowedOpenAiCompatibleUrl } from "../../models/endpoints/openai-compatible-url.js";
+import { httpModelEndpointsAllowed } from "../../models/http-model-endpoints.js";
 import {
   kickModelCredentialRefresh,
   persistRefreshedModelCredential,
@@ -269,6 +270,7 @@ async function resolveModelKeyMaterial(
   apiProtocol?: AgentRunRequest["model"]["apiProtocol"];
   headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
+  allowHttpEndpoint?: boolean;
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
   contextWindow?: number;
   reasoning?: boolean;
@@ -356,6 +358,7 @@ async function resolveModelKeyMaterial(
       const baseUrl =
         resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;
       // Recheck operator configuration for saved private connections on every run.
+      const allowHttpEndpoints = baseUrl ? await httpModelEndpointsAllowed(deps.prisma) : undefined;
       const allowPrivateEndpoint = baseUrl ? deps.mcpAllowPrivateEndpoint === true : undefined;
       if (baseUrl) {
         try {
@@ -393,6 +396,7 @@ async function resolveModelKeyMaterial(
           resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
         headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
         allowPrivateEndpoint,
+        allowHttpEndpoint: allowHttpEndpoints || undefined,
         cacheCapabilities:
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
         contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
@@ -464,6 +468,7 @@ export function resolvedModelRunFields(
     apiProtocol: resolved.apiProtocol,
     headers: resolved.headers,
     allowPrivateEndpoint: resolved.allowPrivateEndpoint,
+    allowHttpEndpoint: resolved.allowHttpEndpoint,
     cacheCapabilities: resolved.cacheCapabilities,
     contextWindow: resolved.contextWindow,
     reasoning: resolved.reasoning,

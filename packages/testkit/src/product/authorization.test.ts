@@ -261,6 +261,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/rename"],
       ["models/saveModelSettings"],
       ["models/disconnect"],
+      ["models/httpEndpointsAllowed"],
+      ["models/setHttpEndpointsAllowed", { allowed: true }],
       ["spaces/list"],
       ["meetingCalendar/status", { botId: "missing-bot" }],
       ["meetingCalendar/upcoming", { botId: "missing-bot" }],
