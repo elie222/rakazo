@@ -21,6 +21,7 @@ import { acquireBootLease } from "./computer-control.js";
 type SwitchDeps = Pick<RouterDeps, "prisma" | "sandbox" | "home" | "jobs" | "events" | "dataDir">;
 
 const COPY_ATTEMPTS = 3;
+const TEAM_COMPUTER_BUSY = "The Team Computer is busy. Try again in a moment.";
 
 type StoredComputer = {
   id: string;
@@ -46,6 +47,10 @@ export async function saveTeamHomeForMove(
   botId: string,
   computer: StoredComputer,
 ): Promise<void> {
+  // A computer on its way up or down is being saved or restored by someone else right now.
+  if (computer.state === "booting" || computer.state === "suspending") {
+    throw new ClientError("CONFLICT", TEAM_COMPUTER_BUSY);
+  }
   if (computer.state !== "running" || !computer.providerRef) return;
   let revision: string | undefined;
   try {
@@ -64,7 +69,7 @@ export async function saveTeamHomeForMove(
   }
   // Other bots are working on it, or it is starting; saving now would interrupt them.
   if (revision === undefined) {
-    throw new ClientError("CONFLICT", "The Team Computer is busy. Try again in a moment.");
+    throw new ClientError("CONFLICT", TEAM_COMPUTER_BUSY);
   }
 }
 

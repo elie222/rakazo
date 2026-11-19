@@ -1,10 +1,7 @@
 import { t } from "@lingui/core/macro";
-import type { ComputerMode } from "@rakazo/contracts";
+import type { ComputerMode, ComputerMoveFiles } from "@rakazo/contracts";
 import { Alert } from "react-native";
 import { rpc } from "../api/api";
-
-/** What happens to a bot's files when it moves to another computer. */
-export type ComputerMoveFiles = "bring" | "leave";
 
 /**
  * Asks, before a bot moves to `mode`, whether its files come along. Resolves null when the
@@ -16,10 +13,10 @@ export async function askComputerMoveFiles(input: {
   mode: ComputerMode;
 }): Promise<ComputerMoveFiles | null> {
   const { botName, mode } = input;
-  // The question is still asked when the server cannot say what the other computer holds.
+  // When the server cannot say what the other computer holds, assume the files replace some.
   const replaces = await rpc("bots/computerMove", { botId: input.botId, mode }).then(
     (move) => move.replacesFiles,
-    () => false,
+    () => true,
   );
   const message = !replaces
     ? undefined

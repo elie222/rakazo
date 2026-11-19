@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { ComputerModeSchema } from "../computers/computer.js";
+import { ComputerModeSchema, ComputerMoveFilesSchema } from "../computers/computer.js";
 import { Id } from "../ids.js";
 import {
   AgentImportCreateInput,
@@ -80,7 +80,7 @@ export const botsRpc = {
           botId: Id,
           mode: ComputerModeSchema,
           /** Whether the bot's files are copied to the computer it moves to. Absent leaves them. */
-          files: z.enum(["bring", "leave"]).optional(),
+          files: ComputerMoveFilesSchema.optional(),
         }),
       )
       .output(BotSchema),

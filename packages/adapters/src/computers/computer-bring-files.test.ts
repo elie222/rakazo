@@ -160,6 +160,83 @@ describe("bringing a bot's files to the computer it moved to", () => {
     await expect(home.readFile("bot1", "project/notes.md", context)).resolves.toBe("newer");
   });
 
+  it.each([
+    ["its own computer", TEAM, "dedicated", ""],
+    ["the Team Computer", OWN, "team", "bots/bot1/"],
+  ] as const)(
+    "puts the older files on %s back when the import fails",
+    async (_name, from, scope, folder) => {
+      const home = await savedHomes({
+        "team-home/bots/bot1/project/notes.md": "newer",
+        "bot1/project/notes.md": "newer",
+      });
+      const to = await localComputer({
+        [`${folder}project/notes.md`]: "older",
+        [`${folder}old-project/readme.md`]: "older",
+        [`${folder}.config/tool.json`]: "{}",
+      });
+      const importWorkspace = to.sandbox.importWorkspace.bind(to.sandbox);
+      to.sandbox.importWorkspace = async (computer, files, ctx) => {
+        await importWorkspace(computer, files, ctx);
+        throw new Error("connection reset");
+      };
+
+      await expect(
+        bringBotFiles(
+          { home, sandbox: to.sandbox },
+          { botId: "bot1", from, to: { computer: to.computer, scope } },
+          context,
+        ),
+      ).rejects.toThrow("connection reset");
+
+      await expect(to.read(`${folder}project/notes.md`)).resolves.toBe("older");
+      await expect(to.read(`${folder}old-project/readme.md`)).resolves.toBe("older");
+      await expect(to.read(`${folder}.config/tool.json`)).resolves.toBe("{}");
+      await to.missing(`${folder}.rakazo-replaced`);
+
+      // The next try starts from the computer as it was and finishes the replacement.
+      to.sandbox.importWorkspace = importWorkspace;
+      await bringBotFiles(
+        { home, sandbox: to.sandbox },
+        { botId: "bot1", from, to: { computer: to.computer, scope } },
+        context,
+      );
+      await expect(to.read(`${folder}project/notes.md`)).resolves.toBe("newer");
+      await to.missing(`${folder}old-project`);
+      await to.missing(`${folder}.rakazo-replaced`);
+      await to.missing(`${folder}.rakazo-replaced.done`);
+    },
+  );
+
+  it("puts back files an attempt that died had set aside, before replacing them", async () => {
+    const home = await savedHomes({ "team-home/bots/bot1/project/notes.md": "newer" });
+    const own = await localComputer({
+      ".rakazo-replaced/project/notes.md": "older",
+      ".rakazo-replaced/keep.md": "older",
+      "project/half-imported.md": "partial",
+    });
+    const importWorkspace = own.sandbox.importWorkspace.bind(own.sandbox);
+    own.sandbox.importWorkspace = async () => {
+      throw new Error("connection reset");
+    };
+    const bring = () =>
+      bringBotFiles(
+        { home, sandbox: own.sandbox },
+        { botId: "bot1", from: TEAM, to: { computer: own.computer, scope: "dedicated" } },
+        context,
+      );
+
+    await expect(bring()).rejects.toThrow("connection reset");
+    await expect(own.read("keep.md")).resolves.toBe("older");
+    await expect(own.read("project/notes.md")).resolves.toBe("older");
+    await own.missing("project/half-imported.md");
+
+    own.sandbox.importWorkspace = importWorkspace;
+    await bring();
+    await expect(own.read("project/notes.md")).resolves.toBe("newer");
+    await own.missing("keep.md");
+  });
+
   it("removes nothing when the bot has no files to bring", async () => {
     const home = await savedHomes({ "team-home/bots/other/work.md": "a teammate's" });
     const own = await localComputer({ "project/notes.md": "kept" });

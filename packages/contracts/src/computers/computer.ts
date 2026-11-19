@@ -5,6 +5,9 @@ import { ProviderSettingsFieldSchema } from "../models/provider-settings.js";
 
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
 export type ComputerMode = z.infer<typeof ComputerModeSchema>;
+/** What happens to a bot's files when it moves to another computer. */
+export const ComputerMoveFilesSchema = z.enum(["bring", "leave"]);
+export type ComputerMoveFiles = z.infer<typeof ComputerMoveFilesSchema>;
 
 /** How big a machine a cloud computer runs on. Providers without sizes ignore it. */
 export const ComputerSizeSchema = z.enum(["standard", "large", "xlarge"]);

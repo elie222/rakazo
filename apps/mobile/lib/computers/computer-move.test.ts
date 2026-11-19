@@ -62,11 +62,11 @@ it("moves nothing when the question is cancelled or dismissed", async () => {
   await expect(dismissed).resolves.toBeNull();
 });
 
-it("still asks when the server cannot say what the other computer holds", async () => {
+it("still asks, with the warning, when the server cannot say what the other computer holds", async () => {
   mocks.rpc.mockRejectedValue(new Error("offline"));
   const answer = askComputerMoveFiles({ botId: "bot-1", botName: "Ada", mode: "dedicated" });
   const alert = await shown();
-  expect(alert.message).toBeUndefined();
+  expect(alert.message).toBe("They replace the older files on its own computer.");
   alert.press("Bring files");
   await expect(answer).resolves.toBe("bring");
 });

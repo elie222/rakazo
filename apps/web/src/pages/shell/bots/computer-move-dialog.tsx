@@ -1,5 +1,5 @@
 import { Trans } from "@lingui/react/macro";
-import type { ComputerMode } from "@rakazo/contracts";
+import type { ComputerMode, ComputerMoveFiles } from "@rakazo/contracts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,9 +11,6 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useSpaceQueries } from "../../../lib/query/query";
-
-/** What happens to a bot's files when it moves to another computer. */
-export type ComputerMoveFiles = "bring" | "leave";
 
 /**
  * Asked when a bot is moved to `mode`: bring its files along, or start with none. Dismissing it
@@ -34,11 +31,14 @@ export function ComputerMoveDialog({
 }) {
   const queries = useSpaceQueries();
   // Asked each time: what the other computer holds changes with every stay there.
-  const replaces = useQuery({
+  const move = useQuery({
     ...queries.bots.computerMove.queryOptions({ input: { botId, mode } }),
     staleTime: 0,
     gcTime: 0,
-  }).data?.replacesFiles;
+    retry: false,
+  });
+  // Until the answer is in, the files cannot be brought; without one, assume they replace some.
+  const replaces = move.data?.replacesFiles ?? move.isError;
   return (
     <AlertDialog
       open
@@ -69,7 +69,7 @@ export function ComputerMoveDialog({
           <AlertDialogAction variant="outline" onClick={() => onChoose("leave")}>
             <Trans>Start empty</Trans>
           </AlertDialogAction>
-          <AlertDialogAction autoFocus onClick={() => onChoose("bring")}>
+          <AlertDialogAction autoFocus disabled={move.isPending} onClick={() => onChoose("bring")}>
             <Trans>Bring files</Trans>
           </AlertDialogAction>
         </AlertDialogFooter>

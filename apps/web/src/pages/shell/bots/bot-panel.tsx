@@ -3,6 +3,7 @@ import type {
   Bot,
   BotAvatarSet,
   ComputerMode,
+  ComputerMoveFiles,
   ModelCatalogEntry,
   ThinkingLevel,
 } from "@rakazo/contracts";
@@ -39,7 +40,6 @@ import {
   ToolsGroup,
   VoiceRow,
 } from "./bot-settings-sections";
-import type { ComputerMoveFiles } from "./computer-move-dialog";
 import { ComputerMoveDialog } from "./computer-move-dialog";
 import { InstructionSettings } from "./instruction-settings";
 
@@ -698,7 +698,12 @@ export function BotSettings({
                 label={<Trans>Own computer</Trans>}
                 checked={computerMode === "dedicated"}
                 disabled={saving}
-                onChange={(checked) => setComputerMove(checked ? "dedicated" : "team")}
+                onChange={(checked) => {
+                  const mode = checked ? "dedicated" : "team";
+                  // Going back to the computer the bot is saved on moves nothing, so asks nothing.
+                  if (mode === (JSON.parse(savedAdvanced) as unknown[])[2]) setComputerMode(mode);
+                  else setComputerMove(mode);
+                }}
               />
               {changed.readAloud ? (
                 <SwitchRow

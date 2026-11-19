@@ -1,6 +1,12 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { Bot, BotAvatarSet, ComputerMode, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  Bot,
+  BotAvatarSet,
+  ComputerMode,
+  ComputerMoveFiles,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
@@ -47,7 +53,6 @@ import { loadSessionToken } from "../lib/api/session";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
-import type { ComputerMoveFiles } from "../lib/computers/computer-move";
 import { askComputerMoveFiles } from "../lib/computers/computer-move";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { chatModelPickerChoices } from "../lib/models/chat-model";

@@ -3,7 +3,7 @@
 import { i18n } from "@lingui/core";
 import { ORPCError } from "@orpc/client";
 import type { Bot, BotAvatarSet } from "@rakazo/contracts";
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -501,6 +501,11 @@ describe("BotSettings model autosave", () => {
   const moveDialog = () => container.querySelector<HTMLElement>('[role="alertdialog"]');
   const answer = (label: string) =>
     [...moveDialog()!.querySelectorAll("button")].find((node) => node.textContent === label)!;
+  /** Bring files waits for the server to say whether it would replace anything. */
+  const bringFiles = async () => {
+    await vi.waitFor(() => expect(answer("Bring files").disabled).toBe(false));
+    await act(async () => answer("Bring files").click());
+  };
 
   it("asks about the bot's files before Own computer saves, and puts back a refused change", async () => {
     await render();
@@ -511,7 +516,7 @@ describe("BotSettings model autosave", () => {
     expect(moveDialog()?.querySelector("p")).toBeNull();
     expect(onSave).not.toHaveBeenCalled();
     expect(ownComputer().getAttribute("aria-checked")).toBe("false");
-    await act(async () => answer("Bring files").click());
+    await bringFiles();
     expect(moveDialog()).toBeNull();
     expect(onSave.mock.lastCall?.[0]).toMatchObject({
       computerMode: "dedicated",
@@ -542,6 +547,20 @@ describe("BotSettings model autosave", () => {
     expect(rpc.bots.computerMove).toHaveBeenLastCalledWith(
       { botId: "bot-1", mode: "dedicated" },
       expect.anything(),
+    );
+  });
+
+  it("holds Bring files until it knows, and warns when it cannot find out", async () => {
+    const lookup = deferred<{ replacesFiles: boolean }>();
+    vi.mocked(rpc.bots.computerMove).mockReturnValueOnce(lookup.promise);
+    await render();
+    await act(async () => ownComputer().click());
+    expect(answer("Bring files").disabled).toBe(true);
+    expect(answer("Start empty").disabled).toBe(false);
+    await act(async () => lookup.reject(new Error("offline")));
+    await vi.waitFor(() => expect(answer("Bring files").disabled).toBe(false));
+    expect(moveDialog()?.querySelector("p")?.textContent).toBe(
+      "They replace the older files on its own computer.",
     );
   });
 });
