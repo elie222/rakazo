@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
+
 import type { Bot, Routine } from "@rakazo/contracts";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { createSpaceRpc } from "../../lib/rpc";
+import type { createSpaceRpc } from "../../lib/query/rpc";
 import { useRoutineEditor } from "./use-routine-editor";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -20,6 +23,7 @@ const routine: Routine = {
   timezone: "UTC",
   active: true,
   notify: true,
+  inChat: false,
   webhookEnabled: false,
   githubEnabled: false,
   messageProvider: null,
@@ -36,7 +40,7 @@ const routine: Routine = {
 
 let root: Root;
 let editor: ReturnType<typeof useRoutineEditor>;
-let finishUpdate: (saved: Routine) => void;
+let finishUpdate: Deferred<Routine>;
 const update = vi.fn();
 const rotateWebhookSecret = vi.fn();
 let activeBot: Bot;
@@ -62,7 +66,10 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   activeBot = { id: "bot-1", webhookConfigured: false } as Bot;
   activeBotId.current = activeBot.id;
-  update.mockImplementation(() => new Promise<Routine>((resolve) => (finishUpdate = resolve)));
+  update.mockImplementation(() => {
+    finishUpdate = deferred();
+    return finishUpdate.promise;
+  });
   root = createRoot(document.createElement("div"));
   act(() => root.render(<Harness />));
 });
@@ -85,7 +92,7 @@ it("keeps edits made while a save is in flight", async () => {
   act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, name: "Monthly" }));
 
   await act(async () => {
-    finishUpdate({ ...routine, name: "Weekly", prompt: "Check in." });
+    finishUpdate.resolve({ ...routine, name: "Weekly", prompt: "Check in." });
     await saving;
   });
 
@@ -111,8 +118,11 @@ it("sends on/off only when the save changes it", async () => {
 });
 
 it("shows a revealed webhook secret only for the bot it belongs to", async () => {
-  let finishRotate!: (result: { secret: string }) => void;
-  rotateWebhookSecret.mockImplementation(() => new Promise((resolve) => (finishRotate = resolve)));
+  let finishRotate!: Deferred<{ secret: string }>;
+  rotateWebhookSecret.mockImplementation(() => {
+    finishRotate = deferred();
+    return finishRotate.promise;
+  });
   let ensuring!: Promise<void>;
   act(() => {
     ensuring = editor.editorProps!.onEnsureWebhook() as Promise<void>;
@@ -121,7 +131,7 @@ it("shows a revealed webhook secret only for the bot it belongs to", async () =>
   activeBot = { id: "bot-2", webhookConfigured: false } as Bot;
   act(() => root.render(<Harness />));
   await act(async () => {
-    finishRotate({ secret: "secret-1" });
+    finishRotate.resolve({ secret: "secret-1" });
     await ensuring;
   });
   expect(editor.editorProps!.webhook.secret).toBeNull();
@@ -168,15 +178,18 @@ it("shows why a key cannot be set instead of leaving the rejection unhandled", a
 });
 
 it("drops a key failure that arrives after switching to another bot", async () => {
-  let fail!: (error: Error) => void;
-  rotateWebhookSecret.mockImplementation(() => new Promise((_resolve, reject) => (fail = reject)));
+  let fail!: Deferred<{ secret: string }>;
+  rotateWebhookSecret.mockImplementation(() => {
+    fail = deferred();
+    return fail.promise;
+  });
   let ensuring!: Promise<void>;
   act(() => {
     ensuring = editor.editorProps!.onEnsureWebhook() as Promise<void>;
   });
   activeBotId.current = "bot-2";
   await act(async () => {
-    fail(Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }));
+    fail.reject(Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }));
     await ensuring;
   });
   expect(editor.editorProps!.error).toBeNull();

@@ -1,18 +1,27 @@
 import { describe, expect, it } from "vitest";
+import { studioFacts, studioFiles } from "../evals/fixtures/studio.js";
 import { fileId } from "./files.js";
-import { studioFacts, studioFiles } from "./fixtures/studio.js";
 
 const now = new Date("2026-11-06T16:30:00Z");
+/** The fields these tests read from a successful call. */
+type FilesData = {
+  files: Array<{ name: string; type: string }>;
+  next_page_token: string | null;
+  content: string;
+  sheets: Array<{ rows: string[][] }>;
+  permissions: Array<{ email: string; role: string }>;
+  capabilities: Record<string, boolean>;
+};
 const ok = (result: ReturnType<ReturnType<typeof studioFiles>["call"]>) => {
   if (!result.ok) throw new Error(result.error.message);
-  return result.data as Record<string, any>;
+  return result.data as FilesData;
 };
 
 describe("files emulator", () => {
   it("searches names and contents, ranking name matches and newest first", () => {
     const files = studioFiles({ now });
     const juniper = ok(files.call("search_files", { query: "juniper proposal" }));
-    expect(juniper.files.map((f: { name: string }) => f.name)).toEqual([
+    expect(juniper.files.map((f) => f.name)).toEqual([
       "Juniper Row – Lobby Proposal v3",
       "Juniper Row – Lobby Proposal v2",
     ]);
@@ -24,7 +33,7 @@ describe("files emulator", () => {
     expect(
       ok(files.call("search_files", { query: "walnut", type: "document" })).files,
     ).toHaveLength(1);
-    expect(ok(files.call("search_files", { query: '"payment terms"' })).files[0].type).toBe("pdf");
+    expect(ok(files.call("search_files", { query: '"payment terms"' })).files[0]?.type).toBe("pdf");
     // A file the account cannot open never appears in search.
     expect(ok(files.call("search_files", { query: "FY2027" })).files).toEqual([]);
     // Operators the service lacks are refused, not ignored.
@@ -37,13 +46,9 @@ describe("files emulator", () => {
   it("lists folders with pagination", () => {
     const files = studioFiles({ now });
     const root = ok(files.call("list_folder", { page_size: 3 }));
-    expect(root.files.map((f: { name: string }) => f.name)).toEqual([
-      "Brand",
-      "Clients",
-      "Finance",
-    ]);
+    expect(root.files.map((f) => f.name)).toEqual(["Brand", "Clients", "Finance"]);
     const rest = ok(files.call("list_folder", { page_size: 3, page_token: root.next_page_token }));
-    expect(rest.files.map((f: { name: string }) => f.name)).toEqual([
+    expect(rest.files.map((f) => f.name)).toEqual([
       "Suppliers",
       "Templates",
       "Meeting notes – October 2026",
@@ -56,7 +61,7 @@ describe("files emulator", () => {
     const v3 = ok(files.call("read_file", { file_id: studioFacts(now).proposalV3Url }));
     expect(v3.content).toContain("**41,250**");
     const sheet = ok(files.call("read_file", { file_id: fileId("budget-2026"), sheet: "Summary" }));
-    expect(sheet.sheets[0].rows).toContainEqual(["Marketing", "64,000"]);
+    expect(sheet.sheets[0]?.rows).toContainEqual(["Marketing", "64,000"]);
     const meta = ok(files.call("get_file_metadata", { file_id: fileId("juniper-proposal-v2") }));
     expect(meta.permissions).toContainEqual({
       email: "dana.whitfield@juniperrow.example",

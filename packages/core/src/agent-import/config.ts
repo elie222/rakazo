@@ -1,3 +1,4 @@
+import { trimEndChars } from "@rakazo/contracts";
 import JSON5 from "json5";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
@@ -104,21 +105,46 @@ export function parseDotEnv(content: string): Record<string, string> {
   );
 }
 
+/**
+ * The text inside a value's opening quote and the first closing quote that only a comment follows.
+ * Double quotes skip backslash escapes. Scanned by hand: the equivalent regex backtracks over every
+ * quote and grows with the square of the line.
+ */
+function quotedDotEnvValue(value: string): string | undefined {
+  const quote = value[0]!;
+  for (let at = 1; at < value.length; at++) {
+    if (quote === '"' && value[at] === "\\") {
+      at++;
+      continue;
+    }
+    if (value[at] !== quote) continue;
+    let next = at + 1;
+    while (next < value.length && /\s/.test(value[next]!)) next++;
+    if (next === value.length || value[next] === "#") return value.slice(1, at);
+  }
+  return undefined;
+}
+
+function withoutDotEnvComment(value: string): string {
+  const hash = /\s#/.exec(value);
+  if (!hash) return value;
+  let end = hash.index;
+  while (end > 0 && /\s/.test(value[end - 1]!)) end--;
+  return value.slice(0, end);
+}
+
 function readDotEnv(content: string): Record<string, { value: string; literal: string }> {
   const values: Record<string, { value: string; literal: string }> = {};
   for (const line of content.split(/\r?\n/)) {
     if (line.trimStart().startsWith("#")) continue;
-    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/.exec(line);
     if (!match) continue;
-    let value = match[2]!;
+    let value = match[2]!.trim();
     const quote = value[0];
-    const quoted =
-      quote === "'"
-        ? /^'(.*?)'(?:\s*#.*)?$/.exec(value)
-        : /^"((?:\\.|[^\\])*?)"(?:\s*#.*)?$/.exec(value);
-    value = quoted ? quoted[1]! : value.replace(/\s+#.*$/, "");
+    const quoted = quote === "'" || quote === '"' ? quotedDotEnvValue(value) : undefined;
+    value = quoted ?? withoutDotEnvComment(value);
     // Preserve the source quoting so preparation cannot turn a value's contents into a comment.
-    const literal = quoted ? `${quote}${value}${quote}` : value;
+    const literal = quoted !== undefined ? `${quote}${value}${quote}` : value;
     values[match[1]!] = { value, literal };
   }
   return values;
@@ -413,10 +439,5 @@ function modelName(value: unknown): Json {
 }
 
 function folderName(path: string): string {
-  return (
-    path
-      .replace(/[\\/]+$/, "")
-      .split(/[\\/]/)
-      .at(-1) ?? ""
-  );
+  return trimEndChars(path, "\\/").split(/[\\/]/).at(-1) ?? "";
 }

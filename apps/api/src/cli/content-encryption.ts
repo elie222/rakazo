@@ -14,8 +14,8 @@ import {
   vaultItemsUnderOlderKeys,
   withSecretPersistence,
 } from "@rakazo/adapters";
-import { resolveContentEncryption, resolveEncryptionKey } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { resolveContentEncryption, resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { ContentMigrationMode } from "@rakazo/db";
 import {
   contentEncryptionStatus,
@@ -26,8 +26,9 @@ import {
   rotateSpaceDataKeys,
   runAsSystem,
 } from "@rakazo/db";
-import { moveMcpArgsIntoSecrets } from "../mcp-args-migration.js";
-import { createSecretMigrationRepository } from "../secret-migration.js";
+import { bestEffort } from "@rakazo/logging";
+import { moveMcpArgsIntoSecrets } from "../integrations/mcp-args-migration.js";
+import { createSecretMigrationRepository } from "./secret-migration.js";
 
 loadRootEnv();
 await unwrapEnvFromKeyManager();
@@ -304,6 +305,6 @@ try {
   );
   process.exitCode = 1;
 } finally {
-  await prisma.$disconnect().catch(() => undefined);
-  await pool.end().catch(() => undefined);
+  await bestEffort("disconnect database client", prisma.$disconnect());
+  await bestEffort("close database pool", pool.end());
 }

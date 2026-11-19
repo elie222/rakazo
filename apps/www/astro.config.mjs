@@ -3,9 +3,11 @@ import { satteri } from "@astrojs/markdown-satteri";
 import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
-import { isIndexedPath } from "./src/blog/indexability.ts";
+import { buildChecks } from "./src/build-checks.ts";
 import { docsCallouts } from "./src/docs-callouts.ts";
 import { LOCALE_HREFLANG, LOCALES } from "./src/i18n/locales.ts";
+import { marketing } from "./src/marketing-site.ts";
+import { sitemapEntry } from "./src/sitemap.ts";
 import { resolveWwwPort } from "./www-port.mjs";
 
 const wwwPort = resolveWwwPort();
@@ -21,9 +23,15 @@ export default defineConfig({
     },
   },
   integrations: [
+    ...(marketing.integration ? [marketing.integration] : []),
+    buildChecks(),
     react(),
     sitemap({
-      filter: (page) => isIndexedPath(new URL(page).pathname),
+      filter: (page) => {
+        const { pathname } = new URL(page);
+        return !pathname.endsWith(".xml") && marketing.isIndexedPath(pathname);
+      },
+      serialize: sitemapEntry,
       i18n: {
         defaultLocale: "en",
         locales: LOCALE_HREFLANG,

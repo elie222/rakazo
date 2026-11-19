@@ -1,21 +1,26 @@
-import type { AppBootstrap } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_BYTES, attachmentMaxBytes } from "@rakazo/contracts";
+import type { AppBootstrap, LabFeature } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, attachmentMaxBytes, parseLabs } from "@rakazo/contracts";
 import { displayIdentityResult } from "@rakazo/core";
 import { initialBootstrapTarget } from "./bootstrap-target";
-import { identityLabels } from "./identity-display";
-import { markOnce } from "./performance";
-import { rpc, selectedSpaceId } from "./rpc";
+import { identityLabels } from "./bots/identity-display";
+import { markOnce } from "./platform/performance";
+import { rpc, selectedSpaceId } from "./query/rpc";
 
-let ticketBoardEnabled = false;
+let labs: readonly LabFeature[] = [];
 let maxUploadSizeBytes = ATTACHMENT_MAX_BYTES;
 export function getMaxUploadSizeBytes() {
   return maxUploadSizeBytes;
 }
 const capabilityListeners = new Set<() => void>();
-export function getTicketBoardEnabled() {
-  return ticketBoardEnabled;
+export function getLabs() {
+  return labs;
 }
-export function subscribeTicketBoardEnabled(listener: () => void) {
+/** Applies a saved Labs list at once, so routes and menus follow without a reload. */
+export function setLabs(next: readonly LabFeature[]) {
+  labs = next;
+  for (const listener of capabilityListeners) listener();
+}
+export function subscribeLabs(listener: () => void) {
   capabilityListeners.add(listener);
   return () => {
     capabilityListeners.delete(listener);
@@ -24,6 +29,8 @@ export function subscribeTicketBoardEnabled(listener: () => void) {
 
 let primedBootstrap: {
   botId?: string;
+  /** The linked group the first load asked the server to place; a switch already knows the Space. */
+  groupId?: string;
   spaceId?: string;
   promise: Promise<AppBootstrap>;
   /** What this space showed last time, painted while the fresh bootstrap loads. */
@@ -35,12 +42,12 @@ const initialTarget = initialBootstrapTarget(
   Boolean(window.rakazoDesktop),
 );
 if (initialTarget) {
-  const { botId } = initialTarget;
-  const promise = requestBootstrap(botId);
+  const { botId, groupId } = initialTarget;
+  const promise = requestBootstrap(botId, undefined, groupId);
   // Authentication can redirect before Shell consumes this speculative request.
   // Register a rejection handler immediately while preserving rejection for a consumer.
   void promise.catch(() => undefined);
-  primedBootstrap = { botId, promise };
+  primedBootstrap = { botId, groupId, promise };
 }
 
 /** The speculative first-load bootstrap, left in place for the shell to take. */
@@ -49,13 +56,12 @@ export function peekInitialBootstrap(): Promise<AppBootstrap> | undefined {
   return primedBootstrap?.spaceId === undefined ? primedBootstrap?.promise : undefined;
 }
 
-function primedFor(botId: string | undefined) {
+function primedFor(botId: string | undefined, groupId?: string) {
   const primed = primedBootstrap;
-  return primed &&
-    primed.botId === botId &&
-    (primed.spaceId === undefined || primed.spaceId === selectedSpaceId())
-    ? primed
-    : null;
+  if (!primed || primed.botId !== botId) return null;
+  // The first load also says which Space holds a linked group, so it must have asked about this one.
+  if (primed.spaceId === undefined) return primed.groupId === groupId ? primed : null;
+  return primed.spaceId === selectedSpaceId() ? primed : null;
 }
 
 /** The cached bootstrap a revisited space opens with, if the switch had one. */
@@ -63,8 +69,8 @@ export function peekBootstrapSeed(botId?: string): AppBootstrap | undefined {
   return primedFor(botId)?.seed;
 }
 
-export function takeInitialBootstrap(botId?: string) {
-  const primed = primedFor(botId);
+export function takeInitialBootstrap(botId?: string, groupId?: string) {
+  const primed = primedFor(botId, groupId);
   primedBootstrap = null;
   if (primed) {
     if (primed.seed) applyCapabilities(primed.seed);
@@ -74,7 +80,7 @@ export function takeInitialBootstrap(botId?: string) {
       (value) => displayIdentityResult(["bootstrap"], value, identityLabels()) as AppBootstrap,
     );
   }
-  return requestBootstrap(botId);
+  return requestBootstrap(botId, undefined, groupId);
 }
 
 /**
@@ -99,9 +105,9 @@ export function discardPrimedBootstrap(promise: Promise<AppBootstrap>): void {
   if (primedBootstrap?.promise === promise) primedBootstrap = null;
 }
 
-function requestBootstrap(botId?: string, spaceId?: string) {
+function requestBootstrap(botId?: string, spaceId?: string, groupId?: string) {
   markOnce("rk:renderer:bootstrap-request-start");
-  const input = botId ? { botId } : {};
+  const input = { ...(botId ? { botId } : {}), ...(groupId ? { groupId } : {}) };
   const request = spaceId ? rpc.bootstrap(input, { context: { spaceId } }) : rpc.bootstrap(input);
   return request.then((bootstrap) => {
     markOnce("rk:renderer:bootstrap-response");
@@ -110,7 +116,7 @@ function requestBootstrap(botId?: string, spaceId?: string) {
 }
 
 function applyCapabilities(bootstrap: AppBootstrap): AppBootstrap {
-  ticketBoardEnabled = bootstrap.me.ticketBoardEnabled;
+  labs = parseLabs(bootstrap.me.labs);
   maxUploadSizeBytes = attachmentMaxBytes(bootstrap.me);
   for (const listener of capabilityListeners) listener();
   return bootstrap;

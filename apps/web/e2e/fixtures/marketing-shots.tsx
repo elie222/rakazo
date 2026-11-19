@@ -4,15 +4,15 @@ import { defaultCronPreset } from "@rakazo/core";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AskCard } from "../../src/components/AskCard";
-import { bootstrapI18n, i18n } from "../../src/lib/i18n";
-import { queryClient } from "../../src/lib/query";
-import type { RoutineDraftState } from "../../src/lib/routine-draft";
-import { rpc } from "../../src/lib/rpc";
-import { RoutineEditor } from "../../src/pages/RoutineEditor";
-import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
-import { BotSettings } from "../../src/pages/shell/bot-panel";
-import { CreateBotDialog } from "../../src/pages/shell/create-bot-dialog";
+import { AskCard } from "../../src/components/messages/AskCard";
+import { bootstrapI18n, i18n } from "../../src/lib/locale/i18n";
+import { queryClient } from "../../src/lib/query/query";
+import { rpc } from "../../src/lib/query/rpc";
+import type { RoutineDraftState } from "../../src/lib/routines/routine-draft";
+import { RoutineEditor } from "../../src/pages/routines/RoutineEditor";
+import { SettingsOverlay } from "../../src/pages/settings/SettingsOverlay";
+import { BotSettings } from "../../src/pages/shell/bots/bot-panel";
+import { CreateBotDialog } from "../../src/pages/shell/bots/create-bot-dialog";
 import "../../src/styles.css";
 
 const demoRpc: Record<string, unknown> = {
@@ -46,6 +46,8 @@ const demoRpc: Record<string, unknown> = {
   me: null,
   "scratchpad/list": [],
   "memory/list": [],
+  "pages/list": { items: [], nextCursor: null },
+  "bots/emailAddress": null,
   "agentSkills/list": [],
 };
 
@@ -149,8 +151,7 @@ function ModelShot() {
     >
       <BotSettings
         bot={inboxBot()}
-        memoryProviderConfigured={false}
-        onSkillsChange={() => undefined}
+        focusModel={1}
         onSave={async () => undefined}
         onExport={async () => undefined}
         onClear={() => undefined}
@@ -173,6 +174,7 @@ function RoutineShot() {
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",
+    inChat: false,
     watch: null,
   });
   return (
@@ -228,7 +230,9 @@ function ApprovalShot() {
 }
 
 const subscriptionMe: Me = {
+  labs: [],
   ticketBoardEnabled: false,
+  labsAvailable: [],
   navLinks: [],
   phoneCallsEnabled: false,
   userId: "user-demo",
@@ -321,9 +325,11 @@ function SubscriptionShot() {
         onSectionChange={() => undefined}
         memoryConfig={null}
         onMemoryConfigChange={() => undefined}
-        onUsageOpen={() => undefined}
         timezone="UTC"
         onTimezoneChange={async () => undefined}
+        labs={[]}
+        labsAvailable={[]}
+        onLabsChange={async () => undefined}
         onClose={() => undefined}
       />
     </main>

@@ -1,8 +1,8 @@
 import type { APIRoute } from "astro";
-import { AGENT_INSTRUCTIONS } from "../agent-content";
+import { agentInstructions, agentResourceGroups } from "../agent-index";
 
-export const GET: APIRoute = ({ request }) =>
-  new Response(request.method === "HEAD" ? null : AGENT_INSTRUCTIONS, {
+export const GET: APIRoute = async ({ request }) =>
+  new Response(request.method === "HEAD" ? null : agentInstructions(await agentResourceGroups()), {
     headers: {
       "Cache-Control": "public, max-age=0, must-revalidate",
       "Content-Language": "en",

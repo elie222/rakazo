@@ -1,5 +1,6 @@
+import { useNow } from "@rakazo/chat-ui/hooks";
 import { cn } from "@rakazo/ui-web";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import "./beautiful-ui.css";
 
 /* Beautiful UI primitives — hand-ported from beautifului.dev
@@ -35,11 +36,7 @@ export function formatElapsed(startedAtMs: number, nowMs: number): string {
 
 function useElapsed(startedAtMs?: number): string {
   const [mountedAt] = useState(() => Date.now());
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 100);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useNow(100);
   return formatElapsed(startedAtMs ?? mountedAt, now);
 }
 

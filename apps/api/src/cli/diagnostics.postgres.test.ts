@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { asSystem, bootstrapUserSpace, createDb } from "@rakazo/db";
 import { expect, it } from "vitest";
-import { opaque } from "../diagnostics.js";
+import { opaque } from "../telemetry/diagnostics.js";
 
 const run = promisify(execFile);
 const testDatabase = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
@@ -18,10 +18,7 @@ it.skipIf(!testDatabase)(
       data: { id: randomUUID(), name: "Private Person", email: `${randomUUID()}@example.test` },
     });
     try {
-      const { spaceId } = await bootstrapUserSpace(prisma, user, {
-        signupsEnabled: "true",
-        signupAllowlist: "",
-      });
+      const { spaceId } = await bootstrapUserSpace(prisma, user);
       const bot = await prisma.bot.create({
         data: { spaceId, userId: user.id, name: "Secret Bot", color: "#000000" },
       });

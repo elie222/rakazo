@@ -1,16 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
+import { useNow } from "@rakazo/chat-ui/hooks";
 import { BotAvatar, Button, cn, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Captions, ChevronDown, Mic, MicOff, PhoneOff, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { CallState } from "../../lib/call-session";
+import type { CallState } from "../../lib/calls/call-session";
 import {
   endCall,
   setCallMinimized,
   toggleMute,
   toggleTranscript,
   useCallSession,
-} from "../../lib/call-session";
+} from "../../lib/calls/call-session";
+import { useEventListener } from "../../lib/use-event-listener";
 import { CallWindow } from "./CallWindow";
 
 const BARS = [9, 15, 21, 15, 9];
@@ -25,13 +26,7 @@ function callClock(seconds: number): string {
 /** Whole seconds the call has been connected, ticking while it is. */
 function useCallElapsed(call: CallState | null): number {
   const connectedAt = call?.connectedAt ?? null;
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (connectedAt === null) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [connectedAt]);
+  const now = useNow(connectedAt === null ? null : 1000);
   return connectedAt === null ? 0 : Math.max(0, Math.floor((now - connectedAt) / 1000));
 }
 
@@ -42,17 +37,12 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
   const navigate = useNavigate();
   const { botId } = useParams();
   const onCall = Boolean(call);
-  useEffect(() => {
-    if (!onCall) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.isContentEditable || EDITABLE.test(target?.tagName ?? "")) return;
-      endCall();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCall]);
+  useEventListener(onCall ? window : null, "keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.isContentEditable || EDITABLE.test(target?.tagName ?? "")) return;
+    endCall();
+  });
   if (!call || call.minimized) return null;
   const onBotScreen = botId === call.botId;
   const ringing = call.phase === "ringing";

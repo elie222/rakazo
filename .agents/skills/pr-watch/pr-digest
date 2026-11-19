@@ -26,11 +26,12 @@ seen_path() { echo "$SEEN_DIR/${1//\//-}-$2"; }
 # One line per failed check run or commit status on a head. The head and the
 # job URL make a re-run or a new commit's failure distinct from an earlier one.
 failure_ids() {
-  local head=$1 runs=$2 statuses=$3
+  local head=$1 runs=$2 statuses=$3 workflows=$4
   {
     jq -r --arg h "$head" '.[] | select(.conclusion != null and (.conclusion | test("^(success|neutral|skipped)$") | not))
       | "\($h) run \(.name) \(.html_url // "")"' <<<"$runs"
     jq -r --arg h "$head" '.[] | select(.state | test("^(failure|error)$")) | "\($h) status \(.context)"' <<<"$statuses"
+    failed_workflows "$runs" "$workflows" | jq -r --arg h "$head" '.[] | "\($h) workflow \(.html_url)"'
   } | sort -u
 }
 
@@ -49,6 +50,27 @@ api() {
 check_runs() {
   api --paginate "repos/$1/commits/$2/check-runs?per_page=100" \
     --jq '.check_runs[] | {name, status, conclusion, html_url}' | jq -s .
+}
+
+# A workflow queued behind a runner backlog has no jobs yet, so it shows up
+# here before it creates any check run. Only runs the PR's own commits trigger
+# count; a manual dispatch on the same commit is not part of the PR's checks.
+# A newer run of the same workflow replaces an older one.
+workflow_runs() {
+  api --paginate "repos/$1/actions/runs?head_sha=$2&per_page=100" \
+    --jq '.workflow_runs[] | select(.event | test("^(pull_request|pull_request_target|push)$"))
+      | {id, workflow_id, event, name, status, conclusion, html_url}' |
+    jq -s 'group_by([.workflow_id, .event]) | map(max_by(.id))'
+}
+
+# Workflow runs that ended unsuccessfully without a failed job of their own,
+# such as one that never started; nothing else would report them.
+failed_workflows() {
+  jq --argjson runs "$1" '[.[] | . as $w
+    | select(.conclusion != null and (.conclusion | test("^(success|neutral|skipped)$") | not))
+    | select([$runs[] | select((.html_url // "") | startswith($w.html_url + "/job/"))
+              | select(.conclusion != null and (.conclusion | test("^(success|neutral|skipped)$") | not))]
+             | length == 0)]' <<<"$2"
 }
 
 # Fork PRs always carry Vercel's "Authorization required to deploy." failure,
@@ -144,6 +166,34 @@ findings() {
     def links($url):
       [scan("https?://[^\\s<>\\\"()\\[\\]]+")] | map(sub("[.,;:!?]+$"; "")) | index($url) != null;'
 
+  # Qodo keeps its findings in one sticky comment that it edits on every head,
+  # so the comment itself is noise and each numbered finding is read instead.
+  # Only the latest review counts (the part above "Previous reviews"); a struck
+  # title or a Resolved/Outdated tag closes a finding. The commit marker names
+  # the head that review covered.
+  local qodo_def='
+    def qodo_review:
+      (.user.login | startswith("qodo-"))
+      and (.body | ltrimstr("\n") | startswith("<h3>Code Review"));
+    def decode:
+      gsub("&#x27;|&#39;"; "'"'"'") | gsub("&quot;"; "\"") | gsub("&lt;"; "<")
+      | gsub("&gt;"; ">") | gsub("&amp;"; "&");
+    def printable: explode | map(select(. >= 32 and (. < 127 or . > 159))) | implode;
+    def qodo_current: .body | split("<summary><strong>Previous reviews</strong>")[0];
+    def qodo_sha:
+      [qodo_current | scan("<!-- https://github\\.com/[^ ]+/commit/([0-9a-f]{7,40}) -->") | .[0]] | first;
+    def qodo_findings:
+      [qodo_current | split("<summary>\\s+(?=\\d+\\.\\s)"; null) | .[1:][]
+       | capture("^(?<n>\\d+)\\.\\s+(?<head>[\\s\\S]*?)</summary>(?<rest>[\\s\\S]*)")
+       | [.head | scan("<code>([^<]*)</code>") | .[0] | printable] as $tags
+       | {n: (.n | tonumber),
+          title: (.head | sub("<code>[\\s\\S]*$"; "") | gsub("<[^>]+>"; "") | decode
+                  | gsub("\\s+"; " ") | printable | sub("^ "; "") | sub(" $"; "")),
+          closed: ((.head | test("<s>")) or ($tags | any(test("Resolved|Outdated")))),
+          new: ($tags | any(test("New"))),
+          category: ($tags | map(select(test("New") | not)) | join(", ")),
+          detail: ((.rest | capture("<pre>(?<p>[\\s\\S]*?)</pre>").p) // "")}];'
+
   # Inline review threads. One stays open until *you* have replied to it; a bot
   # follow-up confirming your fix must not mark it handled.
   local inline open
@@ -191,6 +241,33 @@ findings() {
        | {key: \"\(.id):\(.updated_at)\", id, author: .user.login,
           path: \"(conversation)\", line: 0, body: (.body | clean)}]" <<<"$convo")
 
+  # A Qodo finding stays open until Qodo marks it resolved, or until *you* post
+  # a conversation comment that quotes the sticky permalink and the finding's
+  # title. Its key is its title, not the comment's updated_at, so re-reviews
+  # of a new head do not reopen findings already answered, while a finding
+  # added by an edit is unseen and wakes the watch.
+  local qodo qodo_open
+  qodo=$(jq --arg me "$viewer" "
+    $qodo_def
+    $link_def
+    [.[] | select(.user.login == \$me) | .body | ascii_downcase] as \$mine
+    | [.[] | select(qodo_review) | . as \$c | qodo_findings as \$all
+       | \$all[] | select(.closed | not)
+       | (.title | ascii_downcase) as \$t
+       # A longer title that contains this one must not answer it too.
+       | [\$all[].title | ascii_downcase | select(. != \$t and contains(\$t))] as \$longer
+       | . + {id: \$c.id, author: \$c.user.login,
+              answered: ([\$mine[] | reduce \$longer[] as \$l (.; split(\$l) | join(\" \"))
+                          | select(\$t != \"\" and links(\$c.html_url | ascii_downcase) and contains(\$t))]
+                         | length > 0)}]" <<<"$convo")
+  qodo_open=$(jq --argjson n "$BODY_CHARS" "
+    $clean_def
+    $qodo_def
+    [.[] | select(.answered | not)
+     | {key: \"q\(.id):\(.title)\", id, author, path: \"(qodo \(.n))\", line: 0,
+        body: (\"\(.title) [\(.category)\(if .new then \", new\" else \"\" end)] \"
+               + (.detail | gsub(\"\\n>\"; \"\\n\") | clean | decode))}]" <<<"$qodo")
+
   # A human can request changes in a review summary with no line comment and no
   # conversation comment attached, so that surface has to be read too.
   local reviews review_open
@@ -207,8 +284,9 @@ findings() {
          | {key: \"r\(.id):\(.submitted_at)\", id, author: .user.login,
             path: \"(review \(.state))\", line: 0, body: (.body | clean)}]" <<<"$reviews")
 
-  OPEN=$(jq -s 'add' <<<"$open$convo_open$review_open")
-  INLINE=$inline CONVO=$convo REVIEWS=$reviews NOISE_N=$noise_n
+  QODO_SHA=$(jq -r "$qodo_def [.[] | select(qodo_review) | qodo_sha | values] | last // \"\"" <<<"$convo")
+  OPEN=$(jq -s 'add' <<<"$open$convo_open$qodo_open$review_open")
+  INLINE=$inline CONVO=$convo REVIEWS=$reviews NOISE_N=$noise_n QODO=$qodo
 }
 
 digest() {
@@ -241,20 +319,27 @@ digest() {
     fi
   fi
 
-  local runs statuses pending failed
+  local runs statuses workflows wf_failed pending failed
   runs=$(check_runs "$repo" "$head") || die "could not read check runs"
   statuses=$(commit_statuses "$repo" "$head") || die "could not read commit statuses"
+  workflows=$(workflow_runs "$repo" "$head") || die "could not read workflow runs"
+  wf_failed=$(failed_workflows "$runs" "$workflows")
 
   # Legacy commit statuses gate a PR exactly like check runs do, so they have to
   # reach the verdict rather than only being printed.
   pending=$(( $(jq '[.[] | select(.status != "completed")] | length' <<<"$runs") +
-              $(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses") ))
+              $(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses") +
+              $(jq '[.[] | select(.status != "completed")] | length' <<<"$workflows") ))
   failed=$(( $(jq '[.[] | select(.conclusion != null and (.conclusion | test("^(success|neutral|skipped)$") | not))] | length' <<<"$runs") +
-             $(jq '[.[] | select(.state | test("^(failure|error)$"))] | length' <<<"$statuses") ))
+             $(jq '[.[] | select(.state | test("^(failure|error)$"))] | length' <<<"$statuses") +
+             $(jq length <<<"$wf_failed") ))
 
-  jq -r '"checks " + (if length == 0 then "none"
-    else ([.[].conclusion // "pending"] | group_by(.) | map("\(length) \(.[0])") | join(" · ")) end)' <<<"$runs"
+  jq -r --argjson wf "$workflows" '"checks " + (if length == 0 then "none"
+    else ([.[].conclusion // "pending"] | group_by(.) | map("\(length) \(.[0])") | join(" · ")) end)
+    + ([$wf[] | select(.status != "completed") | .status]
+       | group_by(.) | map(" · \(length) workflow \(.[0])") | join(""))' <<<"$runs"
   jq -r '.[] | select(.state != "success") | "STATUS \(.context) \(.state)"' <<<"$statuses"
+  jq -r '.[] | "FAIL workflow \(.name) [\(.conclusion)]\n     \(.html_url)"' <<<"$wf_failed"
 
   # Report the failed step and skipped successors without inferring whether
   # tests ran: a test assertion failure can also skip later report steps.
@@ -283,6 +368,12 @@ digest() {
   open_n=$(jq length <<<"$open")
   echo "comments $(jq length <<<"$inline") inline · $(jq length <<<"$convo") conversation ($noise_n noise) · $(jq length <<<"$reviews") reviews · $open_n awaiting your reply"
   [ "$decision" = "CHANGES_REQUESTED" ] && echo "REVIEW changes requested"
+  if [ -n "$QODO_SHA" ]; then
+    local at="head"
+    [[ $head == "$QODO_SHA"* || $QODO_SHA == "$head"* ]] || at="${QODO_SHA:0:8}, not the head yet"
+    jq -r --arg at "$at" '"qodo reviewed \($at) · \([.[] | select(.answered | not)] | length) open · \([.[] | select(.answered)] | length) answered"
+      + ([.[] | select(.answered) | "\n  answered (qodo \(.n)) \(.title)"] | join(""))' <<<"$QODO"
+  fi
 
   if [ "$open_n" -gt 0 ]; then
     # Show a finding in full once. On later cycles it stays listed — nothing is
@@ -361,19 +452,20 @@ main() {
   [ "$FORK" = true ] || FORK=false
 
   if [ "$watch" -eq 1 ]; then
-    local head runs statuses empty=0 baseline="" first=1 seen
+    local head runs statuses workflows empty=0 baseline="" first=1 seen
     seen=$(seen_path "$repo" "$pr")
     while :; do
       head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid) \
         || die "could not read PR head"
       runs=$(check_runs "$repo" "$head") || die "could not read check runs"
       statuses=$(commit_statuses "$repo" "$head") || die "could not read commit statuses"
+      workflows=$(workflow_runs "$repo" "$head") || die "could not read workflow runs"
       # Wake as soon as there is something to act on, rather than when the slowest
       # check settles: a check that newly failed, or a finding not yet shown.
       # Failures already present at the start were seen and do not wake it again.
       if [ "$first" = 1 ]; then
-        baseline=$(failure_ids "$head" "$runs" "$statuses"); first=0
-      elif [ -n "$(comm -13 <(echo "$baseline") <(failure_ids "$head" "$runs" "$statuses"))" ]; then
+        baseline=$(failure_ids "$head" "$runs" "$statuses" "$workflows"); first=0
+      elif [ -n "$(comm -13 <(echo "$baseline") <(failure_ids "$head" "$runs" "$statuses" "$workflows"))" ]; then
         break
       fi
       findings "$pr" "$repo" "$viewer"
@@ -381,7 +473,8 @@ main() {
         break
       fi
       if [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")" = "0" ] &&
-         [ "$(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses")" = "0" ]; then
+         [ "$(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses")" = "0" ] &&
+         [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$workflows")" = "0" ]; then
         # Nothing outstanding. Wait a few polls before believing a PR that has
         # reported nothing at all, in case checks are still registering.
         if [ "$(jq 'length' <<<"$runs")" != "0" ] ||

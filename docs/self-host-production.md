@@ -2,6 +2,11 @@
 
 Run Rakazo on a public server with automatic HTTPS, hardened hosts and zero-downtime deploys.
 
+For a single-node cluster, see [Kubernetes / k3s installation](./self-host-kubernetes.md).
+Putting a cookie-based login gate in front of any deployment also needs
+[capability-aware screen routing](./self-host-kubernetes.md#add-a-login-gate-without-breaking-the-computer):
+a screen iframe can lack the outer cookie even after the user signs in.
+
 ## Public single-VM deployment
 
 `infra/compose/docker-compose.prod.yml` runs the hosted product with Postgres, the API, worker, web app,
@@ -68,7 +73,7 @@ RAKAZO_IMAGE_TAG=local
 
 ```bash
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
-  build --build-arg GIT_SHA=$(git rev-parse HEAD)
+  build --build-arg GIT_SHA="$(git rev-parse HEAD)"
 docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
   up -d --wait --pull never
 curl --fail https://app.example.com/health
@@ -181,7 +186,7 @@ docker compose --env-file .env \
   -f infra/compose/docker-compose.prod.yml \
   -f infra/compose/docker-compose.prod.docker.yml \
   pull --ignore-buildable
-docker compose --env-file .env \
+GIT_SHA="$(git rev-parse HEAD)" docker compose --env-file .env \
   -f infra/compose/docker-compose.prod.yml \
   -f infra/compose/docker-compose.prod.docker.yml \
   up -d --build --wait --wait-timeout 300 --pull never
@@ -224,11 +229,15 @@ docker compose --env-file .env \
 ## Other deployment layouts
 
 API and worker need always-on processes; serverless request handlers are not sufficient. Use a
-Node.js version supported by the root `package.json`, Postgres 16 or newer and a persistent `DATA_DIR` volume shared by API and worker, with encrypted off-host
-backups. Homes stay on that volume unless they are kept in
-[object storage](./self-host-storage.md#bot-homes-in-object-storage); other `DATA_DIR` files still need it shared.
+Node.js version supported by the root `package.json`, Postgres 16 or newer and, by default, a
+persistent `DATA_DIR` volume shared by API and worker, with encrypted off-host backups. Homes stay on that volume unless they are kept in
+[object storage](./self-host-storage.md#bot-homes-in-object-storage). With object storage set from
+the first start, `DATA_DIR` is only per-process scratch, so replicas can each use their own
+non-persistent directory, unless you run Docker computers: they mount their cached home from
+`DATA_DIR/homes`, so the API and worker that start them must share that directory on the same
+host. The [data directory](./self-host-storage.md#data-directory) lists what each path holds.
 
 Use the same HTTPS origin for the web app, `/api`, and `/rpc`. Preserve the authenticated screen
-proxy routes. Choose a [computer provider](./self-host-sandbox-providers.md#choosing-a-provider) appropriate to the
+proxy routes. Behind a cookie login gate, exempt only `/novnc/session/*` ([why](./self-host-kubernetes.md#add-a-login-gate-without-breaking-the-computer)). Choose a [computer provider](./self-host-sandbox-providers.md#choosing-a-provider) appropriate to the
 service's trust boundary. `SIGNUPS_ENABLED` and `SIGNUP_ALLOWLIST` apply from the environment on every API start.
 The optional marketing site in `apps/www` can be hosted separately.

@@ -1,5 +1,6 @@
 import { Duplex, Readable, Writable } from "node:stream";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computerCommandEnv } from "./supervisor-logic.js";
 
@@ -81,14 +82,11 @@ describe("computer command identity", () => {
   it("keeps a silent command's response alive until it exits", async () => {
     vi.useFakeTimers();
     try {
-      let finish = (_code: number) => {};
-      const exited = new Promise<number>((resolve) => {
-        finish = resolve;
-      });
+      const exited = deferred<number>();
       mock.exec.mockImplementation(async () => ({
         start: async () => {
           const output = new Readable({ read() {} });
-          void exited.then(() => output.push(null));
+          void exited.promise.then(() => output.push(null));
           return Duplex.from({
             readable: output,
             writable: new Writable({
@@ -98,14 +96,14 @@ describe("computer command identity", () => {
             }),
           });
         },
-        inspect: async () => ({ ExitCode: await exited }),
+        inspect: async () => ({ ExitCode: await exited.promise }),
       }));
       const response = await post("/computers/computer-exec/exec", { argv: ["sleep", "600"] });
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       await vi.advanceTimersByTimeAsync(15_000);
       expect(decoder.decode((await reader?.read())?.value)).toBe("\n");
-      finish(0);
+      exited.resolve(0);
       let rest = "";
       for (;;) {
         const chunk = await reader?.read();

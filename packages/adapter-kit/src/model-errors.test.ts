@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   isModelCredentialRejected,
@@ -39,6 +40,10 @@ describe("transient model errors", () => {
     ["service unavailable", { status: 503, message: "service unavailable" }],
     ["bad gateway", new Error("502 Bad Gateway")],
     ["empty truncated stream", new Error("Stream ended without finish_reason")],
+    [
+      "stream ended without a finish reason",
+      new Error("Example stream ended without a finish reason"),
+    ],
     ["stream ended before its stop event", new Error("Anthropic stream ended before message_stop")],
     ["error injected into the stream", new Error("JSON error injected into SSE stream")],
     ["dropped fetch body", new TypeError("terminated")],
@@ -438,6 +443,33 @@ describe("provider availability classification", () => {
   });
 });
 
+describe("OpenAI prepaid credit exhaustion", () => {
+  const noCredits = [
+    "You have no credits remaining. Add credits to continue using the API at",
+    "https://example.test/credits.",
+  ].join(" ");
+
+  it.each([
+    ["statusless no-credits message", new Error(noCredits)],
+    [
+      "statusless credit_balance_exhausted text",
+      new Error(`credit_balance_exhausted: ${noCredits}`),
+    ],
+    ["code only", { code: "credit_balance_exhausted" }],
+    ["HTTP 429 credit_balance_exhausted", { status: 429, code: "credit_balance_exhausted" }],
+  ])("moves to a backup without retrying the same model: %s", (_label, error) => {
+    expect(isRetryableProviderUnavailable(error)).toBe(true);
+    expect(isTransientModelError(error)).toBe(false);
+  });
+
+  it.each([`401 invalid_api_key: ${noCredits}`, `${noCredits} invalid api key`])(
+    "does not treat a credit message with an auth marker as fallback-eligible: %s",
+    (error) => {
+      expect(isRetryableProviderUnavailable(new Error(error))).toBe(false);
+    },
+  );
+});
+
 describe("rejected model credentials", () => {
   it.each([
     '401 {"type":"error","error":{"type":"authentication_error","message":"OAuth access token has been revoked."}}',
@@ -511,5 +543,18 @@ describe("sign-in retry requests", () => {
     );
     expect(isSignInRetryRequest(error)).toBe(true);
     expect(isTransientModelError(error)).toBe(false);
+  });
+});
+
+describe("status codes in long messages", () => {
+  it("reads a status after spacing and a separator", () => {
+    expect(isModelCredentialRejected("status code =  401 invalid api key")).toBe(true);
+  });
+
+  it("stays fast on long runs of spacing after a status word", () => {
+    expectLinearTime(() => {
+      isTransientModelError(`status${"\t".repeat(200_000)}x`);
+      isModelCredentialRejected(`http status${"\t".repeat(200_000)}x`);
+    });
   });
 });
