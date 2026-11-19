@@ -182,7 +182,7 @@ describe("buildApprovalAskBlock", () => {
   });
 });
 
-it("shows the full instruction replacement as a diff with Apply and Dismiss", () => {
+it("shows the instruction change as a line diff with Apply and Dismiss", () => {
   const block = buildApprovalAskBlock(
     "effect-1",
     "update_bot",
@@ -197,7 +197,7 @@ it("shows the full instruction replacement as a diff with Apply and Dismiss", ()
   );
   expect(block).toMatchObject({
     kind: "ask",
-    detail: "- Draft only\n+ Draft only\n+ Ask before sending",
+    detail: "  Draft only\n+ Ask before sending",
     instructionUpdate: {
       botId: "bot-1",
       before: "Draft only",
