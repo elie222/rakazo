@@ -20,6 +20,12 @@ it("normalizes mixed-case suffixes on child nodes", () => {
   expect(child.props.style).toEqual({ width: "32px" });
 });
 
+it("removes priorities written with a space after the bang", () => {
+  const root = node({ strokeWidth: "26.83px ! important", fill: "important" });
+  catalogSvgStyles(root);
+  expect(root.props.style).toEqual({ strokeWidth: "26.83px", fill: "important" });
+});
+
 it("preserves artwork text and unrelated attributes", () => {
   const root = node({});
   root.children.push(' style="!important"');

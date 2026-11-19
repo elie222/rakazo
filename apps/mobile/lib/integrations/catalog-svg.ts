@@ -13,9 +13,9 @@ export const catalogSvgStyles: Middleware = (root) => {
       for (const [property, value] of Object.entries(style)) {
         if (typeof value !== "string") continue;
         const trimmed = value.trimEnd();
-        if (trimmed.slice(-10).toLowerCase() === "!important") {
-          style[property] = trimmed.slice(0, -10).trimEnd();
-        }
+        if (trimmed.slice(-9).toLowerCase() !== "important") continue;
+        const beforeWord = trimmed.slice(0, -9).trimEnd();
+        if (beforeWord.endsWith("!")) style[property] = beforeWord.slice(0, -1).trimEnd();
       }
     }
     for (const child of node.children) if (typeof child !== "string") pending.push(child);
