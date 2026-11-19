@@ -2707,15 +2707,22 @@ describe("createMessagingInboundHandler owner commands", () => {
       steeringMessage: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     });
     deps.sendUserMessage.mockResolvedValue({ messageId: "msg-1", runId: "run-1", seq: 3 });
-    const handle = createMessagingInboundHandler(deps);
-    const stop = handle({ ...dmEvent, handle: "handle-0", content: "stop" });
-    const photo = handle(photoEvent);
-    await flush();
-    cancelling.resolve([]);
-    await Promise.all([stop, photo]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const handle = createMessagingInboundHandler(deps);
+      const stop = handle({ ...dmEvent, handle: "handle-0", content: "stop" });
+      const photo = handle(photoEvent);
+      await flush();
+      // The stop's reply row is written; time passes while it finishes.
+      vi.setSystemTime(Date.now() + 1_000);
+      cancelling.resolve([]);
+      await Promise.all([stop, photo]);
 
-    await vi.waitFor(() => expect(deps.sendUserMessage).toHaveBeenCalledOnce());
-    expect(deps.sendUserMessage.mock.lastCall![0]).not.toHaveProperty("createRun");
+      await vi.waitFor(() => expect(deps.sendUserMessage).toHaveBeenCalledOnce());
+      expect(deps.sendUserMessage.mock.lastCall![0]).not.toHaveProperty("createRun");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("answers a stop once, even when the provider redelivers it", async () => {
