@@ -108,6 +108,7 @@ export function usePageDocument(
       reply,
       bottomInset,
       review,
+      reviewAnchor,
       i18n.locale,
     ],
   );

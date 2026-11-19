@@ -30,8 +30,9 @@ const reviewWhere = (userId: string): Prisma.PageWhereInput => ({
   grants: { some: grantWhere(userId) },
 });
 
-export async function reviewAccess(db: Db, userId: string, pageId: string, ownerOnly = false) {
-  const owner = pageOwnerWhere(userId);
+async function reviewAccess(db: Db, actor: Actor, pageId: string, ownerOnly = false) {
+  const { userId, spaceId } = actor;
+  const owner = pageOwnerWhere(actor);
   const page = await db.page.findFirst({
     where: { id: pageId, OR: ownerOnly ? [owner] : [owner, reviewWhere(userId)] },
     select: {
@@ -42,11 +43,16 @@ export async function reviewAccess(db: Db, userId: string, pageId: string, owner
       title: true,
       visibility: true,
       currentVersion: true,
-      grants: { where: grantWhere(userId), select: { id: true, firstVersion: true } },
+      grants: {
+        where: grantWhere(userId),
+        orderBy: [{ firstVersion: "asc" }, { id: "asc" }],
+        take: 1,
+        select: { id: true, firstVersion: true },
+      },
     },
   });
   if (!page) throw new IsolationError();
-  const isOwner = page.userId === userId;
+  const isOwner = page.userId === userId && page.spaceId === spaceId;
   const grant = page.grants[0];
   if (!isOwner && (page.visibility !== "people" || !grant)) throw new IsolationError();
   return { page, owner: isOwner, grant: isOwner ? undefined : grant };
@@ -61,10 +67,9 @@ export function readPageReview<T>(
   ownerOnly = false,
 ) {
   return runAsSystem("authorized page review read", () =>
-    prisma.$transaction(
-      async (tx) => work(tx, await reviewAccess(tx, actor.userId, pageId, ownerOnly)),
-      { isolationLevel: "RepeatableRead" },
-    ),
+    prisma.$transaction(async (tx) => work(tx, await reviewAccess(tx, actor, pageId, ownerOnly)), {
+      isolationLevel: "RepeatableRead",
+    }),
   );
 }
 
@@ -77,9 +82,9 @@ export function writePageReview<T>(
 ) {
   return runAsSystem("authorized page review write", () =>
     prisma.$transaction(async (tx) => {
-      await reviewAccess(tx, actor.userId, pageId, ownerOnly);
+      await reviewAccess(tx, actor, pageId, ownerOnly);
       await lockPage(tx, pageId);
-      return work(tx, await reviewAccess(tx, actor.userId, pageId, ownerOnly));
+      return work(tx, await reviewAccess(tx, actor, pageId, ownerOnly));
     }),
   );
 }
@@ -134,10 +139,10 @@ export function getPageGrants(prisma: PrismaClient, actor: Actor, pageId: string
       if (page.visibility !== "people") return [];
       const grants = await tx.pageGrant.findMany({
         where: { pageId },
-        select: { id: true, user: { select: { name: true, email: true } } },
-        orderBy: { user: { email: "asc" } },
+        select: { id: true, recipientEmail: true },
+        orderBy: { recipientEmail: "asc" },
       });
-      return grants.map(({ id, user }) => ({ id, ...user }));
+      return grants.map(({ id, recipientEmail }) => ({ id, email: recipientEmail }));
     },
     true,
   );
@@ -155,25 +160,36 @@ export async function grantPage(
     async (tx, { page }) => {
       if (page.visibility !== "people")
         throw new ClientError("CONFLICT", "Choose Specific people before adding someone");
-      const users = await tx.user.findMany({
-        where: { ...verifiedPageAccount, email: { equals: email, mode: "insensitive" } },
-        select: { id: true, email: true, name: true },
-        take: 2,
-      });
-      const user = users[0];
-      if (!user || users.length !== 1 || user.id === actor.userId)
-        throw new ClientError("NOT_FOUND", "No eligible account uses that email");
-      const where = { pageId_userId: { pageId, userId: user.id } };
-      const existing = await tx.pageGrant.findUnique({ where, select: { id: true } });
+      const recipientEmail = email.toLowerCase();
+      const where = { pageId_recipientEmail: { pageId, recipientEmail } };
+      const existing = await tx.pageGrant.findUnique({ where });
       if (!existing && (await tx.pageGrant.count({ where: { pageId } })) >= MAX_GRANTS)
         throw new ClientError("CONFLICT", "This page has reached its sharing limit");
-      const row =
-        existing ??
-        (await tx.pageGrant.create({
-          data: { pageId, userId: user.id, firstVersion: page.currentVersion },
-          select: { id: true },
-        }));
-      return { id: row.id, name: user.name, email: user.email, userId: user.id };
+      // The owner sees only the address they entered, even when it cannot be bound to a reviewer.
+      const users = await tx.user.findMany({
+        where: { ...verifiedPageAccount, email: { equals: recipientEmail, mode: "insensitive" } },
+        select: { id: true },
+        take: 2,
+      });
+
+      const recipient = users[0];
+      const userId = existing?.bound
+        ? existing.userId
+        : users.length === 1 && recipient && recipient.id !== actor.userId
+          ? recipient.id
+          : null;
+      const binding = {
+        userId,
+        bound: Boolean(existing?.bound || userId),
+        firstVersion: existing?.bound ? existing.firstVersion : page.currentVersion,
+      };
+      const row = await tx.pageGrant.upsert({
+        where,
+        create: { pageId, recipientEmail, ...binding },
+        update: binding,
+        select: { id: true },
+      });
+      return { id: row.id, email: recipientEmail, userId };
     },
     true,
   );
@@ -241,10 +257,14 @@ export function pageComments(
         createdAt: true,
         resolvedAt: true,
         author: { select: { name: true } },
-        request: { select: { status: true, resultVersion: true, grantId: true } },
+        requests: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, status: true, resultVersion: true, grantId: true },
+        },
       },
     });
-    const requestGrants = rows.flatMap(({ request }) =>
+    const requestGrants = rows.flatMap(({ requests: [request] }) =>
       request?.grantId ? [request.grantId] : [],
     );
     const active = new Set(
@@ -256,7 +276,7 @@ export function pageComments(
       ).map(({ id }) => id),
     );
     return {
-      items: rows.slice(0, LIST_SIZE).map((row) => ({
+      items: rows.slice(0, LIST_SIZE).map(({ requests: [request], ...row }) => ({
         id: row.id,
         author: row.author?.name ?? null,
         mine: row.authorId === actor.userId,
@@ -265,15 +285,18 @@ export function pageComments(
         body: row.body,
         createdAt: row.createdAt.toISOString(),
         resolvedAt: row.resolvedAt?.toISOString() ?? null,
-        revision: row.request && {
-          status:
-            row.request.grantId &&
-            !active.has(row.request.grantId) &&
-            (row.request.status === "pending" || row.request.status === "ready")
-              ? "cancelled"
-              : PageRevisionStatus.parse(row.request.status),
-          resultVersion: row.request.resultVersion,
-        },
+        revision: request
+          ? {
+              id: request.id,
+              status:
+                request.grantId &&
+                !active.has(request.grantId) &&
+                (request.status === "pending" || request.status === "ready")
+                  ? "cancelled"
+                  : PageRevisionStatus.parse(request.status),
+              resultVersion: request.resultVersion,
+            }
+          : null,
       })),
       nextCursor: rows.length > LIST_SIZE ? rows[LIST_SIZE - 1]!.id : null,
     };

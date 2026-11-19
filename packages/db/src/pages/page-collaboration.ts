@@ -7,9 +7,11 @@ import type { ThreadEvents } from "../threads/events.js";
 
 export const pageChangesScope = (userId: string) => `pages:${userId}`;
 
-export function signalPageUsers(events: ThreadEvents, userIds: readonly string[]) {
+export function signalPageUsers(events: ThreadEvents, userIds: readonly (string | null)[]) {
   return Promise.all(
-    [...new Set(userIds)].map((id) => events.publishSpaceChange?.(pageChangesScope(id), "pages")),
+    [...new Set(userIds)]
+      .filter((id) => id !== null)
+      .map((id) => events.publishSpaceChange?.(pageChangesScope(id), "pages")),
   );
 }
 
@@ -55,8 +57,15 @@ export async function lockPage(tx: Prisma.TransactionClient, pageId: string) {
 export const activePageAccount = { deactivatedAt: null };
 export const verifiedPageAccount = { ...activePageAccount, emailVerified: true };
 
-export const pageOwnerWhere = (userId: string): Prisma.PageWhereInput => ({
+export const pageOwnerWhere = ({
   userId,
+  spaceId,
+}: {
+  userId: string;
+  spaceId: string;
+}): Prisma.PageWhereInput => ({
+  userId,
+  spaceId,
   user: activePageAccount,
   space: { memberships: { some: { userId } } },
 });

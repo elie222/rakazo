@@ -1,3 +1,4 @@
+import type { PageVisibility } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const publishMessage = vi.fn();
@@ -14,7 +15,7 @@ const source = (heading: string) =>
 
 function context(
   tx: Record<string, unknown>,
-  existing?: { currentVersion: number; visibility?: "private" | "link" },
+  existing?: { currentVersion: number; visibility?: PageVisibility },
   secrets: string[] = [],
   skipApprovals = false,
 ) {
@@ -183,29 +184,35 @@ describe("save_page", () => {
   });
 });
 
-describe("saving a page shared by link", () => {
+describe("saving a shared page", () => {
   const edit = { find: "Hi", replace: "Hello" };
 
-  it("holds a change to a shared page for approval, showing what changes", async () => {
-    const held = request({ pageId: "page-1", edits: [edit], approvedVersion: 9 });
-    await holdSharedPageSave(context({}, { currentVersion: 1, visibility: "link" }), held as never);
-    expect(held.heldForApproval).toBe(true);
-    expect(held.fleetSummary).toEqual({
-      title: "Update shared page “Plan”?",
-      lines: ["-     <Text>Hi</Text>", "+     <Text>Hello</Text>"],
-    });
-    // The approval pins the version the card was shown against, never one the model sent.
-    expect(held.args).toMatchObject({ approvedVersion: 1 });
-    expect(held.effectRequest).toBe(held.args);
+  it.each(["link", "people"] as const)(
+    "holds a %s share for approval, showing what changes",
+    async (visibility) => {
+      const held = request({ pageId: "page-1", edits: [edit], approvedVersion: 9 });
+      await holdSharedPageSave(context({}, { currentVersion: 1, visibility }), held as never);
+      expect(held.heldForApproval).toBe(true);
+      expect(held.fleetSummary).toEqual({
+        title: "Update shared page “Plan”?",
+        lines: ["-     <Text>Hi</Text>", "+     <Text>Hello</Text>"],
+      });
+      // The approval pins the version the card was shown against, never one the model sent.
+      expect(held.args).toMatchObject({ approvedVersion: 1, approvedVisibility: visibility });
+      expect(held.effectRequest).toBe(held.args);
 
-    // A whole new source shows only the lines that change too.
-    const whole = request({ pageId: "page-1", source: source("Plan").replace("Hi", "Bye") });
-    await holdSharedPageSave(
-      context({}, { currentVersion: 1, visibility: "link" }),
-      whole as never,
-    );
-    expect(whole.fleetSummary?.lines).toEqual(["-     <Text>Hi</Text>", "+     <Text>Bye</Text>"]);
-  });
+      // A whole new source shows only the lines that change too.
+      const whole = request({ pageId: "page-1", source: source("Plan").replace("Hi", "Bye") });
+      await holdSharedPageSave(
+        context({}, { currentVersion: 1, visibility: "link" }),
+        whole as never,
+      );
+      expect(whole.fleetSummary?.lines).toEqual([
+        "-     <Text>Hi</Text>",
+        "+     <Text>Bye</Text>",
+      ]);
+    },
+  );
 
   it("lets a save that would fail anyway fail without a card", async () => {
     const shared = { currentVersion: 1, visibility: "link" as const };
@@ -313,19 +320,30 @@ describe("saving a page shared by link", () => {
     expect(tx.pageVersion.create).not.toHaveBeenCalled();
   });
 
-  it("tells the bot a page is shared when it saves an approved change", async () => {
-    const updateMany = vi.fn(async () => ({ count: 1 }));
-    const tx = {
-      page: { updateMany, findUniqueOrThrow: vi.fn(async () => ({ title: "Plan" })) },
-      pageVersion: { create: vi.fn() },
-    };
-    const result = (await pageTools.save_page!(
-      context(tx, { currentVersion: 1, visibility: "link" }),
-      call({ pageId: "page-1", edits: [edit] }, { nextApprovedTool: "save_page" }),
-    )) as Record<string, unknown>;
-    expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "page-1", currentVersion: 1 } }),
-    );
-    expect(result).toMatchObject({ version: 2, sharedByLink: true });
-  });
+  it.each([
+    ["link", "sharedByLink"],
+    ["people", "sharedWithPeople"],
+  ] as const)(
+    "keeps approved %s saves fenced to the reviewed audience and reports the share",
+    async (visibility, hint) => {
+      const updateMany = vi.fn(async () => ({ count: 1 }));
+      const tx = {
+        page: { updateMany, findUniqueOrThrow: vi.fn(async () => ({ title: "Plan" })) },
+        pageVersion: { create: vi.fn() },
+      };
+      const result = (await pageTools.save_page!(
+        context(tx, { currentVersion: 1, visibility }),
+        call(
+          { pageId: "page-1", edits: [edit], approvedVersion: 1, approvedVisibility: visibility },
+          { nextApprovedTool: "save_page" },
+        ),
+      )) as Record<string, unknown>;
+      expect(updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "page-1", currentVersion: 1, visibility: { in: ["private", visibility] } },
+        }),
+      );
+      expect(result).toMatchObject({ version: 2, [hint]: true });
+    },
+  );
 });

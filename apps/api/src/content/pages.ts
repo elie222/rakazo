@@ -258,7 +258,7 @@ async function swapPageShare(
   } | null,
   scope: { spaceId: string; userId: string },
   visibility: PageVisibility,
-): Promise<{ kept: boolean; replaced: PageShareSecret | null; revoked: string[] }> {
+): Promise<{ kept: boolean; replaced: PageShareSecret | null; revoked: (string | null)[] }> {
   for (let attempt = 0; ; attempt++) {
     const outcome = await runAsSystem("change sharing on an owned page", () =>
       prisma.$transaction(async (tx) => {

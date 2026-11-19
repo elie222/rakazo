@@ -9,7 +9,7 @@ import { errorText } from "../../lib/query/user-error";
 
 type CommentAction =
   | { kind: "resolve"; id: string; resolved: boolean }
-  | { kind: "ask"; id: string }
+  | { kind: "ask"; id: string; retryOf?: string }
   | { kind: "add"; id: string; section: string; body: string };
 
 export function PageReviewComments({
@@ -47,7 +47,8 @@ export function PageReviewComments({
       const commentId = action.id;
       if (action.kind === "resolve")
         return rpc.pageReviews.resolve({ pageId, commentId, resolved: action.resolved });
-      if (action.kind === "ask") return rpc.pageReviews.askRevision({ pageId, commentId });
+      if (action.kind === "ask")
+        return rpc.pageReviews.askRevision({ pageId, commentId, retryOf: action.retryOf });
       await rpc.pageReviews.comment({
         pageId,
         submissionId: commentId,
@@ -148,7 +149,7 @@ export function PageReviewComments({
                 current &&
                 comment.version === page.version &&
                 comment.revision?.status === "ready" ? (
-                  <Button variant="outline" size="xs" onClick={() => onDraft(comment.id)}>
+                  <Button variant="outline" size="xs" onClick={() => onDraft(comment.revision!.id)}>
                     <Trans>Preview draft</Trans>
                   </Button>
                 ) : null}
@@ -156,13 +157,17 @@ export function PageReviewComments({
                 page.canRequestRevision &&
                 current &&
                 comment.version === page.version &&
-                !comment.revision &&
+                (!comment.revision ||
+                  comment.revision.status === "failed" ||
+                  comment.revision.status === "cancelled") &&
                 !comment.resolvedAt ? (
                   <Button
                     variant="outline"
                     size="xs"
                     disabled={save.pending}
-                    onClick={() => save.run({ kind: "ask", id: comment.id })}
+                    onClick={() =>
+                      save.run({ kind: "ask", id: comment.id, retryOf: comment.revision?.id })
+                    }
                   >
                     <Trans>Ask bot to revise</Trans>
                   </Button>

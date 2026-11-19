@@ -125,13 +125,13 @@ export const artifactsRpc = {
       .input(PageAccessInput.extend({ commentId: Id, resolved: z.boolean() }))
       .output(z.object({ ok: z.literal(true) })),
     askRevision: oc
-      .input(PageAccessInput.extend({ commentId: Id }))
+      .input(PageAccessInput.extend({ commentId: Id, retryOf: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
     draft: oc
-      .input(PageAccessInput.extend({ commentId: Id }))
+      .input(PageAccessInput.extend({ requestId: Id }))
       .output(z.object({ code: z.string() })),
     publish: oc
-      .input(PageAccessInput.extend({ commentId: Id }))
+      .input(PageAccessInput.extend({ requestId: Id }))
       .output(z.object({ version: PageVersionNumber })),
   },
   pages: {

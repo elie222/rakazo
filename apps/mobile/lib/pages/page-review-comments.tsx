@@ -17,7 +17,7 @@ import { ACCOUNT_SETTINGS } from "../query/settings-target";
 
 type CommentAction =
   | { kind: "resolve"; id: string; resolved: boolean }
-  | { kind: "ask"; id: string }
+  | { kind: "ask"; id: string; retryOf?: string }
   | { kind: "add"; id: string; section: string; body: string };
 
 export function PageReviewComments({
@@ -53,7 +53,8 @@ export function PageReviewComments({
     target: ACCOUNT_SETTINGS,
     save: async (action: CommentAction, send) => {
       const commentId = action.id;
-      if (action.kind === "ask") return send("pageReviews/askRevision", { pageId, commentId });
+      if (action.kind === "ask")
+        return send("pageReviews/askRevision", { pageId, commentId, retryOf: action.retryOf });
       if (action.kind === "resolve")
         return send("pageReviews/resolve", { pageId, commentId, resolved: action.resolved });
       await send("pageReviews/comment", {
@@ -191,20 +192,24 @@ export function PageReviewComments({
                 key="draft"
                 title={t`Preview draft`}
                 chevron="right"
-                onPress={() => onDraft(comment.id)}
+                onPress={() => onDraft(comment.revision!.id)}
               />
             ) : null}
             {canAct &&
             page.canRequestRevision &&
             current &&
             version === page.version &&
-            !comment.revision &&
+            (!comment.revision ||
+              comment.revision.status === "failed" ||
+              comment.revision.status === "cancelled") &&
             !comment.resolvedAt ? (
               <SettingsRow
                 key="ask"
                 title={t`Ask bot to revise`}
                 disabled={save.pending}
-                onPress={() => save.run({ kind: "ask", id: comment.id })}
+                onPress={() =>
+                  save.run({ kind: "ask", id: comment.id, retryOf: comment.revision?.id })
+                }
               />
             ) : null}
             {canAct ? (

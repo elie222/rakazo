@@ -65,14 +65,14 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
   const review = useQuery({ ...read, refetchOnMount: "always", refetchOnWindowFocus: "always" });
   const page = review.isError ? undefined : review.data;
   const draft = useQuery({
-    ...queries.pageReviews.draft.queryOptions({ input: { pageId, commentId: draftId ?? "" } }),
+    ...queries.pageReviews.draft.queryOptions({ input: { pageId, requestId: draftId ?? "" } }),
     enabled: Boolean(page?.owner && draftId),
     gcTime: 0,
   });
   const code = draftId ? (draft.isError ? undefined : draft.data?.code) : page?.code;
   const preview = usePageDocument(code, "card", false, 0, !draftId, revision?.section);
   const publish = useSave({
-    save: (commentId: string, rpc) => rpc.pageReviews.publish({ pageId, commentId }),
+    save: (requestId: string, rpc) => rpc.pageReviews.publish({ pageId, requestId }),
     stale: [
       queries.pageReviews.get.key(),
       queries.pageReviews.comments.key(),

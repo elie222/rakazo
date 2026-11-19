@@ -16,7 +16,7 @@ export const PageReviewSchema = z.strictObject({
   canRequestRevision: z.boolean(),
 });
 
-export const PageGrantSchema = z.strictObject({ id: Id, email: z.string(), name: z.string() });
+export const PageGrantSchema = z.strictObject({ id: Id, email: z.string() });
 export const PageRevisionStatus = z.enum(["pending", "ready", "published", "failed", "cancelled"]);
 
 export const PageCommentSchema = z.strictObject({
@@ -30,6 +30,7 @@ export const PageCommentSchema = z.strictObject({
   resolvedAt: IsoDate.nullable(),
   revision: z
     .strictObject({
+      id: Id,
       status: PageRevisionStatus,
       resultVersion: PageVersionNumber.nullable(),
     })

@@ -2066,14 +2066,17 @@ model PageVersion {
 }
 
 model PageGrant {
-  id           String @id @default(cuid())
-  pageId       String
-  page         Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  firstVersion Int
+  id             String @id @default(cuid())
+  pageId         String
+  page           Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  recipientEmail String
+  userId         String?
+  user           User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// Retains the binding when the account is deleted. It takes a fresh grant to share the address again.
+  bound          Boolean @default(false)
+  firstVersion   Int
 
-  @@unique([pageId, userId])
+  @@unique([pageId, recipientEmail])
   @@index([userId, pageId])
   @@map("page_grants")
 }
@@ -2089,7 +2092,7 @@ model PageComment {
   body       String
   createdAt  DateTime @default(now())
   resolvedAt DateTime?
-  request    PageRevisionRequest?
+  requests   PageRevisionRequest[]
 
   @@index([pageId, createdAt, id])
   @@map("page_comments")
@@ -2097,7 +2100,9 @@ model PageComment {
 
 model PageRevisionRequest {
   id          String @id @default(cuid())
-  commentId   String @unique
+  commentId   String
+  /// A reviewer can explicitly retry a terminal request once. Replays reuse the same retry.
+  retryOf     String? @unique
   comment     PageComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
   requesterId String
   /// The exact grant at submission. A later grant does not reinstate work from this one.
@@ -2109,6 +2114,7 @@ model PageRevisionRequest {
   resultVersion Int?
 
   @@index([grantId])
+  @@index([commentId, createdAt])
   @@map("page_revision_requests")
 }
 

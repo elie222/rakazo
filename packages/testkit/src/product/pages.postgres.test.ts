@@ -156,14 +156,41 @@ describePages("pages", () => {
     await rpc(app, owner, "pages/setVisibility", { ...input, visibility: "people" });
     expect((await app.request(`${SHARED_PAGE_PATH_PREFIX}${token}`)).status).toBe(404);
 
+    const otherSpace = await rpc<{ id: string }>(app, owner, "spaces/create", { name: "Other" });
+    for (const procedure of ["pageReviews/get", "pageReviews/comments", "pageReviews/grants"]) {
+      expect((await raw(app, owner, procedure, input, otherSpace.id)).status, procedure).toBe(404);
+    }
     expect(
-      (await raw(app, owner, "pageReviews/grant", { ...input, email: reviewerEmail })).status,
+      (
+        await raw(
+          app,
+          owner,
+          "pageReviews/grant",
+          { ...input, email: reviewerEmail },
+          otherSpace.id,
+        )
+      ).status,
     ).toBe(404);
+    const pendingGrant = await rpc<{ id: string; email: string }>(app, owner, "pageReviews/grant", {
+      ...input,
+      email: reviewerEmail,
+    });
+    const unknownEmail = "unknown-review-account@example.test";
+    const unknown = await rpc<{ id: string; email: string }>(app, owner, "pageReviews/grant", {
+      ...input,
+      email: unknownEmail,
+    });
+    expect(pendingGrant).toEqual({ id: expect.any(String), email: reviewerEmail });
+    expect(unknown).toEqual({ id: expect.any(String), email: unknownEmail });
+    expect(await rpc(app, owner, "pageReviews/grants", input)).toEqual([pendingGrant, unknown]);
+    expect((await raw(app, reviewer, "pageReviews/get", input)).status).toBe(404);
     await db().user.update({ where: { id: reviewerId }, data: { emailVerified: true } });
+    expect((await raw(app, reviewer, "pageReviews/get", input)).status).toBe(404);
     const grant = await rpc<{ id: string }>(app, owner, "pageReviews/grant", {
       ...input,
       email: reviewerEmail.toUpperCase(),
     });
+    expect(grant).toEqual(pendingGrant);
     expect(await rpc(app, reviewer, "pageReviews/list")).toMatchObject({
       items: [{ id: pageId, title }],
     });
@@ -218,27 +245,43 @@ describePages("pages", () => {
       (await raw(app, outsider, "pageReviews/askRevision", { ...input, commentId })).status,
     ).toBe(404);
     const reviewRequest = { ...input, commentId };
-    const draftSource = page("Updated by the bot");
-    revisionCalls.mockResolvedValue(draftSource);
-    await rpc(app, reviewer, "pageReviews/askRevision", reviewRequest);
-    await rpc(app, reviewer, "pageReviews/askRevision", reviewRequest);
-    await vi.waitFor(async () => {
-      expect(await rpc(app, owner, "pageReviews/draft", reviewRequest)).toEqual({
-        code: pageViewerCode(draftSource),
+    const newestRequest = (id: string) =>
+      db().pageRevisionRequest.findFirstOrThrow({
+        where: { commentId: id },
+        orderBy: { createdAt: "desc" },
       });
+    revisionCalls.mockResolvedValueOnce("invalid page source");
+    await rpc(app, reviewer, "pageReviews/askRevision", reviewRequest);
+    await vi.waitFor(async () => expect((await newestRequest(commentId)).status).toBe("failed"));
+    const failed = await newestRequest(commentId);
+
+    const draftSource = page("Updated by the bot").trim();
+    revisionCalls.mockResolvedValue(draftSource);
+    const retry = { ...reviewRequest, retryOf: failed.id };
+    await rpc(app, reviewer, "pageReviews/askRevision", retry);
+    await rpc(app, reviewer, "pageReviews/askRevision", retry);
+    await vi.waitFor(async () => expect((await newestRequest(commentId)).status).toBe("ready"));
+    const ready = await newestRequest(commentId);
+    const reviewedDraft = { ...input, requestId: ready.id };
+    expect(ready.id).not.toBe(failed.id);
+    expect(await rpc(app, owner, "pageReviews/draft", reviewedDraft)).toEqual({
+      code: pageViewerCode(draftSource),
     });
-    expect(revisionCalls).toHaveBeenCalledTimes(1);
-    const request = revisionCalls.mock.calls[0]![0];
+    expect(revisionCalls).toHaveBeenCalledTimes(2);
+    const request = revisionCalls.mock.calls[1]![0];
     expect(request).toMatchObject({ botId: bot.id, history: [], tools: [] });
     expect(JSON.parse(request.prompt)).toEqual({
       source: page("Ready for review"),
       reviewedSection: comment.section,
       reviewerFeedback: feedback,
     });
-    expect((await raw(app, reviewer, "pageReviews/draft", reviewRequest)).status).toBe(404);
-    expect((await raw(app, reviewer, "pageReviews/publish", reviewRequest)).status).toBe(404);
-    expect(await rpc(app, owner, "pageReviews/publish", reviewRequest)).toEqual({ version: 3 });
-    expect(await rpc(app, owner, "pageReviews/publish", reviewRequest)).toEqual({ version: 3 });
+    expect((await raw(app, reviewer, "pageReviews/draft", reviewedDraft)).status).toBe(404);
+    expect((await raw(app, reviewer, "pageReviews/publish", reviewedDraft)).status).toBe(404);
+    expect(
+      (await raw(app, owner, "pageReviews/publish", { ...input, requestId: failed.id })).status,
+    ).toBe(409);
+    expect(await rpc(app, owner, "pageReviews/publish", reviewedDraft)).toEqual({ version: 3 });
+    expect(await rpc(app, owner, "pageReviews/publish", reviewedDraft)).toEqual({ version: 3 });
     expect(await rpc(app, reviewer, "pageReviews/get", input)).toMatchObject({
       version: 3,
       code: pageViewerCode(draftSource),
@@ -297,13 +340,16 @@ describePages("pages", () => {
       complete.resolve(page("Revoked result"));
     }
     await vi.waitFor(async () => {
-      const row = await db().pageRevisionRequest.findUniqueOrThrow({
-        where: { commentId: inFlightId },
-      });
+      const row = await newestRequest(inFlightId);
       expect(row).toMatchObject({ status: "cancelled", draftSource: null, draftCode: null });
     });
     expect(
-      (await raw(app, owner, "pageReviews/publish", { ...input, commentId: inFlightId })).status,
+      (
+        await raw(app, owner, "pageReviews/publish", {
+          ...input,
+          requestId: (await newestRequest(inFlightId)).id,
+        })
+      ).status,
     ).toBe(404);
     await rpc(app, owner, "pages/setVisibility", { ...input, visibility: "private" });
     expect(await rpc(app, reviewer, "pageReviews/list")).toEqual({ items: [], nextCursor: null });

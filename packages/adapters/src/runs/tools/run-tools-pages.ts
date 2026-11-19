@@ -143,7 +143,7 @@ export async function holdSharedPageSave(
     return undefined;
   }
   // Only a card the user approved pins a version.
-  const { approvedVersion: _ignored, ...args } = request.args;
+  const { approvedVersion: _version, approvedVisibility: _visibility, ...args } = request.args;
   request.args = args;
   request.effectRequest = args;
   if (args.help === true || !argumentGiven(args.pageId)) return undefined;
@@ -160,7 +160,7 @@ export async function holdSharedPageSave(
       versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
     },
   });
-  if (page?.visibility !== "link") return undefined;
+  if (!page || !["link", "people"].includes(page.visibility)) return undefined;
   const parsedTitle = hasTitle ? PageTitleSchema.safeParse(args.title) : undefined;
   if (parsedTitle && !parsedTitle.success) return undefined;
   const current = page.versions[0]?.source ?? "";
@@ -179,14 +179,24 @@ export async function holdSharedPageSave(
   if (redactSecrets(lines.join("\n"), ctx.secrets).length > MAX_APPROVAL_DETAIL_LENGTH)
     return {
       error:
-        "This page is shared by link, and this change is too long to show the user for approval. Save it as several smaller edits.",
+        "This page is shared, and this change is too long to show the user for approval. Save it as several smaller edits.",
     };
   const title = page.title.replace(new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g"), "\\$&");
-  request.args = { ...args, approvedVersion: page.currentVersion };
+  request.args = {
+    ...args,
+    approvedVersion: page.currentVersion,
+    approvedVisibility: page.visibility,
+  };
   request.effectRequest = request.args;
   request.heldForApproval = true;
   request.fleetSummary = { title: `Update shared page “${title}”?`, lines };
   return undefined;
+}
+
+function pageSharingHint(visibility: string | undefined) {
+  if (visibility === "link") return { sharedByLink: true };
+  if (visibility === "people") return { sharedWithPeople: true };
+  return {};
 }
 
 async function savePage(ctx: RunContext, call: ToolCall) {
@@ -227,7 +237,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       pageId: page.id,
       version: page.currentVersion,
       title: page.title,
-      ...(page.visibility === "link" ? { sharedByLink: true } : {}),
+      ...pageSharingHint(page.visibility),
       source: current,
     };
   }
@@ -238,6 +248,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   // An approved change applies only to the version the user saw it against.
   if (page && args.approvedVersion !== undefined && args.approvedVersion !== page.currentVersion)
     return { error: "The page changed while saving; read it again and retry.", unchanged: true };
+  // Older approval cards were only issued for link sharing.
+  const approvedVisibility =
+    call.nextApprovedTool === "save_page"
+      ? args.approvedVisibility === "people"
+        ? "people"
+        : "link"
+      : undefined;
   const proposed = proposedSource(current, args);
   if (!proposed.ok) return { error: proposed.error, unchanged: true };
   const { source } = proposed;
@@ -284,8 +301,10 @@ async function savePage(ctx: RunContext, call: ToolCall) {
           id: page.id,
           currentVersion: page.currentVersion,
           ...(unapproved
-            ? { visibility: page.visibility === "people" ? "people" : "private" }
-            : {}),
+            ? { visibility: "private" }
+            : approvedVisibility
+              ? { visibility: { in: ["private", approvedVisibility] } }
+              : {}),
         },
         data: { currentVersion: version, title, updatedAt: new Date() },
       });
@@ -330,7 +349,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
   const result = {
     ...saved,
-    ...(page?.visibility === "link" ? { sharedByLink: true } : {}),
+    ...pageSharingHint(page?.visibility),
     mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
   };
   return check.warnings?.length ? { ...result, warnings: check.warnings } : result;

@@ -1,10 +1,12 @@
 CREATE TABLE "page_grants" (
   "id" TEXT PRIMARY KEY,
   "pageId" TEXT NOT NULL REFERENCES "pages"("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  "userId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "recipientEmail" TEXT NOT NULL,
+  "userId" TEXT REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "bound" BOOLEAN NOT NULL DEFAULT false,
   "firstVersion" INTEGER NOT NULL
 );
-CREATE UNIQUE INDEX "page_grants_pageId_userId_key" ON "page_grants"("pageId", "userId");
+CREATE UNIQUE INDEX "page_grants_pageId_recipientEmail_key" ON "page_grants"("pageId", "recipientEmail");
 CREATE INDEX "page_grants_userId_pageId_idx" ON "page_grants"("userId", "pageId");
 
 CREATE TABLE "page_comments" (
@@ -22,6 +24,7 @@ CREATE INDEX "page_comments_pageId_createdAt_id_idx" ON "page_comments"("pageId"
 CREATE TABLE "page_revision_requests" (
   "id" TEXT PRIMARY KEY,
   "commentId" TEXT NOT NULL REFERENCES "page_comments"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "retryOf" TEXT,
   "requesterId" TEXT NOT NULL,
   "grantId" TEXT,
   "status" TEXT NOT NULL DEFAULT 'pending',
@@ -30,7 +33,8 @@ CREATE TABLE "page_revision_requests" (
   "draftCode" TEXT,
   "resultVersion" INTEGER
 );
-CREATE UNIQUE INDEX "page_revision_requests_commentId_key" ON "page_revision_requests"("commentId");
+CREATE UNIQUE INDEX "page_revision_requests_retryOf_key" ON "page_revision_requests"("retryOf");
+CREATE INDEX "page_revision_requests_commentId_createdAt_idx" ON "page_revision_requests"("commentId", "createdAt");
 CREATE INDEX "page_revision_requests_grantId_idx" ON "page_revision_requests"("grantId");
 
 -- Collaboration crosses Space boundaries exclusively through page-scoped service methods.

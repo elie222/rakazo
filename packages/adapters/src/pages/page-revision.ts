@@ -9,7 +9,6 @@ import type {
 import { containsSecret, deadlineSignal, withAbort } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
-  activePageAccount,
   assertLeaseHeld,
   lockPage,
   memberHasModelAccess,
@@ -75,7 +74,7 @@ export async function pageRevisionAuthorized(tx: Prisma.TransactionClient, row: 
     return false;
   if (!page.bot || page.bot.archivedAt || page.bot.spaceId !== page.spaceId) return false;
   const membership = await tx.spaceMember.findFirst({
-    where: { spaceId: page.spaceId, userId: page.userId, user: activePageAccount },
+    where: { spaceId: page.spaceId, userId: page.userId },
     select: { userId: true },
   });
   if (!membership) return false;

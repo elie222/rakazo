@@ -37,7 +37,7 @@ function Review({ pageId }: { pageId: string }) {
   const review = useScreenQuery(read);
   const page = review.isError ? undefined : review.data;
   const draft = useScreenQuery(
-    targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/draft", { pageId, commentId: draftId ?? "" }),
+    targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/draft", { pageId, requestId: draftId ?? "" }),
     { enabled: Boolean(page?.owner && draftId) },
   );
   const source = draftId ? (draft.isError ? undefined : draft.data?.code) : page?.code;
@@ -65,7 +65,7 @@ function Review({ pageId }: { pageId: string }) {
   usePageReviewSignals();
   const publish = useSave({
     target: ACCOUNT_SETTINGS,
-    save: (commentId: string, send) => send("pageReviews/publish", { pageId, commentId }),
+    save: (requestId: string, send) => send("pageReviews/publish", { pageId, requestId }),
     stale: [
       read.queryKey,
       targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/comments", { pageId }).queryKey,
