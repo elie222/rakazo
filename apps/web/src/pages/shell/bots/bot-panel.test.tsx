@@ -411,7 +411,10 @@ it("edits the bot name from the settings tab's profile", async () => {
   });
   const input = profile.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Ada V2");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Ada V2",
+    );
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () =>
