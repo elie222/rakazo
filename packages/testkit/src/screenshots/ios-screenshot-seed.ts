@@ -525,6 +525,19 @@ async function ensureThreadCopy(
             "",
             `The unique search phrase is ${MARKER}.`,
             "",
+            "- [x] Customer quotes",
+            "- [ ] Changelog",
+            "",
+            "| Item | Owner |",
+            "| --- | --- |",
+            "| Quotes | Dana |",
+            "",
+            "> Ship after the changelog lands.",
+            "",
+            "```ts",
+            'const launch = "Thursday";',
+            "```",
+            "",
             "![Remote diagram](https://example.com/diagram.png)",
           ].join("\n"),
         },
@@ -740,7 +753,7 @@ async function ensureTickets(
 }
 
 /** Subscribes through the API and the billing provider, so every billing screen reads it back. */
-async function ensurePlan(input: {
+export async function ensurePlan(input: {
   apiUrl: string;
   headers: Record<string, string>;
   prisma: ReturnType<typeof createDb>["prisma"];
@@ -910,7 +923,7 @@ async function ensureText(
   });
 }
 
-async function ensureUser(apiUrl: string, email: string, password: string, name: string) {
+export async function ensureUser(apiUrl: string, email: string, password: string, name: string) {
   const signup = await postAuth(apiUrl, "sign-up", { email, password, name });
   const session = signup.ok ? signup : await postAuth(apiUrl, "sign-in", { email, password });
   if (!session.ok || !session.token) {
@@ -961,7 +974,7 @@ async function postAuth(
   };
 }
 
-async function rpc<T>(
+export async function rpc<T>(
   apiUrl: string,
   headers: Record<string, string>,
   procedure: string,

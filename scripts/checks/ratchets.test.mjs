@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
+import { count as countFileLines } from "./ratchets/max-file-lines.mjs";
 import {
   formatBaseline,
   loadRules,
@@ -16,6 +17,30 @@ import {
 
 const rules = await loadRules();
 const found = scan(rules, repoFiles());
+
+test("counts source files above 1,000 lines", () => {
+  const text = "line\n".repeat(1000);
+  for (const file of ["packages/core/src/task.ts", "packages/testkit/src/cli/flows.ts"]) {
+    assert.deepEqual(countFileLines(text, file), []);
+    assert.deepEqual(countFileLines(`${text}line`, file), [
+      { line: 1001, text: "1001 lines, limit 1000" },
+    ]);
+  }
+});
+
+test("exempts tests and evals from the file line limit", () => {
+  const text = "line\n".repeat(3000);
+  for (const file of [
+    "packages/core/src/task.test.ts",
+    "apps/web/e2e/task.spec.ts",
+    "infra/sandboxes/computer/test_task.py",
+    "packages/testkit/src/cli/evals.ts",
+    "packages/testkit/src/cli/approval-eval.ts",
+    "packages/testkit/src/evals/suites/recall.ts",
+  ]) {
+    assert.deepEqual(countFileLines(text, file), [], file);
+  }
+});
 
 for (const rule of rules) {
   test(`${rule.name}: no file is above its baseline`, () => {

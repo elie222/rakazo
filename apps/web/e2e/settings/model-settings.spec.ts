@@ -45,7 +45,7 @@ test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, test
   });
   await openUserSettings(page, "models");
   const mainList = page.getByTestId("model-role-main");
-  await expect(mainList.getByTestId("model-role-default")).toContainText("Choose a model");
+  await expect(mainList.getByTestId("model-role-default")).toContainText("Connect a model");
   const dialog = await openModelConnection(page, "OpenRouter");
   await expect(dialog.getByLabel("API key")).toBeVisible();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-1-not-connected");

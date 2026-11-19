@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import type { MemoryProviderDescriptor, ProviderSettingsField } from "@rakazo/contracts";
 
@@ -31,6 +32,18 @@ export interface MemoryProviderDefinition {
    * saves it. When this changes, the stored credentials must not follow.
    */
   credentialTarget(settings: Record<string, string>): string;
+}
+
+/** Binds stored cleanup work to the saved connection and endpoint, never to credential plaintext. */
+export function memoryConnectionIdentity(
+  connectionVersion: string | undefined,
+  baseUrl: string,
+): string | undefined {
+  return connectionVersion
+    ? createHash("sha256")
+        .update(JSON.stringify([connectionVersion, baseUrl]))
+        .digest("hex")
+    : undefined;
 }
 
 /** Every provider turns a key shorter than this down. */

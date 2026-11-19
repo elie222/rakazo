@@ -29,71 +29,71 @@ export function SocialSignInButtons({
   const { primary, secondary } = signInProviderGroups(providers);
   const row = primary.length > 1 && width >= 720;
   const dark = scheme === "dark";
+  const outline = providerStyle("outline", tokens);
   return (
-    <View style={{ marginTop: 8, gap: 0 }}>
-      {primary.length > 0 ? (
-        <View style={{ flexDirection: row ? "row" : "column", gap: 12 }}>
-          {primary.map((provider) => (
-            <NativeProviderButton
-              key={provider.id}
-              provider={provider}
-              disabled={disabled}
-              dark={dark}
-              onPress={() => onPress(provider.id)}
-              fill={!row}
-            >
-              <Choice
-                label={t`Continue with ${ph({ name: provider.name })}`}
+    <View style={{ marginTop: 24 }}>
+      <View style={{ gap: 12 }}>
+        {primary.length > 0 ? (
+          <View style={{ flexDirection: row ? "row" : "column", gap: 12 }}>
+            {primary.map((provider) => (
+              <NativeProviderButton
+                key={provider.id}
+                provider={provider}
                 disabled={disabled}
+                dark={dark}
                 onPress={() => onPress(provider.id)}
                 fill={!row}
-                style={providerStyle(provider.presentation?.variant, tokens)}
-                mark={
-                  provider.presentation?.mark ? (
-                    <Svg width={20} height={20} viewBox={provider.presentation.mark.viewBox}>
-                      {provider.presentation.mark.paths.map((path) => (
-                        <Path
-                          key={path.d}
-                          d={path.d}
-                          fill={
-                            path.fill ??
-                            (provider.presentation?.variant === "outline"
-                              ? tokens.foreground
-                              : tokens.primaryForeground)
-                          }
-                        />
-                      ))}
-                    </Svg>
-                  ) : null
-                }
-              />
-            </NativeProviderButton>
-          ))}
-        </View>
-      ) : null}
-      {onEmail ? (
-        <>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 18 }}>
-            <View style={{ flex: 1, height: 1, backgroundColor: tokens.border }} />
-            <Text style={{ color: tokens.mutedForeground, fontSize: 13 }}>{t`or`}</Text>
-            <View style={{ flex: 1, height: 1, backgroundColor: tokens.border }} />
+              >
+                <Choice
+                  label={t`Continue with ${ph({ name: provider.name })}`}
+                  disabled={disabled}
+                  onPress={() => onPress(provider.id)}
+                  fill={!row}
+                  style={providerStyle(provider.presentation?.variant, tokens)}
+                  mark={
+                    provider.presentation?.mark ? (
+                      <Svg width={20} height={20} viewBox={provider.presentation.mark.viewBox}>
+                        {provider.presentation.mark.paths.map((path) => (
+                          <Path
+                            key={path.d}
+                            d={path.d}
+                            fill={
+                              path.fill ??
+                              (provider.presentation?.variant === "outline"
+                                ? tokens.foreground
+                                : tokens.primaryForeground)
+                            }
+                          />
+                        ))}
+                      </Svg>
+                    ) : null
+                  }
+                />
+              </NativeProviderButton>
+            ))}
           </View>
-          <QuietChoice
+        ) : null}
+        {onEmail ? (
+          <Choice
             label={t`Continue with email`}
-            mark={<MailMark color={tokens.mutedForeground} />}
+            mark={<MailMark color={tokens.foreground} />}
             disabled={disabled}
             onPress={onEmail}
+            fill
+            style={outline}
           />
-        </>
-      ) : null}
-      {onPasskey ? (
-        <QuietChoice
-          label={t`Continue with passkey`}
-          mark={<KeyMark color={tokens.mutedForeground} />}
-          disabled={disabled}
-          onPress={onPasskey}
-        />
-      ) : null}
+        ) : null}
+        {onPasskey ? (
+          <Choice
+            label={t`Continue with passkey`}
+            mark={<KeyMark color={tokens.foreground} />}
+            disabled={disabled}
+            onPress={onPasskey}
+            fill
+            style={outline}
+          />
+        ) : null}
+      </View>
       {secondary.map((provider) => (
         <Pressable
           key={provider.id}
@@ -180,45 +180,9 @@ function Choice({
   );
 }
 
-function QuietChoice({
-  label,
-  mark,
-  disabled,
-  onPress,
-}: {
-  label: string;
-  mark: ReactNode;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  const tokens = useMobileTokens();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={{
-        alignSelf: "center",
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-        marginTop: 10,
-        minHeight: 32,
-        paddingHorizontal: 8,
-        opacity: disabled ? 0.45 : 1,
-      }}
-    >
-      {mark}
-      <Text style={{ color: tokens.mutedForeground, fontSize: 14, fontWeight: "500" }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 function KeyMark({ color }: { color: string }) {
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
       <Path
         d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6"
         stroke={color}
@@ -233,7 +197,7 @@ function KeyMark({ color }: { color: string }) {
 
 function MailMark({ color }: { color: string }) {
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
       <Path
         d="M4 7.2C4 6 5 5 6.2 5h11.6C19 5 20 6 20 7.2v9.6c0 1.2-1 2.2-2.2 2.2H6.2C5 19 4 18 4 16.8V7.2Z"
         stroke={color}

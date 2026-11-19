@@ -105,6 +105,7 @@ export function templatePlan(template: BotTemplate, timezone: string): Built {
     mcpServers: [],
     routines,
     apiKeys: [],
+    leftovers: [],
     skipped: [],
   };
   return {
@@ -155,6 +156,7 @@ export async function createBotFromTemplate<PreparedKey>(
       mcpServers: [],
       routines: template.routines.map((_, index) => `routine-${index}`),
       apiKeys: [],
+      leftovers: [],
     },
     build: async () => {
       if (template.version !== input.version) {

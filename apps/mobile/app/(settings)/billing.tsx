@@ -15,6 +15,7 @@ import {
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
+import { computerUsageDetails } from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
@@ -61,6 +62,11 @@ export default function BillingScreen() {
   const statusRead = formRead(rpcQuery("billing/status", undefined, space));
   const statusQuery = useScreenQuery(statusRead);
   const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
+  const [showComputerUsage, setShowComputerUsage] = useState(false);
+  const usageRead = rpcQuery("billing/computerUsage", undefined, space);
+  const computerUsage = useScreenQuery(usageRead, {
+    enabled: showComputerUsage && status?.canManage === true && status.computerHoursLeft != null,
+  });
   useEffect(() => {
     if (!status) return;
     rememberReferral(space ?? null, status.referral);
@@ -77,6 +83,7 @@ export default function BillingScreen() {
   }, [readError, errorUpdatedAt, t]);
   const change = useSave({
     target,
+    stale: [usageRead.queryKey],
     save: async (work: (send: SaveSend) => Promise<BillingStatus | undefined>, send) => {
       const next = await work(send);
       if (next) await writeSaved(queryClient, statusRead.queryKey, () => next);
@@ -91,6 +98,10 @@ export default function BillingScreen() {
   const pending = change.pending;
   const action = change.run;
   if (!status) return null;
+  const usageDetails =
+    status.canManage && showComputerUsage
+      ? computerUsageDetails(computerUsage, dateLocaleForUi())
+      : null;
 
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
@@ -252,6 +263,18 @@ export default function BillingScreen() {
           {status.computerHoursResetAt ? (
             <SettingsRow title={t`Resets`} value={formatDate(status.computerHoursResetAt)} />
           ) : null}
+          {status.canManage ? (
+            <SettingsRow
+              title={t`Hours by computer`}
+              chevron={showComputerUsage ? "down" : "right"}
+              accessibilityState={{ expanded: showComputerUsage }}
+              onPress={() => setShowComputerUsage((open) => !open)}
+            />
+          ) : null}
+          {usageDetails?.rows.map((row) => (
+            <SettingsRow key={row.id} title={row.label} value={row.hours} />
+          ))}
+          {usageDetails?.message ? <SettingsRow title={usageDetails.message} /> : null}
           {endTrial ? (
             <SettingsRow
               title={t`Start plan now`}
