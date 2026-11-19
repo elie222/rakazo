@@ -12,7 +12,9 @@ set -euo pipefail
 app="${APP_PREFIX:-rakazo-pr}-$PR"
 here=$(cd "$(dirname "$0")" && pwd)
 
-python3 "$here/reclaim-capacity.py"
+if ! python3 "$here/reclaim-capacity.py"; then
+  echo "::warning::Could not reclaim Fly preview capacity. Continuing with the deploy."
+fi
 
 flyctl status --app "$app" > /dev/null 2>&1 || flyctl apps create "$app" --org "$FLY_ORG"
 if [[ $(flyctl volumes list --app "$app" --json | jq length) == 0 ]]; then

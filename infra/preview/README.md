@@ -12,10 +12,11 @@ migrations and demo-account setup run once per image on each database. Data surv
 is deleted with the preview when the pull request closes, or by a daily sweep. A deleted demo
 account is recreated on the next cold boot.
 
-At 90 provisioned Fly Machines, a deploy that needs a new Machine first removes up to ten of
-the least recently updated PR previews. A preview is eligible when its pull request and its
-stopped or suspended Machine have both gone at least an hour without an update. The next
-push to an evicted PR recreates its preview with a fresh database.
+At 90 provisioned Fly Machines, a deploy that needs a new Machine first removes up to ten
+idle PR previews, starting with missed closes and then the least recently updated open PRs.
+A preview is eligible when its stopped or suspended Machine has gone at least an hour
+without an update. An open PR must also have gone an hour without an update. The next push
+to an evicted PR recreates its preview with a fresh database.
 
 Idle machines incur storage charges, including the root filesystem and the data volume; compute
 is billed only while running. See [Fly pricing](https://fly.io/docs/about/pricing/).

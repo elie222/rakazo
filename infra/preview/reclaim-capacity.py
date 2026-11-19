@@ -40,18 +40,27 @@ def reclaim_capacity(org, repo, prefix, deploying_pr, high_water, now):
         text=True,
     )
     cutoff = now - timedelta(hours=1)
+    open_prs = {pr["number"]: updated_at(pr) for page in json.loads(pages) for pr in page}
     previews = []
-    for page in json.loads(pages):
-        for pr in page:
-            number = pr["number"]
-            app = f"{prefix}-{number}"
-            if number != deploying_pr and apps.get(app) == 1:
-                last_update = updated_at(pr)
-                if last_update <= cutoff:
-                    previews.append((last_update, number, app))
+    for app, count in apps.items():
+        match = re.fullmatch(rf"{re.escape(prefix)}-([1-9][0-9]*)", app)
+        if not match or count != 1:
+            continue
+        number = int(match[1])
+        # Check apps missing from the open list first. A fresh PR read confirms their state.
+        last_update = open_prs.get(number, datetime.min.replace(tzinfo=timezone.utc))
+        if number != deploying_pr and last_update <= cutoff:
+            previews.append((last_update, number, app))
 
     removed = 0
     for _, number, app in sorted(previews):
+        pr = json.loads(subprocess.check_output(
+            ["gh", "api", f"repos/{repo}/pulls/{number}", "--jq", "{state, updated_at}"],
+            text=True,
+        ))
+        if pr["state"] != "closed" and (pr["state"] != "open" or updated_at(pr) > cutoff):
+            continue
+
         try:
             machines = fly_get(f"apps/{app}/machines")
         except HTTPError as error:
@@ -65,6 +74,9 @@ def reclaim_capacity(org, repo, prefix, deploying_pr, high_water, now):
         if machine["state"] not in IDLE_STATES or updated_at(machine) > cutoff:
             continue
 
+        # Fly refuses a non-forced destroy if the Machine has started since the check.
+        if subprocess.run(["flyctl", "machine", "destroy", machine["id"], "--app", app]).returncode:
+            continue
         print(f"Reclaiming idle preview {app} ({total} Machines before cleanup).", flush=True)
         subprocess.run(
             ["bash", str(Path(__file__).with_name("cleanup.sh"))],

@@ -56,5 +56,5 @@ jobs:
         with:
           name: preview-image
           path: ${{ runner.temp }}/preview-image.tar.zst
-          retention-days: 1
+          retention-days: 3
           compression-level: 0
