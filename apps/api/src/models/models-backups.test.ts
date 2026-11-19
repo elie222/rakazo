@@ -379,6 +379,18 @@ describe("role-based model settings API", () => {
       },
     );
 
+    it("marks a verifier the deployment pays for as included", async () => {
+      clearApprovalEnvironment();
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "jev");
+      vi.stubEnv("TYPESAFE_API_KEY", "fake-key");
+      const { call } = setup({ credits: true });
+      const { response } = await call("models/role", { role: "approval" });
+      expect((await response.json()).json).toMatchObject({
+        deploymentPrimary: { provider: "jev" },
+        deploymentIncluded: true,
+      });
+    });
+
     it("preserves a saved approval model when its connection is unavailable", async () => {
       clearApprovalEnvironment();
       const { call, prisma } = setup();

@@ -16,11 +16,11 @@ import {
   createFaviconResolver,
   decisionModelCatalog,
   deploymentModelRole,
+  deploymentPaysForReview,
   findConnectedModelCredential,
   hasHostedModelCredits,
   hasReadyModelCredential,
   hiddenCatalogModel,
-  includedReviewChecker,
   isAutoReviewCheckerConfigured,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
@@ -326,12 +326,6 @@ export function createRouterContext(deps: RouterDeps) {
       };
     }
     const creditsEnabled = deps.billing?.modelCreditsEnabled === true;
-    const included = role === "approval" ? includedReviewChecker(creditsEnabled) : null;
-    if (included)
-      return {
-        deploymentPrimary: { provider: included.provider, modelId: included.model },
-        deploymentIncluded: true,
-      };
     let deploymentPrimary = deploymentModelRole(role, {
       includedApproval: creditsEnabled,
     }).primary;
@@ -359,7 +353,14 @@ export function createRouterContext(deps: RouterDeps) {
         deploymentPrimary = null;
       }
     }
-    return { deploymentPrimary };
+    return role === "approval" &&
+      deploymentPrimary &&
+      deploymentPaysForReview(
+        { provider: deploymentPrimary.provider, model: deploymentPrimary.modelId },
+        creditsEnabled,
+      )
+      ? { deploymentPrimary, deploymentIncluded: true }
+      : { deploymentPrimary };
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings
