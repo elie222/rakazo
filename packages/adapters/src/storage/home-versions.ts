@@ -4,10 +4,11 @@ import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 
 /** The newest saves are kept whatever their day, so a bad last save can be undone at once. */
-const RECENT_HOME_VERSIONS = 3;
+const RECENT_HOME_VERSIONS = 2;
 /**
- * The first and last save of each of this many UTC days are kept too. A computer that saves every
- * few minutes would otherwise push every good copy out within hours of being damaged.
+ * The first save of each of this many UTC days is kept too: a computer that saves every few
+ * minutes would otherwise push every good copy out within hours of being damaged, and a day's
+ * first save is from before anything that went wrong later that day.
  */
 const HOME_VERSION_DAYS = 7;
 const DAY_MS = 24 * 60 * 60_000;
@@ -55,8 +56,8 @@ export class HomeRestoreChangedError extends ClientError {
 class PruneRaceError extends Error {}
 
 /**
- * The revisions a save keeps: the current one, the newest few, and the first and last save of
- * each recent day. Saves spread across days survive a burst of saves of a damaged home.
+ * The revisions a save keeps: the current one, the newest few, and the first save of each recent
+ * day. Saves spread across days survive a burst of saves of a damaged home.
  */
 export function keptHomeRevisions(
   versions: readonly HomeVersion[],
@@ -67,16 +68,13 @@ export function keptHomeRevisions(
   const newest = [...versions].sort((a, b) => b.savedAt.getTime() - a.savedAt.getTime());
   for (const version of newest.slice(0, RECENT_HOME_VERSIONS)) kept.add(version.revision);
   const firstDay = Math.floor(now.getTime() / DAY_MS) - (HOME_VERSION_DAYS - 1);
-  const days = new Map<number, { first: HomeVersion; last: HomeVersion }>();
+  const firstOfDay = new Map<number, HomeVersion>();
+  // Newest first, so the last one seen for a day is its first save.
   for (const version of newest) {
     const day = Math.floor(version.savedAt.getTime() / DAY_MS);
-    if (day < firstDay) continue;
-    const seen = days.get(day);
-    // Newest first, so the first one seen is the day's last save.
-    if (seen) seen.first = version;
-    else days.set(day, { first: version, last: version });
+    if (day >= firstDay) firstOfDay.set(day, version);
   }
-  for (const { first, last } of days.values()) kept.add(first.revision).add(last.revision);
+  for (const version of firstOfDay.values()) kept.add(version.revision);
   return kept;
 }
 

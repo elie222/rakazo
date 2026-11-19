@@ -741,8 +741,8 @@ describe("ObjectAgentHomeStore", () => {
     } finally {
       vi.useRealTimers();
     }
-    // All saved the same day: the newest three and the day's first one stay.
-    const kept = [saved[0]!, ...saved.slice(-3)];
+    // All saved the same day: the newest two and the day's first one stay.
+    const kept = [saved[0]!, ...saved.slice(-2)];
     expect(versions.map((version) => version.revision).sort()).toEqual([...kept].sort());
     expect([...storage.objects.keys()].sort()).toEqual(
       kept.map((revision) => `homes/${rows[0]!.homeStorageId}/${revision}`).sort(),

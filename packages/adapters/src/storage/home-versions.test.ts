@@ -21,7 +21,7 @@ function saves(from: Date, everyMs: number): HomeVersion[] {
 }
 
 describe("keptHomeRevisions", () => {
-  it("keeps the newest saves and each recent day's first and last", () => {
+  it("keeps the newest saves and each recent day's first", () => {
     const versions = saves(new Date("2026-11-10T00:10:00Z"), 20 * 60_000);
     const current = versions.at(-1)!.revision;
 
@@ -29,17 +29,11 @@ describe("keptHomeRevisions", () => {
 
     expect(kept).toEqual(
       [
-        // The newest three, the current one among them.
+        // The newest two, the current one among them.
         "2026-11-19T14:30:00.000Z",
         "2026-11-19T14:50:00.000Z",
-        "2026-11-19T14:10:00.000Z",
-        // Today's first save.
-        "2026-11-19T00:10:00.000Z",
-        // The first and last save of each of the six days before.
-        ...[13, 14, 15, 16, 17, 18].flatMap((day) => [
-          `2026-11-${day}T00:10:00.000Z`,
-          `2026-11-${day}T23:50:00.000Z`,
-        ]),
+        // The first save of today and of each of the six days before.
+        ...[13, 14, 15, 16, 17, 18, 19].map((day) => `2026-11-${day}T00:10:00.000Z`),
       ].sort(),
     );
   });
@@ -50,7 +44,7 @@ describe("keptHomeRevisions", () => {
     const damagedAt = now.getTime() - 5 * HOUR;
     const kept = [...keptHomeRevisions(versions, versions.at(-1)!.revision, now)];
     expect(kept.some((revision) => new Date(revision).getTime() < damagedAt)).toBe(true);
-    expect(kept.length).toBeLessThanOrEqual(3 + 2 * 7);
+    expect(kept.length).toBeLessThanOrEqual(2 + 7);
   });
 
   it("always keeps the current revision, even an old one a restore made current", () => {

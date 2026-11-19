@@ -145,16 +145,18 @@ describePostgres("agent home storage records (PostgreSQL)", () => {
         data: { savedAt: savedAt(revision) },
       });
 
-    // The day's first save and the newest three stay.
-    expect((await records.prune(homeKey, storageId, savedAt("rev-5"))).sort()).toEqual(["rev-2"]);
+    // The day's first save and the newest two stay.
+    expect((await records.prune(homeKey, storageId, savedAt("rev-5"))).sort()).toEqual([
+      "rev-2",
+      "rev-3",
+    ]);
     expect((await records.versions(homeKey))?.versions.map((v) => v.revision)).toEqual([
       "rev-5",
       "rev-4",
-      "rev-3",
       "rev-1",
     ]);
     expect((await records.revisions([storageId])).get(storageId)).toEqual(
-      new Set(["rev-1", "rev-3", "rev-4", "rev-5"]),
+      new Set(["rev-1", "rev-4", "rev-5"]),
     );
 
     await expect(records.restore(homeKey, storageId, "rev-1")).rejects.toThrow(
