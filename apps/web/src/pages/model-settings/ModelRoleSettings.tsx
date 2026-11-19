@@ -55,6 +55,7 @@ type Props = {
   credentials: ModelCredential[];
   modelRole?: ModelRole;
   title: string;
+  hideHeading?: boolean;
   /** What runs when the first slot is empty. */
   defaultLabel: string;
   providers: ConnectableProvider[];
@@ -119,6 +120,7 @@ export function ModelRoleSettings({
   credentials,
   modelRole: role = "main",
   title,
+  hideHeading,
   defaultLabel,
   providers,
   providerLabel,
@@ -303,7 +305,7 @@ export function ModelRoleSettings({
   const reopenFor = (slot: "primary" | number | "add") =>
     reopen?.slot === slot ? { query: reopen.query, key: reopen.key } : undefined;
 
-  const canAdd = backups.length < MAX_MODEL_BACKUPS;
+  const canAdd = (primary || deployment) && backups.length < MAX_MODEL_BACKUPS;
   // Order only means something once there is more than one row.
   const ordered = rows.length + (primary ? 0 : 1) > 1;
   const rowClass = `flex min-h-[52px] items-center gap-2.5 py-2 pe-2 ${ordered ? "ps-2" : "ps-3"}`;
@@ -326,10 +328,12 @@ export function ModelRoleSettings({
 
   return (
     <section className="mb-8" data-testid={`model-role-${role}`}>
-      <div className="mb-2.5 flex min-h-7 items-center justify-between gap-3">
-        <SectionHeading variant="heading">{title}</SectionHeading>
-        {headerAction}
-      </div>
+      {hideHeading ? null : (
+        <div className="mb-2.5 flex min-h-7 items-center justify-between gap-3">
+          <SectionHeading variant="heading">{title}</SectionHeading>
+          {headerAction}
+        </div>
+      )}
       <ol className="divide-y divide-border rounded-xl border border-border">
         {primary ? null : (
           <li className={`${rowClass} ${ordered ? "ps-8" : ""}`} data-testid="model-role-default">
@@ -340,7 +344,7 @@ export function ModelRoleSettings({
                 !settings ? "\u00a0" : deployment ? modelLabel(deployment) : defaultLabel,
                 deployment ? providerName(deployment) : undefined,
               )}
-              label={t`Change ${title}`}
+              label={hideHeading ? defaultLabel : t`Change ${title}`}
               options={options}
               providers={providers}
               disabled={pickerLocked}

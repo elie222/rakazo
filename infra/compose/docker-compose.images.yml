@@ -41,6 +41,7 @@ x-app-environment: &app-environment # Runtime
   API_URL: ${API_URL:-http://127.0.0.1:5173}
   MAX_UPLOAD_SIZE_MB:
   MAX_ATTACHMENTS_PER_MESSAGE:
+  WORKSPACE_SAVE_MAX_GB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   USER_DEVICES_ENABLED:
@@ -144,6 +145,18 @@ x-app-environment: &app-environment # Runtime
   MEDIA_GENERATION_API_KEY:
   MEDIA_GENERATION_IMAGE_MODEL:
   MEDIA_GENERATION_VIDEO_MODEL:
+  MEETING_PROVIDER:
+  MEETING_API_KEY:
+  MEETING_REGION:
+  MEETING_SPACE_IDS:
+  MEETING_WEBHOOK_SECRET:
+  MEETING_WEBHOOK_SIGNATURE:
+  MEETING_SIGNING_KEY:
+  MEETING_PUBLIC_ORIGIN:
+  MEETING_LIVE_VOICE:
+  MEETING_CALENDAR_CLIENT_ID:
+  MEETING_CALENDAR_CLIENT_SECRET:
+  MEETING_CALENDAR_WEBHOOK_SECRET:
   PAID_SERVICES_PROVIDER:
   PAID_SERVICES_API_KEY:
   PAID_SERVICES_BASE_URL:
@@ -313,6 +326,8 @@ x-app-environment: &app-environment # Runtime
   http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
   https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
   no_proxy: ${no_proxy:-${NO_PROXY:-}}
+  # Hosts the proxy must be asked for by name instead of the checked address.
+  RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS:
 
 services:
   postgres:
@@ -582,6 +597,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       <<: *app-environment
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://127.0.0.1:5173}
       GRAPHILE_WORKER_CONCURRENCY:
       RUN_DRAIN_ENABLED:
     volumes:

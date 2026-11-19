@@ -683,7 +683,7 @@ export function computerRoutes(ctx: RouterContext) {
             return clearGoneSandbox(deps, computer, error);
           });
         if (!session?.url) return { url: null };
-        scheduleComputerSleep(deps.jobs, bot.computer.id);
+        if (!input.preview) scheduleComputerSleep(deps.jobs, bot.computer.id);
         const viewUrl = withViewOnly(session.url, !holder);
         return {
           url: addScreenProxyCapability(

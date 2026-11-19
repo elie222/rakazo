@@ -1,4 +1,4 @@
-import type { DesktopMenuCommand } from "@rakazo/contracts";
+import type { DesktopMenuCommand, DesktopUpdateState } from "@rakazo/contracts";
 import { app, dialog, Menu } from "electron";
 import { desktop } from "../desktop-state.js";
 import { desktopLocale, t } from "../i18n.js";
@@ -18,15 +18,21 @@ function checkForUpdatesFromMenu() {
   return menuUpdateCheck;
 }
 async function runMenuUpdateCheck() {
-  let state = await desktop.desktopUpdater.check(true);
-  // A found update starts downloading on its own; wait for it so the answer can be "restart".
-  if (state.phase === "available" || state.phase === "downloading") {
-    state = await desktop.desktopUpdater.download();
-  }
   const alert = (options: Electron.MessageBoxOptions) =>
     desktop.mainWindow && !desktop.mainWindow.isDestroyed()
       ? dialog.showMessageBox(desktop.mainWindow, options)
       : dialog.showMessageBox(options);
+  let state = await desktop.desktopUpdater.check(true);
+  // A found update starts downloading on its own; wait for it so the answer can be "restart".
+  if (state.phase === "available" || state.phase === "downloading") {
+    // Say so now: the download can take minutes, and the menu click has no other answer.
+    const downloading = alert({
+      message: t("Downloading Rakazo {version}…", { version: state.availableVersion ?? "" }),
+    });
+    state = await desktop.desktopUpdater.download();
+    // The result waits for that alert, so the two never show at once.
+    await downloading;
+  }
   if (state.phase === "ready") {
     const { response } = await alert({
       message: t("Rakazo {version} is ready to install.", {
@@ -69,6 +75,26 @@ export async function installUpdate() {
   if (state.phase !== "ready" || state.message !== null) desktop.quitting = false;
   return state;
 }
+/** Keeps the menu item's label and the Dock or taskbar progress bar in step with the updater. */
+export function followUpdateState(rebuildMenu: () => void) {
+  let phase = desktop.desktopUpdater.state().phase;
+  return desktop.desktopUpdater.subscribe((state) => {
+    const window = desktop.mainWindow;
+    if (window && !window.isDestroyed()) {
+      window.setProgressBar(state.phase === "downloading" ? (state.percent ?? 0) / 100 : -1);
+    }
+    if (state.phase !== phase) {
+      phase = state.phase;
+      rebuildMenu();
+    }
+  });
+}
+function updateMenuLabel(phase: DesktopUpdateState["phase"] | undefined) {
+  if (phase === "checking") return t("Checking for Updates…");
+  if (phase === "available" || phase === "downloading") return t("Downloading Update…");
+  if (phase === "ready") return t("Restart to Update…");
+  return t("Check for Updates…");
+}
 type MenuActions = {
   revokeLocalComputerAccess: ReturnType<typeof createLocalComputerChoice>["revoke"];
   updaterEnvironment: Parameters<typeof updaterSupport>[0];
@@ -97,8 +123,11 @@ export function applicationMenuInstaller({
       accelerator: "CmdOrCtrl+,",
       click: () => desktop.mainWindow?.webContents.send("desktop.settings.open"),
     };
+    const updatePhase = desktop.desktopUpdater?.state().phase;
     const checkForUpdates: Electron.MenuItemConstructorOptions = {
-      label: t("Check for Updates…"),
+      label: updateMenuLabel(updatePhase),
+      enabled:
+        updatePhase !== "checking" && updatePhase !== "available" && updatePhase !== "downloading",
       visible: updaterSupport(updaterEnvironment).supported,
       click: () => void checkForUpdatesFromMenu(),
     };

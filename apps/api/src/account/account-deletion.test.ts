@@ -6,6 +6,7 @@ import {
   claimOrganizationForDeletion,
   deleteClaimedSpace,
   recordAuditEvent,
+  releaseOrganizationDeletionClaim,
   setOrganizationDeletionLease,
 } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +36,9 @@ describe("deleteOrganization lease", () => {
     artifact: { findMany: vi.fn(async () => []) },
     bot: { findMany: vi.fn(async () => []) },
     computer: { findMany: vi.fn(async () => []) },
+    meetingCalendarConnection: {
+      findFirst: vi.fn<() => Promise<{ id: string } | null>>(async () => null),
+    },
     space: { count: vi.fn(async () => spacesLeft) },
     // The lease table: every take, renewal, release and fence check finds the row.
     $queryRaw: vi.fn(async () => [{ fence: 1 }]),
@@ -61,6 +65,34 @@ describe("deleteOrganization lease", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("preserves billing and files when the calendar provider cannot disconnect", async () => {
+    const outage = new Error("calendar provider unavailable");
+    const disconnectSpace = vi.fn().mockRejectedValue(outage);
+    const cancelForDeletedOrganization = vi.fn();
+    const remove = vi.fn();
+    prisma.meetingCalendarConnection.findFirst.mockResolvedValueOnce({ id: "calendar-1" });
+
+    await expect(
+      deleteOrganization(
+        deps({
+          meetingCalendar: { disconnectSpace },
+          billing: { cancelForDeletedOrganization },
+          artifacts: { remove },
+        }),
+        "user-1",
+        "org-1",
+      ),
+    ).rejects.toMatchObject({ kind: "SERVICE_UNAVAILABLE", cause: outage });
+    expect(disconnectSpace).toHaveBeenCalledWith("space-1");
+    expect(cancelForDeletedOrganization).not.toHaveBeenCalled();
+    expect(prisma.artifact.findMany).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(releaseOrganizationDeletionClaim).toHaveBeenCalledWith(prisma, {
+      organizationId: "org-1",
+      claimId: "organization-deletion:org-1:attempt",
+    });
   });
 
   it("finishes and records a deletion whose last file cleanup outlasts the lease", async () => {

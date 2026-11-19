@@ -163,7 +163,7 @@ export function ComposerError({
           <button
             type="button"
             data-testid="composer-error-open-models"
-            onClick={onOpenModels}
+            onClick={onOpenConnections}
             className="text-left underline underline-offset-2 hover:text-foreground"
           >
             {sendError}

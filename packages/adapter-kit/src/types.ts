@@ -8,6 +8,8 @@ import type {
   ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
+  ToolQuestion,
+  ToolQuestionAnswer,
   VoiceAccountErrorCode,
 } from "@rakazo/contracts";
 
@@ -25,11 +27,16 @@ export interface AdapterContext {
   /** When releasing a screen after cancel, also stop orphaned browser work on that screen. */
   cancelRunWork?: boolean;
   signal: AbortSignal;
+  /** Asks the person who owns the run a tool server's question and waits for the answer. Absent
+   * when the run has nobody to ask; the question is then declined. */
+  askPerson?: ToolAsk;
   /** Connected external accounts available to this run, including their owning connector. */
   connectedConnections?: ConnectedConnector[];
   /** @deprecated Prefer connectedConnections so providers with the same app slug cannot collide. */
   connectedProviders?: string[];
 }
+
+export type ToolAsk = (question: ToolQuestion, signal: AbortSignal) => Promise<ToolQuestionAnswer>;
 
 /**
  * A provider machine no stored computer points at: one a start created and has not stored, or a
@@ -291,6 +298,8 @@ export interface SandboxKindCapabilities {
   serverOwnsStoredTeamHome: boolean;
   /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
   storedHomeIsBackup: boolean;
+  /** The provider can read the disk of a stopped sandbox without starting it. */
+  readStoppedFiles?: boolean;
 }
 
 export interface SandboxCapabilities {
@@ -307,6 +316,8 @@ export interface ConnectorTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Editable, fully previewable outgoing arguments selected by the adapter. */
+  outgoingDraft?: OutgoingDraftDescriptor;
   /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
   readOnly?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
@@ -319,6 +330,14 @@ export interface ConnectorTool {
   appResourceUri?: string;
 }
 
+export interface OutgoingDraftDescriptor {
+  kind: "email" | "message";
+  source: string;
+  keys: { to: string; body: string; subject?: string };
+  defaults?: Record<string, string | boolean>;
+  recipientAlias?: string;
+}
+
 /**
  * Where a batch tool's arguments name the actions it runs: `args[items][i][action]`, each with
  * its own arguments at `args[items][i][arguments]`. Approval rules and the read/write check judge
@@ -328,6 +347,7 @@ export interface ToolBatch {
   items: string;
   action: string;
   arguments: string;
+  outgoingDrafts?: Readonly<Record<string, OutgoingDraftDescriptor>>;
 }
 
 export interface ConnectorRoute {
@@ -966,6 +986,7 @@ export interface BackgroundJobPayloads {
   "skill.teaching-expire": { skillId: string };
   /** Drop the run-only logins and codes of a run still waiting on someone after the expiry. */
   "run.forget-secrets": { runId: string };
+  "approval.expire": { runId: string; effectId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string; userId?: string };
@@ -1044,6 +1065,19 @@ export interface BackgroundJobPayloads {
   "team_chat.ambient": { conversationId: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  "meeting.calendar-sync": { connectionId: string };
+  "meeting.work": {
+    sessionId: string;
+    action:
+      | "join"
+      | "leave"
+      | "expire"
+      | "reconcile"
+      | "transcript"
+      | "transcript-check"
+      | "cleanup";
+    detached?: { provider: string; externalId?: string; recordingId?: string };
+  };
   "purchase.poll": { purchaseId: string };
   /** Check a submitted video and post it when ready; the ID is the bot-visible job ID. */
   "media.poll": { jobId: string };
@@ -1677,6 +1711,11 @@ export interface AutoReviewRequest {
    * instruction.
    */
   savedContextWrite?: boolean;
+  /**
+   * The owner's own earlier messages in this chat, oldest first, before `userTask`: never a tool
+   * result or anyone else's message. Redacted and capped by the caller.
+   */
+  ownerMessages?: string[];
 }
 
 export interface AutoReviewResult {

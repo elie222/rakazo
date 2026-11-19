@@ -163,6 +163,14 @@ export class UnavailableModelForAuthError extends Error {
   }
 }
 
+/** A saved model connection's secret was removed after it was chosen. */
+export class ModelConnectionGoneError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelConnectionGoneError";
+  }
+}
+
 export type SpaceCatalogAuth = {
   managedProvider?: string;
   managedProviders?: string[];

@@ -39,6 +39,16 @@
       "development": "./src/node/shutdown-signals.ts",
       "default": "./src/node/shutdown-signals.ts"
     },
+    "./node/aes-gcm": {
+      "types": "./src/node/aes-gcm.ts",
+      "development": "./src/node/aes-gcm.ts",
+      "default": "./src/node/aes-gcm.ts"
+    },
+    "./node/sealed-box": {
+      "types": "./src/node/sealed-box.ts",
+      "development": "./src/node/sealed-box.ts",
+      "default": "./src/node/sealed-box.ts"
+    },
     "./node/approval-effect-key": {
       "types": "./src/node/approval-effect-key.ts",
       "development": "./src/node/approval-effect-key.ts",

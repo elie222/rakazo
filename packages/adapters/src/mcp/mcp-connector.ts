@@ -560,7 +560,7 @@ export class McpConnector implements ConnectorProvider {
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
-              ...mcpToolFields(tool),
+              ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
@@ -745,7 +745,14 @@ export class McpConnector implements ConnectorProvider {
         used = session;
         material = this.sessions.get(sessionKey)?.material;
         launchSecrets = this.sessions.get(sessionKey)?.launchSecrets ?? [];
-        return session.callTool(toolName, call.args, { signal: context.signal });
+        return session.callTool(toolName, call.args, {
+          signal: context.signal,
+          asker: {
+            owner: context.runId ?? context.operationId,
+            source: assignment.server.name,
+            ask: context.askPerson,
+          },
+        });
       });
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       yield { type: "result", data: redactConnectorPayload(result, secrets) };
@@ -1140,7 +1147,7 @@ export class McpConnector implements ConnectorProvider {
     credentialDir?: string;
     launchSecrets?: string[];
   }> {
-    let session = new McpSession({ name: `rakazo-${server.slug}` });
+    let session = new McpSession({ name: `rakazo-${server.slug}`, elicitation: true });
     let credentialDir: string | undefined;
     const launchSecrets: string[] = [];
     // Hoisted so a throw after the secret is decoded can still hand the material out.
@@ -1357,7 +1364,7 @@ export class McpConnector implements ConnectorProvider {
           if (!authProvider || !isRejectedTokenError(error)) throw error;
           await authProvider.replaceRejectedToken();
           await closeMcpResource(() => session.close());
-          session = new McpSession({ name: `rakazo-${server.slug}` });
+          session = new McpSession({ name: `rakazo-${server.slug}`, elicitation: true });
           await connect();
         }
       }

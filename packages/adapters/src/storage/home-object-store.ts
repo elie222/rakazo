@@ -7,6 +7,7 @@ import type {
   AgentHomeStore,
   ObjectStorage,
   PortableFile,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import { retry } from "@rakazo/core";
 import type { ContentKeyRing, ContentLocation, DataKey, PrismaClient } from "@rakazo/db";
@@ -31,6 +32,7 @@ import {
   packHome,
   unpackHome,
 } from "./home-archive.js";
+import { workspaceSaveLimits } from "./workspace-save-policy.js";
 
 const HOMES_PREFIX = "homes/";
 const SWEEP_INTERVAL_MS = 60 * 60_000;
@@ -106,8 +108,9 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     private readonly storage: ObjectStorage,
     private readonly records: AgentHomeRecords,
     private readonly limits: HomeArchiveLimits = DEFAULT_HOME_ARCHIVE_LIMITS,
+    saveLimits?: WorkspaceExportLimits,
   ) {
-    super(root);
+    super(root, saveLimits);
   }
 
   override describe() {
@@ -412,7 +415,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       sealArtifact(
         stored.key,
         sealedId(stored.storageId, revision),
-        tap(packHome(home, this.limits), digest),
+        tap(packHome(home, this.limits, this.saveLimits), digest),
       ),
     );
     const discard = () => this.storage.delete([key]).catch(() => undefined);
@@ -696,12 +699,20 @@ export function createAgentHomeStore(
   dataDir: string,
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
+  /** Read once at startup; defaults to the environment's `WORKSPACE_SAVE_MAX_GB`. */
+  saveLimits: WorkspaceExportLimits = workspaceSaveLimits(env),
 ): LocalAgentHomeStore {
   const storage = createObjectStorage(env);
-  if (!storage) return new LocalAgentHomeStore(dataDir);
+  if (!storage) return new LocalAgentHomeStore(dataDir, saveLimits);
   const ring = contentEncryptionOf(prisma)?.ring;
   if (!ring) throw new Error("Storing homes in object storage needs content encryption keys");
-  return new ObjectAgentHomeStore(dataDir, storage, new PrismaAgentHomeRecords(prisma, ring));
+  return new ObjectAgentHomeStore(
+    dataDir,
+    storage,
+    new PrismaAgentHomeRecords(prisma, ring),
+    DEFAULT_HOME_ARCHIVE_LIMITS,
+    saveLimits,
+  );
 }
 
 /**

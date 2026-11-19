@@ -1,4 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
+import { createThreadMessage, runAsSystem } from "@rakazo/db";
 
 const TOPICS = [
   "the onboarding funnel",
@@ -200,4 +202,39 @@ function heavyMarkdown(turn: number) {
 
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** Fills a bot's chat with `size` benchmark messages, none of them unread. */
+export async function seedBenchmarkThread(
+  prisma: PrismaClient,
+  botId: string,
+  name: string,
+  size: number,
+) {
+  return runAsSystem("benchmark seed", async () => {
+    const bot = await prisma.bot.findUniqueOrThrow({
+      where: { id: botId },
+      select: { spaceId: true, thread: { select: { id: true } } },
+    });
+    const threadId = bot.thread?.id;
+    if (!threadId) throw new Error(`${name} has no thread`);
+    let lastMessageId = "";
+    let bytes = 0;
+    for (const message of benchmarkThreadMessages(size)) {
+      bytes += JSON.stringify(message.blocks).length;
+      const created = await createThreadMessage(prisma, {
+        threadId,
+        role: message.role,
+        blocks: message.blocks,
+        botId: message.role === "bot" ? botId : undefined,
+        markUnread: false,
+      });
+      lastMessageId = created.id;
+    }
+    return { size, name, botId, threadId, spaceId: bot.spaceId, lastMessageId, bytes };
+  });
+}
+
+export function benchmarkBot(name: string) {
+  return { name, title: "", description: "", notifyOnFinish: false, computerMode: "team" };
 }

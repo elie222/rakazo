@@ -28,6 +28,7 @@ export type UsageMeasurement = {
   totalTokens: number | null;
   costUsd: number | null;
 };
+type MeasuredUsage = Partial<UsageMeasurement> & { costSource?: string | null };
 export type Operation = UsageOperationKind;
 export const OPERATION_KINDS = [
   "answer",
@@ -208,6 +209,7 @@ export class SpendBudget {
   private spent = 0;
   private reservations = new Map<string, { estimate: number; pricing?: EvalPricing }>();
   private serial = 0;
+  private refusedUnsettled = 0;
   private unavailablePricing = false;
   constructor(
     readonly capUsd = 5,
@@ -283,10 +285,25 @@ export class SpendBudget {
     this.reservations.delete(id);
     this.spent += actualUsd ?? reservation.estimate; // Missing usage must not restore potentially incurred spend.
   }
-  settleUsage(
-    id: string,
-    usage: (Partial<UsageMeasurement> & { costSource?: string | null }) | null,
-  ) {
+  /** Counts a request the eval refuses before it is sent, as a stand-in for stored trials does.
+   * Returns false, the answer a request gate gives to refuse it. */
+  refuse(): false {
+    this.refusedUnsettled++;
+    return false;
+  }
+  settleUsage(id: string, usage: (MeasuredUsage & { providerRequestId?: string | null }) | null) {
+    // Frees no more calls than were refused. Some runtimes count tokens for every call they
+    // attempt, so only a measurement from the provider proves a call went out.
+    if (
+      this.refusedUnsettled > 0 &&
+      (usage === null ||
+        (usage.costUsd == null &&
+          !usage.providerRequestId &&
+          ![usage.inputTokens, usage.outputTokens, usage.totalTokens].some(Boolean)))
+    ) {
+      this.refusedUnsettled--;
+      return this.settle(id, 0);
+    }
     const pricing = this.reservations.get(id)?.pricing;
     const priced = usage ? measureCalls([{ id, ...usage }], pricing).costUsd : null;
     // A bounded reservation has no per-token rates; its own bound already covers the write.

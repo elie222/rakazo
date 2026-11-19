@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   download: vi.fn(),
   create: vi.fn(),
   revoke: vi.fn(),
+  writeText: vi.fn(),
 }));
 vi.mock("../../lib/pages/artifact-open", () => ({
   fetchArtifactBytes: mocks.fetch,
@@ -26,7 +27,10 @@ vi.mock("@lingui/core/macro", () => ({
     `«${strings.reduce((text, part, index) => text + part + (values[index] ?? ""), "")}»`,
 }));
 vi.mock("./PdfViewer", () => ({ PdfViewer: () => null }));
-vi.mock("@rakazo/chat-ui/web", () => ({ ChatMarkdown: () => null }));
+vi.mock("@rakazo/chat-ui/web", () => ({
+  ChatMarkdown: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+}));
+vi.mock("./SandboxedHtmlViewer", () => ({ SandboxedHtmlViewer: () => <iframe title="HTML" /> }));
 
 import { ArtifactFileCard } from "./ArtifactFileCard";
 
@@ -41,6 +45,11 @@ beforeEach(() => {
       static override revokeObjectURL = mocks.revoke;
     },
   );
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: mocks.writeText },
+  });
+  mocks.writeText.mockReset().mockResolvedValue(undefined);
   mocks.create.mockReset().mockReturnValue("blob:audio-preview");
   mocks.revoke.mockReset();
   mocks.fetch.mockReset().mockResolvedValue(new Uint8Array([1, 2, 3]));
@@ -300,3 +309,106 @@ it.each(["unmount", "change"])("ignores a rejected retry after %s", async (clean
     expect(container.querySelector("audio")).not.toBeNull();
   }
 });
+
+async function openFilePreview(mimeType = "text/markdown") {
+  await act(async () =>
+    root?.render(
+      <ArtifactFileCard
+        target={{ botId: "bot-1" }}
+        artifactId="file-1"
+        name="notes.md"
+        mimeType={mimeType}
+        size={30}
+      />,
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Preview notes.md"]')!.click(),
+  );
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+  expect(dialog).not.toBeNull();
+  return dialog!;
+}
+
+it.each(["text/markdown", "text/plain"])(
+  "copies the raw %s source after loading",
+  async (mimeType) => {
+    const source = "# Notes\n\n**Raw** source";
+    const loading = deferred<Uint8Array>();
+    mocks.fetch.mockReturnValue(loading.promise);
+    const dialog = await openFilePreview(mimeType);
+    expect(dialog.querySelector('button[aria-label="Copy notes.md"]')).toBeNull();
+    await act(async () => loading.resolve(new TextEncoder().encode(source)));
+    const copy = dialog.querySelector<HTMLButtonElement>('button[aria-label="Copy notes.md"]');
+    expect(copy).not.toBeNull();
+    await act(async () => copy!.click());
+    expect(mocks.writeText).toHaveBeenCalledExactlyOnceWith(source);
+    expect(copy!.getAttribute("aria-label")).toBe("Copied");
+  },
+);
+
+it("offers the source to copy by hand when the browser refuses", async () => {
+  const source = "# Notes";
+  mocks.fetch.mockResolvedValue(new TextEncoder().encode(source));
+  mocks.writeText.mockRejectedValue(new Error("denied"));
+  Object.defineProperty(document, "execCommand", { configurable: true, value: () => false });
+  const dialog = await openFilePreview("text/markdown");
+  await act(async () =>
+    dialog.querySelector<HTMLButtonElement>('button[aria-label="Copy notes.md"]')!.click(),
+  );
+  await vi.waitFor(() =>
+    expect(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Copy notes.md"]')?.value,
+    ).toBe(source),
+  );
+});
+
+it.each(["text/html", "application/pdf", "video/mp4"])(
+  "does not offer copy for %s",
+  async (mimeType) => {
+    mocks.fetch.mockResolvedValue(new TextEncoder().encode("<h1>Notes</h1>"));
+    const dialog = await openFilePreview(mimeType);
+    expect(dialog.querySelector('button[aria-label^="Copy"]')).toBeNull();
+  },
+);
+
+it.each(["metaKey", "ctrlKey"])(
+  "scopes %s+A from the dialog header to the file body",
+  async (modifier) => {
+    mocks.fetch.mockResolvedValue(new TextEncoder().encode("File contents"));
+    const dialog = await openFilePreview();
+    const button = dialog.querySelector<HTMLButtonElement>('button[aria-label="Close preview"]')!;
+    button.focus();
+    const event = new KeyboardEvent("keydown", {
+      key: "a",
+      [modifier]: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => button.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(window.getSelection()?.toString()).toBe("File contents");
+    expect(window.getSelection()?.getRangeAt(0).commonAncestorContainer).toBe(
+      dialog.querySelector("article"),
+    );
+  },
+);
+
+it.each(["input", "textarea", "contenteditable"])(
+  "preserves select-all inside %s",
+  async (kind) => {
+    mocks.fetch.mockResolvedValue(new TextEncoder().encode("File contents"));
+    const dialog = await openFilePreview();
+    const editable = document.createElement(kind === "contenteditable" ? "div" : kind);
+    if (kind === "contenteditable") editable.setAttribute("contenteditable", "true");
+    dialog.append(editable);
+    const event = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => editable.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+  },
+);

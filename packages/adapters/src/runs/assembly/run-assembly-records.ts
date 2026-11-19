@@ -3,6 +3,7 @@ import { hasLab, resolveLabs } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
 import {
   effectiveMemoryScope,
+  expireRunToolQuestions,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
   readMessageBlocks,
@@ -19,7 +20,7 @@ import {
 import { formatAgentEnvironmentInstruction } from "../../computers/sandbox/agent-environment.prompt.js";
 import {
   connectedContext,
-  loadLivePluginSlugs,
+  loadLivePlugins,
   persistLivePluginConnections,
   selectRunConnections,
 } from "../../integrations/connection-context.js";
@@ -361,11 +362,12 @@ export async function connectRun(
   );
   let liveSlugs: string[] = [];
   if (needsLivePluginSync(composioRows)) {
-    const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+    const listing = await loadLivePlugins(deps.listConnectedPlugins, run.userId);
     if (listing.ok) {
       liveSlugs = listing.slugs;
-      await persistLivePluginConnections(deps.prisma, run, composioRows, listing.slugs).catch(
-        () => undefined,
+      await bestEffort(
+        "save live plugin connections",
+        persistLivePluginConnections(deps.prisma, run, composioRows, listing),
       );
     }
   }
@@ -399,10 +401,20 @@ export async function connectRun(
     runId,
     payload: {
       trigger: run.trigger,
+      // Whose cards a viewer may answer while the run runs, before the next snapshot.
+      userId: run.userId,
       routineId: run.routineId,
       ...(run.routine ? { routineName: run.routine.name } : {}),
     },
   });
+
+  // A question a tool asked in an earlier attempt lost its call with that attempt's process.
+  await bestEffort(
+    "tool questions",
+    expireRunToolQuestions(deps.prisma, { id: runId, spaceId: run.spaceId }, (threadId, seq) =>
+      deps.events.notify(threadId, seq),
+    ),
+  );
 
   const discoveredPromise = deps.connector
     ? deps.connector.discoverTools(context)

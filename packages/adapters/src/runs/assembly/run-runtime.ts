@@ -6,6 +6,7 @@ import type {
   ManagedConnectorProvider,
   MessagingSurface,
   SecretStore,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import type { LabFeature } from "@rakazo/contracts";
 import {
@@ -60,6 +61,7 @@ import {
 import { createStrategicInitiativeReconciler } from "../../routines/strategic-initiative.js";
 import { localModelsApiKey } from "../../runtime/pi/models/pi-local-provider-id.js";
 import type { SecretCleanupDeps } from "../../secrets/secret-cleanup.js";
+import { workspaceSaveLimits } from "../../storage/workspace-save-policy.js";
 import { createWebProvider } from "../../web/web-provider-factory.js";
 import { auditLogConfig, createAuditLogReconciler } from "../../webhooks/audit-forwarding.js";
 import { createRunExecutor } from "../executor/executor.js";
@@ -92,6 +94,8 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  /** What one computer save may copy; read once from `WORKSPACE_SAVE_MAX_GB`. */
+  workspaceSaveLimits: WorkspaceExportLimits;
   /** Only names a bot's address to it; the API receives the mail. */
   inboundEmailDomain: string | undefined;
 }
@@ -125,6 +129,7 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     deploymentLabs: deploymentLabsFromEnv(source),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    workspaceSaveLimits: workspaceSaveLimits(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
   };
 }
@@ -211,7 +216,7 @@ type SetByRunRuntime =
   | "connector"
   | "connectors"
   | "userCloudAgents"
-  | "listConnectedPluginSlugs"
+  | "listConnectedPlugins"
   | "secrets"
   | "mcpAllowPrivateEndpoint"
   | "deploymentModelKey"
@@ -224,8 +229,7 @@ type SetByRunRuntime =
   | "inboundEmailDomain"
   | "maxUploadSizeBytes"
   | "messaging"
-  | "messagingDelivery"
-  | "web";
+  | "messagingDelivery";
 
 /** The run executor and the background job handlers that drive it. */
 export function createRunRuntime(
@@ -237,10 +241,19 @@ export function createRunRuntime(
     /** Whether a connected workspace still has its bot installed. */
     isMessagingInstallationActive?: (installationId: string) => Promise<boolean>;
     /** Answers the lifecycle-mail job where account mail is configured. */
+    meetingCalendarSync?: (job: BackgroundJobPayloads["meeting.calendar-sync"]) => Promise<void>;
+    meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
     lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
   },
 ) {
-  const { messaging, isMessagingInstallationActive, lifecycleEmail, ...executorDeps } = deps;
+  const {
+    messaging,
+    isMessagingInstallationActive,
+    lifecycleEmail,
+    meetingWork,
+    meetingCalendarSync,
+    ...executorDeps
+  } = deps;
   const runtime = cliModelRuntime(env, deps.runtime, deps);
   const messagingDelivery = messaging
     ? new MessagingDelivery({
@@ -281,8 +294,7 @@ export function createRunRuntime(
     connector: connectors.stack.connector,
     connectors: connectors.stack.connector,
     userCloudAgents: connectors.userCloudAgents,
-    listConnectedPluginSlugs: (userId) =>
-      connectors.integrationSettings.listConnectedPluginSlugs(userId),
+    listConnectedPlugins: (userId) => connectors.integrationSettings.listConnectedPlugins(userId),
     secrets: [
       env.deploymentModelKey ?? "",
       localModelsApiKey() ?? "",
@@ -310,7 +322,7 @@ export function createRunRuntime(
         }
       : undefined,
     messagingDelivery,
-    web: createWebProvider(),
+    web: executorDeps.web ?? createWebProvider(),
   });
   const jobHandlers = createBackgroundJobHandlers({
     executor,
@@ -337,6 +349,8 @@ export function createRunRuntime(
     mediaGeneration: deps.mediaGeneration,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     lifecycleEmail,
+    meetingWork,
+    meetingCalendarSync,
   });
   return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
 }

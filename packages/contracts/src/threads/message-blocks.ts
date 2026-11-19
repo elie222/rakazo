@@ -9,6 +9,8 @@ import { Id, ThinkingLevelSchema } from "../ids.js";
 import { AgentImportSetupItemSchema } from "../integrations/agent-import-setup.js";
 import { McpTransportSchema } from "../integrations/mcp.js";
 import { McpAppCspSchema } from "../integrations/mcp-app.js";
+import { OutgoingDraft } from "../integrations/outgoing-draft.js";
+import { ToolQuestionSchema } from "../integrations/tool-question.js";
 
 export const MessageRole = z.enum(["user", "bot", "system"]);
 export const BotMessageIntent = z.enum(["request", "result", "question", "status", "fyi"]);
@@ -84,6 +86,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("ask"),
     text: z.string(),
     approvalEffectId: Id.optional(),
+    outgoingDraft: OutgoingDraft.optional(),
     instructionUpdate: z
       .object({
         botId: Id,
@@ -124,6 +127,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     answerMessageId: z.string().optional(),
     /** A secret request the user dismissed instead of answering. */
     dismissed: z.literal(true).optional(),
+    /** An approval nobody answered before an unattended run's card expired; it was not done. */
+    expired: z.literal(true).optional(),
     /** A login the user used for this run only instead of saving it. */
     remembered: z.literal(false).optional(),
     actions: z
@@ -314,6 +319,21 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     toolResult: z.record(z.string(), z.any()),
     csp: McpAppCspSchema.optional(),
     prefersBorder: z.boolean().optional(),
+  }),
+  z.object({
+    /**
+     * A tool's server asking the person something while its call waits (MCP elicitation). Only
+     * the run's own user answers it, and only while the call is open; the call ends it as
+     * expired otherwise.
+     */
+    kind: z.literal("tool_question"),
+    question: ToolQuestionSchema,
+    status: z.enum(["pending", "accepted", "declined", "expired"]),
+    expiresAt: z.string(),
+    /** The waiting call's one-time key: an answer is sealed to it, so only that call reads it. */
+    publicKey: z.string().max(64),
+    /** The person's values sealed to `publicKey`, held only until the waiting call takes them. */
+    sealedValues: z.string().max(100_000).optional(),
   }),
   z.object({
     /** A page the bot saved. Title and version are as sent; read the page for its latest. */

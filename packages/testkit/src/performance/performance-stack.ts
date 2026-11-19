@@ -182,6 +182,13 @@ export function positiveInteger(value: string) {
   return parsed;
 }
 
+export function nonnegativeInteger(value: string) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0)
+    throw new Error(`Expected a non-negative integer: ${value}`);
+  return parsed;
+}
+
 export function safeName(value: string) {
   const name = value.toLowerCase().replace(/[^\p{L}\p{M}\p{N}._-]+/gu, "-");
   // Leave room for the longest report wrapper: web-chat-<name>.json.

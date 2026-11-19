@@ -22,6 +22,7 @@ import {
   GrokBotExportError,
   grokBotExportJson,
   hasAgentImportSecrets,
+  looksLikeCredential,
   newClientId,
   openAgentImportArchive,
   parseGrokBotExport,
@@ -99,16 +100,21 @@ export function useAgentImportSource() {
       if (read !== latestRead.current) return;
       setFiles(next);
       setIncludeSecrets(secrets);
-      // Anything that runs or acts (skills, MCP servers, routines) starts unticked, as do
-      // untouched defaults the source wrote: the user ticks each one they want.
+      // Everything starts ticked but the untouched defaults the source wrote. Routines arrive
+      // paused, and the bot asks before it uses an MCP server.
       const flagged = [
-        ...found.skills,
-        ...found.mcpServers,
-        ...found.routines,
+        // A skill joins the library every bot shares, and an export is text someone else or
+        // a model wrote: one that carries code or files comes over only when it is ticked.
+        ...found.skills.filter((item) =>
+          item.warnings.some((warning) => warning === "runs_code" || warning === "bundled_files"),
+        ),
         ...found.instructions.filter((item) => item.stock),
         ...found.memory.filter((item) => item.stock),
         // Key-looking text reaches a bot only when the user ticks it.
-        ...[...found.instructions, ...found.memory].filter((item) => item.containsKey),
+        ...[...found.instructions, ...found.memory, ...found.skills].filter(
+          (item) => item.containsKey,
+        ),
+        ...found.routines.filter((item) => looksLikeCredential(item.content)),
       ].map((item) => item.id);
       if (keepChoices && plan) {
         // Turning the API key opt-in on or off keeps every choice; only new items get defaults.
@@ -119,6 +125,7 @@ export function useAgentImportSource() {
             ...plan.skills,
             ...plan.mcpServers,
             ...plan.routines,
+            ...plan.leftovers,
             ...plan.apiKeys,
             ...(plan.model ? [plan.model] : []),
           ].map((item) => item.id),
