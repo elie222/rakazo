@@ -17,33 +17,37 @@ interface ResumeDeps {
  */
 export async function resumeRoutinesAfterRestore(deps: ResumeDeps, botIds: string[]) {
   if (botIds.length === 0) return;
+  // Only while it is still marked and its bot is still restored.
   const marked = { botId: { in: botIds }, resumeOnRestore: true, bot: { archivedAt: null } };
   const routines = await deps.prisma.routine.findMany({
     where: marked,
-    select: { id: true, spaceId: true, crons: true, timezone: true, watch: true },
+    select: { id: true, spaceId: true },
   });
-  if (routines.length === 0) return;
-  const now = new Date();
-  const wakeups: Array<{ id: string; nextRunAt: Date }> = [];
-  for (const routine of routines) {
-    if (isOneShotRoutineCrons(routine.crons)) continue;
-    const nextRunAt =
-      routine.watch != null
-        ? firstWatchCheck()
-        : nextCronDateAcross(routine.crons, now, routine.timezone);
-    // Only while it is still marked and its bot is still restored: an archive that lands in
-    // between keeps it off.
-    const resumed = await deps.prisma.routine.updateMany({
-      where: { ...marked, id: routine.id, active: false },
-      data: { active: true, nextRunAt, resumeOnRestore: false },
+  for (const { id } of routines) {
+    // Under the row lock, so the schedule is computed from the routine as it stands, and with
+    // its wakeup in the same transaction, so a routine is never on without one.
+    await deps.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM routines WHERE id = ${id} FOR UPDATE`;
+      const routine = await tx.routine.findFirst({
+        where: { ...marked, id },
+        select: { active: true, crons: true, timezone: true, watch: true },
+      });
+      if (!routine) return;
+      if (routine.active || isOneShotRoutineCrons(routine.crons)) {
+        await tx.routine.update({ where: { id }, data: { resumeOnRestore: false } });
+        return;
+      }
+      const nextRunAt =
+        routine.watch != null
+          ? firstWatchCheck()
+          : nextCronDateAcross(routine.crons, new Date(), routine.timezone);
+      await tx.routine.update({
+        where: { id },
+        data: { active: true, nextRunAt, resumeOnRestore: false },
+      });
+      if (nextRunAt) await deps.jobs.enqueueIn(tx, routineWakeupJob(id, nextRunAt));
     });
-    if (resumed.count === 1 && nextRunAt) wakeups.push({ id: routine.id, nextRunAt });
   }
-  await deps.prisma.routine.updateMany({
-    where: { ...marked, id: { in: routines.map((routine) => routine.id) } },
-    data: { resumeOnRestore: false },
-  });
-  for (const { id, nextRunAt } of wakeups) await deps.jobs.enqueue(routineWakeupJob(id, nextRunAt));
   for (const spaceId of new Set(routines.map((routine) => routine.spaceId)))
     await deps.events?.publishSpaceChange?.(spaceId, "routines");
 }
