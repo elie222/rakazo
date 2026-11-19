@@ -1,5 +1,6 @@
 import type { PageVisibility } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RunContext } from "../assembly/run-context.js";
 
 const publishMessage = vi.fn();
 vi.mock("../assembly/run-messages.js", async (importActual) => ({
@@ -72,6 +73,15 @@ describe("save_page", () => {
     expect(result).toMatchObject({ pageId: "page-1", version: 1, title: "Plan" });
     expect(result.error).toMatch(/saved, but its card could not be posted/);
     expect(result.error).toContain("[Plan](page:page-1)");
+  });
+
+  it("signals the owner's page list even when the page is new", async () => {
+    const tx = { page: { create: vi.fn(async () => ({ id: "page-2", title: "New" })) } };
+    const ctx = context(tx);
+    const publishSpaceChange = vi.fn(async () => {});
+    Object.assign((ctx as RunContext).deps, { events: { publishSpaceChange } });
+    await pageTools.save_page!(ctx, call({ title: "New", source: source("New") }));
+    expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith("pages:user-1", "pages");
   });
 
   it("taints the run when it reads a page's stored source, but not when it saves one", async () => {

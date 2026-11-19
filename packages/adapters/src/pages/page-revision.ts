@@ -19,7 +19,7 @@ import {
   verifiedPageAccount,
   withLease,
 } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { checkPageSource } from "@rakazo/page-kit/validate";
 import { PAGE_REVISION_INSTRUCTIONS, pageRevisionPrompt } from "./page-revision.prompt.js";
 
@@ -154,6 +154,9 @@ export function createPageRevisions(deps: Dependencies) {
                 );
               } catch (error) {
                 if (!attempt || attempt.number < attempt.max) throw error;
+                getLogger().error("page revision failed after retries", error, {
+                  "page.revision_request_id": requestId,
+                });
               }
             }
           }

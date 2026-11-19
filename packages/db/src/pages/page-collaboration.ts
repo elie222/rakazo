@@ -7,8 +7,8 @@ import type { ThreadEvents } from "../threads/events.js";
 
 export const pageChangesScope = (userId: string) => `pages:${userId}`;
 
-export function signalPageUsers(events: ThreadEvents, userIds: readonly (string | null)[]) {
-  return Promise.all(
+export async function signalPageUsers(events: ThreadEvents, userIds: readonly (string | null)[]) {
+  await Promise.all(
     [...new Set(userIds)]
       .filter((id) => id !== null)
       .map((id) => events.publishSpaceChange?.(pageChangesScope(id), "pages")),

@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageComment, PageReview } from "@rakazo/contracts";
 import { newClientId } from "@rakazo/core";
+import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
 import { Button, Input, OptionSelect, Spinner, Textarea } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -209,24 +210,6 @@ function ReviewStatus({
   comment: PageComment;
   currentVersion: number;
 }) {
-  const { t } = useLingui();
-  const status = comment.revision?.status;
-  const stale = comment.version !== currentVersion;
-  const label =
-    status === "published"
-      ? t`Published in revision ${comment.revision?.resultVersion}`
-      : status === "cancelled"
-        ? t`Request cancelled`
-        : stale
-          ? t`Earlier revision`
-          : status === "pending"
-            ? t`Bot draft requested`
-            : status === "ready"
-              ? t`Draft ready`
-              : status === "failed"
-                ? t`Bot couldn't draft a revision`
-                : comment.resolvedAt
-                  ? t`Resolved`
-                  : null;
+  const label = pageCommentStatusLabel(comment, currentVersion);
   return label ? <span className="text-label text-muted-foreground">{label}</span> : null;
 }

@@ -87,6 +87,7 @@ function OpenPage({
   const code = errorCode(page.error);
   const gone = failed && (code === "NOT_FOUND" || code === "FORBIDDEN");
 
+  // This partial key matches all reads for the page, including the share popover’s link input.
   const reads = [
     queries.pages.get.queryKey({ input: { pageId: shownId } }),
     queries.pages.list.key(),

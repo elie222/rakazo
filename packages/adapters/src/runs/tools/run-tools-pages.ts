@@ -1,7 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
 import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
-import { isUniqueViolation, signalPage } from "@rakazo/db";
+import { isUniqueViolation, signalPage, signalPageUsers } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
@@ -330,8 +330,12 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     }
     throw error;
   }
-  if (page && deps.events?.publishSpaceChange)
-    await bestEffort("signal page save", signalPage(deps.prisma, deps.events, page.id));
+  if (deps.events?.publishSpaceChange) {
+    const change = page
+      ? signalPage(deps.prisma, deps.events, page.id)
+      : signalPageUsers(deps.events, [run.userId]);
+    await bestEffort("signal page save", change);
+  }
   const block: MessageBlock = { kind: "page", ...saved };
   const linkText = saved.title.replace(/[\\[\]]/g, "\\$&");
   try {

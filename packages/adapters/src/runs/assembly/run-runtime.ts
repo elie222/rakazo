@@ -333,7 +333,7 @@ export function createRunRuntime(
     events: deps.events,
     jobs: deps.jobs,
     billingEnabled: deps.billingEnabled,
-    runtime: pageRevisionRuntime,
+    runtime: cliModelRuntime(env, pageRevisionRuntime, deps),
     resolveModel: executor.resolveModel,
   });
   const jobHandlers = createBackgroundJobHandlers({

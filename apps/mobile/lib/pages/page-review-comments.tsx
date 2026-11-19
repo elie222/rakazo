@@ -2,6 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PageComment, PageReview } from "@rakazo/contracts";
 import { newClientId } from "@rakazo/core";
+import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import {
@@ -244,25 +245,8 @@ export function PageReviewComments({
 }
 
 function CommentStatus({ comment, latest }: { comment: PageComment; latest: number }) {
-  const { t } = useLingui();
   const tokens = useMobileTokens();
-  const request = comment.revision;
-  const label =
-    request?.status === "published" && request.resultVersion !== null
-      ? t`Published in revision ${ph({ version: request.resultVersion })}`
-      : request?.status === "cancelled"
-        ? t`Request cancelled`
-        : comment.version !== latest
-          ? t`Earlier revision`
-          : request?.status === "pending"
-            ? t`Bot draft requested`
-            : request?.status === "ready"
-              ? t`Draft ready`
-              : request?.status === "failed"
-                ? t`Bot couldn't draft a revision`
-                : comment.resolvedAt
-                  ? t`Resolved`
-                  : null;
+  const label = pageCommentStatusLabel(comment, latest);
   return label ? <Text style={{ color: tokens.mutedForeground }}>{label}</Text> : null;
 }
 
