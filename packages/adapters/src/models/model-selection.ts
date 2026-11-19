@@ -236,33 +236,24 @@ export async function modelCredentialAuthKindsForSpace(
       ).filter((provider): provider is string => provider !== null)
     : [];
   const hosted = hostedProvider && managedProviders.includes(hostedProvider);
-  const [credentials, savedPreferences] = await Promise.all([
-    prisma.userModelCredential.findMany({
-      where: { userId: scope.userId },
-      select: {
-        id: true,
-        provider: true,
-        secretId: true,
-        updatedAt: true,
-        createdAt: true,
+  // Start with connections so a concurrent detach can only leave an empty list of preferences.
+  const rows = await prisma.userModelCredential.findMany({
+    where: { userId: scope.userId },
+    select: {
+      id: true,
+      provider: true,
+      secretId: true,
+      updatedAt: true,
+      createdAt: true,
+      userPreferences: {
+        select: { modelId: true, thinkingLevel: true, updatedAt: true },
       },
-    }),
-    prisma.userModelPreference.findMany({
-      where: { userId: scope.userId },
-      select: {
-        credentialId: true,
-        modelId: true,
-        thinkingLevel: true,
-        updatedAt: true,
-      },
-    }),
-  ]);
-  // Join the two reads by id so disconnecting a connection cannot break a required relation read.
-  const credentialsById = new Map(credentials.map((credential) => [credential.id, credential]));
-  const preferences = savedPreferences.flatMap(({ credentialId, ...preference }) => {
-    const credential = credentialsById.get(credentialId);
-    return credential ? [{ ...preference, credential }] : [];
+    },
   });
+  const credentials = rows.map(({ userPreferences, ...credential }) => credential);
+  const preferences = rows.flatMap(({ userPreferences, ...credential }) =>
+    userPreferences.map((preference) => ({ ...preference, credential })),
+  );
   const connectedProviders = new Set(
     credentials.map((credential) => canonicalPiProviderId(credential.provider)),
   );

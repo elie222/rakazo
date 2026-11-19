@@ -294,18 +294,21 @@ describe("space catalog auth", () => {
     preferences: ReturnType<typeof storedPreference>[];
     secrets: Array<{ id: string; ciphertext: string }>;
   }) {
-    const credentialFindMany = vi.fn().mockResolvedValue(options.credentials);
-    const preferenceFindMany = vi.fn().mockResolvedValue(options.preferences);
+    const credentialFindMany = vi.fn().mockResolvedValue(
+      options.credentials.map((credential) => ({
+        ...credential,
+        userPreferences: options.preferences.filter((row) => row.credentialId === credential.id),
+      })),
+    );
     const secretFindMany = vi.fn().mockResolvedValue(options.secrets);
     const prisma = {
       userModelCredential: {
         findMany: credentialFindMany,
         findFirst: vi.fn().mockResolvedValue(null),
       },
-      userModelPreference: { findMany: preferenceFindMany },
       secret: { findMany: secretFindMany },
     } as unknown as PrismaClient;
-    return { prisma, credentialFindMany, preferenceFindMany, secretFindMany };
+    return { prisma, credentialFindMany, secretFindMany };
   }
 
   function listsSpark(auth: Awaited<ReturnType<typeof modelCredentialAuthKindsForSpace>>) {
@@ -432,7 +435,7 @@ describe("space catalog auth", () => {
   });
 
   it("uses the saved preference instead of a newer account credential", async () => {
-    const { prisma, preferenceFindMany } = authPrisma({
+    const { prisma, credentialFindMany } = authPrisma({
       credentials: [
         storedCredential("cred-api", "secret-api", "2026-03-01T00:00:00.000Z"),
         storedCredential("cred-oauth", "secret-oauth", "2026-01-01T00:00:00.000Z"),
@@ -454,7 +457,7 @@ describe("space catalog auth", () => {
     const auth = await modelCredentialAuthKindsForSpace(prisma, { load }, scope);
 
     expect(auth.byProvider["openai-codex"]).toBe("oauth");
-    expect(preferenceFindMany).toHaveBeenCalledWith(
+    expect(credentialFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { userId: scope.userId },
       }),
@@ -464,7 +467,7 @@ describe("space catalog auth", () => {
   });
 
   it("ignores a preference whose connection disappeared during the catalog read", async () => {
-    const { prisma, preferenceFindMany } = authPrisma({
+    const { prisma, credentialFindMany } = authPrisma({
       credentials: [storedCredential("remaining", "remaining-secret", "2026-02-01T00:00:00Z")],
       preferences: [
         {
@@ -486,10 +489,11 @@ describe("space catalog auth", () => {
 
     expect(auth.secretIdByProvider["openai-codex"]).toBe("remaining-secret");
     expect(auth.secretIdByModel["openai-codex"]?.[spark]).toBeUndefined();
-    expect(preferenceFindMany).toHaveBeenCalledWith({
-      where: { userId: scope.userId },
-      select: { credentialId: true, modelId: true, thinkingLevel: true, updatedAt: true },
-    });
+    expect(credentialFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ userPreferences: expect.anything() }),
+      }),
+    );
   });
 
   it("keeps a model's API-key preference when the default is ChatGPT sign-in", async () => {
