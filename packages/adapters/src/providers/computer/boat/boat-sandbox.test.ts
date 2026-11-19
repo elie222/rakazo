@@ -2205,6 +2205,30 @@ describe("BoatSandboxProvider", () => {
     });
   });
 
+  it("does not read a disk failure from a file name in the archive's errors", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("archive=")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        stdout: "",
+        stderr: "tar: ./No space left on device.txt: Cannot open: Permission denied\n",
+        exitCode: 2,
+        timedOut: false,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    const error = await exportAll(provider, computer).catch((failure: Error) => failure);
+
+    expect(error).not.toBeInstanceOf(WorkspaceSaveFailedError);
+  });
+
   it.each([
     ["Input/output error", "disk_error"],
     ["Transport endpoint is not connected", "disk_error"],

@@ -650,7 +650,9 @@ export class BoatSandboxProvider implements SandboxProvider {
   ): AsyncIterable<PortableFile | StreamedPortableFile> {
     const id = this.id(computer);
     await this.desktops.stopBrowsers(computer, context).catch((error: unknown) => {
-      const reason = diskFailure(error instanceof Error ? error.message : String(error));
+      const reason = diskFailure(
+        errorReasons(error instanceof Error ? error.message : String(error)),
+      );
       throw reason ? new WorkspaceSaveFailedError(reason, { cause: error }) : error;
     });
     // One archive, not a request per file: Boat rate limits every API call by IP, and a
@@ -673,7 +675,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       if (result.exitCode !== 0 || result.timedOut) {
         const failure = new Error(`could not archive Boat workspace (${commandStatus(result)})`);
-        const reason = result.timedOut ? "timed_out" : diskFailure(result.stderr);
+        const reason = result.timedOut ? "timed_out" : diskFailure(errorReasons(result.stderr));
         throw reason ? new WorkspaceSaveFailedError(reason, { cause: failure }) : failure;
       }
       const response = await this.signedDownload(
@@ -1509,12 +1511,12 @@ function systemDamaged(stderr: string): boolean {
   return BOAT_SYSTEM_DAMAGED.test(stderr);
 }
 
-/** The disk failure a command's error output reports, when the computer's own disk failed it. */
-function diskFailure(output: string): "disk_full" | "disk_error" | undefined {
-  if (/\bNo space left on device\b/.test(output)) return "disk_full";
+/** The disk failure in a command's error reasons, read without the paths they name. */
+function diskFailure(reasons: string): "disk_full" | "disk_error" | undefined {
+  if (/\bNo space left on device\b/.test(reasons)) return "disk_full";
   if (
     /\b(?:Input\/output error|Transport endpoint is not connected|Read-only file system)\b/.test(
-      output,
+      reasons,
     )
   )
     return "disk_error";
