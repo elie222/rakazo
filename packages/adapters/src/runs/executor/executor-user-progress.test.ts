@@ -1592,6 +1592,46 @@ describe("text from assistant messages with no tool call between them", () => {
   });
 });
 
+describe("streamed text the person reads as the reply", () => {
+  // The second piece is still batched when the status line arrives, so it is flushed ahead of it.
+  const runtimeEvents: AgentRuntimeEvent[] = [
+    { type: "text", text: "Checking" },
+    { type: "text", text: " the logs." },
+    { type: "progress", text: "Searching the web", activity: true },
+    { type: "text", text: " All clear." },
+    { type: "done", text: "Checking the logs. All clear." },
+  ];
+  const progress = (append: Awaited<ReturnType<typeof runTurn>>["append"]) =>
+    append.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === "thread.progress")
+      .map((event) => event.payload as Record<string, unknown>);
+
+  it("is marked as shown in chat mode, unlike status lines", async () => {
+    const { append } = await runTurn("", false, undefined, [], "fyi", { runtimeEvents });
+    const payloads = progress(append);
+    const written = payloads.filter((payload) => payload.streaming === true);
+    expect(written.map((payload) => payload.text ?? payload.delta).join("")).toBe(
+      "Checking the logs. All clear.",
+    );
+    expect(written.some((payload) => typeof payload.delta === "string")).toBe(true);
+    for (const payload of written) expect(payload.shown).toBe(true);
+    const status = payloads.filter((payload) => payload.activity === true);
+    expect(status.length).toBeGreaterThan(0);
+    for (const payload of status) expect(payload).not.toHaveProperty("shown");
+  });
+
+  it("stays unmarked in messages mode, where working text is private", async () => {
+    const { append } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents,
+      replyMode: "messages",
+    });
+    const payloads = progress(append);
+    expect(payloads.some((payload) => payload.streaming === true)).toBe(true);
+    for (const payload of payloads) expect(payload).not.toHaveProperty("shown");
+  });
+});
+
 describe("a stray NO_RESPONSE on runs that must reply", () => {
   const savedText = (finalizeRun: Awaited<ReturnType<typeof runTurn>>["finalizeRun"]) =>
     finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
