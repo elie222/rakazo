@@ -2,6 +2,8 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   auditEventDto,
+  auditLogAccess,
+  auditLogScope,
   installAuditEventStore,
   listAuditEvents,
   recordAuditEvent,
@@ -359,6 +361,54 @@ describe("security events in the audit log", () => {
     await recordSecurityEvent({ type: "rate_limit.hit", userId: "user-1", ip: "203.0.113.5" });
     await recordSecurityEvent({ type: "deployment.settings.changed", userId: "user-1" });
     expect(store.rows).toEqual([]);
+  });
+});
+
+describe("who reads the audit log", () => {
+  const actor = { userId: "user-1", spaceId: "space-1" };
+  const withRole = (role: string | null) => {
+    const findFirst = vi.fn(async (_args: unknown) =>
+      role ? { organizationId: "org-1", role } : null,
+    );
+    return { db: { member: { findFirst } } as never, findFirst };
+  };
+
+  it("gives owners and admins everyone's events and other members only their own", async () => {
+    expect(await auditLogAccess(withRole("owner").db, actor)).toEqual({
+      organizationId: "org-1",
+      actorId: null,
+    });
+    expect(await auditLogAccess(withRole("admin").db, actor)).toEqual({
+      organizationId: "org-1",
+      actorId: null,
+    });
+    // Better Auth stores several roles comma-separated.
+    expect(await auditLogAccess(withRole("member,admin").db, actor)).toEqual({
+      organizationId: "org-1",
+      actorId: null,
+    });
+    expect(await auditLogAccess(withRole("member").db, actor)).toEqual({
+      organizationId: "org-1",
+      actorId: "user-1",
+    });
+  });
+
+  it("gives nothing to someone outside the space's organization or only a guest of it", async () => {
+    expect(await auditLogAccess(withRole(null).db, actor)).toBeNull();
+    const { db, findFirst } = withRole(null);
+    await auditLogAccess(db, actor);
+    expect(findFirst.mock.calls[0]![0]).toMatchObject({
+      where: { userId: "user-1", role: { not: "guest" } },
+    });
+  });
+
+  it("overrides an actor filter a member asked for, and leaves an admin's alone", () => {
+    expect(auditLogScope({ actorId: "user-1" }, { actorId: "user-2", action: "x" })).toEqual({
+      actorId: "user-1",
+      action: "x",
+    });
+    expect(auditLogScope({ actorId: "user-1" }, {})).toEqual({ actorId: "user-1" });
+    expect(auditLogScope({ actorId: null }, { actorId: "user-2" })).toEqual({ actorId: "user-2" });
   });
 });
 

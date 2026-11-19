@@ -2422,6 +2422,11 @@ describe("archiveBot", () => {
         }),
       );
       expect(cancel.mock.calls).toEqual([["run:active-run"], ["routine:routine-1"]]);
+      // The routines that were on are marked before every routine is turned off.
+      expect(tx.routine.updateMany.mock.calls).toEqual([
+        [{ where: { botId: "bot-1", active: true }, data: { resumeOnRestore: true } }],
+        [{ where: { botId: "bot-1" }, data: { active: false, nextRunAt: null } }],
+      ]);
       expect(tx.bot.update).toHaveBeenCalled();
       expect(tx.routine.updateMany).toHaveBeenCalled();
     },
