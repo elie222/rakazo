@@ -5244,6 +5244,20 @@ describe("Auto Review of actions on the bot's own computer after outside content
     expect(isApprovalPausedResult(f.results[0])).toBe(true);
   });
 
+  it("asks a person when the review of a command fails", async () => {
+    reviewMock.mockResolvedValue({
+      decision: "error",
+      reason: "Checker timed out.",
+      model: "mock",
+    });
+    const f = fixture({ name: "shell", builtin: true, autoReview: true });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ args: { command: exfil }, executionId: "call-1" }]);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+  });
+
   it("runs a command the approval model passed", async () => {
     reviewMock.mockResolvedValue({ decision: "pass", reason: "Routine", model: "mock" });
     const f = fixture({ name: "shell", builtin: true, autoReview: true });
