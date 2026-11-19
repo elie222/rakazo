@@ -28,7 +28,7 @@ import {
 } from "@rakazo/contracts";
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { catalogToolPrefix } from "../approvals/approval-effect.js";
 import {
@@ -71,6 +71,7 @@ import {
   isNpxCommand,
   parseNpxLaunch,
 } from "./mcp-package-installer.js";
+import { needsMcpReauthorization, postMcpReconnectCard } from "./mcp-reconnect-card.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { mcpToolAllowed } from "./mcp-tool-permissions.js";
@@ -247,8 +248,9 @@ export type McpConnectorOptions = {
   stdioEnabled?: boolean;
   allowedCommands?: string[];
   network?: RemoteTransportDependencies;
-  /** Audit sink for failed discovery. Without it the log line stays the only trace. */
-  events?: Pick<ThreadEvents, "append">;
+  /** Audit sink for failed discovery. Without it the log line stays the only trace. With
+   * `notify`, an expired sign-in also leaves its authorization card in the run's chat. */
+  events?: Pick<ThreadEvents, "append"> & Partial<Pick<ThreadEvents, "notify">>;
   allowPrivateEndpoint?: boolean;
   /** Where `npx` packages are installed; see `defaultMcpPackagesRoot`. */
   packagesDir?: string;
@@ -630,6 +632,24 @@ export class McpConnector implements ConnectorProvider {
             startedAt,
             secrets,
           );
+          const events = this.options.events;
+          // Only the bot's own assignment: the card's Authorize re-approves that assignment, and a
+          // server shared with every bot would otherwise put a card in every bot's chat.
+          if (
+            events?.notify &&
+            context.runId &&
+            context.botId &&
+            "botId" in assignment &&
+            needsMcpReauthorization(error)
+          )
+            await bestEffort(
+              "post the MCP reconnect card",
+              postMcpReconnectCard(
+                { prisma: this.prisma, events: { notify: events.notify.bind(events) } },
+                { runId: context.runId, botId: context.botId },
+                server,
+              ),
+            );
           return [unavailableTool(assignment.server, reason)];
         }
       }),
