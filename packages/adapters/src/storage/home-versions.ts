@@ -44,6 +44,13 @@ export class HomeRestoreRunningError extends ClientError {
   }
 }
 
+export class HomeRestoreChangedError extends ClientError {
+  constructor() {
+    super("CONFLICT", "The computer's files changed meanwhile. Try again.");
+    this.name = "HomeRestoreChangedError";
+  }
+}
+
 /** Thrown inside a prune's transaction to roll it back when it would drop the current revision. */
 class PruneRaceError extends Error {}
 
@@ -236,7 +243,16 @@ export function restoreHomeVersion(
           restorePending: computer.restorePending || computer.providerRef !== null,
         },
       });
-      if (moved.count !== 1) throw new HomeRestoreRunningError();
+      if (moved.count === 1) return;
+      // Another transaction changed the computer meanwhile: say what it was.
+      const now = await tx.computer.findUnique({
+        where: { id: computer.id },
+        select: { state: true, maintenanceId: true, homeStorageId: true },
+      });
+      if (now?.homeStorageId !== storageId) throw new HomeVersionNotFoundError();
+      if (!IDLE_STATES.includes(now.state) || now.maintenanceId)
+        throw new HomeRestoreRunningError();
+      throw new HomeRestoreChangedError();
     }),
   );
 }

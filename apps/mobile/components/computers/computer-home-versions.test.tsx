@@ -10,7 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryClient } from "../../lib/query/query";
 import { useComputerHomeVersionRows } from "./computer-home-versions";
 
-const { rpc, alert } = vi.hoisted(() => ({ rpc: vi.fn(), alert: vi.fn() }));
+const { rpc, alert, appState } = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  alert: vi.fn(),
+  appState: { currentState: "active", listeners: new Set<() => void>() },
+}));
 vi.mock("../../lib/api/api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",
@@ -27,7 +31,15 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("react-native", () => ({
   Alert: { alert },
-  AppState: { currentState: "active", addEventListener: () => ({ remove: () => undefined }) },
+  AppState: {
+    get currentState() {
+      return appState.currentState;
+    },
+    addEventListener: (_: string, listener: () => void) => {
+      appState.listeners.add(listener);
+      return { remove: () => appState.listeners.delete(listener) };
+    },
+  },
   View: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("../native/native-symbol", () => ({ NativeSymbol: () => null }));
@@ -89,6 +101,7 @@ describe("computer home version rows", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queryClient.clear();
+    appState.currentState = "active";
     container = document.createElement("div");
     root = createRoot(container);
   });
@@ -98,6 +111,32 @@ describe("computer home version rows", () => {
     rpc.mockResolvedValue([]);
     await act(async () => root.render(createElement(Rows)));
     expect(container.textContent).toBe("");
+  });
+
+  it("says when the versions could not be read", async () => {
+    rpc.mockRejectedValue(new Error("storage down"));
+    await act(async () => root.render(createElement(Rows)));
+    await vi.waitFor(() => expect(container.textContent).toBe("Could not load earlier versions"));
+  });
+
+  it("reads the versions again when the app comes back", async () => {
+    rpc.mockResolvedValue([]);
+    await act(async () => root.render(createElement(Rows)));
+    const reads = () =>
+      rpc.mock.calls.filter(([procedure]) => procedure === "computer/homeVersions").length;
+    const before = reads();
+    rpc.mockResolvedValue(versions);
+    const setState = async (state: string) => {
+      appState.currentState = state;
+      await act(async () => {
+        for (const listener of appState.listeners) listener();
+      });
+    };
+    await setState("background");
+    await setState("active");
+
+    expect(reads()).toBe(before + 1);
+    expect(container.textContent).toContain("Restore earlier version");
   });
 
   it("restores the chosen version once confirmed", async () => {

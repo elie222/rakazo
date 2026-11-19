@@ -1,11 +1,11 @@
 import { i18n } from "@lingui/core";
 import { Trans, useLingui } from "@lingui/react/macro";
-import { COMPUTER_RUNNING_ERROR } from "@rakazo/contracts";
+import { homeVersionChoices } from "@rakazo/core";
 import { Button, RadioGroup, RadioGroupItem } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
-import { errorCode, errorText } from "../../lib/query/user-error";
+import { errorText } from "../../lib/query/user-error";
 import { ConfirmDialog } from "../ConfirmDialog";
 
 /**
@@ -16,7 +16,8 @@ export function ComputerHomeVersions({ botId }: { botId: string }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const read = queries.computer.homeVersions.queryOptions({ input: { botId } });
-  const versions = useQuery(read).data ?? [];
+  const listing = useQuery(read);
+  const versions = homeVersionChoices(listing.data ?? [], i18n.locale);
   const [open, setOpen] = useState(false);
   const [chosen, setChosen] = useState<string | null>(null);
   const labelId = useId();
@@ -26,17 +27,18 @@ export function ComputerHomeVersions({ botId }: { botId: string }) {
     onSaved: () => setOpen(false),
   });
 
+  if (listing.isError)
+    return (
+      <div className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground">
+        <Trans>Computer files</Trans>
+        <span className="text-body-sm text-destructive">
+          <Trans>Could not load</Trans>
+        </span>
+      </div>
+    );
   if (!versions.length) return null;
-  const selected = chosen && versions.some((v) => v.id === chosen) ? chosen : versions[0]!.id;
-  const formatter = new Intl.DateTimeFormat(i18n.locale || undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-  const error = restore.error
-    ? errorCode(restore.error) === COMPUTER_RUNNING_ERROR
-      ? t`Stop the computer first.`
-      : errorText(restore.error, t`Could not restore files`)
-    : null;
+  const selected = chosen && versions.some((v) => v.key === chosen) ? chosen : versions[0]!.key;
+  const error = restore.error ? errorText(restore.error, t`Could not restore files`) : null;
 
   return (
     <div className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground">
@@ -80,11 +82,11 @@ export function ComputerHomeVersions({ botId }: { botId: string }) {
           {versions.map((version) => (
             // biome-ignore lint/a11y/noLabelWithoutControl: the wrapped RadioGroupItem is the control.
             <label
-              key={version.id}
+              key={version.key}
               className="flex cursor-pointer items-center gap-3 rounded-lg px-1 py-1.5 text-body text-foreground"
             >
-              <RadioGroupItem value={version.id} />
-              {formatter.format(new Date(version.savedAt))}
+              <RadioGroupItem value={version.key} />
+              {version.label}
             </label>
           ))}
         </RadioGroup>

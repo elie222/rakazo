@@ -350,7 +350,7 @@ export function computerRoutes(ctx: RouterContext) {
       }),
       homeVersions: authed.computer.homeVersions.handler(async ({ context, input }) => {
         const computer = (await repos.getBot(context.actor, input.botId)).computer;
-        if (!computer) throw new IsolationError();
+        if (!computer) return [];
         const store = versionedHomeStore(deps.home, computer.kind);
         if (!store) return [];
         const versions = await store.earlierVersions(computer.homeKey);

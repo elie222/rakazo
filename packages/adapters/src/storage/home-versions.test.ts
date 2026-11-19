@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { HomeVersion } from "./home-versions.js";
-import { keptHomeRevisions } from "./home-versions.js";
+import {
+  HomeRestoreChangedError,
+  HomeRestoreRunningError,
+  HomeVersionNotFoundError,
+  keptHomeRevisions,
+  restoreHomeVersion,
+} from "./home-versions.js";
 
 const HOUR = 60 * 60_000;
 const DAY = 24 * HOUR;
@@ -59,5 +65,59 @@ describe("keptHomeRevisions", () => {
     expect(keptHomeRevisions([old, ...recent], recent.at(-1)!.revision, now).has("old")).toBe(
       false,
     );
+  });
+});
+
+describe("restoreHomeVersion", () => {
+  const idle: {
+    id: string;
+    state: string;
+    maintenanceId: string | null;
+    providerRef: null;
+    restorePending: boolean;
+    homeStorageId: string | null;
+    homeStorageRevision: string;
+    homeRevisionAt: Date;
+    updatedAt: Date;
+  } = {
+    id: "computer-1",
+    state: "stopped",
+    maintenanceId: null,
+    providerRef: null,
+    restorePending: false,
+    homeStorageId: "storage-1",
+    homeStorageRevision: "rev-2",
+    homeRevisionAt: now,
+    updatedAt: now,
+  };
+
+  /** A database whose final update loses to a change another transaction committed. */
+  function racedBy(after: Partial<typeof idle> | null) {
+    const tx = {
+      computer: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce(idle)
+          .mockResolvedValueOnce(after && { ...idle, ...after }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      computerHomeVersion: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    };
+    return { $transaction: (work: (db: typeof tx) => unknown) => work(tx) } as never;
+  }
+
+  it.each([
+    ["the computer started meanwhile", { state: "running" }, HomeRestoreRunningError],
+    ["maintenance began meanwhile", { maintenanceId: "update-1" }, HomeRestoreRunningError],
+    ["another restore committed first", { homeStorageRevision: "rev-3" }, HomeRestoreChangedError],
+    ["retention cleared the saved files", { homeStorageId: null }, HomeVersionNotFoundError],
+    ["the computer was deleted", null, HomeVersionNotFoundError],
+  ])("says what changed when %s", async (_, after, expected) => {
+    await expect(
+      restoreHomeVersion(racedBy(after), "home-1", "storage-1", "rev-1"),
+    ).rejects.toBeInstanceOf(expected);
   });
 });

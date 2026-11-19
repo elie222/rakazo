@@ -7,7 +7,7 @@ import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { ContentDecryptionError, ContentKeyRing, LocalKeyProvider } from "@rakazo/db";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   checkpointComputerWorkspace,
   restoreComputerWorkspace,
@@ -720,11 +720,27 @@ describe("ObjectAgentHomeStore", () => {
     ]);
   });
 
+  it("still saves when forgetting old versions fails", async () => {
+    const { store, rows, records } = await setup();
+    const prune = vi.spyOn(records, "prune").mockRejectedValue(new Error("database down"));
+    const revision = await store.commit("bot-1", await staged({ "a.txt": "saved" }), context);
+    expect(prune).toHaveBeenCalled();
+    expect(rows[0]!.homeStorageRevision).toBe(revision);
+  });
+
   it("deletes the objects of versions the policy stops keeping when it saves", async () => {
     const { store, storage, versions, rows } = await setup();
     const saved: string[] = [];
-    for (let save = 0; save < 6; save++)
-      saved.push(await store.commit("bot-1", await staged({ "a.txt": `${save}` }), context));
+    // A minute apart, so no two saves share a time.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      for (let save = 0; save < 6; save++) {
+        vi.setSystemTime(new Date(Date.UTC(2026, 10, 19, 12, save)));
+        saved.push(await store.commit("bot-1", await staged({ "a.txt": `${save}` }), context));
+      }
+    } finally {
+      vi.useRealTimers();
+    }
     // All saved the same day: the newest three and the day's first one stay.
     const kept = [saved[0]!, ...saved.slice(-3)];
     expect(versions.map((version) => version.revision).sort()).toEqual([...kept].sort());

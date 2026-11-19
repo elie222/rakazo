@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { COMPUTER_RUNNING_ERROR } from "@rakazo/contracts";
+import { homeVersionChoices } from "@rakazo/core";
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { Alert, View } from "react-native";
@@ -21,7 +21,7 @@ export function useComputerHomeVersionRows(botId: string | undefined): ReactElem
   // The bot's own Space, the one selected when its settings opened, whatever is selected later.
   const [spaceId] = useState(() => selectedSpaceId() ?? undefined);
   const read = rpcQuery("computer/homeVersions", { botId: botId ?? "" }, spaceId);
-  const versions = useScreenQuery(read, { enabled: Boolean(botId), onForeground: false });
+  const versions = useScreenQuery(read, { enabled: Boolean(botId) });
   const restore = useSave({
     target: spaceId ? { scope: "space", spaceId } : undefined,
     save: async ({ botId, versionId }: { botId: string; versionId: string }, send) => {
@@ -30,22 +30,12 @@ export function useComputerHomeVersionRows(botId: string | undefined): ReactElem
     stale: [read.queryKey],
   });
 
-  const list = versions.error ? [] : (versions.data ?? []);
-  if (!botId || !list.length) return [];
-  const format = new Intl.DateTimeFormat(i18n.locale || undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-  const choices = list.map((version) => ({
-    key: version.id,
-    label: format.format(new Date(version.savedAt)),
-  }));
-  const failure = restore.error;
-  const error = failure
-    ? "code" in failure && failure.code === COMPUTER_RUNNING_ERROR
-      ? t`Stop the computer first.`
-      : errorText(failure, t`Could not restore files`)
-    : null;
+  if (!botId) return [];
+  if (versions.error)
+    return [<SettingsRow key="restore-failed" dimmed title={t`Could not load earlier versions`} />];
+  const choices = homeVersionChoices(versions.data ?? [], i18n.locale);
+  if (!choices.length) return [];
+  const error = restore.error ? errorText(restore.error, t`Could not restore files`) : null;
 
   function confirm(versionId: string) {
     const savedAt = choices.find((choice) => choice.key === versionId)?.label;

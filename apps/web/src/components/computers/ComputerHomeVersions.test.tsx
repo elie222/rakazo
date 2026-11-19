@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { COMPUTER_RUNNING_ERROR } from "@rakazo/contracts";
+import { QueryClient } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -70,7 +71,7 @@ let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 beforeEach(() => {
   host = document.createElement("div");
-  root = createRoot(host);
+  root = createRoot(host, new QueryClient({ defaultOptions: { queries: { retry: false } } }));
   computer.homeVersions.mockReset().mockResolvedValue(versions);
   computer.restoreHomeVersion.mockReset().mockResolvedValue({ ok: true });
 });
@@ -90,6 +91,13 @@ it("shows nothing until the computer has an earlier version", async () => {
   await act(async () => root.render(<ComputerHomeVersions botId="bot-1" />));
   await vi.waitFor(() => expect(computer.homeVersions).toHaveBeenCalled());
   expect(host.textContent).toBe("");
+});
+
+it("says when the versions could not be read", async () => {
+  computer.homeVersions.mockRejectedValue(new Error("storage down"));
+  await act(async () => root.render(<ComputerHomeVersions botId="bot-1" />));
+  await vi.waitFor(() => expect(host.textContent).toBe("Computer filesCould not load"));
+  expect(host.querySelector("button")).toBeNull();
 });
 
 it("restores the chosen version and reads the versions again", async () => {
