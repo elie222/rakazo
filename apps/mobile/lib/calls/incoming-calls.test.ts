@@ -20,8 +20,12 @@ const fake = vi.hoisted(() => ({
   rpc: vi.fn(),
   startCall: vi.fn(),
   call: null as unknown,
+  autoLanguage: false,
 }));
 vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => fake.native }));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: async () => (fake.autoLanguage ? "1" : null),
+}));
 vi.mock("expo-notifications", () => ({
   setNotificationCategoryAsync: async () => {},
   getLastNotificationResponse: () => fake.lastResponse,
@@ -106,6 +110,7 @@ beforeEach(() => {
   fake.onEvent = undefined;
   fake.lastResponse = null;
   fake.call = null;
+  fake.autoLanguage = false;
   vi.clearAllMocks();
   fake.native.incomingState.mockResolvedValue({ token: "", actions: [] });
   fake.rpc.mockImplementation(async (path: string) => {
@@ -150,12 +155,15 @@ describe("mobile incoming calls", () => {
     expect(fake.rpc).toHaveBeenCalledTimes(requests);
   });
   it("answers with the existing call id, opening, Space and session", async () => {
+    fake.autoLanguage = true;
     const call = await ring();
     await respondToMobileCall(call, "answer");
     expect(fake.startCall).toHaveBeenCalledWith(
       expect.objectContaining({
         botId: bot.id,
         greeting: "Hello",
+        autoLanguage: true,
+        transcribe: true,
         answered: { callId: "call-1" },
         session: 1,
         requestContext: expect.objectContaining({

@@ -11,8 +11,6 @@ import {
   callTurn,
   createCallReplySpeech,
   createCallSendTracker,
-  createInterimBargeIn,
-  isCallBargeIn,
   isFarewell,
   isRetryableError,
   isRunWorking,
@@ -111,12 +109,9 @@ export type CallDeps = {
   followUp: (botId: string, text: string, clientNonce: string) => Promise<void>;
   /** Tells the server the caller hung up, so it files the call marker and the wrap-up run. */
   endCall: (botId: string, callId: string) => Promise<void>;
-  /**
-   * Says `text`, cutting off whatever the call is saying, or with `queue` after it, so a reply
-   * can be said sentence by sentence as the bot writes it.
-   */
+  /** Says `text` immediately, or queues it after the current sentence during a streamed reply. */
   speak: (botId: string, text: string, queue?: boolean) => Promise<void>;
-  /** Cuts the reply off when the caller talks over it. */
+  /** Cuts the reply off when the call ends. */
   stopSpeaking: () => void;
   /** The opening cue as the call starts, the closing one once the caller's turn is heard. */
   cue: (cue: CallCue) => Promise<void>;
@@ -199,24 +194,15 @@ let turnSeq = 0;
 let speechSeq = 0;
 /** Whether the provider can transcribe, so the fallback path is worth trying at all. */
 let canTranscribe = true;
+let autoLanguage = false;
 /** Whether this device does its own speech recognition; unknown until a turn tries it again. */
 let onDevice: boolean | null = null;
 let recognitionFailures = 0;
-/** A microphone session is running, so playback can leave it open instead of restarting it. */
+/** A microphone session is starting or running. */
 let micOpen = false;
 /** True from ringing until the start cue ends: nothing may open the microphone before the greeting. */
 let opening = false;
-/** The caller cut the reply off: the speaker going idle must not reopen the microphone. */
-let bargedIn = false;
 let guardTimer: ReturnType<typeof setTimeout> | null = null;
-/** Counting down a phrase heard over the reply, before it counts as cutting in. */
-const interim = createInterimBargeIn(() => {
-  if (state?.phase !== "speaking") return;
-  bargedIn = true;
-  deps.stopSpeaking();
-  sealStream();
-  set({ phase: "listening", caption: "" });
-});
 /** Takes over a turn that asks for another bot: the bot to hand over to, or nothing. */
 let switchBot: ((text: string) => CallSwitch | undefined) | undefined;
 let switching = false;
@@ -272,6 +258,7 @@ export function startCall(
     botColor?: string;
     botAvatarSet?: BotAvatarSet;
     transcribe?: boolean;
+    autoLanguage?: boolean;
     /** Spoken as the call connects, before the caller's first turn. */
     greeting?: string;
     answered?: { callId: string };
@@ -290,11 +277,11 @@ export function startCall(
   deps = { ...productionDeps(call.requestContext), ...overrides };
   switchBot = call.switchBot;
   callRunId = null;
-  canTranscribe = call.transcribe ?? true;
+  autoLanguage = call.autoLanguage === true;
+  canTranscribe = call.transcribe ?? !autoLanguage;
   onDevice = null;
   recognitionFailures = 0;
   micOpen = false;
-  bargedIn = false;
   spokenMemory.clear();
   replySpeech.clear();
   streamRunId = null;
@@ -390,10 +377,8 @@ export function endCall(): void {
   failures = 0;
   micOpen = false;
   opening = false;
-  bargedIn = false;
   switchBot = undefined;
   switching = false;
-  interim.clear();
   spokenMemory.clear();
   if (!state) return;
   state = null;
@@ -417,15 +402,6 @@ function guardThenListen(): void {
     guardTimer = null;
     void listen();
   }, ECHO_GUARD_MS);
-}
-
-/**
- * iOS pairs SpeechRecognizer with AVAudioSession voice-chat AEC. Android SpeechRecognizer
- * reads VOICE_RECOGNITION without AEC against loudspeaker playback, so the mic stays shut
- * while the bot speaks and waits out the speaker/reverb tail before reopening.
- */
-function supportsPlaybackBargeIn(): boolean {
-  return Boolean(onDevice) && Platform.OS !== "android";
 }
 
 /**
@@ -457,7 +433,6 @@ export function toggleMute(): void {
     turn?.abort();
     turn = null;
     micOpen = false;
-    interim.clear();
     return;
   }
   consentBlocked = false;
@@ -484,7 +459,7 @@ async function listen(): Promise<void> {
 
 /** Opens one microphone session, unless one is already running or the call is muted. */
 async function openMic(): Promise<void> {
-  if (!state || micOpen || state.muted) return;
+  if (state?.phase !== "listening" || micOpen || state.muted) return;
   // A code is typed on screen: the call must not hear or transcribe it. Until the thread's
   // first snapshot arrives, the call cannot tell, so it waits for that too.
   if (!thread || pendingCallSecretAsk(thread)) {
@@ -498,13 +473,11 @@ async function openMic(): Promise<void> {
   const { botId } = state;
   const mine = () => !controller.signal.aborted && state?.botId === botId;
   try {
-    if (onDevice !== false) {
-      // The session stays open until it delivers a turn, so the microphone is still the
-      // caller's while the reply plays and a barge-in can land.
+    if (!autoLanguage && onDevice !== false) {
       const started = await deps.dictate(
         {
           onInterim: (text) => {
-            if (mine()) heardInterim(text);
+            if (mine()) set({ heard: text });
           },
           onFinal: (text) => {
             if (!mine()) return;
@@ -515,14 +488,12 @@ async function openMic(): Promise<void> {
             if (!mine()) return;
             controller.abort();
             micOpen = false;
-            interim.clear();
             set({ heard: "" });
             if (reason === "failed") {
               onDevice = false;
               recognitionFailures += 1;
             }
-            // Recording must wait for playback; recognition can still hear a barge-in with AEC.
-            if (state?.phase !== "speaking" || supportsPlaybackBargeIn()) void openMic();
+            void openMic();
           },
         },
         controller.signal,
@@ -543,7 +514,9 @@ async function openMic(): Promise<void> {
     if (!canTranscribe) {
       micOpen = false;
       set({
-        caption: t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
+        caption: autoLanguage
+          ? t`Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings.`
+          : t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
       });
       return;
     }
@@ -562,39 +535,16 @@ async function openMic(): Promise<void> {
   }
 }
 
-/** One finished turn: drop the reply leaking back, cut in over playback, or send it. */
+/** Drops any residual echo before a completed turn reaches the bot. */
 async function handleTranscript(raw: string): Promise<void> {
-  if (!state) return;
+  if (!state || state.phase === "speaking" || replyStillWritten()) return;
   // The session stopped itself to deliver this.
   micOpen = false;
   failures = 0;
   const text = raw.trim();
   if (!text) {
-    // Between sentences of a reply still being written the turn stays the bot's.
-    if (replyStillWritten()) void openMic();
-    else void listen();
+    void listen();
     return;
-  }
-  // Between sentences of a reply still being written counts as over it: a backchannel or the
-  // reply's echo must not become a turn.
-  if (state.phase === "speaking" || replyStillWritten()) {
-    if (!supportsPlaybackBargeIn()) {
-      set({ heard: "" });
-      return;
-    }
-    if (!isCallBargeIn(text)) {
-      // The microphone caught the reply, not the caller: reopen so a real interruption
-      // still lands, and let the reply play out.
-      set({ heard: "" });
-      void openMic();
-      return;
-    }
-    // The caller talked over the reply: cut the audio, and never resume that message.
-    bargedIn = true;
-    interim.clear();
-    deps.stopSpeaking();
-    sealStream();
-    set({ phase: "thinking", caption: "" });
   }
   if (spokenMemory.isEcho(text)) {
     set({ heard: "" });
@@ -726,30 +676,12 @@ function blockForConsent(error: AiConsentBlocked): void {
   turn?.abort();
   turn = null;
   micOpen = false;
-  interim.clear();
   set({
     phase: "listening",
     muted: true,
     heard: "",
     caption: errorText(error, t`Could not hear that.`),
   });
-}
-
-/**
- * A running guess: it shows what the caller is saying, and over a reply it is the only
- * signal that arrives while they are still talking. A phrase that stands for
- * INTERIM_BARGE_IN_MS stops the audio at once; the session keeps running, so its silence
- * window finishes the utterance and handleTranscript sends it as the next turn.
- */
-function heardInterim(text: string): void {
-  if (!state) return;
-  if (state.phase !== "speaking") {
-    interim.clear();
-    set({ heard: text });
-    return;
-  }
-  if (!supportsPlaybackBargeIn()) return;
-  interim.hear(text);
 }
 
 function onReply(messageId: string, text: string, runId?: string): void {
@@ -809,7 +741,6 @@ function onThread(next: MobileSnapshot): void {
     turn?.abort();
     turn = null;
     micOpen = false;
-    interim.clear();
     set({ heard: "", caption: t`Hang up, then enter the code on screen.` });
     return;
   }
@@ -873,16 +804,10 @@ function speakAndListen(text: string, { queue = false, continues = false } = {})
   // Bump before anything else: this attempt supersedes all older ones, even if it then
   // declines to speak, so only the newest speech below may run its handlers.
   const speechId = ++speechSeq;
-  // An older speech can settle long after a newer one started, because its barge-in
-  // stop need not resolve it: it must not act on the newer speech's call.
+  // A superseded speech can settle late, for example when replaced by a farewell.
   const superseded = () =>
     state?.botId !== botId || callId !== speakingCallId || speechSeq !== speechId;
   let blockedByConsent = false;
-  // More of the same reply keeps a cut-in that is already counting down.
-  if (!continues) {
-    bargedIn = false;
-    interim.clear();
-  }
   set({ exchanges: withBotSpeech(state.exchanges, text, continues) });
   // A prior disclosure refuse stays muted until unmute; do not re-open speech consent.
   if (consentBlocked) {
@@ -890,16 +815,11 @@ function speakAndListen(text: string, { queue = false, continues = false } = {})
     return;
   }
   spokenMemory.remember(text);
-  // Only on-device recognition with hardware AEC can hear the caller over the reply;
-  // without it (recording fallback, or Android SpeechRecognizer), keep the mic shut until playback ends.
-  const bargeIn = supportsPlaybackBargeIn();
-  if (!bargeIn) {
-    turn?.abort();
-    turn = null;
-    micOpen = false;
-  }
+  // A transcript cannot reliably distinguish loudspeaker echo from the caller.
+  turn?.abort();
+  turn = null;
+  micOpen = false;
   set({ phase: "speaking", heard: "" });
-  if (bargeIn) void openMic();
   void deps
     .speak(botId, text, queue)
     .catch((error: unknown) => {
@@ -922,10 +842,7 @@ function speakAndListen(text: string, { queue = false, continues = false } = {})
     .finally(() => {
       if (superseded()) return;
       if (blockedByConsent) return;
-      // The caller cut in: the microphone is already theirs and their turn is on its way.
-      if (bargedIn) return;
-      // Everything written so far was said, but the run is still writing: wait for the rest
-      // with the microphone as it was while speaking.
+      // The microphone stays shut between sentences while the bot is still writing.
       if (replyStillWritten()) {
         set({ phase: "thinking" });
         deps.waitSound("start");
@@ -937,7 +854,7 @@ function speakAndListen(text: string, { queue = false, continues = false } = {})
 
 /** The reply has been said: listen, after the echo guard where the microphone stayed shut. */
 function endTurn(): void {
-  if (hangUpAfterReply || Platform.OS !== "android") {
+  if (hangUpAfterReply) {
     void listen();
     return;
   }
@@ -966,8 +883,7 @@ function onCallEnded(ended: CallEnded): void {
 }
 
 function productionDeps(requestContext?: ApiRequestContext): CallDeps {
-  // One owner per call: its hang-up and barge-in stop only its own speech, never
-  // unrelated read-aloud that has since replaced it.
+  // One owner per call: hanging up never stops unrelated read-aloud that replaced its speech.
   const speechOwner = createSpeechOwner();
   const sessionCallId = callId;
   // A late request of this call fails instead of going out with a newer session.

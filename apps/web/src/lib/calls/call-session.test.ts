@@ -35,6 +35,7 @@ vi.mock("./dictation.js", () => ({
   usesServerDictation: vi.fn(() => false),
   dictation: {
     recording: false,
+    recordingOrStarting: false,
     listen: vi.fn(async () => undefined),
     stop: vi.fn(),
     subscribe: vi.fn(() => () => undefined),
@@ -826,6 +827,29 @@ describe("call session", () => {
     }
   });
 
+  it("cancels a pending automatic-language microphone before playback", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: true, autoLanguage: true });
+    const mic = dictation as { recordingOrStarting: boolean };
+    mic.recordingOrStarting = true;
+    listen.mockClear();
+    vi.mocked(dictation.stop).mockClear();
+    const speech = vi.mocked(speaker.subscribe).mock.calls[0]?.[0];
+    try {
+      speech?.({ status: "speaking" });
+      expect(dictation.stop).toHaveBeenCalledWith("cancel");
+      expect(listen).not.toHaveBeenCalled();
+      speech?.({ status: "idle" });
+      await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS - 1);
+      expect(listen).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(listen).toHaveBeenCalledWith(
+        expect.objectContaining({ autoLanguage: true, transcribe: true }),
+      );
+    } finally {
+      mic.recordingOrStarting = false;
+    }
+  });
+
   it("lets a finished recording's transcription land when a reply starts", async () => {
     vi.mocked(usesServerDictation).mockReturnValue(true);
     try {
@@ -840,6 +864,48 @@ describe("call session", () => {
       vi.mocked(usesServerDictation).mockReturnValue(false);
     }
   });
+
+  it("waits out speaker echo when an automatic transcription finishes empty", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: true, autoLanguage: true });
+    const turn = listen.mock.calls.at(-1)?.[0];
+    const speech = vi.mocked(speaker.subscribe).mock.calls[0]?.[0];
+    listen.mockClear();
+    speech?.({ status: "speaking" });
+    speech?.({ status: "idle" });
+    turn?.onFinal("");
+    await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS - 1);
+    expect(listen).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(listen).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])(
+    "delivers a completed automatic transcript after playback and its quiet gap (during guard: %s)",
+    async (duringGuard) => {
+      await answeredCall({
+        botId: "call-bot",
+        botName: "Ada",
+        transcribe: true,
+        autoLanguage: true,
+      });
+      const turn = listen.mock.calls.at(-1)?.[0];
+      const speech = vi.mocked(speaker.subscribe).mock.calls[0]?.[0];
+      listen.mockClear();
+      speech?.({ status: "speaking" });
+      if (duringGuard) speech?.({ status: "idle" });
+      turn?.onFinal("sim");
+      expect(send).not.toHaveBeenCalled();
+      if (!duringGuard) speech?.({ status: "idle" });
+      await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS - 1);
+      expect(send).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(send).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ botId: "call-bot", text: "sim" }),
+      );
+      expect(getSnapshot()?.phase).toBe("thinking");
+      expect(listen).not.toHaveBeenCalled();
+    },
+  );
 
   it("stops a fallback recording that starts while the reply plays", async () => {
     await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: true });
@@ -1175,6 +1241,25 @@ describe("call session", () => {
     speech?.({ status: "idle" });
     await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
 
+    expect(getSnapshot()).toBeNull();
+  });
+
+  it("finishes the bot's farewell when an automatic transcript returns empty during it", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: true, autoLanguage: true });
+    const turn = listen.mock.calls.at(-1)?.[0];
+    const feed = vi.mocked(runThreadSubscription).mock.calls[0]?.[0];
+    const speech = vi.mocked(speaker.subscribe).mock.calls.at(-1)?.[0];
+    feed?.onEvent?.(callEndedEvent(turn?.callId ?? ""), { threadId: "thread-1", cursor: 3 });
+    isSpeaking.mockReturnValue(true);
+    speech?.({ status: "speaking", caption: "Talk soon" });
+    vi.mocked(speaker.stop).mockClear();
+    turn?.onFinal("");
+    expect(getSnapshot()?.phase).toBe("speaking");
+    expect(speaker.stop).not.toHaveBeenCalled();
+
+    isSpeaking.mockReturnValue(false);
+    speech?.({ status: "idle" });
+    await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
     expect(getSnapshot()).toBeNull();
   });
 

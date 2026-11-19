@@ -262,6 +262,8 @@ function fakes(opts: { onDevice?: boolean; loadThread?: boolean } = {}) {
 afterEach(() => endCall());
 
 describe("mobile call session", () => {
+  const waitForListening = () => vi.waitFor(() => expect(getSnapshot()?.phase).toBe("listening"));
+
   it("confirms connection and explicit hang-up once, without buzzing for an absent or aborted call", async () => {
     vi.mocked(hapticImpact).mockClear();
     vi.mocked(hapticSuccess).mockClear();
@@ -501,7 +503,7 @@ describe("mobile call session", () => {
       fake.thread(waitingOn([{ kind: "ask", text: "Ship it?", status: "pending" }]));
       fake.replyWith("start-reply", "Started.", "run-0");
       fake.speeches[0]?.resolve();
-      await flush();
+      await waitForListening();
       fake.say("yes");
       await flush();
       fake.replyWith("reply", "Shipped.", "run-1");
@@ -521,7 +523,7 @@ describe("mobile call session", () => {
       fake.thread(waitingOn([], "running"));
       fake.replyWith("start-reply", "On it.", "run-0");
       fake.speeches[0]?.resolve();
-      await flush();
+      await waitForListening();
       fake.say("also check the tests");
       await flush();
       fake.replyWith("more", "Tests pass.", "run-5");
@@ -693,21 +695,22 @@ describe("mobile call session", () => {
     expect(reportMobileError).toHaveBeenCalledWith(unexpected, "voice.turn");
   });
 
-  it("sends the saved server headers on the transcription request", async () => {
+  it.each([false, true])("sends server headers and no language hint (auto: %s)", async (auto) => {
     const server = "https://api.example.test";
     await saveServerHeaders(server, { "x-proxy-token": "gate" });
-    const fetchImpl = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(JSON.stringify({ text: "transcribed words" })),
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ text: "Olá! How are you?" }),
     );
     vi.stubGlobal("fetch", fetchImpl);
     try {
-      const fake = fakes();
+      const fake = fakes({ onDevice: auto });
       const { transcribe: _transcribe, ...deps } = fake.deps;
       startCall(
         {
           botId: "bot-1",
           botName: "Ada",
+          autoLanguage: auto,
+          transcribe: true,
           requestContext: {
             apiBase: server,
             headers: { authorization: "Bearer token" },
@@ -717,21 +720,23 @@ describe("mobile call session", () => {
         deps,
       );
       await flush();
+      expect(fake.recordings).toHaveLength(1);
       fake.say("spoken words");
       await flush();
-      expect(fake.send).toHaveBeenCalledWith("bot-1", "transcribed words", expect.any(String));
+      expect(fake.send).toHaveBeenCalledWith("bot-1", "Olá! How are you?", expect.any(String));
       expect(fetchImpl).toHaveBeenCalledOnce();
       expect(fetchImpl.mock.calls[0]?.[0]).toBe(`${server}/api/voice/transcribe`);
       const init = fetchImpl.mock.calls[0]?.[1];
       expect(init?.redirect).toBe("error");
       expect(new Headers(init?.headers).get("x-proxy-token")).toBe("gate");
+      expect(JSON.parse(String(init?.body))).not.toHaveProperty("language");
     } finally {
       vi.unstubAllGlobals();
       await saveServerHeaders(server, {});
     }
   });
 
-  describe("voice consent before a recorded clip is uploaded", () => {
+  describe.each([false, true])("voice consent before a recorded clip (auto: %s)", (auto) => {
     const server = "https://api.example.test";
     let allowed = false;
     const prompt = vi.fn<(...args: unknown[]) => Promise<boolean>>();
@@ -771,12 +776,14 @@ describe("mobile call session", () => {
     });
 
     function ungreetedCall() {
-      const fake = fakes();
+      const fake = fakes({ onDevice: auto });
       const { transcribe: _transcribe, ...deps } = fake.deps;
       startCall(
         {
           botId: "bot-1",
           botName: "Ada",
+          autoLanguage: auto,
+          transcribe: true,
           requestContext: {
             apiBase: server,
             headers: { authorization: "Bearer token" },
@@ -867,7 +874,7 @@ describe("mobile call session", () => {
     await flush();
     fake.replyWith("message-1", "It is green.");
     fake.speeches[0]?.resolve();
-    await flush();
+    await waitForListening();
     fake.say("and the tests");
     await flush();
 
@@ -890,8 +897,7 @@ describe("mobile call session", () => {
       { role: "bot", text: "It is green." },
     ]);
     fake.speeches[0]?.resolve();
-    await flush();
-    expect(getSnapshot()?.phase).toBe("listening");
+    await waitForListening();
     expect(fake.recordings).toHaveLength(2);
   });
 
@@ -905,8 +911,7 @@ describe("mobile call session", () => {
     expect(fake.recordings).toHaveLength(0);
 
     fake.speeches[0]?.resolve();
-    await flush();
-    expect(getSnapshot()?.phase).toBe("listening");
+    await waitForListening();
     expect(fake.recordings).toHaveLength(1);
   });
 
@@ -1094,7 +1099,7 @@ describe("mobile call session", () => {
     fake.replyWith("message-1", "It is green.");
     expect(fake.waits).toEqual(["preload", "stop"]);
     fake.speeches[0]?.resolve();
-    await flush();
+    await waitForListening();
 
     fake.hear("and the tests");
     await flush();
@@ -1147,7 +1152,7 @@ describe("mobile call session", () => {
     await flush();
     fake.replyWith("message-1", "It is green.");
     fake.speeches[0]?.reject(new Error("voice offline"));
-    await flush();
+    await waitForListening();
 
     expect(fake.recordings).toHaveLength(2);
     expect(getSnapshot()).toMatchObject({ phase: "listening", muted: false });
@@ -1162,7 +1167,7 @@ describe("mobile call session", () => {
     await flush();
     fake.replyWith("message-1", "It is green.");
     fake.speeches[0]?.resolve();
-    await flush();
+    await waitForListening();
 
     expect(fake.recordings).toHaveLength(2);
     expect(dictate).toHaveBeenCalledOnce();
@@ -1234,9 +1239,7 @@ describe("mobile call session", () => {
     fake.endedCall("someone-elses-call", "Talk soon.");
     fake.replyWith("message-1", "It is green.");
     fake.speeches[0]?.resolve();
-    await flush();
-
-    expect(getSnapshot()?.phase).toBe("listening");
+    await waitForListening();
   });
 
   it("reports a failed recording and retries, then hangs up cleanly", async () => {
@@ -1382,7 +1385,8 @@ describe("mobile call session", () => {
     fake.hear("how is the deploy going");
     await flush();
     fake.replyWith("message-1", "The deploy is green and the tests pass.");
-    await flush();
+    fake.speeches[0]?.resolve();
+    await waitForListening();
 
     fake.hear("the deploy is green and the tests pass");
     await flush();
@@ -1559,6 +1563,7 @@ describe("mobile call speech locales", () => {
     "es-MX",
     "ja-JP",
     "nl-NL",
+    "pt-BR",
     "ru-RU",
     "zh-CN",
     "zh-TW",
@@ -1582,6 +1587,8 @@ describe("mobile call speech locales", () => {
 
   it.each([
     ["en", "ios", "en-US", "en-US"],
+    ["en", "ios", "pt-BR", "pt-BR"],
+    ["pt-BR", "ios", "en-US", "pt-BR"],
     ["de", "ios", "en-US", "de-DE"],
     ["nl", "ios", "en-US", "nl-NL"],
     ["ja", "ios", "en-US", "ja-JP"],
@@ -1619,6 +1626,7 @@ describe("mobile call speech locales", () => {
       setSpeechRecognizer(recognizer);
       activateUiLocale(locale);
       const fake = fakes();
+      const spoken = lang === "pt-BR" ? "Como foi a reunião?" : "status please";
       const { dictate: _dictate, ...deps } = fake.deps;
       startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, deps);
       await vi.advanceTimersByTimeAsync(0);
@@ -1631,20 +1639,16 @@ describe("mobile call speech locales", () => {
         );
       listeners.get("result")?.({
         isFinal: false,
-        results: [{ transcript: "status please" }],
+        results: [{ transcript: spoken }],
       } as never);
-      expect(getSnapshot()).toMatchObject({ phase: "listening", heard: "status please" });
+      expect(getSnapshot()).toMatchObject({ phase: "listening", heard: spoken });
       expect(fake.send).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
 
       expect(fake.send).toHaveBeenCalledOnce();
-      expect(fake.send).toHaveBeenCalledWith(
-        "bot-1",
-        "status please",
-        expect.stringMatching(/^call:/),
-      );
-      expect(getSnapshot()).toMatchObject({ phase: "thinking", heard: "status please" });
+      expect(fake.send).toHaveBeenCalledWith("bot-1", spoken, expect.stringMatching(/^call:/));
+      expect(getSnapshot()).toMatchObject({ phase: "thinking", heard: spoken });
       expect(fake.recordings).toHaveLength(0);
     },
   );
@@ -1685,7 +1689,7 @@ describe("mobile call recognition recovery", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(start).not.toHaveBeenCalled();
     fake.speeches[0]?.resolve();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
     expect(start).toHaveBeenCalledOnce();
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1722,13 +1726,14 @@ describe("mobile call recognition recovery", () => {
 
     fake.replyWith("message-1", "The task is ready.");
     await vi.advanceTimersByTimeAsync(0);
-    fake.emit("result", { isFinal: false, results: [{ transcript: "actually hang on" }] });
-    await vi.advanceTimersByTimeAsync(INTERIM_BARGE_IN_MS);
-    expect(fake.stopSpeaking).toHaveBeenCalledOnce();
+    expect(fake.start).toHaveBeenCalledTimes(starts);
+    fake.speeches[1]?.resolve();
+    await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
+    fake.emit("result", { isFinal: false, results: [{ transcript: "and the deploy" }] });
     await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
     expect(fake.send).toHaveBeenLastCalledWith(
       "bot-1",
-      "actually hang on",
+      "and the deploy",
       expect.stringMatching(/^call:/),
     );
   });
@@ -1787,7 +1792,7 @@ describe("mobile call recognition recovery", () => {
     expect(fake.recordings).toHaveLength(1);
     expect(fake.start).toHaveBeenCalledOnce();
     fake.speeches[1]?.resolve();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
     expect(fake.recordings).toHaveLength(1);
     expect(fake.start).toHaveBeenCalledTimes(2);
   });
@@ -1802,7 +1807,7 @@ describe("mobile call recognition recovery", () => {
     fake.replyWith("message-1", "The task is ready.");
     await vi.advanceTimersByTimeAsync(0);
     fake.speeches[1]?.resolve();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
     expect(fake.start).toHaveBeenCalledTimes(2);
     expect(fake.recordings).toHaveLength(2);
 
@@ -1811,7 +1816,7 @@ describe("mobile call recognition recovery", () => {
     fake.replyWith("message-2", "It shipped.");
     await vi.advanceTimersByTimeAsync(0);
     fake.speeches[2]?.resolve();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
     expect(fake.start).toHaveBeenCalledTimes(2);
     expect(fake.recordings).toHaveLength(3);
   });
@@ -1829,18 +1834,20 @@ describe("mobile call recognition recovery", () => {
     expect(fake.send).toHaveBeenCalledOnce();
   });
 
-  it("defers recording after a recognition failure during playback", async () => {
+  it("falls back only when recognition starts again after playback", async () => {
     const fake = await greetedCall(true);
     fake.emit("result", { isFinal: true, results: [{ transcript: "status please" }] });
     await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
     fake.replyWith("message-1", "The task is ready.");
+    fake.start.mockImplementationOnce(() => {
+      throw new Error("recognizer unavailable");
+    });
     await vi.advanceTimersByTimeAsync(0);
-    fake.emit("error", { error: "language-not-supported" });
-    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.start).toHaveBeenCalledOnce();
     expect(getSnapshot()?.phase).toBe("speaking");
     expect(fake.recordings).toHaveLength(0);
     fake.speeches[1]?.resolve();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS);
     expect(fake.recordings).toHaveLength(1);
     fake.say("another task please");
     await vi.advanceTimersByTimeAsync(0);
@@ -1908,32 +1915,7 @@ describe("mobile call session on a timer", () => {
 
   const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
 
-  it("cuts the reply short when the caller talks over it, and still sends that turn", async () => {
-    const fake = fakes({ onDevice: true });
-    startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
-    await tick();
-    fake.hear("status please");
-    await tick();
-    fake.replyWith("message-1", "It is green.");
-    await tick();
-
-    fake.interim("actually hang on");
-    await tick(INTERIM_BARGE_IN_MS - 1);
-    expect(fake.stopSpeaking).not.toHaveBeenCalled();
-    await tick(1);
-    expect(fake.stopSpeaking).toHaveBeenCalled();
-    expect(getSnapshot()?.phase).toBe("listening");
-
-    fake.hear("actually hang on");
-    await tick();
-    expect(fake.send).toHaveBeenLastCalledWith(
-      "bot-1",
-      "actually hang on",
-      expect.stringMatching(/^call:/),
-    );
-  });
-
-  it("keeps the bot's farewell when the barged-out reply settles late", async () => {
+  it("keeps the bot's farewell when the reply it replaced settles late", async () => {
     const fake = fakes({ onDevice: true });
     const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
     await tick();
@@ -1943,31 +1925,24 @@ describe("mobile call session on a timer", () => {
     await tick();
     expect(fake.speeches).toHaveLength(1);
 
-    // Model hosted preparation: the stop for the barge-in does not settle the speech.
-    fake.stopSpeaking.mockImplementationOnce(() => undefined);
-    fake.interim("actually hang on");
-    await tick(INTERIM_BARGE_IN_MS);
-    expect(fake.stopSpeaking).toHaveBeenCalledOnce();
-    expect(getSnapshot()?.phase).toBe("listening");
-
     fake.endedCall(id, "Talk soon.");
     await tick();
     expect(fake.spoken).toEqual(["It is green.", "Talk soon."]);
 
-    // The barged-out reply settles after the farewell started: it must not hang up.
+    // The superseded reply settles after the farewell starts: it must not hang up.
     fake.speeches[0]?.resolve();
     await tick();
     expect(getSnapshot()?.phase).toBe("speaking");
-    expect(fake.stopSpeaking).toHaveBeenCalledOnce();
+    expect(fake.stopSpeaking).not.toHaveBeenCalled();
 
     fake.speeches[1]?.resolve();
     await tick();
     expect(getSnapshot()).toBeNull();
   });
 
-  describe("Android echo guard and playback mic isolation", () => {
+  describe.each(["ios", "android"])("%s echo guard and playback mic isolation", (os) => {
     beforeEach(() => {
-      device.os = "android";
+      device.os = os;
     });
     afterEach(() => {
       device.os = "ios";
@@ -1982,21 +1957,18 @@ describe("mobile call session on a timer", () => {
 
       fake.hear("status please");
       await tick();
-      fake.replyWith(
-        "message-1",
-        "I checked the staging deploy logs and all integration tests are green today.",
-      );
+      fake.replyWith("message-1", "O deploy terminou e todos os testes passaram.");
       await tick();
       expect(getSnapshot()?.phase).toBe("speaking");
-      // Playback did not open a new dictation session while speaking on Android.
+      // The listener is closed even if the native recognizer had an outstanding result.
       expect(fake.signals).toHaveLength(1);
       expect(fake.signals[0]?.aborted).toBe(true);
 
-      // Late interim or final events during Android playback must not barge in or reopen the mic.
-      fake.interim("unrelated noisy room chatter over speaker");
+      // A misrecognized echo is not a caller's interruption or a new turn.
+      fake.interim("the boy turned in all his papers");
       await tick(INTERIM_BARGE_IN_MS);
       expect(fake.stopSpeaking).not.toHaveBeenCalled();
-      fake.hear("I checked the staging deploy logs and all integration tests are green");
+      fake.hear("the boy turned in all his papers");
       await tick();
       expect(fake.send).toHaveBeenCalledTimes(1);
       expect(fake.signals).toHaveLength(1);
@@ -2010,9 +1982,16 @@ describe("mobile call session on a timer", () => {
       expect(getSnapshot()?.phase).toBe("listening");
       expect(fake.signals).toHaveLength(2);
       expect(fake.signals[1]?.aborted).toBe(false);
+      fake.hear("E agora, qual é o próximo passo?");
+      await tick();
+      expect(fake.send).toHaveBeenLastCalledWith(
+        "bot-1",
+        "E agora, qual é o próximo passo?",
+        expect.stringMatching(/^call:/),
+      );
     });
 
-    it("waits ECHO_GUARD_MS after playback before opening recording fallback on Android", async () => {
+    it("waits ECHO_GUARD_MS after playback before opening recording fallback", async () => {
       const fake = fakes();
       startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
       await tick();
@@ -2061,7 +2040,7 @@ describe("mobile call session on a timer", () => {
       },
     );
 
-    it("handles mute and unmute cleanly across the Android echo guard window", async () => {
+    it("handles mute and unmute cleanly across the echo guard window", async () => {
       const fake = fakes({ onDevice: true });
       startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
       await tick();
@@ -2084,7 +2063,7 @@ describe("mobile call session on a timer", () => {
       expect(fake.signals).toHaveLength(2);
     });
 
-    it("cancels the pending Android echo guard on hang-up and on a follow-up reply", async () => {
+    it("cancels the pending echo guard on hang-up and on a follow-up reply", async () => {
       const fake = fakes({ onDevice: true });
       startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
       await tick();
@@ -2109,7 +2088,7 @@ describe("mobile call session on a timer", () => {
       expect(fake.signals).toHaveLength(1);
     });
 
-    it("hangs up immediately after a farewell on Android without waiting out the echo guard", async () => {
+    it("hangs up immediately after a farewell without waiting out the echo guard", async () => {
       const fake = fakes({ onDevice: true });
       const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, fake.deps);
       await tick();
