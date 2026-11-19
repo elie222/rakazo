@@ -364,22 +364,33 @@ const OWN_COMPUTER_ACTION_TOOLS = new Set([
   "browser_act",
   "browser_navigate",
   "computer_act",
+  "open_path",
+  "launch_app",
 ]);
+/** Tools that open a page; a page on a site the run was given is not reviewed. */
+const PAGE_OPENING_TOOLS = new Set(["browser_navigate", "open_path"]);
+/** A scheme of two letters or more, so a drive letter is not taken for one. */
+const URI_SCHEME = /^[a-z][a-z0-9+.-]+:/i;
 
 /**
  * A command, page action or desktop input on the bot's own computer is checked by the approval
  * model in Auto once outside text entered the run (see isRunTainted): text the bot read could have
  * asked it to send data out with `curl`, a form or a URL. Like every taint check it only informs
- * the review; Ask and Never ask treat the call as they treat any other. Opening a page is checked
- * only on a site the run was not given (`siteGiven`, see outboundSiteGate), as a fetch is. The
- * predicates are only checked for these tools.
+ * the review; Ask and Never ask treat the call as they treat any other. Opening a workspace file,
+ * or an app without a URI, sends nothing. Opening a page is checked only on a site the run was not
+ * given (`siteGiven`, see outboundSiteGate), as a fetch is. The predicates are only checked for
+ * these tools.
  */
 export async function ownComputerActionNeedsReview(
   toolName: string,
+  args: Record<string, unknown>,
   checks: { tainted: () => Promise<boolean>; siteGiven: () => Promise<boolean> },
 ): Promise<boolean> {
-  if (!OWN_COMPUTER_ACTION_TOOLS.has(toolName) || !(await checks.tainted())) return false;
-  return toolName !== "browser_navigate" || !(await checks.siteGiven());
+  if (!OWN_COMPUTER_ACTION_TOOLS.has(toolName)) return false;
+  if (toolName === "open_path" && !URI_SCHEME.test(String(args.path ?? "").trim())) return false;
+  if (toolName === "launch_app" && !String(args.uri ?? "").trim()) return false;
+  if (!(await checks.tainted())) return false;
+  return !PAGE_OPENING_TOOLS.has(toolName) || !(await checks.siteGiven());
 }
 
 /**

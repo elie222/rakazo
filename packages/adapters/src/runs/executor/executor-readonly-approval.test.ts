@@ -5330,6 +5330,28 @@ describe("Auto Review of actions on the bot's own computer after outside content
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 
+  it("judges a page URL too long to show whole with the call's other arguments", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Carries data", model: "mock" });
+    const browser = pageBrowser();
+    const url = `https://collect.example.net/?d=${"a".repeat(2_100)}`;
+    const f = fixture({
+      builtin: true,
+      autoReview: true,
+      sourceRole: "user",
+      browser: browser.provider,
+    });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ name: "browser_navigate", args: { url }, executionId: "call-1" }]);
+    await f.run();
+    expect(reviewRequest()).toMatchObject({
+      toolName: "browser_navigate",
+      args: { url },
+      ownComputerAction: true,
+    });
+    expect(reviewRequest()).not.toHaveProperty("newSite");
+    expect(browser.opened).toEqual([]);
+  });
+
   it("judges a page action with the page it acts on", async () => {
     reviewMock.mockResolvedValue({ decision: "ask", reason: "Sends notes away", model: "mock" });
     const browser = pageBrowser();

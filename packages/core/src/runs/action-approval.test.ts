@@ -992,41 +992,45 @@ describe("savedContextWriteNeedsReview", () => {
 describe("ownComputerActionNeedsReview", () => {
   const yes = async () => true;
   const no = async () => false;
+  const review = (name: string, args: Record<string, unknown>, tainted = yes, siteGiven = no) =>
+    ownComputerActionNeedsReview(name, args, { tainted, siteGiven });
 
-  it.each(["shell", "browser_act", "computer_act"])(
-    "reviews %s only once outside content entered the run",
-    async (name) => {
-      await expect(
-        ownComputerActionNeedsReview(name, { tainted: yes, siteGiven: yes }),
-      ).resolves.toBe(true);
-      await expect(
-        ownComputerActionNeedsReview(name, { tainted: no, siteGiven: no }),
-      ).resolves.toBe(false);
-    },
-  );
-
-  it("reviews opening a page only on a site the run was not given", async () => {
-    await expect(
-      ownComputerActionNeedsReview("browser_navigate", { tainted: yes, siteGiven: no }),
-    ).resolves.toBe(true);
-    await expect(
-      ownComputerActionNeedsReview("browser_navigate", { tainted: yes, siteGiven: yes }),
-    ).resolves.toBe(false);
-    await expect(
-      ownComputerActionNeedsReview("browser_navigate", { tainted: no, siteGiven: no }),
-    ).resolves.toBe(false);
+  it.each([
+    ["shell", { command: "ls" }],
+    ["browser_act", { actions: [] }],
+    ["computer_act", { actions: [] }],
+    ["launch_app", { application: "Mail", uri: "mailto:a@example.com?body=notes" }],
+    ["open_path", { path: "mailto:a@example.com?body=notes" }],
+  ])("reviews %s only once outside content entered the run", async (name, args) => {
+    await expect(review(name, args)).resolves.toBe(true);
+    await expect(review(name, args, no)).resolves.toBe(false);
   });
 
-  it("leaves other tools alone and does not check the run for them", async () => {
+  it.each([
+    ["browser_navigate", { url: "https://collect.example.net/?d=1" }],
+    ["open_path", { path: "https://collect.example.net/?d=1" }],
+  ])("reviews %s only on a site the run was not given", async (name, args) => {
+    await expect(review(name, args)).resolves.toBe(true);
+    await expect(review(name, args, yes, yes)).resolves.toBe(false);
+    await expect(review(name, args, no)).resolves.toBe(false);
+  });
+
+  it("leaves opening a workspace file or an app without a URI alone", async () => {
     let checked = false;
     const check = async () => {
       checked = true;
       return true;
     };
-    for (const name of ["write_file", "read_file", "browser_snapshot", "computer_observe"]) {
-      await expect(
-        ownComputerActionNeedsReview(name, { tainted: check, siteGiven: check }),
-      ).resolves.toBe(false);
+    for (const [name, args] of [
+      ["open_path", { path: "reports/q4.pdf" }],
+      ["open_path", { path: "C:\\Users\\bot\\notes.txt" }],
+      ["launch_app", { application: "Calculator" }],
+      ["write_file", { path: "a.txt" }],
+      ["read_file", { path: "a.txt" }],
+      ["browser_snapshot", {}],
+      ["computer_observe", {}],
+    ] as const) {
+      await expect(review(name, args, check, check)).resolves.toBe(false);
     }
     expect(checked).toBe(false);
   });

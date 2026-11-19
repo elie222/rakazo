@@ -232,10 +232,11 @@ const MAX_HOST_CHARS = 253;
  * with anchored patterns, so a long command is read in linear time; each is cut short enough to
  * keep its host.
  */
-function addressesIn(text: string): string[] {
+function addressesIn(text: string): string[] | undefined {
   const found = new Set<string>();
   for (const word of text.split(WORD_SEPARATORS)) {
-    if (found.size >= MAX_LEFT_OUT_ADDRESSES) break;
+    // More than the list holds could hide the one that matters behind decoys.
+    if (found.size > MAX_LEFT_OUT_ADDRESSES) return undefined;
     if (URL_WORD.test(word) || USER_AT_HOST_WORD.test(word)) found.add(word);
     else if (IPV4_WORD.test(word)) found.add(IPV4_WORD.exec(word)![0]);
     else {
@@ -245,11 +246,10 @@ function addressesIn(text: string): string[] {
         found.add(host);
     }
   }
-  return [...found]
-    .slice(0, MAX_LEFT_OUT_ADDRESSES)
-    .map((address) =>
-      address.length <= MAX_ADDRESS_CHARS ? address : `${address.slice(0, MAX_ADDRESS_CHARS)}…`,
-    );
+  if (found.size > MAX_LEFT_OUT_ADDRESSES) return undefined;
+  return [...found].map((address) =>
+    address.length <= MAX_ADDRESS_CHARS ? address : `${address.slice(0, MAX_ADDRESS_CHARS)}…`,
+  );
 }
 
 /**
@@ -277,6 +277,8 @@ export function ownComputerReviewArgs(
       command.length - COMMAND_TAIL_CHARS + MAX_ADDRESS_CHARS,
     ),
   );
+  // Too many to list: the whole command goes, and one too long to review asks.
+  if (!addresses) return args;
   return {
     ...args,
     command: `${command.slice(0, COMMAND_HEAD_CHARS)}\n…[${leftOut.length} characters left out]…\n${command.slice(-COMMAND_TAIL_CHARS)}`,

@@ -249,24 +249,32 @@ export async function gateToolCall(
     isRunTainted(ctx),
   );
   // Opening a page sends its whole URL to the site, like a fetch, so it is judged like one.
-  const navigateUrl =
-    name === "browser_navigate" ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
-  const navigateSite = navigateUrl ? urlSite(navigateUrl) : undefined;
+  const pageUrl =
+    name === "browser_navigate" || name === "open_path"
+      ? normalizedHttpUrl(String((name === "open_path" ? args.path : args.url) ?? ""))
+      : undefined;
+  const pageSite = pageUrl ? urlSite(pageUrl) : undefined;
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   // Only the approval model reads this, so only Auto looks for outside content here.
-  const ownComputerActionReviewed = await ownComputerActionNeedsReview(name, {
+  const ownComputerActionReviewed = await ownComputerActionNeedsReview(name, args, {
     tainted: async () => mode === "auto" && (await isRunTainted(ctx)),
     siteGiven: async () =>
-      navigateUrl !== undefined &&
-      navigateSite !== undefined &&
+      pageUrl !== undefined &&
+      pageSite !== undefined &&
       outboundSiteGate({
-        site: navigateSite,
+        site: pageSite,
         trusted:
-          ctx.trust.searchResultUrls.has(navigateUrl) ||
-          (await ctx.trust.loadTrustedSites()).has(navigateSite),
+          ctx.trust.searchResultUrls.has(pageUrl) ||
+          (await ctx.trust.loadTrustedSites()).has(pageSite),
         rules: await ctx.trust.loadApprovalRules(),
       }) === "allow",
   });
+  // A page on a new site is judged on its URL alone, as a fetch is, when the URL is short enough to
+  // show whole; a longer one is judged with the call's other arguments, under their size limit.
+  const newPageUrl =
+    ownComputerActionReviewed && pageSite && pageUrl!.length <= MAX_FETCH_URL_LENGTH
+      ? pageUrl
+      : undefined;
   // Outside text only ever informs the approval model: these go to it in Auto, and nowhere else.
   const reviewOnly =
     connectorReadGated ||
@@ -498,15 +506,9 @@ export async function gateToolCall(
       name,
       args,
       connectorKind,
-      newSiteUrl:
-        siteGate === "new"
-          ? fetchUrl
-          : ownComputerActionReviewed && navigateSite
-            ? navigateUrl
-            : undefined,
+      newSiteUrl: siteGate === "new" ? fetchUrl : newPageUrl,
       savedContextWrite: savedContextWriteReviewed,
-      // A page on a new site is judged as a new site, on its URL alone.
-      ownComputerAction: ownComputerActionReviewed && !navigateSite,
+      ownComputerAction: ownComputerActionReviewed && !newPageUrl,
       matchingRules: approvalResolved.matchingRules,
       gated,
       applied,
