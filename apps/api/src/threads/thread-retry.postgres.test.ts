@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
 import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
@@ -14,6 +15,7 @@ import {
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
+import { handleRpcError } from "../rpc-errors.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(databaseUrl);
@@ -58,7 +60,10 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
       sandbox: {},
       env,
     } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+    // Domain errors answer with their own status, as in the app.
+    const handler = new RPCHandler(createRouter(deps), {
+      clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
+    });
     call = async (path, input) => {
       const { response } = await handler.handle(
         new Request(`http://127.0.0.1/rpc/threads/${path}`, {
@@ -148,6 +153,18 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     expect(await system.run.count({ where: { threadId, retryOfRunId: run.id } })).toBe(1);
     expect(enqueue).toHaveBeenCalledTimes(2);
     expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
+  });
+
+  it("retries a reply the sender followed up on while it ran", async () => {
+    const { run } = await failedReply();
+    const followUp = await createThreadMessage(system, {
+      threadId,
+      role: "user",
+      authorUserId: actor.userId,
+      blocks: [{ kind: "text", text: "Only the urgent ones." }],
+    });
+    await system.message.update({ where: { id: followUp.id }, data: { runId: run.id } });
+    expect((await retry(run.id)).status).toBe(200);
   });
 
   it("refuses once the conversation moved on or the run was not a typed message", async () => {

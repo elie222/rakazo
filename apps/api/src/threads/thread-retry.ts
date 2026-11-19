@@ -1,7 +1,6 @@
-import { ORPCError } from "@orpc/server";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, canRetryRun } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, ClientError, canRetryRun } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   IsolationError,
@@ -14,7 +13,11 @@ import {
 import type { ThreadTarget } from "./thread-target.js";
 import { enqueueRunsNeedingContinue, lockAndLoadGroupMembers } from "./thread-target.js";
 
-const STALE_RETRY = "This reply can no longer be retried.";
+class StaleRetryError extends ClientError {
+  constructor() {
+    super("CONFLICT", "This reply can no longer be retried.");
+  }
+}
 
 /**
  * Run a failed reply again from the message that started it. Only its sender may, and only while
@@ -65,11 +68,17 @@ export async function retryThreadRun(
             source?.role !== "user" ||
             (members && !members.some((member) => member.botId === botId))
           ) {
-            throw new ORPCError("CONFLICT", { message: STALE_RETRY });
+            throw new StaleRetryError();
           }
           const [newerMessage, busyRun] = await Promise.all([
             tx.message.findFirst({
-              where: { threadId: target.threadId, role: "user", seq: { gt: source.seq } },
+              where: {
+                threadId: target.threadId,
+                role: "user",
+                seq: { gt: source.seq },
+                // A follow-up or answer sent during the failed reply belongs to it.
+                OR: [{ runId: null }, { runId: { not: failed.id } }],
+              },
               select: { id: true },
             }),
             tx.run.findFirst({
@@ -81,7 +90,7 @@ export async function retryThreadRun(
               select: { id: true },
             }),
           ]);
-          if (newerMessage || busyRun) throw new ORPCError("CONFLICT", { message: STALE_RETRY });
+          if (newerMessage || busyRun) throw new StaleRetryError();
           const task = await tx.task.create({
             data: {
               spaceId: actor.spaceId,
