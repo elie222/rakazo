@@ -19,7 +19,7 @@ import { CHATGPT_OAUTH_PROVIDER, oauthCredentialAccountId } from "./pi-oauth.js"
  * backend for a newer compatibility view.
  */
 export const CODEX_MODELS_ENDPOINT = "https://chatgpt.com/backend-api/codex/models";
-const CODEX_CLIENT_VERSION = "0.159.3";
+const CODEX_CLIENT_VERSION = "0.169.1";
 
 const CODEX_CATALOG_TIMEOUT_MS = 12_000;
 const CODEX_CATALOG_HARD_DEADLINE_MS = CODEX_CATALOG_TIMEOUT_MS + 10_000;
@@ -213,7 +213,7 @@ function parseReasoningEfforts(value: unknown): string[] | typeof INVALID {
 
 function parseContextWindow(value: unknown): number | undefined | typeof INVALID {
   if (value === undefined || value === null) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0 || value > 0xffffffff) {
     return INVALID;
   }
   return value;
@@ -501,9 +501,13 @@ function withLiveFields(entry: PiCatalogEntry, model: CodexCatalogModel): PiCata
   // An explicit account answer decides image input. An omitted list keeps the entry's own.
   const withImages =
     model.supportsImages === undefined ? entry : { ...entry, images: model.supportsImages };
+  const withContext =
+    model.contextWindow === undefined
+      ? withImages
+      : { ...withImages, contextWindow: model.contextWindow };
   return thinkingLevels
-    ? { ...withImages, reasoning: true, thinkingLevels }
-    : { ...withImages, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
+    ? { ...withContext, reasoning: true, thinkingLevels }
+    : { ...withContext, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
 }
 
 function liveThinkingLevels(model: CodexCatalogModel): ThinkingLevel[] | undefined {

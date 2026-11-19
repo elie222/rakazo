@@ -131,7 +131,7 @@ describe("fetchCodexCatalog", () => {
     expect(result.status).toBe("ok");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0]!;
-    expect(String(url)).toBe(`${CODEX_MODELS_ENDPOINT}?client_version=0.159.3`);
+    expect(String(url)).toBe(`${CODEX_MODELS_ENDPOINT}?client_version=0.169.1`);
     const headers = new Headers(init?.headers);
     expect(headers.get("authorization")).toBe(`Bearer ${ACCESS_TOKEN}`);
     expect(headers.get("chatgpt-account-id")).toBe(ACCOUNT_ID);
@@ -317,6 +317,12 @@ describe("parseCodexCatalog", () => {
       "negative context window",
       catalogPayload([
         { slug: "ok", visibility: "list", supported_in_api: true, context_window: -5 },
+      ]),
+    ],
+    [
+      "zero context window",
+      catalogPayload([
+        { slug: "ok", visibility: "list", supported_in_api: true, context_window: 0 },
       ]),
     ],
     [
@@ -1118,6 +1124,34 @@ describe("applyCodexLiveCatalog", () => {
       .filter((entry) => entry.provider === CHATGPT_OAUTH_PROVIDER)
       .map((entry) => entry.id);
     expect(ids).toEqual([LUNA, "gpt-7-codex-new"]);
+  });
+
+  it.each([
+    ["gpt-6.2-sol", 500_000],
+    ["gpt-6.2-astra", 272_000],
+  ] as const)("uses account capabilities for %s", (slug, contextWindow) => {
+    const merged = applyCodexLiveCatalog(
+      base,
+      oauthAuth,
+      liveFor({
+        "secret-a": [
+          liveModel(LUNA),
+          liveModel(slug, {
+            reasoningEfforts: ["low", "medium", "high"],
+            supportsImages: true,
+            contextWindow,
+          }),
+        ],
+      }),
+    );
+    expect(
+      merged.find((entry) => entry.provider === CHATGPT_OAUTH_PROVIDER && entry.id === slug),
+    ).toMatchObject({
+      reasoning: true,
+      thinkingLevels: ["low", "medium", "high"],
+      images: true,
+      contextWindow,
+    });
   });
 
   it("adds live-only models from their owning model-specific accounts once", () => {
