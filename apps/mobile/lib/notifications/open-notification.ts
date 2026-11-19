@@ -33,9 +33,15 @@ function findChatStack(root: NavigationState | undefined): NavigationState | und
 
 function openNotificationThread(navigation: NotificationNavigation, target: NotificationRoute) {
   const stack = findChatStack(navigation.getRootState());
-  if (!stack) {
-    router.dismissTo("/");
-    router.push(target, { dangerouslySingular: threadRouteId });
+  const sharing = stack?.routes.some((route) => route.name === "share");
+  if (!sharing) closeSettingsSheet();
+  if (!stack) router.dismissTo("/");
+  // Removing these routes can discard a pending share or ask again to close a dirty editor.
+  if (!stack || sharing || stack.routes.some((route) => route.name === "(settings)")) {
+    router.push(
+      sharing ? { ...target, params: { ...target.params, preserveIncomingShare: "1" } } : target,
+      { dangerouslySingular: threadRouteId },
+    );
     return;
   }
 
@@ -98,7 +104,6 @@ export async function openNotificationResponse(
       openedResponses.delete(key);
       return false;
     }
-    closeSettingsSheet();
     openNotificationThread(navigation, target);
     clearNotificationResponseIfCurrent(response);
     return true;

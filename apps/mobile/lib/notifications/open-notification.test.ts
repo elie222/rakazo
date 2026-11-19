@@ -43,7 +43,8 @@ function rootWithChatStack(routes: NavigationState["routes"]): NavigationState {
     type: "stack",
     key: "app-stack",
     index: routes.length - 1,
-    routeNames: ["index", "thread", "group-thread", "(settings)"],
+    routeKeySeq: routes.length,
+    routeNames: ["index", "thread", "group-thread", "(settings)", "share"],
     routes,
   };
   return {
@@ -51,6 +52,7 @@ function rootWithChatStack(routes: NavigationState["routes"]): NavigationState {
     type: "stack",
     key: "expo-root",
     index: 0,
+    routeKeySeq: 1,
     routeNames: ["__root"],
     routes: [{ name: "__root", key: "root-slot", state: stack }],
   };
@@ -69,20 +71,14 @@ beforeEach(() => {
 });
 
 describe("opening a notification tap", () => {
-  it("closes settings and opens a different chat with the list as its back route", async () => {
+  it("opens a different chat with the list as its back route", async () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
     const inbox = { name: "index", key: "inbox" };
     navigation.getRootState.mockReturnValue(
-      rootWithChatStack([
-        inbox,
-        { name: "thread", key: "prior-chat", params: { botId: "bot-2" } },
-        { name: "(settings)", key: "settings" },
-      ]),
+      rootWithChatStack([inbox, { name: "thread", key: "prior-chat", params: { botId: "bot-2" } }]),
     );
 
-    await expect(openNotificationResponse(tap("tap-over-settings"))).resolves.toBe(true);
-    expect(closeSettingsSheet).toHaveBeenCalledTimes(1);
-    expect(closeSettingsSheet).toHaveBeenCalledBefore(navigation.dispatch);
+    await expect(openNotificationResponse(tap("tap-over-other-chat"))).resolves.toBe(true);
     expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         target: "app-stack",
@@ -91,6 +87,50 @@ describe("opening a notification tap", () => {
           routes: [inbox, { name: "thread", params: { botId: "bot-1", threadId: "thread-1" } }],
         }),
       }),
+    );
+  });
+
+  it("opens a notification without removing a settings editor that is still in the stack", async () => {
+    vi.mocked(loadSessionToken).mockResolvedValue("token");
+    navigation.getRootState.mockReturnValue(
+      rootWithChatStack([
+        { name: "index", key: "inbox" },
+        { name: "(settings)", key: "settings" },
+      ]),
+    );
+
+    await expect(openNotificationResponse(tap("tap-over-settings"))).resolves.toBe(true);
+
+    expect(closeSettingsSheet).toHaveBeenCalledOnce();
+    expect(closeSettingsSheet).toHaveBeenCalledBefore(vi.mocked(router.push));
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledExactlyOnceWith(
+      { pathname: "/thread", params: { botId: "bot-1", threadId: "thread-1" } },
+      { dangerouslySingular: threadRouteId },
+    );
+  });
+
+  it("opens a notification over the share picker without taking its pending share", async () => {
+    vi.mocked(loadSessionToken).mockResolvedValue("token");
+    navigation.getRootState.mockReturnValue(
+      rootWithChatStack([
+        { name: "index", key: "inbox" },
+        { name: "share", key: "share" },
+      ]),
+    );
+
+    await expect(openNotificationResponse(tap("tap-over-share"))).resolves.toBe(true);
+
+    expect(closeSettingsSheet).not.toHaveBeenCalled();
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledExactlyOnceWith(
+      {
+        pathname: "/thread",
+        params: { botId: "bot-1", threadId: "thread-1", preserveIncomingShare: "1" },
+      },
+      { dangerouslySingular: threadRouteId },
     );
   });
 
