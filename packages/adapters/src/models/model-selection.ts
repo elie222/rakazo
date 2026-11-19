@@ -250,27 +250,21 @@ export async function modelCredentialAuthKindsForSpace(
     prisma.userModelPreference.findMany({
       where: { userId: scope.userId },
       select: {
+        credentialId: true,
         modelId: true,
-        thinkingLevel: true,
         updatedAt: true,
-        credential: {
-          select: {
-            id: true,
-            provider: true,
-            secretId: true,
-            updatedAt: true,
-            createdAt: true,
-          },
-        },
       },
     }),
   ]);
-  // A connection can be removed between Prisma's preference and relation reads.
-  const preferences = savedPreferences.filter((preference) => preference.credential !== null);
-  const connectedProviders = new Set([
-    ...credentials.map((credential) => canonicalPiProviderId(credential.provider)),
-    ...preferences.map((preference) => canonicalPiProviderId(preference.credential.provider)),
-  ]);
+  // Join the two reads by id so disconnecting a connection cannot break a required relation read.
+  const credentialsById = new Map(credentials.map((credential) => [credential.id, credential]));
+  const preferences = savedPreferences.flatMap(({ credentialId, ...preference }) => {
+    const credential = credentialsById.get(credentialId);
+    return credential ? [{ ...preference, credential }] : [];
+  });
+  const connectedProviders = new Set(
+    credentials.map((credential) => canonicalPiProviderId(credential.provider)),
+  );
   const selections: Array<{
     provider: string;
     modelId: string;

@@ -278,24 +278,19 @@ describe("space catalog auth", () => {
     id: string;
     modelId: string | null;
     credentialId: string;
-    secretId: string;
     iso: string;
   }) {
     return {
       id: input.id,
       modelId: input.modelId,
       updatedAt: stamp(input.iso),
-      credential: storedCredential(input.credentialId, input.secretId, input.iso),
+      credentialId: input.credentialId,
     };
   }
 
   function authPrisma(options: {
     credentials: ReturnType<typeof storedCredential>[];
-    preferences: Array<
-      Omit<ReturnType<typeof storedPreference>, "credential"> & {
-        credential: ReturnType<typeof storedCredential> | null;
-      }
-    >;
+    preferences: ReturnType<typeof storedPreference>[];
     secrets: Array<{ id: string; ciphertext: string }>;
   }) {
     const credentialFindMany = vi.fn().mockResolvedValue(options.credentials);
@@ -446,7 +441,6 @@ describe("space catalog auth", () => {
           id: "pref-oauth",
           modelId: luna,
           credentialId: "cred-oauth",
-          secretId: "secret-oauth",
           iso: "2026-01-02T00:00:00.000Z",
         }),
       ],
@@ -469,14 +463,14 @@ describe("space catalog auth", () => {
   });
 
   it("ignores a preference whose connection disappeared during the catalog read", async () => {
-    const { prisma } = authPrisma({
+    const { prisma, preferenceFindMany } = authPrisma({
       credentials: [storedCredential("remaining", "remaining-secret", "2026-02-01T00:00:00Z")],
       preferences: [
         {
           id: "removed-preference",
           modelId: spark,
           updatedAt: stamp("2026-03-01T00:00:00Z"),
-          credential: null,
+          credentialId: "removed",
         },
       ],
       secrets: [{ id: "remaining-secret", ciphertext: "remaining-ciphertext" }],
@@ -490,6 +484,10 @@ describe("space catalog auth", () => {
 
     expect(auth.secretIdByProvider["openai-codex"]).toBe("remaining-secret");
     expect(auth.secretIdByModel["openai-codex"]?.[spark]).toBeUndefined();
+    expect(preferenceFindMany).toHaveBeenCalledWith({
+      where: { userId: scope.userId },
+      select: { credentialId: true, modelId: true, updatedAt: true },
+    });
   });
 
   it("keeps a model's API-key preference when the default is ChatGPT sign-in", async () => {
@@ -503,14 +501,12 @@ describe("space catalog auth", () => {
           id: "pref-oauth",
           modelId: luna,
           credentialId: "cred-oauth",
-          secretId: "secret-oauth",
           iso: "2026-03-02T00:00:00.000Z",
         }),
         storedPreference({
           id: "pref-spark",
           modelId: spark,
           credentialId: "cred-api",
-          secretId: "secret-api",
           iso: "2026-02-02T00:00:00.000Z",
         }),
       ],
@@ -549,14 +545,12 @@ describe("space catalog auth", () => {
           id: "pref-api",
           modelId: luna,
           credentialId: "cred-api",
-          secretId: "secret-api",
           iso: "2026-03-02T00:00:00.000Z",
         }),
         storedPreference({
           id: "pref-spark",
           modelId: spark,
           credentialId: "cred-oauth",
-          secretId: "secret-oauth",
           iso: "2026-02-02T00:00:00.000Z",
         }),
       ],
@@ -622,14 +616,12 @@ describe("space catalog auth", () => {
           id: "pref-api",
           modelId: luna,
           credentialId: "cred-api",
-          secretId: "secret-api",
           iso: "2026-03-02T00:00:00.000Z",
         }),
         storedPreference({
           id: "pref-spark",
           modelId: spark,
           credentialId: "cred-oauth",
-          secretId: "secret-oauth",
           iso: "2026-02-02T00:00:00.000Z",
         }),
       ],
