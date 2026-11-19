@@ -10,6 +10,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   events: vi.fn(),
+  recheckSession: vi.fn(),
   organizations: [] as unknown[],
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -29,6 +30,7 @@ vi.mock("../../lib/query/rpc", () => ({
     new Headers(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
   clearSpaceSelection: vi.fn(),
   selectSpace: vi.fn(),
+  recheckSessionOnUnauthorized: api.recheckSession,
 }));
 vi.mock("../../lib/spaces/organizations", () => ({
   organizationsQuery: () => ({ queryKey: ["organizations"] }),
@@ -291,6 +293,26 @@ it("says so when the export fails", async () => {
       "Could not export the log.",
     ),
   );
+  vi.unstubAllGlobals();
+});
+
+it("reads the log again after a refused export, so a reader who lost access goes back", async () => {
+  api.events.mockResolvedValueOnce({ events: [event("e1")], nextCursor: null });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("no", { status: 401 })),
+  );
+  await open();
+  api.events.mockRejectedValue(Object.assign(new Error("Refused"), { code: "UNAUTHORIZED" }));
+
+  const exportButton = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Export",
+  )!;
+  await act(async () => exportButton.click());
+  await vi.waitFor(() =>
+    expect(container.querySelector('[data-testid="organization-settings"]')).not.toBeNull(),
+  );
+  expect(api.recheckSession).toHaveBeenCalledWith(401);
   vi.unstubAllGlobals();
 });
 

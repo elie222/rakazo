@@ -5,7 +5,7 @@ import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { queryClient } from "../../lib/query/query";
-import { rpc, withSpaceHeaders } from "../../lib/query/rpc";
+import { recheckSessionOnUnauthorized, rpc, withSpaceHeaders } from "../../lib/query/rpc";
 import { errorCode, errorText } from "../../lib/query/user-error";
 import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 
@@ -40,7 +40,10 @@ async function downloadExport(spaceId: string): Promise<void> {
     headers: withSpaceHeaders(undefined, spaceId),
     credentials: "include",
   });
-  if (!response.ok) throw new Error(`Export failed (${response.status})`);
+  if (!response.ok) {
+    recheckSessionOnUnauthorized(response.status);
+    throw new Error(`Export failed (${response.status})`);
+  }
   const name =
     /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ??
     "rakazo-audit-log.jsonl";
@@ -79,7 +82,14 @@ export function AuditLog({
     },
     queryClient,
   );
-  const download = useMutation({ mutationFn: () => downloadExport(spaceId) }, queryClient);
+  const download = useMutation(
+    {
+      mutationFn: () => downloadExport(spaceId),
+      // A refused export may mean access was removed: reading the log again sends that reader back.
+      onError: () => void log.refetch(),
+    },
+    queryClient,
+  );
   // Not allowed, or no longer a member of the Space the log is read through.
   const code = errorCode(log.error);
   const refused = code === "FORBIDDEN" || code === "UNAUTHORIZED";
