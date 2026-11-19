@@ -18,6 +18,7 @@ import {
 
 const LIST_SIZE = 40;
 const MAX_GRANTS = 50;
+const MAX_REVIEWER_COMMENTS_PER_HOUR = 30;
 
 type Db = Prisma.TransactionClient;
 type Dependencies = { prisma: PrismaClient; events: ThreadEvents };
@@ -331,22 +332,37 @@ export async function addPageComment(
   const id = createHash("sha256")
     .update(JSON.stringify([pageId, actor.userId, submissionId]))
     .digest("hex");
-  await writePageReview(prisma, actor, pageId, async (tx, { page }) => {
+  const added = await writePageReview(prisma, actor, pageId, async (tx, { page, owner }) => {
     const existing = await tx.pageComment.findUnique({
       where: { id },
       select: { version: true, section: true, body: true },
     });
     if (existing) {
       if (existing.version === version && existing.section === section && existing.body === body)
-        return;
+        return false;
       throw new ClientError("CONFLICT", "This review comment was already posted");
     }
     if (version !== page.currentVersion) throw new StalePageReviewError();
+    if (!owner) {
+      const recent = await tx.pageComment.count({
+        where: {
+          pageId,
+          authorId: actor.userId,
+          createdAt: { gte: new Date(Date.now() - 3_600_000) },
+        },
+      });
+      if (recent >= MAX_REVIEWER_COMMENTS_PER_HOUR)
+        throw new ClientError(
+          "TOO_MANY_REQUESTS",
+          "You've posted too many comments on this page. Try again later.",
+        );
+    }
     await tx.pageComment.create({
       data: { id, pageId, authorId: actor.userId, version, section, body },
     });
+    return true;
   });
-  await signalPage(prisma, events, pageId);
+  if (added) await signalPage(prisma, events, pageId);
   return { id };
 }
 

@@ -40,13 +40,15 @@ export function PageReviewComments({
   const [section, setSection] = useState("");
   const [body, setBody] = useState("");
   const [id, setId] = useState(newClientId);
+  const [choosingSection, setChoosingSection] = useState(false);
   const [composingVersion, setComposingVersion] = useState(page.version);
   if (composingVersion !== page.version) {
     setComposingVersion(page.version);
     setSection("");
+    setBody("");
     setId(newClientId());
+    setChoosingSection(false);
   }
-  const [choosingSection, setChoosingSection] = useState(false);
   const pageId = page.id;
   const read = targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/comments", { pageId, cursor });
   const comments = useScreenQuery(read);

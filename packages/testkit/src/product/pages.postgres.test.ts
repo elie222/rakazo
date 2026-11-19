@@ -363,6 +363,83 @@ describePages("pages", () => {
     expect(await rpc(app, reviewer, "pageReviews/list")).toEqual({ items: [], nextCursor: null });
   });
 
+  it("limits reviewer comments and drafts while reserving an allowance for the owner", async () => {
+    const owner = await signup(app, `limits-owner-${stamp}@example.test`, "Author");
+    const signupReviewer = async (number: number) => {
+      const email = `limits-reviewer-${number}-${stamp}@example.test`;
+      const cookie = await signup(app, email, "Reviewer");
+      const { id } = await me(app, cookie);
+      await db().user.update({ where: { id }, data: { emailVerified: true } });
+      return { cookie, id, email };
+    };
+    const first = await signupReviewer(1);
+    const second = await signupReviewer(2);
+    const third = await signupReviewer(3);
+    const bot = await createBot(app, owner, "Review limits bot");
+    const source = page("Review limits");
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Review limits", source })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    await rpc(app, owner, "pages/setVisibility", { pageId, visibility: "people" });
+    for (const { email } of [first, second, third])
+      await rpc(app, owner, "pageReviews/grant", { pageId, email });
+
+    const feedback = { pageId, version: 1, section: "Review limits", body: "Clarify the limit." };
+    const post = (cookie: string) =>
+      rpc<{ id: string }>(app, cookie, "pageReviews/comment", {
+        ...feedback,
+        submissionId: randomUUID(),
+      });
+    await db().pageComment.createMany({
+      data: Array.from({ length: 29 }, () => ({ ...feedback, authorId: first.id })),
+    });
+    const submission = { ...feedback, submissionId: randomUUID() };
+    const comment = await rpc<{ id: string }>(app, first.cookie, "pageReviews/comment", submission);
+    expect(await rpc(app, first.cookie, "pageReviews/comment", submission)).toEqual(comment);
+    const throttled = await raw(app, first.cookie, "pageReviews/comment", {
+      ...feedback,
+      submissionId: randomUUID(),
+    });
+    expect(throttled.status).toBe(429);
+    expect(await db().pageComment.count({ where: { pageId, authorId: first.id } })).toBe(30);
+
+    const secondComment = await post(second.cookie);
+    const thirdComment = await post(third.cookie);
+    const ownerComment = await post(owner);
+    const ask = (cookie: string, commentId: string) =>
+      raw(app, cookie, "pageReviews/askRevision", { pageId, commentId });
+
+    const seedRequests = async (requesterId: string, count: number) => {
+      const comments = await db().pageComment.createManyAndReturn({
+        data: Array.from({ length: count }, () => ({
+          ...feedback,
+          authorId: requesterId,
+          createdAt: new Date(Date.now() - 7_200_000),
+        })),
+        select: { id: true },
+      });
+      await db().pageRevisionRequest.createMany({
+        data: comments.map(({ id }) => ({ commentId: id, requesterId, status: "cancelled" })),
+      });
+    };
+    await seedRequests(first.id, 3);
+    expect((await ask(first.cookie, comment.id)).status).toBe(429);
+
+    await seedRequests(second.id, 2);
+    expect((await ask(second.cookie, secondComment.id)).status).toBe(429);
+    expect((await ask(third.cookie, thirdComment.id)).status).toBe(429);
+
+    revisionCalls.mockResolvedValue(source);
+    expect((await ask(owner, ownerComment.id)).status).toBe(200);
+    await vi.waitFor(async () => {
+      const result = await db().pageRevisionRequest.findFirst({
+        where: { commentId: ownerComment.id },
+      });
+      expect(result?.status).toBe("ready");
+    });
+  });
+
   it("saves, edits and guards pages through the bot's save_page", async () => {
     const cookie = await signup(app, `pages-${stamp}@rakazo.test`, "Page Owner");
     const bot = await createBot(app, cookie, "Reporter");

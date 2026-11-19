@@ -13,7 +13,10 @@ import { readPageReview, StalePageReviewError, writePageReview } from "./page-co
 type DraftInput = { pageId: string; requestId: string };
 type Services = { prisma: PrismaClient; events: ThreadEvents };
 
-const MAX_REQUESTS_PER_DAY = 10;
+const MAX_OWNER_REQUESTS_PER_DAY = 10;
+const MAX_SHARED_REQUESTS_PER_DAY = 5;
+const MAX_REQUESTS_PER_REVIEWER_PER_DAY = 3;
+const DAY_MS = 86_400_000;
 
 export async function askPageRevision(
   {
@@ -84,11 +87,22 @@ export async function askPageRevision(
     });
     if (active)
       throw new ClientError("CONFLICT", "This revision already has a bot request in progress");
+    const recent = { comment: { pageId }, createdAt: { gte: new Date(Date.now() - DAY_MS) } };
     const count = await tx.pageRevisionRequest.count({
-      where: { comment: { pageId }, createdAt: { gte: new Date(Date.now() - 86_400_000) } },
+      where: { ...recent, requesterId: owner ? page.userId : { not: page.userId } },
     });
-    if (count >= MAX_REQUESTS_PER_DAY)
-      throw new ClientError("TOO_MANY_REQUESTS", "This page has reached its daily revision limit");
+    if (count >= (owner ? MAX_OWNER_REQUESTS_PER_DAY : MAX_SHARED_REQUESTS_PER_DAY))
+      throw new ClientError("TOO_MANY_REQUESTS", "The daily revision limit has been reached");
+    if (!owner) {
+      const requested = await tx.pageRevisionRequest.count({
+        where: { ...recent, requesterId: actor.userId },
+      });
+      if (requested >= MAX_REQUESTS_PER_REVIEWER_PER_DAY)
+        throw new ClientError(
+          "TOO_MANY_REQUESTS",
+          "You've reached your daily revision limit for this page",
+        );
+    }
     const request = await tx.pageRevisionRequest.create({
       data: {
         commentId,
@@ -104,8 +118,10 @@ export async function askPageRevision(
     await jobs.enqueueIn(tx, pageRevisionJob(request.id, true));
     return request.id;
   });
-  if (id) start(id);
-  await signalPage(prisma, events, pageId);
+  if (id) {
+    start(id);
+    await signalPage(prisma, events, pageId);
+  }
   return { ok: true as const };
 }
 

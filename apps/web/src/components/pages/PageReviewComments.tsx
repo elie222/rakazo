@@ -33,6 +33,7 @@ export function PageReviewComments({
   if (composingVersion !== page.version) {
     setComposingVersion(page.version);
     setSection("");
+    setBody("");
     setId(newClientId());
   }
   const comments = useInfiniteQuery(
