@@ -104,7 +104,12 @@ function webhook(body: unknown, headers: Record<string, string> = {}) {
   });
 }
 
-function encryptedWebhook(payload: unknown, validSignature = true, pretty = false) {
+function encryptedWebhook(
+  payload: unknown,
+  validSignature = true,
+  pretty = false,
+  timestamp = String(Math.floor(Date.now() / 1_000)),
+) {
   const iv = Buffer.alloc(16, 1);
   const key = createHash("sha256").update(encryptKey).digest();
   const cipher = createCipheriv("aes-256-cbc", key, iv);
@@ -114,7 +119,6 @@ function encryptedWebhook(payload: unknown, validSignature = true, pretty = fals
     cipher.final(),
   ]).toString("base64");
   const body = pretty ? JSON.stringify({ encrypt }, null, 2) : JSON.stringify({ encrypt });
-  const timestamp = "1700000000";
   const nonce = "test-nonce";
   const signature = createHash("sha256")
     .update(timestamp + nonce + encryptKey + body)
@@ -262,6 +266,27 @@ describe("Lark messaging conformance", () => {
       );
     },
   );
+
+  it("rejects a replayed delivery whose signature is older than the window", async () => {
+    const { surface, events } = createSurface(true);
+    const dayOld = String(Math.floor(Date.now() / 1_000) - 24 * 60 * 60);
+    const response = await surface.handleWebhook(
+      "lark",
+      encryptedWebhook(message(), true, false, dayOld),
+    );
+    expect(response?.status).toBe(403);
+    expect(events).toEqual([]);
+  });
+
+  it("rejects a timestamp that is not a number", async () => {
+    const { surface, events } = createSurface(true);
+    const response = await surface.handleWebhook(
+      "lark",
+      encryptedWebhook(message(), true, false, "not-a-timestamp"),
+    );
+    expect(response?.status).toBe(403);
+    expect(events).toEqual([]);
+  });
 
   it("sends with a dedupe id Lark honors, so a repeated send of one message arrives once", async () => {
     const { surface } = createSurface();

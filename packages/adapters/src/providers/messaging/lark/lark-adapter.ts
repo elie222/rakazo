@@ -99,10 +99,14 @@ export class LarkAdapter extends LarkAdapterBase implements Adapter {
       const timestamp = request.headers.get("x-lark-request-timestamp");
       const nonce = request.headers.get("x-lark-request-nonce");
       const signature = request.headers.get("x-lark-signature");
+      // The timestamp is part of the signed string, so a signature alone says the request was
+      // signed once, not that it arrived now: without this window a captured delivery stays valid
+      // forever. Slack and the other signed-webhook providers use the same five minutes.
+      if (!timestamp || !nonce || !freshTimestamp(timestamp)) return forbidden();
       const expected = createHash("sha256")
-        .update((timestamp ?? "") + (nonce ?? "") + this.config.encryptKey + body)
+        .update(timestamp + nonce + this.config.encryptKey + body)
         .digest("hex");
-      if (!timestamp || !nonce || !equal(signature ?? "", expected)) return forbidden();
+      if (!equal(signature ?? "", expected)) return forbidden();
     }
     if (payload.encrypt) {
       if (!this.config.encryptKey) return forbidden();
@@ -321,6 +325,15 @@ function equal(a: string, b: string) {
   const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
 }
+
+/** How far a signed webhook's timestamp may sit from now, as the other signed webhooks allow. */
+const WEBHOOK_TIMESTAMP_WINDOW_SECONDS = 5 * 60;
+
+function freshTimestamp(raw: string) {
+  if (!/^\d+$/.test(raw)) return false;
+  return Math.abs(Date.now() / 1_000 - Number(raw)) <= WEBHOOK_TIMESTAMP_WINDOW_SECONDS;
+}
+
 function forbidden() {
   return new Response("Forbidden", { status: 403 });
 }
