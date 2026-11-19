@@ -93,7 +93,7 @@ afterEach(async () => {
 it("lists the bot's recent files with their size", async () => {
   await render([file("Report.pdf", 1), file("photo.png", 2, "image/png")]);
   const rows = [
-    ...container.querySelectorAll<HTMLButtonElement>('[data-testid="bot-library-files"] button'),
+    ...container.querySelectorAll<HTMLAnchorElement>('[data-testid="bot-library-files"] a'),
   ];
   expect(rows.map((row) => row.textContent)).toEqual(["Report.pdf2 KB", "photo.png2 KB"]);
 });
@@ -107,7 +107,7 @@ it("says where files will show when the bot has none", async () => {
 it("opens a file on the Artifacts page", async () => {
   await render([file("Report.pdf", 1)]);
   await act(async () => {
-    container.querySelector<HTMLButtonElement>('[data-testid="bot-library-files"] button')!.click();
+    container.querySelector<HTMLAnchorElement>('[data-testid="bot-library-files"] a')!.click();
   });
   expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
     "/app/artifacts/artifact-1",
@@ -116,8 +116,8 @@ it("opens a file on the Artifacts page", async () => {
 
 it("links the heading to all files when more remain", async () => {
   await render([file("Report.pdf", 1)], "cursor-next");
-  const heading = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Files",
+  const heading = [...container.querySelectorAll("a")].find(
+    (entry) => entry.textContent === "Files",
   );
   if (!heading) throw new Error("Missing Files heading link");
   await act(async () => heading.click());

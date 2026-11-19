@@ -30,8 +30,8 @@ function rowClass(open: boolean): string {
 /**
  * Bot memory. Skills belong to the person in a space, not to one bot, so they live in
  * the Skills dialog; memory shared across bots lives in the Memory settings overlay.
- * The full mode lists every document with a heading and an empty state, for the bot
- * panel's own Memory tab; the compact preview folds into its parent list.
+ * The full mode lists every document and the empty state; the caller names the section.
+ * The compact preview folds into its parent list.
  */
 export function KnowledgeSection({ botId, full = false }: { botId: string; full?: boolean }) {
   return (

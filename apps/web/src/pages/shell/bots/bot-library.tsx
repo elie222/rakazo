@@ -3,7 +3,7 @@ import { formatFileSize } from "@rakazo/core";
 import { Skeleton } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, FileText, Image as ImageIcon, Paperclip } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { PagesList } from "../../../components/pages/PagesList";
 import { useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
@@ -39,7 +39,6 @@ export function BotLibrary({
   onOpenAllPages: () => void;
 }) {
   const { t } = useLingui();
-  const navigate = useNavigate();
   const queries = useSpaceQueries();
   const files = useQuery({
     ...queries.artifacts.listSpace.queryOptions({ input: { botId, limit: PREVIEW_LIMIT } }),
@@ -53,14 +52,13 @@ export function BotLibrary({
       <PanelSection
         label={
           files.data?.nextCursor ? (
-            <button
-              type="button"
-              onClick={() => navigate(`/app/artifacts?bot=${botId}`)}
+            <Link
+              to={`/app/artifacts?bot=${botId}`}
               className="flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Trans>Files</Trans>
               <ChevronRight aria-hidden="true" className="size-3.5 rtl:rotate-180" />
-            </button>
+            </Link>
           ) : (
             <Trans>Files</Trans>
           )
@@ -83,9 +81,8 @@ export function BotLibrary({
           <ul data-testid="bot-library-files">
             {items.map((item) => (
               <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/app/artifacts/${item.id}`)}
+                <Link
+                  to={`/app/artifacts/${item.id}`}
                   className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-start outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {fileIcon(item.mimeType)}
@@ -95,7 +92,7 @@ export function BotLibrary({
                   <span className="shrink-0 text-body-sm text-muted-foreground">
                     {formatFileSize(item.size)}
                   </span>
-                </button>
+                </Link>
               </li>
             ))}
           </ul>
