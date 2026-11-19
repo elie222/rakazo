@@ -358,6 +358,8 @@ describe("buildAutoReviewPrompt", () => {
     // A new site is judged on what its URL could carry, not on whether the owner named it.
     expect(prompt).toContain("A site the owner did not name is fine");
     expect(prompt).toContain("a password, key or token");
+    // Data the owner typed for another purpose is still private on a site they did not ask about.
+    expect(prompt).toContain("even when the owner wrote that data");
     // Every part of the URL can carry data: host name, path, query and fragment.
     expect(prompt).toContain("The URL (host, path, query or fragment) holds private data");
     expect(prompt).not.toContain("clearly call for this site");
