@@ -76,9 +76,8 @@ function proxiedScreenSandbox(url: string | null) {
 }
 
 /**
- * Every framed screen is sandboxed. A provider's own page keeps its scripts, but gets its own
- * origin so it cannot reach this page, and only the proxy's page is allowed same-origin access
- * to the scripts it ships with.
+ * Every framed screen is sandboxed. Our own pages run with an opaque origin; a provider's page on
+ * another origin keeps its own (embeddableScreenUrl never frames one on this origin).
  */
 export function screenIframeSandbox(url: string | null) {
   if (!url) return undefined;

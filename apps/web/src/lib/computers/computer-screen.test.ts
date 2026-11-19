@@ -165,7 +165,6 @@ describe("screenIframeSandbox", () => {
     expect(screenIframeSandbox("http://127.0.0.1:5173/novnc/vnc.html")).toBe(
       "allow-scripts allow-pointer-lock",
     );
-    // A provider's own page keeps its scripts but gets its own origin, so it cannot reach this one.
     expect(screenIframeSandbox("http://127.0.0.1:5173/vnc.html")).toBe(
       "allow-scripts allow-same-origin allow-pointer-lock",
     );
@@ -181,9 +180,6 @@ describe("same-origin screens", () => {
   it("refuses a provider URL on this page's origin that the proxy does not serve", () => {
     vi.stubGlobal("window", { location: { href: "https://app.example/chat" } });
     expect(embeddableScreenUrl("https://app.example/somewhere-else")).toBeNull();
-    expect(screenIframeSandbox("https://app.example/somewhere-else")).toBe(
-      "allow-scripts allow-same-origin allow-pointer-lock",
-    );
   });
 
   it("still serves the proxied path from this page's origin", () => {
