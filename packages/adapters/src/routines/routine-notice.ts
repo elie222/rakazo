@@ -1,6 +1,10 @@
 import type { RoutineEventChange } from "@rakazo/contracts";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+} from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 
 export type RoutineNoticeDeps = { prisma: PrismaClient; events: ThreadEvents };
@@ -73,7 +77,7 @@ export async function postRoutineNotice(
         payload: { messageId: message.id, role: "system", blocks },
       });
       return event.seq;
-    });
+    }, THREAD_LOCK_TRANSACTION_OPTIONS);
     await bestEffort("routine notice notify", deps.events.notify(threadId, seq));
     return true;
   } catch (error) {
