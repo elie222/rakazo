@@ -1159,6 +1159,8 @@ test("specific people review a version and lose access when removed", async ({
     await captureScreenshot(reviewer, testInfo, "page-review-ai-consent");
     await consent.getByRole("button", { name: "Cancel" }).click();
     await expect(consent).toBeHidden();
+    await reviewer.getByRole("button", { name: "Comments", exact: true }).click();
+    await expect(askBot).toBeVisible();
 
     await shareButton.click();
     await expect(share).toBeHidden();
