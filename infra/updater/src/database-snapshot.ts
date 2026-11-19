@@ -65,31 +65,27 @@ function isMissing(error: unknown): boolean {
 
 interface SnapshotUpdate {
   fromTag: string | null;
-  toTag: string | null;
 }
 
-/** The marker's two lines: the unfinished update's first snapshot, without `.dump`, and its target. */
-function cycleMarker(cycle: string, update: SnapshotUpdate): string {
-  return `${cycle}\n${update.toTag ?? ""}\n`;
-}
-
-/** The first snapshot's name if this same update, between the same two releases, was tried before. */
+/**
+ * The name, without `.dump`, of the first snapshot taken since this release last updated
+ * successfully. Whatever an attempt since then targeted, its migrations may have run, so that
+ * file stays the one clean copy until an update from this release succeeds.
+ */
 async function readCycle(directory: string, update: SnapshotUpdate): Promise<string | null> {
-  let marker: string;
+  let cycle: string;
   try {
-    marker = await readFile(path.posix.join(directory, CYCLE_MARKER), "utf8");
+    cycle = (await readFile(path.posix.join(directory, CYCLE_MARKER), "utf8")).trim();
   } catch (error) {
     if (isMissing(error)) return null;
     throw error;
   }
-  const cycle = marker.split("\n")[0] ?? "";
-  // A marker from an update between other releases describes a different update, not a retry.
-  const same =
+  // A marker left while another release was running describes a cycle that is over.
+  const open =
     SNAPSHOT_FILE.test(`${cycle}.dump`) &&
     !cycle.endsWith(RETRY_SUFFIX) &&
-    cycle.slice(STAMP_LENGTH + 1) === update.fromTag &&
-    marker === cycleMarker(cycle, update);
-  return same ? cycle : null;
+    cycle.slice(STAMP_LENGTH + 1) === update.fromTag;
+  return open ? cycle : null;
 }
 
 async function exists(file: string): Promise<boolean> {
@@ -106,11 +102,13 @@ async function exists(file: string): Promise<boolean> {
  * Dumps the database the outgoing release wrote and saves it in the deployment directory. Image
  * recovery never reverses a migration, so this file is what makes going back possible.
  *
- * One update is one cycle, however often it is retried. Its first attempt saves
+ * A cycle runs from a release's first update attempt until an update from it succeeds, however
+ * many attempts that takes and whatever each one targets. The first attempt saves
  * `<time>-<tag>.dump`, which no later attempt replaces: a failed attempt's migrations may already
- * have run, so only that file is certain to predate them. A retry saves `<time>-<tag>+retry.dump`
- * beside it, replacing the previous retry's, so a cycle never holds more than two files. The cycle
- * ends when the update succeeds ({@link endSnapshotCycle}); files of the last
+ * have run, so only that file is certain to predate them. A later attempt saves
+ * `<time>-<tag>+retry.dump` beside it, replacing the previous one's, so a cycle never holds more
+ * than two files. The cycle ends when an update succeeds ({@link endSnapshotCycle}), never on a
+ * rollback, which leaves the failed attempt's migrations in place; files of the last
  * `config.databaseSnapshots` cycles are kept. A failure is returned, not thrown, and happens
  * before any service is recreated.
  */
@@ -143,12 +141,10 @@ export async function snapshotDatabase(
     const retry = await exists(first);
     const file = retry ? path.posix.join(directory, `${cycle}${RETRY_SUFFIX}.dump`) : first;
     await rename(partial, file);
-    await writeFile(path.posix.join(directory, CYCLE_MARKER), cycleMarker(cycle, update), {
-      mode: 0o600,
-    });
+    await writeFile(path.posix.join(directory, CYCLE_MARKER), `${cycle}\n`, { mode: 0o600 });
     await prune(directory, config.databaseSnapshots);
     const output = retry
-      ? `Saved ${file}. This update was tried before: ${first} is the copy from before that attempt.`
+      ? `Saved ${file}. An update from this release failed before: ${first} is the copy from before that attempt.`
       : `Saved ${file}`;
     return { ok: true, exitCode: 0, stdout: output, output };
   } catch (error) {

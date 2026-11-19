@@ -871,7 +871,7 @@ export function createUpdaterApp(
       }
       record.ok = true;
       record.restart = "recreated";
-      await bestEffort("end the database snapshot cycle", endSnapshotCycle(config));
+      if (input.snapshot) await bestEffort("end the snapshot cycle", endSnapshotCycle(config));
       await bestEffort(
         "prune obsolete update images",
         readEnvFile().then((env) =>

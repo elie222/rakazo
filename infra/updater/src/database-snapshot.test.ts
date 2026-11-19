@@ -195,11 +195,11 @@ describe("snapshot before an update", () => {
 
 describe("snapshot cycles and retention", () => {
   type Fixture = Awaited<ReturnType<typeof deployment>>;
-  async function snapshot(fixture: Fixture, fromTag: string, at: string, toTag = "v2.0.0") {
+  async function snapshot(fixture: Fixture, fromTag: string, at: string) {
     const result = await snapshotDatabase(
       fixture.config,
       { composeFiles: fixture.config.composeFiles, projectName: fixture.config.projectName },
-      { fromTag, toTag },
+      { fromTag },
       fakeDocker().run,
       new Date(at),
     );
@@ -251,18 +251,23 @@ describe("snapshot cycles and retention", () => {
     );
   });
 
-  it("starts a new cycle when the next attempt targets another release", async () => {
-    const fixture = await deployment("2");
-    await snapshot(fixture, "v1.0.0", "2026-01-02T00:00:00Z", "v1.1.0");
-    // v1.1.0 never came up; a later release is tried from the same running image.
-    const next = await snapshot(fixture, "v1.0.0", "2026-01-09T00:00:00Z", "v1.2.0");
-    expect(next.output).not.toContain("tried before");
-    expect(await dumps(fixture)).toEqual(
-      new Set(["20260102T000000Z-v1.0.0.dump", "20260109T000000Z-v1.0.0.dump"]),
+  it("keeps the clean copy through a rollback and an attempt at a newer release", async () => {
+    const fixture = await deployment("1");
+    const failing = createUpdaterApp(fixture.config, { run: fakeDocker({ failUp: true }).run });
+    // The recreate fails, perhaps after the new release's migrations ran.
+    expect((await apply(failing)).ok).toBe(false);
+    const [first] = [...(await dumps(fixture))];
+    await writeFile(path.join(fixture.snapshots, first as string), "from before the failed update");
+    // A successful image rollback reverses no migration, so it must not close the cycle.
+    const working = createUpdaterApp(fixture.config, { run: fakeDocker().run });
+    const rollback = await working.request("/rollback", { method: "POST", headers: authorized });
+    expect(((await rollback.json()) as ServerUpdateRun).ok).toBe(true);
+    // Nor does the next attempt, whichever release it targets: the database may be part migrated.
+    const retried = await snapshot(fixture, "v1.0.0", "2030-01-10T00:00:00Z");
+    expect(retried.output).toContain(`${first} is the copy from before`);
+    expect(await readFile(path.join(fixture.snapshots, first as string), "utf8")).toBe(
+      "from before the failed update",
     );
-    // And a retry of that newer update pairs with its own first snapshot.
-    const retried = await snapshot(fixture, "v1.0.0", "2026-01-10T00:00:00Z", "v1.2.0");
-    expect(retried.output).toContain("20260109T000000Z-v1.0.0.dump is the copy from before");
   });
 
   it("starts a new cycle once an update succeeds, so a later update from the same release is not a retry", async () => {
@@ -272,7 +277,7 @@ describe("snapshot cycles and retention", () => {
     expect(record.ok).toBe(true);
     await expect(stat(path.join(fixture.snapshots, ".in-progress"))).rejects.toThrow();
     // The same update again, as after a rollback: its copy must be a fresh first one.
-    await snapshot(fixture, "v1.0.0", "2030-01-02T00:00:00Z", record.toTag ?? "");
+    await snapshot(fixture, "v1.0.0", "2030-01-02T00:00:00Z");
     const names = [...(await dumps(fixture))];
     expect(names).toHaveLength(2);
     expect(names.some((name) => name.includes("+retry"))).toBe(false);
