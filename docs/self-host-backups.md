@@ -78,6 +78,37 @@ set the same `COMPOSE_PROJECT_NAME` in that file. Set the retention and space se
 When updating an existing installation, reinstall the script and units, then run
 `systemctl daemon-reload`; pulling the repository does not update `/usr/local/sbin` copies.
 
+### Published-images installs
+
+The same script backs up an install made with `install-images.sh`, which has no checkout. Set
+`RAKAZO_DEPLOY_DIR` to the directory holding `docker-compose.images.yml` and `.env`; with no
+production Compose file there, the script uses `docker-compose.images.yml` and, when present,
+`docker-compose.override.yml`. For any other set of files, list them in `RAKAZO_COMPOSE_FILE`, in
+order, as paths inside the deployment directory, separated the way the
+[updater](./self-host-upgrading.md#deployments-that-layer-a-compose-overlay) takes them.
+
+Fetch the script and units for the release you run, then enable the timer:
+
+```bash
+base=https://raw.githubusercontent.com/elie222/rakazo/vX.Y.Z/infra
+sudo curl -fsSL "$base/compose/backup-prod.sh" -o /usr/local/sbin/rakazo-backup
+sudo chmod 755 /usr/local/sbin/rakazo-backup
+for unit in rakazo-backup.service rakazo-backup.timer; do
+  sudo curl -fsSL "$base/systemd/$unit" -o "/etc/systemd/system/$unit"
+done
+sudo install -d -m 700 /etc/rakazo
+printf 'RAKAZO_DEPLOY_DIR=%s\n' "$PWD" | sudo tee /etc/rakazo/backup.env >/dev/null
+sudo chmod 600 /etc/rakazo/backup.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now rakazo-backup.timer
+sudo systemctl start rakazo-backup.service
+```
+
+Run it from the deployment directory. The last command takes the first backup now, so a
+misconfiguration shows at once in `journalctl -u rakazo-backup.service`. The restore steps below
+apply with your own Compose file and volume names; this stack runs Postgres 16, so the drill needs
+`pg_restore` 16 or newer.
+
 For a dedicated backup disk, mount it persistently and bind its `backups` directory onto
 `/var/backups` in `/etc/fstab`. Add `x-systemd.requires-mounts-for=/mnt/your-backup-volume` to the bind
 mount options. Set `RAKAZO_BACKUP_REQUIRE_VOLUME=1` and add a service drop-in containing

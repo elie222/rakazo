@@ -4,7 +4,32 @@ umask 077
 
 PROJECT_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
 [[ "${PROJECT_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
-COMPOSE_FILE="${PROJECT_DIR}/infra/compose/docker-compose.prod.yml"
+# The stack's Compose files, as the updater takes them: paths inside the deployment directory,
+# in order, separated like Compose's own COMPOSE_FILE.
+COMPOSE_SEPARATOR="${COMPOSE_PATH_SEPARATOR:-:}"
+COMPOSE_FILES="${RAKAZO_COMPOSE_FILE:-}"
+if [[ -z "${COMPOSE_FILES}" ]]; then
+  COMPOSE_FILES="infra/compose/docker-compose.prod.yml"
+  # A published-images install has no checkout: its Compose file sits in the deployment directory.
+  if [[ ! -e "${PROJECT_DIR}/${COMPOSE_FILES}" && -f "${PROJECT_DIR}/docker-compose.images.yml" ]]; then
+    COMPOSE_FILES="docker-compose.images.yml"
+    [[ ! -f "${PROJECT_DIR}/docker-compose.override.yml" ]] ||
+      COMPOSE_FILES+="${COMPOSE_SEPARATOR}docker-compose.override.yml"
+  fi
+fi
+compose_file_args=()
+while [[ -n "${COMPOSE_FILES}" ]]; do
+  entry="${COMPOSE_FILES%%"${COMPOSE_SEPARATOR}"*}"
+  if [[ "${entry}" == "${COMPOSE_FILES}" ]]; then
+    COMPOSE_FILES=""
+  else
+    COMPOSE_FILES="${COMPOSE_FILES#*"${COMPOSE_SEPARATOR}"}"
+  fi
+  [[ -n "${entry}" && "${entry}" != /* && "/${entry}/" != */../* ]] || {
+    echo "RAKAZO_COMPOSE_FILE must list paths inside the deployment directory" >&2; exit 1;
+  }
+  compose_file_args+=(-f "${PROJECT_DIR}/${entry}")
+done
 ENV_FILE="${PROJECT_DIR}/.env"
 BACKUP_ROOT="/var/backups/rakazo"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -61,7 +86,7 @@ if [[ "${RAKAZO_BACKUP_REQUIRE_VOLUME:-0}" == 1 ]]; then
   }
 fi
 
-compose=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
+compose=(docker compose --env-file "${ENV_FILE}" "${compose_file_args[@]}")
 
 # Archive the appdata volume from the host, not through `compose exec api`: the cap-dropped
 # api user cannot read the root-owned mode-600 bot homes, so its archive would miss the bot
