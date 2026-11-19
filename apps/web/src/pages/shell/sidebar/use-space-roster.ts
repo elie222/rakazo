@@ -65,6 +65,8 @@ export function useSpaceRoster({
   const savingBotOrderRef = useRef(false);
   const [botSections, setBotSections] = useState<BotSection[]>(seed?.botSections ?? []);
   const [spaces, setSpaces] = useState<Space[]>(seed?.spaces ?? []);
+  // Until the server says otherwise, an account with nothing in sight is treated as new.
+  const [firstBotDue, setFirstBotDue] = useState(true);
   const [archivedBots, setArchivedBots] = useState<Bot[]>(seed?.archivedBots ?? []);
   const [archivedGroups, setArchivedGroups] = useState<Group[]>(seed?.archivedGroups ?? []);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(Boolean(seed));
@@ -128,6 +130,7 @@ export function useSpaceRoster({
       setBotSections((previous) => replaceEqualDeep(previous, sections));
       setGroups((previous) => replaceEqualDeep(previous, groupList));
       setSpaces((previous) => replaceEqualDeep(previous, navigation.spaces));
+      setFirstBotDue(navigation.firstBotDue !== false);
       setInitialBotsLoaded(true);
       botsRefreshApplied.current = request;
       const route = liveRoute();
@@ -234,6 +237,8 @@ export function useSpaceRoster({
     botSections,
     spaces,
     setSpaces,
+    firstBotDue,
+    setFirstBotDue,
     archivedBots,
     setArchivedBots,
     archivedGroups,
@@ -305,6 +310,7 @@ export function useSpaceBootstrap({
     setArchivedGroups,
     spaces,
     setSpaces,
+    setFirstBotDue,
     setInitialBotsLoaded,
     setInitialLoadFailed,
     bootstrapMe,
@@ -382,6 +388,7 @@ export function useSpaceBootstrap({
           setArchivedGroups(bootstrap.archivedGroups);
           setGroups(groupList);
           setSpaces(bootstrap.spaces);
+          setFirstBotDue(bootstrap.firstBotDue !== false);
           setInitialBotsLoaded(true);
         }
         // A seeded shell already loads its chat live; this older copy must not replace it.
