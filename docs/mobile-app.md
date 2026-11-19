@@ -15,6 +15,12 @@ Sign in with your rakazo.com account. To use your own server instead, tap **Use 
 the sign-in screen and enter its address. For a server on your local network, follow
 [Connecting a phone on the same network](./self-host-clients.md#connecting-a-phone-on-the-same-network).
 
+Custom servers you switch to or away from are listed on that screen, so you can switch back with
+one tap (the five most recent are kept, counting the one in use; press and hold one to remove it). The app is signed in to one server at a
+time: to use another, sign out, open the server screen from the sign-in screen and pick it, then
+sign in there. Changing the server signs the device out of the previous one, as described in
+[Apps and clients](./self-host-clients.md#connect-mobile-clients).
+
 ## What you can do
 
 - Chat with bots and groups, attach photos, files or camera shots, and talk instead of typing.
