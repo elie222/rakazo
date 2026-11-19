@@ -136,12 +136,15 @@ export function outsideTextOf(content: unknown): string {
 }
 
 /**
- * Whether a run's task prompt is someone else's words (a run someone else or a helper started)
- * rather than the owner's: the one rule for both sides of the target check.
+ * Whether a run's task prompt may hold someone else's words: a run someone else or a helper
+ * started, or a routine, whose task carries the note of what its watch read. Such a task counts
+ * as outside content, and only `loadOwnerWords` (a routine's instructions without the note) as
+ * the owner's. The one rule for both sides of the target check.
  */
 export function taskPromptIsOutside(run: { trigger: string }, ownerStartedRun: boolean): boolean {
   return (
     !ownerStartedRun ||
+    run.trigger === "routine" ||
     run.trigger === BACKGROUND_HELPER_TRIGGER ||
     run.trigger === HELPER_RESULT_TRIGGER
   );

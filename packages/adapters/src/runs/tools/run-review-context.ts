@@ -25,7 +25,7 @@ export async function reviewOwnerContext(
         ownerWords: [
           await ctx.trust.loadOwnerWords(),
           ...earlier,
-          // The task of a run the owner started is their own words, as the outside side assumes.
+          // Only a task that cannot hold outside text counts as the owner's words.
           ...(taskPromptIsOutside(ctx.run, ctx.source.ownerStartedRun) ? [] : [ctx.task.prompt]),
         ],
         outsideText: ctx.state.outsideText,
