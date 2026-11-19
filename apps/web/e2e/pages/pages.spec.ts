@@ -1136,8 +1136,8 @@ test("specific people review a version and lose access when removed", async ({
       .fill("Add the rollout date.");
     await reviewer.getByRole("button", { name: "Post comment" }).click();
     await expect(reviewer.getByText("Add the rollout date.", { exact: true })).toBeVisible();
-    const askBot = reviewer.getByRole("button", { name: "Ask bot to revise" });
-    await expect(askBot).toBeVisible();
+    const reviewerActions = reviewer.getByRole("button", { name: "Comment actions" });
+    await expect(reviewerActions).toBeVisible();
     await captureScreenshot(reviewer, testInfo, "page-review-comment");
 
     await rpc(page, "models/connect", {
@@ -1150,7 +1150,8 @@ test("specific people review a version and lose access when removed", async ({
       modelProvider: "openai",
       modelId: "gpt-6-sol",
     });
-    await askBot.click();
+    await reviewerActions.click();
+    await reviewer.getByRole("menuitem", { name: "Ask bot to revise" }).click();
     const consent = reviewer.getByRole("alertdialog", { name: "Share data with OpenAI?" });
     await expect(consent).toBeVisible();
     await expect(
@@ -1159,8 +1160,9 @@ test("specific people review a version and lose access when removed", async ({
     await captureScreenshot(reviewer, testInfo, "page-review-ai-consent");
     await consent.getByRole("button", { name: "Cancel" }).click();
     await expect(consent).toBeHidden();
-    await reviewer.getByRole("button", { name: "Comments", exact: true }).click();
-    await expect(askBot).toBeVisible();
+    if (await reviewerActions.isHidden())
+      await reviewer.getByRole("button", { name: "Comments", exact: true }).click();
+    await expect(reviewerActions).toBeVisible();
 
     await shareButton.click();
     await expect(share).toBeHidden();
@@ -1168,8 +1170,11 @@ test("specific people review a version and lose access when removed", async ({
     await page.getByRole("button", { name: "Review page" }).click();
     await page.getByRole("button", { name: "Comments", exact: true }).click();
     await expect(page.getByText("Add the rollout date.", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Resolve", exact: true }).click();
-    await expect(reviewer.getByRole("button", { name: "Reopen", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Comment actions" }).click();
+    await page.getByRole("menuitem", { name: "Resolve", exact: true }).click();
+    await expect(reviewer.getByText("Resolved", { exact: true })).toBeVisible();
+    await reviewerActions.click();
+    await expect(reviewer.getByRole("menuitem", { name: "Reopen", exact: true })).toBeVisible();
     await page.goBack();
     await shareButton.click();
     await share.getByRole("button", { name: `Remove access for ${reviewerEmail}` }).click();

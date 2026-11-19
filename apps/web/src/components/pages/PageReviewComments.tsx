@@ -7,8 +7,19 @@ import {
   pageCommentActions,
 } from "@rakazo/core";
 import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
-import { Button, Input, OptionSelect, Spinner, Textarea } from "@rakazo/ui-web";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Input,
+  OptionSelect,
+  Spinner,
+  Textarea,
+} from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { Ellipsis } from "lucide-react";
 import { useState } from "react";
 import { promptDataConsent } from "../../lib/calls/voice-consent";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
@@ -83,7 +94,7 @@ export function PageReviewComments({
   const current = page.currentVersion === page.version;
   const canPost = !save.pending && canPostPageComment(sections, section, body);
   const rows = comments.isError ? [] : (comments.data?.pages.flatMap(({ items }) => items) ?? []);
-  const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const date = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
   return (
     <div className="flex flex-col gap-3">
       {current ? (
@@ -135,57 +146,82 @@ export function PageReviewComments({
       ) : null}
       {comments.isPending ? <Spinner /> : null}
       {rows.length ? (
-        <ul className="divide-y">
+        <ul className="divide-y border-t border-border">
           {rows.map((comment) => {
             const { canResolve, canAsk, draftId } = pageCommentActions(page, comment);
             return (
-              <li key={comment.id} className="flex flex-col gap-1 py-3">
-                <div className="break-words font-medium">{comment.section}</div>
-                <div className="flex flex-wrap items-center gap-x-2 text-label text-muted-foreground">
-                  <span>{comment.author || t`Deleted account`}</span>
-                  <time dateTime={comment.createdAt}>
+              <li key={comment.id} className="flex flex-col gap-1 py-2">
+                <div className="flex min-h-6 items-center gap-2 text-label text-muted-foreground">
+                  <span className="truncate font-medium text-foreground">
+                    {comment.author || t`Deleted account`}
+                  </span>
+                  <time
+                    className="shrink-0"
+                    dateTime={comment.createdAt}
+                    title={new Date(comment.createdAt).toLocaleString()}
+                  >
                     {date.format(new Date(comment.createdAt))}
                   </time>
+                  {draftId || canAsk || canResolve ? (
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger
+                        render={<Button variant="ghost" size="icon-xs" />}
+                        className="ms-auto text-muted-foreground"
+                        aria-label={t`Comment actions`}
+                        disabled={save.pending}
+                      >
+                        <Ellipsis className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-max">
+                        {draftId ? (
+                          <DropdownMenuItem onClick={() => onDraft(draftId)}>
+                            <Trans>Preview draft</Trans>
+                          </DropdownMenuItem>
+                        ) : null}
+                        {canAsk ? (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              save.run({
+                                kind: "ask",
+                                id: comment.id,
+                                retryOf: comment.revision?.id,
+                              })
+                            }
+                          >
+                            <Trans>Ask bot to revise</Trans>
+                          </DropdownMenuItem>
+                        ) : null}
+                        {canResolve ? (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              save.run({
+                                kind: "resolve",
+                                id: comment.id,
+                                resolved: !comment.resolvedAt,
+                              })
+                            }
+                          >
+                            {comment.resolvedAt ? <Trans>Reopen</Trans> : <Trans>Resolve</Trans>}
+                          </DropdownMenuItem>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
+                <p className="whitespace-pre-wrap break-words text-body">{comment.body}</p>
+                <div className="flex flex-wrap items-center gap-x-2">
                   <Button
-                    variant="link"
+                    variant="text"
                     size="xs"
+                    className="min-w-0 max-w-full justify-start gap-2"
                     onClick={() => onRevision(comment.version, comment.section)}
                   >
-                    <Trans>Revision {comment.version}</Trans>
+                    <span className="truncate">{comment.section}</span>
+                    <span className="shrink-0 font-normal">
+                      <Trans>Revision {comment.version}</Trans>
+                    </span>
                   </Button>
-                </div>
-                <p className="whitespace-pre-wrap break-words text-body-sm">{comment.body}</p>
-                <div className="flex flex-wrap items-center gap-2">
                   <ReviewStatus comment={comment} currentVersion={page.currentVersion} />
-                  {draftId ? (
-                    <Button variant="outline" size="xs" onClick={() => onDraft(draftId)}>
-                      <Trans>Preview draft</Trans>
-                    </Button>
-                  ) : null}
-                  {canAsk ? (
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      disabled={save.pending}
-                      onClick={() =>
-                        save.run({ kind: "ask", id: comment.id, retryOf: comment.revision?.id })
-                      }
-                    >
-                      <Trans>Ask bot to revise</Trans>
-                    </Button>
-                  ) : null}
-                  {canResolve ? (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      disabled={save.pending}
-                      onClick={() =>
-                        save.run({ kind: "resolve", id: comment.id, resolved: !comment.resolvedAt })
-                      }
-                    >
-                      {comment.resolvedAt ? <Trans>Reopen</Trans> : <Trans>Resolve</Trans>}
-                    </Button>
-                  ) : null}
                 </div>
               </li>
             );
