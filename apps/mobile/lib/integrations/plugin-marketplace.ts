@@ -111,8 +111,3 @@ export function pluginSkillCount(install: CapabilityInstall): number {
 export function hasPluginConnector(install: CapabilityInstall): boolean {
   return installedPluginParts(install.config).includes("connector");
 }
-
-export function sourceHref(source: string, sha: string | undefined): string {
-  const [repo, subdir] = source.split("#");
-  return subdir ? `${repo}/tree/${sha ?? "HEAD"}/${subdir}` : (repo ?? source);
-}

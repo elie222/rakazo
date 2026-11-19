@@ -8,6 +8,7 @@ import {
   matchesWordPrefixes,
   pluginCategory,
   pluginSite,
+  pluginSourceHref,
 } from "./plugin-catalog.js";
 
 function entry(
@@ -144,5 +145,24 @@ describe("pluginSite", () => {
       "https://notgithub.com",
     );
     expect(pluginSite(entry({ name: "a", homepage: "not a url" }))).toBeNull();
+  });
+});
+
+describe("pluginSourceHref", () => {
+  it("links a repository or its pinned subfolder", () => {
+    expect(pluginSourceHref("https://github.com/acme/plugins", undefined)).toBe(
+      "https://github.com/acme/plugins",
+    );
+    expect(pluginSourceHref("https://github.com/acme/plugins#calcom", "abc")).toBe(
+      "https://github.com/acme/plugins/tree/abc/calcom",
+    );
+    expect(pluginSourceHref("https://github.com/acme/plugins#calcom", undefined)).toBe(
+      "https://github.com/acme/plugins/tree/HEAD/calcom",
+    );
+  });
+
+  it("has no link for a source that is not a web address", () => {
+    expect(pluginSourceHref("example", undefined)).toBeNull();
+    expect(pluginSourceHref("javascript:alert(1)#x", "abc")).toBeNull();
   });
 });

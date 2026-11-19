@@ -9,7 +9,6 @@ import {
   pluginCategories,
   pluginSkillCount,
   skillPacks,
-  sourceHref,
 } from "./plugin-marketplace";
 
 const entry = (overrides: Partial<PluginMarketplaceEntry>): PluginMarketplaceEntry => ({
@@ -47,10 +46,7 @@ it("lists only present categories in product order", () => {
   expect(pluginCategories(plugins)).toEqual(["productivity", "ops"]);
 });
 
-it("links a pinned subfolder to its tree and names a pasted URL after its last segment", () => {
-  expect(sourceHref("https://github.com/acme/plugins#calcom", "abc")).toBe(
-    "https://github.com/acme/plugins/tree/abc/calcom",
-  );
+it("names a pasted URL after its last segment", () => {
   expect(gitImportParams(" https://github.com/acme/neon/ ")).toEqual({
     source: "https://github.com/acme/neon",
     installedSource: "https://github.com/acme/neon",

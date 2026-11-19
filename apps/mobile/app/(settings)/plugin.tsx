@@ -7,6 +7,7 @@ import {
   connectCatalogItem,
   installedPluginParts,
   isCatalogItemConnected,
+  pluginSourceHref,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -36,10 +37,10 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
 import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
-import { sourceHref } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { openExternalUrl } from "../../lib/platform/open-url";
 import type { SaveSend } from "../../lib/query/query";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
@@ -222,6 +223,7 @@ function PluginScreen() {
   const busy = Boolean(pending);
   const parsed = install ? PluginPreviewSchema.safeParse(install.config) : null;
   const detail = parsed?.success ? parsed.data : preview;
+  const sourceHref = pluginSourceHref(params.installedSource, detail?.resolvedSha);
   // An ignored manifest field loses nothing, so it isn't reported. A skill left out for repeating
   // a built-in one says why, since the user still has that skill.
   const notAdded = [
@@ -306,22 +308,22 @@ function PluginScreen() {
             <Text numberOfLines={2} style={styles.name}>
               {params.name}
             </Text>
-            <Pressable
-              accessibilityRole="link"
-              hitSlop={8}
-              onPress={() =>
-                void Linking.openURL(sourceHref(params.installedSource, detail?.resolvedSha))
-              }
-              style={styles.sourceLink}
-            >
-              <Text style={styles.secondary}>{t`View source`}</Text>
-              <NativeSymbol
-                android="open-outline"
-                color={native.secondaryLabel}
-                ios="arrow.up.right"
-                size={12}
-              />
-            </Pressable>
+            {sourceHref ? (
+              <Pressable
+                accessibilityRole="link"
+                hitSlop={8}
+                onPress={() => void openExternalUrl(sourceHref)}
+                style={styles.sourceLink}
+              >
+                <Text style={styles.secondary}>{t`View source`}</Text>
+                <NativeSymbol
+                  android="open-outline"
+                  color={native.secondaryLabel}
+                  ios="arrow.up.right"
+                  size={12}
+                />
+              </Pressable>
+            ) : null}
           </View>
         </View>
 
