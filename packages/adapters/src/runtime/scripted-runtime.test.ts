@@ -357,6 +357,18 @@ describe("inferScript update_bot", () => {
   });
 });
 
+describe("inferScript scratchpad_add", () => {
+  it("adds the named item to the bot's open work", () => {
+    expect(inferScript("add to your open work: Compare the two vendors")).toEqual([
+      {
+        assistant: "noted for later.",
+        toolCalls: [{ name: "scratchpad_add", args: { title: "Compare the two vendors" } }],
+        complete: true,
+      },
+    ]);
+  });
+});
+
 describe("ScriptedAgentRuntime executionIds", () => {
   it("gives repeated tools distinct executionIds within a run", async () => {
     const runtime = new ScriptedAgentRuntime();
