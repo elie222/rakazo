@@ -11,7 +11,7 @@ import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 
 const PAGE_SIZE = 50;
 
-/** Metadata keys that name what changed, for an event with no target label of its own. */
+/** Metadata keys that name what changed or what was decided. */
 const IDENTIFYING_KEYS = [
   "connectorId",
   "connectionId",
@@ -20,6 +20,7 @@ const IDENTIFYING_KEYS = [
   "id",
   "botId",
   "name",
+  "decision",
 ];
 
 function detailLabels(event: AuditEvent): string[] {
