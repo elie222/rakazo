@@ -39,6 +39,11 @@ import {
   retireToReconnectMarker,
   withModelCredentialLock,
 } from "../../models/model-credential-refresh.js";
+import {
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../../models/model-provider-allowlist.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
 import { parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
@@ -284,6 +289,8 @@ async function resolveModelKeyMaterial(
   if (credential) {
     if (canonicalPiProviderId(credential.provider) !== canonicalPiProviderId(provider))
       throw new UnavailableModelForAuthError("Model connection does not match provider");
+    if (!modelProviderAllowed(modelProviderAllowlist(), credential.provider))
+      throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
     return withModelCredentialLock(credential.secretId, async () => {
       const row = await deps.prisma.secret.findFirst({
         where: { id: credential.secretId, userId, spaceId: null },
@@ -423,6 +430,9 @@ async function resolveModelKeyMaterial(
   if (modelCreditOfferings() && !operatorFunded) {
     if (!(await modelCreditBillingEnabled(deps)))
       throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
+    // Credits a member chose follow the allowlist like their own connections do.
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider))
+      throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
     const material = await approvedModelCreditMaterial(
       deps.prisma,
       deps.secretStore,
@@ -483,6 +493,11 @@ export async function resolveConnectedModelKey(
   requireStoredSecret = false,
   credentialId?: string,
 ) {
+  // Before validation, which can probe a stored connection's live catalog: a refused
+  // provider is not contacted, and its refusal is not replaced by a failed probe.
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+    throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
+  }
   const creditOfferingId = creditOfferingFromConnectionId(credentialId);
   if (creditOfferingId) {
     const resolved = await resolveModelKey(

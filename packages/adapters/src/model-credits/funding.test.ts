@@ -200,6 +200,23 @@ describe("explicit model credit funding", () => {
     ).rejects.toThrow("unavailable");
     expect(load).not.toHaveBeenCalled();
   });
+  it("refuses a saved credit choice once the allowlist leaves its provider out", async () => {
+    const { deps, load } = setup();
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
+    await expect(
+      resolveModelKey(
+        deps,
+        scope.userId,
+        scope.spaceId,
+        null,
+        offering.provider,
+        offering.modelId,
+        undefined,
+        { creditOfferingId: offering.id },
+      ),
+    ).rejects.toThrow("not allowed");
+    expect(load).not.toHaveBeenCalled();
+  });
 });
 
 it("keeps an unpinned legacy backup on the exact approved offering", async () => {

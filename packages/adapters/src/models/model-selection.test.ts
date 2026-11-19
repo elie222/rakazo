@@ -1414,6 +1414,27 @@ describe("bot model change validation", () => {
     ).resolves.toEqual({ ok: true, provider: "xai", model: "saved-model", thinkingLevel: null });
   });
 
+  it("rejects a provider the deployment allowlist leaves out", async () => {
+    const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
+    try {
+      const deps = changeDeps({ anthropic: credential("anthropic", "claude-haiku-5-5") });
+      await expect(
+        validateBotModelChange(deps, {
+          ...scope,
+          provider: "anthropic",
+          model: "claude-haiku-5-5",
+        }),
+      ).resolves.toEqual({
+        ok: false,
+        error: "This model provider is not allowed on this server.",
+      });
+    } finally {
+      if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+      else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
+    }
+  });
+
   it("rejects Spark on Codex, which Pi no longer bundles", async () => {
     const deps = changeDeps({ "openai-codex": credential("openai-codex", null) });
     const result = await validateBotModelChange(deps, {

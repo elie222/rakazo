@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { CodexLiveCatalog } from "@rakazo/adapters";
 import {
+  assertModelProviderAllowed,
   buildModelConnectPlaintext,
   CHATGPT_OAUTH_PROVIDER,
   codexLiveListsModel,
@@ -144,6 +145,7 @@ export async function prepareModelCredential(
   codexCatalog: CodexLiveCatalog,
 ) {
   throwIfAborted(input.signal);
+  assertModelProviderAllowed(input.provider);
   const parsedSecret = parseModelSecret(input.plaintext);
   const requestedModelId = usableModelId(input.modelId);
   const resolvedCodexModelId =
@@ -469,6 +471,9 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
     input: ModelConnectInput,
     signal: AbortSignal | undefined,
   ) => {
+    // Before the submitted endpoint is contacted, not after: a blocked provider is not
+    // probed, and its refusal is not replaced by whatever the probe would have said.
+    assertModelProviderAllowed(input.provider);
     // Refused before the checks below, whose catch would turn it into a code-less error.
     dataRetentionForConnect(input);
     const credential = await modelConnectionTarget(deps, actor, input.provider, input.credentialId);
