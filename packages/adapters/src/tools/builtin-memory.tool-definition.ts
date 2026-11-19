@@ -1,21 +1,14 @@
-import type { AgentRunTool, ConnectorTool } from "@rakazo/adapter-kit";
+import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { HISTORY_QUERIES_MAX_BYTES, HISTORY_SEARCH_KINDS } from "@rakazo/contracts";
 
 function searchHistoryDefinition(myChatsAvailable: boolean): ConnectorTool {
   return {
     name: "search_history",
-    description: [
-      myChatsAvailable
-        ? "Search literal keywords in earlier messages and their file names (default this_chat)."
-        : "Search literal keywords in earlier messages and their file names in this chat only.",
-      "Every word of a query must match the same message.",
-      myChatsAvailable
-        ? "To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats. Narrow by date or botId when hinted."
-        : "",
-      "Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
-    ]
-      .filter(Boolean)
-      .join(" "),
+    description:
+      (myChatsAvailable
+        ? "Search literal keywords in earlier messages and their file names (default this_chat); every word of a query must match the same message. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run."
+        : "Search literal keywords in earlier messages and their file names in this chat only. Every word of a query must match the same message.") +
+      " Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
     inputSchema: {
       type: "object",
       properties: {
@@ -88,10 +81,10 @@ function searchHistoryDefinition(myChatsAvailable: boolean): ConnectorTool {
 }
 
 const crossChatSearchHistory = searchHistoryDefinition(true);
-export const thisChatSearchHistory: AgentRunTool = {
-  ...searchHistoryDefinition(false),
-  validationInputSchema: crossChatSearchHistory.inputSchema,
-};
+const thisChatSearchHistory = searchHistoryDefinition(false);
+export const thisChatHistoryDeclaration: ReadonlyMap<string, ConnectorTool> = new Map([
+  [thisChatSearchHistory.name, thisChatSearchHistory],
+]);
 
 /** History, email and memory tools. */
 export const memoryTools: ConnectorTool[] = [

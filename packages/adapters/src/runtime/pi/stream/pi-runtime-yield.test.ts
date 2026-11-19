@@ -5,7 +5,7 @@ import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "../../../tools/builtin.tool-definition.js";
-import { thisChatSearchHistory } from "../../../tools/builtin-memory.tool-definition.js";
+import { thisChatHistoryDeclaration } from "../../../tools/builtin-memory.tool-definition.js";
 
 const fake = vi.hoisted(() => ({ stream: vi.fn() }));
 vi.mock("@earendil-works/pi-ai/providers/all", () => ({
@@ -35,6 +35,7 @@ vi.mock("../models/pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "../pi-runtime.js";
+import * as toolParameters from "../tools/pi-runtime-tool-parameters.js";
 import { releaseToolCallBudget } from "../tools/pi-runtime-tools.js";
 
 /**
@@ -115,6 +116,7 @@ beforeEach(() => {
 
 describe("search_history scope declarations", () => {
   const searchHistory = builtinAgentTools.find((tool) => tool.name === "search_history")!;
+  const thisChatSearchHistory = thisChatHistoryDeclaration.get("search_history")!;
   const currentSearch = (index: number) =>
     getCurrentTools((fake.stream.mock.calls[index]![1] as Context).messages).find(
       (tool) => tool.name === "search_history",
@@ -124,12 +126,11 @@ describe("search_history scope declarations", () => {
     "narrows before model request %i when outside steering is claimed",
     async (index) => {
       const input = request(new AbortController());
-      const search = { ...searchHistory };
-      input.tools.push(search);
+      input.tools.push(searchHistory);
       let claims = 0;
       input.claimSteering = async () => {
         if (claims++ !== index) return [];
-        Object.assign(search, thisChatSearchHistory);
+        input.builtinToolDeclarations = thisChatHistoryDeclaration;
         return [{ id: "steering", messageId: "incoming", origin: "webhook", text: "Update" }];
       };
       script(["a", "b", undefined]);
@@ -152,6 +153,23 @@ describe("search_history scope declarations", () => {
     },
   );
 
+  it("reuses the restricted model schema on later steps", async () => {
+    const input = request(new AbortController());
+    input.tools.push(searchHistory);
+    input.builtinToolDeclarations = thisChatHistoryDeclaration;
+    const conversions = vi.spyOn(toolParameters, "parametersFor");
+    try {
+      script(["a", "b", undefined]);
+      await run(input);
+      expect(fake.stream).toHaveBeenCalledTimes(3);
+      expect(
+        conversions.mock.calls.filter(([tool]) => tool === thisChatSearchHistory),
+      ).toHaveLength(1);
+    } finally {
+      conversions.mockRestore();
+    }
+  });
+
   it("uses the narrowed declaration on resume and still sends pending arguments to the executor", async () => {
     const input = request(new AbortController(), "never");
     input.instructions = "Saved instructions.";
@@ -170,7 +188,8 @@ describe("search_history scope declarations", () => {
       turnCheckpoint: checkpoint,
       instructions: "New instructions.",
     };
-    resumed.tools.push(thisChatSearchHistory);
+    resumed.tools.push(searchHistory);
+    resumed.builtinToolDeclarations = thisChatHistoryDeclaration;
     script(["search", undefined]);
     const events = await run(resumed);
 

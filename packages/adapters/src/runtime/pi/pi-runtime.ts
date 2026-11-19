@@ -1,4 +1,4 @@
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type {
   Api,
@@ -147,6 +147,22 @@ export interface PiAgentRuntimeOptions {
       usage: AgentUsage;
     },
   ) => void;
+}
+
+// Pi copies its initial tools. Keep any temporarily disabled tools out of the next request.
+function matchToolDeclarations(
+  current: AgentTool[] | undefined,
+  from: AgentTool[],
+  to: AgentTool[],
+) {
+  if (!current?.length || from === to) return current;
+  if (
+    current === from ||
+    (current.length === from.length && current.every((tool, index) => tool === from[index]))
+  )
+    return to;
+  const replacements = new Map(from.map((tool, index) => [tool, to[index]!]));
+  return current.map((tool) => replacements.get(tool) ?? tool);
 }
 
 export class PiAgentRuntime implements AgentRuntime {
@@ -327,13 +343,16 @@ export class PiAgentRuntime implements AgentRuntime {
           [...toolsByAgentName.keys()].filter((name) => !offeredToolNames.has(name)),
         );
         let tools = allTools;
-        const hasNarrowDeclarations = () =>
-          toolDefs.some((tool) => tool.validationInputSchema !== undefined);
-        const toolsForModel = () =>
-          hasNarrowDeclarations()
+        let declarations: AgentRunRequest["builtinToolDeclarations"];
+        let switchedMode = false;
+        let modelTools = tools;
+        const refreshModelTools = () => {
+          const offered = request.builtinToolDeclarations;
+          declarations = offered;
+          modelTools = offered?.size
             ? tools.map((tool) => {
-                const declaration = toolsByAgentName.get(tool.name);
-                return declaration?.validationInputSchema
+                const declaration = offered.get(tool.name);
+                return declaration && !toolsByAgentName.get(tool.name)?.route
                   ? {
                       ...tool,
                       description: declaration.description,
@@ -342,6 +361,7 @@ export class PiAgentRuntime implements AgentRuntime {
                   : tool;
               })
             : tools;
+        };
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
         let hasCurrentImages = Boolean(
@@ -633,7 +653,9 @@ export class PiAgentRuntime implements AgentRuntime {
               if (mode === "computer")
                 fallbackState.messagesBeforeSwitch = agent.state.messages.length;
               tools = modeTools();
-              agent.state.tools = toolsForModel();
+              switchedMode = true;
+              refreshModelTools();
+              agent.state.tools = modelTools;
             },
             signal,
           );
@@ -651,6 +673,7 @@ export class PiAgentRuntime implements AgentRuntime {
           ];
         };
         tools = modeTools();
+        refreshModelTools();
         if (computer) {
           fallbackState = mode === "computer" ? computerFallbackState! : mainFallbackState;
           setTarget(activeStreamTarget);
@@ -676,8 +699,12 @@ export class PiAgentRuntime implements AgentRuntime {
             ),
           // Pi has appended the model's tool declarations by this point. Validate calls
           // against the original schemas so the executor still decides access.
-          prepareRequest: ({ context }) =>
-            hasNarrowDeclarations() ? { context: { ...context, tools } } : undefined,
+          prepareRequest: ({ context }) => {
+            const executable = matchToolDeclarations(context.tools, modelTools, tools);
+            return executable === context.tools
+              ? undefined
+              : { context: { ...context, tools: executable } };
+          },
           getApiKey:
             hasBackups || computer
               ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
@@ -732,13 +759,16 @@ export class PiAgentRuntime implements AgentRuntime {
               request.claimSteering && (!terminatedReply || host.pausePending)
                 ? await request.claimSteering([...seenSteeringIds])
                 : [];
-            const modelTools = toolsForModel();
+            if (declarations !== request.builtinToolDeclarations) refreshModelTools();
             const update =
               computer || modelTools !== tools
                 ? {
                     context: {
                       ...turn.context,
-                      tools: modelTools,
+                      tools:
+                        switchedMode && turn.context.tools?.length
+                          ? modelTools
+                          : matchToolDeclarations(turn.context.tools, tools, modelTools),
                       messages:
                         mode === "main" && computerSpan
                           ? withoutThinkingFrom(turn.context.messages, ...computerSpan)
@@ -753,6 +783,7 @@ export class PiAgentRuntime implements AgentRuntime {
                     }),
                   }
                 : undefined;
+            switchedMode = false;
             if (steering.length === 0) return update;
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) representedHistoryIds.add(item.messageId);
@@ -789,7 +820,7 @@ export class PiAgentRuntime implements AgentRuntime {
             thinkingLevel: computer
               ? thinkingLevelFor(activeStreamTarget.model, activeStreamTarget.config.thinkingLevel)
               : thinkingLevel,
-            tools: toolsForModel(),
+            tools: modelTools,
             messages: history,
           },
         });

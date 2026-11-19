@@ -1,4 +1,4 @@
-import type { AgentRunRequest, AgentRunTool } from "@rakazo/adapter-kit";
+import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { modelRoleConnectionId } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, redactSecrets } from "@rakazo/core";
 import { isDatabaseUnavailable, recordUsage } from "@rakazo/db";
@@ -7,7 +7,7 @@ import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js
 import { personSpeaker } from "../../runtime/context/history-speakers.js";
 import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
-import { thisChatSearchHistory } from "../../tools/builtin-memory.tool-definition.js";
+import { thisChatHistoryDeclaration } from "../../tools/builtin-memory.tool-definition.js";
 import { promptVersion } from "../assembly/prompt-version.js";
 import type { AssembledTurn } from "../assembly/run-assembly.js";
 import {
@@ -157,10 +157,9 @@ async function modelTurnRequest(
   const { ctx } = turn;
   const { script, state } = turn.ctx;
   const { effects } = turn.ctx.state;
-  const searchHistory = tools.find((tool) => tool.name === "search_history" && !tool.route);
-  const offeredSearch: AgentRunTool | undefined = searchHistory && { ...searchHistory };
-  let myChatsAvailable = Boolean(offeredSearch) && (await historyMyChatsAvailable(ctx));
-  if (offeredSearch && !myChatsAvailable) Object.assign(offeredSearch, thisChatSearchHistory);
+  const offersHistory =
+    !scripted && tools.some((tool) => tool.name === "search_history" && !tool.route);
+  let myChatsAvailable = offersHistory && (await historyMyChatsAvailable(ctx));
   return {
     botId: bot.id,
     verbatimMcpServers,
@@ -250,9 +249,10 @@ async function modelTurnRequest(
         currentTurnFiles.length &&
         !turnBlocks?.some((block) => block.kind === "image" && block.imageHandling === "confirm"),
     ),
-    tools: offeredSearch
-      ? tools.map((tool) => (tool === searchHistory ? offeredSearch : tool))
-      : tools,
+    tools,
+    get builtinToolDeclarations() {
+      return offersHistory && !myChatsAvailable ? thisChatHistoryDeclaration : undefined;
+    },
     // The live array: secrets learned later in the run redact too.
     secrets: runSecrets,
     model: mainRunModel,
@@ -375,10 +375,8 @@ async function modelTurnRequest(
           hasImages: Boolean(currentTurnImages?.length),
         },
       );
-      if (steering.length && offeredSearch && myChatsAvailable) {
+      if (steering.length && myChatsAvailable)
         myChatsAvailable = await historyMyChatsAvailable(ctx);
-        if (!myChatsAvailable) Object.assign(offeredSearch, thisChatSearchHistory);
-      }
       return steering;
     },
   };

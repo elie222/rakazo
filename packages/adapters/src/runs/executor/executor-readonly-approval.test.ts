@@ -91,6 +91,7 @@ function fixture({
   nativeReview = false,
   checkerConnected = true,
   skipApprovals = false,
+  scripted = false,
   trigger = "user",
   secrets = [] as string[],
   prompt = "Read the item",
@@ -119,6 +120,7 @@ function fixture({
 }: {
   /** The Space's semantic memory provider; none by default. */
   memoryProvider?: Record<string, unknown>;
+  scripted?: boolean;
   /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
   browser?: BrowserProvider;
   /** The user's spending limit for payments. */
@@ -574,7 +576,7 @@ function fixture({
   const executor = createRunExecutor({
     deploymentModelKey: "fixture-model-key",
     prisma: transactionalPrisma,
-    runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
+    runtime: { describe: () => ({ capabilities: { scripted } }), run: runtimeRun },
     connector: {
       discoverTools: async () =>
         builtin
@@ -792,7 +794,22 @@ function askDetail(f: ReturnType<typeof fixture>): string {
 
 describe("search_history scope guidance", () => {
   const searchTool = (request: AgentRunRequest) =>
+    request.builtinToolDeclarations?.get("search_history") ??
     request.tools.find((tool) => tool.name === "search_history")!;
+
+  it("skips the history scope lookup for scripted runs", async () => {
+    const f = fixture({
+      name: "search_history",
+      builtin: true,
+      sourceRole: "user",
+      scripted: true,
+      prompt: "Silent routine fixture",
+    });
+    f.setCalls([]);
+    await f.run();
+    expect(f.runtimeRun).toHaveBeenCalledTimes(1);
+    expect(f.prisma.steeringMessage.findFirst).not.toHaveBeenCalled();
+  });
 
   it.each(["routine", "user with earlier outside steering"] as const)(
     "declares only this_chat for a %s before handing the run to the runtime",
