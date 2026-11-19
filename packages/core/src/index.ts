@@ -91,6 +91,7 @@ export * from "./messaging/messaging.prompt.js";
 export * from "./messaging/messaging-commands.js";
 export * from "./messaging/messaging-link-guard.js";
 export * from "./messaging/messaging-providers.js";
+export * from "./messaging/messaging-requests.js";
 export * from "./models/model-connection-error.js";
 export * from "./models/model-connection-form.js";
 export * from "./models/model-marks.js";

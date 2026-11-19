@@ -3,8 +3,17 @@ import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
-import type { MessagingChannelMembership, MessagingStatus } from "@rakazo/contracts";
-import { createMessagingLinkGuard, messagingChatApps, messagingProviderName } from "@rakazo/core";
+import type {
+  MessagingAgentConnection,
+  MessagingChannelMembership,
+  MessagingStatus,
+} from "@rakazo/contracts";
+import {
+  createMessagingLinkGuard,
+  messagingChatApps,
+  messagingProviderName,
+  messagingRequests,
+} from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Linking, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -154,8 +163,8 @@ export default function MessagingSettings() {
     [linkGuard],
   );
   const botName = (id: string) => bots.find((bot) => bot.id === id)?.name;
-  // Only meaningful once a second chat app is linked: the same group can then
-  // hold two of the caller's memberships, one per agent.
+  // A joined group names its agent only once a second chat app is linked: the
+  // same group can then hold two of the caller's memberships, one per agent.
   const agentByIdentity = new Map(status?.identities.map((i) => [i.id, i.botName]) ?? []);
   const channelDetail = (channel: MessagingChannelMembership) =>
     [
@@ -164,10 +173,26 @@ export default function MessagingSettings() {
     ]
       .filter(Boolean)
       .join(", ");
-  const invitedChannels = channels.filter((channel) => channel.status === "invited");
-  const incomingConnections = connections.filter(
-    (connection) => connection.status === "pending" && connection.incoming,
-  );
+  const { invites, connectionRequests } = messagingRequests({ status, channels, connections });
+  const inviteTitle = (channel: MessagingChannelMembership, named: string | undefined) => {
+    const agent = named ?? t`Your bot`;
+    const group = channel.name;
+    return group ? t`${agent} was invited to ${group}` : t`${agent} was invited to a group`;
+  };
+  const inviteDetail = (channel: MessagingChannelMembership) => {
+    const app = messagingProviderName(channel.provider);
+    return t`${app} group`;
+  };
+  const connectionRequestTitle = (
+    connection: MessagingAgentConnection,
+    named: string | undefined,
+  ) => {
+    const owner = connection.peerOwnerLabel;
+    const peer = connection.peerBotName;
+    return named
+      ? t`${owner}'s ${peer} wants to connect to ${named}`
+      : t`${owner}'s ${peer} wants to connect to your bot`;
+  };
   const joinedChannels = channels.filter((channel) => channel.status === "approved");
   const otherConnections = connections.filter(
     (connection) =>
@@ -364,7 +389,7 @@ export default function MessagingSettings() {
   ];
   const respond = (onRespond: (accept: boolean, send: SaveSend) => Promise<unknown>) => (
     <View style={styles.actions}>
-      {textAction(t`Approve`, (send) => onRespond(true, send), "primary")}
+      {textAction(t`Allow`, (send) => onRespond(true, send), "primary")}
       {textAction(t`Decline`, (send) => onRespond(false, send))}
     </View>
   );
@@ -387,20 +412,20 @@ export default function MessagingSettings() {
         <Text style={styles.error}>{shownError}</Text>
       ) : null}
       <SettingsGroup label={t`Requests`}>
-        {invitedChannels.map((channel) => (
+        {invites.map(({ channel, agent }) => (
           <SettingsRow
             key={channel.id}
-            title={channel.name ?? t`Group`}
-            detail={channelDetail(channel)}
+            title={inviteTitle(channel, agent)}
+            detail={inviteDetail(channel)}
             trailing={respond((accept, send) =>
               send("messaging/channels/respond", { membershipId: channel.id, accept }),
             )}
           />
         ))}
-        {incomingConnections.map((connection) => (
+        {connectionRequests.map(({ connection, agent }) => (
           <SettingsRow
             key={connection.id}
-            title={`${connection.peerOwnerLabel}'s ${connection.peerBotName}`}
+            title={connectionRequestTitle(connection, agent)}
             trailing={respond((accept, send) =>
               send("messaging/connections/respond", { connectionId: connection.id, accept }),
             )}

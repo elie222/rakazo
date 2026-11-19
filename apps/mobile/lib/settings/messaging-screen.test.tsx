@@ -180,7 +180,15 @@ beforeEach(() => {
       providers: ["sendblue"],
       addresses: { sendblue: "+15550001111" },
       openSignup: false,
-      identities: [],
+      identities: [
+        {
+          id: "mi-1",
+          provider: "whatsapp",
+          address: "+15551230001",
+          botId: "bot-2",
+          botName: "Lead",
+        },
+      ],
     },
     "messaging/installations/list": { available: false, installations: [] },
     "messaging/channels/list": [
@@ -206,6 +214,7 @@ beforeEach(() => {
     "messaging/connections/list": [
       {
         id: "ac-in",
+        botId: "bot-2",
         peerBotName: "Assistant",
         peerOwnerLabel: "Dana",
         status: "pending",
@@ -213,6 +222,7 @@ beforeEach(() => {
       },
       {
         id: "ac-ok",
+        botId: "bot-2",
         peerBotName: "Helper",
         peerOwnerLabel: "Sam",
         status: "approved",
@@ -265,7 +275,7 @@ it("answers requests and manages conversations by their own ids, then refreshes"
   await act(async () => root.render(<MessagingSettings />));
   const before = listCalls();
 
-  await press("Family", "Approve");
+  await press("Lead was invited to Family", "Allow");
   expect(rpc).toHaveBeenCalledWith(
     "messaging/channels/respond",
     {
@@ -274,7 +284,7 @@ it("answers requests and manages conversations by their own ids, then refreshes"
     },
     expect.anything(),
   );
-  await press("Family", "Decline");
+  await press("Lead was invited to Family", "Decline");
   expect(rpc).toHaveBeenCalledWith(
     "messaging/channels/respond",
     {
@@ -283,7 +293,7 @@ it("answers requests and manages conversations by their own ids, then refreshes"
     },
     expect.anything(),
   );
-  await press("Dana's Assistant", "Approve");
+  await press("Dana's Assistant wants to connect to Lead", "Allow");
   expect(rpc).toHaveBeenCalledWith(
     "messaging/connections/respond",
     {
@@ -292,7 +302,7 @@ it("answers requests and manages conversations by their own ids, then refreshes"
     },
     expect.anything(),
   );
-  await press("Dana's Assistant", "Decline");
+  await press("Dana's Assistant wants to connect to Lead", "Decline");
   expect(rpc).toHaveBeenCalledWith(
     "messaging/connections/respond",
     {
@@ -496,7 +506,7 @@ it("keeps a failed action's error when a refresh that was pending then succeeds"
   });
   await comeBack();
 
-  await press("Family", "Approve");
+  await press("Lead was invited to Family", "Allow");
   expect(container.textContent).toContain("Something went wrong. Try again.");
 
   await act(async () => finishRefresh.resolve());
@@ -647,8 +657,8 @@ it("answers a request once for a double tap", async () => {
   const answer = deferred<unknown>();
   responses["messaging/channels/respond"] = answer.promise;
   await act(async () => {
-    button("Family", "Approve").click();
-    button("Family", "Approve").click();
+    button("Lead was invited to Family", "Allow").click();
+    button("Lead was invited to Family", "Allow").click();
   });
   await act(async () => answer.resolve({ ok: true }));
   expect(

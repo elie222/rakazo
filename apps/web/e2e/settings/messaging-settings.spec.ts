@@ -95,6 +95,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
         json: [
           {
             id: "cn1",
+            botId: "bot-1",
             peerBotName: "Assistant",
             peerOwnerLabel: "Dana",
             status: "pending",
@@ -192,6 +193,13 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await expect(messagingSettings.getByText("Example workspace", { exact: false })).toBeVisible();
   await expect(messagingSettings.getByText("+15551230001, Chief")).toBeVisible();
   await expect(messagingSettings.getByText("424242, Lead")).toBeVisible();
+  // Each request says what it asks: a group the bot was added to, or another person's bot.
+  await expect(messagingSettings.getByText("Chief was invited to Family")).toBeVisible();
+  await expect(messagingSettings.getByText("iMessage group")).toBeVisible();
+  await expect(
+    messagingSettings.getByText("Dana's Assistant wants to connect to Chief"),
+  ).toBeVisible();
+  await expect(messagingSettings.getByRole("button", { name: "Allow" })).toHaveCount(2);
   await expect(messagingSettings.getByRole("button", { name: "Connect Feishu" })).toBeEnabled();
   await expect(messagingSettings.getByRole("button", { name: "Connect WhatsApp" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "messaging-slack-workspace");
@@ -234,10 +242,11 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await expect(messagingSettings).toBeVisible();
   await expect(messagingSettings.getByText("+15551230001, Chief")).toBeVisible();
   await expect(messagingSettings.getByText("424242, Lead")).toBeVisible();
-  await expect(messagingSettings.getByText("Family")).toBeVisible();
-  await expect(messagingSettings.getByText("Dana's Assistant")).toBeVisible();
-  // Scoped to the panel: the settings nav has its own 승인 (Approvals).
-  await expect(messagingSettings.getByRole("button", { name: "승인" })).toHaveCount(2);
+  await expect(messagingSettings.getByText("Chief was invited to Family")).toBeVisible();
+  await expect(
+    messagingSettings.getByText("Dana's Assistant wants to connect to Chief"),
+  ).toBeVisible();
+  await expect(messagingSettings.getByRole("button", { name: "허용" })).toHaveCount(2);
 
   await messagingSettings.getByRole("button", { name: /iMessage/ }).click();
   await page.getByRole("menuitem", { name: "Lead", exact: true }).click();
