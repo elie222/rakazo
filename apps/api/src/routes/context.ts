@@ -20,6 +20,7 @@ import {
   hasHostedModelCredits,
   hasReadyModelCredential,
   hiddenCatalogModel,
+  includedReviewChecker,
   isAutoReviewCheckerConfigured,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
@@ -301,26 +302,38 @@ export function createRouterContext(deps: RouterDeps) {
       );
   };
 
-  // Shown where a member chose no model, so the list names what actually runs.
+  // Shown where a member chose no model, so the list names what actually runs and whether
+  // the deployment pays for it.
   const deploymentDefault = async (
     actor: Actor,
     role: ModelRole,
-  ): Promise<ModelRoleChoice | null> => {
+  ): Promise<Pick<ModelRoleView, "deploymentPrimary" | "deploymentIncluded">> => {
     if (role === "main") {
-      if (!deps.env.deploymentModelConfigured) return null;
+      if (!deps.env.deploymentModelConfigured) return { deploymentPrimary: null };
       const access = await bestEffort(
         "read main model default funding",
         deploymentModelAccess(deps, actor),
       );
-      return access?.hasDeployment
-        ? deploymentModelRole(role, {
-            settings: await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-            deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
-          }).primary
-        : null;
+      return {
+        deploymentPrimary: access?.hasDeployment
+          ? deploymentModelRole(role, {
+              settings: await deps.prisma.deploymentSettings.findUnique({
+                where: { id: "default" },
+              }),
+              deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
+            }).primary
+          : null,
+      };
     }
+    const creditsEnabled = deps.billing?.modelCreditsEnabled === true;
+    const included = role === "approval" ? includedReviewChecker(creditsEnabled) : null;
+    if (included)
+      return {
+        deploymentPrimary: { provider: included.provider, modelId: included.model },
+        deploymentIncluded: true,
+      };
     let deploymentPrimary = deploymentModelRole(role, {
-      includedApproval: deps.billing?.modelCreditsEnabled === true,
+      includedApproval: creditsEnabled,
     }).primary;
     if (
       role === "approval" &&
@@ -346,7 +359,7 @@ export function createRouterContext(deps: RouterDeps) {
         deploymentPrimary = null;
       }
     }
-    return deploymentPrimary;
+    return { deploymentPrimary };
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings

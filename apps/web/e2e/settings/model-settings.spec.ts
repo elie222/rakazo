@@ -547,3 +547,63 @@ test("model funding connections", async ({ page }, testInfo) => {
     credentialId: "personal-example",
   });
 });
+
+test("an approval default the deployment pays for reads as included", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `approval-included-${stamp}@rakazo.test`, "password12", "Model Settings");
+  await completeOnboarding(page);
+  const included = {
+    provider: "example",
+    providerName: "Example",
+    id: "reviewer-example",
+    label: "Reviewer",
+    billing: "",
+    protocol: "decisions" as const,
+  };
+  const other = {
+    provider: "example",
+    providerName: "Example",
+    id: "judge-example",
+    label: "Judge",
+    billing: "",
+    creditOfferingId: "offering-example",
+  };
+  let settings: ModelRoleSettings = { primary: null, backups: [] };
+  const view = () => ({
+    ...settings,
+    deploymentPrimary: { provider: included.provider, modelId: included.id },
+    deploymentIncluded: true,
+  });
+  const approval = (route: Route) =>
+    (route.request().postDataJSON() as { json: { role: string } }).json.role === "approval";
+  await page.route("**/rpc/models/forRole", (route) =>
+    approval(route) ? route.fulfill({ json: { json: [included, other] } }) : route.continue(),
+  );
+  await page.route("**/rpc/models/role", (route) =>
+    approval(route) ? route.fulfill({ json: { json: view() } }) : route.continue(),
+  );
+  await page.route("**/rpc/models/setRole", async (route) => {
+    if (!approval(route)) return route.continue();
+    const { json } = route.request().postDataJSON() as { json: Partial<ModelRoleSettings> };
+    settings = { ...settings, ...json };
+    await route.fulfill({ json: { json: view() } });
+  });
+  await page.reload();
+  await openUserSettings(page, "models");
+  const section = page.getByTestId("model-role-approval");
+  await expect(section.getByTestId("model-role-default")).toHaveText("ReviewerIncluded");
+  await captureScreenshot(page, testInfo, "model-settings-approval-included");
+
+  await section.getByRole("button", { name: "Change Approval model", exact: true }).click();
+  await page.getByRole("option", { name: "Judge", exact: true }).click();
+  await expect(section.getByTestId("model-role-row-1")).toContainText("Judge");
+  await section.getByRole("button", { name: "Change Judge", exact: true }).click();
+  const back = page.getByRole("option").filter({ hasText: "Reviewer" });
+  await expect(back).toHaveText("ReviewerIncluded");
+  await captureScreenshot(page, testInfo, "model-settings-approval-included-picker");
+  await back.click();
+  await expect(section.getByTestId("model-role-default")).toHaveText("ReviewerIncluded");
+  expect(settings.primary).toBeNull();
+});
