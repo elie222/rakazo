@@ -207,7 +207,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     // Archiving pauses a bot's routines; re-pause one that slipped back to active.
     await deps.prisma.routine.updateMany({
       where: { id: routine.id, active: true },
-      data: { active: false, nextRunAt: null },
+      data: { active: false, nextRunAt: null, resumeOnRestore: true },
     });
     return;
   }
