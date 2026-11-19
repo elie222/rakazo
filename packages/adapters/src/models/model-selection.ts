@@ -236,7 +236,7 @@ export async function modelCredentialAuthKindsForSpace(
       ).filter((provider): provider is string => provider !== null)
     : [];
   const hosted = hostedProvider && managedProviders.includes(hostedProvider);
-  const [credentials, preferences] = await Promise.all([
+  const [credentials, savedPreferences] = await Promise.all([
     prisma.userModelCredential.findMany({
       where: { userId: scope.userId },
       select: {
@@ -265,6 +265,8 @@ export async function modelCredentialAuthKindsForSpace(
       },
     }),
   ]);
+  // A connection can be removed between Prisma's preference and relation reads.
+  const preferences = savedPreferences.filter((preference) => preference.credential !== null);
   const connectedProviders = new Set([
     ...credentials.map((credential) => canonicalPiProviderId(credential.provider)),
     ...preferences.map((preference) => canonicalPiProviderId(preference.credential.provider)),

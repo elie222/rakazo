@@ -291,7 +291,11 @@ describe("space catalog auth", () => {
 
   function authPrisma(options: {
     credentials: ReturnType<typeof storedCredential>[];
-    preferences: ReturnType<typeof storedPreference>[];
+    preferences: Array<
+      Omit<ReturnType<typeof storedPreference>, "credential"> & {
+        credential: ReturnType<typeof storedCredential> | null;
+      }
+    >;
     secrets: Array<{ id: string; ciphertext: string }>;
   }) {
     const credentialFindMany = vi.fn().mockResolvedValue(options.credentials);
@@ -462,6 +466,30 @@ describe("space catalog auth", () => {
     );
     expect(listsSpark(auth)).toBe(false);
     expect(load).not.toHaveBeenCalledWith("cipher-api", "secret-api");
+  });
+
+  it("ignores a preference whose connection disappeared during the catalog read", async () => {
+    const { prisma } = authPrisma({
+      credentials: [storedCredential("remaining", "remaining-secret", "2026-02-01T00:00:00Z")],
+      preferences: [
+        {
+          id: "removed-preference",
+          modelId: spark,
+          updatedAt: stamp("2026-03-01T00:00:00Z"),
+          credential: null,
+        },
+      ],
+      secrets: [{ id: "remaining-secret", ciphertext: "remaining-ciphertext" }],
+    });
+
+    const auth = await modelCredentialAuthKindsForSpace(
+      prisma,
+      { load: vi.fn().mockResolvedValue(oauth) },
+      scope,
+    );
+
+    expect(auth.secretIdByProvider["openai-codex"]).toBe("remaining-secret");
+    expect(auth.secretIdByModel["openai-codex"]?.[spark]).toBeUndefined();
   });
 
   it("keeps a model's API-key preference when the default is ChatGPT sign-in", async () => {
