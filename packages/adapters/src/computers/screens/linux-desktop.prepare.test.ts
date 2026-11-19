@@ -75,9 +75,10 @@ describe("provider desktop preparation", () => {
     expect(result.calls[3]).toContain("xvfb");
   });
 
-  it("waits for another package install to release the lock", () => {
-    const result = prepareDesktop({ broken: false });
-    for (const call of result.calls) expect(call).toContain("-o DPkg::Lock::Timeout=60");
+  it("waits for another preparation of the same computer before checking its tools", () => {
+    const lock = PREPARE_LINUX_DESKTOP.indexOf("flock 9");
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(PREPARE_LINUX_DESKTOP.indexOf('missing=""'));
   });
 
   it("stops if dependencies cannot be repaired without removing packages", () => {
@@ -188,7 +189,7 @@ describe("provider desktop preparation", () => {
         encoding: "utf8",
       });
       expect(result.status).not.toBe(0);
-      expect(readFileSync(calls, "utf8").trim()).toBe("update -qq -o DPkg::Lock::Timeout=60");
+      expect(readFileSync(calls, "utf8").trim()).toBe("update -qq");
     } finally {
       rmSync(bin, { recursive: true, force: true });
     }
