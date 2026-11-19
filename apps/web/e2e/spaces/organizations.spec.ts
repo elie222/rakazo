@@ -180,6 +180,9 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     computerMode: "team",
   });
   const workChat = `/app/${scout.id}`;
+  // Open Scout first, so the roster settling on the new bots cannot pass for the switch away.
+  await page.goto(workChat);
+  await expect(page.getByPlaceholder("Message Scout")).toBeVisible();
   await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
 
   // A link to a chat in another organization opens it there.
