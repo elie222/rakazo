@@ -24,6 +24,7 @@ import {
   MODEL_DISCOVERY_DELAY_MS,
   modelConnectionFormSecrets,
   modelConnectRequest,
+  sameCompatibleModelEndpoint,
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
@@ -312,7 +313,8 @@ export default function ModelConnection() {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
-    if (baseUrl.trim() === nextBaseUrl.trim()) return;
+    if (baseUrl.trim() === nextBaseUrl.trim() || sameCompatibleModelEndpoint(baseUrl, nextBaseUrl))
+      return;
     // A typed key belongs to the endpoint it was entered for.
     if (baseUrl.trim()) setApiKey("");
     setHeaderRows(null);
@@ -360,21 +362,24 @@ export default function ModelConnection() {
           credential,
         })
       : null;
+  function discoverModels() {
+    if (!discovery) return;
+    setProbeError(null);
+    void modelProbe.probe({
+      baseUrl: discovery.baseUrl,
+      apiKey: discovery.apiKey ?? "",
+      request: () =>
+        rpc("models/probeOpenAiCompatible", discovery, { timeoutMs: MODEL_CONNECT_TIMEOUT_MS }),
+      onSuccess: (models) => setModelId((current) => current.trim() || models[0] || ""),
+      onError: (err) =>
+        setProbeError(connectionErrorText(err, t`Could not reach this model server`)),
+    });
+  }
+
   useTimeout(
-    () => {
-      if (!discovery) return;
-      void modelProbe.probe({
-        baseUrl: discovery.baseUrl,
-        apiKey: discovery.apiKey ?? "",
-        request: () =>
-          rpc("models/probeOpenAiCompatible", discovery, { timeoutMs: MODEL_CONNECT_TIMEOUT_MS }),
-        onSuccess: (models) => setModelId((current) => current.trim() || models[0] || ""),
-        onError: (err) =>
-          setProbeError(connectionErrorText(err, t`Could not reach this model server`)),
-      });
-    },
+    discoverModels,
     discovery ? (endpointPreset?.publicModels ? 0 : MODEL_DISCOVERY_DELAY_MS) : null,
-    JSON.stringify([baseUrl.trim(), headerRows, discovery]),
+    JSON.stringify([headerRows, discovery]),
   );
 
   async function disconnectCredential() {
@@ -551,6 +556,7 @@ export default function ModelConnection() {
       apiProtocol={apiProtocol}
       onChangeProtocol={updateApiProtocol}
       probeError={probeError}
+      onRetryProbe={discoverModels}
       keyField={compatKeySection}
       showModelPicker={showModelPicker}
       onToggleModelPicker={() => setShowModelPicker((visible) => !visible)}

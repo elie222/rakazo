@@ -8,6 +8,15 @@ import {
 
 export const MODEL_DISCOVERY_DELAY_MS = 450;
 
+/** A key can survive an edit only when it still targets the same endpoint. */
+export function sameCompatibleModelEndpoint(previous: string, next: string): boolean {
+  try {
+    return savedCompatibleEndpointMatches(next, normalizeOpenAiCompatibleBaseUrl(previous));
+  } catch {
+    return false;
+  }
+}
+
 /** Once the endpoint has enough information, schedule discovery for this exact configuration. */
 export function compatibleModelDiscovery(input: {
   baseUrl: string;

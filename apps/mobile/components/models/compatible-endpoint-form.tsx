@@ -6,6 +6,7 @@ import { Pressable, Text, TextInput, View } from "react-native";
 import { native, useThemedStyles } from "../../lib/native/native";
 import type { useListSearch } from "../../lib/search/use-list-search";
 import { HeaderRowsEditor } from "../integrations/header-rows-editor";
+import { NativeActionButton } from "../native/native-action-button";
 import { NativeSwitch } from "../native/native-switch";
 import { SettingsRow } from "../settings/settings-group";
 import { ListSearchInput } from "../ui/list-search-input";
@@ -27,6 +28,7 @@ type CompatibleEndpointFormProps = {
   apiProtocol: ModelApiProtocol;
   onChangeProtocol: (next: ModelApiProtocol) => void;
   probeError: string | null;
+  onRetryProbe: () => void;
   search: ReturnType<typeof useListSearch<string>>;
   compatibleRows: string[];
   modelId: string;
@@ -55,6 +57,7 @@ export function CompatibleEndpointForm({
   apiProtocol,
   onChangeProtocol,
   probeError,
+  onRetryProbe,
   search,
   compatibleRows,
   modelId,
@@ -104,7 +107,6 @@ export function CompatibleEndpointForm({
       {compatibleRows.includes(modelId) && !showModelPicker ? (
         <Text style={styles.secondary}>{modelId}</Text>
       ) : null}
-      {/* The switches stay visible while the default is "Other model…" or a typed id. */}
       {showModelPicker && search.showSearch ? (
         <ListSearchInput query={search.query} setQuery={search.setQuery} />
       ) : null}
@@ -188,9 +190,18 @@ export function CompatibleEndpointForm({
         <Text style={styles.secondary} accessibilityLiveRegion="polite">{t`Finding…`}</Text>
       ) : null}
       {probeError ? (
-        <Text style={styles.error} accessibilityLiveRegion="polite">
-          {probeError}
-        </Text>
+        <>
+          <Text style={styles.error} accessibilityLiveRegion="polite">
+            {probeError}
+          </Text>
+          <NativeActionButton
+            disabled={busy}
+            fill={false}
+            label={t`Try again`}
+            prominence="secondary"
+            onPress={onRetryProbe}
+          />
+        </>
       ) : null}
       {showConnectionOptions ? (
         <>

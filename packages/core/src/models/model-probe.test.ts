@@ -4,12 +4,19 @@ import {
   compatibleModelDiscovery,
   createModelProbe,
   initialModelProbeState,
+  sameCompatibleModelEndpoint,
 } from "./model-probe.js";
 
 describe("automatic compatible model discovery", () => {
   const baseUrl = "https://models.example.test/v1";
   const draft = { baseUrl, apiKey: "", apiProtocol: "chat-completions", headerRows: null } as const;
   const preset = { name: "Hosted models", baseUrl };
+
+  it("recognizes edits that keep a key on the same normalized endpoint", () => {
+    expect(sameCompatibleModelEndpoint("https://models.example.test", baseUrl + "/")).toBe(true);
+    expect(sameCompatibleModelEndpoint(baseUrl, "https://models.example.test/v2")).toBe(false);
+    expect(sameCompatibleModelEndpoint(baseUrl, "https://")).toBe(false);
+  });
 
   it("loads a public catalog without sending the typed key", () => {
     expect(

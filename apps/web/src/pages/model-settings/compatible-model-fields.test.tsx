@@ -50,6 +50,7 @@ function props(compatibleRows: string[], enabledModelIds: string[], modelId = ""
     enabledModelIds,
     modelId,
     setModelId: () => {},
+    discoverModels: () => {},
     probeError: null,
     probeModels: [],
     probing: false,

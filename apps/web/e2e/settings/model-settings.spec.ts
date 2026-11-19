@@ -276,7 +276,8 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
 
-    await page.getByRole("button", { name: "Enabled models", exact: true }).click();
+    const enabledModels = page.getByRole("button", { name: "Enabled models", exact: true });
+    await enabledModels.click();
     const modelSearch = page.getByRole("textbox", { name: "Search models", exact: true });
     await expect(modelSearch).toBeVisible();
     await captureScreenshot(page, testInfo, "compatible-model-list-search");
@@ -286,8 +287,10 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await modelSearch.fill("");
     await expect(page.getByRole("checkbox", { name: LOCAL_MODEL_ID })).toBeChecked();
     await page.getByRole("checkbox", { name: SECOND_MODEL_ID }).check();
+    await enabledModels.click();
+    await expect(modelSearch).toBeHidden();
     await page.getByText("Advanced", { exact: true }).click();
-    await page.getByRole("button", { name: "Add header", exact: true }).click();
+    await page.getByRole("button", { name: "Add header", exact: true }).press("Enter");
     await page.getByRole("textbox", { name: "Header name", exact: true }).fill("x-session");
     await page.getByLabel("Header value", { exact: true }).fill("fake-session-secret");
     await captureScreenshot(page, testInfo, "openai-compatible-header-edit");

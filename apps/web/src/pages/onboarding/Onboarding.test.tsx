@@ -88,7 +88,10 @@ it("marks onboarding as usable for the desktop only once a step shows", async ()
   act(() => root.unmount());
 });
 
-it("finds and searches a long custom endpoint list during onboarding", async () => {
+it("recovers a failed discovery and searches a long custom endpoint list during onboarding", async () => {
+  const probe = vi.mocked(rpc.models.probeOpenAiCompatible);
+  probe.mockClear();
+  probe.mockRejectedValueOnce(new Error("Temporary discovery failure"));
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(async () =>
     root.render(
@@ -119,8 +122,14 @@ it("finds and searches a long custom endpoint list during onboarding", async () 
   await act(async () =>
     vi.waitFor(() => expect(rpc.models.probeOpenAiCompatible).toHaveBeenCalled()),
   );
-  // Onboarding probes the endpoint the same way model settings does.
-  expect(rpc.models.probeOpenAiCompatible).toHaveBeenCalledWith(
+  expect(document.body.textContent).toContain("Temporary discovery failure");
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "Try again")!
+      .click(),
+  );
+  expect(probe).toHaveBeenCalledTimes(2);
+  expect(probe).toHaveBeenLastCalledWith(
     expect.objectContaining({
       baseUrl: "https://models.example.test/v1",
       apiProtocol: "chat-completions",

@@ -31,6 +31,7 @@ export function CompatibleModelFields({
   endpointPreset,
   modelId,
   setModelId,
+  discoverModels,
   probeError,
   probeModels,
   probing,
@@ -56,6 +57,7 @@ export function CompatibleModelFields({
   | "endpointPreset"
   | "modelId"
   | "setModelId"
+  | "discoverModels"
   | "probeError"
   | "probeModels"
   | "probing"
@@ -196,9 +198,14 @@ export function CompatibleModelFields({
         </p>
       ) : null}
       {probeError ? (
-        <p className="mt-2 text-destructive" role="status">
-          {probeError}
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <p className="text-destructive" role="status">
+            {probeError}
+          </p>
+          <Button type="button" variant="outline" size="xs" onClick={discoverModels}>
+            <Trans>Try again</Trans>
+          </Button>
+        </div>
       ) : null}
       {!endpointPreset || credential ? (
         <Disclosure className="mt-4 text-body text-muted-foreground" summary={t`Advanced`}>
