@@ -209,10 +209,12 @@ async function loadBotWebhookSecret(
   return loadWebhookSecret(deps.secrets, cache, key, secret);
 }
 
+/** `signing: false` leaves the sender's signing secret unread, for a route that never checks it. */
 export async function loadWebhookTarget(
   deps: Pick<WebhookDeps, "prisma" | "secrets">,
   cache: WebhookSecretCache,
   botId: string,
+  options: { signing: boolean },
 ): Promise<WebhookTarget | null> {
   const bot = await deps.prisma.bot.findUnique({
     where: { id: botId, archivedAt: null },
@@ -227,7 +229,7 @@ export async function loadWebhookTarget(
     },
   });
   const signature = bot ? botWebhookSignature(bot) : null;
-  const signingSecretId = (signature && bot?.webhookSigningSecretId) || null;
+  const signingSecretId = (options.signing && signature && bot?.webhookSigningSecretId) || null;
 
   // A deactivated owner's bot takes no deliveries; callers see the usual unauthorized reply.
   if (

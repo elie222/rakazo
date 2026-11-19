@@ -46,7 +46,7 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
 
     let target: Awaited<ReturnType<typeof loadWebhookTarget>>;
     try {
-      target = await loadWebhookTarget(deps, secretCache, c.req.param("botId"));
+      target = await loadWebhookTarget(deps, secretCache, c.req.param("botId"), { signing: true });
     } catch (error) {
       if (error instanceof SecretStoreUnavailableError) {
         return c.json({ error: "Service unavailable" }, 503);
@@ -59,15 +59,15 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
     const bearer =
       target.expected !== null &&
       hasValidBearerToken(c.req.header("authorization"), target.expected);
-    const signed =
-      !bearer && target.signing
-        ? verifyWebhookSignature(
-            target.signing.signature,
-            target.signing.secret,
-            (name) => c.req.header(name),
-            raw,
-          )
-        : null;
+    // Checked even beside a valid key, so a signed delivery always dedupes on its signed id.
+    const signed = target.signing
+      ? verifyWebhookSignature(
+          target.signing.signature,
+          target.signing.secret,
+          (name) => c.req.header(name),
+          raw,
+        )
+      : null;
     if (!bearer && !signed) {
       return target.unavailable ? c.json({ error: "Service unavailable" }, 503) : unauthorized();
     }

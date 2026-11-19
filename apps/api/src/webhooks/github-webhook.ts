@@ -176,7 +176,7 @@ export function mountGithubWebhookRoute(
 
     let target: Awaited<ReturnType<typeof loadWebhookTarget>>;
     try {
-      target = await loadWebhookTarget(deps, secretCache, c.req.param("botId"));
+      target = await loadWebhookTarget(deps, secretCache, c.req.param("botId"), { signing: false });
     } catch (error) {
       if (error instanceof SecretStoreUnavailableError) {
         return c.json({ error: "Service unavailable" }, 503);

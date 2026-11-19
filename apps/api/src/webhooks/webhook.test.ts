@@ -1186,7 +1186,9 @@ describe("webhook external rotation", () => {
     deps.secrets = store;
     const cache = new Map();
     try {
-      expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe("initial");
+      expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+        "initial",
+      );
       const changed = vi.fn();
       store.onChange(changed);
       fake.values.set(record.ref.split(":").at(-1)!, "rotated");
@@ -1194,14 +1196,20 @@ describe("webhook external rotation", () => {
       expect(cache.size).toBe(1);
       expect(changed).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(30_000);
-      expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe("rotated");
+      expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+        "rotated",
+      );
       expect(changed).toHaveBeenCalledExactlyOnceWith(record.ref);
       changed.mockClear();
       fake.values.set(record.ref.split(":").at(-1)!, "rotated-again");
       await vi.advanceTimersByTimeAsync(30_000);
-      expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe("rotated-again");
+      expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+        "rotated-again",
+      );
       expect(changed).toHaveBeenCalledExactlyOnceWith(record.ref);
-      expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe("rotated-again");
+      expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+        "rotated-again",
+      );
     } finally {
       await store.close();
       vi.useRealTimers();
@@ -1243,12 +1251,18 @@ describe("encrypted webhook cache expiry", () => {
     const changed = vi.fn();
     store.onChange(changed);
     try {
-      expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe("initial");
+      expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+        "initial",
+      );
       await vi.advanceTimersByTimeAsync(29_999);
-      expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe("initial");
+      expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+        "initial",
+      );
       expect(load).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(1);
-      expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe("initial");
+      expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+        "initial",
+      );
       expect(load).toHaveBeenCalledTimes(2);
       expect(changed).not.toHaveBeenCalled();
       const replacement = await store.put("replacement", context, { recordId: record.id });
@@ -1259,7 +1273,9 @@ describe("encrypted webhook cache expiry", () => {
         userId: "user-1",
         spaceId: "ws-1",
       } as never);
-      expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe("replacement");
+      expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+        "replacement",
+      );
       expect(load).toHaveBeenCalledTimes(3);
     } finally {
       await store.close();
@@ -1336,12 +1352,12 @@ describe("webhook secret cache", () => {
     secrets.set("secret-a", "cipher-a").set("secret-b", "cipher-b");
     const cache = new Map();
 
-    expect((await loadWebhookTarget(deps, cache, "bot-a"))?.expected).toBe("a");
-    expect((await loadWebhookTarget(deps, cache, "bot-b"))?.expected).toBe("b");
+    expect((await loadWebhookTarget(deps, cache, "bot-a", { signing: true }))?.expected).toBe("a");
+    expect((await loadWebhookTarget(deps, cache, "bot-b", { signing: true }))?.expected).toBe("b");
     values.set("cipher-a", "a2");
     changed("cipher-a");
-    expect((await loadWebhookTarget(deps, cache, "bot-a"))?.expected).toBe("a2");
-    expect((await loadWebhookTarget(deps, cache, "bot-b"))?.expected).toBe("b");
+    expect((await loadWebhookTarget(deps, cache, "bot-a", { signing: true }))?.expected).toBe("a2");
+    expect((await loadWebhookTarget(deps, cache, "bot-b", { signing: true }))?.expected).toBe("b");
     expect(load).toHaveBeenCalledTimes(3);
   });
 
@@ -1355,9 +1371,11 @@ describe("webhook secret cache", () => {
     secrets.set("secret-1", "cipher").set("secret-2", "cipher");
     const cache = new Map();
 
-    expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe(SECRET);
+    expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+      SECRET,
+    );
     bots.set("bot-1", "secret-2");
-    expect(await loadWebhookTarget(deps, cache, "bot-1")).toBeNull();
+    expect(await loadWebhookTarget(deps, cache, "bot-1", { signing: true })).toBeNull();
   });
 
   it("keeps the newer secret when a decrypt for the revoked one finishes late", async () => {
@@ -1368,13 +1386,17 @@ describe("webhook secret cache", () => {
     secrets.set("secret-1", "cipher-1").set("secret-2", "cipher-2");
     const cache = new Map();
 
-    const stale = loadWebhookTarget(deps, cache, "bot-1");
+    const stale = loadWebhookTarget(deps, cache, "bot-1", { signing: true });
     await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
     bots.set("bot-1", "secret-2");
-    expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe(SECRET);
+    expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+      SECRET,
+    );
     staleDecrypt.resolve(SECRET);
     expect(await stale).toBeNull();
-    expect((await loadWebhookTarget(deps, cache, "bot-1"))?.expected).toBe(SECRET);
+    expect((await loadWebhookTarget(deps, cache, "bot-1", { signing: true }))?.expected).toBe(
+      SECRET,
+    );
     expect(load).toHaveBeenCalledTimes(2);
   });
 
@@ -1385,14 +1407,15 @@ describe("webhook secret cache", () => {
       secrets.set(`secret-${i}`, `cipher-${i}`);
     }
     const cache = new Map();
-    for (let i = 0; i < 1_000; i++) await loadWebhookTarget(deps, cache, `bot-${i}`);
-    await loadWebhookTarget(deps, cache, "bot-0");
+    for (let i = 0; i < 1_000; i++)
+      await loadWebhookTarget(deps, cache, `bot-${i}`, { signing: true });
+    await loadWebhookTarget(deps, cache, "bot-0", { signing: true });
     expect(load).toHaveBeenCalledTimes(1_000);
 
-    await loadWebhookTarget(deps, cache, "bot-1000");
-    await loadWebhookTarget(deps, cache, "bot-0");
+    await loadWebhookTarget(deps, cache, "bot-1000", { signing: true });
+    await loadWebhookTarget(deps, cache, "bot-0", { signing: true });
     expect(load).toHaveBeenCalledTimes(1_001);
-    await loadWebhookTarget(deps, cache, "bot-1");
+    await loadWebhookTarget(deps, cache, "bot-1", { signing: true });
     expect(load).toHaveBeenCalledTimes(1_002);
   });
 });
@@ -1561,6 +1584,38 @@ describe("signed webhook deliveries", () => {
     const retried = await app.request("/api/v1/bots/bot-1/webhook", standardDelivery(raw));
     expect(retried.status).toBe(200);
     expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("dedupes on the signed id even when the request also carries the bot's key", async () => {
+    const deps = createDeps({ signing: { signature: STANDARD }, routines: [WEBHOOK_ROUTINE] });
+    const app = mount(deps);
+    for (const key of ["retry-1", "retry-2"]) {
+      const delivery = standardDelivery(raw, {
+        headers: { authorization: `Bearer ${SECRET}`, "idempotency-key": key },
+      });
+      expect((await app.request("/api/v1/bots/bot-1/webhook", delivery)).status).toBe(200);
+    }
+    const nonces = deps.sendUserMessage.mock.calls.map((call) => call[0].clientNonce);
+    expect(nonces).toEqual([signedNonce("msg_fake_1"), signedNonce("msg_fake_1")]);
+  });
+
+  it("never reads the signing secret for a Git event", async () => {
+    const load = vi.fn(defaultLoad);
+    const deps = createDeps({
+      load,
+      signing: { signature: STANDARD },
+      routines: [WEBHOOK_ROUTINE],
+    });
+    const res = await mount(deps).request("/api/v1/bots/bot-1/github", {
+      method: "POST",
+      headers: {
+        "x-github-event": "push",
+        "x-hub-signature-256": `sha256=${createHmac("sha256", SECRET).update(raw).digest("hex")}`,
+      },
+      body: raw,
+    });
+    expect(res.status).toBe(200);
+    expect(load.mock.calls.map(([ciphertext]) => ciphertext)).toEqual(["cipher"]);
   });
 
   it("keeps accepting the bot's own key as a bearer token", async () => {
