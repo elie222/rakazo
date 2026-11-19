@@ -50,6 +50,10 @@ describe("ensureFirstBot", () => {
     );
     expect(deps.introduce).toHaveBeenCalledWith(actor, { id: "chief-new" });
     expect(deps.promptFocus).toHaveBeenCalledWith(actor, "chief-new");
+    // The card checks for the intro run, so the run is committed first.
+    expect(deps.introduce.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.promptFocus.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("reuses the bot with the first-run key before a legacy Chief", async () => {
@@ -61,9 +65,9 @@ describe("ensureFirstBot", () => {
     });
     await expect(run()).resolves.toEqual({ botId: "keyed" });
     expect(deps.createBot).not.toHaveBeenCalled();
+    // Whoever created it greets it, so a found Chief's thread is left alone.
     expect(deps.introduce).not.toHaveBeenCalled();
-    // Idempotent: a thread already under way keeps its messages.
-    expect(deps.promptFocus).toHaveBeenCalledWith(actor, "keyed");
+    expect(deps.promptFocus).not.toHaveBeenCalled();
   });
 
   it("reuses a Chief made before the first-run key existed", async () => {
@@ -110,7 +114,7 @@ describe("ensureFirstBot", () => {
       .mockResolvedValueOnce([{ id: "chief-other", spawnKey: FIRST_BOT_SPAWN_KEY }]);
     await expect(run()).resolves.toEqual({ botId: "chief-other" });
     expect(deps.createBot).not.toHaveBeenCalled();
-    expect(deps.promptFocus).toHaveBeenCalledWith(actor, "chief-other");
+    expect(deps.promptFocus).not.toHaveBeenCalled();
   });
 
   it("still opens Chief when greeting it fails", async () => {

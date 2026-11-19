@@ -412,10 +412,9 @@ async function memberSpaceNavigation(
       distinct: ["spaceId"],
     }),
     // A Space whose bots were all deleted was used, so it is not sent back to onboarding.
-    deps.prisma.botDeletion.findMany({
+    deps.prisma.botDeletion.groupBy({
+      by: ["spaceId"],
       where: { spaceId: { in: spaceIds } },
-      select: { spaceId: true },
-      distinct: ["spaceId"],
     }),
     // Spaces someone from outside their organization belongs to, marked so nobody shares
     // there unaware.

@@ -40,9 +40,6 @@ export async function ensureFirstBot(
     (await createFirstBot(deps, actor)) ??
     // Another tab or device may have made Chief between the two reads, so its history is Chief.
     (await existingFirstBot(deps.prisma, actor));
-  if (!botId) return { botId: null };
-  // A failed card leaves Chief usable; the person can type to it.
-  await bestEffort("first bot focus prompt", deps.promptFocus(actor, botId));
   return { botId };
 }
 
@@ -79,7 +76,11 @@ async function createFirstBot(deps: FirstBotDeps, actor: Actor): Promise<string 
     color: BOT_COLOR_LIST.find((color) => color.id === "orange")?.hex,
     spawnKey: FIRST_BOT_SPAWN_KEY,
   });
-  // Runs at most once per bot, so the loser of a concurrent create adds nothing.
+  // Each runs at most once per thread, and in this order: the focus card waits for an intro run
+  // that is already committed, so a concurrent call cannot leave both openers. A Chief that is
+  // only found is left as it is, since whoever created it greets it.
   await bestEffort("first bot intro run", deps.introduce(actor, bot));
+  // A failed card leaves Chief usable; the person can type to it.
+  await bestEffort("first bot focus prompt", deps.promptFocus(actor, bot.id));
   return bot.id;
 }
