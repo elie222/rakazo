@@ -73,7 +73,12 @@ const usageFor = (input: Input) => ({
     ...point(input.botId ? 3 : 4, input.botId ? 400 : 467, 0.04),
   },
   models: [
-    { provider: input.provider ?? "p:1", model: input.model ?? "m1", ...point(3, 400, 0.04) },
+    {
+      provider: input.provider ?? "p:1",
+      model: input.model ?? "m1",
+      ...point(3, 400, 0.04),
+      cachedTokens: 250,
+    },
   ],
   overTimeUnit: "day",
   overTime: [{ date: "2026-11-10", ...point(3, 400, 0.04) }],
@@ -151,7 +156,7 @@ it("shows every bot's usage first, then narrows it by bot, model and date range"
       [...panel.container.querySelectorAll("tbody tr")].map((row) =>
         [...row.querySelectorAll("td")].map((cell) => cell.textContent),
       ),
-    ).toEqual([["m1p:1", "3", "399", "1", "$0.04"]]);
+    ).toEqual([["m1p:1", "3", "399", "250", "1", "$0.04"]]);
 
     await panel.choose("Bot", "Alpha");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({ range: "30d", botId: "bot-a" });

@@ -250,6 +250,22 @@ describeBreakdown("usage.breakdown", () => {
     const cached = await get({ range: "30d", botId: alpha.id });
     expect(cached.models.find((m) => m.model === "caching")?.cachedTokens).toBe(42);
     expect(cached.models.find((m) => m.model === "m1")?.cachedTokens).toBeNull();
+    // A row from before cache reads were measured holds a zero and no total: still unknown.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "caching",
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+      },
+    });
+    const older = await get({ range: "30d", botId: alpha.id });
+    expect(older.models.find((m) => m.model === "caching")?.cachedTokens).toBeNull();
 
     const elsewhere = await rpc<UsageBreakdown>(app, other, "usage/breakdown", { range: "all" });
     expect(summary(elsewhere)).toEqual({ runs: 1, calls: 1, tokens: 1_000_000 });

@@ -299,10 +299,12 @@ export function contentRoutes(ctx: RouterContext) {
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
           `),
+                // Rows from before cache reads were measured hold a zero and no total, so a cached
+                // figure counts as known only where the total is.
                 tx.$queryRaw<ModelRow[]>(Prisma.sql`
             SELECT u.provider, u.model, ${totalsSelect},
               SUM(u."cacheReadTokens")::double precision AS "cachedTokens",
-              BOOL_AND(u."cacheReadTokens" IS NOT NULL) AS "cachedComplete"
+              BOOL_AND(u."cacheReadTokens" IS NOT NULL AND u."totalTokens" IS NOT NULL) AS "cachedComplete"
             FROM usage_records u
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
