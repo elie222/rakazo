@@ -54,7 +54,7 @@ function groupRun() {
 }
 
 describe("scratchpad_add", () => {
-  const add = async (args: Record<string, unknown>) => {
+  const add = async (args: Record<string, unknown>, trigger = "user") => {
     notice.postOpenWorkNotice.mockClear();
     const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
       id: "item-1",
@@ -65,7 +65,7 @@ describe("scratchpad_add", () => {
     }));
     const ctx = {
       deps: { prisma: { scratchpadItem: { create } } },
-      run: { id: "run-1", spaceId: "s", userId: "u" },
+      run: { id: "run-1", spaceId: "s", userId: "u", trigger },
       bot: { id: "b" },
       thread: { id: "thread-1" },
     } as unknown as RunContext;
@@ -91,6 +91,13 @@ describe("scratchpad_add", () => {
   it("leaves no row for a refused item or one saved as already done", async () => {
     await expect(add({ title: "" })).resolves.toEqual({ error: "title is required." });
     await add({ title: "Shipped", status: "done" });
+    expect(notice.postOpenWorkNotice).not.toHaveBeenCalled();
+  });
+
+  it("leaves no row for background ticket work, which stays out of the chat", async () => {
+    await expect(add({ title: "Compare vendors" }, "tickets")).resolves.toMatchObject({
+      item: { title: "Compare vendors" },
+    });
     expect(notice.postOpenWorkNotice).not.toHaveBeenCalled();
   });
 });

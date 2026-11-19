@@ -14,8 +14,7 @@ export function OpenWorkEventRow({ block, botId }: { block: OpenWorkEventBlock; 
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const list = queries.scratchpad.list.queryOptions({ input: { botId: botId ?? "" } });
-  // The row was written as the item was saved, so a cached list may not hold it yet.
-  const items = useQuery({ ...list, enabled: Boolean(botId), refetchOnMount: "always" }).data;
+  const items = useQuery({ ...list, enabled: Boolean(botId) }).data;
   const remove = useSave({
     stale: [list.queryKey],
     save: async (_: null, rpc) => {

@@ -1,3 +1,4 @@
+import { isBackgroundRunTrigger } from "@rakazo/core";
 import {
   desktopGuardApplies,
   desktopProtectionGuardMessage,
@@ -103,7 +104,8 @@ export const taskTools: ToolHandlers = {
       notes: args.notes !== undefined ? String(args.notes) : undefined,
     });
     // The person sees what was kept while they still remember why, and can drop it there.
-    if (created.item && created.item.status !== "done") {
+    // Background work stays out of the chat, so it leaves no row.
+    if (created.item && created.item.status !== "done" && !isBackgroundRunTrigger(run.trigger)) {
       await postOpenWorkNotice(deps, {
         spaceId: run.spaceId,
         threadId: thread.id,
