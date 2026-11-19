@@ -23,7 +23,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { finishRoutineHandover } from "../routines/routine-handover.js";
-import { postRoutineNotice, routineEditChange } from "../routines/routine-notice.js";
+import { postRoutineNotice, routineEditChange, routineEdited } from "../routines/routine-notice.js";
 import type { RoutineEvents } from "../routines/routine-triggers.js";
 import {
   hasRoutineEvents,
@@ -1212,13 +1212,23 @@ export async function updateScheduleFromTool(
   } catch {
     // The change is saved even if the thread signal fails.
   }
-  await postRoutineNotice(deps, {
-    spaceId: input.spaceId,
-    threadId: existing.threadId ?? input.threadId,
-    botId: input.botId,
-    change: routineEditChange(existing, { active }),
-    name: name ?? existing.name,
-  });
+  const saved = {
+    ...existing,
+    ...(name === undefined ? {} : { name }),
+    ...(prompt === undefined ? {} : { prompt }),
+    ...(inChat === undefined ? {} : { inChat }),
+    ...(timingChanged ? { crons, timezone, active } : {}),
+    ...(eventsChanged ? events : {}),
+  };
+  if (routineEdited(existing, saved)) {
+    await postRoutineNotice(deps, {
+      spaceId: input.spaceId,
+      threadId: existing.threadId ?? input.threadId,
+      botId: input.botId,
+      change: routineEditChange(existing, saved),
+      name: saved.name,
+    });
+  }
 
   const timing = describeRoutineTiming({ crons, timezone, nextRunAt });
   return {

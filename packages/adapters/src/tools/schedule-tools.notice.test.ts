@@ -104,6 +104,9 @@ describe("routine rows from the schedule tools", () => {
       expect.anything(),
       expect.objectContaining({ change: "updated", name: "Shopping" }),
     );
+    notice.postRoutineNotice.mockClear();
+    await updateScheduleFromTool(deps, { ...base, active: true, name: "Groceries" });
+    expect(notice.postRoutineNotice).not.toHaveBeenCalled();
   });
 
   it("cancel leaves a deleted row in the routine's chat", async () => {
