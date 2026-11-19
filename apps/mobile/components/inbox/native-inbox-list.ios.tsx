@@ -238,12 +238,13 @@ export function NativeInboxList<Item>({
             viewport={avatarViewport}
             topInset={headerInset}
             bottomInset={bottom}
-            onJump={(index) =>
+            onJump={(index) => {
+              openSwipe.current?.close();
               void scrollNativeListToRow(
                 findNodeHandle(hostRef.current) ?? null,
                 firstItemRow + index,
-              )
-            }
+              );
+            }}
           />
         </View>
       ) : null}

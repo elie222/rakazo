@@ -23,6 +23,7 @@ import {
 } from "./inbox-swipe";
 
 const swipe = vi.hoisted(() => ({
+  touch: () => {},
   start: () => {},
   update: (_event: { translationX: number }) => {},
   end: (_event: { translationX: number }, _success: boolean) => {},
@@ -67,6 +68,10 @@ vi.mock("react-native-gesture-handler", () => {
     activeOffsetX: () => pan,
     failOffsetY: () => pan,
     maxPointers: () => pan,
+    onBegin: (callback: typeof swipe.touch) => {
+      swipe.touch = callback;
+      return pan;
+    },
     onStart: (callback: typeof swipe.start) => {
       swipe.start = callback;
       return pan;
@@ -480,6 +485,18 @@ describe("iOS swipe row", () => {
     expect(container.querySelector('[data-ui="ContextMenu.Trigger"] button')).toBeNull();
     expect(swipe.foreground().transform).toEqual([{ translateX: 0 }]);
     expect(onAction).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
+  it("dismisses another row's swipe on touch before a pan starts", () => {
+    const { activeSwipe, root } = render();
+    const close = vi.fn(() => {
+      activeSwipe.current = null;
+    });
+    activeSwipe.current = { id: "another-row", close };
+    act(() => swipe.touch());
+    expect(close).toHaveBeenCalledOnce();
+    expect(activeSwipe.current).toBeNull();
     act(() => root.unmount());
   });
 

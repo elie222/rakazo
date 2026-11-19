@@ -94,11 +94,14 @@ export function InboxSwipeContent({
     if (activeSwipe?.current?.id === id) activeSwipe.current = null;
   }
 
+  function closeOtherSwipe() {
+    if (activeSwipe?.current?.id !== id) activeSwipe?.current?.close();
+  }
+
   function begin() {
     setShowActions(true);
-    if (!activeSwipe || activeSwipe.current?.id === id) return;
-    activeSwipe.current?.close();
-    activeSwipe.current = { id, close };
+    closeOtherSwipe();
+    if (activeSwipe) activeSwipe.current = { id, close };
   }
 
   function activate(action: InboxRowAction) {
@@ -111,6 +114,9 @@ export function InboxSwipeContent({
     .activeOffsetX([-10, 10])
     .failOffsetY([-8, 8])
     .maxPointers(1)
+    .onBegin(() => {
+      scheduleOnRN(closeOtherSwipe);
+    })
     .onStart(() => {
       cancelAnimation(offset);
       dragStart.value = offset.value;
