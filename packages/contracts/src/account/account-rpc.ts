@@ -73,7 +73,7 @@ export const accountRpc = {
   security: {
     events: oc.input(SecurityEventListInputSchema).output(z.array(SecurityEventSchema)),
   },
-  /** The organization's audit log, newest first. Organization owners and admins only. */
+  /** The organization's audit log, newest first: everyone's for owners and admins, a member's own otherwise. */
   audit: {
     events: oc.input(AuditEventListInputSchema).output(AuditEventPageSchema),
   },
