@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Routine, RoutineHistory } from "@rakazo/contracts";
 import {
@@ -291,4 +292,52 @@ test("a webhook delivery stays out of the chat, like a scheduled run", async ({
   });
   await expect(transcript.getByTestId("message-user-bubble")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "routine-webhook-delivery");
+});
+
+test("a webhook signed with the sender's own secret starts the routine", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-signed-${stamp}@rakazo.test`, "password12", "Signed");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await rpc(page, "routines/create", {
+    botId,
+    name: "Signed sync",
+    prompt: "Note the new order.",
+    webhookEnabled: true,
+    active: true,
+    notify: false,
+  });
+  const hook = await rpc<{ path: string }>(page, "bots/rotateWebhookSecret", { botId });
+  await page.reload();
+  await openBotPanel(page);
+  await page.getByRole("button", { name: /Signed sync/ }).click();
+
+  // A fake secret in the sender's own format, pasted the way its dashboard shows it.
+  const key = Buffer.from(`fake-sender-key-${stamp}`);
+  await page.getByRole("button", { name: "Key options" }).click();
+  await page.getByRole("menuitem", { name: "Signing secret" }).click();
+  await page.getByLabel("Secret", { exact: true }).fill(`whsec_${key.toString("base64")}`);
+  await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("Standard Webhooks", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-webhook-signing-secret");
+
+  const body = JSON.stringify({ event: "order.paid", id: `evt_${stamp}` });
+  const id = `msg_${stamp}`;
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = createHmac("sha256", key).update(`${id}.${timestamp}.${body}`).digest("base64");
+  const delivered = await page.request.post(hook.path, {
+    headers: {
+      "content-type": "application/json",
+      "webhook-id": id,
+      "webhook-timestamp": timestamp,
+      "webhook-signature": `v1,${signature}`,
+    },
+    data: body,
+  });
+  expect(delivered.status()).toBe(200);
+  expect(await delivered.json()).toMatchObject({ ok: true });
 });
