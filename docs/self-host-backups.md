@@ -110,8 +110,10 @@ Run it from the deployment directory. The deployment directory is added to
 `/etc/rakazo/backup.env` on a line of its own, without replacing settings already there. The
 last command takes the first backup now, so a misconfiguration shows at once in
 `journalctl -u rakazo-backup.service`. The restore steps below apply with your own Compose file
-and volume names. Their drill script is not part of this install. Where you keep the identity
-file, fetch it and run it on a snapshot you copied there:
+and volume names. That first backup is plaintext until you set recipients as described under
+[encrypted and off-site backups](#encrypted-and-off-site-backups); the drill reads encrypted
+snapshots only. Its script is not part of this install. Where you keep the identity file, fetch
+it and run it on an encrypted snapshot you copied there:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/elie222/rakazo/vX.Y.Z/infra/compose/backup-drill.sh
