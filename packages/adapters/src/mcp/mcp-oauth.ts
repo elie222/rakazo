@@ -892,6 +892,13 @@ type Pending = {
 const PENDING_TTL_MS = 10 * 60_000;
 const MAX_PENDING_SESSIONS = 100;
 
+/**
+ * Where a sign-in is sent back when the authorization server registers only loopback
+ * redirects. Nothing listens there: the desktop app reads the code from the navigation
+ * itself, and RFC 8252 has servers accept any port on a loopback redirect.
+ */
+export const MCP_LOOPBACK_REDIRECT_URI = "http://127.0.0.1:53682/callback";
+
 /** OAuth traffic runs through the same URL policy as runtime MCP requests
  * (HTTPS enforced, redirects rejected), with the endpoint-origin fallback
  * layered on top for providers like Brex. */
@@ -905,6 +912,8 @@ function oauthFetch(
   close: () => Promise<void>;
   headers: Record<string, string>;
   publicError: (error: unknown, message: string) => Error;
+  /** The authorization server's last refusal named the redirect address (RFC 7591). */
+  refusedRedirect: () => boolean;
 } {
   const url = new URL(endpoint);
   const localHttp = url.protocol === "http:" && isLocalhostOrLoopbackIp(url.hostname);
@@ -955,6 +964,7 @@ function oauthFetch(
     headers,
     fetch: recordingFetch,
     close: () => safeFetch.close(),
+    refusedRedirect: () => rejection?.code === "invalid_redirect_uri",
     publicError: (error, message) => {
       if (error instanceof McpOAuthStoreError) return error;
       const secrets = oauthMaterialSecrets(material);
@@ -1273,6 +1283,9 @@ export class McpOAuthBroker {
     redirectUri: string;
     client?: McpOAuthClientKind;
     botId?: string;
+    /** The client can take the code from a loopback redirect, so a server that registers
+     * only loopback redirects (RFC 8252) is tried again on one when it refuses ours. */
+    capturesLoopback?: boolean;
   }): Promise<
     | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
     | { status: "already_connected" | "authorization_not_requested" }
@@ -1324,6 +1337,7 @@ export class McpOAuthBroker {
       server.endpoint ? loaded.material : withoutRequestCredentials(loaded.material),
       this.allowPrivateEndpoint,
     );
+    let retryOnLoopback = false;
     try {
       if (server.endpoint)
         await startRemoteAuthorization(
@@ -1344,10 +1358,20 @@ export class McpOAuthBroker {
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
       if (needsMcpOAuthClient(error)) throw new McpOAuthClientRequiredError(server.revision);
-      if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");
+      // A client entered by hand was registered with its own redirect; only a registration
+      // this attempt made can be made again with another one.
+      retryOnLoopback =
+        !authorizationUrl &&
+        input.capturesLoopback === true &&
+        input.redirectUri !== MCP_LOOPBACK_REDIRECT_URI &&
+        !loaded.material.oauthClient &&
+        networkFetch.refusedRedirect();
+      if (!authorizationUrl && !retryOnLoopback)
+        throw networkFetch.publicError(error, "Could not start MCP OAuth");
     } finally {
       await networkFetch.close().catch(() => undefined);
     }
+    if (retryOnLoopback) return this.begin({ ...input, redirectUri: MCP_LOOPBACK_REDIRECT_URI });
     if (!authorizationUrl) {
       if (await provider.tokens()) {
         return { status: "already_connected" };
