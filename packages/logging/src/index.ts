@@ -12,6 +12,7 @@ export {
   type RequestCorrelation,
 } from "./correlation.js";
 export { createServiceLogger, resolveLogEnv, SERVICE_NAMES } from "./env.js";
+export { warnExpectedFailure } from "./expected-failures.js";
 export {
   formatTraceparent,
   generateRequestId,

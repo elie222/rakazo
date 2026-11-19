@@ -1,3 +1,5 @@
+import { ClientError } from "@rakazo/core";
+
 /** Upload part size: large enough that most homes are one request, small enough to hold in memory. */
 export const PART_BYTES = 16 * 1024 * 1024;
 
@@ -9,6 +11,19 @@ export interface ObjectStorageConnection {
   secretAccessKey: string;
   /** Prepended to every key, so one bucket can hold several deployments. */
   prefix: string;
+}
+
+/** The store failed in a way that passes, such as an outage, throttling or a dropped connection. */
+export class ObjectStorageUnavailableError extends ClientError {
+  constructor(options?: ErrorOptions) {
+    super(
+      "SERVICE_UNAVAILABLE",
+      "File storage is not responding. Try again in a moment.",
+      "SERVICE_UNAVAILABLE",
+      options,
+    );
+    this.name = "ObjectStorageUnavailableError";
+  }
 }
 
 /**

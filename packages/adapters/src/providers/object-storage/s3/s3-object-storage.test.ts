@@ -3,12 +3,21 @@ import { Agent as HttpsAgent } from "node:https";
 import type { AddressInfo } from "node:net";
 import type * as S3Sdk from "@aws-sdk/client-s3";
 import { S3Client } from "@aws-sdk/client-s3";
+import {
+  createLogger,
+  createTestSink,
+  getLogger,
+  installLogger,
+  runCorrelatedJob,
+} from "@rakazo/logging";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   MemoryObjectStorage,
   objectStorageConformance,
 } from "../../../storage/object-storage.test-support.js";
+import { ObjectStorageUnavailableError } from "../../../storage/object-storage-common.js";
 import {
+  isPassingStorageFailure,
   objectStorageConfigFromEnv,
   objectStorageRequestHandler,
   S3ObjectStorage,
@@ -58,6 +67,8 @@ function fakeS3() {
     requests.push(
       `${req.method} ${key ? "object" : "bucket"}${named.length ? `?${named.join("&")}` : ""}`,
     );
+    if (bucket === "busy-bucket")
+      return send(503, "<Error><Code>SlowDown</Code><Message>Reduce your rate</Message></Error>");
     if (bucket !== "test-bucket") return send(404, "<Error><Code>NoSuchBucket</Code></Error>");
     if (req.method === "PUT" && query.has("uploadId")) {
       uploads.get(query.get("uploadId")!)!.parts.set(Number(query.get("partNumber")), body);
@@ -143,9 +154,9 @@ afterAll(async () => {
   await new Promise((resolve) => fake.server.close(resolve));
 });
 
-function storage(prefix = "") {
+function storage(prefix = "", bucket = "test-bucket") {
   return new S3ObjectStorage({
-    bucket: "test-bucket",
+    bucket,
     endpoint,
     region: "us-east-1",
     accessKeyId: "fake-access-key",
@@ -239,6 +250,57 @@ describe("S3ObjectStorage failures", () => {
       ),
     ).rejects.toThrow();
     expect(closed).toBe(true);
+  });
+});
+
+describe("S3ObjectStorage outages", () => {
+  const upload = (bucket: string) =>
+    storage("", bucket).put(
+      "home",
+      (async function* () {
+        yield Buffer.from("x");
+      })(),
+    );
+
+  it("answers a store that stays busy through the SDK's retries as an expected outage", async () => {
+    const previous = getLogger();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      fake.requests.length = 0;
+      const failure = await runCorrelatedJob({
+        name: "computer.sleep",
+        payload: {},
+        run: () => upload("busy-bucket"),
+      }).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(ObjectStorageUnavailableError);
+      expect(failure).toMatchObject({ kind: "SERVICE_UNAVAILABLE", cause: { name: "SlowDown" } });
+      expect(fake.requests.length).toBeGreaterThan(1);
+      expect(sink.events.map(({ level, message }) => ({ level, message }))).toEqual([
+        { level: "warn", message: "object storage unavailable" },
+        { level: "error", message: "job.completed" },
+      ]);
+      expect(sink.events.at(-1)).toMatchObject({ "error.report": false });
+    } finally {
+      installLogger(previous);
+    }
+  });
+
+  it("leaves a request the store refuses as it was", async () => {
+    const failure = await upload("missing-bucket").catch((error: unknown) => error);
+    expect(failure).not.toBeInstanceOf(ObjectStorageUnavailableError);
+  });
+
+  it("counts dropped connections and server errors as passing, and refusals as not", () => {
+    const withCode = (code: string) => Object.assign(new Error("socket hang up"), { code });
+    const withStatus = (name: string, httpStatusCode: number) =>
+      Object.assign(new Error(name), { name, $metadata: { httpStatusCode } });
+    expect(isPassingStorageFailure(withCode("ECONNRESET"))).toBe(true);
+    expect(isPassingStorageFailure(withStatus("BadGateway", 502))).toBe(true);
+    expect(isPassingStorageFailure(withStatus("ServiceUnavailable", 503))).toBe(true);
+    expect(isPassingStorageFailure(withStatus("AccessDenied", 403))).toBe(false);
+    expect(isPassingStorageFailure(withStatus("NoSuchKey", 404))).toBe(false);
+    expect(isPassingStorageFailure(withCode("ENOENT"))).toBe(false);
   });
 });
 
