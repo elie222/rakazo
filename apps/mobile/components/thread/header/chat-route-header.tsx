@@ -9,7 +9,7 @@ import { NativeSymbol } from "../../native/native-symbol";
 import { trailingHeaderOptions } from "../../native/sheet-header";
 import type { ChatTitleParams } from "./chat-header-title";
 import { ChatHeaderTitle } from "./chat-header-title";
-import { threadHeaderRight } from "./thread-header-right";
+import { openInvite, threadHeaderRight } from "./thread-header-right";
 
 /**
  * Whether the chat sits beside the chat list, whether that list is hidden, and whether a
@@ -44,7 +44,7 @@ export function chatRouteHeader(
       color,
       onGroupSettings: () =>
         router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
-      onInvite: canInvite && botId ? () => router.push("/invite") : undefined,
+      onInvite: canInvite && botId ? () => openInvite(router) : undefined,
     }),
     ...threadHeaderLeft({ split, inboxHidden, foldActive, color }),
     // An archived chat offers Restore; the open chat gives it its action.

@@ -1,8 +1,12 @@
 import { t } from "@lingui/core/macro";
-import type { NativeStackNavigationOptions } from "expo-router";
+import type { ImperativeRouter, NativeStackNavigationOptions } from "expo-router";
 import { Pressable } from "react-native";
 import { iosAtLeast } from "../../../lib/native/native-controls";
 import { NativeSymbol } from "../../native/native-symbol";
+
+export function openInvite(router: ImperativeRouter) {
+  router.push("/invite");
+}
 
 /**
  * A chat header's right side: the group's settings button in a group, the invite gift in a bot

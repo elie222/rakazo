@@ -15,7 +15,7 @@ import { threadEdgeOptions } from "../../lib/thread/scroll/thread-edges";
 import { trailingHeaderOptions } from "../native/sheet-header";
 import type { ChatTitle } from "./header/chat-header-title";
 import { publishChatTitle } from "./header/chat-header-title";
-import { threadHeaderRight } from "./header/thread-header-right";
+import { openInvite, threadHeaderRight } from "./header/thread-header-right";
 
 /**
  * The chat's navigation header: its title (which opens the bot's profile), the invite gift (or
@@ -106,7 +106,7 @@ export function useThreadHeader({
         color: tokens.foreground,
         onGroupSettings: () =>
           router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
-        onInvite: canInvite && botId ? () => router.push("/invite") : undefined,
+        onInvite: canInvite && botId ? () => openInvite(router) : undefined,
       }),
       ...(readOnly
         ? trailingHeaderOptions(t`Restore`, () => void restoreConversation(), restoring)
