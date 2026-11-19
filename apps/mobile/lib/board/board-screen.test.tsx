@@ -11,6 +11,8 @@ import BoardScreen from "../../app/board";
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("../api/api", () => ({ rpc }));
+// Going back to Settings is covered by its own test.
+vi.mock("../settings/back-to-settings", () => ({ useBackToSettings: () => undefined }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: EffectCallback) => useEffect(effect, [effect]),
 }));
