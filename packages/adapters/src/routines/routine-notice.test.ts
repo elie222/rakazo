@@ -10,7 +10,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...db,
 }));
 
-import { postRoutineNotice, routineEditChange } from "./routine-notice.js";
+import { postRoutineNotice, routineEditChange, routineEdited } from "./routine-notice.js";
 
 const tx = {};
 function deps(overrides: { thread?: string | null } = {}) {
@@ -132,5 +132,13 @@ describe("postRoutineNotice", () => {
         name: "n",
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("routineEdited", () => {
+  it("counts a moved run time as an edit and an equal one as none", () => {
+    const at = (iso: string) => ({ nextRunAt: new Date(iso) });
+    expect(routineEdited(at("2030-01-01T10:00:00Z"), at("2030-01-01T10:00:00Z"))).toBe(false);
+    expect(routineEdited(at("2030-01-01T10:00:00Z"), at("2030-01-02T10:00:00Z"))).toBe(true);
   });
 });

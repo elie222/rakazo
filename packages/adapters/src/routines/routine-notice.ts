@@ -28,7 +28,7 @@ export function routineEditChange(
   return after.active ? "enabled" : "disabled";
 }
 
-/** The settings a person edits; a save that changes none of them leaves no row. */
+/** The settings a person edits, and when it next runs; a save that changes none leaves no row. */
 const EDITABLE_FIELDS = [
   "name",
   "prompt",
@@ -45,16 +45,18 @@ const EDITABLE_FIELDS = [
   "modelId",
   "thinkingLevel",
   "watch",
+  "nextRunAt",
 ] as const;
+
+const comparable = (value: unknown) =>
+  value instanceof Date ? String(value.getTime()) : stableStringify(value);
 
 /** Whether a save changed anything a person edits. */
 export function routineEdited(
   before: Partial<Record<(typeof EDITABLE_FIELDS)[number], unknown>>,
   after: Partial<Record<(typeof EDITABLE_FIELDS)[number], unknown>>,
 ): boolean {
-  return EDITABLE_FIELDS.some(
-    (key) => stableStringify(before[key]) !== stableStringify(after[key]),
-  );
+  return EDITABLE_FIELDS.some((key) => comparable(before[key]) !== comparable(after[key]));
 }
 
 /** The bot's own chat, for a routine saved without one. */

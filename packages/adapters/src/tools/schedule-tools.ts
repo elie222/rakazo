@@ -1217,7 +1217,7 @@ export async function updateScheduleFromTool(
     ...(name === undefined ? {} : { name }),
     ...(prompt === undefined ? {} : { prompt }),
     ...(inChat === undefined ? {} : { inChat }),
-    ...(timingChanged ? { crons, timezone, active } : {}),
+    ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
     ...(eventsChanged ? events : {}),
   };
   if (routineEdited(existing, saved)) {
