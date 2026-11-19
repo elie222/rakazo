@@ -250,9 +250,9 @@ async function modelTurnRequest(
         !turnBlocks?.some((block) => block.kind === "image" && block.imageHandling === "confirm"),
     ),
     tools,
-    get builtinToolDeclarations() {
-      return offersHistory && !myChatsAvailable ? thisChatHistoryDeclaration : undefined;
-    },
+    getBuiltinToolDeclarations: offersHistory
+      ? () => (myChatsAvailable ? undefined : thisChatHistoryDeclaration)
+      : undefined,
     // The live array: secrets learned later in the run redact too.
     secrets: runSecrets,
     model: mainRunModel,

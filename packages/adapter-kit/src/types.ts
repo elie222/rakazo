@@ -718,8 +718,8 @@ export interface AgentRunRequest {
   /** Server verified legacy attachment bytes remain available to file tools. */
   currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
-  /** Model-facing definitions for builtins. Replace the map when steering changes the offer. */
-  builtinToolDeclarations?: ReadonlyMap<string, ConnectorTool>;
+  /** Read the current model-facing definitions. The map changes only when the offer changes. */
+  getBuiltinToolDeclarations?: () => ReadonlyMap<string, ConnectorTool> | undefined;
   model: AgentRunModel;
   /** Optional explicitly authenticated vision target for same-run computer mode. */
   computerModel?: AgentRunModel;

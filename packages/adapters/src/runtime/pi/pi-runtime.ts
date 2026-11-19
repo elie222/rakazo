@@ -16,6 +16,7 @@ import type {
   AgentRuntimeEvent,
   AgentSteeringMessage,
   AgentUsage,
+  ConnectorTool,
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
 import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
@@ -343,11 +344,10 @@ export class PiAgentRuntime implements AgentRuntime {
           [...toolsByAgentName.keys()].filter((name) => !offeredToolNames.has(name)),
         );
         let tools = allTools;
-        let declarations: AgentRunRequest["builtinToolDeclarations"];
+        let declarations: ReadonlyMap<string, ConnectorTool> | undefined;
         let switchedMode = false;
         let modelTools = tools;
-        const refreshModelTools = () => {
-          const offered = request.builtinToolDeclarations;
+        const refreshModelTools = (offered = request.getBuiltinToolDeclarations?.()) => {
           declarations = offered;
           modelTools = offered?.size
             ? tools.map((tool) => {
@@ -759,7 +759,8 @@ export class PiAgentRuntime implements AgentRuntime {
               request.claimSteering && (!terminatedReply || host.pausePending)
                 ? await request.claimSteering([...seenSteeringIds])
                 : [];
-            if (declarations !== request.builtinToolDeclarations) refreshModelTools();
+            const offered = request.getBuiltinToolDeclarations?.();
+            if (declarations !== offered) refreshModelTools(offered);
             const update =
               computer || modelTools !== tools
                 ? {

@@ -5,6 +5,7 @@ import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { beforeEach, expect, it, vi } from "vitest";
 import { approvalPausedToolResult } from "../../../approvals/approval-effect.js";
 import { builtinAgentTools } from "../../../tools/builtin.tool-definition.js";
+import { thisChatHistoryDeclaration } from "../../../tools/builtin-memory.tool-definition.js";
 
 const fake = vi.hoisted(() => ({ models: new Map<string, unknown>(), stream: vi.fn() }));
 vi.mock("@earendil-works/pi-ai/providers/all", () => ({
@@ -349,6 +350,45 @@ it.each([false, true])(
     expect(input.executeTool).not.toHaveBeenCalled();
   },
 );
+it.each([0, 1])("refreshes history scope on resumed computer request %i", async (arrival) => {
+  const input = request();
+  input.tools.push(builtinAgentTools.find((tool) => tool.name === "search_history")!);
+  let checkpoint = "";
+  input.onCheckpoint = async (capture) => {
+    checkpoint = capture();
+  };
+  script([
+    ["enter_computer_mode", { goal: "Open the app" }],
+    ["request_takeover", { reason: "Continue" }],
+  ]);
+  await run(input);
+  expect(JSON.parse(checkpoint).computerMode.mode).toBe("computer");
+
+  let claims = 0;
+  let restricted = false;
+  fake.stream.mockReset();
+  script([["leave_computer_mode", { summary: "Done" }], [undefined]]);
+  await run({
+    ...input,
+    computerModel: undefined,
+    turnCheckpoint: checkpoint,
+    resolveModel: async (provider, id) => ({ provider, id, apiKey: "fake-key" }),
+    getBuiltinToolDeclarations: () => (restricted ? thisChatHistoryDeclaration : undefined),
+    claimSteering: async () => {
+      if (claims++ !== arrival) return [];
+      restricted = true;
+      return [{ id: "steering", messageId: "incoming", origin: "webhook", text: "Update" }];
+    },
+  });
+  expect(fake.stream).toHaveBeenCalledTimes(2);
+  for (const [index, [, context]] of fake.stream.mock.calls.entries()) {
+    const search = getCurrentTools(context.messages).find((tool) => tool.name === "search_history");
+    expect(search?.parameters).toMatchObject({
+      properties: { scope: { enum: index < arrival ? ["this_chat", "my_chats"] : ["this_chat"] } },
+    });
+  }
+});
+
 it.each(["missing", "wrong-account", "changed-auth"])(
   "fails closed on cross-provider resume when the target is %s",
   async (variant) => {

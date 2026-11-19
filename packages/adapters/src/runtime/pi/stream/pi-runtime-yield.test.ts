@@ -128,9 +128,12 @@ describe("search_history scope declarations", () => {
       const input = request(new AbortController());
       input.tools.push(searchHistory);
       let claims = 0;
+      let restricted = false;
+      input.getBuiltinToolDeclarations = () =>
+        restricted ? thisChatHistoryDeclaration : undefined;
       input.claimSteering = async () => {
         if (claims++ !== index) return [];
-        input.builtinToolDeclarations = thisChatHistoryDeclaration;
+        restricted = true;
         return [{ id: "steering", messageId: "incoming", origin: "webhook", text: "Update" }];
       };
       script(["a", "b", undefined]);
@@ -156,7 +159,7 @@ describe("search_history scope declarations", () => {
   it("reuses the restricted model schema on later steps", async () => {
     const input = request(new AbortController());
     input.tools.push(searchHistory);
-    input.builtinToolDeclarations = thisChatHistoryDeclaration;
+    input.getBuiltinToolDeclarations = () => thisChatHistoryDeclaration;
     const conversions = vi.spyOn(toolParameters, "parametersFor");
     try {
       script(["a", "b", undefined]);
@@ -189,7 +192,7 @@ describe("search_history scope declarations", () => {
       instructions: "New instructions.",
     };
     resumed.tools.push(searchHistory);
-    resumed.builtinToolDeclarations = thisChatHistoryDeclaration;
+    resumed.getBuiltinToolDeclarations = () => thisChatHistoryDeclaration;
     script(["search", undefined]);
     const events = await run(resumed);
 

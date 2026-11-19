@@ -794,7 +794,7 @@ function askDetail(f: ReturnType<typeof fixture>): string {
 
 describe("search_history scope guidance", () => {
   const searchTool = (request: AgentRunRequest) =>
-    request.builtinToolDeclarations?.get("search_history") ??
+    request.getBuiltinToolDeclarations?.()?.get("search_history") ??
     request.tools.find((tool) => tool.name === "search_history")!;
 
   it("skips the history scope lookup for scripted runs", async () => {
