@@ -47,11 +47,13 @@ export default function RoutineDetail() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useLingui();
-  const { botId, botName, routineId, origin } = useLocalSearchParams<{
+  const { botId, botName, routineId, origin, copyOf } = useLocalSearchParams<{
     botId?: string;
     botName?: string;
     routineId?: string;
     origin?: string;
+    /** A new routine that starts as a copy of this one, usually another member's. */
+    copyOf?: string;
   }>();
   const router = useRouter();
   const deletionContext = useMemo(() => ({ active: false }), [botId, routineId]);
@@ -74,6 +76,7 @@ export default function RoutineDetail() {
   const [editing, setEditing] = useState(false);
   const creating = Boolean(botId) && !routineId;
   const routine = routines?.find((item) => item.id === routineId) ?? null;
+  const template = (creating && routines?.find((item) => item.id === copyOf)) || null;
   const error = !botId
     ? t`Routine link is incomplete`
     : creating || routine
@@ -103,6 +106,7 @@ export default function RoutineDetail() {
           botId={botId}
           botName={botName ?? ""}
           routine={routine}
+          template={template}
           onCancel={() => setEditing(false)}
           onSaved={(saved) => {
             if (creating) router.setParams({ routineId: saved.id });
@@ -120,6 +124,12 @@ export default function RoutineDetail() {
           editable={editable}
           showConversation={origin !== "profile"}
           onEdit={() => setEditing(true)}
+          onCopy={() =>
+            router.push({
+              pathname: "/routine",
+              params: { botId, botName: botName ?? "", copyOf: routine.id },
+            })
+          }
         />
       ) : null}
     </ScrollView>
@@ -134,13 +144,16 @@ function RoutineView({
   editable,
   showConversation,
   onEdit,
+  onCopy,
 }: {
   botId: string;
   botName: string | undefined;
   routine: Routine;
+  /** False for another member's routine: only its owner changes it, anyone may turn it on or off. */
   editable: boolean;
   showConversation: boolean;
   onEdit: () => void;
+  onCopy: () => void;
 }) {
   const tokens = useMobileTokens();
   const { t } = useLingui();
@@ -185,31 +198,29 @@ function RoutineView({
           headerRight: undefined,
           unstable_headerLeftItems: undefined,
           unstable_headerRightItems: undefined,
-          ...(editable
-            ? iosAtLeast(26)
-              ? {
-                  unstable_headerRightItems: () => [
-                    {
-                      type: "button" as const,
-                      label: t`Run now`,
-                      icon: { type: "sfSymbol" as const, name: "play" },
-                      disabled: running,
-                      onPress: () => void testRun(),
-                    },
-                  ],
-                }
-              : {
-                  headerRight: () => (
-                    <GlassIconButton
-                      accessibilityLabel={t`Run now`}
-                      ios="play"
-                      android="play"
-                      disabled={running}
-                      onPress={() => void testRun()}
-                    />
-                  ),
-                }
-            : {}),
+          ...(iosAtLeast(26)
+            ? {
+                unstable_headerRightItems: () => [
+                  {
+                    type: "button" as const,
+                    label: t`Run now`,
+                    icon: { type: "sfSymbol" as const, name: "play" },
+                    disabled: running,
+                    onPress: () => void testRun(),
+                  },
+                ],
+              }
+            : {
+                headerRight: () => (
+                  <GlassIconButton
+                    accessibilityLabel={t`Run now`}
+                    ios="play"
+                    android="play"
+                    disabled={running}
+                    onPress={() => void testRun()}
+                  />
+                ),
+              }),
         }}
       />
       <SettingsGroup>
@@ -217,23 +228,14 @@ function RoutineView({
           key="active"
           label={t`Active`}
           value={routine.active}
-          // Only the routine's creator can pause or resume it.
-          disabled={!editable}
           onChange={(active) =>
             setRoutineActive(botId, routine, active, (cause) =>
               Alert.alert(t`Could not update routine`, errorText(cause, t`Try again.`)),
             )
           }
         />
-        {routine.runsAs ? (
-          <SettingsRow
-            key="runs-as"
-            title={
-              routine.runsAs.isViewer
-                ? t`Runs as you`
-                : t`Runs as ${ph({ name: routine.runsAs.name })}`
-            }
-          />
+        {routine.runsAs && !routine.runsAs.isViewer ? (
+          <SettingsRow key="runs-as" title={t`Runs as ${ph({ name: routine.runsAs.name })}`} />
         ) : null}
       </SettingsGroup>
       <View style={{ gap: 7 }}>
@@ -285,8 +287,8 @@ function RoutineView({
           />
         ) : null}
       </SettingsGroup>
-      {editable ? (
-        <SettingsGroup>
+      <SettingsGroup>
+        {editable ? (
           <SettingsRow
             key="edit"
             accessibilityRole="button"
@@ -294,8 +296,16 @@ function RoutineView({
             title={t`Edit routine`}
             onPress={onEdit}
           />
-        </SettingsGroup>
-      ) : null}
+        ) : (
+          <SettingsRow
+            key="copy"
+            accessibilityRole="button"
+            tinted
+            title={t`Make a copy`}
+            onPress={onCopy}
+          />
+        )}
+      </SettingsGroup>
     </>
   );
 }
@@ -305,6 +315,7 @@ function RoutineEditor({
   botId,
   botName,
   routine,
+  template,
   onCancel,
   onSaved,
   onDeleted,
@@ -312,6 +323,8 @@ function RoutineEditor({
   botId: string;
   botName: string;
   routine: Routine | null;
+  /** For a new routine: the one it starts as a copy of. */
+  template: Routine | null;
   onCancel: () => void;
   onSaved: (routine: Routine) => void;
   onDeleted: () => void;
@@ -321,7 +334,16 @@ function RoutineEditor({
   // The routine as it was when Edit opened; a save sends only what changed since.
   const [base] = useState(routine);
   const [draft, setDraft] = useState<MobileRoutineDraft>(() =>
-    base ? draftFromRoutine(base) : emptyRoutineDraft(),
+    base
+      ? draftFromRoutine(base)
+      : template
+        ? // Off until saved and turned on, so it never runs twice alongside the original.
+          {
+            ...draftFromRoutine(template),
+            name: t`${ph({ name: template.name })} (copy)`,
+            active: false,
+          }
+        : emptyRoutineDraft(),
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -467,12 +489,6 @@ function RoutineEditor({
       />
       {saveError ? (
         <Text style={{ color: tokens.destructive, fontSize: 15 }}>{saveError}</Text>
-      ) : null}
-      {/* Saving hands another member's routine to the editor. */}
-      {routine?.runsAs && !routine.runsAs.isViewer ? (
-        <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
-          {t`Runs as ${ph({ name: routine.runsAs.name })}. Saving makes it run as you.`}
-        </Text>
       ) : null}
       <SettingsGroup>
         <SettingsInputRow

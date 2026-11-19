@@ -13,19 +13,14 @@ export function RunsAsLabel({ routine }: { routine: Routine }) {
   );
 }
 
-/** At the top of the editor, for another member's routine: saving hands it to the editor. */
-export function RoutineTakeoverNote({ routine }: { routine: Routine | null }) {
+/** At the top of the editor, for another member's routine: why its fields cannot be changed. */
+export function RoutineOwnerNote({ routine }: { routine: Routine | null }) {
   const { t } = useLingui();
   if (!routine?.runsAs || routine.runsAs.isViewer) return null;
   const name = routine.runsAs.name;
   return (
-    <p
-      role="status"
-      data-testid="routine-takeover-note"
-      className="mb-5 text-body text-warning"
-      dir="auto"
-    >
-      {t`Runs as ${name}. Saving makes it run as you.`}
+    <p data-testid="routine-owner-note" className="mb-5 text-body text-muted-foreground" dir="auto">
+      {t`Runs as ${name}. Only they can change it.`}
     </p>
   );
 }

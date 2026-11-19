@@ -165,6 +165,7 @@ export async function routineViews(
     const name = names.get(row.userId);
     return {
       ...mapRoutine(row),
+      editable: row.userId === actor.userId,
       runsAs:
         name === undefined
           ? null
@@ -184,7 +185,7 @@ export async function routineView(
   return view;
 }
 
-/** Any member may change a routine; editing it hands it to them (see routines.update). */
+/** Only a routine's owner changes it; other members may turn it on or off (see routines.update). */
 export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },

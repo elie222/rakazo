@@ -1,6 +1,5 @@
 import { createRouterClient } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
-import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { appHandler, createRouter, handle } from "../router-test-support.js";
@@ -15,6 +14,7 @@ describe("routine live Codex model validation", () => {
       const row = {
         id: "routine-1",
         botId: "bot-1",
+        userId: "user-1",
         name: "Check",
         prompt: "Check changes",
         crons: ["0 9 * * *"],
@@ -179,15 +179,14 @@ describe("routines.list", () => {
     return { routines: await client.routines.list({ botId: "bot-1" }), findOwners };
   };
 
-  it("lets every Space member change a routine, whoever created it", async () => {
+  it("lets only a routine's owner change it", async () => {
     const { routines } = await list([row("mine", "user-1"), row("theirs", "user-2")], {
       "user-1": "Riley",
       "user-2": "Dana",
     });
-    // Nothing marks either one read-only: any member may change it.
     expect(routines.map(({ id, editable }) => ({ id, editable }))).toEqual([
-      { id: "mine", editable: undefined },
-      { id: "theirs", editable: undefined },
+      { id: "mine", editable: true },
+      { id: "theirs", editable: false },
     ]);
     expect(routines[0]).not.toHaveProperty("userId");
   });
@@ -313,7 +312,6 @@ describe("routines.update", () => {
     );
     const enqueue = vi.fn(async () => undefined);
     const cancel = vi.fn(async () => undefined);
-    const moveQueued = vi.fn(async (_args: unknown) => [] as Array<{ taskId: string }>);
     const prisma = {
       spaceMember: {
         findMany: vi.fn(async () => [
@@ -342,7 +340,6 @@ describe("routines.update", () => {
         update,
         count: vi.fn(async () => 0),
       },
-      run: { updateManyAndReturn: moveQueued },
       bot: {
         findFirst: vi.fn(async () =>
           botArchived ? null : { id: "bot-1", thread: { id: "thread-1" }, computer: null },
@@ -372,7 +369,7 @@ describe("routines.update", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-    return { update, enqueue, cancel, call, moveQueued, findFirst: prisma.routine.findFirst };
+    return { update, enqueue, cancel, call, findFirst: prisma.routine.findFirst };
   }
 
   it("refuses to re-arm a routine on an archived bot without writing", async () => {
@@ -404,29 +401,20 @@ describe("routines.update", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("takes over a routine and restarts its watch baseline when someone else edits it", async () => {
-    const { call, update, moveQueued } = fixture(false, false, { userId: "user-2" });
-    const response = await call({ name: "Renamed" });
+  it("refuses another member's change to what a routine does", async () => {
+    const { call, update } = fixture(false, false, { userId: "user-2" });
+    expect((await call({ name: "Renamed", active: undefined, runAt: undefined })).status).toBe(403);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("lets another member turn a routine off without taking it over", async () => {
+    const { call, update } = fixture(false, false, { userId: "user-2" });
+    const response = await call({ active: false, runAt: undefined });
     expect(response.status).toBe(200);
-    // The answer already says whose it is now, and carries no id.
-    const saved = (await response.json()).json;
-    expect(saved.runsAs).toEqual({ name: "Riley", isViewer: true });
-    expect(JSON.stringify(saved)).not.toContain("user-2");
     const data = update.mock.calls[0]![0].data;
-    expect(data.userId).toBe("user-1");
-    expect(data).toHaveProperty("watchState", Prisma.DbNull);
-    // An occurrence already queued runs with the new owner's accounts.
-    expect(moveQueued).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          routineId: routine.id,
-          userId: "user-2",
-          status: "queued",
-          routine: { userId: "user-1" },
-        },
-        data: { userId: "user-1" },
-      }),
-    );
+    expect(data).not.toHaveProperty("userId");
+    expect(data).not.toHaveProperty("watchState");
+    expect(data.active).toBe(false);
   });
 
   it("keeps its watch baseline when the owner edits it", async () => {
@@ -677,6 +665,7 @@ describe("routine watch creation boundaries", () => {
     const findRoutine = vi.fn(async () => ({
       id: "routine-1",
       botId: "bot-1",
+      userId: "user-1",
       crons: [],
       watch: null,
     }));

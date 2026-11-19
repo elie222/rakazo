@@ -76,7 +76,10 @@ export const RoutineSchema = z.object({
   /** Computed by the server; absent on older servers. Not a worker-health diagnosis. */
   scheduleDelayed: z.boolean().optional(),
   createdAt: z.string(),
-  /** Older servers send false for another member's routine; any member can now change it. */
+  /**
+   * False for another member's routine: only its owner changes it, while others may still turn it
+   * on or off, run it, copy it or delete it. Absent from servers where any member could change it.
+   */
   editable: z.boolean().optional(),
   /**
    * Whose accounts and approval rules its runs use: that member's display name and whether it is

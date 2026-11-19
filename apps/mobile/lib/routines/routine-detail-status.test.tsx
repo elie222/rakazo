@@ -136,38 +136,24 @@ it("refreshes recovered and newly delayed status while the detail stays open", a
   expect(container.textContent).toContain("Schedule delayed");
 });
 
-it("shows a routine another member created without the editor", async () => {
-  state.useBotRoutines.mockReturnValue({ routines: [{ ...routine, editable: false }] });
+it("shows another member's routine with its owner and a copy in place of the editor", async () => {
+  state.useBotRoutines.mockReturnValue({
+    routines: [{ ...routine, editable: false, runsAs: { name: "Dana", isViewer: false } }],
+  });
   await act(async () => root.render(createElement(RoutineDetail)));
   expect(container.textContent).toContain("Prepare the report.");
+  expect(container.textContent).toContain("Runs as Dana");
+  expect(container.textContent).toContain("Make a copy");
   expect(container.textContent).not.toContain("Edit routine");
 });
 
-async function showRoutine(runsAs: { name: string; isViewer: boolean }) {
-  state.useBotRoutines.mockReturnValue({ routines: [{ ...routine, runsAs }] });
+it("names no owner on the viewer's own routine", async () => {
+  state.useBotRoutines.mockReturnValue({
+    routines: [{ ...routine, editable: true, runsAs: { name: "Riley", isViewer: true } }],
+  });
   await act(async () => root.render(createElement(RoutineDetail)));
-}
-
-async function openEditor() {
-  const button = [...container.querySelectorAll("button")].find(
-    (node) => node.textContent === "Edit routine",
-  );
-  await act(async () => button?.click());
-}
-
-it("warns before an edit takes over another member's routine", async () => {
-  await showRoutine({ name: "Dana", isViewer: false });
-  expect(container.textContent).toContain("Runs as Dana");
-  expect(container.textContent).not.toContain("Saving makes it run as you.");
-  await openEditor();
-  expect(container.textContent).toContain("Runs as Dana. Saving makes it run as you.");
-});
-
-it("says a routine runs as you, with no warning in its editor", async () => {
-  await showRoutine({ name: "Riley", isViewer: true });
-  expect(container.textContent).toContain("Runs as you");
-  await openEditor();
-  expect(container.textContent).not.toContain("Saving makes it run as you.");
+  expect(container.textContent).not.toContain("Runs as");
+  expect(container.textContent).toContain("Edit routine");
 });
 
 it("uses the shared routine store with focus-scoped polling enabled", () => {

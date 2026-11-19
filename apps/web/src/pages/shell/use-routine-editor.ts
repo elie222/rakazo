@@ -339,6 +339,46 @@ export function useRoutineEditor({
           }
           await refreshThread(targetBotId).catch(() => undefined);
         },
+        onSetActive: async (on) => {
+          const targetBotId = active.id;
+          const targetRoutine = editingRoutine;
+          if (!targetRoutine || routineSavePending.current) return;
+          const saveRequest = ++routineSaveRequest.current;
+          routineSavePending.current = true;
+          setSavingRoutine(true);
+          setRoutineError(null);
+          setRoutineDraft((current) => ({ ...current, active: on }));
+          try {
+            const saved = await rpc.routines.update({ routineId: targetRoutine.id, active: on });
+            if (routineSaveRequest.current === saveRequest && activeBotId.current === targetBotId) {
+              setEditingRoutine(saved);
+              setRoutineDraft((current) => ({ ...current, active: saved.active }));
+            }
+          } catch (error) {
+            if (routineSaveRequest.current !== saveRequest || activeBotId.current !== targetBotId) {
+              return;
+            }
+            setRoutineDraft((current) => ({ ...current, active: targetRoutine.active }));
+            setRoutineError(errorText(error, t`Could not save routine`));
+            return;
+          } finally {
+            routineSavePending.current = false;
+            setSavingRoutine(false);
+          }
+          await refreshThread(targetBotId).catch(() => undefined);
+        },
+        onCopy: () => {
+          if (!editingRoutine) return;
+          const name = editingRoutine.name;
+          // Off until the person saves and turns it on, so it never runs twice alongside the original.
+          setRoutineDraft({
+            ...draftStateFromRoutine(editingRoutine),
+            name: t`${name} (copy)`,
+            active: false,
+          });
+          setEditingRoutine(null);
+          setRoutineError(null);
+        },
         onTestRun: async () => {
           if (routineRunPending.current) return;
           const targetBotId = active.id;

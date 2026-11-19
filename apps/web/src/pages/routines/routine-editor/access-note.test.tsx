@@ -6,7 +6,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { RoutineTakeoverNote } from "./access-note";
+import { RoutineOwnerNote } from "./access-note";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -38,13 +38,13 @@ afterEach(async () => {
 });
 
 async function render(editing: Routine | null) {
-  await act(async () => root.render(<RoutineTakeoverNote routine={editing} />));
-  return container.querySelector('[data-testid="routine-takeover-note"]')?.textContent ?? null;
+  await act(async () => root.render(<RoutineOwnerNote routine={editing} />));
+  return container.querySelector('[data-testid="routine-owner-note"]')?.textContent ?? null;
 }
 
-it("warns that saving takes over another member's routine", async () => {
+it("says who owns another member's routine and that only they can change it", async () => {
   expect(await render(routine({ name: "Dana", isViewer: false }))).toBe(
-    "Runs as Dana. Saving makes it run as you.",
+    "Runs as Dana. Only they can change it.",
   );
 });
 
