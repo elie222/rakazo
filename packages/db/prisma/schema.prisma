@@ -485,6 +485,7 @@ model Organization {
   spaces       Space[]
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
+  computerAllowanceGrants ComputerAllowanceGrant[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
@@ -579,6 +580,18 @@ model AccessGrant {
   @@index([email])
   @@index([createdAt])
   @@map("access_grants")
+}
+
+/// Extra computer allowance an operator gave an organization for the period it was granted in.
+model ComputerAllowanceGrant {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  amountCents    Int
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("computer_allowance_grants")
 }
 
 model PluginSubmission {

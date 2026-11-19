@@ -92,6 +92,19 @@ row and sum their indexed journal. Automatic assignment and timed caps are not e
 Deploy the API and worker changes before relying on enforcement; the previous release ignores
 the new nullable setting while a rolling deployment finishes.
 
+## Extra computer allowance
+
+An operator can give an organization extra computer allowance, in US dollars, for its current
+period only. It adds to whatever its plan includes, is recorded in the billing journal, and does
+not carry into the next period. From the API container, run:
+
+```sh
+node dist/cli/computer-allowance.js grant <organization-id> 10
+node dist/cli/computer-allowance.js status <organization-id>
+```
+
+Both print the period's allowance, the extra granted, and when it resets. Billing shows the hours left.
+
 ## Accounting
 
 Postgres owns accounting. `billing_audit_events` is an append-only journal enforced by database
