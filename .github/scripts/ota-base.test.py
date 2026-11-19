@@ -405,6 +405,27 @@ class OtaBaseStepTests(OtaBaseTestCase):
                 self.assertEqual(publish, expected)
                 self.assertIn(summary_line, summary)
 
+    def test_classifies_translation_changes_from_the_mobile_bundle(self):
+        catalog = "packages/i18n/locales/de/messages.po"
+        manifest = "packages/i18n/package.json"
+        unrelated_catalog = "packages/ui-web/locales/de/messages.po"
+        eligible = "Mobile OTA eligible"
+        translation = 'msgid "Save"\nmsgstr "Speichern"\n'
+        edited_translation = 'msgid "Save"\nmsgstr "Sichern"\n'
+        for files, expected, summary_line in (
+            ({catalog: translation}, "publish=true", eligible),
+            ({"packages/i18n/src/meeting.ts": "export const meeting = 1;\n"}, "publish=true", eligible),
+            ({catalog: edited_translation, SWIFT_FILE: "import UIKit\n"}, "publish=false", SWIFT_FILE),
+            ({manifest: "{}\n"}, "publish=false", manifest),
+            ({unrelated_catalog: translation}, "publish=false", "No mobile OTA needed"),
+        ):
+            with self.subTest(files=sorted(files)):
+                published = self.repo.head
+                self.repo.head = self.repo.commit("change translations or adjacent files", files)
+                publish, summary = self.run_step(updates_response(update(published, RUNTIME)))
+                self.assertEqual(publish, expected)
+                self.assertIn(summary_line, summary)
+
 
 if __name__ == "__main__":
     unittest.main()

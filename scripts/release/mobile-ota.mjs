@@ -13,8 +13,8 @@ function neverShips(file) {
   );
 }
 
-// Only bundled JavaScript may change. index.ts is the bundle entry the manifest's "main" names; the
-// other top-level mobile scripts (app config, metro) shape the native build.
+// Only mobile bundle inputs may change. index.ts is the bundle entry the manifest's "main" names;
+// the other top-level mobile scripts (app config, metro) shape the native build.
 const BUNDLED = [
   {
     prefixes: ["apps/mobile/app/", "apps/mobile/components/", "apps/mobile/lib/"],
@@ -27,17 +27,20 @@ const BUNDLED = [
     extensions: [".ts", ".tsx", ".css"],
   },
   {
-    prefixes: ["packages/contracts/src/", "packages/core/src/", "packages/logging/src/"],
+    prefixes: ["packages/contracts/src/", "packages/core/src/", "packages/i18n/src/", "packages/logging/src/"],
     files: [],
     extensions: [".ts", ".tsx"],
   },
 ];
 
 function isBundled(file) {
-  return BUNDLED.some(
-    ({ prefixes, files, extensions }) =>
-      (files.includes(file) || prefixes.some((prefix) => file.startsWith(prefix))) &&
-      extensions.some((extension) => file.endsWith(extension)),
+  return (
+    /^packages\/i18n\/locales\/[^/]+\/messages\.po$/.test(file) ||
+    BUNDLED.some(
+      ({ prefixes, files, extensions }) =>
+        (files.includes(file) || prefixes.some((prefix) => file.startsWith(prefix))) &&
+        extensions.some((extension) => file.endsWith(extension)),
+    )
   );
 }
 
@@ -65,7 +68,7 @@ export function otaSummary(base, { publish, blocked }) {
     return [
       "### Mobile OTA eligible",
       "",
-      `Since \`${since}\`, only JavaScript, TypeScript, or bundled CSS used by the mobile client changed.`,
+      `Since \`${since}\`, only the mobile bundle's JavaScript, TypeScript, stylesheets, or translation catalogs changed.`,
       "",
     ].join("\n");
   }
