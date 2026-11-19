@@ -49,6 +49,7 @@ export async function openNotificationResponse(
       return false;
     }
     closeSettingsSheet();
+    router.dismissTo("/");
     router.push(target, { dangerouslySingular: threadRouteId });
     clearNotificationResponseIfCurrent(response);
     return true;
