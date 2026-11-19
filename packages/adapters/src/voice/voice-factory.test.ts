@@ -15,7 +15,7 @@ import {
 } from "../providers/voice/scripted/scripted-voice.js";
 import { XaiVoiceProvider } from "../providers/voice/xai/xai-voice.js";
 import { createVoiceProvider, isVoiceProviderId, listVoiceCatalog } from "./voice-factory.js";
-import { MAX_VOICE_JSON_BYTES } from "./voice-http.js";
+import { MAX_VOICE_JSON_BYTES, VoiceProviderUnavailableError } from "./voice-http.js";
 
 const ctx = {
   operationId: "voice",
@@ -628,7 +628,8 @@ describe("FishAudioVoiceProvider", () => {
       .synthesize({ text: "Hi", voiceId: "voice-id", apiKey }, ctx)
       .catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(VoiceProviderUnavailableError);
+    expect(error).toMatchObject({ kind: "SERVICE_UNAVAILABLE" });
     expect((error as Error).message).toBe(
       "speaking failed: model s1 is not enabled for [Redacted]",
     );
@@ -643,7 +644,7 @@ describe("FishAudioVoiceProvider", () => {
       "error.detail": "model s1 is not enabled for [Redacted]",
     });
     expect(JSON.stringify(event)).not.toContain(apiKey);
-    expect(event?.level).toBe("error");
+    expect(event?.level).toBe("warn");
   });
 
   it.each([
