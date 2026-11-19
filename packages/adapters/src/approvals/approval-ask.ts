@@ -321,8 +321,9 @@ function formatApprovalDetail(
       if (previous?.key === key) previous.runs++;
       else entries.push({ key, name: raw ? readableToolName(raw) : "…", args: entryArgs, runs: 1 });
     }
-    // The title already names a lone action that runs once, so its arguments need no heading.
-    const single = entries.length === 1 && entries[0]?.runs === 1;
+    // The title already names a lone named action that runs once, so its arguments need no heading.
+    // An unnamed entry keeps its "…" heading, so the card shows the action is unknown.
+    const single = entries.length === 1 && entries[0]?.runs === 1 && entries[0].name !== "…";
     // Every action and its destinations first, then each action's long text.
     const later: string[] = [];
     for (const { name, args: entryArgs, runs } of entries) {

@@ -520,4 +520,16 @@ describe("approval card arguments", () => {
       "ID: 1",
     ]);
   });
+
+  it("keeps the unknown-action heading on a lone unnamed batch entry", () => {
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "MULTI_EXECUTE",
+      { tools: [{ arguments: { id: "1" } }] },
+      [],
+      { batch: { items: "tools", action: "tool_slug", arguments: "arguments" } },
+    );
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail?.split("\n")).toEqual(["…", "ID: 1"]);
+  });
 });
