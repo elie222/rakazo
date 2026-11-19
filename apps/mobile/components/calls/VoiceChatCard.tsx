@@ -2,9 +2,10 @@ import { useLingui } from "@lingui/react/macro";
 import type { VoiceChatGroup } from "@rakazo/core";
 import { speechFromBlocks, voiceChatDuration, voiceChatSummary } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { MobileMessage } from "../../lib/api/mobile-types";
+import { canSelectMessage } from "../../lib/messages/message-selection";
 import { native, useMobileTokens } from "../../lib/native/native";
 import { NativeSymbol } from "../native/native-symbol";
 
@@ -13,10 +14,25 @@ function clock(seconds: number): string {
 }
 
 /** One call's exchange, collapsed to a card; expanding it shows the transcript. */
-export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> }) {
+export function VoiceChatCard({
+  group,
+  selectedIds = null,
+  onToggleSelection,
+  onStartSelection,
+}: {
+  group: VoiceChatGroup<MobileMessage>;
+  /** The messages chosen to copy together; null while not choosing. */
+  selectedIds?: ReadonlySet<string> | null;
+  onToggleSelection?: (message: MobileMessage) => void;
+  /** Long-pressing a turn starts choosing, as a message's menu does elsewhere. */
+  onStartSelection?: (message: MobileMessage) => void;
+}) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
-  const [open, setOpen] = useState(false);
+  // The list remounts cards scrolled out of view; one holding chosen turns comes back open.
+  const [open, setOpen] = useState(() =>
+    group.messages.some((message) => selectedIds?.has(message.id)),
+  );
   const summary = voiceChatSummary(group);
   return (
     <View style={[styles.card, { backgroundColor: native.fill }]}>
@@ -24,7 +40,15 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
         accessibilityRole="button"
         accessibilityLabel={open ? t`Hide transcript` : t`Show transcript`}
         accessibilityState={{ expanded: open }}
-        onPress={() => setOpen((wasOpen) => !wasOpen)}
+        onPress={() => {
+          // Turns that are no longer shown must not stay chosen for the copy.
+          if (open && selectedIds && onToggleSelection) {
+            for (const message of group.messages) {
+              if (selectedIds.has(message.id)) onToggleSelection(message);
+            }
+          }
+          setOpen((wasOpen) => !wasOpen);
+        }}
         style={styles.header}
       >
         <NativeSymbol ios="waveform" android="pulse-outline" size={16} color={tokens.foreground} />
@@ -48,20 +72,57 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
             if (message === group.marker) return null;
             const text = speechFromBlocks(message.blocks).trim();
             if (!text) return null;
-            return message.role === "user" ? (
-              <Text key={message.id} style={[styles.user, { color: tokens.mutedForeground }]}>
-                {text}
-              </Text>
-            ) : (
-              <Text
+            const turn =
+              message.role === "user" ? (
+                <Text style={[styles.user, { color: tokens.mutedForeground }]}>{text}</Text>
+              ) : (
+                <Text
+                  style={[
+                    styles.bot,
+                    { backgroundColor: native.fillPressed, color: tokens.foreground },
+                  ]}
+                >
+                  {text}
+                </Text>
+              );
+            if (!selectedIds && onStartSelection && canSelectMessage(message)) {
+              return (
+                <Pressable
+                  key={message.id}
+                  accessibilityActions={[{ name: "selectMessages", label: t`Select messages` }]}
+                  onAccessibilityAction={(event) => {
+                    if (event.nativeEvent.actionName === "selectMessages")
+                      onStartSelection(message);
+                  }}
+                  onLongPress={() => onStartSelection(message)}
+                >
+                  {turn}
+                </Pressable>
+              );
+            }
+            if (!selectedIds || !onToggleSelection || !canSelectMessage(message)) {
+              return <Fragment key={message.id}>{turn}</Fragment>;
+            }
+            const selected = selectedIds.has(message.id);
+            return (
+              <Pressable
                 key={message.id}
-                style={[
-                  styles.bot,
-                  { backgroundColor: native.fillPressed, color: tokens.foreground },
-                ]}
+                accessibilityRole="checkbox"
+                accessibilityLabel={text}
+                accessibilityState={{ checked: selected }}
+                onPress={() => onToggleSelection(message)}
+                style={styles.choosable}
               >
-                {text}
-              </Text>
+                <NativeSymbol
+                  ios={selected ? "checkmark.circle.fill" : "circle"}
+                  android={selected ? "checkmark-circle" : "ellipse-outline"}
+                  size={22}
+                  color={selected ? tokens.primary : tokens.mutedForeground}
+                />
+                <View style={styles.choosableTurn} pointerEvents="none">
+                  {turn}
+                </View>
+              </Pressable>
             );
           })}
         </View>
@@ -99,6 +160,8 @@ const styles = StyleSheet.create({
     writingDirection: "auto",
   },
   transcript: { paddingHorizontal: 12, paddingBottom: 12, gap: 6 },
+  choosable: { flexDirection: "row", alignItems: "center", gap: 8 },
+  choosableTurn: { flex: 1 },
   user: {
     alignSelf: "flex-end",
     ...typeScale.secondary,
