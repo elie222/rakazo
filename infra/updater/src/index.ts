@@ -42,7 +42,12 @@ import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
 import type { Context } from "hono";
 import { Hono } from "hono";
-import { SNAPSHOT_STEP_ID, snapshotDatabase, withSnapshotStep } from "./database-snapshot.js";
+import {
+  endSnapshotCycle,
+  SNAPSHOT_STEP_ID,
+  snapshotDatabase,
+  withSnapshotStep,
+} from "./database-snapshot.js";
 import type { ComputerTagChange } from "./runtime-state.js";
 import {
   COMPUTER_TAG_ENV,
@@ -866,6 +871,7 @@ export function createUpdaterApp(
       }
       record.ok = true;
       record.restart = "recreated";
+      await bestEffort("end the database snapshot cycle", endSnapshotCycle(config));
       await bestEffort(
         "prune obsolete update images",
         readEnvFile().then((env) =>

@@ -1,4 +1,4 @@
-import { chmod, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { access, chmod, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ComposeTarget, ComposeUpdateStep } from "@rakazo/core";
 import { composeCopyArgv, composeExecArgv } from "@rakazo/core";
@@ -13,6 +13,10 @@ const DATABASE_SERVICE = "postgres";
 const CONTAINER_DUMP = "/tmp/rakazo-pre-update.dump";
 const SNAPSHOT_FILE = /^\d{8}T\d{6}Z-[A-Za-z0-9_.-]+\.dump$/;
 const STAMP_LENGTH = "20260101T000000Z".length;
+const RETRY_SUFFIX = ".retry";
+// Neither name can match SNAPSHOT_FILE, so neither is ever counted or pruned as a snapshot.
+const CYCLE_MARKER = ".in-progress";
+const PARTIAL_FILE = ".partial";
 // A dump of a large database is slow; the copy out of the container is bounded the same way.
 const SNAPSHOT_TIMEOUT_MS = 1_800_000;
 // Fixed text: the database name and user are read from the container's own environment, so no
@@ -51,14 +55,49 @@ function snapshotName(fromTag: string, now: Date): string {
     .toISOString()
     .replace(/\.\d+Z$/, "Z")
     .replaceAll(/[-:]/g, "");
-  return `${stamp}-${fromTag}.dump`;
+  return `${stamp}-${fromTag}`;
+}
+
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === "ENOENT";
+}
+
+/** The update in progress: the name, without `.dump`, of the snapshot its first attempt saved. */
+async function readCycle(directory: string, fromTag: string): Promise<string | null> {
+  let cycle: string;
+  try {
+    cycle = (await readFile(path.posix.join(directory, CYCLE_MARKER), "utf8")).trim();
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw error;
+  }
+  // A marker left by an update from another release describes a cycle that is over.
+  if (!SNAPSHOT_FILE.test(`${cycle}.dump`) || cycle.slice(STAMP_LENGTH + 1) !== fromTag)
+    return null;
+  return cycle;
+}
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await access(file);
+    return true;
+  } catch (error) {
+    if (isMissing(error)) return false;
+    throw error;
+  }
 }
 
 /**
- * Dumps the database the outgoing release wrote and saves it in the deployment directory, keeping
- * files for the last `config.databaseSnapshots` releases. Image recovery never reverses a migration, so this
- * file is what makes going back to the previous release possible. A failure is returned, not
- * thrown, and happens before any service is recreated.
+ * Dumps the database the outgoing release wrote and saves it in the deployment directory. Image
+ * recovery never reverses a migration, so this file is what makes going back possible.
+ *
+ * One update is one cycle, however often it is retried. Its first attempt saves
+ * `<time>-<tag>.dump`, which no later attempt replaces: a failed attempt's migrations may already
+ * have run, so only that file is certain to predate them. A retry saves `<time>-<tag>.retry.dump`
+ * beside it, replacing the previous retry's, so a cycle never holds more than two files. The cycle
+ * ends when the update succeeds ({@link endSnapshotCycle}); files of the last
+ * `config.databaseSnapshots` cycles are kept. A failure is returned, not thrown, and happens
+ * before any service is recreated.
  */
 export async function snapshotDatabase(
   config: UpdaterConfig,
@@ -69,8 +108,7 @@ export async function snapshotDatabase(
 ): Promise<CommandResult> {
   const options = { cwd: config.deployDir, timeoutMs: SNAPSHOT_TIMEOUT_MS };
   const directory = path.posix.join(config.deployDir, SNAPSHOT_DIRECTORY);
-  const file = path.posix.join(directory, snapshotName(fromTag, now));
-  const partial = `${file}.partial`;
+  const partial = path.posix.join(directory, PARTIAL_FILE);
   const exec = (command: readonly string[]) => {
     const invocation = composeExecArgv(target, DATABASE_SERVICE, command);
     return run(invocation.command, invocation.args, options);
@@ -83,9 +121,17 @@ export async function snapshotDatabase(
     const copied = await run(copy.command, copy.args, options);
     if (!copied.ok) return copied;
     await chmod(partial, 0o600);
+    const cycle = (await readCycle(directory, fromTag)) ?? snapshotName(fromTag, now);
+    const first = path.posix.join(directory, `${cycle}.dump`);
+    // Also true for a new cycle that lands on an existing name: the earlier file is never replaced.
+    const retry = await exists(first);
+    const file = retry ? path.posix.join(directory, `${cycle}${RETRY_SUFFIX}.dump`) : first;
     await rename(partial, file);
+    await writeFile(path.posix.join(directory, CYCLE_MARKER), `${cycle}\n`, { mode: 0o600 });
     await prune(directory, config.databaseSnapshots);
-    const output = `Saved ${file}`;
+    const output = retry
+      ? `Saved ${file}. This update was tried before: ${first} is the copy from before that attempt.`
+      : `Saved ${file}`;
     return { ok: true, exitCode: 0, stdout: output, output };
   } catch (error) {
     const output = `Could not save the database snapshot: ${error instanceof Error ? error.message : String(error)}`;
@@ -99,26 +145,18 @@ export async function snapshotDatabase(
   }
 }
 
-/**
- * Keeps snapshots for the `keep` most recently outgoing releases. A release that was snapshotted
- * more than once had an update retried: its first file is the only one certain to predate the
- * failed attempt's migrations and its last is the freshest, so both stay and the ones between go.
- * Only files this module named are ever removed.
- */
+/** The update succeeded, so the next snapshot of this release starts a new cycle. */
+export async function endSnapshotCycle(config: UpdaterConfig): Promise<void> {
+  await rm(path.posix.join(config.deployDir, SNAPSHOT_DIRECTORY, CYCLE_MARKER), { force: true });
+}
+
+/** Keeps the files of the newest `keep` cycles. Only files this module named are ever removed. */
 async function prune(directory: string, keep: number) {
-  // Stamps sort by time, so each release's files are oldest first.
-  const names = (await readdir(directory)).filter((name) => SNAPSHOT_FILE.test(name)).sort();
-  const byRelease = new Map<string, string[]>();
+  const names = (await readdir(directory)).filter((name) => SNAPSHOT_FILE.test(name));
+  const cycleOf = (name: string) => name.replace(/(\.retry)?\.dump$/, "");
+  // Stamps sort by time.
+  const kept = new Set([...new Set(names.map(cycleOf))].sort().slice(-keep));
   for (const name of names) {
-    const release = name.slice(STAMP_LENGTH + 1);
-    const files = byRelease.get(release) ?? [];
-    // Inserted again at the end, which leaves the releases ordered by their newest file.
-    byRelease.delete(release);
-    byRelease.set(release, [...files, name]);
-  }
-  const releases = [...byRelease.values()];
-  const kept = new Set(releases.slice(-keep).flatMap((files) => [files[0], files.at(-1)]));
-  for (const name of releases.flat()) {
-    if (!kept.has(name)) await rm(path.posix.join(directory, name), { force: true });
+    if (!kept.has(cycleOf(name))) await rm(path.posix.join(directory, name), { force: true });
   }
 }

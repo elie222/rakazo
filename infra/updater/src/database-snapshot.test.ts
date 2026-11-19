@@ -177,7 +177,9 @@ describe("snapshot before an update", () => {
       "recover",
     ]);
     expect(docker.kinds().filter((name) => name === "dump")).toHaveLength(1);
-    expect(await readdir(fixture.snapshots)).toHaveLength(1);
+    expect(
+      (await readdir(fixture.snapshots)).filter((name) => name.endsWith(".dump")),
+    ).toHaveLength(1);
   });
 
   it("takes no snapshot on a rollback, which may need the one it has", async () => {
@@ -191,54 +193,99 @@ describe("snapshot before an update", () => {
   });
 });
 
-describe("snapshot retention", () => {
-  it("keeps a retried update's first snapshot, the one from before its migrations", async () => {
+describe("snapshot cycles and retention", () => {
+  async function snapshot(
+    fixture: Awaited<ReturnType<typeof deployment>>,
+    tag: string,
+    at: string,
+  ) {
+    const result = await snapshotDatabase(
+      fixture.config,
+      { composeFiles: fixture.config.composeFiles, projectName: fixture.config.projectName },
+      tag,
+      fakeDocker().run,
+      new Date(at),
+    );
+    expect(result.ok, result.output).toBe(true);
+    return result;
+  }
+  const dumps = async (fixture: Awaited<ReturnType<typeof deployment>>) =>
+    (await readdir(fixture.snapshots)).filter((name) => name.endsWith(".dump")).sort();
+
+  it("never replaces a retried update's first snapshot, the one from before its migrations", async () => {
     const fixture = await deployment("1");
-    const target = {
-      composeFiles: fixture.config.composeFiles,
-      projectName: fixture.config.projectName,
-    };
     await mkdir(fixture.snapshots, { recursive: true });
     await writeFile(path.join(fixture.snapshots, "20260101T000000Z-v0.9.0.dump"), "older release");
     // Four attempts at the same update, as a schedule retrying a failing recreate would make.
-    for (const day of ["02", "03", "04", "05"]) {
-      const result = await snapshotDatabase(
-        fixture.config,
-        target,
-        "sha-v1.0.0-build",
-        fakeDocker().run,
-        new Date(`2026-01-${day}T00:00:00Z`),
+    await snapshot(fixture, "sha-v1.0.0-build", "2026-01-02T00:00:00Z");
+    const first = path.join(fixture.snapshots, "20260102T000000Z-sha-v1.0.0-build.dump");
+    await writeFile(first, "from before the first attempt");
+    for (const day of ["03", "04", "05"]) {
+      const retried = await snapshot(fixture, "sha-v1.0.0-build", `2026-01-${day}T00:00:00Z`);
+      expect(retried.output).toContain(
+        "20260102T000000Z-sha-v1.0.0-build.dump is the copy from before",
       );
-      expect(result.ok).toBe(true);
     }
-    expect((await readdir(fixture.snapshots)).sort()).toEqual([
+    expect(await dumps(fixture)).toEqual([
       "20260102T000000Z-sha-v1.0.0-build.dump",
-      "20260105T000000Z-sha-v1.0.0-build.dump",
+      "20260102T000000Z-sha-v1.0.0-build.retry.dump",
     ]);
+    expect(await readFile(first, "utf8")).toBe("from before the first attempt");
   });
 
-  it("keeps the newest files and leaves anything it did not name", async () => {
+  it("keeps the first snapshot when a retry lands in the same second", async () => {
+    const fixture = await deployment("1");
+    await snapshot(fixture, "v1.0.0", "2026-01-02T00:00:00.100Z");
+    const first = path.join(fixture.snapshots, "20260102T000000Z-v1.0.0.dump");
+    await writeFile(first, "from before the first attempt");
+    await snapshot(fixture, "v1.0.0", "2026-01-02T00:00:00.900Z");
+    expect(await readFile(first, "utf8")).toBe("from before the first attempt");
+    expect(await dumps(fixture)).toHaveLength(2);
+  });
+
+  it("starts a new cycle once an update succeeds, so a later update from the same release is not a retry", async () => {
+    const fixture = await deployment("2");
+    const docker = fakeDocker();
+    const subject = createUpdaterApp(fixture.config, { run: docker.run });
+    expect((await apply(subject)).ok).toBe(true);
+    await expect(stat(path.join(fixture.snapshots, ".in-progress"))).rejects.toThrow();
+    // The same release is outgoing again, as after a rollback: its copy must be a fresh first one.
+    await snapshot(fixture, "v1.0.0", "2030-01-02T00:00:00Z");
+    const names = await dumps(fixture);
+    expect(names).toHaveLength(2);
+    expect(names.some((name) => name.includes(".retry."))).toBe(false);
+    expect(names.at(-1)).toBe("20300102T000000Z-v1.0.0.dump");
+  });
+
+  it("leaves the cycle open when the recreate fails, so the next attempt is a retry", async () => {
+    const fixture = await deployment("1");
+    const subject = createUpdaterApp(fixture.config, { run: fakeDocker({ failUp: true }).run });
+    expect((await apply(subject)).ok).toBe(false);
+    expect((await apply(subject)).ok).toBe(false);
+    const names = await dumps(fixture);
+    expect(names).toHaveLength(2);
+    expect(names[1]).toBe(names[0]?.replace(/\.dump$/, ".retry.dump"));
+  });
+
+  it("keeps the newest cycles and leaves anything it did not name", async () => {
     const fixture = await deployment("2");
     await mkdir(fixture.snapshots, { recursive: true });
     for (const name of [
       "20260101T000000Z-v0.8.0.dump",
+      "20260101T000000Z-v0.8.0.retry.dump",
       "20260102T000000Z-v0.9.0.dump",
       "20260103T000000Z-v0.9.1.dump",
+      "20260103T000000Z-v0.9.1.retry.dump",
       "notes.txt",
     ]) {
       await writeFile(path.join(fixture.snapshots, name), "kept or pruned");
     }
-    const docker = fakeDocker();
-    const result = await snapshotDatabase(
-      fixture.config,
-      { composeFiles: fixture.config.composeFiles, projectName: fixture.config.projectName },
-      "v1.0.0",
-      docker.run,
-      new Date("2026-01-04T05:06:07.890Z"),
-    );
-    expect(result.ok).toBe(true);
-    expect((await readdir(fixture.snapshots)).sort()).toEqual([
+    await snapshot(fixture, "v1.0.0", "2026-01-04T05:06:07.890Z");
+    expect(
+      (await readdir(fixture.snapshots)).filter((name) => !name.startsWith(".")).sort(),
+    ).toEqual([
       "20260103T000000Z-v0.9.1.dump",
+      "20260103T000000Z-v0.9.1.retry.dump",
       "20260104T050607Z-v1.0.0.dump",
       "notes.txt",
     ]);

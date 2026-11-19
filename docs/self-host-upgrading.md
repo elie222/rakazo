@@ -397,28 +397,34 @@ services untouched. A rollback takes no snapshot, and an update that finds nothi
 takes none either.
 
 A failed update that is tried again is snapshotted again, and by then the failed attempt's
-migrations may already have run. So for each outgoing release the updater keeps the first copy
-and the latest one and removes those between; releases beyond the number kept lose all of
-theirs. The first copy for a release is the one certain to predate the update.
+migrations may already have run. The first attempt's file is therefore never replaced: a retry
+saves `<time>-<outgoing tag>.retry.dump` beside it, with the first attempt's time, and each
+further retry replaces only that retry file. Once the update succeeds, the next update starts a
+new pair. The setting counts updates, so each kept update holds one or two files.
 
 The dump is a `pg_dump` custom-format file of the Compose `postgres` service, with owners and
 privileges, written inside that container first and then copied out, so it needs free space for
 about two copies. Leave the setting at `0` when the database runs outside this Compose stack. It
-is a way back from one update, not a backup: it holds no application data and never leaves the
-server, so keep the [scheduled backups](./self-host-backups.md) too.
+is a way back from one update, not a backup: it covers the database only, not the bot homes and
+files in the application data volume, and it never leaves the server, so keep the
+[scheduled backups](./self-host-backups.md) too. It holds everything in the database, account
+details included, unencrypted: protect the directory as you would a backup.
 
 To go back after a bad update, restore the database first and roll back the image second: the
 previous release cannot start on the newer schema. Pause scheduling, stop everything that uses
-the database, and restore the outgoing release's first snapshot. Use your own Compose files in
+the database, and restore this update's snapshot. Choose the newest `<time>-<outgoing tag>.dump`
+for the release you are going back to; a `.retry.dump` beside it is newer, but restore it only
+if you know the earlier attempts never reached their migrations. Use your own Compose files in
 place of `docker-compose.images.yml`, the ones the updater runs:
 
 ```bash
 COMPOSE="docker compose --env-file .env -f docker-compose.images.yml"
 $COMPOSE stop api worker web
-$COMPOSE exec -T postgres sh -c \
-  'pg_restore --clean --if-exists --create --exit-on-error -U "$POSTGRES_USER" -d postgres' \
-  < backups/pre-update/<time>-<outgoing tag>.dump
+sudo cat "backups/pre-update/<time>-<outgoing tag>.dump" | $COMPOSE exec -T postgres sh -c \
+  'pg_restore --clean --if-exists --create --exit-on-error -U "$POSTGRES_USER" -d postgres'
 ```
+
+The files belong to root, hence `sudo cat`.
 
 `--create` drops the database and creates it again from the snapshot, so tables the failed
 update added do not survive, and grants and revocations return as they were. It refuses while
