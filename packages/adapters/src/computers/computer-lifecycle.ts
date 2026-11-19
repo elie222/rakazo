@@ -440,6 +440,7 @@ export async function provisionComputer(
   });
   if (claimed.count !== 1) throw busy("claim_lost");
   let provisioned: ComputerRef | undefined;
+  let recoverySpent = false;
   let incomplete = false;
   // A start that took over an abandoned boot cannot tell how far that boot restored, so it restores.
   const replaces = (ref: ComputerRef) =>
@@ -529,17 +530,41 @@ export async function provisionComputer(
       });
       if (claim.count !== 1) throw busy("restore_claim_lost");
     };
+    // Damage can surface in any setup command, not only in prepare, so all of setup is retried.
+    const setUp = async (current: ComputerRef) => {
+      await prepare(current);
+      // Provision chooses its kind again, so a host change since the check above can mount a
+      // cache that was not brought up to date. Failing rolls this computer back; the next start
+      // downloads.
+      if (cache && !hydrated && sandboxKindCapabilities(current.kind).serverHomeMount === "always")
+        throw new Error("Computer host changed while it was starting");
+      const restores = replaces(current);
+      if (restores) {
+        await onProgress?.("restoring");
+        await restoreComputerWorkspace(deps.home, deps.sandbox, existing.homeKey, current, context);
+      }
+      await onProgress?.("reconnecting");
+      await ensureComputerWorkspaceLayout(
+        deps.sandbox,
+        current,
+        parseComputerMode(existing.scope),
+        context.botId,
+        context,
+      );
+      return restores;
+    };
     let ref = await provision();
     provisioned = ref;
     await markReplacement(ref);
+    let replacement: boolean;
     try {
-      await prepare(ref);
+      replacement = await setUp(ref);
     } catch (error) {
-      if (
-        !isSandboxDamagedError(error) ||
-        !(await claimAutoRecovery(deps.prisma, existing, claimStamp))
-      )
+      if (!isSandboxDamagedError(error)) throw error;
+      if (!(await claimAutoRecovery(deps.prisma, existing, claimStamp))) {
+        recoverySpent = true;
         throw error;
+      }
       // Stopping keeps the provider's last good copy of a system that can no longer run anything,
       // and starting again resumes it, or replaces it from the saved workspace when that is newer.
       log.warn("computer.auto_recover", { provider: ref.kind, step: "stop", error });
@@ -551,11 +576,13 @@ export async function provisionComputer(
         ref = await provision();
         provisioned = ref;
         await markReplacement(ref);
-        await prepare(ref);
+        replacement = await setUp(ref);
       } catch (failure) {
         log.warn("computer.auto_recover", { provider: ref.kind, step: "failed", error: failure });
-        // Recover stays the way out; a failure on the way says less than the damage itself.
-        throw isSandboxDamagedError(failure) ? failure : error;
+        // Only damage that outlived the recovery parks the computer; any other failure on the
+        // way, such as a provider outage, is reported as itself and the next start tries again.
+        recoverySpent = isSandboxDamagedError(failure);
+        throw failure;
       }
       log.warn("computer.auto_recover", {
         provider: ref.kind,
@@ -563,23 +590,6 @@ export async function provisionComputer(
         operation: ref.fresh ? "replaced" : "resumed",
       });
     }
-    // Provision chooses its kind again, so a host change since the check above can mount a cache
-    // that was not brought up to date. Failing rolls this computer back; the next start downloads.
-    if (cache && !hydrated && sandboxKindCapabilities(ref.kind).serverHomeMount === "always")
-      throw new Error("Computer host changed while it was starting");
-    const replacement = replaces(ref);
-    if (replacement) {
-      await onProgress?.("restoring");
-      await restoreComputerWorkspace(deps.home, deps.sandbox, existing.homeKey, ref, context);
-    }
-    await onProgress?.("reconnecting");
-    await ensureComputerWorkspaceLayout(
-      deps.sandbox,
-      ref,
-      parseComputerMode(existing.scope),
-      context.botId,
-      context,
-    );
     // Bots deleted while this computer was not running could not remove their folders then.
     // Skip only plain reconnects; a provider may start or replace the computer during one.
     if (existing.scope === "team" && (!reconnecting || replacement || ref.started === true)) {
@@ -662,7 +672,7 @@ export async function provisionComputer(
       error,
     });
     // The one automatic recovery was spent or failed, so this machine waits for Recover.
-    const damaged = isSandboxDamagedError(error);
+    const damaged = recoverySpent && isSandboxDamagedError(error);
     // A failed reconnect never owns an existing workspace, even if setup failed. A damaged one
     // holds nothing readable, so it is stopped back to the provider's last good copy instead of
     // billing while it waits.

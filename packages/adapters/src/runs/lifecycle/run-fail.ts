@@ -108,14 +108,20 @@ export async function failRun(
   try {
     ctx.computer.lazy.throwIfFailed();
   } catch (computerError) {
-    if (
-      !(computerError instanceof SandboxRateLimitError) &&
-      !(computerError instanceof SandboxAllowanceUsedError) &&
-      !(computerError instanceof SandboxProviderAccountError) &&
-      !computerNeedsRecovery(computerError)
-    )
+    // Setup waits out a database outage, including one that kept a failed start unrecorded.
+    if (isDatabaseUnavailable(computerError)) throw computerError;
+    const refusal = [
+      computerError,
+      ...(computerError instanceof AggregateError ? computerError.errors : []),
+    ].find(
+      (cause) =>
+        cause instanceof SandboxRateLimitError ||
+        cause instanceof SandboxAllowanceUsedError ||
+        cause instanceof SandboxProviderAccountError,
+    );
+    if (!refusal && !computerNeedsRecovery(computerError))
       throw new RunComputerFailedError(computerError);
-    error = computerError;
+    error = refusal ?? computerError;
     computerFailed = true;
   }
   if (!ctx.state.terminalCheckpointComplete) {

@@ -1,6 +1,7 @@
 import type { AgentRunRequest, ComputerRef } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxProviderAccountError,
   SandboxRateLimitError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
@@ -709,6 +710,21 @@ describe("run computer provisioning", () => {
     );
     expect(enqueue).not.toHaveBeenCalled();
     expect(prisma.attempt.findMany).not.toHaveBeenCalled();
+  });
+
+  it("names the provider account refusal behind a start that also failed to roll back", async () => {
+    const refusal = new SandboxProviderAccountError();
+    provisionComputer.mockRejectedValue(
+      new AggregateError([refusal, new Error("rollback failed")], "Computer provisioning failed"),
+    );
+
+    const { finalizeRun, enqueue } = await runRoutine([{ name: "list_files", args: { path: "" } }]);
+
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "failed", error: refusal.message }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it.each([undefined, "abort", "recover"] as const)(

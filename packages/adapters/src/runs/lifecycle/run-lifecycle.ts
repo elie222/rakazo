@@ -550,7 +550,7 @@ export async function retryRunSetup(
       : await whileDatabaseDown("run setup", () => setupFailureStreak(deps.prisma, runId));
   // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
   // setup that fails every time would retry forever. End the run instead.
-  if (needsRecovery || (!retryForever && priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1)) {
+  if (!retryForever && (needsRecovery || priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1)) {
     const bot = await whileDatabaseDown("run setup", () =>
       deps.prisma.bot.findUnique({ where: { id: run.botId }, select: { name: true } }),
     );
