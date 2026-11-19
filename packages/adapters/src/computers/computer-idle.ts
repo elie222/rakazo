@@ -9,6 +9,7 @@ import {
   computerSleepJob,
   isSandboxProviderOutage,
   runJobKey,
+  SandboxDiskTooLargeError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -612,14 +613,15 @@ export async function sleepComputerIfIdle(
       }
       return;
     }
-    if (isSandboxDamagedError(error)) {
-      // Nothing on it can run, so no checkpoint can be taken, now or later. Stop it anyway with
-      // its disk kept, rather than resume and fail on it every idle window; Recover rebuilds it.
+    if (isSandboxDamagedError(error) || error instanceof SandboxDiskTooLargeError) {
+      // Nothing on it can run, or it cannot start to run anything, so no checkpoint can be taken,
+      // now or later. Stop it anyway with its disk kept, rather than resume and fail on it every
+      // idle window; Recover rebuilds it.
       damaged = true;
       getLogger().warn("computer.checkpoint_skipped", {
         "computer.id": computerId,
         provider: computer.kind,
-        reason: "damaged",
+        reason: error instanceof SandboxDiskTooLargeError ? "disk_too_large" : "damaged",
         error,
       });
     } else if (
@@ -1126,8 +1128,14 @@ async function inspectBackgroundWork(
       ? await sandbox.inspectBackgroundWork(computer, computerId, context)
       : await probeBackgroundWork(sandbox, computer, computerId, context);
   } catch (error) {
-    // A gone or damaged sandbox runs nothing; the checkpoint below then stops the computer.
-    if (isSandboxGoneError(error) || isSandboxDamagedError(error)) return "idle";
+    // A gone or damaged sandbox, or one too large to start, runs nothing; the checkpoint below
+    // then stops the computer.
+    if (
+      isSandboxGoneError(error) ||
+      isSandboxDamagedError(error) ||
+      error instanceof SandboxDiskTooLargeError
+    )
+      return "idle";
     getLogger().warn("computer.background_work_probe_failed", {
       "computer.id": computerId,
       provider: computer.kind,

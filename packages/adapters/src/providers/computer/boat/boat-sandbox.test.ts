@@ -5,6 +5,7 @@ import { FetchError, ResponseError } from "@boatdev/sdk";
 import type { ComputerRef, PortableFile, StreamedPortableFile } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
@@ -766,6 +767,25 @@ describe("BoatSandboxProvider", () => {
       ]);
     },
   );
+
+  it("reports a stopped sandbox whose disk fits no machine as too large to start", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.setState(computer.id, "archived");
+    resume.mockRejectedValue(
+      boatError(
+        409,
+        "resume_failed",
+        "This sandbox uses 83.8 GB of disk, which does not fit any available 'default' machine (largest budget: 76.0 GB).",
+      ),
+    );
+
+    await expect(provider.readFile(computer, "kept.txt", context)).rejects.toBeInstanceOf(
+      SandboxDiskTooLargeError,
+    );
+    expect(resume).toHaveBeenCalledOnce();
+  });
 
   it("retries a request that never reached Boat once, whatever the call", async () => {
     const run = vi.spyOn(FakeBoatApi.prototype, "command");

@@ -1,4 +1,8 @@
-import { SandboxUnavailableError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  SandboxDiskTooLargeError,
+  SandboxUnavailableError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import type { RunStatus } from "@rakazo/contracts";
 import {
   assertTransition,
@@ -482,11 +486,13 @@ export async function retryRunSetup(
   const retryForever = computerBusy || databaseDown;
   const setupMessage = redactSecrets(userRunError(setupError), runSecrets);
   const reportedSetupError = sanitizedError(setupError, (text) => redactSecrets(text, runSecrets));
-  // An outage at the computer provider or the key manager, or a paused turn's tool going
-  // offline, is retried like any setup failure, but is not a Rakazo bug to report.
+  // An outage at the computer provider or the key manager, a computer whose disk outgrew every
+  // machine, or a paused turn's tool going offline, is retried like any setup failure, but is
+  // not a Rakazo bug to report.
   const providerOutage =
     setupError instanceof SandboxUnavailableError ||
     setupError instanceof SandboxUnresponsiveError ||
+    setupError instanceof SandboxDiskTooLargeError ||
     setupError instanceof PausedTurnToolsUnavailableError ||
     setupError instanceof VaultKeyUnavailableError;
   // Named here, not left to the log context, so the line is found by run wherever it is written.

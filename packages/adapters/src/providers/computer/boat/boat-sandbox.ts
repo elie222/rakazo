@@ -35,6 +35,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
@@ -1596,6 +1597,9 @@ function boatSizeError(error: unknown): unknown {
   }
   if (error.code === "type_too_small") {
     return new SandboxSizeUnavailableError("too_small", { cause: error });
+  }
+  if (error.code === "resume_failed" && /\bdoes not fit any available\b/i.test(error.message)) {
+    return new SandboxDiskTooLargeError({ cause: error });
   }
   return error;
 }
