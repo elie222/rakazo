@@ -38,7 +38,7 @@ describe("useThreadKeyboardAvoidance", () => {
     },
   );
 
-  it("leaves keyboard avoidance to the root during a call", () => {
+  it("clears the thread padding when a call takes over with the keyboard still open", () => {
     Platform.OS = "android";
     height.value = -300;
 
@@ -48,7 +48,11 @@ describe("useThreadKeyboardAvoidance", () => {
         floatingHeader: false,
         nativeHeaderHeight: 88,
       }),
-    ).toEqual({ enabled: false, keyboardVerticalOffset: 0, keyboardPadding: {} });
+    ).toEqual({
+      enabled: false,
+      keyboardVerticalOffset: 0,
+      keyboardPadding: { paddingBottom: 0 },
+    });
   });
 
   it.each([
@@ -65,7 +69,7 @@ describe("useThreadKeyboardAvoidance", () => {
           floatingHeader,
           nativeHeaderHeight: 103,
         }),
-      ).toEqual({ enabled: true, keyboardVerticalOffset, keyboardPadding: {} });
+      ).toEqual({ enabled: true, keyboardVerticalOffset, keyboardPadding: { paddingBottom: 0 } });
     },
   );
 });

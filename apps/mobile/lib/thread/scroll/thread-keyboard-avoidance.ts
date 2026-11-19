@@ -14,9 +14,9 @@ export function useThreadKeyboardAvoidance({
   const { height } = useReanimatedKeyboardAnimation();
   const android = Platform.OS === "android";
   const padForKeyboard = android && !rootAvoidsKeyboard;
-  const keyboardPadding = useAnimatedStyle(() =>
-    padForKeyboard ? { paddingBottom: Math.max(0, -height.value) } : {},
-  );
+  const keyboardPadding = useAnimatedStyle(() => ({
+    paddingBottom: padForKeyboard ? Math.max(0, -height.value) : 0,
+  }));
 
   return {
     enabled: !android && !rootAvoidsKeyboard,
