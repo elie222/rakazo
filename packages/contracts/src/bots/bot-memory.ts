@@ -15,7 +15,8 @@ export function isEmptyBotMemory(doc: Pick<MemoryDocument, "path" | "content">):
  */
 export function memoryDocumentName(path: string): string | null {
   if (path === MEMORY_INDEX_PATH) return null;
-  return (path.split("/").at(-1) ?? path).replace(/\.md$/i, "");
+  // Keep folders, so two documents never share a name, and keep a name that is only ".md".
+  return path.replace(/\.md$/i, "") || path;
 }
 
 /** The first note in a memory document, skipping headings. */

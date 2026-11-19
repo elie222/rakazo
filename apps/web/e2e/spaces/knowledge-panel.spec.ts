@@ -47,7 +47,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   // The main notes show by their first note, never by file name.
   const memoryRow = (preview: string) =>
     spaceDocs.getByRole("button", { name: preview, exact: true });
-  const retiredRow = spaceDocs.getByRole("button", { name: "retired", exact: true });
+  const retiredRow = spaceDocs.getByRole("button", { name: "projects/retired", exact: true });
   const seededShared = (await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" })).find(
     (doc) => doc.path === "MEMORY.md",
   )!;

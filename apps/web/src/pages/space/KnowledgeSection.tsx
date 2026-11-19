@@ -265,7 +265,7 @@ function MemoryDocumentList({
                     <Button
                       variant="ghost"
                       type="button"
-                      disabled={busy}
+                      disabled={busy || draft !== doc.content}
                       onClick={() => change.run({ kind: "download", doc })}
                       size="sm"
                     >

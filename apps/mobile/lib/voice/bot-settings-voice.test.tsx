@@ -740,7 +740,7 @@ describe("bot settings device voice menu", () => {
     expect(container.textContent).toContain("note-6");
     await act(async () =>
       [...container.querySelectorAll<HTMLButtonElement>("button")]
-        .find((node) => node.textContent === "note-6")!
+        .find((node) => node.textContent === "notes/note-6")!
         .click(),
     );
     expect(mocks.push).toHaveBeenCalledWith({

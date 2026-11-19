@@ -21,7 +21,9 @@ describe("memory document names", () => {
   it("gives the main notes no file name and drops the extension from others", () => {
     expect(memoryDocumentName("MEMORY.md")).toBeNull();
     expect(memoryDocumentName("projects.md")).toBe("projects");
-    expect(memoryDocumentName("people/team.md")).toBe("team");
+    expect(memoryDocumentName("people/team.md")).toBe("people/team");
+    expect(memoryDocumentName("archive/team.md")).toBe("archive/team");
+    expect(memoryDocumentName(".md")).toBe(".md");
   });
 
   it("previews the first note, past any heading", () => {

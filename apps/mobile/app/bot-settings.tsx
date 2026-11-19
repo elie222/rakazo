@@ -670,7 +670,7 @@ export default function BotSettingsScreen() {
               value={instructions}
               editable={!pending}
               onChangeText={setInstructions}
-              placeholder={t`How ${name} should always behave`}
+              placeholder={bot?.name ? t`How ${bot.name} should always behave` : undefined}
               backgroundColor={native.groupedCell}
               fontSize={17}
             />
