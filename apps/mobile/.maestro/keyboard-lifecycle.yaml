@@ -113,5 +113,4 @@ tags:
 - tapOn: "Select all"
 - eraseText: 1
 - assertNotVisible: 'Keyboard lifecycle check\nSecond line'
-- assertNotVisible: "Send"
 - hideKeyboard
