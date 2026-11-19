@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import { Button, Label, Switch } from "@rakazo/ui-web";
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useId } from "react";
 import { listUserDevices, removeUserDevice } from "../../lib/auth/user-devices";
@@ -73,6 +73,7 @@ export function useThisComputer() {
 export function ComputerDeviceSettings() {
   const { t } = useLingui();
   const { thisComputer, plainHttp, queryKey: thisComputerKey } = useThisComputer();
+  const queryClient = useQueryClient();
   const devicesQuery = userDevicesQuery(useQueryUserId());
   const devicesRead = useQuery(devicesQuery);
   const devices = devicesRead.data ?? [];
@@ -85,6 +86,12 @@ export function ComputerDeviceSettings() {
       await action();
     },
     stale: [devicesQuery.queryKey, thisComputerKey],
+    // A failed removal or pairing may still have changed something, so both are read again.
+    onFailed: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey }),
+        queryClient.invalidateQueries({ queryKey: thisComputerKey }),
+      ]),
   });
   const pending = change.pending;
 

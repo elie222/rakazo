@@ -1,7 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { CloudComputers, ComputerSize, UserDeviceSummary } from "@rakazo/contracts";
-import { ComputerSizeSchema } from "@rakazo/contracts";
+import { ComputerSizeSchema, computerSizeChoice } from "@rakazo/contracts";
 import { computerName, computerSizeLabel } from "@rakazo/i18n/computer-usage";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -89,8 +89,10 @@ export default function ComputersSettings() {
   }
 
   function chooseSize(computer: CloudComputer, size: ComputerSize) {
-    if (!cloud || size === computer.savedSize) return;
-    if (!cloud.available.includes(size)) {
+    if (!cloud) return;
+    const choice = computerSizeChoice(size, computer, cloud.available);
+    if (choice === "unchanged") return;
+    if (choice === "upgrade") {
       Alert.alert(t`Your plan does not include this size.`, undefined, [
         { text: t`Cancel`, style: "cancel" },
         { text: t`Upgrade`, onPress: () => router.push("/billing") },

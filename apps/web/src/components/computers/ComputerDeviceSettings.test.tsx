@@ -169,6 +169,8 @@ it("reports a failed removal", async () => {
     host.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop"]')?.click(),
   );
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not remove");
+  // The removal may still have happened, so the list is read again.
+  await vi.waitFor(() => expect(vi.mocked(listUserDevices).mock.calls.length).toBeGreaterThan(1));
 });
 
 it("shows every connected computer as connected", async () => {

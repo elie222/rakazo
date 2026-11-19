@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { CloudComputers, ComputerSize } from "@rakazo/contracts";
-import { ComputerSizeSchema } from "@rakazo/contracts";
+import { ComputerSizeSchema, computerSizeChoice } from "@rakazo/contracts";
 import { computerName, computerSizeLabel } from "@rakazo/i18n/computer-usage";
 import { Button, OptionSelect } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -100,14 +100,9 @@ function CloudComputerRow({
             onValueChange={(size) => {
               change.reset();
               setChanged(false);
-              if (!available.includes(size)) {
-                setBeyondPlan(size);
-                return;
-              }
-              setBeyondPlan(null);
-              // A plan that shrank shows the size it allows; picking it saves it in place of the
-              // larger one it stands in for.
-              if (size !== computer.savedSize) change.run(size);
+              const choice = computerSizeChoice(size, computer, available);
+              setBeyondPlan(choice === "upgrade" ? size : null);
+              if (choice === "save") change.run(size);
             }}
           />
         ) : (
