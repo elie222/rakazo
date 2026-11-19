@@ -528,7 +528,7 @@ export function TableOfContents({ items, title }: { items: TocItem[]; title?: st
           href={`#${entry.id}`}
           title={entry.label}
           aria-current={entry.id === current.id ? "location" : undefined}
-          style={entry.depth ? { paddingLeft: 6 + entry.depth * 16 } : undefined}
+          style={entry.depth ? { paddingInlineStart: 6 + entry.depth * 16 } : undefined}
           onClick={(event) => go(event, entry.id)}
         >
           {entry.label}
