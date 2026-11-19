@@ -31,7 +31,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, ChevronDownIcon, EllipsisIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { providerLabel } from "../../lib/integrations/messaging";
@@ -43,20 +43,42 @@ import { ExternalConversationSettings } from "./ExternalConversationSettings";
 const LINK_POLL_MS = 3_000;
 const NO_INSTALLATIONS: MessagingInstallationsStatus = { available: false, installations: [] };
 
-function Row({
-  children,
-  actions,
-  wrap = false,
-}: {
-  children: ReactNode;
-  actions: ReactNode;
-  /** A request is a sentence, so it wraps instead of losing its end. */
-  wrap?: boolean;
-}) {
+function Row({ children, actions }: { children: ReactNode; actions: ReactNode }) {
   return (
     <li className="flex items-center justify-between gap-3 text-body text-foreground/75">
-      <span className={wrap ? "min-w-0 break-words" : "min-w-0 truncate"}>{children}</span>
+      <span className="min-w-0 truncate">{children}</span>
       <span className="flex shrink-0 gap-2">{actions}</span>
+    </li>
+  );
+}
+
+/** A request is a sentence: it wraps instead of losing its end, and describes its buttons. */
+function RequestRow({
+  children,
+  onRespond,
+}: {
+  children: ReactNode;
+  onRespond: (accept: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <li className="flex items-center justify-between gap-3 text-body text-foreground/75">
+      <span id={id} className="min-w-0 break-words">
+        {children}
+      </span>
+      <span className="flex shrink-0 gap-2">
+        <Button size="sm" aria-describedby={id} onClick={() => onRespond(true)}>
+          <Trans>Allow</Trans>
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          aria-describedby={id}
+          onClick={() => onRespond(false)}
+        >
+          <Trans>Decline</Trans>
+        </Button>
+      </span>
     </li>
   );
 }
@@ -482,17 +504,6 @@ export function MessagingSettingsPanel() {
     </SettingsRow>
   );
 
-  const respondButtons = (respond: (accept: boolean) => Promise<unknown>) => (
-    <>
-      <Button size="sm" onClick={() => void act(() => respond(true))}>
-        <Trans>Allow</Trans>
-      </Button>
-      <Button size="sm" variant="secondary" onClick={() => void act(() => respond(false))}>
-        <Trans>Decline</Trans>
-      </Button>
-    </>
-  );
-
   return (
     <div data-testid="messaging-settings" className="space-y-8">
       {shownError ? <p className="text-body-sm text-destructive">{shownError}</p> : null}
@@ -504,26 +515,28 @@ export function MessagingSettingsPanel() {
           </SectionHeading>
           <ul className="mt-3 space-y-3">
             {invites.map(({ channel, agent }) => (
-              <Row
+              <RequestRow
                 key={channel.id}
-                wrap
-                actions={respondButtons((accept) =>
-                  rpc.messaging.channels.respond({ membershipId: channel.id, accept }),
-                )}
+                onRespond={(accept) =>
+                  void act(() =>
+                    rpc.messaging.channels.respond({ membershipId: channel.id, accept }),
+                  )
+                }
               >
                 <InviteText channel={channel} agent={agent ?? t`Your agent`} />
-              </Row>
+              </RequestRow>
             ))}
             {connectionRequests.map(({ connection, agent }) => (
-              <Row
+              <RequestRow
                 key={connection.id}
-                wrap
-                actions={respondButtons((accept) =>
-                  rpc.messaging.connections.respond({ connectionId: connection.id, accept }),
-                )}
+                onRespond={(accept) =>
+                  void act(() =>
+                    rpc.messaging.connections.respond({ connectionId: connection.id, accept }),
+                  )
+                }
               >
                 <ConnectionRequestText connection={connection} agent={agent} />
-              </Row>
+              </RequestRow>
             ))}
           </ul>
         </section>
