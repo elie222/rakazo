@@ -95,6 +95,14 @@ Docker Desktop、rootless Docker 和 nftables 后端不支持这套规则；需�
 不要把默认的 `auto` 当成隔离保证；缺少规则时它可能使用开放出站。
 旧版 Docker 或自定义 DNS 的额外配置见[计算机出站限制（英文）](../self-host-docker-computers.md#restricted-computer-egress)。
 
+启动后，在安装目录查看监督服务对新计算机采用的出站模式：
+
+```bash
+docker compose -f docker-compose.images.yml exec supervisor pnpm --filter @rakazo/sandbox-supervisor egress
+```
+
+使用与启动时相同的 Compose 文件和项目选项。输出会显示防火墙检查是否通过、是否失败，以及 `auto` 是否已回退到开放出站。修改主机规则后，重新创建监督服务即可重新检查。
+
 下面在同一个 Bash 会话运行；先将占位值替换为可信摘要：
 
 ```bash
