@@ -43,7 +43,24 @@ watch can't be combined with a schedule.
 
 ### Webhook
 
-Gives you a URL and key. Any service that can send a POST request can start the routine.
+Gives you a URL and key. Any service that can send a POST request can start the routine by
+sending the key as `Authorization: Bearer <key>`.
+
+Some services sign each delivery with a secret they generate instead. Open the trigger's menu,
+choose **Signing secret**, paste the service's secret, and pick its format:
+
+- **Standard Webhooks**: `webhook-id`, `webhook-timestamp` and `webhook-signature` headers, with
+  a `whsec_` secret.
+- **HMAC of the body**: one header holding a hex or base64 HMAC of the raw body, with an optional
+  prefix such as `sha256=`. SHA-256, SHA-512, or SHA-1 for older services.
+- **`t=…,v1=…`**: one header with a timestamp and HMAC-SHA256 signatures of `<timestamp>.<body>`.
+- **`v0=…`**: an HMAC-SHA256 of `v0:<timestamp>:<body>`, with the timestamp in its own header.
+
+A signed timestamp more than five minutes from the server's clock is refused, and a replayed
+delivery starts the routine only once. With **HMAC of the body**, which carries no timestamp, an
+identical body counts as the same delivery. The key keeps working beside the signing secret, which
+is stored encrypted and never shown again. Signatures made with a key pair or another kind of
+request signing aren't supported yet.
 
 ### Git event
 
