@@ -111,7 +111,7 @@ export function WebhookSignatureDialog({
   });
   const error = save.error
     ? errorCode(save.error) === "FORBIDDEN"
-      ? t`Only the bot's creator can set its webhook key.`
+      ? t`Only the bot's creator can set its signing secret.`
       : errorText(save.error)
     : null;
   const change = (next: Partial<Draft>) => {

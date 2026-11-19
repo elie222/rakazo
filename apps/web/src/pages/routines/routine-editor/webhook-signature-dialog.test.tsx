@@ -192,7 +192,7 @@ it("keeps the dialog open with the reason when saving fails", async () => {
   await act(async () => submit(container).click());
   await vi.waitFor(() =>
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      "Only the bot's creator can set its webhook key.",
+      "Only the bot's creator can set its signing secret.",
     ),
   );
   expect(onOpenChange).not.toHaveBeenCalledWith(false);
