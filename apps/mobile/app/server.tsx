@@ -201,7 +201,7 @@ export default function ServerScreen() {
             disabled={pending}
           />
           {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
-          <SettingsGroup>
+          <SettingsGroup label={t`Recent servers`}>
             {saved
               .filter((entry) => entry.apiBase !== current)
               .map((entry) => (
