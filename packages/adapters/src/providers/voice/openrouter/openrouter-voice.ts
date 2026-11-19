@@ -96,13 +96,9 @@ export class OpenRouterVoiceProvider implements VoiceProvider {
     context: AdapterContext,
     options: { model?: string } = {},
   ): Promise<VoiceInfo[]> {
+    const model = options.model || TTS_MODEL;
     const models = await fetchSpeechModels(apiKey, context.signal);
-    // The default model can leave the catalog; the first model that lists voices stands in.
-    const chosen = options.model
-      ? models.find((entry) => entry.id === options.model)
-      : (models.find((entry) => entry.id === TTS_MODEL) ??
-        models.find((entry) => entry.voices.length > 0));
-    const voices = chosen?.voices ?? [];
+    const voices = models.find((entry) => entry.id === model)?.voices ?? [];
     return voices.map((id) => ({ id, label: id }));
   }
 

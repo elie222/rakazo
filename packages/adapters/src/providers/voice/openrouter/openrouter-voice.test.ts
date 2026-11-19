@@ -74,20 +74,6 @@ describe("OpenRouterVoiceProvider", () => {
     expect(await provider.listVoices("key", context, { model: "unknown/model" })).toEqual([]);
   });
 
-  it("falls back to the first model with voices when the default one is gone", async () => {
-    stubFetch(() =>
-      Response.json({
-        data: [
-          { id: "fish/s2", supported_voices: [] },
-          { id: "vendor/tts", supported_voices: ["ana"] },
-        ],
-      }),
-    );
-    expect(await new OpenRouterVoiceProvider().listVoices("key", context)).toEqual([
-      { id: "ana", label: "ana" },
-    ]);
-  });
-
   it("asks for MP3 and returns it as is", async () => {
     const fetch = stubFetch(
       () => new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/mpeg" } }),

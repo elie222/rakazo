@@ -401,6 +401,8 @@ export function VoiceSettingsOverlay({
         setError(errorText(err, t`Could not save that voice`));
         return;
       }
+      // Saved, so a later model change may show the voice the server moves it to.
+      edited.current.delete("voiceId");
       // The voice is saved; a failed read after it only leaves the form behind.
       await refresh(selected?.id, { keepForm: true }).catch((err: unknown) =>
         setError(errorText(err, t`Could not load voice settings`)),

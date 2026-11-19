@@ -105,13 +105,14 @@ it("offers the speech models a provider lists and follows the new model's voices
   voice.credentials.mockReset().mockResolvedValue([router]);
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openrouter" });
   let model = router.speechModel;
-  voice.voices
-    .mockReset()
-    .mockImplementation(async () =>
-      model === router.speechModel
-        ? [{ id: "alloy", label: "alloy" }]
-        : [{ id: "en_paul", label: "en_paul" }],
-    );
+  voice.voices.mockReset().mockImplementation(async () =>
+    model === router.speechModel
+      ? [
+          { id: "alloy", label: "alloy" },
+          { id: "nova", label: "nova" },
+        ]
+      : [{ id: "en_paul", label: "en_paul" }],
+  );
   voice.models.mockReset().mockResolvedValue([
     { id: "mistralai/voxtral-mini-tts-2603", label: "Mistral: Voxtral" },
     { id: router.speechModel, label: "OpenAI: GPT-4o Mini TTS" },
@@ -135,9 +136,22 @@ it("offers the speech models a provider lists and follows the new model's voices
     await vi.waitFor(() => expect(selects()).toHaveLength(3));
     expect(selects()[1]?.textContent).toContain("alloy");
     expect(speechModelInput(container)).toBeUndefined();
+    const options = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+
+    // A voice picked earlier must not keep the form from following the next model change.
+    await act(async () => selects()[1]!.click());
+    await act(async () =>
+      options()
+        .find((option) => option.textContent === "nova")!
+        .click(),
+    );
+    expect(voice.setVoice).toHaveBeenCalledWith({
+      scope: "account",
+      voiceId: "nova",
+      provider: "openrouter",
+    });
 
     await act(async () => selects()[2]!.click());
-    const options = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')];
     expect(options().map((option) => option.textContent)).toEqual([
       "Default",
       "Mistral: Voxtral",
@@ -155,7 +169,7 @@ it("offers the speech models a provider lists and follows the new model's voices
       speechModel: "mistralai/voxtral-mini-tts-2603",
     });
     await vi.waitFor(() => expect(selects()[1]?.textContent).toContain("en_paul"));
-    expect(voice.setVoice).not.toHaveBeenCalled();
+    expect(voice.setVoice).toHaveBeenCalledTimes(1);
   } finally {
     await act(async () => root.unmount());
     container.remove();

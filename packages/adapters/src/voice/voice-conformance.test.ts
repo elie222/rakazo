@@ -201,7 +201,7 @@ const fixtures: Record<VoiceProviderId, VoiceConformanceFixture> = {
       "GET https://openrouter.ai/api/v1/models": {
         answer: () =>
           Response.json({
-            data: [{ id: "openai/gpt-4o-mini-tts-2025-12-15", supported_voices: ["alloy"] }],
+            data: [{ id: "mistralai/voxtral-mini-tts-2603", supported_voices: ["en_paul"] }],
           }),
         query: ["output_modalities"],
       },
