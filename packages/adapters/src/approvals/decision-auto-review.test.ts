@@ -162,6 +162,7 @@ it("passes each model at its own pass probability, read through its confidence s
   const decide = async (p: number) =>
     (await answering(2 * p - 1, model).review(request, context)).decision;
   expect(await decide(minPassProbability)).toBe("pass");
+  expect((await answering(0.32, model).review(request, context)).decision).toBe("pass");
   expect(await decide(minPassProbability - 0.001)).toBe("ask");
 });
 
