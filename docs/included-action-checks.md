@@ -82,8 +82,8 @@ run, and never delays or changes the decision. Each trial records an `approval.s
 audit event naming the reviewed effect, both verdicts, their pass probabilities and latencies; its
 cost is operator usage whose `operationId` starts with `shadow:`. Unset, nothing runs.
 
-This read-only query compares the two, and for actions the included reviewer asked about, what the
-person answered. A review retried after a cancelled run counts once, at its latest trial:
+This read-only query compares the two, and for actions a person was asked about, what they
+answered. A review retried after a cancelled run counts once, at its latest trial:
 
 ```sql
 WITH s AS (
@@ -91,25 +91,27 @@ WITH s AS (
   FROM audit_events
   WHERE action = 'approval.shadow_reviewed' AND "createdAt" > now() - interval '7 days'
   ORDER BY COALESCE(metadata->>'effectId', id), "createdAt" DESC
+),
+d AS (
+  SELECT DISTINCT ON (metadata->>'effectId') metadata->>'effectId' AS effect_id, metadata
+  FROM audit_events
+  WHERE action = 'approval.decided' AND "createdAt" > now() - interval '7 days'
+  ORDER BY metadata->>'effectId', "createdAt" DESC
 )
 SELECT
   s.metadata->>'decision' AS decision,
   s.metadata->>'shadowDecision' AS shadow_decision,
   CASE
-    WHEN e."reviewDecision" <> 'ask' THEN NULL
     WHEN e.status = 'denied' AND e.result IS NOT NULL THEN 'expired'
-    ELSE COALESCE(d.metadata->>'decision', 'unanswered')
+    WHEN d.metadata IS NOT NULL THEN d.metadata->>'decision'
+    WHEN e."reviewDecision" IN ('ask', 'error') THEN 'unanswered'
   END AS owner_answer,
   count(*) AS reviews,
   round(avg((s.metadata->>'latencyMs')::numeric)) AS latency_ms,
   round(avg((s.metadata->>'shadowLatencyMs')::numeric)) AS shadow_latency_ms
 FROM s
 LEFT JOIN external_effects e ON e.id = s.metadata->>'effectId'
-LEFT JOIN LATERAL (
-  SELECT metadata FROM audit_events
-  WHERE action = 'approval.decided' AND metadata->>'effectId' = e.id
-  ORDER BY "createdAt" DESC LIMIT 1
-) d ON true
+LEFT JOIN d ON d.effect_id = e.id
 GROUP BY 1, 2, 3
 ORDER BY 1, 2, 3;
 ```
