@@ -682,6 +682,20 @@ it.each([
     expect(f.browserAct).not.toHaveBeenCalled();
   },
 );
+it.each(["Unknown model for that provider", "Connect that model provider first"])(
+  "ends the paused turn when its saved model is gone: %s",
+  async (message) => {
+    const f = await paused();
+    f.effect.status = "approved";
+    vi.mocked(resolveConnectedRunModel).mockRejectedValueOnce(new Error(message));
+    await f.run();
+    expect(f.finalizeRun).toHaveBeenLastCalledWith(
+      expect.objectContaining({ error: PINNED_COMPUTER_MODEL_LOST_RUN_ERROR }),
+    );
+    expect(fake.stream).not.toHaveBeenCalled();
+    expect(f.browserAct).not.toHaveBeenCalled();
+  },
+);
 it.each(["main-a", "computer-c"])(
   "fails closed when saved %s is unavailable even though current B is valid",
   async (id) => {
