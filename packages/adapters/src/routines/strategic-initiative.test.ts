@@ -520,11 +520,18 @@ it("parks open work untouched for two weeks, except what a follow-up covers", as
     2,
     expect.objectContaining({ where: expect.objectContaining({ id: { gt: "bot-1" } }) }),
   );
+  // The write rechecks the bot, so one switched off or archived since the read is left alone.
+  const bot = { archivedAt: null, dailyCheckIns: true, space: { deletingAt: null } };
   const writes = vi.mocked(prisma.scratchpadItem.updateMany).mock.calls.map(([args]) => args);
   expect(writes).toEqual([
-    { where: { botId: "bot-1", ...forgotten }, data: { status: "parked" } },
+    { where: { botId: "bot-1", bot, ...forgotten }, data: { status: "parked" } },
     {
-      where: { botId: "bot-2", ...forgotten, NOT: [{ notes: { contains: "routine-lease" } }] },
+      where: {
+        botId: "bot-2",
+        bot,
+        ...forgotten,
+        NOT: [{ notes: { contains: "routine-lease" } }],
+      },
       data: { status: "parked" },
     },
   ]);

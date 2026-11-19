@@ -60,14 +60,13 @@ export async function parkForgottenOpenWork(deps: {
     status: "open",
     updatedAt: { lte: new Date(deps.now.getTime() - PARK_SCRATCHPAD_ITEM_MS) },
   };
+  const tidied = { archivedAt: null, dailyCheckIns: true, space: { deletingAt: null } };
   let parked = 0;
   let cursor: string | undefined;
   for (;;) {
     const bots = await deps.prisma.bot.findMany({
       where: {
-        archivedAt: null,
-        dailyCheckIns: true,
-        space: { deletingAt: null },
+        ...tidied,
         scratchpadItems: { some: forgotten },
         ...(cursor ? { id: { gt: cursor } } : {}),
       },
@@ -81,10 +80,12 @@ export async function parkForgottenOpenWork(deps: {
     if (bots.length === 0) return parked;
     cursor = bots[bots.length - 1]!.id;
     for (const bot of bots) {
-      // The age and coverage are part of the write, so an item touched since the read stays open.
+      // The age, coverage and the bot's settings are part of the write, so an item touched or a
+      // bot switched off since the read is left alone.
       const { count } = await deps.prisma.scratchpadItem.updateMany({
         where: {
           botId: bot.id,
+          bot: tidied,
           ...forgotten,
           ...(bot.routines.length
             ? { NOT: bot.routines.map((routine) => ({ notes: { contains: routine.id } })) }
