@@ -57,7 +57,7 @@ describe("postRoutineNotice", () => {
         change: "created",
         name: "Morning joke",
       }),
-    ).resolves.toBe(true);
+    ).resolves.toBeUndefined();
     const [, message] = db.createThreadMessageInTransaction.mock.calls[0]!;
     expect(message).toMatchObject({ threadId: "thread-1", role: "system", botId: "bot-1" });
     expect(message.markUnread).toBeUndefined();
@@ -132,7 +132,7 @@ describe("postRoutineNotice", () => {
         change: "enabled",
         name: "n",
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBeUndefined();
     expect(db.createThreadMessageInTransaction).not.toHaveBeenCalled();
   });
 
@@ -146,6 +146,6 @@ describe("postRoutineNotice", () => {
         change: "created",
         name: "n",
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBeUndefined();
   });
 });

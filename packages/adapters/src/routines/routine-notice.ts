@@ -5,7 +5,7 @@ import {
   createThreadMessageInTransaction,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging";
 
 export type RoutineNoticeDeps = { prisma: PrismaClient; events: ThreadEvents };
 
@@ -41,47 +41,45 @@ async function botThreadId(prisma: PrismaClient, botId: string): Promise<string 
  * block holding the routine's name and what happened, never the prompt or schedule. A system
  * message is not unread, and the block has no text, so the model never sees it. A deletion also
  * appends `routine.deleted` to the timeline, like the other routine events. Never throws:
- * the change is already saved, so a failure is only logged. Returns whether a row was written.
+ * the change is already saved, so a failure is only logged.
  */
 export async function postRoutineNotice(
   deps: RoutineNoticeDeps,
   input: RoutineNoticeInput,
-): Promise<boolean> {
-  try {
-    const threadId = input.threadId ?? (await botThreadId(deps.prisma, input.botId));
-    if (!threadId) return false;
-    const name = input.name.slice(0, 200);
-    const blocks = [{ kind: "routine_event" as const, change: input.change, name }];
-    const seq = await deps.prisma.$transaction(async (tx) => {
-      const message = await createThreadMessageInTransaction(tx, {
-        threadId,
-        botId: input.botId,
-        role: "system",
-        blocks,
-      });
-      // Created and updated already have their timeline events; a deletion gets its own here.
-      if (input.change === "deleted") {
-        await appendEventInTransaction(tx, {
-          spaceId: input.spaceId,
-          threadId,
-          botId: input.botId,
-          type: "routine.deleted",
-          payload: { name },
-        });
-      }
-      const event = await appendEventInTransaction(tx, {
+): Promise<void> {
+  await bestEffort("routine notice", writeRoutineNotice(deps, input));
+}
+
+async function writeRoutineNotice(deps: RoutineNoticeDeps, input: RoutineNoticeInput) {
+  const threadId = input.threadId ?? (await botThreadId(deps.prisma, input.botId));
+  if (!threadId) return;
+  const name = input.name.slice(0, 200);
+  const blocks = [{ kind: "routine_event" as const, change: input.change, name }];
+  const seq = await deps.prisma.$transaction(async (tx) => {
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId,
+      botId: input.botId,
+      role: "system",
+      blocks,
+    });
+    // Created and updated already have their timeline events; a deletion gets its own here.
+    if (input.change === "deleted") {
+      await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
         threadId,
         botId: input.botId,
-        type: "thread.message.created",
-        payload: { messageId: message.id, role: "system", blocks },
+        type: "routine.deleted",
+        payload: { name },
       });
-      return event.seq;
-    }, THREAD_LOCK_TRANSACTION_OPTIONS);
-    await bestEffort("routine notice notify", deps.events.notify(threadId, seq));
-    return true;
-  } catch (error) {
-    getLogger().error("routine.notice_failed", error);
-    return false;
-  }
+    }
+    const event = await appendEventInTransaction(tx, {
+      spaceId: input.spaceId,
+      threadId,
+      botId: input.botId,
+      type: "thread.message.created",
+      payload: { messageId: message.id, role: "system", blocks },
+    });
+    return event.seq;
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
+  await bestEffort("routine notice notify", deps.events.notify(threadId, seq));
 }

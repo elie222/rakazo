@@ -1,13 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { messageReaction } from "./message-reactions.js";
-import { needsTimeSeparator } from "./time-separators.js";
 
 type PresentableMessage = {
   id: string;
   runId?: string;
   role?: string;
   replyToMessageId?: string | null;
-  createdAt?: string | Date;
   blocks: readonly MessageBlock[];
 };
 
@@ -193,54 +191,7 @@ export function foldPeerReplies<T extends PresentableMessage>(
     if (markerId === undefined) return true;
     return fold(markerId, message);
   });
-  return { messages: groupRoutineRows(visible, mergedInto), folded, markerOf, mergedInto };
-}
-
-function isRoutineRow(message: PresentableMessage): boolean {
-  return message.blocks.length > 0 && message.blocks.every((b) => b.kind === "routine_event");
-}
-
-function sameRoutineEvent(a: MessageBlock, b: MessageBlock | undefined): boolean {
-  return (
-    a.kind === "routine_event" &&
-    b?.kind === "routine_event" &&
-    a.change === b.change &&
-    a.name === b.name
-  );
-}
-
-/**
- * Back-to-back routine rows read as one group: the first row carries every block, and the others
- * are dropped and resolve to it for jumps. A repeat of the line just above reads once. A row that
- * would need its own time separator starts a new group, so it keeps its own time.
- */
-function groupRoutineRows<T extends PresentableMessage>(
-  messages: T[],
-  mergedInto: Map<string, string>,
-): T[] {
-  if (!messages.some(isRoutineRow)) return messages;
-  const out: T[] = [];
-  let head: T | undefined;
-  let lastAt: string | Date | undefined;
-  for (const message of messages) {
-    const separate =
-      message.createdAt !== undefined && needsTimeSeparator(message.createdAt, lastAt);
-    lastAt = message.createdAt;
-    if (!isRoutineRow(message)) {
-      head = undefined;
-      out.push(message);
-    } else if (head && !separate) {
-      const last = head.blocks.at(-1);
-      const repeat = message.blocks.filter((block) => !sameRoutineEvent(block, last));
-      head = { ...head, blocks: [...head.blocks, ...repeat] };
-      out[out.length - 1] = head;
-      mergedInto.set(message.id, head.id);
-    } else {
-      head = message;
-      out.push(message);
-    }
-  }
-  return out;
+  return { messages: visible, folded, markerOf, mergedInto };
 }
 
 export function userVisibleMessages<T extends PresentableMessage>(

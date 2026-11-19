@@ -320,13 +320,6 @@ export function routinesRoutes(ctx: RouterContext) {
             payload: { routineId: row.id, active: row.active },
           });
         }
-        await postRoutineNotice(deps, {
-          spaceId: context.actor.spaceId,
-          threadId: existing.threadId ?? bot.thread?.id,
-          botId: bot.id,
-          change: routineEditChange(existing, row),
-          name: row.name,
-        });
         const scheduleNeedsSync =
           existing.active !== row.active ||
           scheduleChanged ||
@@ -340,6 +333,13 @@ export function routinesRoutes(ctx: RouterContext) {
             await deps.jobs.cancel(routineJobKey(row.id));
           }
         }
+        await postRoutineNotice(deps, {
+          spaceId: context.actor.spaceId,
+          threadId: existing.threadId ?? bot.thread?.id,
+          botId: bot.id,
+          change: routineEditChange(existing, row),
+          name: row.name,
+        });
         return mapRoutine(row);
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
