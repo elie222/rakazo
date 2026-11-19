@@ -372,6 +372,8 @@ export async function runApprovalSuite(
         ),
         providerId: connection.provider,
         model: connection.modelId,
+        // A model not in the catalog yet is gated with Jev's calibration.
+        calibration: (catalog ?? decisionModel("openrouter", "typesafe/jev-1.14")!).calibration,
       });
     } else {
       const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");

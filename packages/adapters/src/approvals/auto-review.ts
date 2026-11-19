@@ -50,7 +50,6 @@ export type AutoReviewProviderKind = "llm" | "jev" | "scripted";
 export const JEV_AUTO_REVIEW_PROVIDER = "jev";
 export const SCRIPTED_AUTO_REVIEW_PROVIDER = "scripted";
 export const DEFAULT_JEV_MODEL = "jev-latest";
-export const DEFAULT_AUTO_REVIEW_MIN_CONFIDENCE = 0.5;
 
 export function autoReviewTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.RAKAZO_AUTO_REVIEW_TIMEOUT_MS?.trim();
@@ -66,11 +65,12 @@ export function typesafeApiKey(env: NodeJS.ProcessEnv = process.env): string | u
   return value || undefined;
 }
 
-export function autoReviewMinConfidence(env: NodeJS.ProcessEnv = process.env): number {
+/** The operator's confidence floor for every decision model; unset, each model's calibration decides. */
+export function autoReviewMinConfidence(env: NodeJS.ProcessEnv = process.env): number | undefined {
   const raw = env.RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE?.trim();
-  if (!raw) return DEFAULT_AUTO_REVIEW_MIN_CONFIDENCE;
+  if (!raw) return undefined;
   const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0 || value > 1) return DEFAULT_AUTO_REVIEW_MIN_CONFIDENCE;
+  if (!Number.isFinite(value) || value < 0 || value > 1) return undefined;
   return value;
 }
 
