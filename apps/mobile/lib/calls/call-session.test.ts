@@ -14,7 +14,9 @@ import { hapticImpact, hapticSuccess } from "../native/haptics";
 
 vi.mock("../native/haptics", () => ({ hapticImpact: vi.fn(), hapticSuccess: vi.fn() }));
 
-import type { MobileSnapshot } from "../api/mobile-types";
+import { rpc } from "../api/api";
+import { subscribeThread } from "../api/api-live";
+import type { MobileMessage, MobileSnapshot } from "../api/mobile-types";
 import { saveServerHeaders } from "../api/server-headers";
 import {
   clearSessionToken,
@@ -175,7 +177,7 @@ function fakes(opts: { onDevice?: boolean; loadThread?: boolean } = {}) {
   const followUp = vi.fn(async (_botId: string, _text: string, _clientNonce: string) => undefined);
   const closeCall = vi.fn(async (_botId: string, _callId: string) => undefined);
   const unwatch = vi.fn();
-  let threadUpdate: (thread: MobileSnapshot) => void = () => undefined;
+  let threadUpdate: (thread: MobileSnapshot, nextReply?: MobileMessage) => void = () => undefined;
   let reply: (messageId: string, text: string, runId?: string) => void = () => undefined;
   let ended: (ended: CallEnded) => void = () => undefined;
   const spoken: string[] = [];
@@ -251,7 +253,7 @@ function fakes(opts: { onDevice?: boolean; loadThread?: boolean } = {}) {
     followUp,
     closeCall,
     unwatch,
-    thread: (thread: MobileSnapshot) => threadUpdate(thread),
+    thread: (thread: MobileSnapshot, nextReply?: MobileMessage) => threadUpdate(thread, nextReply),
     say: (text: string) =>
       recordings[recordings.length - 1]?.resolve({ base64: text, mimeType: "audio/m4a" }),
     replyWith: (messageId: string, text: string, runId?: string) => reply(messageId, text, runId),
@@ -2332,7 +2334,8 @@ describe("mobile call session on a timer", () => {
     });
     /** The run finishes: the live feed reports the thread, then the reply it finished on. */
     const finish = (fake: ReturnType<typeof fakes>, text: string) => {
-      fake.thread(finished(text));
+      const update = finished(text);
+      fake.thread(update, update.messages[0]);
       fake.replyWith("message-1", text, "run-1");
     };
 
@@ -2383,7 +2386,7 @@ describe("mobile call session on a timer", () => {
       await tick();
       expect(getSnapshot()?.phase).toBe("speaking");
       fake.speeches[2]?.resolve();
-      await tick();
+      await tick(ECHO_GUARD_MS);
       expect(getSnapshot()?.phase).toBe("listening");
     });
 
@@ -2444,9 +2447,98 @@ describe("mobile call session on a timer", () => {
       expect(getSnapshot()?.phase).toBe("thinking");
 
       finish(fake, "Booked for Friday.");
-      await tick();
+      await tick(ECHO_GUARD_MS);
       expect(fake.spoken).toEqual(["Booked for Friday."]);
       expect(getSnapshot()?.phase).toBe("listening");
+    });
+
+    it("reopens the mic when the streamed run is cancelled without a final reply", async () => {
+      const fake = fakes({ onDevice: true });
+      await callWaitingOnRun(fake);
+      fake.thread(writing("Booked for Friday. Bye"));
+      await tick();
+      fake.speeches[0]?.resolve();
+      await tick();
+      expect(getSnapshot()?.phase).toBe("thinking");
+
+      fake.thread({ ...finished("Earlier narration."), run: null });
+      await tick(ECHO_GUARD_MS - 1);
+      expect(fake.signals).toHaveLength(1);
+      await tick(1);
+      expect(getSnapshot()?.phase).toBe("listening");
+      expect(fake.signals).toHaveLength(2);
+    });
+
+    it("resumes listening when a cancelled stream leaves an already-handled approval", async () => {
+      let push: Parameters<typeof subscribeThread>[2] = () => undefined;
+      vi.mocked(rpc).mockResolvedValue({
+        ...idleThread("bot-1"),
+        run: { id: "run-1", status: "waiting_input" },
+      } as never);
+      vi.mocked(subscribeThread).mockImplementation((_target, _cursor, onEvent, signal) => {
+        const stream = deferred<never>();
+        push = onEvent;
+        signal.addEventListener("abort", () => stream.resolve(undefined as never), { once: true });
+        return stream.promise;
+      });
+      const fake = fakes({ onDevice: true });
+      const { watch: _watch, ...deps } = fake.deps;
+      try {
+        const id = startCall({ botId: "bot-1", botName: "Ada", transcribe: false }, deps);
+        await tick();
+        const run = { botId: "bot-1", runId: "run-1" };
+        push({
+          ...run,
+          type: "thread.message.created",
+          seq: 1,
+          payload: { messageId: "turn", role: "user", callId: id, blocks: [] },
+        });
+        push({
+          ...run,
+          type: "thread.message.created",
+          seq: 2,
+          payload: {
+            messageId: "approval",
+            role: "bot",
+            blocks: [
+              {
+                kind: "ask",
+                text: "Book the flight?",
+                status: "pending",
+                approvalEffectId: "effect-1",
+                actions: [
+                  { id: "allow", label: "Allow" },
+                  { id: "deny", label: "Deny" },
+                ],
+              },
+            ],
+          },
+        });
+        fake.hear("yes");
+        await tick();
+        expect(getSnapshot()?.caption).toBe("Approve or deny it on screen.");
+
+        push({ ...run, type: "run.started", seq: 3, payload: {} });
+        push({
+          ...run,
+          type: "thread.progress",
+          seq: 4,
+          payload: { text: "Booked for Friday. Next", shown: true },
+        });
+        await tick();
+        expect(fake.spoken).toEqual(["Booked for Friday."]);
+        fake.speeches[0]?.resolve();
+        await tick();
+        expect(getSnapshot()?.phase).toBe("thinking");
+        push({ ...run, type: "run.cancelled", seq: 5, payload: {} });
+        await tick(ECHO_GUARD_MS);
+        expect(getSnapshot()?.phase).toBe("listening");
+        expect(fake.signals.at(-1)?.aborted).toBe(false);
+      } finally {
+        endCall();
+        vi.mocked(rpc).mockReset();
+        vi.mocked(subscribeThread).mockReset();
+      }
     });
 
     it("keeps a backchannel between sentences from becoming a turn", async () => {
@@ -2464,32 +2556,20 @@ describe("mobile call session on a timer", () => {
       expect(fake.followUp).not.toHaveBeenCalled();
     });
 
-    it("stops at a cut-in and later says only what the run wrote after it", async () => {
+    it("keeps queued sentences when the closed recognizer reports a late cut-in", async () => {
       const fake = fakes({ onDevice: true });
       await callWaitingOnRun(fake);
       fake.thread(writing("Booked for Friday. The ho"));
       await tick();
-      expect(getSnapshot()?.phase).toBe("speaking");
-
       fake.thread(writing("Booked for Friday. The hotel is close. About"));
-      // That sentence is queued behind the one playing when the caller cuts in.
-      expect(fake.spoken).toEqual(["Booked for Friday.", "The hotel is close."]);
       fake.hear("wait, what about the deploy");
       await tick();
-      expect(fake.stopSpeaking).toHaveBeenCalled();
-      expect(fake.followUp).toHaveBeenCalledWith(
-        "bot-1",
-        "wait, what about the deploy",
-        expect.stringMatching(/^call:/),
-      );
-      fake.thread(writing("Booked for Friday. The hotel is close. About the deploy. It"));
-      await tick();
-      expect(fake.spoken).toHaveLength(2);
+      expect(fake.stopSpeaking).not.toHaveBeenCalled();
+      expect(fake.followUp).not.toHaveBeenCalled();
 
-      finish(fake, "Booked for Friday. The hotel is close. About the deploy. It shipped.");
-      await tick();
-      expect(fake.spoken.at(-1)).toBe("It shipped.");
-      expect(fake.queued.at(-1)).toBe(false);
+      finish(fake, "Booked for Friday. The hotel is close. It shipped.");
+      expect(fake.spoken).toEqual(["Booked for Friday.", "The hotel is close.", "It shipped."]);
+      expect(fake.queued).toEqual([true, true, true]);
     });
 
     it("says the end of text the run posts as a message before a step", async () => {
@@ -2545,6 +2625,7 @@ describe("mobile call session on a timer", () => {
           },
         ],
       });
+      await tick(ECHO_GUARD_MS);
       fake.hear("the work account please");
       await tick();
       expect(fake.answer).toHaveBeenCalledOnce();
@@ -2554,7 +2635,7 @@ describe("mobile call session on a timer", () => {
       expect(fake.spoken.at(-1)).toBe("Using the work account. Done.");
     });
 
-    it("keeps thinking when dictation ends empty between sentences", async () => {
+    it("keeps the microphone closed if dictation reports an empty result between sentences", async () => {
       const fake = fakes({ onDevice: true });
       await callWaitingOnRun(fake);
       fake.thread(writing("Booked for Friday. The ho"));
@@ -2566,7 +2647,7 @@ describe("mobile call session on a timer", () => {
       fake.hear("");
       await tick();
       expect(getSnapshot()?.phase).toBe("thinking");
-      expect(fake.signals).toHaveLength(sessions + 1);
+      expect(fake.signals).toHaveLength(sessions);
     });
 
     it("on Android stops the waiting sound before the echo guard after a pause", async () => {

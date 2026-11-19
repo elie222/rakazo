@@ -592,7 +592,7 @@ async function listen() {
     return;
   }
   // A guard is already counting down the quiet gap; it calls back here when it ends.
-  if (guardTimer) return;
+  if (guardTimer || (autoLanguage && replyStillWritten())) return;
   const final = pendingTranscript;
   pendingTranscript = undefined;
   set({ phase: "listening", heard: "" });
@@ -612,8 +612,9 @@ async function listen() {
 /** Starts dictation unless it is already running, muted, or waiting on a typed secret. */
 async function openMic() {
   if (!state || micOpen || state.muted || pendingCallSecretAsk(thread)) return;
-  if (autoLanguage ? state.phase === "speaking" || replyStillWritten()
-    : state.phase === "speaking" && usesServerDictation(transcribe)) return;
+  if (autoLanguage) {
+    if (state.phase === "speaking" || replyStillWritten()) return;
+  } else if (state.phase === "speaking" && usesServerDictation(transcribe)) return;
   micOpen = true;
   try {
     await dictation.listen({
@@ -641,7 +642,7 @@ async function handleTranscript(text: string) {
     return;
   }
   // A completed automatic transcript belongs to the next turn, not the reply being read.
-  if (autoLanguage && (state.phase === "speaking" || replyStillWritten())) {
+  if (autoLanguage && (state.phase === "speaking" || guardTimer || replyStillWritten())) {
     pendingTranscript = text;
     return;
   }
@@ -824,7 +825,7 @@ function reactToThread() {
     if (!runActive(thread)) {
       spokenMessageIds.add(lastBot.id);
       awaitingReply = false;
-      void listen();
+      finishTurnWithoutReply();
     }
   }
   if (awaitingReply && replyRunId && finishedRunIds.has(replyRunId)) {
@@ -832,8 +833,17 @@ function reactToThread() {
     approvalRunId = null;
     awaitedRunId = null;
     set({ caption: errorText(thread?.run?.id === replyRunId ? thread.run.error : undefined) });
-    void listen();
+    finishTurnWithoutReply();
   }
+}
+
+function finishTurnWithoutReply() {
+  if (!autoLanguage || streamRunId === null) {
+    void listen();
+    return;
+  }
+  streamRunId = null;
+  if (!speaker.isSpeaking()) guardThenListen();
 }
 
 /**

@@ -1597,8 +1597,77 @@ describe("call session", () => {
       expect(getSnapshot()?.phase).toBe("listening");
     });
 
-    it("keeps thinking and reopens the mic when dictation ends empty between sentences", async () => {
-      await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    it("holds a finished automatic transcript until the last streamed sentence's quiet gap", async () => {
+      const turn = callerMessage("check the site");
+      const approval = approvalMessage();
+      const feed = await approvalWait(turn, approval, true);
+      const final = listen.mock.calls.at(-1)?.[0]?.onFinal;
+      const speech = vi.mocked(speaker.subscribe).mock.calls.at(-1)?.[0];
+      getThread.mockResolvedValue(
+        snapshot(
+          [turn, answered(approval), streamingMessage("The site is up. Next", true)],
+          runningRun,
+        ) as never,
+      );
+      await feed?.refresh();
+      expect(queue).toHaveBeenCalledWith("The site is up.", expect.anything());
+      speech?.({ status: "speaking" });
+      speech?.({ status: "idle" });
+      expect(getSnapshot()?.phase).toBe("thinking");
+      getThread.mockResolvedValue(
+        snapshot([turn, answered(approval), botMessage("message-1", "The site is up.")]) as never,
+      );
+      await feed?.refresh();
+      send.mockClear();
+      const receipt = deferred<{ runId: string; taskId: string }>();
+      send.mockReturnValueOnce(receipt.promise as never);
+      final?.("sim");
+      await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS - 1);
+      expect(send).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(send).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: "sim" }));
+      expect(getSnapshot()?.phase).toBe("thinking");
+      receipt.resolve({ runId: "run-2", taskId: "task-2" });
+    });
+
+    it("waits out echo when an automatic call's streamed run is cancelled", async () => {
+      await answeredCall({
+        botId: "call-bot",
+        botName: "Ada",
+        transcribe: true,
+        autoLanguage: true,
+      });
+      const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)?.[0];
+      const speech = vi.mocked(speaker.subscribe).mock.calls.at(-1)?.[0];
+      getThread.mockResolvedValue(
+        snapshot([streamingMessage("Booked for Friday. Next", true)], runningRun) as never,
+      );
+      await heard("book the flight");
+      speech?.({ status: "speaking" });
+      speech?.({ status: "idle" });
+      expect(getSnapshot()?.phase).toBe("thinking");
+      listen.mockClear();
+
+      feed?.applyEvent({
+        ...userMessageEvent("call-1"),
+        seq: 17,
+        type: "run.cancelled",
+        runId: "run-1",
+        payload: {},
+      });
+      await vi.advanceTimersByTimeAsync(ECHO_GUARD_MS - 1);
+      expect(listen).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(listen).toHaveBeenCalledOnce();
+    });
+
+    it.each([false, true])("handles empty dictation between sentences (auto: %s)", async (auto) => {
+      await answeredCall({
+        botId: "call-bot",
+        botName: "Ada",
+        transcribe: auto,
+        autoLanguage: auto,
+      });
       const speech = vi.mocked(speaker.subscribe).mock.calls.at(-1)?.[0];
       getThread.mockResolvedValue(
         snapshot([streamingMessage("Booked for Friday. The ho", true)], runningRun) as never,
@@ -1614,7 +1683,7 @@ describe("call session", () => {
       await onFinal?.("");
       await Promise.resolve();
       expect(getSnapshot()?.phase).toBe("thinking");
-      expect(listen).toHaveBeenCalledOnce();
+      expect(listen).toHaveBeenCalledTimes(auto ? 0 : 1);
       expect(speaker.stop).not.toHaveBeenCalled();
     });
 
@@ -1864,8 +1933,8 @@ function askMessage(id: string, block: Record<string, unknown>): ThreadMessage {
 }
 
 /** Calls, takes the turn, and reads the approval card it stops on. */
-async function approvalWait(turn: ThreadMessage, approval: ThreadMessage) {
-  await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+async function approvalWait(turn: ThreadMessage, approval: ThreadMessage, autoLanguage = false) {
+  await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: autoLanguage, autoLanguage });
   const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)?.[0];
   getThread.mockResolvedValue(snapshot([turn, approval], waitingRun) as never);
   await heard("check the site");

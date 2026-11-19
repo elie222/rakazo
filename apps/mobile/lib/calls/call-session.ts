@@ -35,7 +35,7 @@ import type { ApiRequestContext } from "../api/api";
 import { captureApiRequestContext, rpc } from "../api/api";
 import { subscribeThread } from "../api/api-live";
 import { configureSessionEndHangUp } from "../api/api-server";
-import type { MobileSnapshot } from "../api/mobile-types";
+import type { MobileMessage, MobileSnapshot } from "../api/mobile-types";
 import { fetchServer } from "../api/server-headers";
 import { currentSessionGeneration, subscribeSessionGeneration } from "../api/session";
 import { errorText, voiceAccountErrorText } from "../api/user-error";
@@ -123,8 +123,8 @@ export type CallDeps = {
     botId: string,
     onReply: (messageId: string, text: string, runId?: string) => void,
     onCallEnded: (ended: CallEnded) => void,
-    /** Every update of the call's thread, so a turn can answer what the bot is waiting on. */
-    onThread: (thread: MobileSnapshot) => void,
+    /** Every thread update, with any reply delivered just after it. */
+    onThread: (thread: MobileSnapshot, nextReply?: MobileMessage) => void,
   ) => () => void;
 };
 
@@ -302,8 +302,8 @@ export function startCall(
   };
   // An ended call's watcher can still deliver a buffered snapshot; it must not reach this call.
   const watchedCallId = callId;
-  unwatch = deps.watch(call.botId, onReply, onCallEnded, (next) => {
-    if (callId === watchedCallId) onThread(next);
+  unwatch = deps.watch(call.botId, onReply, onCallEnded, (next, nextReply) => {
+    if (callId === watchedCallId) onThread(next, nextReply);
   });
   emit();
   void openCall(callId, call.greeting);
@@ -562,7 +562,7 @@ async function handleTranscript(raw: string): Promise<void> {
   micOpen = false;
   failures = 0;
   const text = raw.trim();
-  if (state.phase === "speaking" || replyStillWritten()) {
+  if (state.phase === "speaking" || guardTimer || replyStillWritten()) {
     pendingTranscript = text;
     return;
   }
@@ -721,21 +721,37 @@ function onReply(messageId: string, text: string, runId?: string): void {
   const rest = runId ? replySpeech.finish(runId, text, messageId) : text;
   if (rest) speakAndListen(rest, { queue: streamed, continues: streamed });
   // Nothing left to say: the turn ends now, or once the sentences still playing end.
-  else if (state.phase !== "speaking") endTurn();
+  else if (state.phase !== "speaking") {
+    if (streamed) endTurn();
+    else if (state.phase === "thinking") void listen();
+  }
 }
 
 /**
  * Says each finished sentence of the reply while its run is still writing it, when the server
  * marks that text as the reply. Without the mark, the reply is said once it is whole.
  */
-function speakAsWritten(): void {
+function speakAsWritten(nextReply: MobileMessage | undefined): void {
   const runId = callRunId;
   if (!state || !thread || !runId || switching || botEndedCall || consentBlocked || opening) return;
   const status = callRunStatus(thread, runId);
   // A run that stops to ask the caller ends this reply. The call does not say the question, so
   // nothing finishes it: forget it, and say what the run writes once it resumes from the start.
-  if (WAITING_ON_USER_RUN_STATUSES.some((waiting) => waiting === status)) replySpeech.clear();
-  if (!isRunWorking(status)) return;
+  if (WAITING_ON_USER_RUN_STATUSES.some((waiting) => waiting === status)) {
+    replySpeech.clear();
+    if (streamRunId === runId) {
+      streamRunId = null;
+      if (state.phase === "thinking") endTurn();
+    }
+  }
+  if (!isRunWorking(status)) {
+    // A run can stop without a final message, for example when the caller cancels it.
+    if (streamRunId === runId && (nextReply?.runId !== runId || nextReply.id === spokenMessageId)) {
+      streamRunId = null;
+      if (state.phase === "thinking") endTurn();
+    }
+    return;
+  }
   const sentences = replySpeech.take(thread.messages, runId);
   if (!sentences) return;
   const continues = streamRunId === runId;
@@ -743,7 +759,7 @@ function speakAsWritten(): void {
   speakAndListen(sentences, { queue: true, continues });
 }
 
-/** The caller cut in: nothing more of the reply being written is said until it is whole. */
+/** Finish tracking the stream before the bot says its farewell. */
 function sealStream(): void {
   if (streamRunId) replySpeech.seal(thread?.messages ?? [], streamRunId);
   streamRunId = null;
@@ -755,7 +771,7 @@ function replyStillWritten(): boolean {
 }
 
 /** Keeps the thread current, and the microphone shut while the bot waits on a typed code. */
-function onThread(next: MobileSnapshot): void {
+function onThread(next: MobileSnapshot, nextReply?: MobileMessage): void {
   thread = next;
   if (!state) return;
   if (pendingCallSecretAsk(next)) {
@@ -776,7 +792,7 @@ function onThread(next: MobileSnapshot): void {
     heldForCode = false;
     if (state.phase === "listening" && !micOpen && !opening) void listen();
   }
-  speakAsWritten();
+  speakAsWritten(nextReply);
 }
 
 /** The bot on the line says it is handing over, then this call hangs up and the other bot rings. */
@@ -1159,7 +1175,7 @@ function watchReplies(
   botId: string,
   onNewReply: (messageId: string, text: string, runId?: string) => void,
   onEnded: (ended: CallEnded) => void,
-  onThread: (thread: MobileSnapshot) => void,
+  onThread: (thread: MobileSnapshot, nextReply?: MobileMessage) => void,
   requestContext?: ApiRequestContext,
 ): () => void {
   const controller = new AbortController();
@@ -1202,17 +1218,20 @@ function watchReplies(
             const previous = snapshot;
             snapshot = reduceThreadSnapshot(snapshot, event) ?? snapshot;
             if (!snapshot) return;
-            if (snapshot !== previous) onThread(snapshot);
             const message = latestSpokenCallReply(snapshot.messages, watchedCallId);
-            if (!message || message.id === lastSeen) return;
-            // Wait for the message's own run to settle so half-written blocks are never
-            // spoken; another run still working says nothing about this one.
-            // An answered question can resume a run behind the one the thread shows first, so
-            // look the message's run up among every active run.
+            if (!message || message.id === lastSeen) {
+              if (snapshot !== previous) onThread(snapshot);
+              return;
+            }
+            // An answered question can resume a run behind the one the thread shows first.
             const run =
               snapshot?.activeRuns?.find((active) => active.id === message.runId) ?? snapshot?.run;
             const fromAnotherRun = Boolean(message.runId && message.runId !== run?.id);
-            if (!fromAnotherRun && run && ACTIVE_RUN_STATUSES.some((s) => s === run.status)) return;
+            if (!fromAnotherRun && run && ACTIVE_RUN_STATUSES.some((s) => s === run.status)) {
+              if (snapshot !== previous) onThread(snapshot);
+              return;
+            }
+            if (snapshot !== previous) onThread(snapshot, message);
             const text = speechFromBlocks(message.blocks).trim();
             lastSeen = message.id;
             onNewReply(message.id, text, message.runId);
