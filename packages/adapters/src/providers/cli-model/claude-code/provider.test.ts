@@ -25,13 +25,13 @@ import {
 import { cliModelRuntime } from "../../../cli-models/runtime.js";
 import { hostCredentialSource, resolveDeploymentModel } from "../../../models/deployment-model.js";
 import { knownModelImageInput, modelAcceptsImageInput } from "../../../models/model-vision.js";
-import { listPiCatalog } from "../../../runtime/pi/models/pi-models.js";
 import { resolveRuntimeModel } from "../../../runtime/pi/pi-runtime-models.js";
 import { scopedRuntimeModels } from "../../../runtime/pi/pi-runtime-scope.js";
 import { normalizePiUsage } from "../../../runtime/pi/usage/pi-usage.js";
 import { CLAUDE_CODE_NOT_INSTALLED_ERROR, CLAUDE_CODE_SIGNED_OUT_ERROR } from "./cli.js";
 import {
   CLAUDE_CODE_PROVIDER_ID,
+  claudeCodeModelIds,
   claudeCodeProvider,
   registerClaudeCodeProvider,
 } from "./provider.js";
@@ -76,7 +76,7 @@ let models: MutableModels;
 let model: Model<Api>;
 
 function configureProvider(accessCheck: (() => Promise<string | undefined>) | undefined) {
-  models = registerClaudeCodeProvider(builtinModels(), { modelId: MODEL_ID, accessCheck });
+  models = registerClaudeCodeProvider(builtinModels(), { modelIds: [MODEL_ID], accessCheck });
   model = models.getModel(CLAUDE_CODE_PROVIDER_ID, MODEL_ID)!;
 }
 
@@ -102,7 +102,12 @@ function fakeClaude(scenario: string) {
         cwdMode: number;
         system: string;
         frames: unknown[];
-        tools: { init?: { protocolVersion?: string }; tools: unknown[]; call?: unknown };
+        tools: {
+          init?: { protocolVersion?: string };
+          tools: unknown[];
+          call?: unknown;
+          env?: Record<string, string>;
+        };
       },
     /** Whether the fake was still running well after the reply ended. */
     survived: async () => {
@@ -131,7 +136,7 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     vi.stubEnv("PI_DEFAULT_PROVIDER", CLAUDE_CODE_PROVIDER_ID);
     vi.stubEnv("PI_DEFAULT_MODEL", MODEL_ID);
     vi.stubEnv("PI_DEFAULT_CREDENTIALS", "host");
-    models = registerClaudeCodeProvider(builtinModels(), { modelId: MODEL_ID });
+    models = registerClaudeCodeProvider(builtinModels(), { modelIds: [MODEL_ID] });
     model = models.getModel(CLAUDE_CODE_PROVIDER_ID, MODEL_ID)!;
   });
   beforeEach(() => {
@@ -196,6 +201,22 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       { name: "lookup", description: tools[0]!.description, inputSchema: tools[0]!.parameters },
     ]);
     expect(record.tools.call).toMatchObject({ isError: true });
+    // Under Electron, process.execPath runs as Node only with this set.
+    expect(record.tools.env).toEqual({ ELECTRON_RUN_AS_NODE: "1" });
+  });
+
+  it("runs the CLI named by RAKAZO_CLAUDE_CODE_COMMAND when PATH does not reach it", async () => {
+    const cli = fakeClaude("reply");
+    const dir = process.env.PATH!.split(delimiter)[0]!;
+    vi.stubEnv("PATH", mkdtempSync(join(tmpdir(), "rakazo-no-claude-")));
+    vi.stubEnv("RAKAZO_CLAUDE_CODE_COMMAND", join(dir, "claude"));
+    try {
+      const { message } = await run(hello);
+      expect(message.errorMessage).toBeUndefined();
+      expect(cli.started()).toBe(true);
+    } finally {
+      vi.stubEnv("RAKAZO_CLAUDE_CODE_COMMAND", "");
+    }
   });
 
   it("admits and forwards image input outside a runtime scope", async () => {
@@ -611,17 +632,17 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     },
   );
 
-  it.each(["unoffered-tool", "wrong-prefix", "bare-tool"])(
-    "rejects a %s call before publishing it",
-    async (scenario) => {
-      fakeClaude(scenario);
-      const { events, message } = await run(hello);
-      expect(message.stopReason).toBe("error");
-      expect(message.errorMessage).toContain("tool that was not offered");
-      expect(events.some((event) => event.type.startsWith("toolcall"))).toBe(false);
-      expect(events.some((event) => event.type === "done")).toBe(false);
-    },
-  );
+  it.each([
+    ["unoffered-tool", "feedback"],
+    ["wrong-prefix", "mcp__other__lookup"],
+    ["bare-tool", "lookup"],
+  ])("passes a %s call through for the agent loop to answer", async (scenario, name) => {
+    fakeClaude(scenario);
+    const { events, message } = await run(hello);
+    expect(message.stopReason).toBe("toolUse");
+    expect(message.content).toMatchObject([{ type: "toolCall", name }]);
+    expect(events.at(-1)?.type).toBe("done");
+  });
 
   it("redacts secrets from the CLI's error output", async () => {
     fakeClaude("crash");
@@ -672,18 +693,35 @@ describe("Claude Code deployment", () => {
     expect(hostCredentialSource(CLAUDE_CODE_PROVIDER_ID)).toBe("CLI");
   });
 
-  it("registers the explicitly supplied model without rereading process settings", () => {
+  it("registers the explicitly supplied models without rereading process settings", () => {
     vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
     expect(
-      claudeCodeProvider(builtinModels(), { modelId: MODEL_ID })
+      claudeCodeProvider(builtinModels(), { modelIds: [MODEL_ID, "claude-haiku-5"] })
         .getModels()
         .map((card) => card.id),
-    ).toEqual([MODEL_ID]);
+    ).toEqual([MODEL_ID, "claude-haiku-5"]);
   });
 
-  it("is never offered in the model catalog", () => {
+  it("serves the deployment model first, then the operator's listed extras once each", () => {
+    expect(
+      claudeCodeModelIds(MODEL_ID, " claude-haiku-5, ,claude-sonnet-5,claude-opus-5 "),
+    ).toEqual([MODEL_ID, "claude-haiku-5", "claude-opus-5"]);
+    expect(claudeCodeModelIds(MODEL_ID, undefined)).toEqual([MODEL_ID]);
+  });
+
+  it("is offered in the model catalog only when it serves the deployment model", async () => {
+    const catalogProviders = async () => {
+      vi.resetModules();
+      const { listPiCatalog } = await import("../../../runtime/pi/models/pi-models.js");
+      return listPiCatalog()
+        .filter((entry) => entry.provider === CLAUDE_CODE_PROVIDER_ID)
+        .map((entry) => entry.id);
+    };
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
+    vi.stubEnv("RAKAZO_CLAUDE_CODE_MODELS", "claude-haiku-5");
+    expect(await catalogProviders()).toEqual([]);
     for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
-    expect(listPiCatalog().some((entry) => entry.provider === CLAUDE_CODE_PROVIDER_ID)).toBe(false);
+    expect(await catalogProviders()).toEqual([MODEL_ID, "claude-haiku-5"]);
   });
 });
 

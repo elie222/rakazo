@@ -31,6 +31,31 @@ describe("model catalog offered to pickers", () => {
     ).toEqual([saved]);
     expect(openrouter.some((entry) => entry.id === "anthropic/claude-haiku-5.5")).toBe(true);
   });
+  it("marks Claude Code models managed only when the server's own sign-in runs them", async () => {
+    const claudeCode = {
+      ...listPiCatalog().find((entry) => entry.provider === "anthropic")!,
+      provider: adapters.CLAUDE_CODE_PROVIDER_ID,
+      id: "claude-sonnet-5",
+    };
+    const catalog = vi
+      .spyOn(adapters, "listAvailablePiCatalog")
+      .mockReturnValue([...listPiCatalog(), claudeCode]);
+    try {
+      const managed = async (defaultProvider: string) => {
+        const { call, deps } = setup();
+        deps.env.defaultProvider = defaultProvider;
+        const { response } = await call("models/forRole", { role: "main" });
+        const { json } = (await response.json()) as {
+          json: Array<{ provider: string; managed?: boolean }>;
+        };
+        return json.find((entry) => entry.provider === claudeCode.provider)?.managed;
+      };
+      expect(await managed(adapters.CLAUDE_CODE_PROVIDER_ID)).toBe(true);
+      expect(await managed("openrouter")).toBeUndefined();
+    } finally {
+      catalog.mockRestore();
+    }
+  });
 });
 
 describe("model backup settings API", () => {

@@ -36,7 +36,10 @@ async function inventory() {
   const at = args.indexOf("--mcp-config");
   if (at < 0) return { tools: [] };
   const server = JSON.parse(readFileSync(args[at + 1], "utf8")).mcpServers.rakazo;
-  const child = spawn(server.command, server.args, { stdio: ["pipe", "pipe", "inherit"] });
+  const child = spawn(server.command, server.args, {
+    env: { ...process.env, ...server.env },
+    stdio: ["pipe", "pipe", "inherit"],
+  });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   const request = async (id, method, params) => {
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
@@ -46,7 +49,7 @@ async function inventory() {
   const { result } = await request(2, "tools/list", {});
   const call = await request(3, "tools/call", { name: result.tools[0]?.name, arguments: {} });
   child.kill();
-  return { init: init.result, tools: result.tools, call: call.result };
+  return { init: init.result, tools: result.tools, call: call.result, env: server.env };
 }
 
 /** Answers one stream-json request the way the CLI would, by scenario. */

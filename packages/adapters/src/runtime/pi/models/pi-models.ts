@@ -21,6 +21,11 @@ import {
 import { cloudflareRoutingFields } from "../../../models/endpoints/cloudflare-ai-gateway.js";
 import { COMPATIBLE_ENDPOINT_PRESETS } from "../../../models/endpoints/openai-compatible-url.js";
 import { modelProviderDefinition } from "../../../models/model-provider-registry.js";
+import {
+  CLAUDE_CODE_PROVIDER_ID,
+  claudeCodeModelIds,
+  registerClaudeCodeProvider,
+} from "../../../providers/cli-model/claude-code/provider.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "../pi-runtime-limits.js";
 import { maximumModelCallCost } from "../usage/pi-usage.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
@@ -223,9 +228,14 @@ function buildPiCatalog(): PiCatalogEntry[] {
   catalogBaseUrls.clear();
   hiddenCatalogKeys.clear();
   pricedCatalogKeys.clear();
+  const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
+  const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
   const models = registerOpenAiCompatibleCatalog(
     registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
+  // A server whose deployment model is its own Claude Code sign-in offers those models to pick.
+  if (envDefaultProvider === CLAUDE_CODE_PROVIDER_ID && envDefaultModel)
+    registerClaudeCodeProvider(models, { modelIds: claudeCodeModelIds(envDefaultModel) });
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const definition = modelProviderDefinition(provider.id);
@@ -288,8 +298,6 @@ function buildPiCatalog(): PiCatalogEntry[] {
     }
   }
 
-  const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
-  const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
   if (
     envDefaultProvider === "openrouter" &&
     envDefaultModel &&

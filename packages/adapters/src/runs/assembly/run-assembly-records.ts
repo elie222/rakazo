@@ -34,6 +34,7 @@ import {
 } from "../../providers/integration/composio/composio-connector.js";
 import { LEGACY_HISTORY_WINDOW_SIZE } from "../../runtime/context/history-compaction.js";
 import { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
+import { toolActivationMode } from "../../runtime/pi/tools/pi-tool-activation.js";
 import {
   loadCommandVariables,
   loadLoginPasswordRedactions,
@@ -392,6 +393,7 @@ export async function connectRun(
     ? effectiveMemoryScope(bot.memoryScope, configuredMemory.defaultScope)
     : null;
   const semanticMemory: SemanticMemoryProvider | null = configuredMemory?.provider ?? null;
+  const toolActivation = toolActivationMode();
 
   await deps.events.append({
     spaceId: run.spaceId,
@@ -405,6 +407,7 @@ export async function connectRun(
       userId: run.userId,
       routineId: run.routineId,
       ...(run.routine ? { routineName: run.routine.name } : {}),
+      ...(toolActivation === "direct" ? { toolActivation } : {}),
     },
   });
 
@@ -435,6 +438,7 @@ export async function connectRun(
     semanticMemory,
     discoveredPromise,
     cloudAgentPromise,
+    toolActivation,
   };
 }
 

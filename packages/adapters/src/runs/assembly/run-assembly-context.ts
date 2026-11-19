@@ -233,6 +233,7 @@ export async function createRunContext(
       disabled: disabledBuiltinTools,
       connectedPlugins,
       approvedReplays: approvedEffectReplays,
+      activation: parts.connected.toolActivation,
     },
     trust: { ...trustLoaders, searchResultUrls },
     memory: {

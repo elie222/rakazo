@@ -158,6 +158,7 @@ function modelTurnRequest(
   return {
     botId: bot.id,
     verbatimMcpServers,
+    ...(ctx.tools.activation === "direct" ? { toolActivation: "direct" as const } : {}),
     threadId: thread.id,
     runId,
     usageOperationKind: run.trigger === BACKGROUND_HELPER_TRIGGER ? "subagent" : "answer",

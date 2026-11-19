@@ -152,6 +152,8 @@ export interface RouterDeps {
     deploymentModelConfigured?: boolean;
     deploymentModelHostCredentials?: boolean;
     webOrigin: string;
+    /** Extra browser origins trusted for sign-in, from `RAKAZO_EXTRA_AUTH_ORIGINS`. */
+    extraAuthOrigins?: string[];
     privacyPolicyUrl?: string;
     screenProxySecret: string;
     /** Keys the hash that names an invited address in the security log, so it can't be guessed. */

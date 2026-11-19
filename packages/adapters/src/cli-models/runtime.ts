@@ -2,6 +2,7 @@ import type { AgentRuntime } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import {
   CLAUDE_CODE_PROVIDER_ID,
+  claudeCodeModelIds,
   registerClaudeCodeProvider,
 } from "../providers/cli-model/claude-code/provider.js";
 import type { RunRuntimeEnv } from "../runs/assembly/run-runtime.js";
@@ -18,7 +19,7 @@ export function cliModelRuntime(
     return runtime;
   }
   const models = registerClaudeCodeProvider(createRuntimeModels(), {
-    modelId: env.defaultModel,
+    modelIds: claudeCodeModelIds(env.defaultModel),
     accessCheck: personalCliAccessCheck(deps),
   });
   return withRuntimeModels(runtime, models);

@@ -3,11 +3,15 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
 /**
- * Runs the official `claude` executable found on the server's PATH, exactly as installed. Rakazo
- * never signs it in, never reads its sign-in, and never passes it a key: the operator signs in
- * once with `claude auth login`, and every model request is the CLI's own.
+ * Runs the official `claude` executable exactly as installed: the one on the server's PATH, or
+ * the path in `RAKAZO_CLAUDE_CODE_COMMAND` where PATH does not reach it (the desktop app runs its
+ * server with only the system directories). Rakazo never signs it in, never reads its sign-in,
+ * and never passes it a key: the operator signs in once with `claude auth login`, and every model
+ * request is the CLI's own.
  */
-export const CLAUDE_CODE_COMMAND = "claude";
+export function claudeCodeCommand(): string {
+  return process.env.RAKAZO_CLAUDE_CODE_COMMAND?.trim() || "claude";
+}
 
 /** The oldest CLI whose stream-json history replay and tool switches this bridge relies on. */
 export const CLAUDE_CODE_MIN_VERSION = "2.1.280";
@@ -130,7 +134,7 @@ export function startClaudeCode(
   args: string[],
   options: { cwd: string; env: Record<string, string> },
 ): ClaudeCodeProcess {
-  const child = spawn(CLAUDE_CODE_COMMAND, args, {
+  const child = spawn(claudeCodeCommand(), args, {
     cwd: options.cwd,
     env: options.env,
     stdio: ["pipe", "pipe", "pipe"],
@@ -208,7 +212,7 @@ function capture(
 ): Promise<{ stdout: string; missing: boolean; timedOut: boolean }> {
   signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const child = spawn(CLAUDE_CODE_COMMAND, args, {
+    const child = spawn(claudeCodeCommand(), args, {
       cwd,
       env: claudeCodeEnv(),
       stdio: ["ignore", "pipe", "ignore"],

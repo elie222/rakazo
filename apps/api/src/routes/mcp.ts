@@ -116,9 +116,14 @@ export function mcpRoutes(ctx: RouterContext) {
     actor: Actor,
     input: { serverId: string; redirectUri?: string; client?: McpOAuthClientKind; botId?: string },
   ) {
-    const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
-    // Native clients omit the redirect; the registered web callback is always used.
-    if (input.redirectUri && new URL(input.redirectUri).toString() !== expectedRedirect) {
+    // The web origin, or an extra one the operator trusts (a phone reaching it over a tailnet).
+    const allowedRedirects = [deps.env.webOrigin, ...(deps.env.extraAuthOrigins ?? [])].map(
+      (origin) => new URL("/mcp/oauth/callback", origin).toString(),
+    );
+    const requested = input.redirectUri && new URL(input.redirectUri).toString();
+    // Native clients omit the redirect; the registered web callback is used then.
+    const expectedRedirect = requested || allowedRedirects[0]!;
+    if (!allowedRedirects.includes(expectedRedirect)) {
       throw new ClientError(
         "BAD_REQUEST",
         "The sign-in address does not match this server's configuration.",

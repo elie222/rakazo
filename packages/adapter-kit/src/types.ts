@@ -663,6 +663,8 @@ export interface AgentRunRequest {
    * (`mcp__<slug>__<tool>`); catalog calls match `ids` (`<server id>:<tool>`).
    */
   verbatimMcpServers?: { ids: readonly string[]; slugs: readonly string[] };
+  /** "direct": a tool whose schema the model loaded is also offered under its own name. */
+  toolActivation?: "direct";
   /** Exclusive workflow cost bucket; retrieval tool turns are detected for answer calls. */
   usageOperationKind?: UsageOperationKind;
   botId: string;

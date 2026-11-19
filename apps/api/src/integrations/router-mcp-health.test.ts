@@ -634,6 +634,31 @@ describe("MCP server health", () => {
       );
     });
 
+    it("accepts a callback on an extra trusted origin and starts OAuth there", async () => {
+      const h = harness({
+        row: baseRow({ transport: "streamable_http", endpoint: "https://mcp.example.test/mcp" }),
+      });
+      const begin = vi.fn(async () => ({ status: "already_connected" as const }));
+      Object.assign(h.deps, { mcpOAuth: { ...(h.deps.mcpOAuth as object), begin } });
+      Object.assign(h.deps.env, { extraAuthOrigins: ["https://mini.tailnet.test:5443"] });
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+      const redirectUri = "https://mini.tailnet.test:5443/mcp/oauth/callback";
+
+      await expect(client.mcp.oauth.begin({ serverId: "server-1", redirectUri })).resolves.toEqual({
+        status: "already_connected",
+      });
+      expect(begin).toHaveBeenCalledWith(expect.objectContaining({ redirectUri }));
+    });
+
     it("probes the server once its OAuth session completes", async () => {
       const h = harness({ row: baseRow() });
       const complete = vi.fn(async () => ({ serverId: "server-1", revision: 1 }));

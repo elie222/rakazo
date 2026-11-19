@@ -8,6 +8,7 @@ import {
   approvedModelCreditSeesImages,
   availableModelCreditOfferings,
   CHATGPT_OAUTH_PROVIDER,
+  CLAUDE_CODE_PROVIDER_ID,
   CodexCatalogCache,
   codexLiveCatalogsForSpace,
   connectedModelSeesImages,
@@ -278,7 +279,10 @@ export function createRouterContext(deps: RouterDeps) {
           modelCreditOfferings()
             ? Boolean(entry.creditOfferingId)
             : entry.provider === auth.managedProvider ||
-              auth.managedProviders?.includes(entry.provider)
+              auth.managedProviders?.includes(entry.provider) ||
+              // The server's own Claude Code sign-in runs these, so no member connects them.
+              (entry.provider === CLAUDE_CODE_PROVIDER_ID &&
+                deps.env.defaultProvider === CLAUDE_CODE_PROVIDER_ID)
         )
           ? {
               ...entry,

@@ -18,7 +18,7 @@ const DEFAULT_CONTEXT_WINDOW = 200_000;
 const DEFAULT_MAX_TOKENS = 32_000;
 
 interface ClaudeCodeProviderOptions {
-  modelId: string;
+  modelIds: readonly string[];
   accessCheck?: PersonalCliAccessCheck;
 }
 
@@ -40,6 +40,15 @@ export function claudeCodeModel(id: string, models: Models): Model<Api> {
     contextWindow: card?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
     maxTokens: card?.maxTokens ?? DEFAULT_MAX_TOKENS,
   };
+}
+
+/** The deployment model, then any others the operator lists in `RAKAZO_CLAUDE_CODE_MODELS`. */
+export function claudeCodeModelIds(
+  defaultModel: string,
+  extra = process.env.RAKAZO_CLAUDE_CODE_MODELS,
+): string[] {
+  const listed = (extra ?? "").split(",").map((id) => id.trim());
+  return [...new Set([defaultModel, ...listed].filter(Boolean))];
 }
 
 export function claudeCodeProvider(models: Models, options: ClaudeCodeProviderOptions): Provider {
@@ -68,7 +77,7 @@ export function claudeCodeProvider(models: Models, options: ClaudeCodeProviderOp
         resolve: async () => ({ auth: {}, source: "claude auth login" }),
       },
     },
-    models: [claudeCodeModel(options.modelId, models)],
+    models: options.modelIds.map((id) => claudeCodeModel(id, models)),
     api: { stream, streamSimple: stream },
   });
 }

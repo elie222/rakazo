@@ -46,6 +46,7 @@ import type { RuntimeModelTarget } from "../pi-runtime-models.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "../usage/pi-telemetry.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { parametersFor, prepareFleetArguments } from "./pi-runtime-tool-parameters.js";
+import type { ActivatedTool } from "./pi-tool-activation.js";
 
 export interface ToolCallBudget {
   count: number;
@@ -364,11 +365,27 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
   };
 }
 
+/** Loaded tools as directly callable agent tools; events and audit name the loaded tool. */
+export function activatedAgentTools(
+  activated: readonly ActivatedTool[],
+  host: ToolHost,
+): AgentTool[] {
+  return activated.map(({ name, tool, via }) => {
+    const agentTool = toAgentTool(tool, host, name, { via });
+    // A built-in runs sequentially as it would through use_tool.
+    return via ? agentTool : { ...agentTool, executionMode: "sequential" };
+  });
+}
+
 function toAgentTool(
   tool: ConnectorTool,
   host: ToolHost,
   exposedName: string,
-  { deferred = [], viaUseTool = false }: { deferred?: ConnectorTool[]; viaUseTool?: boolean } = {},
+  {
+    deferred = [],
+    viaUseTool = false,
+    via,
+  }: { deferred?: ConnectorTool[]; viaUseTool?: boolean; via?: ActivatedTool["via"] } = {},
 ): AgentTool {
   return {
     name: exposedName,
@@ -505,9 +522,17 @@ function toAgentTool(
           )
             throw new Error("Enter top-level computer mode before using computer tools");
           const args = (params ?? {}) as Record<string, unknown>;
-          const keepToolResultWhole = (name: string, callArgs: Record<string, unknown>) =>
-            VERBATIM_TOOL_RESULTS.has(name) ||
-            isVerbatimMcpResult(name, callArgs, host.request.verbatimMcpServers);
+          // A loaded connector tool runs as the catalog call the model could have made itself.
+          const run = via
+            ? {
+                name: via.wrapper.name,
+                args: { id: via.id, arguments: args },
+                route: via.wrapper.route,
+              }
+            : { name: tool.name, args, route: tool.route };
+          const keepToolResultWhole = () =>
+            VERBATIM_TOOL_RESULTS.has(run.name) ||
+            isVerbatimMcpResult(run.name, run.args, host.request.verbatimMcpServers);
           recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
           const rawCallId =
             providerToolCallId(host.providerToolCallIds, toolCallId) ||
@@ -627,10 +652,10 @@ function toAgentTool(
               }
               if (host.request.executeTool) {
                 const result = await host.request.executeTool(
-                  tool.name,
-                  args,
+                  run.name,
+                  run.args,
                   executionId,
-                  tool.route,
+                  run.route,
                   {
                     onShellStillRunning: (completion) => {
                       host.pendingShells.push(completion);
@@ -639,9 +664,7 @@ function toAgentTool(
                 );
                 if (isAgentToolExecutionResult(result)) {
                   if (isToolPauseResult(result)) host.pausePending = true;
-                  return keepToolResultWhole(tool.name, args)
-                    ? result
-                    : boundAgentToolResult(result);
+                  return keepToolResultWhole() ? result : boundAgentToolResult(result);
                 }
                 return {
                   content: [
@@ -650,8 +673,8 @@ function toAgentTool(
                       text: serializeToolResult(
                         result,
                         host.request.contextStrategy,
-                        tool.name,
-                        args,
+                        run.name,
+                        run.args,
                         host.request.verbatimMcpServers,
                       ),
                     },
@@ -669,7 +692,7 @@ function toAgentTool(
                 details: { error: "no executor" },
               };
             })();
-            if (keepToolResultWhole(tool.name, args)) return result as AgentToolResult<unknown>;
+            if (keepToolResultWhole()) return result as AgentToolResult<unknown>;
             return boundAgentToolResult(result as AgentToolResult<unknown>);
           } catch (error) {
             failure = error;

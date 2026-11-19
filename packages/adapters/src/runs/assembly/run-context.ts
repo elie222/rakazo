@@ -39,6 +39,8 @@ import type { UnchangedVisualStreak } from "../../computers/screens/computer-too
 import type { selectRunConnections } from "../../integrations/connection-context.js";
 import type { loadBotMessageContext } from "../../messaging/bot-messages.js";
 import { namedAgentTools } from "../../runtime/pi/tools/pi-runtime-tools.js";
+import type { ToolActivation } from "../../runtime/pi/tools/pi-tool-activation.js";
+import { activatedTools } from "../../runtime/pi/tools/pi-tool-activation.js";
 import type { inferScript } from "../../runtime/scripted-runtime.js";
 import type { VaultItemUse } from "../../secrets/bot-secrets.js";
 import { secretPausedToolResult } from "../../secrets/run-secret.js";
@@ -283,6 +285,7 @@ export interface RunTools {
   disabled: Set<string>;
   connectedPlugins: ReturnType<typeof selectRunConnections>;
   approvedReplays: ApprovedEffectReplayQueue;
+  activation: ToolActivation;
 }
 
 export type RunTrust = ReturnType<typeof createRunTrustLoaders> & {
@@ -536,7 +539,12 @@ export function restoreTurnCheckpointEffects(
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
     const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
-    const available = new Set(namedTools.map((tool) => tool.name));
+    const available = new Set([
+      ...namedTools.map((tool) => tool.name),
+      ...(ctx.tools.activation === "direct"
+        ? activatedTools(saved.messages, ctx.tools.offered).map((tool) => tool.name)
+        : []),
+    ]);
     if (computerMode) {
       // Only the authenticated saved role authorizes a runtime transition. Do not
       // add it to the executor's tool table or mask a connector wire-name collision.

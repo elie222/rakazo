@@ -1,4 +1,4 @@
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type {
   Api,
@@ -25,7 +25,7 @@ import {
   MODEL_OUTPUT_CUT_ERROR,
   modelFallbackFailure,
 } from "@rakazo/core";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import {
   isTerminatingReplyResult,
   terminatingReplyText,
@@ -44,7 +44,11 @@ import {
   midTaskMessageFromPrompt,
   midTaskMessagePrompt,
 } from "../../runs/assembly/run-replies.prompt.js";
-import { runToolCallIds, uniqueToolCallIdStream } from "../../runs/turn/tool-call-ids.js";
+import {
+  providerToolCallId,
+  runToolCallIds,
+  uniqueToolCallIdStream,
+} from "../../runs/turn/tool-call-ids.js";
 import type { ComputerModeCheckpoint } from "../../runs/turn/turn-checkpoint.js";
 import {
   restoreTurnCheckpoint,
@@ -106,6 +110,7 @@ import {
 } from "./tools/pi-runtime-computer-mode.js";
 import type { ToolCallBudget, ToolHost } from "./tools/pi-runtime-tools.js";
 import {
+  activatedAgentTools,
   agentToolDefinitions,
   createQueue,
   describeToolActivity,
@@ -115,6 +120,7 @@ import {
   toolCallBudgetExceededMessage,
   toolCallBudgetFor,
 } from "./tools/pi-runtime-tools.js";
+import { activatedTools } from "./tools/pi-tool-activation.js";
 import { withPiTelemetry } from "./usage/pi-telemetry.js";
 import { observedPiStream } from "./usage/pi-usage.js";
 
@@ -349,6 +355,19 @@ export class PiAgentRuntime implements AgentRuntime {
             offeredToolNames,
             deferredToolNames,
           );
+        // Tools the model loaded this turn, callable by their own names from the next request.
+        // Only added, so a tool stays callable after its load result is compacted away.
+        const directTools = request.toolActivation === "direct";
+        const activated = new Map<string, AgentTool>();
+        const activateLoaded = (messages: readonly Message[]) => {
+          if (!directTools) return false;
+          const loaded = activatedTools(messages, toolDefs).filter(
+            ({ name }) => !activated.has(name),
+          );
+          for (const tool of activatedAgentTools(loaded, host)) activated.set(tool.name, tool);
+          return loaded.length > 0;
+        };
+        activateLoaded(history);
         const representedHistoryIds = new Set(
           restored
             ? (restored.historyMessageIds ??
@@ -577,8 +596,8 @@ export class PiAgentRuntime implements AgentRuntime {
             agent.state.thinkingLevel = thinkingLevelFor(target.model, target.config.thinkingLevel);
           }
         };
-        const modeTools = () => {
-          if (!computer) return allTools;
+        const modeTools = (): AgentTool[] => {
+          if (!computer) return [...allTools, ...activated.values()];
           const transition = computerTransitionTool(
             mode,
             async () => {
@@ -631,6 +650,7 @@ export class PiAgentRuntime implements AgentRuntime {
               (tool) => mode === "computer" || !COMPUTER_MODE_TOOLS.has(tool.label),
             ),
             transition,
+            ...activated.values(),
           ];
         };
         tools = modeTools();
@@ -704,6 +724,7 @@ export class PiAgentRuntime implements AgentRuntime {
               agent.steer({ role: "user", content: finishedShells, timestamp: Date.now() });
           },
           prepareNextTurnWithContext: async (turn) => {
+            if (directTools && activateLoaded(turn.context.messages)) tools = modeTools();
             const update = computer
               ? {
                   context: {
@@ -720,7 +741,9 @@ export class PiAgentRuntime implements AgentRuntime {
                     activeStreamTarget.config.thinkingLevel,
                   ),
                 }
-              : undefined;
+              : activated.size
+                ? { context: { ...turn.context, tools } }
+                : undefined;
             if (!request.claimSteering) return update;
             // The turn is ending at a terminating result that aborted the agent; no
             // model request would answer a follow-up claimed now, and a completed run
@@ -882,6 +905,28 @@ export class PiAgentRuntime implements AgentRuntime {
         // it counts as the final reply, including when the completed message omits it.
         let streamedBeforePendingFinal = 0;
         agent.subscribe(async (event) => {
+          // A call to a name the model was not offered never reaches a tool; audit it like one.
+          if (
+            event.type === "tool_execution_end" &&
+            event.isError &&
+            !tools.some((tool) => tool.name === event.toolName)
+          ) {
+            void bestEffort(
+              "unknown tool audit",
+              Promise.resolve(
+                request.onToolCompleted?.({
+                  name: event.toolName,
+                  executionId: JSON.stringify([
+                    "pi-tool",
+                    "main",
+                    providerToolCallId(host.providerToolCallIds, event.toolCallId),
+                  ]),
+                  durationMs: 0,
+                  error: new Error(`Tool ${event.toolName} not found`),
+                }),
+              ),
+            );
+          }
           if (event.type === "tool_execution_end" && isTerminatingReplyResult(event.result)) {
             terminatedReply = terminatingReplyText(event.result) ?? terminatedReply;
           }

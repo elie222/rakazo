@@ -378,7 +378,6 @@ export function streamClaudeCode(
       if (options.signal?.aborted) throw new Aborted("Request was aborted");
       const system = getCurrentSystemPrompt(context.messages);
       const tools = getCurrentTools(context.messages);
-      const offeredToolNames = new Set(tools.map((tool) => `${TOOL_PREFIX}${tool.name}`));
       const frames = claudeCodeFrames(context, model);
       files = await mkdtemp(join(tmpdir(), "rakazo-claude-code-request-"));
       const cwd = join(files, "cwd");
@@ -432,7 +431,13 @@ export function streamClaudeCode(
           config,
           JSON.stringify({
             mcpServers: {
-              [TOOL_SERVER]: { type: "stdio", command: process.execPath, args: [server, manifest] },
+              // On desktop the server runs inside Electron, whose binary acts as Node only when asked.
+              [TOOL_SERVER]: {
+                type: "stdio",
+                command: process.execPath,
+                args: [server, manifest],
+                env: { ELECTRON_RUN_AS_NODE: "1" },
+              },
             },
           }),
           { mode: 0o600 },
@@ -567,13 +572,12 @@ export function streamClaudeCode(
               });
             } else if (block.type === "tool_use") {
               const name = String(block.name ?? "");
-              if (!offeredToolNames.has(name)) {
-                throw new Error("Claude Code requested a tool that was not offered.");
-              }
+              // A name Rakazo did not offer passes through, so the agent loop answers it with
+              // its usual unknown-tool error instead of the run failing.
               output.content.push({
                 type: "toolCall",
                 id: String(block.id ?? ""),
-                name: name.slice(TOOL_PREFIX.length),
+                name: name.startsWith(TOOL_PREFIX) ? name.slice(TOOL_PREFIX.length) : name,
                 arguments: {},
               });
               blocks.set(index, { index: contentIndex, json: "" });

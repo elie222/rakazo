@@ -870,6 +870,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       deploymentModelConfigured: env.deploymentModelConfigured,
       deploymentModelHostCredentials: env.deploymentModelHostCredentials,
       webOrigin: env.webOrigin,
+      extraAuthOrigins: env.extraAuthOrigins,
       privacyPolicyUrl: env.privacyPolicyUrl,
       screenProxySecret: env.screenProxySecret,
       invitationRecipientKey: createHmac("sha256", env.authSecret)
