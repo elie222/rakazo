@@ -1,7 +1,10 @@
 import {
   COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_DAMAGED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_RECOVERY_REQUIRED_ERROR,
+  COMPUTER_START_FAILED_ERROR,
   COMPUTER_UNRESPONSIVE_ERROR,
 } from "@rakazo/contracts";
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
@@ -740,6 +743,9 @@ it.each([
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_UNRESPONSIVE_ERROR,
+  COMPUTER_START_FAILED_ERROR,
+  COMPUTER_DAMAGED_ERROR,
+  COMPUTER_RECOVERY_REQUIRED_ERROR,
 ])("shows the computer error %j as written", (message) => {
   expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
 });

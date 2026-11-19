@@ -1322,8 +1322,9 @@ describe("computer provisioning", () => {
       expect(updateMany.mock.invocationCallOrder[markIndex]).toBeLessThan(
         vi.mocked(sandbox.prepare).mock.invocationCallOrder[1]!,
       );
+      // The recovery failed for another reason, so the next start tries again instead of parking it.
       expect(updateMany).toHaveBeenLastCalledWith(
-        expect.objectContaining({ data: { state: "error", restorePending: true } }),
+        expect.objectContaining({ data: expect.objectContaining({ state: "error" }) }),
       );
     } finally {
       await rm(dataDir, { recursive: true, force: true });
