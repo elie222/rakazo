@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import type { PageVisibility } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,7 +11,7 @@ type Summary = {
   id: string;
   title: string;
   pinned: boolean;
-  visibility: "private" | "link";
+  visibility: PageVisibility;
   updatedAt: string;
 };
 
@@ -151,6 +153,11 @@ it("shows a share change made in the sheet once the sheet is dismissed", async (
   await act(async () => host.focus?.());
   expect(rows(container)).toEqual(["Plan | Shared · now"]);
   expect(actions("Plan")).toContain("copy");
+
+  await rpc("pages/setVisibility", { pageId: "p1", visibility: "people" });
+  await act(async () => host.focus?.());
+  expect(rows(container)).toEqual(["Plan | Specific people · now"]);
+  expect(actions("Plan")).not.toContain("copy");
 
   // And private again.
   await rpc("pages/setVisibility", { pageId: "p1", visibility: "private" });

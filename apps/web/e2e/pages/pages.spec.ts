@@ -1197,6 +1197,16 @@ test("specific people review a version and lose access when removed", async ({
     await share.getByRole("button", { name: `Remove access for ${reviewerEmail}` }).click();
     await expect(reviewer.getByText("This page isn't available", { exact: true })).toBeVisible();
     await expect(reviewer.locator(`iframe[title="${title}"]`)).toHaveCount(0);
+    await shareButton.click();
+    await page.getByRole("button", { name: "Close page", exact: true }).click();
+    const card = page.getByTestId("page-card").filter({ hasText: title });
+    await expect(card).toContainText("Page · Specific people");
+    await openBotPanel(page);
+    const library = page.getByTestId("bot-pages").filter({ visible: true });
+    await expect(library.getByRole("listitem").filter({ hasText: title })).toContainText(
+      "Specific people",
+    );
+    await captureScreenshot(page, testInfo, "page-specific-people-library");
   } finally {
     await reviewerContext.close();
   }

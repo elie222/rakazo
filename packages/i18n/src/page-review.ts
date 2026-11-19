@@ -1,5 +1,11 @@
 import { ph, t } from "@lingui/core/macro";
-import type { PageComment } from "@rakazo/contracts";
+import type { PageComment, PageVisibility } from "@rakazo/contracts";
+
+export function pageSharingLabel(visibility?: PageVisibility) {
+  if (visibility === "people") return t`Specific people`;
+  if (visibility === "link") return t`Shared`;
+  return undefined;
+}
 
 export function pageRevisionDataDisclosure() {
   return t`The page and selected comment are sent to draft a revision.`;
