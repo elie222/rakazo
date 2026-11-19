@@ -75,6 +75,15 @@ it("names the item and removes it from the row", async () => {
   expect(container.textContent).toBe('Added to open work "Compare vendors"');
 });
 
+it("says so when the removal fails and keeps Remove for another try", async () => {
+  rpcMock.scratchpad.remove.mockRejectedValue(new Error("Request failed"));
+  await mount();
+  await act(async () => removeButton()!.click());
+  await act(flush);
+  expect(container.textContent).toBe('Added to open work "Compare vendors"Could not remove');
+  expect(removeButton()!.disabled).toBe(false);
+});
+
 it("offers no removal once the item is finished or gone, or without its bot", async () => {
   rpcMock.scratchpad.list.mockResolvedValue([{ ...item, id: "another" }]);
   await mount();

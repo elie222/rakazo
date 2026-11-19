@@ -603,22 +603,22 @@ code-b
       },
     ];
   }
-  const openWork = /add to your open work:\s*([^\n<&]+)/i.exec(prompt);
-  if (openWork) {
-    return [
-      {
-        assistant: "noted for later.",
-        toolCalls: [{ name: "scratchpad_add", args: { title: openWork[1]!.trim() } }],
-        complete: true,
-      },
-    ];
-  }
   const ownInstructions = /update your instructions to:\s*([^\n<&]+)/i.exec(prompt);
   if (ownInstructions) {
     return [
       {
         assistant: "updating my instructions.",
         toolCalls: [{ name: "update_bot", args: { instructions: ownInstructions[1]!.trim() } }],
+        complete: true,
+      },
+    ];
+  }
+  const openWork = /add to your open work:\s*([^\n<&]+)/i.exec(prompt);
+  if (openWork) {
+    return [
+      {
+        assistant: "noted for later.",
+        toolCalls: [{ name: "scratchpad_add", args: { title: openWork[1]!.trim() } }],
         complete: true,
       },
     ];

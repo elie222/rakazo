@@ -46,6 +46,7 @@ export function OpenWorkEventRow({ block, botId }: { block: OpenWorkEventBlock; 
           <X />
         </Button>
       ) : null}
+      {remove.error ? <span className="text-destructive">{t`Could not remove`}</span> : null}
     </div>
   );
 }

@@ -367,6 +367,13 @@ describe("inferScript scratchpad_add", () => {
       },
     ]);
   });
+
+  it("leaves an instruction update that quotes the phrase to update_bot", () => {
+    const [step] = inferScript(
+      "update your instructions to: when asked, add to your open work: compare vendors",
+    );
+    expect(step?.toolCalls?.[0]?.name).toBe("update_bot");
+  });
 });
 
 describe("ScriptedAgentRuntime executionIds", () => {
