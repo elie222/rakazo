@@ -27,7 +27,7 @@ import {
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDownIcon, EllipsisIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, EllipsisIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
@@ -321,7 +321,7 @@ export function MessagingSettingsPanel() {
     );
   }
 
-  const botItems = (row: string, provider: string) =>
+  const botItems = (row: string, provider: string, currentBotId?: string) =>
     bots.map((bot) => (
       <DropdownMenuItem
         key={bot.id}
@@ -329,6 +329,7 @@ export function MessagingSettingsPanel() {
         onClick={() => void startLink(row, provider, bot.id)}
       >
         {bot.name}
+        {bot.id === currentBotId ? <CheckIcon className="ml-auto" aria-label={t`Current`} /> : null}
       </DropdownMenuItem>
     ));
 
@@ -411,7 +412,7 @@ export function MessagingSettingsPanel() {
               <Trans>Change bot</Trans>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              {botItems(`identity:${identity.id}`, identity.provider)}
+              {botItems(`identity:${identity.id}`, identity.provider, identity.botId)}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         ) : null,
