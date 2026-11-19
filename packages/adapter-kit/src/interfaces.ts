@@ -89,6 +89,7 @@ import type {
   UnreferencedMachine,
   VoiceCapabilities,
   VoiceInfo,
+  VoiceModelInfo,
   VoiceSynthesizeRequest,
   VoiceTranscribeRequest,
   VoiceUsage,
@@ -679,12 +680,17 @@ export interface ExecutionRunner {
 export interface VoiceProvider {
   describe(): AdapterDescriptor<VoiceCapabilities>;
   verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult>;
-  /** `options.language` narrows the listing for providers that advertise `languages`. */
+  /**
+   * `options.language` narrows the listing for providers that advertise `languages`;
+   * `options.model` selects the speech model for providers whose voices belong to one.
+   */
   listVoices(
     apiKey: string,
     context: AdapterContext,
-    options?: { language?: string },
+    options?: { language?: string; model?: string },
   ): Promise<VoiceInfo[]>;
+  /** The speech models the account can pick from, for providers that list them. */
+  listModels?(apiKey: string, context: AdapterContext): Promise<VoiceModelInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
   transcribe?(
     request: VoiceTranscribeRequest,

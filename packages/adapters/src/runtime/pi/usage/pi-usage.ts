@@ -16,6 +16,7 @@ import type {
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { withDataRetentionPayload } from "../../../models/endpoints/data-retention.js";
 import { withGoogleToolHistory } from "../../../models/endpoints/google-tool-history.js";
 import { openRouterInferenceFetch } from "../../../models/endpoints/openrouter-usage.js";
 import { estimateModelContextTokens } from "../../../models/model-context.js";
@@ -455,11 +456,14 @@ export function observedPiStream(
         // Each guarded reservation covers one HTTP attempt, not hidden SDK retries.
         const historyOptions = withGoogleToolHistory(
           model,
-          withChatCompletionsCompatibility(model, {
-            ...options,
-            ...(cacheRetention ? { cacheRetention } : {}),
-            ...(observer ? { maxRetries: 0 } : {}),
-          }),
+          withDataRetentionPayload(
+            model,
+            withChatCompletionsCompatibility(model, {
+              ...options,
+              ...(cacheRetention ? { cacheRetention } : {}),
+              ...(observer ? { maxRetries: 0 } : {}),
+            }),
+          ),
         );
         // Innermost on the fetch chain, so a rejection records the body exactly as it was sent.
         const streamOptions = hooks?.onRejectedRequest

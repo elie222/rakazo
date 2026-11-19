@@ -63,6 +63,14 @@ test("the weekly rotation moves on and named features win", () => {
   assert.equal(isoWeek(new Date("2026-01-01T12:00:00Z")), 1);
 });
 
+test("a screen path cannot leave its code span in the issue body", () => {
+  const path =
+    "javascript:x` [spoof](https://example.invalid) ![i](https://example.invalid/i.png) @octocat `";
+  assert.equal(normalizePath(path), "/");
+  assert.equal(normalizePath("/a`b c"), "/a%60b%20c");
+  assert.ok(issueBody({ ...bug, path }, links).includes("**Screen:** `/`\n"));
+});
+
 test("the fingerprint ignores record ids and wording but not the bug", () => {
   assert.equal(normalizePath("/chats/clx1a2b3c4d5e6f7g8h9i0j1k?tab=1"), "/chats/:id");
   assert.equal(normalizePath("/bots/42/"), "/bots/:id");

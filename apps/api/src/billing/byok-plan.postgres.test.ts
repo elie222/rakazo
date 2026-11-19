@@ -236,6 +236,17 @@ dbTests("own-key plan", () => {
       byokPriceCents: BYOK_TIERS.pro.annualPriceCents,
       byokInterval: "year",
     });
+    expect(await planComputerSize(prisma, spaceId)).toBe("standard");
+    const sized = createBillingService({
+      prisma,
+      provider,
+      sandbox: { describe: () => ({ id: "boat" }) } as SandboxProvider,
+      webOrigin: "https://example.test",
+    });
+    await expect(sized.setComputerSize(actor, "xlarge")).rejects.toMatchObject({
+      message: "Your plan does not include this computer size",
+    });
+    await sized.setComputerSize(actor, "large");
     expect(await planComputerSize(prisma, spaceId)).toBe("large");
 
     await expect(service.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
@@ -245,12 +256,17 @@ dbTests("own-key plan", () => {
       byokPriceCents: BYOK_TIERS.max.annualPriceCents,
       byokInterval: "year",
     });
+    expect(await planComputerSize(prisma, spaceId)).toBe("large");
+    await sized.setComputerSize(actor, "xlarge");
     expect(await planComputerSize(prisma, spaceId)).toBe("xlarge");
     await service.changeTier(actor, "standard");
     await expect(service.status(actor)).resolves.toMatchObject({
       byokTier: "standard",
       byokPriceCents: BYOK_TIERS.standard.annualPriceCents,
     });
+    expect(await planComputerSize(prisma, spaceId)).toBe("standard");
+
+    await service.changeTier(actor, "max");
     expect(await planComputerSize(prisma, spaceId)).toBe("standard");
 
     // A plan set to cancel stays as it is.
@@ -268,7 +284,7 @@ dbTests("own-key plan", () => {
     const metered = createBillingService({
       prisma,
       provider,
-      sandbox: {} as SandboxProvider,
+      sandbox: { describe: () => ({ id: "fake" }) } as SandboxProvider,
       webOrigin: "https://example.test",
     });
     // $25 of computer time, more than Pro's $20 a month.

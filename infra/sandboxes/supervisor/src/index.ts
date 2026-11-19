@@ -4,8 +4,8 @@ import { serve } from "@hono/node-server";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { computerResourceLimits } from "./computer-spec.js";
-import { computerEgressSetting, ensureComputerImage, screenNetworkMode } from "./context.js";
-import { computerEgressMode, ensureRestrictedEgressEnforced } from "./egress.js";
+import { computerEgressSetting, screenNetworkMode } from "./context.js";
+import { ensureComputerEgress } from "./egress.js";
 import { reclaimIdleComputerNetworks } from "./networks.js";
 import { supervisorApp } from "./routes.js";
 
@@ -18,17 +18,10 @@ async function startSupervisor() {
   // and pass its healthcheck, then fail the first POST /computers with a 500 that reads like a
   // Docker problem. Failing here names the variable while the deployment is still coming up.
   computerResourceLimits();
-  if (computerEgressSetting === "auto" && screenNetworkMode !== "internal") {
-    // Settle the mode before the first provision rather than on it.
-    void ensureComputerImage()
-      .then(ensureRestrictedEgressEnforced)
-      .catch((error) => logger.error("computer egress probe failed", error));
-  } else if (computerEgressMode === "restricted" && screenNetworkMode !== "internal") {
-    // Report a missing host ruleset at startup too, not only on the first provision.
-    void ensureComputerImage()
-      .then(ensureRestrictedEgressEnforced)
-      .then(() => logger.info("restricted computer egress verified"))
-      .catch((error) => logger.error("restricted computer egress unavailable", error));
+  if (computerEgressSetting !== "open" && screenNetworkMode !== "internal") {
+    void ensureComputerEgress().catch((error) =>
+      logger.error("computer egress probe failed", error),
+    );
   }
   void reclaimIdleComputerNetworks().catch((error) => {
     logger.error("computer network reclaim failed", error);

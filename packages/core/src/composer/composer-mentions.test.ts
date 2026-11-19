@@ -210,6 +210,30 @@ describe("partition and payload", () => {
 });
 
 describe("strip and connector intent", () => {
+  it("preserves code indentation and double spaces when stripping a typed mention", () => {
+    const code = 'if ready:\n    print("a  b")';
+    expect(stripMentionToken(`Run @Planning this:\n${code}`, "Planning")).toBe(
+      `Run this:\n${code}`,
+    );
+  });
+
+  it("preserves formatting in the send plan when removing an exact connector range", () => {
+    const code = 'if ready:\n    print("a  b")';
+    const text = `Run @Calendar this:\n${code}`;
+    const plan = resolveComposerSendPlan({
+      text,
+      mentions: [
+        { kind: "connector", id: "calendar", name: "Calendar", ranges: [{ start: 4, end: 13 }] },
+      ],
+      hasAttachments: false,
+    });
+    expect(plan.trimmed).toBe(`Run this:\n${code}`);
+  });
+
+  it("does not rewrite whitespace when a legacy mention does not match", () => {
+    expect(stripMentionToken("one  two\n\tthree", "Planning")).toBe("one  two\n\tthree");
+  });
+
   it("strips selected mention kinds from prompt text", () => {
     expect(
       stripMentionKinds(

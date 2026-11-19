@@ -78,7 +78,9 @@ export function refreshOrganizations(): Promise<void> {
 export function refreshOrganizationReads(): Promise<void> {
   return queryClient.invalidateQueries({
     predicate: ({ queryKey }) =>
-      queryKey.includes("organizations/list") || queryKey.includes("organizations/members/list"),
+      queryKey.includes("organizations/list") ||
+      queryKey.includes("organizations/members/list") ||
+      queryKey.includes("billing/status"),
   });
 }
 

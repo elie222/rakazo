@@ -409,6 +409,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/releaseInterrupted"],
       ["computer/dismissUpdate"],
       ["computer/dismissDiskWarning", { botId: "missing-bot" }],
+      ["computer/homeVersions", { botId: "missing-bot" }],
+      ["computer/restoreHomeVersion", { botId: "missing-bot", versionId: "missing-version" }],
       ["computer/downloadFile"],
       ["computer/uploadFile"],
       ["computer/terminalUrl"],
@@ -520,6 +522,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["voice/disconnect", { provider: "elevenlabs" }],
       ["voice/setVoice", { voiceId: "missing-voice" }],
       ["voice/voices", {}],
+      ["voice/models", { provider: "openrouter" }],
       ["voice/prepare", { text: "Nope" }],
       ["voice/setSpeechModel"],
       ["analytics/screen"],
@@ -529,6 +532,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["aiConsent/revoke"],
       ["billing/status"],
       ["billing/computerUsage"],
+      ["billing/setComputerSize", { size: "standard" }],
       ["billing/refresh"],
       ["billing/selectFunding"],
       ["billing/purchaseCredits"],
@@ -580,6 +584,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/oauth/complete"],
       ["mcp/oauth/disconnect"],
       ["onboarding/signupSurvey"],
+      ["onboarding/firstBot"],
       ["onboarding/start"],
       ["onboarding/promptFocus"],
       ["onboarding/choose"],
@@ -2423,14 +2428,16 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await handles.prisma.user.findUnique({ where: { email } })).not.toBeNull();
   });
 
-  it("shows an organization's audit log only to its owners and admins, past deleted spaces", async () => {
+  it("shows an organization's whole audit log to its owners and admins, a member only their own, past deleted spaces", async () => {
     const owner = await signup(app, `audit-owner-${stamp}@rakazo.test`, "Audit Owner");
     const outsider = await signup(app, `audit-outsider-${stamp}@rakazo.test`, "Audit Outsider");
     const account = await rpc<Actor>(app, owner, "me");
     const space = await rpc<Space>(app, owner, "spaces/create", { name: "Client A" });
     await rpc(app, owner, "spaces/remove", { spaceId: space.id });
 
-    type Page = { events: Array<{ action: string; spaceName: string | null }> };
+    type Page = {
+      events: Array<{ action: string; spaceName: string | null; organizationId: string }>;
+    };
     const actions = (page: Page) => page.events.map((event) => event.action);
     const ownLog = await rpc<Page>(app, owner, "audit/events", { spaceId: space.id });
     expect(actions(ownLog)).toEqual(["space.deleted", "space.created"]);
@@ -2442,7 +2449,32 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(exported.status).toBe(200);
     expect(await exported.text()).toContain('"action":"space.created"');
 
+    // Another person's event in the same organization, which a plain member must not see.
+    const organizationId = ownLog.events[0]!.organizationId;
+    await db.auditEvent.create({
+      data: {
+        organizationId,
+        actorType: "user",
+        actorId: "someone-else",
+        action: "credential.created",
+        outcome: "success",
+      },
+    });
+    expect(actions(await rpc<Page>(app, owner, "audit/events", {}))).toContain(
+      "credential.created",
+    );
+
     await db.member.updateMany({ where: { userId: account.userId }, data: { role: "member" } });
+    const memberLog = await rpc<Page>(app, owner, "audit/events", { spaceId: space.id });
+    expect(actions(memberLog)).toEqual(["space.deleted", "space.created"]);
+    const memberExport = await app.request("/api/audit-events/export", {
+      headers: { cookie: owner },
+    });
+    expect(memberExport.status).toBe(200);
+    expect(await memberExport.text()).not.toContain("credential.created");
+
+    // A guest is not a member, so they read nothing.
+    await db.member.updateMany({ where: { userId: account.userId }, data: { role: "guest" } });
     await expectForbidden(app, owner, "audit/events", {});
     expect(
       (await app.request("/api/audit-events/export", { headers: { cookie: owner } })).status,

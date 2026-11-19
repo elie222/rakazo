@@ -33,7 +33,11 @@ import type { AuditEventInput } from "@rakazo/db";
 import { recordAuditEvent, runSecretKind } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
-import { buildApprovalAskBlock, MAX_FETCH_URL_LENGTH } from "../../approvals/approval-ask.js";
+import {
+  approvalActionName,
+  buildApprovalAskBlock,
+  MAX_FETCH_URL_LENGTH,
+} from "../../approvals/approval-ask.js";
 import {
   boundDirectApprovalDetails,
   DENIED_ACTION_ERROR,
@@ -50,7 +54,6 @@ import {
 } from "../../approvals/auto-review.js";
 import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
 import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
-import { reviewOwnerMessages } from "../../approvals/review-owner-messages.js";
 import { pagePaymentPrecheck, paysWithWallet } from "../../billing/spending-gate.js";
 import { reportBotMessageWait } from "../../messaging/bot-messages.js";
 import { findConnectedModelCredential } from "../../models/model-selection.js";
@@ -84,6 +87,7 @@ import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lif
 import { notifyRun } from "../lifecycle/run-notifications.js";
 import { autoReviewCheckerProvider, includedAutoReviewChecker } from "../turn/run-auto-review.js";
 import { refusal } from "../turn/tool-refusal.js";
+import { reviewOwnerContext } from "./run-review-context.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
@@ -812,7 +816,9 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   await notifyRun(deps, run, {
     kind: "help",
     title: `${displayName(bot.name, "Bot")} needs approval`,
-    body: `Review before ${name}`,
+    // Only the action, with no verb: the card's title can name a recipient or subject, and a call
+    // can decline rather than allow, so both stay on the card.
+    body: approvalActionName(name, args, card.batch, ctx.secrets),
     botId: bot.id,
     threadId: thread.id,
   });
@@ -854,12 +860,6 @@ async function reviewToolCall(
       review.newSite && fetchUrl
         ? { url: redactSecrets(fetchUrl, ctx.secrets) }
         : redactToolArgsForReview(args, ctx.secrets);
-    const ownerMessages = reviewOwnerMessages(
-      // Extra context only: a failed lookup drops it and never fails the review.
-      (
-        (await bestEffort("auto_review.owner_messages", ctx.trust.loadEarlierOwnerMessages())) ?? []
-      ).map((text) => redactSecrets(text, ctx.secrets)),
-    );
     const reviewRequest: AutoReviewRequest = {
       toolName: name,
       connectorKind,
@@ -872,7 +872,7 @@ async function reviewToolCall(
       matchingRules: review.matchingRules,
       ...(review.newSite && fetchUrl ? { newSite: true } : {}),
       ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
-      ...(ownerMessages.length ? { ownerMessages } : {}),
+      ...(await reviewOwnerContext(ctx, reviewArgs, !ownerWordsOnly)),
     };
     const reviewContext: AdapterContext = {
       operationId: `auto-review:${runId}`,

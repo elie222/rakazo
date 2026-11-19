@@ -485,6 +485,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         prisma,
         provider: billingProvider,
         sandbox,
+        realtime,
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
         analytics,

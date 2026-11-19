@@ -11,7 +11,7 @@ import {
   resolveAutoReviewProviderKind,
   runAutoReviewJudge,
 } from "./auto-review.js";
-import { buildAutoReviewPrompt } from "./auto-review.prompt.js";
+import { buildAutoReviewPrompt, outsideTargetAsk } from "./auto-review.prompt.js";
 
 describe("resolveAutoReviewChecker", () => {
   it("prefers explicit env overrides", () => {
@@ -320,6 +320,24 @@ describe("buildAutoReviewPrompt", () => {
     expect(prompt).toContain("the owner's own earlier messages in this chat");
     // Owner text is escaped like every other data block.
     expect(prompt.match(/<\/user_task>/g)).toHaveLength(1);
+  });
+
+  it("names targets only outside content gave, and asks about sending them private data", () => {
+    const request = {
+      toolName: "gmail_send_email",
+      connectorKind: "gmail",
+      args: { to: "dana@hr.test" },
+      userTask: "Reply to Dana with what she asked for",
+      botDescription: "Mail bot",
+      matchingRules: [],
+    };
+    const bare = buildAutoReviewPrompt(request);
+    expect(bare).not.toContain("outside_only_targets");
+    expect(bare).not.toContain("Also ask when");
+    const prompt = buildAutoReviewPrompt({ ...request, outsideOnlyTargets: ["dana@hr.test"] });
+    expect(prompt).toContain('<outside_only_targets>\n["dana@hr.test"]\n</outside_only_targets>');
+    expect(prompt).toContain(`Also ask when: ${outsideTargetAsk("outside_only_targets")}.`);
+    expect(prompt).toContain("nowhere in the owner's words");
   });
 
   it("shows a new site's whole URL and says the judge sees only the owner's words", () => {

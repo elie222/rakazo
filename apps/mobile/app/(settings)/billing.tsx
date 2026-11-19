@@ -6,7 +6,6 @@ import {
   ByokTierSchema,
   byokTierChangeOffered,
   byokYearlySwitchSavings,
-  COMPUTER_SIZE_SPECS,
   creditAmountChoices,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
@@ -15,7 +14,11 @@ import {
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
-import { computerUsageDetails } from "@rakazo/i18n/computer-usage";
+import {
+  computerSizeLabel,
+  computerUsageDetails,
+  tierComputerDescription,
+} from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
@@ -81,23 +84,26 @@ export default function BillingScreen() {
   useEffect(() => {
     if (readError && focused.current) Alert.alert(t`Could not load billing`);
   }, [readError, errorUpdatedAt, t]);
+  type BillingChange = (send: SaveSend) => Promise<BillingStatus | undefined>;
   const change = useSave({
     target,
     stale: [usageRead.queryKey],
-    save: async (work: (send: SaveSend) => Promise<BillingStatus | undefined>, send) => {
+    save: async ({ work }: { work: BillingChange; failure?: string }, send) => {
       const next = await work(send);
       if (next) await writeSaved(queryClient, statusRead.queryKey, () => next);
     },
-    onFailed: (error) =>
+    onFailed: (error, { failure }) =>
       Alert.alert(
-        (error as { status?: number }).status === 402
-          ? t`Your card was not charged`
-          : t`Could not update billing`,
+        failure ??
+          ((error as { status?: number }).status === 402
+            ? t`Your card was not charged`
+            : t`Could not update billing`),
       ),
   });
   const pending = change.pending;
-  const action = change.run;
+  const action = (work: BillingChange, failure?: string) => change.run({ work, failure });
   if (!status) return null;
+  const sizing = status.computerSizeSettings;
   const usageDetails =
     status.canManage && showComputerUsage
       ? computerUsageDetails(computerUsage, dateLocaleForUi())
@@ -130,13 +136,11 @@ export default function BillingScreen() {
     const price = `$${cents / 100}`;
     return interval === "year" ? t`${price} / year` : t`${price} / month`;
   };
-  const tierComputer = (offer: TierOffer) =>
-    t`${ph({ vcpus: COMPUTER_SIZE_SPECS[offer.computerSize].vcpus })} vCPU, ${ph({ memoryGb: COMPUTER_SIZE_SPECS[offer.computerSize].memoryGb })} GB, ${ph({ hours: offer.computerHours })} computer hours a month`;
   const changeTier = (offer: TierOffer, cents: number) =>
     Alert.alert(
       t`Switch to ${ph({ name: offer.name })}?`,
       // What the tier gives, then how the change bills.
-      `${tierComputer(offer)}\n\n${
+      `${tierComputerDescription(offer)}\n\n${
         status.state === "trialing"
           ? t`Your plan becomes ${ph({ price: tierPrice(cents) })} when your trial ends.`
           : cents > (ownKeyCents ?? 0)
@@ -154,7 +158,7 @@ export default function BillingScreen() {
   const tierRow = currentTier ? (
     <SettingsRow
       title={currentTier.name}
-      detail={tierComputer(currentTier)}
+      detail={tierComputerDescription(currentTier)}
       chevron={tierChange ? "down" : undefined}
       disabled={pending}
     />
@@ -263,9 +267,34 @@ export default function BillingScreen() {
           {status.computerHoursResetAt ? (
             <SettingsRow title={t`Resets`} value={formatDate(status.computerHoursResetAt)} />
           ) : null}
+          {status.canManage && sizing && sizing.available.length > 1 ? (
+            <MenuView
+              actions={sizing.available.map((size) => ({
+                id: size,
+                title: computerSizeLabel(size, true),
+                state: size === sizing.size ? "on" : "off",
+                attributes: { disabled: pending },
+              }))}
+              onPressAction={({ nativeEvent }) => {
+                const size = sizing.available.find((entry) => entry === nativeEvent.event);
+                if (size && size !== sizing.size)
+                  action(
+                    (send) => send("billing/setComputerSize", { size }),
+                    t`Could not change computer size`,
+                  );
+              }}
+            >
+              <SettingsRow
+                title={t`Computer size`}
+                detail={t`Applies to this organization's computers on their next start.`}
+                value={computerSizeLabel(sizing.size)}
+                chevron="down"
+              />
+            </MenuView>
+          ) : null}
           {status.canManage ? (
             <SettingsRow
-              title={t`Hours by computer`}
+              title={sizing ? t`Standard hours by computer` : t`Hours by computer`}
               chevron={showComputerUsage ? "down" : "right"}
               accessibilityState={{ expanded: showComputerUsage }}
               onPress={() => setShowComputerUsage((open) => !open)}

@@ -1,5 +1,5 @@
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
-import { matchFeaturedConnectorId } from "@rakazo/core";
+import { matchFeaturedConnectorId } from "./featured-connectors.js";
 
 function isFamiliarApp(item: ConnectionCatalogItem) {
   return (
@@ -9,10 +9,14 @@ function isFamiliarApp(item: ConnectionCatalogItem) {
   );
 }
 
-/** Connected apps, or familiar artwork-first suggestions from the loaded catalog. */
+/**
+ * Connected apps, or familiar artwork-first suggestions from the loaded catalog. Without `suggest`
+ * it lists connected apps only, for a surface with no words to say the rest are suggestions.
+ */
 export function connectedAppMarks(
   catalog: readonly ConnectionCatalogItem[],
   connections: readonly Connection[],
+  { suggest = true }: { suggest?: boolean } = {},
 ) {
   const connected = catalog.filter(
     (item) =>
@@ -24,6 +28,7 @@ export function connectedAppMarks(
           row.provider.toLowerCase() === item.slug.toLowerCase(),
       ),
   );
+  if (!connected.length && !suggest) return [];
   const apps = [...(connected.length ? connected : catalog)]
     .sort(
       (a, b) =>

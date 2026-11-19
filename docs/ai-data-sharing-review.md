@@ -38,12 +38,13 @@ using their existing controls. This flow is not a global data-access or run-revo
 
 Use synthetic content and a fresh review account on iPhone and an 11-inch iPad.
 
-1. Send a first message. Confirm the alert names configured recipients, explains data and
-   purposes, and opens the correct deployment policy.
+1. Send a first message. Confirm the alert names configured recipients and explains data and
+   purposes. Confirm Account → AI data sharing links the correct deployment policy.
 2. Choose Not now. Confirm neither content upload nor message submission occurs and the draft
    remains available. Repeat with an attachment and with voice.
 3. Choose Allow. Confirm the grant is saved before the mobile action proceeds.
-4. Relaunch and verify the approved configuration does not prompt again.
+4. Relaunch and verify the approved configuration does not prompt again, including after
+   switching models on an approved service.
 5. Withdraw permission in Account → AI data sharing. Confirm the next mobile action prompts.
    Verify the screen explains that existing runs and routines are stopped separately.
 6. Switch account, Space, server, or recipient endpoint. Confirm grants are not mixed.
@@ -62,7 +63,7 @@ The alert names recipients, describes the data and purpose, and lets users decli
 To review: sign in, open [bot], enter a message, and tap Send. Choose Not now to verify that
 submission is blocked, then send again and choose Allow. Voice requests permission separately.
 Account → AI data sharing withdraws permission for new mobile actions; stop already-authorized
-runs and disable routines using their controls. The policy is linked from the alert and Account.
+runs and disable routines using their controls. The policy is linked from Account → AI data sharing.
 Tested build: [version/build]. Attached: [native iPad screenshot].
 
 ## Reply template

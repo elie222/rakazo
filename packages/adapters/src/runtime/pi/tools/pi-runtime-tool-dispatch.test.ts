@@ -488,6 +488,7 @@ import {
   approvalPausedToolResult,
   terminatingToolResult,
 } from "../../../approvals/approval-effect.js";
+import { MCP_IMAGE_ATTACHED } from "../../../mcp/mcp-result-images.prompt.js";
 import {
   midTaskMessageFromPrompt,
   midTaskMessagePrompt,
@@ -2536,6 +2537,68 @@ describe("Pi connector tool dispatch", () => {
     expect(result.content[0]).toEqual({ type: "text", text: first });
     expect(result.content[1]).toEqual(image);
     expect(result.content[2]).toEqual({ type: "text", text: "bbbbb…" });
+  });
+
+  it("gives an MCP tool's image to the model as an image instead of cutting it into the text", async () => {
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from([0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 2, 0x80, 0, 0, 1, 0xe0]),
+      Buffer.alloc(9),
+      Buffer.from([0, 0, 0xea, 0x60, 0x49, 0x44, 0x41, 0x54]),
+      Buffer.alloc(60_000, 7),
+    ]).toString("base64");
+    fakeAgentState.invoke = { name: "mcp__showcase__render_preview", args: { page: 1 } };
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "mcp-image",
+        prompt: "show me the preview",
+        instructions: "Look at the preview before describing it.",
+        history: [],
+        tools: [
+          {
+            name: "mcp__showcase__render_preview",
+            description: "Render a page preview",
+            inputSchema: { type: "object", properties: { page: { type: "number" } } },
+          },
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({
+          content: [
+            { type: "text", text: "Preview of page 1" },
+            { type: "image", data: png, mimeType: "image/png" },
+          ],
+          isError: false,
+        })),
+      },
+      {
+        operationId: "mcp-image",
+        traceId: "mcp-image",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust so the fake agent executes the tool.
+    }
+
+    const result = fakeAgentState.toolResult as {
+      content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+      details: unknown;
+    };
+    const summary = {
+      content: [
+        { type: "text", text: "Preview of page 1" },
+        { type: "image", data: MCP_IMAGE_ATTACHED, mimeType: "image/png" },
+      ],
+      isError: false,
+    };
+    expect(JSON.parse(result.content[0]!.text!)).toEqual(summary);
+    expect(result.content[1]).toEqual({ type: "image", data: png, mimeType: "image/png" });
+    expect(result.details).toEqual(summary);
   });
 
   it("delivers a skill read larger than the tool result bound verbatim", async () => {

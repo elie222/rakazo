@@ -20,6 +20,7 @@ import {
   isToolPauseResult,
 } from "../../../approvals/approval-effect.js";
 import type { FinishedShellCommand } from "../../../computers/sandbox/shell-command-stream.js";
+import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
 import { textContentArg } from "../../../runs/turn/tool-text.js";
@@ -646,20 +647,22 @@ function toAgentTool(
                     ? result
                     : boundAgentToolResult(result);
                 }
+                const lifted = liftMcpResultImages(result);
                 return {
                   content: [
                     {
                       type: "text",
                       text: serializeToolResult(
-                        result,
+                        lifted.result,
                         host.request.contextStrategy,
                         tool.name,
                         args,
                         host.request.verbatimMcpServers,
                       ),
                     },
+                    ...lifted.images,
                   ],
-                  details: result,
+                  details: lifted.result,
                 };
               }
               return {

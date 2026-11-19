@@ -178,6 +178,7 @@ function SpaceShell() {
     botSections,
     spaces,
     setSpaces,
+    firstBotDue,
     archivedBots,
     archivedGroups,
     initialBotsLoaded,
@@ -687,7 +688,9 @@ function SpaceShell() {
     (groups.length > 0 ||
       archivedBots.length > 0 ||
       archivedGroups.length > 0 ||
-      spaces.some((space) => space.hasContent));
+      spaces.some((space) => space.hasContent) ||
+      // Someone who has chatted before, in a new organization: nothing is on its way to them.
+      !firstBotDue);
   const shellReady =
     initialBotsLoaded &&
     (inGroup

@@ -6,6 +6,7 @@ import {
 } from "@rakazo/adapter-kit";
 import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
+  assertModelProviderAllowed,
   compatibleEndpointPreset,
   listPiCatalog,
   ModelSignInError,
@@ -319,9 +320,11 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
+          assertModelProviderAllowed(OPENAI_COMPATIBLE_PROVIDER_ID);
+          const preset = compatibleEndpointPreset(input.baseUrl);
           let apiKey = input.apiKey;
           let headers = input.headers;
-          if (!apiKey?.trim() || headers === undefined) {
+          if (!preset?.publicModels && (!apiKey?.trim() || headers === undefined)) {
             try {
               const preferred = await findModelCredential(
                 deps.prisma,
@@ -373,7 +376,7 @@ export function modelsRoutes(ctx: RouterContext) {
           try {
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
-              compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
+              preset ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );
@@ -384,6 +387,7 @@ export function modelsRoutes(ctx: RouterContext) {
         },
       ),
       probeCatalog: authed.models.probeCatalog.handler(async ({ context, input }) => {
+        assertModelProviderAllowed(input.provider);
         try {
           const models = await probeCatalogProviderModels(
             { provider: input.provider, apiKey: input.apiKey },
@@ -396,6 +400,7 @@ export function modelsRoutes(ctx: RouterContext) {
         }
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
+        assertModelProviderAllowed(input.provider);
         // An older app's sign-in renews the provider's newest connection, bound now so a
         // disconnect of that connection retires it and it never lands on another one.
         const target = await modelConnectionTarget(
@@ -494,6 +499,7 @@ export function modelsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
+        assertModelProviderAllowed(input.provider);
         const modelId = usableModelId(input.modelId);
         if (!modelId) throw new ORPCError("BAD_REQUEST", { message: "Choose a model" });
         // An omitted level keeps the one this model already has in the main list: on the
