@@ -88,6 +88,7 @@ describe("bringing a bot's files to the computer it moved to", () => {
     const home = await savedHomes({
       "team-home/bots/bot1/project/notes.md": "progress",
       "team-home/bots/bot1/.env": "KEY=1",
+      "team-home/bots/bot1/project/.env": "NESTED=1",
       "team-home/bots/other/secret.txt": "not yours",
       "team-home/shared/plan.md": "shared",
     });
@@ -101,8 +102,10 @@ describe("bringing a bot's files to the computer it moved to", () => {
 
     expect(brought).toBe(true);
     await expect(own.read("project/notes.md")).resolves.toBe("progress");
-    await expect(own.read(".env")).resolves.toBe("KEY=1");
+    // Hidden entries at the top of the bot's folder stay on the computer they are on.
+    await own.missing(".env");
     await own.missing("secret.txt");
+    await expect(own.read("project/.env")).resolves.toBe("NESTED=1");
     await own.missing("bots");
     await own.missing("shared");
     await expect(home.readFile("team-home", "bots/bot1/project/notes.md", context)).resolves.toBe(
@@ -139,6 +142,7 @@ describe("bringing a bot's files to the computer it moved to", () => {
       "bot1/.browser-profiles/chromium-bot/Cookies": "signed in",
     });
     const team = await localComputer({
+      "bots/bot1/.env": "KEY=team",
       "bots/bot1/project/notes.md": "older",
       "bots/bot1/project/removed-since.md": "stale",
       "bots/other/work.md": "a teammate's",
@@ -155,6 +159,7 @@ describe("bringing a bot's files to the computer it moved to", () => {
     await expect(team.read("bots/bot1/project/notes.md")).resolves.toBe("newer");
     await team.missing("bots/bot1/project/removed-since.md");
     await team.missing("bots/bot1/.browser-profiles");
+    await expect(team.read("bots/bot1/.env")).resolves.toBe("KEY=team");
     await expect(team.read("bots/other/work.md")).resolves.toBe("a teammate's");
     await expect(team.read("shared/plan.md")).resolves.toBe("shared");
     await expect(home.readFile("bot1", "project/notes.md", context)).resolves.toBe("newer");

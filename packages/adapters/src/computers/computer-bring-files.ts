@@ -22,9 +22,10 @@ export interface BotFilesHome {
 }
 
 /**
- * The bot's files in a computer's saved home. On a Team Computer they are its folder under
- * bots/. On its own computer they are the home's visible entries: the hidden ones at the top
- * (browser profiles, shell and tool settings) belong to that computer and stay on it.
+ * The bot's files in a computer's saved home: the visible entries of its folder, which is
+ * bots/<id> on a Team Computer and the whole home on its own. Hidden entries at the top of that
+ * folder (browser profiles, shell and tool settings) belong to the computer they are on: they
+ * are never brought, replaced or removed, on either side.
  */
 function savedBotFiles(
   home: AgentHomeStore,
@@ -32,9 +33,10 @@ function savedBotFiles(
   botId: string,
   context: AdapterContext,
 ): AsyncIterable<PortableFile> {
-  return from.scope === "team"
-    ? home.exportHome(from.homeKey, context, { directory: teamBotWorkspaceDirectory(botId) })
-    : home.exportHome(from.homeKey, context, { skipHidden: true });
+  return home.exportHome(from.homeKey, context, {
+    ...(from.scope === "team" ? { directory: teamBotWorkspaceDirectory(botId) } : {}),
+    skipHidden: true,
+  });
 }
 
 /** Whether a computer's saved home holds any file of the bot's. */
@@ -97,7 +99,11 @@ const REPLACE_VISIBLE_ENTRIES = [
   "    put_back",
   '    drop "$aside"',
   '    mkdir -- "$aside"',
-  '    for entry in *; do mv -- "$entry" "$aside"/; done',
+  // A folder that is itself read-only cannot be moved until it is opened up.
+  "    for entry in *; do",
+  '      if [ -d "$entry" ] && [ ! -L "$entry" ]; then chmod u+w -- "$entry" 2>/dev/null || true; fi',
+  '      mv -- "$entry" "$aside"/',
+  "    done",
   "    ;;",
   "  back) put_back ;;",
   // Renamed first, so a removal cut short is never taken for files to put back.

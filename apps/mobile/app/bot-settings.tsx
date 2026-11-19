@@ -52,7 +52,7 @@ import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api/mo
 import { loadSessionToken } from "../lib/api/session";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
-import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
+import { COMPUTER_LIFECYCLE_TIMEOUT_MS, COMPUTER_MOVE_TIMEOUT_MS } from "../lib/computers/computer";
 import { askComputerMoveFiles } from "../lib/computers/computer-move";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
@@ -465,7 +465,12 @@ export default function BotSettingsScreen() {
         await rpc(
           "bots/setComputer",
           { botId, mode: computerMode, files: computerFiles.current },
-          { timeoutMs: COMPUTER_LIFECYCLE_TIMEOUT_MS },
+          {
+            timeoutMs:
+              computerFiles.current === "bring"
+                ? COMPUTER_MOVE_TIMEOUT_MS
+                : COMPUTER_LIFECYCLE_TIMEOUT_MS,
+          },
         );
         setBot((prev) => (prev ? { ...prev, computerMode } : prev));
       }

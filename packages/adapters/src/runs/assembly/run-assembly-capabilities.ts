@@ -16,6 +16,7 @@ import { getLogger } from "@rakazo/logging";
 import { createApprovedEffectReplayQueue } from "../../approvals/approval-effect.js";
 import { loadGroupContext } from "../../bots/group-handoff.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "../../cloud-agents/cloud-agent-factory.js";
+import { unreadComputerChange } from "../../computers/computer-change-note.js";
 import { diskNoteInstruction, recordComputerDisk } from "../../computers/computer-disk.js";
 import { scheduleComputerSleep } from "../../computers/computer-idle.js";
 import {
@@ -897,14 +898,17 @@ export async function loadComputerInstructions(
   ]
     .filter(Boolean)
     .join(" ");
+  const standing = workspaceInstruction({
+    mode: computerMode,
+    botId: bot.id,
+    runsOnUserMachine: sandboxKindCapabilities(computerKind).runsOnUserMachine,
+  });
+  // Told to the first turn after a move, whether or not it reads the chat the note is in.
+  const moved = await unreadComputerChange(deps.prisma, bot.id, hold.runId);
   return {
     hostEnvironment,
     computerInstruction,
-    workspaceInstruction: workspaceInstruction({
-      mode: computerMode,
-      botId: bot.id,
-      runsOnUserMachine: sandboxKindCapabilities(computerKind).runsOnUserMachine,
-    }),
+    workspaceInstruction: moved ? `${standing} ${moved}` : standing,
   };
 }
 

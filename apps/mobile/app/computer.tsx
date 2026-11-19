@@ -44,6 +44,7 @@ import { errorText } from "../lib/api/user-error";
 import { stacksAtTextScale } from "../lib/appearance/text-scale";
 import {
   COMPUTER_LIFECYCLE_TIMEOUT_MS,
+  COMPUTER_MOVE_TIMEOUT_MS,
   computerLabel,
   controlLabel,
   embeddableScreenUrl,
@@ -419,7 +420,9 @@ export default function Computer() {
       await rpc(
         "bots/setComputer",
         { botId, mode, files },
-        { timeoutMs: COMPUTER_LIFECYCLE_TIMEOUT_MS },
+        {
+          timeoutMs: files === "bring" ? COMPUTER_MOVE_TIMEOUT_MS : COMPUTER_LIFECYCLE_TIMEOUT_MS,
+        },
       );
       if (!action.isActive()) return;
       setComputer(null);
