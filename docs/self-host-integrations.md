@@ -110,8 +110,9 @@ refused. `npx` is the only supported package launcher: other package managers an
 (`npm`, `pnpm`, `yarn`, `bun`, `bunx`, `deno`, `uv`, `uvx`, `pipx` and the like) are refused
 even when allowlisted. To run a server from another ecosystem, install it on the host and
 allowlist its binary. To run a server that lives on another machine, allowlist `ssh`, which the
-app image includes, and launch the server through it. An allowlisted interpreter or shell (`node`, `python`, `sh`) runs any
-code passed in its arguments, so allowlist it only where that is acceptable. Each server runs as one process per user in each of the API and worker,
+app image includes, and launch the server through it. An allowlisted interpreter or shell
+(`node`, `python`, `sh`) runs any code passed in its arguments, and `ssh` runs local commands
+through options such as `ProxyCommand`, so allowlist these only where that is acceptable. Each server runs as one process per user in each of the API and worker,
 shared by that user's bots, and stops after `MCP_STDIO_IDLE_MS` (default 900000, 15 minutes)
 without use. When a server fails to start, the reason (including the end of its stderr, with
 credentials redacted) appears on the server in **Settings**, and its bots are told it is
