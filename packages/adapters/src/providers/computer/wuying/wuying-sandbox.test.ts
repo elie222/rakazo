@@ -70,10 +70,11 @@ describe("WuyingSandboxProvider", () => {
       WorkspaceDirectoryError,
     );
     const missingHome = { ...computer, botId: "unprovisioned" };
-    await expect(provider.listFiles(missingHome, "notes", ctx)).rejects.toMatchObject({
-      name: "WuyingToolError",
-      code: "not_found",
-    });
+    const listError = { name: "WuyingToolError", tool: "fs_list", code: "not_found" };
+    await expect(provider.listFiles(missingHome, "notes", ctx)).rejects.toMatchObject(listError);
+    const { home } = await provider.environment(missingHome, ctx);
+    await desktop.call("fs_write", { path: home, data: "regular file", encoding: "utf8" });
+    await expect(provider.listFiles(missingHome, "notes", ctx)).rejects.toMatchObject(listError);
 
     await provider.writeFile(
       computer,

@@ -885,7 +885,8 @@ export class WuyingSandboxProvider implements SandboxProvider {
     const entries = await this.list(target, context.signal).catch(async (error: unknown) => {
       if (relative && error instanceof WuyingToolError && error.code === "not_found") {
         const home = await this.home(computer.botId, context.signal);
-        if (await this.exists(home, context.signal)) throw new WorkspaceDirectoryError();
+        if (await this.exists(home, context.signal, "directory"))
+          throw new WorkspaceDirectoryError();
       }
       throw error;
     });
@@ -1118,10 +1119,13 @@ export class WuyingSandboxProvider implements SandboxProvider {
     return normalized ? `${home}\\${normalized.replace(/\//g, "\\")}` : home;
   }
 
-  private async exists(target: string, signal: AbortSignal) {
+  private async exists(target: string, signal: AbortSignal, kind?: "directory") {
     try {
-      await this.tools.call("fs_info", { path: target }, signal);
-      return true;
+      const { data } = await this.tools.call("fs_info", { path: target }, signal);
+      return (
+        kind === undefined ||
+        (typeof data === "object" && data !== null && "kind" in data && data.kind === kind)
+      );
     } catch (error) {
       if (error instanceof WuyingToolError && error.code === "not_found") return false;
       throw error;
