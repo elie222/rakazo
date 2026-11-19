@@ -435,9 +435,6 @@ export async function runApprovalSuite(
   const { appendOutsideText, outsideOnlyTargets } = await import(
     "../../../adapters/src/approvals/review-target-sources.ts"
   );
-  const { ownComputerReviewArgs } = await import(
-    "../../../adapters/src/approvals/own-computer-review.ts"
-  );
   const request = (c: ApprovalCase): AutoReviewRequest => {
     const earlier = reviewOwnerMessages(c.earlierOwnerMessages ?? []);
     const redacted = autoReview.redactToolArgsForReview(c.args, []);
@@ -445,7 +442,7 @@ export async function runApprovalSuite(
       c.newSite && typeof c.args.url === "string"
         ? { url: c.args.url }
         : c.ownComputerAction
-          ? ownComputerReviewArgs(c.toolName, redacted, undefined)
+          ? autoReview.ownComputerReviewArgs(c.toolName, redacted, undefined)
           : redacted;
     // What the product keeps of a run's reads: every result except the bot's own state.
     const outsideText = (c.runSteps ?? [])

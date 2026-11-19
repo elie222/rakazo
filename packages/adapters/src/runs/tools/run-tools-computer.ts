@@ -70,8 +70,8 @@ import { builtinOffered } from "../assembly/run-instructions.prompt.js";
 import { computerScreenToolResult } from "../lifecycle/run-lifecycle.js";
 import { awaitScreenTurn } from "../turn/screen-turn.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "../turn/takeover-resume.prompt.js";
+import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
-import { auditToolCall } from "./run-tool-gate.js";
 
 function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
   const { deps, run, runId, bot, thread } = ctx;
