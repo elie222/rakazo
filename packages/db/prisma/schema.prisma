@@ -1610,6 +1610,8 @@ model BotEmailMessage {
   verified    Boolean
   /// The bot sent this one; its other messages are mail it received.
   sent        Boolean   @default(false)
+  /// A mailbox rule's automatic forward that started a routine, counted by the hourly loop limit.
+  automaticRun Boolean  @default(false)
   to          String[]
   cc          String[]
   subject     String
