@@ -20,7 +20,7 @@ function consentSummary(use: AiDataUse): string {
     case "model":
       return t`Your messages, files and connected-app content are sent to run your bots.`;
     case "voice":
-      return t`Your recordings and spoken replies are sent to process your voice.`;
+      return t`Your recordings and the text you play are sent for transcription and speech.`;
     case "memory":
       return t`Your conversations are sent to remember context.`;
   }
