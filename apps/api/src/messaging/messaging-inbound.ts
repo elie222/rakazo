@@ -245,7 +245,10 @@ type Shutdown = {
 /** One direct message from its arrival here. */
 type Arrival = {
   sender: string;
-  /** When it arrived; an owner's "stop" after this keeps it from starting a turn. */
+  /**
+   * When it arrived, taken again in its record turn, after the sender's earlier messages here: an
+   * owner's "stop" recorded after this keeps it from starting a turn.
+   */
   receivedAt: number;
   /** Being handed to the bot here, so a shutdown leaves its job alone. */
   delivering?: boolean;
@@ -391,8 +394,10 @@ async function prepareDirectEvent(
     if (command === "stop") {
       // Only a bare "stop" is the command; one carrying media is delivered as a message.
       if (attachments.length === 0 && !event.mediaUrl) {
-        // It acts at once. What the owner sent before it still reaches the chat when it settles,
-        // but starts nothing (see `stoppedSince`).
+        // It acts once the messages sent before it have their arrival times, without waiting for
+        // their files: they still reach the chat when they settle, but start nothing
+        // (`stoppedSince`).
+        await arrival.recordTurn;
         await stopOwnerWork(deps, existing, event);
         return null;
       }
@@ -432,8 +437,7 @@ async function prepareDirectEvent(
     });
   }
 
-  const { receivedAt } = arrival;
-  const deadline = receivedAt + DIRECT_MESSAGE_SETTLE_BUDGET_MS;
+  const deadline = arrival.receivedAt + DIRECT_MESSAGE_SETTLE_BUDGET_MS;
   // Earlier messages of theirs may still be with their backup jobs, after a failure here, a
   // restart, or on another instance: this one follows them there rather than overtaking them.
   const ownJob =
@@ -470,6 +474,12 @@ async function prepareDirectEvent(
     const identityId =
       existing?.id ??
       (await deps.prisma.messagingIdentity.findUniqueOrThrow({ where, select: { id: true } })).id;
+    // After the jobs of the sender's earlier messages here, though this one's lookups may finish
+    // first: the job queue places a job by when it was first recorded. Its arrival time is taken
+    // then too, so it falls after a stop sent before it, which records itself in its own turn.
+    await arrival.recordTurn;
+    arrival.receivedAt = Date.now();
+    const receivedAt = arrival.receivedAt;
     const job = { provider: event.provider, handle: event.handle, identityId };
     // The Space and bot it was sent to; the job drops it if the sender re-linked meanwhile.
     // The job keeps what the person wrote, sealed, and never the media link that rides along. It
@@ -489,9 +499,6 @@ async function prepareDirectEvent(
         })),
     };
     const dueAt = settleJobDueAt(receivedAt);
-    // After the jobs of the sender's earlier messages here, though this one's lookups may finish
-    // first: the job queue places a job by when it was first recorded.
-    await arrival.recordTurn;
     try {
       await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, dueAt));
     } finally {

@@ -2688,6 +2688,36 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.sendUserMessage.mock.lastCall![0]).not.toHaveProperty("createRun");
   });
 
+  it("lets a file message sent right after a stop start a turn", async () => {
+    const deps = createDeps({
+      storeAttachment: vi.fn(async () => ({
+        id: "artifact-1",
+        name: "photo.jpg",
+        mimeType: "image/jpeg",
+        size: 42,
+      })),
+    });
+    Object.assign(deps.prisma.thread, {
+      findFirstOrThrow: vi.fn(async () => ({ id: "thread-1" })),
+    });
+    // The stop is still cancelling runs when the photo comes in.
+    const cancelling = deferred<never[]>();
+    Object.assign(deps.txMock.run, { updateManyAndReturn: vi.fn(() => cancelling.promise) });
+    Object.assign(deps.txMock, {
+      steeringMessage: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    });
+    deps.sendUserMessage.mockResolvedValue({ messageId: "msg-1", runId: "run-1", seq: 3 });
+    const handle = createMessagingInboundHandler(deps);
+    const stop = handle({ ...dmEvent, handle: "handle-0", content: "stop" });
+    const photo = handle(photoEvent);
+    await flush();
+    cancelling.resolve([]);
+    await Promise.all([stop, photo]);
+
+    await vi.waitFor(() => expect(deps.sendUserMessage).toHaveBeenCalledOnce());
+    expect(deps.sendUserMessage.mock.lastCall![0]).not.toHaveProperty("createRun");
+  });
+
   it("answers a stop once, even when the provider redelivers it", async () => {
     const deps = createDeps();
     Object.assign(deps.prisma.thread, {
