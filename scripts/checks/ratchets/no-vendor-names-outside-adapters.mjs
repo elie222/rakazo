@@ -16,17 +16,18 @@ export const exclude = [
   "scripts/checks/ratchets/**",
   // Names a user picks by name are product data: model providers and protocols, messaging apps,
   // the integrations catalog, and the settings another agent's import reads.
-  "packages/core/src/{model-providers,messaging-providers,featured-connectors,plugin-catalog}.ts",
+  "packages/core/src/{models/model-providers,messaging/messaging-providers,integrations/featured-connectors,integrations/plugin-catalog}.ts",
   "packages/core/src/agent-import/**",
   // Composition roots wire vendors up and read their configuration, which AGENTS.md allows.
-  "apps/api/src/{app,env,index,monitoring,native-monitoring}.ts",
+  "apps/api/src/{app,env,index}.ts",
+  "apps/api/src/telemetry/{monitoring,native-monitoring}.ts",
   "apps/api/src/cli/**",
   "apps/worker/src/index.ts",
   // Build configuration. Deployment and tooling under infra/ and scripts/ are not included at all.
   "apps/*/{vite,playwright,metro,app}.config.{ts,js}",
   "apps/desktop/scripts/**",
   // The monitoring and logging sinks, which lint also lets load their vendor's SDK.
-  "{apps/desktop/src,apps/web/src/lib,apps/mobile/lib}/monitoring.ts",
+  "{apps/desktop/src/main/system,apps/web/src/lib/platform,apps/mobile/lib/platform}/monitoring.ts",
   "packages/logging/src/{sentry,axiom,axiom-sink}.ts",
 ];
 
@@ -35,16 +36,16 @@ export const exclude = [
 // English, and Docker is the runtime self-hosting itself is built on.
 const UNCHECKED_COMPUTER_IDS = new Set(["none", "fake", "desktop", "docker", "local-vm"]);
 
-// Every computer provider declares its capabilities under its id, so a new one is checked
-// from the pull request that adds it.
+// Every computer provider registers its descriptor under its id, so a new one is checked from
+// the pull request that adds it.
 function computerProviderIds() {
   const source = readFileSync(
-    new URL("../../../packages/adapters/src/sandbox-kind-capabilities.ts", import.meta.url),
+    new URL("../../../packages/adapters/src/computers/computer-providers.ts", import.meta.url),
     "utf8",
   );
-  const ids = topLevelKeys(source, /sandboxCapabilitiesByKind[^=]*=\s*\{/);
-  // The map and its declaration files change together; a short read means the map changed shape.
-  const declared = [...source.matchAll(/from "\.\/[\w-]+-capabilities\.js"/g)].length;
+  const ids = topLevelKeys(source, /computerProviders[^=]*=\s*\{/);
+  // The map and its descriptor files change together; a short read means the map changed shape.
+  const declared = [...source.matchAll(/from "\.\/[\w-]+-computer\.js"/g)].length;
   if (ids.length === 0 || ids.length < declared) {
     throw new Error(
       `Read ${ids.length} computer provider ids from packages/adapters but ${declared} are declared; update computerProviderIds in this rule`,
@@ -96,14 +97,16 @@ const VENDORS = [
   "honcho",
   "hindsight",
   "serenity",
+  "mnemoverse",
   // Voice
   "elevenlabs",
   "cartesia",
   "fish[-_ ]?audio",
-  // Infrastructure: secrets, payments, monitoring, web search, and the SDKs computer providers
-  // are reached through
+  // Infrastructure: secrets, payments, partner programs, monitoring, web search, and the SDKs
+  // computer providers are reached through
   "infisical",
   "stripe",
+  "dub",
   "sentry",
   "axiom(?:hq)?",
   "alicloud",

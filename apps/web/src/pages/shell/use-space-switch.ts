@@ -1,13 +1,15 @@
+import { abortableDelay } from "@rakazo/core";
 import { useCallback, useEffect, useRef } from "react";
 import { discardPrimedBootstrap, primeSpaceBootstrap } from "../../lib/bootstrap";
 import { initialBootstrapTarget } from "../../lib/bootstrap-target";
-import { getSnapshot as getCallSnapshot, isLeavingSession } from "../../lib/call-session";
-import { leaveOrganization } from "../../lib/organizations";
-import { queryClient, spaceSeedKey } from "../../lib/query";
-import { selectedSpaceId, selectSpace } from "../../lib/rpc";
-import { remountShellForSpace, spaceSwitchDecision } from "../../lib/space-switch";
-import { speaker } from "../../lib/tts";
-import { readShellOverlay, searchString, withShellOverlay } from "../shell-overlay";
+import { getSnapshot as getCallSnapshot, isLeavingSession } from "../../lib/calls/call-session";
+import { speaker } from "../../lib/calls/tts";
+import { queryClient, spaceSeedKey } from "../../lib/query/query";
+import { selectedSpaceId, selectSpace } from "../../lib/query/rpc";
+import { leaveOrganization } from "../../lib/spaces/organizations";
+import { useEventListener } from "../../lib/use-event-listener";
+import { readShellOverlay, searchString, withShellOverlay } from "./shell-overlay-url";
+import { remountShellForSpace, spaceSwitchDecision } from "./space-switch";
 import type { useShellNavigation } from "./use-shell-navigation";
 
 /**
@@ -33,18 +35,17 @@ export function useOpenSpaceChat({
   beginSpaceSwitch: (live: () => boolean) => (leftSpace: boolean) => void;
 }) {
   const spaceSwitchRequest = useRef(0);
-  useEffect(() => {
-    const onPopState = () => {
-      spaceSwitchRequest.current += 1;
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => {
+  useEventListener(window, "popstate", () => {
+    spaceSwitchRequest.current += 1;
+  });
+  useEffect(
+    () => () => {
       // A switch still loading when this shell goes away (another page, or a
       // newer switch) must not pull the user back to its space afterwards.
       spaceSwitchRequest.current += 1;
-      window.removeEventListener("popstate", onPopState);
-    };
-  }, []);
+    },
+    [],
+  );
   return useCallback(
     (spaceId: string, path: string) => {
       closeMobileSidebar();
@@ -137,7 +138,7 @@ export function useOpenSpaceChat({
         discardPrimedBootstrap(primed);
         if (action !== "reload") return false;
         // Leave the view-transition update before starting a full navigation.
-        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        await abortableDelay(0);
         return current() && reload();
       };
       const endSwitch = beginSpaceSwitch(current);

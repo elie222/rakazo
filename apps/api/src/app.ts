@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHmac } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
@@ -13,6 +14,7 @@ import type {
   RealtimeFanout,
   SandboxProvider,
   TransactionalEmailProvider,
+  WebProvider,
 } from "@rakazo/adapter-kit";
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import type {
@@ -30,6 +32,8 @@ import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
+  configuredMeetingProviders,
+  configuredMeetingSpaces,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -38,6 +42,7 @@ import {
   createCloudAgentConnection,
   createConnectorRuntime,
   createDubPartnerProgram,
+  createLifecycleEmailSender,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createProductAnalytics,
@@ -55,7 +60,11 @@ import {
   InMemoryRealtimeFanout,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  MeetingCalendarService,
+  MeetingService,
   machineCleanupRecords,
+  meetingCalendarScope,
+  messagingAddresses,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
   PiAgentRuntime,
@@ -71,7 +80,6 @@ import {
   ScriptedAgentRuntime,
   SpaceMemoryProviderResolver,
   StripeBillingProvider,
-  sandboxProviderOptionsFromEnv,
   stripeBillingConfigFromEnv,
   UserDeviceHub,
   UserDevices,
@@ -81,7 +89,9 @@ import {
   WorkActivities,
   withHostComputerScreen,
   withSecretPersistence,
+  withSecretWriteAhead,
 } from "@rakazo/adapters";
+import { configuredMeetingMedia } from "@rakazo/adapters/meeting-media";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import {
   buildTrustedOrigins,
@@ -97,7 +107,7 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
-import { encryptionKeyWarning } from "@rakazo/core";
+import { encryptionKeyWarning, resolveMeetingSigningKey } from "@rakazo/core/node/secrets-guard";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
   configureProviderTransactionPool,
@@ -110,12 +120,14 @@ import {
   IsolationError,
   installAuditEventStore,
   installSecurityEventStore,
+  joinedOrganizationIds,
   observeThreadChanges,
   parsePositiveInteger,
   pushSessionExpiresAt,
   requireMembership,
   rowSecurityWarning,
   runAsSystem,
+  timeZoneWarning,
   verifyContentKeys,
 } from "@rakazo/db";
 import type { Logger } from "@rakazo/logging";
@@ -131,41 +143,55 @@ import { requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { deleteAccountContent, finishStalledOrganizationDeletions } from "./account-deletion.js";
-import { mountAccountExportRoute } from "./account-export.js";
-import { mountAccountImportRoute } from "./account-import.js";
-import { settleDirectoryChange } from "./account-status.js";
-import { mountAppAssociation, nativePasskeys } from "./app-association.js";
-import { storeInboundAttachment } from "./artifacts.js";
-import { mountAuditExportRoute } from "./audit-export.js";
-import { createBillingService } from "./billing.js";
-import { mountBillingRoutes } from "./billing-webhook.js";
-import { clientBuildMiddleware, readDeployedWebBuild } from "./client-build.js";
+import {
+  deleteAccountContent,
+  finishStalledOrganizationDeletions,
+} from "./account/account-deletion.js";
+import { mountAccountExportRoute } from "./account/account-export.js";
+import { mountAccountImportRoute } from "./account/account-import.js";
+import { settleDirectoryChange } from "./account/account-status.js";
+import { mountAuditExportRoute } from "./account/audit-export.js";
+import { createAuthResponseAudit } from "./auth/security-audit.js";
+import { endUserDeviceSession, mountUserDeviceRoutes } from "./auth/user-devices.js";
+import { createBillingService } from "./billing/billing.js";
+import { mountBillingRoutes } from "./billing/billing-webhook.js";
+import { createSpeechSummarizer } from "./calls/speech-summary.js";
+import { mountVoiceHttpRoutes } from "./calls/voice.js";
+import { homeRetentionSweep } from "./computers/home-retention.js";
+import { mountLocalComputerHost } from "./computers/local-settings.js";
+import { mountScreenTarget } from "./computers/screen-proxy.js";
+import { storeInboundAttachment } from "./content/artifacts.js";
+import { mountSharedPages } from "./content/shared-pages.js";
+import { configuredEmailProvider } from "./email/email.js";
+import { mountEmailInboundRoute } from "./email/email-inbound.js";
+import { lifecycleEmailScheduler } from "./email/lifecycle-email.js";
+import { marketingEmailRoutes, sendWelcomeEmail } from "./email/marketing-email.js";
+import { sendReferralEmails } from "./email/referral-email.js";
+import type { AppEnv } from "./env.js";
+import { loadEnv, withEnvOverrides } from "./env.js";
+import { mountAppAssociation, nativePasskeys } from "./http/app-association.js";
+import { clientBuildMiddleware, readDeployedWebBuild } from "./http/client-build.js";
 import {
   clientIpMiddleware,
   createClientIpResolver,
   defaultTrustedProxies,
   requestClientIp,
   withClientIp,
-} from "./client-ip.js";
-import { cspReportRoutes } from "./csp-report.js";
-import { configuredEmailProvider } from "./email.js";
-import { mountEmailInboundRoute } from "./email-inbound.js";
-import type { AppEnv } from "./env.js";
-import { loadEnv } from "./env.js";
-import { createExperiments } from "./experiments.js";
-import { healthRoutes } from "./health.js";
-import { homeRetentionSweep } from "./home-retention.js";
-import { startHourlySweep } from "./hourly-sweep.js";
-import { trackInFlightRequests } from "./in-flight-requests.js";
-import { mountLocalComputerHost } from "./local-settings.js";
-import { marketingEmailRoutes, sendWelcomeEmail } from "./marketing-email.js";
-import { moveMcpArgsIntoSecrets } from "./mcp-args-migration.js";
-import { startMessagingRuntime } from "./messaging-runtime.js";
-import { monitoringRoutes } from "./monitoring.js";
-import { pluginSubmissionRoutes } from "./plugin-submissions.js";
-import { sendReferralEmails } from "./referral-email.js";
-import { mountApiRequestBodyLimits, rpcBodyLimit } from "./request-body-limit.js";
+} from "./http/client-ip.js";
+import { healthRoutes } from "./http/health.js";
+import { startHourlySweep } from "./http/hourly-sweep.js";
+import { trackInFlightRequests } from "./http/in-flight-requests.js";
+import { mountApiRequestBodyLimits, rpcBodyLimit } from "./http/request-body-limit.js";
+import { mountScriptAssets } from "./http/script-assets.js";
+import { SYSTEM_CONTEXT_PATHS } from "./http/system-context-routes.js";
+import { moveMcpArgsIntoSecrets } from "./integrations/mcp-args-migration.js";
+import { pluginSubmissionRoutes } from "./integrations/plugin-submissions.js";
+import { mountMeetingCalendarHttp } from "./meetings/calendar/calendar-routes.js";
+import { createMeetingAnswers } from "./meetings/meeting-answers.js";
+import { mountMeetingWebhook } from "./meetings/meeting-routes.js";
+import { startMessagingRuntime } from "./messaging/messaging-runtime.js";
+import { settleWithTimeout } from "./messaging/team-chat-startup.js";
+import { recordSignInEnded } from "./models/model-connect-analytics.js";
 import { createRouter } from "./router.js";
 import {
   DATABASE_RETRY_AFTER_SECONDS,
@@ -174,17 +200,11 @@ import {
   handleRpcError,
   requestHitDatabaseOutage,
 } from "./rpc-errors.js";
-import { mountScreenTarget } from "./screen-proxy.js";
-import { mountScriptAssets } from "./script-assets.js";
-import { createAuthResponseAudit } from "./security-audit.js";
-import { mountSharedPages } from "./shared-pages.js";
-import { afterSpaceDeparture } from "./space-departure.js";
-import { createSpeechSummarizer } from "./speech-summary.js";
-import { SYSTEM_CONTEXT_PATHS } from "./system-context-routes.js";
-import { settleWithTimeout } from "./team-chat-startup.js";
-import { endUserDeviceSession, mountUserDeviceRoutes } from "./user-devices.js";
-import { mountVoiceHttpRoutes } from "./voice.js";
-import { mountWebhookHttpRoutes } from "./webhook.js";
+import { afterSpaceDeparture } from "./spaces/space-departure.js";
+import { cspReportRoutes } from "./telemetry/csp-report.js";
+import { createExperiments } from "./telemetry/experiments.js";
+import { monitoringRoutes } from "./telemetry/monitoring.js";
+import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 
 /**
  * Native clients always send the app scheme, including in Expo Go, so no
@@ -257,6 +277,8 @@ type CreateAppOverrides = Partial<AppEnv> & {
   userDevices?: UserDeviceGateway;
   /** Test-only present moment the agent is told. */
   now?: () => Date;
+  /** Test-only web search and fetch. */
+  web?: WebProvider;
 };
 
 async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
@@ -279,10 +301,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runtime: runtimeOverride,
     contextStrategy,
     userDevices: userDevicesOverride,
+    web,
     now,
     ...envOverrides
   } = overrides;
-  const env = { ...loadEnv(process.env), ...envOverrides };
+  const env = withEnvOverrides(loadEnv(process.env), envOverrides);
   const runtimeEnv: RunRuntimeEnv = { ...env, inboundEmailDomain: env.inboundEmail?.domain };
   const logger = loggerOverride ?? createServiceLogger({ service: SERVICE_NAMES.api });
   installLogger(logger);
@@ -306,6 +329,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
   if (rowSecurity) logger.warn(rowSecurity);
+  const timeZone = await bestEffort("database time zone check", timeZoneWarning(prisma));
+  if (timeZone) logger.warn(timeZone);
   const weakEncryptionKey = encryptionKeyWarning(process.env);
   if (weakEncryptionKey) logger.warn(weakEncryptionKey);
   // Set once push delivery is configured below; thread changes before then have no cards.
@@ -321,12 +346,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         : new InMemoryRealtimeFanout()),
     (threadId) => workActivities?.threadChanged(threadId),
   );
-  const secrets = createSecretStore(env.encryptionKey, process.env, realtime);
+  // The queue is built from this client below; a secret written or dropped before then gets no
+  // backup.
+  let secretCleanupJobs: JobPublisher | undefined;
+  const secrets = withSecretWriteAhead(
+    createSecretStore(env.encryptionKey, process.env, realtime),
+    () => secretCleanupJobs,
+  );
   await secrets.start();
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
-  // The queue is built from this client below; a secret dropped before then gets no retry.
-  let secretCleanupJobs: JobPublisher | undefined;
   prisma = withSecretPersistence(prisma, secrets, () => secretCleanupJobs);
   installSecurityEventStore(prisma);
   installAuditEventStore(prisma);
@@ -378,29 +407,22 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     deploymentLabs: env.deploymentLabs,
   });
-  const hostComputer = sandboxProviderOptionsFromEnv();
   const sandbox: SandboxProvider =
     sandboxOverride ??
     (await createRunSandbox(env.sandboxProvider, {
-      ...hostComputer,
+      ...env.sandboxOptions,
       supervisorUrl: env.sandboxSupervisorUrl,
       supervisorToken: env.sandboxSupervisorToken,
-      e2bApiKey: env.e2bApiKey,
-      novitaApiKey: env.novitaApiKey,
-      sandboxTemplate: env.sandboxTemplate,
-      daytonaApiKey: env.daytonaApiKey,
-      daytonaApiUrl: env.daytonaApiUrl,
-      daytonaTarget: env.daytonaTarget,
-      boatApiKey: env.boatApiKey,
-      boatApiUrl: env.boatApiUrl,
       dataDir: env.dataDir,
       prisma,
       secrets,
       unreferencedMachines: machineCleanupRecords(jobs),
     }));
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets });
-  const home = createAgentHomeStore(env.dataDir, prisma);
+  const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets }, (ended) =>
+    recordSignInEnded(analytics, ended),
+  );
+  const home = createAgentHomeStore(env.dataDir, prisma, process.env, env.workspaceSaveLimits);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const memory = new MarkdownMemoryStore(prisma);
@@ -432,6 +454,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
+  // Our own product mail, behind the same switch as the welcome email. The worker sends it, and
+  // the local emulator lives in this process, so the emulator counts only in single-process mode.
+  const lifecycleEmailsEnabled =
+    env.welcomeEmailEnabled && Boolean(configuredEmail ?? (inMemoryJobs ? email : undefined));
   const botEmail: TransactionalEmailProvider | undefined =
     configuredBotEmailProvider({
       smtpUrl: env.botEmailSmtpUrl,
@@ -464,6 +490,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         analytics,
         experiments: createExperiments(env.experiments),
         partnerProgram,
+        scheduleLifecycleEmail: lifecycleEmailsEnabled
+          ? lifecycleEmailScheduler({
+              prisma,
+              jobs,
+              webOrigin: env.webOrigin,
+              origin: env.authUrl,
+              secret: env.authSecret,
+            })
+          : undefined,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -528,6 +563,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         onAccountChange: (change) => directoryChanges.getStore()?.push(change),
       })
     : undefined;
+  // Organizations an account being deleted joined, kept until it is gone to count their seats again.
+  const seatsAfterDeletion = new Map<string, string[]>();
   const auth = createAuth(prisma, {
     directoryProvisioning: Boolean(directory),
     analytics,
@@ -563,8 +600,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     extraOrigins: [...MOBILE_AUTH_ORIGINS, ...env.extraAuthOrigins],
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     beforeDeleteUser: async (userId) => {
-      // Billing cancels inside, after the account's spaces are claimed and before anything is
-      // destroyed, so a provider failure aborts deletion with the account as it was.
+      // Calendar cleanup and billing run under the Space claims, before content teardown.
       await deleteAccountContent(
         {
           prisma,
@@ -578,6 +614,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           secrets,
           events,
           billing,
+          meetings,
+          meetingCalendar,
         },
         userId,
       );
@@ -589,6 +627,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       await workActivities
         ?.endUser(userId)
         .catch((error) => getLogger().error("live status card removal failed", error));
+      if (billing) seatsAfterDeletion.set(userId, await joinedOrganizationIds(prisma, userId));
+    },
+    // Its memberships went with it, so the organizations it joined stop paying for its seat.
+    afterDeleteUser: async (userId) => {
+      const organizationIds = seatsAfterDeletion.get(userId) ?? [];
+      seatsAfterDeletion.delete(userId);
+      for (const organizationId of organizationIds)
+        await bestEffort(
+          "seat count after an account deletion",
+          billing?.syncSeats(organizationId),
+        );
     },
     // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {
@@ -639,12 +688,40 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
+  const { meeting: meetingProvider, calendar: calendarProvider } =
+    await configuredMeetingProviders();
+  const meetingMediaConfig = meetingProvider && configuredMeetingMedia();
+  const meetings = new MeetingService({
+    prisma,
+    jobs,
+    events,
+    provider: meetingProvider,
+    spaceIds: meetingProvider && configuredMeetingSpaces(meetingProvider),
+    buildJoin: meetingMediaConfig?.buildJoin,
+  });
+  const meetingCalendar =
+    calendarProvider &&
+    new MeetingCalendarService({
+      prisma,
+      jobs,
+      provider: calendarProvider,
+      webOrigin: env.webOrigin,
+      oauthStateKey: resolveMeetingSigningKey(),
+      enabled: (spaceId) => meetings.enabled(spaceId),
+      buildJoin: meetingMediaConfig?.buildJoin ?? ((input) => input),
+      publish: async ({ spaceId, userId }) => {
+        await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
+      },
+    });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
     runtimeEnv,
     connectors,
     {
       billingEnabled: modelCreditsEnabled,
       mediaGeneration,
+      meetingWork: meetingProvider && meetings.work.bind(meetings),
+      meetingCalendarSync:
+        meetingCalendar && (({ connectionId }) => meetingCalendar.sync(connectionId)),
       contextStrategy,
       prisma,
       runtime: baseRuntime,
@@ -661,6 +738,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       events,
       onTicketChange: ticketChanges,
       email: botEmail,
+      // Single-process mode answers the job here; otherwise the worker does.
+      lifecycleEmail:
+        email && lifecycleEmailsEnabled
+          ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
+          : undefined,
       messaging,
       isMessagingInstallationActive: messagingInstallations
         ? (id: string) => messagingInstallations.isActive(id)
@@ -671,10 +753,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         withHostComputerScreen(userDevices, {
           prisma,
           sandboxKind: env.sandboxProvider,
-          url: hostComputer.hostComputerUrl,
-          token: hostComputer.hostComputerToken,
+          url: env.sandboxOptions.hostComputerUrl,
+          token: env.sandboxOptions.hostComputerToken,
         }),
       paymentWallet,
+      web,
       stoppingSignal: shutdown.signal,
       shutdownSignal: runDrain.signal,
       now,
@@ -689,6 +772,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     ? createRunReconciler(
         {
           prisma,
+          secretStore: secrets,
           jobs,
           events,
           notifications,
@@ -748,7 +832,33 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     (error) => getLogger().error("stalled organization deletion failed", error),
   );
 
+  // Meeting requests use a runtime with no persistent session recording.
+  const meetingRuntime = new PiAgentRuntime();
+  const meetingMedia =
+    meetingMediaConfig &&
+    meetingProvider &&
+    (await import("./meetings/media/app-meeting-media.js")).appMeetingMedia({
+      prisma,
+      secrets,
+      env,
+      runtime: meetingRuntime,
+      resolveModel: executor.resolveModel,
+      config: meetingMediaConfig,
+      billingEnabled: modelCreditsEnabled,
+      providerId: meetingProvider.describe().id,
+      enabled: (spaceId) => meetings.enabled(spaceId),
+    });
+
   const router = createRouter({
+    meetings,
+    meetingCalendar,
+    meetingAnswers: createMeetingAnswers({
+      prisma,
+      runtime: meetingRuntime,
+      resolveModel: executor.resolveModel,
+      offline: meetingProvider?.describe().capabilities.offline === true,
+      billingEnabled: modelCreditsEnabled,
+    }),
     speechSummary:
       env.voiceSummaryMinChars === undefined
         ? undefined
@@ -785,7 +895,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     integrationSettings,
     mcpOAuth,
     mcp,
-    composio: stack.composio,
     connectors: stack.connector,
     remoteConnectors,
     modelConnectionFetch,
@@ -801,16 +910,16 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     messaging: {
       enabled: Boolean(messaging),
       providers: messaging?.platforms().map((platform) => platform.provider) ?? [],
-      addresses: Object.fromEntries(
-        (messaging?.platforms() ?? []).flatMap((platform) =>
-          platform.address ? [[platform.provider, platform.address]] : [],
-        ),
-      ),
+      get addresses() {
+        return messagingAddresses(messaging?.platforms() ?? []);
+      },
+      resolveAddresses: messaging?.resolveAddresses?.bind(messaging),
       openSignup: env.messagingOpenSignup,
     },
     env: {
       inboundEmailDomain: env.inboundEmail?.domain,
       deploymentLabs: env.deploymentLabs,
+      deploymentVoice: env.deploymentVoice,
       phoneCallsEnabled: env.phoneCallsEnabled,
       phoneCallRingSeconds: env.phoneCallRingSeconds,
       navLinks: env.navLinks,
@@ -827,6 +936,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       webOrigin: env.webOrigin,
       privacyPolicyUrl: env.privacyPolicyUrl,
       screenProxySecret: env.screenProxySecret,
+      invitationRecipientKey: createHmac("sha256", env.authSecret)
+        .update("organization-invitation-recipient")
+        .digest("hex"),
       sandboxProvider: env.sandboxProvider,
       gitSha: env.gitSha,
       integrationsCatalogUrl: env.integrationsCatalogUrl,
@@ -909,6 +1021,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       passkeyRpId: auth.passkeyRpId,
       nativePasskeys: nativePasskeys(env, auth.passkeyRpId),
       crispWebsiteId: billing ? (env.crispWebsiteId ?? null) : null,
+      demoAccount: env.demoAccount ?? null,
     } satisfies AuthCapabilities);
   });
   mountAppAssociation(app, env);
@@ -968,8 +1081,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
             pushTokens,
             devices: deviceSessions,
             events,
+            meetingCalendar,
             afterDeparture: (actor, departure) =>
-              afterSpaceDeparture({ prisma, sandbox, jobs, events }, actor, departure),
+              afterSpaceDeparture(
+                { prisma, sandbox, jobs, events, meetings, meetingCalendar },
+                actor,
+                departure,
+              ),
           },
           change,
         ).catch((error) => {
@@ -1110,6 +1228,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     sessionActor,
   );
+  if (meetingProvider) mountMeetingWebhook(app, meetings);
+  meetingMedia?.mount(app);
+  if (meetingCalendar) mountMeetingCalendarHttp(app, meetingCalendar, sessionActor);
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   if (env.inboundEmail) {
     mountEmailInboundRoute(app, {

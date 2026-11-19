@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   closeUnterminatedFence,
@@ -36,6 +37,7 @@ function linkHrefs(text: string) {
     .map((token) => token.attrGet("href"));
 }
 
+/** The input is sized so a backtracking pattern takes far longer, so a slow runner never trips the limit. */
 describe("linkifyExplicitUrls", () => {
   it("links bare http(s) URLs and email addresses", () => {
     expect(
@@ -69,6 +71,15 @@ describe("plainTextLinkParts", () => {
       true,
     );
     expect(visible(text)).toBe(text);
+  });
+
+  it("reads escaped page titles and stays fast on unclosed brackets", () => {
+    expect(plainTextLinkParts(String.raw`[A \[draft\]](page:p1) after`)).toEqual([
+      { type: "page", value: "A [draft]", pageId: "p1" },
+      { type: "text", value: " after" },
+    ]);
+    const text = `[${String.raw`\[`.repeat(100_000)}`;
+    expectLinearTime(() => expect(visible(text)).toBe(text));
   });
 
   it("leaves file names, bare domains, and unopenable schemes as text", () => {
@@ -119,11 +130,10 @@ describe("plainTextLinkParts", () => {
   });
 
   it("scans a long alphanumeric run without an at-sign quickly", () => {
-    const text = "a".repeat(40_000);
-    const started = performance.now();
-    const parts = plainTextLinkParts(text);
-    expect(performance.now() - started).toBeLessThan(250);
-    expect(parts).toEqual([{ type: "text", value: text }]);
+    const text = "a".repeat(400_000);
+    expectLinearTime(() =>
+      expect(plainTextLinkParts(text)).toEqual([{ type: "text", value: text }]),
+    );
   });
 });
 
