@@ -174,7 +174,7 @@ export const computerTools: ConnectorTool[] = [
   },
   {
     name: "list_files",
-    description: "List directory entries. Use shared/ or bots/ to browse the Team root.",
+    description: "List entries. On a Team Computer, shared/ and bots/ are at the root.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: LIST_FILES_PATH_GUIDANCE } },
