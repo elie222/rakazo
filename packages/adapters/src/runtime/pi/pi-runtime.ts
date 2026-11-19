@@ -859,6 +859,7 @@ export class PiAgentRuntime implements AgentRuntime {
         let currentMessageStreamed = "";
         let toolCalls = 0;
         let toolActivityShowing = false;
+        const runningToolCalls = new Set<string>();
         let silentToolContinuations = 0;
         // A reply cut off by a dropped connection continues in the same bubble: no turn break,
         // and a continuation that starts by repeating the end of the cut text loses that repeat.
@@ -897,6 +898,15 @@ export class PiAgentRuntime implements AgentRuntime {
               timestamp: Date.now(),
             });
           }
+          if (
+            event.type === "tool_execution_end" &&
+            runningToolCalls.delete(event.toolCallId) &&
+            !runningToolCalls.size &&
+            toolActivityShowing
+          ) {
+            toolActivityShowing = false;
+            queue.push({ type: "progress", text: "", activity: true });
+          }
           if (event.type === "message_end") {
             stopThinking();
             // Before any copy is kept: the recording below, and the checkpoint and provider
@@ -909,6 +919,7 @@ export class PiAgentRuntime implements AgentRuntime {
             finishedCalls.delete(event.toolCallId);
             if (host.toolCallBudget.exceeded) return;
             toolCalls += 1;
+            runningToolCalls.add(event.toolCallId);
             // Live activity feedback: without this the thread shows a bare
             // "working…" for the whole tool call with nothing actionable.
             toolActivityShowing = true;
