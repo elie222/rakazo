@@ -91,7 +91,8 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
         typeof answer.confidence !== "number" ||
         answer.confidence < (this.options.minConfidence ?? autoReviewMinConfidence())
       )
-        return { decision: "ask", model, reason: "Checker is unsure." };
+        // An unsure checker asks like any other ask: a reason saying so tells the person nothing.
+        return { decision: "ask", model };
       return { decision: "pass", model };
     } catch (error) {
       const reason =

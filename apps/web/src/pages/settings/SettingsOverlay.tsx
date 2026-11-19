@@ -37,7 +37,8 @@ import { BillingSettingsPanel } from "./BillingSettingsPanel";
 import { LabsSettingsPanel } from "./LabsSettingsPanel";
 import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
-import { OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
+import type { OrganizationPage } from "./OrganizationSettingsPanel";
+import { OrganizationOptionsMenu, OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 import { PaymentWalletSettingsPanel } from "./PaymentWalletSettingsPanel";
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
@@ -125,6 +126,7 @@ export function SettingsOverlay({
   const usageRef = useRef<HTMLDivElement>(null);
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [organizationPage, setOrganizationPage] = useState<OrganizationPage>("main");
   // A new object holds the hint for another four seconds; null lets it go.
   const [recoveryHold, setRecoveryHold] = useState<object | null>(null);
   const keepComputerRecovery = recoveryHold !== null;
@@ -156,6 +158,10 @@ export function SettingsOverlay({
   useEffect(() => {
     if (section !== "computer") releaseComputerRecovery();
   }, [section, releaseComputerRecovery]);
+
+  useEffect(() => {
+    if (section !== "organization") setOrganizationPage("main");
+  }, [section]);
 
   useEffect(() => {
     if (section === "usage") usageRef.current?.focus();
@@ -351,13 +357,18 @@ export function SettingsOverlay({
                   ) : null}
                 </div>
               </div>
-              <DialogClose
-                aria-label={closeLabel}
-                disabled={panelBusy}
-                render={<Button variant="ghost" size="icon-sm" />}
-              >
-                <XIcon />
-              </DialogClose>
+              <div className="flex shrink-0 items-center gap-1">
+                {section === "organization" && organizationPage === "main" ? (
+                  <OrganizationOptionsMenu onActivityLog={() => setOrganizationPage("log")} />
+                ) : null}
+                <DialogClose
+                  aria-label={closeLabel}
+                  disabled={panelBusy}
+                  render={<Button variant="ghost" size="icon-sm" />}
+                >
+                  <XIcon />
+                </DialogClose>
+              </div>
             </div>
 
             <SpaceRpcProvider spaceId={spaceId}>
@@ -429,7 +440,11 @@ export function SettingsOverlay({
                     />
                   ) : null}
                   {section === "organization" ? (
-                    <OrganizationSettingsPanel onBusyChange={setVoiceBusy} />
+                    <OrganizationSettingsPanel
+                      page={organizationPage}
+                      onPageChange={setOrganizationPage}
+                      onBusyChange={setVoiceBusy}
+                    />
                   ) : null}
                   {section === "confirmations" ? <ApprovalRulesSettings scope="account" /> : null}
                   {section === "vault" ? <VaultSettings scope="account" /> : null}

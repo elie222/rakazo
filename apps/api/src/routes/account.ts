@@ -5,6 +5,7 @@ import {
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
   loadUserIncomingCalls,
+  meetingCalendarScope,
   PushSessionEndedError,
   settleCallRequest,
   validateCreditOfferingChoice,
@@ -26,7 +27,8 @@ import {
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
-  auditLogOrganization,
+  auditLogAccess,
+  auditLogScope,
   commitBotUpdate,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
@@ -302,10 +304,10 @@ export function accountRoutes(ctx: RouterContext) {
     },
     audit: {
       events: authed.audit.events.handler(async ({ context, input }) => {
-        const organizationId = await auditLogOrganization(deps.prisma, context.actor);
-        if (!organizationId) throw new ORPCError("FORBIDDEN");
+        const access = await auditLogAccess(deps.prisma, context.actor);
+        if (!access) throw new ORPCError("FORBIDDEN");
         return runAsSystem("read the organization's audit log", () =>
-          listAuditEvents(deps.prisma, organizationId, input),
+          listAuditEvents(deps.prisma, access.organizationId, auditLogScope(access, input)),
         );
       }),
     },
@@ -409,14 +411,17 @@ export function accountRoutes(ctx: RouterContext) {
         };
         const spaceChanges = async function* (
           signal: AbortSignal,
+          calendar = false,
         ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
-          if (!followSpaceChanges) return;
+          if (!followSpaceChanges || (calendar && !deps.meetingCalendar)) return;
+          const scope = calendar ? meetingCalendarScope(spaceId, userId) : spaceId;
           // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
           // failure costs one reconnect every half minute rather than a tight loop.
           try {
-            for await (const spaceChange of followSpaceChanges(spaceId, signal))
-              yield { spaceChange };
+            for await (const spaceChange of followSpaceChanges(scope, signal)) {
+              if ((spaceChange === "meetingCalendar") === calendar) yield { spaceChange };
+            }
           } catch (error) {
             await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
             throw error;
@@ -439,6 +444,7 @@ export function accountRoutes(ctx: RouterContext) {
             followChatAlerts(userId, spaceId, signal),
             rosterChanges(signal),
             spaceChanges(signal),
+            spaceChanges(signal, true),
             organizationChanges(signal),
           ),
         );

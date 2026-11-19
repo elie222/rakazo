@@ -308,6 +308,7 @@ export class DesktopUpdateController {
   private downloadPromise: Promise<DesktopUpdateState> | null = null;
   private checkWasRequested = false;
   private installStarted = false;
+  private readonly listeners = new Set<(state: DesktopUpdateState) => void>();
 
   constructor(
     private readonly environment: UpdaterEnvironment,
@@ -321,6 +322,20 @@ export class DesktopUpdateController {
 
   state() {
     return this.current;
+  }
+
+  /** Calls `listener` after every state change, including download progress. */
+  subscribe(listener: (state: DesktopUpdateState) => void) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private set(next: DesktopUpdateState) {
+    if (next === this.current) return;
+    this.current = next;
+    for (const listener of this.listeners) listener(next);
   }
 
   private push(event: UpdaterEvent) {
@@ -337,7 +352,7 @@ export class DesktopUpdateController {
     ) {
       this.lastCheckWasOffline = false;
     }
-    this.current = reduceUpdateState(this.current, event, this.clock.iso());
+    this.set(reduceUpdateState(this.current, event, this.clock.iso()));
     if (event.type === "not-available" || event.type === "downloaded" || event.type === "failed") {
       this.checkWasRequested = false;
     }
@@ -446,13 +461,13 @@ export class DesktopUpdateController {
     this.checkWasRequested = userInitiated;
     // A prior empty feed freezes automatic checks; a manual retry clears that freeze.
     if (this.current.phase === "unsupported" && checkOptions.environmentSupportsUpdates) {
-      this.current = {
+      this.set({
         ...this.current,
         phase: "idle",
         availableVersion: null,
         percent: null,
         message: null,
-      };
+      });
       // Do not make the user wait out the launch-check interval to retry.
       this.lastCheck = 0;
     }
@@ -516,7 +531,7 @@ export class DesktopUpdateController {
       return this.current;
     }
     this.installStarted = true;
-    this.current = { ...this.current, message: null };
+    this.set({ ...this.current, message: null });
     try {
       updater.quitAndInstall();
     } catch (error) {

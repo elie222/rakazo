@@ -623,6 +623,8 @@ export interface AgentRunModel {
   gatewayId?: string;
   projectId?: string;
   region?: string;
+  /** Route only to endpoints that keep no prompts or replies, where the provider offers it. */
+  zeroDataRetention?: boolean;
   baseUrl?: string;
   apiProtocol?: ModelApiProtocol;
   headers?: Record<string, string>;
@@ -1065,6 +1067,7 @@ export interface BackgroundJobPayloads {
   "team_chat.ambient": { conversationId: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  "meeting.calendar-sync": { connectionId: string };
   "meeting.work": {
     sessionId: string;
     action:

@@ -97,6 +97,7 @@ const payloadSchemas = {
   "team_chat.engage": z.object({ externalMessageId: z.string().min(1) }),
   "team_chat.ambient": z.object({ conversationId: z.string().min(1) }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
+  "meeting.calendar-sync": z.object({ connectionId: z.string().min(1) }),
   "meeting.work": z.object({
     sessionId: z.string().min(1),
     action: z.enum([

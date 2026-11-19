@@ -73,6 +73,22 @@ describe("resolveVoiceKey", () => {
     );
   });
 
+  it("refuses a model connection the deployment allowlist leaves out", async () => {
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
+    try {
+      const { prisma, deps: d } = deps({
+        credentials: [credential("new", 2_000)],
+        secrets: { "secret-new": "xai-new-model-key" },
+      });
+      await expect(
+        resolveVoiceKey(d, scope, "xai", MODEL_CONNECTION_VOICE_SECRET),
+      ).rejects.toBeInstanceOf(VoiceAccountError);
+      expect(prisma.secret.findFirst).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   // A due refresh takes a Postgres advisory lock and calls the provider, so only a current
   // sign-in is covered here.
   it("uses the access token of a current Grok sign-in", async () => {

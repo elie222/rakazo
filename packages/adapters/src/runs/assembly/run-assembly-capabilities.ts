@@ -582,7 +582,10 @@ export async function resolveRunCapabilities(
       userComputer = "connected";
       userComputerShell = !device.screenOnly;
       // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
-      userComputerScreen = device.platform === "darwin" || device.platform === "win32";
+      const computers = await deps.userDevices.list(userComputerOwnerId);
+      userComputerScreen = [device, ...computers.filter((computer) => computer.connected)].some(
+        (computer) => computer.platform === "darwin" || computer.platform === "win32",
+      );
     } else userComputer = "offline";
   }
   const cloudAgent = await cloudAgentPromise;
@@ -644,6 +647,7 @@ export async function selectRunTools(
     connected: ConnectedRun;
     turnContext: TurnContext;
     capabilities: RunCapabilities;
+    meetingTranscriptsAvailable?: boolean;
   },
 ) {
   const { contextStrategy, mediaGeneration, paidServices } = services;
@@ -718,6 +722,7 @@ export async function selectRunTools(
           }),
         ),
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
       graphicalToolsAllowed,
       pageBrowserAllowed,
       groupId: conversationThread.groupId,

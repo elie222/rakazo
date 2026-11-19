@@ -118,6 +118,7 @@ export function createBackgroundJobHandlers(deps: {
   mediaGeneration?: MediaGenerationProvider;
   maxUploadSizeBytes?: number;
   /** Sends a lifecycle mail; absent where account mail is not configured, and the job is dropped. */
+  meetingCalendarSync?: (job: BackgroundJobPayloads["meeting.calendar-sync"]) => Promise<void>;
   meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
   lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
 }): BackgroundJobHandlers {
@@ -282,6 +283,10 @@ export function createBackgroundJobHandlers(deps: {
         payload,
       );
     }),
+    "meeting.calendar-sync": async (payload) => {
+      if (!deps.meetingCalendarSync) throw new RetryJobLaterError(60_000);
+      await deps.meetingCalendarSync(payload);
+    },
     "meeting.work": async (payload) => {
       if (!deps.meetingWork) throw new RetryJobLaterError(60_000);
       await deps.meetingWork(payload);

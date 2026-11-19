@@ -106,7 +106,7 @@ export class RecallMeetingProvider implements MeetingProvider {
       id: "recall",
       contractVersion: "1",
       adapterVersion: "1",
-      capabilities: { platforms: ["zoom", "google_meet"] as const },
+      capabilities: { platforms: ["zoom", "google_meet", "microsoft_teams"] as const },
     };
   }
 

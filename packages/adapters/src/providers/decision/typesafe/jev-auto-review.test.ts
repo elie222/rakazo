@@ -140,7 +140,6 @@ describe("JevAutoReviewProvider", () => {
     });
     await expect(provider.review(request, context)).resolves.toEqual({
       decision: "ask",
-      reason: "Checker is unsure.",
       model: "jev/jev-latest",
     });
   });
@@ -157,7 +156,6 @@ describe("JevAutoReviewProvider", () => {
     });
     await expect(provider.review(request, context)).resolves.toEqual({
       decision: "ask",
-      reason: "Checker is unsure.",
       model: "jev/jev-latest",
     });
   });

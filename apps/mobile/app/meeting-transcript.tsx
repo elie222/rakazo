@@ -1,10 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
-import { useMeetingQuestion } from "@rakazo/chat-ui/hooks";
 import { transcriptTime } from "@rakazo/i18n/meeting";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, View } from "react-native";
-import { NativeActionButton } from "../components/native/native-action-button";
-import { SettingsGroup, SettingsInputRow } from "../components/settings/settings-group";
+import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
@@ -20,7 +18,6 @@ export default function MeetingTranscriptScreen() {
   const { botId = "", id = "" } = useLocalSearchParams<{ botId?: string; id?: string }>();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const question = useMeetingQuestion();
   const read = formRead(rpcQuery("meetings/transcript", { id }));
   const list = rpcQuery("meetings/list", { botId });
   const transcript = useScreenQuery(read, { enabled: Boolean(id) });
@@ -31,9 +28,9 @@ export default function MeetingTranscriptScreen() {
     focused && Boolean(id),
   );
 
-  const ask = useSave({
-    save: (question: string, send) => send("meetings/ask", { id, question }),
-    onSaved: question.onAnswered,
+  const sharing = useSave({
+    save: (_, send) => send("meetings/shareTranscript", { id }),
+    stale: [read.queryKey],
   });
   const removal = useSave({
     save: (_, send) => send("meetings/deleteTranscript", { id }),
@@ -58,19 +55,16 @@ export default function MeetingTranscriptScreen() {
           prominence: "destructive",
           onPress: confirmDelete,
           busy: removal.pending,
-          disabled: ask.pending,
+          disabled: sharing.pending,
         }
       : null,
   });
-  const submit = () => question.submit(ask.run, ask.pending || removal.pending);
-  const error = transcript.error ?? ask.error ?? removal.error;
+  const error = transcript.error ?? removal.error;
   return (
     <FlatList
       style={[styles.screen, sideInsets]}
       contentContainerStyle={styles.content}
       contentInsetAdjustmentBehavior="automatic"
-      automaticallyAdjustKeyboardInsets
-      keyboardShouldPersistTaps="handled"
       data={turns}
       keyExtractor={(turn, index) => `${turn.startMs}:${index}`}
       renderItem={({ item }) => (
@@ -86,38 +80,7 @@ export default function MeetingTranscriptScreen() {
       )}
       ListHeaderComponent={
         <View style={styles.actions}>
-          {turns ? (
-            <>
-              <SettingsGroup label={t`Ask about this meeting`}>
-                <SettingsInputRow
-                  accessibilityLabel={t`Ask about this meeting`}
-                  placeholder={t`Type a question`}
-                  returnKeyType="send"
-                  editable={!ask.pending && !removal.pending}
-                  value={question.draft}
-                  onChangeText={(value) => {
-                    ask.reset();
-                    question.setDraft(value);
-                  }}
-                  onSubmitEditing={submit}
-                />
-              </SettingsGroup>
-              <NativeActionButton
-                label={t`Ask`}
-                busy={ask.pending}
-                disabled={removal.pending || !question.canAsk}
-                onPress={submit}
-              />
-              {question.exchange ? (
-                <View accessibilityLiveRegion="polite" style={styles.answer}>
-                  <Text style={styles.speaker}>{question.exchange.question}</Text>
-                  <Text selectable style={styles.body}>
-                    {question.exchange.answer}
-                  </Text>
-                </View>
-              ) : null}
-            </>
-          ) : transcript.isFetching ? (
+          {!turns && transcript.isFetching ? (
             <ActivityIndicator accessibilityLabel={t`Loading transcript…`} />
           ) : null}
           {error ? (
@@ -126,6 +89,24 @@ export default function MeetingTranscriptScreen() {
             </Text>
           ) : null}
         </View>
+      }
+      ListFooterComponent={
+        transcript.data?.artifactAvailable === false ? (
+          <View>
+            <SettingsGroup>
+              <SettingsRow
+                title={t`Share transcript with Space`}
+                disabled={sharing.pending || removal.pending}
+                onPress={() => sharing.run()}
+              />
+            </SettingsGroup>
+            {sharing.error ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {errorText(sharing.error, t`Could not share transcript`)}
+              </Text>
+            ) : null}
+          </View>
+        ) : undefined
       }
     />
   );
@@ -141,7 +122,6 @@ function createStyles() {
     time: { color: native.secondaryLabel, fontVariant: ["tabular-nums"] },
     speaker: { color: native.label, fontWeight: "600" },
     body: { color: native.label, fontSize: 16, lineHeight: 23 },
-    answer: { gap: 4, borderRadius: 12, padding: 12, backgroundColor: native.groupedCell },
     error: { color: mobileTokens().destructive },
   });
 }

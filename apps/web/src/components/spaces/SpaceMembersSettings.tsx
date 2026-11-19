@@ -298,6 +298,7 @@ export function SpaceMembersSettings({
         >
           <div className="flex gap-2">
             <Input
+              size="lg"
               type="email"
               required
               autoFocus

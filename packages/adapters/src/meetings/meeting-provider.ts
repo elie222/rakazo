@@ -1,39 +1,29 @@
-import type { MeetingProvider } from "@rakazo/adapter-kit";
+import type { MeetingCalendarProvider, MeetingProvider } from "@rakazo/adapter-kit";
 
-export async function configuredMeetingProvider(
-  source = process.env,
-): Promise<MeetingProvider | undefined> {
+/** Select transports here; meeting and calendar services receive only their interfaces. */
+export async function configuredMeetingProviders(source = process.env): Promise<{
+  meeting?: MeetingProvider;
+  calendar?: MeetingCalendarProvider;
+}> {
   const provider = source.MEETING_PROVIDER?.trim();
-  if (!provider) return;
+  if (!provider) return {};
   if (provider === "emulator") {
     if (source.NODE_ENV === "production") throw new Error("The meeting emulator is for local use");
-    const { MeetingEmulator } = await import("../providers/meeting/emulator/meeting-emulator.js");
-    return new MeetingEmulator();
+    const [{ MeetingEmulator }, { RecallCalendarEmulator }] = await Promise.all([
+      import("../providers/meeting/emulator/meeting-emulator.js"),
+      import("../providers/meeting/recall/calendar-emulator.js"),
+    ]);
+    return { meeting: new MeetingEmulator(), calendar: new RecallCalendarEmulator().provider };
   }
   if (provider !== "recall") throw new Error("Unknown meeting provider");
-  const { RecallMeetingProvider } = await import("../providers/meeting/recall/recall-meeting.js");
-  const apiKey = source.MEETING_API_KEY?.trim();
-  const secret = source.MEETING_WEBHOOK_SECRET?.trim();
-  const region = source.MEETING_REGION?.trim();
-  const prefix = source.MEETING_WEBHOOK_SIGNATURE?.trim() || "webhook";
-  if (
-    !apiKey ||
-    !secret?.startsWith("whsec_") ||
-    !region ||
-    !["us-east-1", "us-west-2", "eu-central-1", "ap-northeast-1"].includes(region) ||
-    (prefix !== "webhook" && prefix !== "svix")
-  ) {
-    throw new Error("The meeting provider needs a region, API key, and webhook signing secret");
-  }
-  return new RecallMeetingProvider({
-    origin: `https://${region}.recall.ai`,
-    apiKey,
-    verification: { secret, prefix },
-  });
+  const { configuredRecallMeeting } = await import("../providers/meeting/recall/configuration.js");
+  return configuredRecallMeeting(source);
 }
 
 export function configuredMeetingSpaces(provider: MeetingProvider, source = process.env) {
-  if (provider.describe().capabilities.offline) return undefined;
+  if (provider.describe().capabilities.offline || source.MEETING_SPACE_IDS?.trim() === "*") {
+    return undefined;
+  }
   return new Set(
     source.MEETING_SPACE_IDS?.split(",")
       .map((id) => id.trim())

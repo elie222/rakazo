@@ -165,7 +165,28 @@ describe("screenIframeSandbox", () => {
     expect(screenIframeSandbox("http://127.0.0.1:5173/novnc/vnc.html")).toBe(
       "allow-scripts allow-pointer-lock",
     );
-    expect(screenIframeSandbox("http://127.0.0.1:5173/vnc.html")).toBeUndefined();
+    expect(screenIframeSandbox("http://127.0.0.1:5173/vnc.html")).toBe(
+      "allow-scripts allow-same-origin allow-pointer-lock",
+    );
+    expect(isProxiedScreenUrl("http://127.0.0.1:5173/vnc.html")).toBe(false);
+  });
+});
+
+describe("same-origin screens", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("refuses a provider URL on this page's origin that the proxy does not serve", () => {
+    vi.stubGlobal("window", { location: { href: "https://app.example/chat" } });
+    expect(embeddableScreenUrl("https://app.example/somewhere-else")).toBeNull();
+  });
+
+  it("still serves the proxied path from this page's origin", () => {
+    vi.stubGlobal("window", { location: { href: "https://app.example/chat" } });
+    expect(embeddableScreenUrl("https://app.example/novnc/session/view/1.x/vnc.html")).toBe(
+      "https://app.example/novnc/session/view/1.x/vnc.html",
+    );
   });
 });
 

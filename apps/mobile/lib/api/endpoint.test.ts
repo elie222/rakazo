@@ -4,6 +4,7 @@ import {
   apiBaseWarning,
   defaultApiBase,
   displayApiHost,
+  displaySavedServer,
   MAX_API_PROBE_RESPONSE_BYTES,
   normalizeApiBase,
   probeApiBase,
@@ -73,6 +74,12 @@ describe("display and warnings", () => {
   it("shows host and non-default port", () => {
     expect(displayApiHost("https://rakazo.example.com")).toBe("rakazo.example.com");
     expect(displayApiHost("http://10.0.0.8:3100")).toBe("10.0.0.8:3100");
+  });
+
+  it("keeps http visible on a saved server so it differs from its https twin", () => {
+    expect(displaySavedServer("https://10.0.0.8")).toBe("10.0.0.8");
+    expect(displaySavedServer("http://10.0.0.8")).toBe("http://10.0.0.8");
+    expect(displaySavedServer("http://10.0.0.8:3100")).toBe("http://10.0.0.8:3100");
   });
 
   it("warns on public http but not LAN or loopback", () => {
