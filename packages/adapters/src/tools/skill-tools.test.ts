@@ -223,7 +223,16 @@ describe("skill tools", () => {
     expect(prisma.agentSkill.findFirst).toHaveBeenCalledTimes(1);
     expect(prisma.agentSkill.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: "plugin-1", userId: owner.userId }),
+        where: {
+          id: "plugin-1",
+          name: "billing",
+          userId: owner.userId,
+          OR: [
+            { spaceId: owner.spaceId },
+            { allSpaces: true },
+            { availableIn: { some: { spaceId: owner.spaceId } } },
+          ],
+        },
       }),
     );
     expect(
