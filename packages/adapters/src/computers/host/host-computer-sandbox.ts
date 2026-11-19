@@ -12,6 +12,7 @@ import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { describeDesktopSandbox } from "../../providers/computer/desktop/desktop-sandbox.js";
 import { shouldSkipPortableWorkspaceFile } from "../../storage/workspace-save-policy.js";
+import { WorkspaceDirectoryError } from "../screens/computer-support.js";
 import type {
   HostComputerEnvironment,
   HostComputerFrame,
@@ -80,6 +81,7 @@ export class HostComputerSandbox implements SandboxProvider {
           const frame = JSON.parse(pending.slice(0, newline)) as HostComputerFrame<T>;
           pending = pending.slice(newline + 1);
           if ("error" in frame) {
+            if (frame.code === "workspace_directory") throw new WorkspaceDirectoryError();
             const maxBytes = hostComputerFileTooLargeLimit(frame.error);
             throw maxBytes === undefined
               ? new Error(frame.error)

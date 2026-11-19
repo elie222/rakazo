@@ -875,14 +875,21 @@ export class WuyingSandboxProvider implements SandboxProvider {
   ): Promise<ComputerFileEntry[]> {
     let relative: string;
     try {
-      relative = normalizeDesktopWorkspacePath(directory === "." ? "" : directory, "win32");
+      relative = normalizeDesktopWorkspacePath(directory, "win32");
     } catch (error) {
       if (error instanceof WorkspacePathError) throw new WorkspaceDirectoryError(error.message);
       throw error;
     }
     const target = await this.target(computer, relative, context.signal);
     const executables = await this.executables(computer, context.signal);
-    return (await this.list(target, context.signal)).flatMap((entry) => {
+    const entries = await this.list(target, context.signal).catch(async (error: unknown) => {
+      if (relative && error instanceof WuyingToolError && error.code === "not_found") {
+        const home = await this.home(computer.botId, context.signal);
+        if (await this.exists(home, context.signal)) throw new WorkspaceDirectoryError();
+      }
+      throw error;
+    });
+    return entries.flatMap((entry) => {
       if (!relative && entry.name === EXECUTABLES_FILE) return [];
       const path = relative ? `${relative}/${entry.name}` : entry.name;
       return [

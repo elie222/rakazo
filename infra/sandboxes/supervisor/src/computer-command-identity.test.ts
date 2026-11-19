@@ -1,6 +1,7 @@
 import { Duplex, Readable, Writable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { deferred } from "@rakazo/core/test-async";
+import { getLogger } from "@rakazo/logging";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computerCommandEnv } from "./supervisor-logic.js";
 
@@ -163,6 +164,7 @@ describe("computer command identity", () => {
     [44, 422],
     [137, 502],
   ])("maps directory listing exit %i to HTTP %i", async (code, status) => {
+    using warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
     mock.exitCode = () => code;
     const response = await supervisorApp.request("/computers/computer-files/files?mode=list", {
       headers: {
@@ -172,6 +174,18 @@ describe("computer command identity", () => {
       },
     });
     expect(response.status).toBe(status);
+    if (code === 137) {
+      expect(warn).toHaveBeenCalledWith(
+        "computer file listing failed",
+        expect.objectContaining({
+          "computer.id": "computer-files",
+          "process.exit.code": 137,
+        }),
+      );
+      expect(await response.json()).toEqual({ error: "computer file listing failed" });
+    } else {
+      expect(warn).not.toHaveBeenCalledWith("computer file listing failed", expect.anything());
+    }
   });
 
   it("writes uploaded files as the container's user", async () => {

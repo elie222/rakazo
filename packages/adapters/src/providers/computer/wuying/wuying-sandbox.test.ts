@@ -63,6 +63,30 @@ describe("WuyingSandboxProvider", () => {
     );
     expect(desktop.calls).toHaveLength(calls);
 
+    await expect(provider.listFiles(computer, "missing", ctx)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
+    await expect(provider.listFiles(computer, "note.txt", ctx)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
+    const missingHome = { ...computer, botId: "unprovisioned" };
+    await expect(provider.listFiles(missingHome, "notes", ctx)).rejects.toMatchObject({
+      name: "WuyingToolError",
+      code: "not_found",
+    });
+
+    await provider.writeFile(
+      computer,
+      { path: "notes/result.txt", content: Uint8Array.of(2) },
+      ctx,
+    );
+    const notes = await provider.listFiles(computer, "notes", ctx);
+    for (const directory of ["./notes", ".\\notes", "notes/."]) {
+      expect(await provider.listFiles(computer, directory, ctx)).toEqual(notes);
+    }
+    await expect(provider.listFiles(computer, "notes.", ctx)).rejects.toThrow(
+      WorkspaceDirectoryError,
+    );
     const root = await provider.listFiles(computer, "", ctx);
     expect(root).toContainEqual({ path: "note.txt", kind: "file", size: 1 });
     expect(await provider.listFiles(computer, ".", ctx)).toEqual(root);

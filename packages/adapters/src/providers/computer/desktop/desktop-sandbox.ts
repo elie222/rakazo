@@ -372,7 +372,11 @@ export class DesktopSandboxProvider implements SandboxProvider {
         // A link that dangles or leaves the workspace is skipped, as in walkDesktopWorkspace.
         const child = await localWorkspaceTarget(box.home, childPath, true).catch(() => null);
         if (!child) return null;
-        const info = await stat(child);
+        const info = await stat(child).catch((error: unknown) => {
+          if (hasErrorCode(error, "ENOENT") || hasErrorCode(error, "ENOTDIR")) return null;
+          throw error;
+        });
+        if (!info) return null;
         return {
           path: normalizeWorkspacePath(childPath),
           kind: info.isDirectory() ? ("dir" as const) : ("file" as const),
