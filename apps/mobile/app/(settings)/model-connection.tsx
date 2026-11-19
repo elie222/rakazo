@@ -108,13 +108,13 @@ export default function ModelConnection() {
   const credential = credentials.find((entry) => entry.id === credentialId);
   const focused = useIsFocused();
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const endpointPreset =
-    provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? matchCompatibleEndpointPreset(
-          compatibleEndpointPresets(catalog),
-          request?.baseUrl ?? credential?.baseUrl,
-        )
-      : undefined;
+  const endpointPresets = isOpenAiCompatible ? compatibleEndpointPresets(catalog) : [];
+  const endpointPreset = matchCompatibleEndpointPreset(
+    endpointPresets,
+    request?.baseUrl ?? credential?.baseUrl,
+  );
+  const matchedEndpoint = matchCompatibleEndpointPreset(endpointPresets, baseUrl);
+  const compatibleKeyRequired = Boolean(matchedEndpoint);
   const {
     discoverModels,
     modelProbe,
@@ -124,7 +124,7 @@ export default function ModelConnection() {
     resetOpenAiCompatibleProbe,
   } = useCompatibleModelDiscovery(
     focused && isOpenAiCompatible
-      ? { baseUrl, apiKey, apiProtocol, headerRows, preset: endpointPreset, credential }
+      ? { baseUrl, apiKey, apiProtocol, headerRows, preset: matchedEndpoint, credential }
       : null,
     {
       request: (input) =>
@@ -312,7 +312,7 @@ export default function ModelConnection() {
     modelId,
     headerRows,
     credential,
-    keyRequired: Boolean(endpointPreset),
+    keyRequired: compatibleKeyRequired,
   });
   const retentionDirty =
     selected !== undefined && dataRetentionDirty(selected, zeroDataRetention, credential);
@@ -345,7 +345,7 @@ export default function ModelConnection() {
 
   function updateApiKey(nextApiKey: string) {
     setApiKey(nextApiKey);
-    if (!endpointPreset?.publicModels && nextApiKey.trim() !== apiKey.trim()) {
+    if (!matchedEndpoint?.publicModels && nextApiKey.trim() !== apiKey.trim()) {
       resetOpenAiCompatibleProbe();
     }
     clearFeedback();
@@ -487,7 +487,7 @@ export default function ModelConnection() {
   const compatKeySection =
     isOpenAiCompatible && acceptsKey ? (
       <View style={styles.keySection}>
-        {endpointPreset ? (
+        {compatibleKeyRequired ? (
           <Text style={styles.sectionTitle}>{t`API key`}</Text>
         ) : (
           <DisclosureRow
@@ -496,7 +496,7 @@ export default function ModelConnection() {
             onPress={() => setShowApiKey((visible) => !visible)}
           />
         )}
-        {showApiKey || endpointPreset ? (
+        {showApiKey || compatibleKeyRequired ? (
           <TextInput
             accessibilityLabel={t`API key`}
             autoCapitalize="none"
@@ -508,7 +508,7 @@ export default function ModelConnection() {
             placeholder={
               credential?.hasKey
                 ? t`Paste a replacement key`
-                : endpointPreset
+                : compatibleKeyRequired
                   ? undefined
                   : t`Optional`
             }

@@ -27,6 +27,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     apiKey,
     cancelOAuthAttempt,
     canSaveModel,
+    compatibleKeyRequired,
     chooseProvider,
     credits,
     endpointPreset,
@@ -148,14 +149,14 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
             isOpenAiCompatible ? (
               <CompatibleKeyField
                 className="mt-4 block text-body text-muted-foreground"
-                keyRequired={Boolean(endpointPreset)}
+                keyRequired={compatibleKeyRequired}
               >
                 <Input
                   aria-label={t`API key`}
                   value={apiKey}
                   onChange={(e) => updateApiKey(e.target.value)}
-                  required={Boolean(endpointPreset)}
-                  placeholder={endpointPreset ? undefined : t`Optional`}
+                  required={compatibleKeyRequired}
+                  placeholder={compatibleKeyRequired ? undefined : t`Optional`}
                   type="password"
                   autoComplete="new-password"
                   className="mt-2"

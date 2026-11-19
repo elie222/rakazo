@@ -71,6 +71,7 @@ export function useOnboardingModel({
     apiProtocol,
     baseUrl,
     connectionErrorText,
+    compatibleKeyRequired,
     endpointPreset,
     routingReady,
     gatewayId,
@@ -123,7 +124,7 @@ export function useOnboardingModel({
     baseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
-    keyRequired: Boolean(endpointPreset),
+    keyRequired: compatibleKeyRequired,
   });
   const canSaveModel = Boolean(
     selected &&

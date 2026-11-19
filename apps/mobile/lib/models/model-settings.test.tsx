@@ -468,6 +468,20 @@ it("opens the Ollama preset through the compatible form with a visible key field
   ).toHaveLength(0);
 });
 
+it("keeps a pasted hosted URL editable and requires its key", async () => {
+  await remount(() => renderConnection({ credentialId: null }));
+  await change("OpenAI-compatible server URL", "https://ollama.com");
+  await change("Model id", "fixture-model");
+  const save = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Save",
+  );
+  expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com");
+  expect(field("API key")).not.toBeNull();
+  expect(save?.disabled).toBe(true);
+  await change("API key", "fake-fixture-key");
+  expect(save?.disabled).toBe(false);
+});
+
 it("hands a connected model back to the slot that asked for it", async () => {
   const onConnected = vi.fn(async () => undefined);
   await remount(() => renderConnection({ makeDefault: true, onConnected }));

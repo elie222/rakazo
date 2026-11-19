@@ -1537,6 +1537,26 @@ it("keeps the optional API key collapsible for generic compatible servers", asyn
   }
 });
 
+it("requires a key for a hosted URL pasted into a custom connection", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([]);
+  const view = await renderSettings(false);
+  try {
+    await pick("Change Main model", "OpenAI-compatible");
+    await typeInto(baseUrlField(view.container), "https://ollama.com");
+    const model = view.container.querySelector<HTMLInputElement>('input[aria-label="Model id"]')!;
+    await typeInto(model, "fixture-model");
+    expect(baseUrlField(view.container).value).toBe("https://ollama.com");
+    const key = view.container.querySelector<HTMLInputElement>('input[aria-label="API key"]')!;
+    expect(key.required).toBe(true);
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(true);
+    await typeInto(key, "fake-fixture-key");
+    expect(buttons(view.container, "Save")[0]?.disabled).toBe(false);
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("keeps Save enabled with a saved Ollama key and keeps the endpoint fixed", async () => {
   vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "fixture-model"));
   models.list.mockResolvedValue([compatibleEntry]);

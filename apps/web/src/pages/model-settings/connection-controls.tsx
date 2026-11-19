@@ -387,25 +387,25 @@ export function ConnectionControls({
 export function CompatibleKeyInput({
   apiKey,
   credential,
-  endpointPreset,
+  compatibleKeyRequired,
   updateApiKey,
-}: Pick<ModelSettingsState, "apiKey" | "credential" | "endpointPreset" | "updateApiKey">) {
+}: Pick<ModelSettingsState, "apiKey" | "credential" | "compatibleKeyRequired" | "updateApiKey">) {
   const { t } = useLingui();
   return (
     <div className="mt-5">
       <CompatibleKeyField
-        keyRequired={Boolean(endpointPreset)}
+        keyRequired={compatibleKeyRequired}
         className="block text-body text-muted-foreground"
       >
         <Input
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          required={Boolean(endpointPreset)}
+          required={compatibleKeyRequired}
           placeholder={
             credential?.hasKey
               ? t`Paste a replacement key`
-              : endpointPreset
+              : compatibleKeyRequired
                 ? undefined
                 : t`Optional`
           }

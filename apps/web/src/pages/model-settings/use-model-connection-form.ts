@@ -122,7 +122,7 @@ export function useModelConnectionForm({
 
   function updateApiKey(nextApiKey: string) {
     setApiKey(nextApiKey);
-    if (!endpointPreset?.publicModels && nextApiKey.trim() !== apiKey.trim()) {
+    if (!matchedEndpoint?.publicModels && nextApiKey.trim() !== apiKey.trim()) {
       resetOpenAiCompatibleProbe();
     }
   }
@@ -144,9 +144,13 @@ export function useModelConnectionForm({
   const endpointPreset = isOpenAiCompatible
     ? matchCompatibleEndpointPreset(endpointPresets, presetBaseUrl ?? credential?.baseUrl)
     : undefined;
+  const matchedEndpoint = isOpenAiCompatible
+    ? matchCompatibleEndpointPreset(endpointPresets, baseUrl)
+    : undefined;
+  const compatibleKeyRequired = Boolean(matchedEndpoint);
   const discovery = useCompatibleModelDiscovery(
     isOpenAiCompatible
-      ? { baseUrl, apiKey, apiProtocol, headerRows, preset: endpointPreset, credential }
+      ? { baseUrl, apiKey, apiProtocol, headerRows, preset: matchedEndpoint, credential }
       : null,
     {
       request: (input) => rpc.models.probeOpenAiCompatible(input),
@@ -166,6 +170,7 @@ export function useModelConnectionForm({
     apiProtocol,
     applyFields,
     baseUrl,
+    compatibleKeyRequired,
     connectionErrorText,
     ...discovery,
     routingReady,

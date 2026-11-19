@@ -86,6 +86,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     baseUrl,
     connectionErrorText,
     enabledModelIds,
+    compatibleKeyRequired,
     endpointPreset,
     gatewayId,
     projectId,
@@ -291,7 +292,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     modelId,
     headerRows,
     credential,
-    keyRequired: Boolean(endpointPreset),
+    keyRequired: compatibleKeyRequired,
   });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
