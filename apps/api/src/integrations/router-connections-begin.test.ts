@@ -928,5 +928,8 @@ describe("connection tool listing", () => {
     );
     expect(listAppTools).toHaveBeenCalled();
     expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "warn", message: "connections.tools cancelled" }),
+    );
   });
 });

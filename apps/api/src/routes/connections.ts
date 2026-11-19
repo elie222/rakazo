@@ -248,12 +248,14 @@ export function connectionsRoutes(ctx: RouterContext) {
             description: tool.description,
           }));
         } catch (error) {
+          const fields = { connectorId: input.connectorId, provider: input.provider };
           // The client went away before the list came back.
-          if (context.signal?.aborted) return [];
-          getLogger().error("connections.tools failed", error, {
-            connectorId: input.connectorId,
-            provider: input.provider,
-          });
+          if (context.signal?.aborted)
+            getLogger().warn("connections.tools cancelled", {
+              ...fields,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          else getLogger().error("connections.tools failed", error, fields);
           return [];
         }
       }),
