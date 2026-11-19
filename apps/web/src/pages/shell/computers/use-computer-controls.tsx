@@ -518,9 +518,10 @@ export function useComputerControls({
     showingRecoveryHint,
     embeddedScreenUrl,
     hasControl,
-    /** The panel flags the computer tab while any of these wait on the user. */
+    /** The panel flags the computer tab while any of these wait on the user, for this bot only. */
     computerNeedsAttention:
-      computerFailure !== null || showingRecoveryHint || computer?.diskFullPercent !== undefined,
+      computer?.botId === activeBotId.current &&
+      (computerFailure !== null || showingRecoveryHint || computer?.diskFullPercent !== undefined),
     computerScreenError,
     computerBooting,
   };

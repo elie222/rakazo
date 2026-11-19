@@ -720,13 +720,11 @@ export function BotSettings({
             />
           </TabsContent>
           <TabsContent keepMounted value="memory" className="space-y-6 pt-4">
-            <PanelSection label={<Trans>Memory</Trans>}>
-              <ErrorBoundary fallback={<SectionLoadFailed />}>
-                <Suspense fallback={null}>
-                  <KnowledgeSection botId={bot.id} full />
-                </Suspense>
-              </ErrorBoundary>
-            </PanelSection>
+            <ErrorBoundary fallback={<SectionLoadFailed />}>
+              <Suspense fallback={null}>
+                <KnowledgeSection botId={bot.id} full />
+              </Suspense>
+            </ErrorBoundary>
             {onOpenMemorySettings ? (
               <div className="rounded-xl bg-muted/50 px-4 py-3">
                 <button

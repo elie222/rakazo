@@ -99,8 +99,6 @@ export function ArtifactsPage() {
   const { t } = useLingui();
   // The bot filter is part of the URL, so a link to a bot's files keeps it after a reload.
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeBotId = searchParams.get("bot");
-  const botQuery = activeBotId ? `?bot=${activeBotId}` : "";
   function setActiveBotId(botId: string | null) {
     setSearchParams(
       (current) => {
@@ -122,12 +120,19 @@ export function ArtifactsPage() {
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   // The space's bootstrap is where the shell keeps what it last loaded, bots included.
-  const bots =
-    useQuery({
-      queryKey: queries.bootstrap.queryKey({ input: {} }),
-      queryFn: () => takeInitialBootstrap(),
-      select: (bootstrap) => bootstrap.bots,
-    }).data ?? NO_BOTS;
+  const botsQuery = useQuery({
+    queryKey: queries.bootstrap.queryKey({ input: {} }),
+    queryFn: () => takeInitialBootstrap(),
+    select: (bootstrap) => bootstrap.bots,
+  });
+  const bots = botsQuery.data ?? NO_BOTS;
+  // A saved link naming a bot that no longer exists reads as all bots, not as a refused listing.
+  const requestedBotId = searchParams.get("bot");
+  const activeBotId =
+    requestedBotId && botsQuery.isSuccess && !bots.some((bot) => bot.id === requestedBotId)
+      ? null
+      : requestedBotId;
+  const botQuery = activeBotId ? `?bot=${activeBotId}` : "";
   const listingOptions = queries.artifacts.listSpace.infiniteOptions({
     input: (cursor: string | undefined) => ({
       botId: activeBotId ?? undefined,
