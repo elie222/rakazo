@@ -335,6 +335,29 @@ dbTests("model credits ledger", () => {
     await expireModelCredits(prisma, organizationId, renewal);
     expect(await balance()).toBe(0n);
   });
+  it("forgets a returned dispute repayment, so a later dispute after the month expired still reconciles", async () => {
+    const topup = (disputedCents: number, now = beforeRenewal) =>
+      reconcileCreditPurchase(
+        prisma,
+        organizationId,
+        { id: `${organizationId}-topup`, amountCents: 1000, disputedCents },
+        now,
+      );
+    await topup(0);
+    await settleModelCredits(prisma, await reserve(10), 10, beforeRenewal);
+    await topup(1000);
+    await grant("monthly", 1000, renewal);
+    await topup(0);
+    const purchase = await prisma.modelCreditEntry.findUniqueOrThrow({
+      where: { source: `purchase:${organizationId}-topup` },
+    });
+    expect(purchase.allocations).toEqual([]);
+    await expireModelCredits(prisma, organizationId, renewal);
+    await topup(500, nextRenewal);
+    expect(await balance()).toBe(-5_000_000n);
+    await topup(0, nextRenewal);
+    expect(await balance()).toBe(0n);
+  });
   it("leaves lapsed credits out of a read without expiring them", async () => {
     await grant("topup", 2000);
     await grant("monthly", 1000, renewal);
