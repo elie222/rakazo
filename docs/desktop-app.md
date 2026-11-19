@@ -16,7 +16,9 @@ The first time it opens, the app asks which server to use:
   the Docker Desktop download (Docker Engine on Linux) and carries on by itself once Docker is
   installed and open; if Docker is installed but stopped, the app opens it. Everything, including
   your bots' computers, then
-  runs on your machine. It is yours alone: once you create your account, it accepts no other.
+  runs on your machine. It is yours alone: once you create your account, it accepts no other, and
+  only this computer can reach it, so the mobile app can't connect to it
+  ([details](./self-host-clients.md#desktop-this-computer-servers)).
 - **Existing instance**: connect to a Rakazo server you or your team already run. Enter its
   **Server address** and choose **Check connection**.
 
