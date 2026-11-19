@@ -401,7 +401,8 @@ migrations may already have run. The first attempt's file is therefore never rep
 attempt, whichever release it targets, saves `<time>-<outgoing tag>+retry.dump` beside it, with
 the first attempt's time, and each further attempt replaces only that file. The pair is closed
 when an update succeeds, not by a rollback or a change of release, and the next update then starts a new one. The
-setting counts these pairs, so each holds one or two files.
+setting counts these pairs, so each holds one or two files. If you finish a failed update by
+hand instead, delete `backups/pre-update/.in-progress` so the next update starts a new pair.
 
 The dump is a `pg_dump` custom-format file of the Compose `postgres` service, with owners and
 privileges, written inside that container first and then copied out, so it needs free space for

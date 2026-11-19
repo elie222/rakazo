@@ -871,7 +871,8 @@ export function createUpdaterApp(
       }
       record.ok = true;
       record.restart = "recreated";
-      if (input.snapshot) await bestEffort("end the snapshot cycle", endSnapshotCycle(config));
+      // Any update, snapshotted or not; a rollback leaves `snapshot` unset and the cycle open.
+      if (input.snapshot !== undefined) await bestEffort("end cycle", endSnapshotCycle(config));
       await bestEffort(
         "prune obsolete update images",
         readEnvFile().then((env) =>

@@ -93,6 +93,16 @@ describe("database snapshot setting", () => {
     await expect(stat(fixture.snapshots)).rejects.toThrow();
   });
 
+  it("closes a cycle left open when an update succeeds with snapshots turned off", async () => {
+    const fixture = await deployment(undefined);
+    await mkdir(fixture.snapshots, { recursive: true });
+    const marker = path.join(fixture.snapshots, ".in-progress");
+    await writeFile(marker, "20250101T000000Z-v0.8.0\n");
+    const record = await apply(createUpdaterApp(fixture.config, { run: fakeDocker().run }));
+    expect(record.ok).toBe(true);
+    await expect(stat(marker)).rejects.toThrow();
+  });
+
   it("rejects a count that is not a whole number from 0 to 30", () => {
     const base = { RAKAZO_DEPLOY_DIR: "/srv/rakazo", RAKAZO_UPDATER_TOKEN: token };
     for (const value of ["true", "-1", "1.5", "31"]) {
