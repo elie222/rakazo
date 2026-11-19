@@ -120,7 +120,13 @@ export class EncryptedSecretStore extends SecretChanges implements SecretStore {
     // Ciphertexts written before v2 used a single SHA-256 key derivation and
     // no AAD. Keep them readable so an upgrade does not strand credentials;
     // every subsequent write uses the stronger versioned format above.
+    // Anything shorter than its fixed parts is not a legacy value: report it the
+    // way parseSealed does, so a garbage row is classified as permanent instead
+    // of surfacing a raw cipher error callers would retry forever.
     const buf = Buffer.from(ciphertext, "base64");
+    if (buf.length < IV_BYTES + TAG_BYTES + 1) {
+      throw new Error("Encrypted secret is malformed");
+    }
     const iv = buf.subarray(0, IV_BYTES);
     const tag = buf.subarray(IV_BYTES, IV_BYTES + TAG_BYTES);
     const enc = buf.subarray(IV_BYTES + TAG_BYTES);
