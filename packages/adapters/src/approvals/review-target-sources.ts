@@ -16,11 +16,16 @@ const PARTY_KEY = /payee|merchant|vendor|beneficiary|iban|account|grantee/i;
 /** Checked one token at a time, anchored, so a long argument is read in linear time. */
 const EMAIL = /^[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+$/u;
 const TOKEN_SEPARATORS = /[\s,;<>()[\]"'`]+/;
+/** A character that can continue an address, host or account, so a match must not touch one. */
+const ADDRESS_CHAR = /[\p{L}\p{N}_%+@-]/u;
 const MIN_PARTY_CHARS = 3;
+const MIN_ACCOUNT_DIGITS = 5;
 const MAX_PARTY_CHARS = 120;
 const MAX_ARG_DEPTH = 6;
 /** Enough for a batch's recipients without burying the reviewer's input. */
 const MAX_TARGETS = 10;
+/** How many of a call's targets are looked up, so a huge batch costs bounded work. */
+const MAX_CHECKED_TARGETS = 40;
 /** What a run keeps of the outside content it read, newest last. */
 export const MAX_OUTSIDE_TEXT_CHARS = 400_000;
 
@@ -33,12 +38,16 @@ export function actionTargets(args: Record<string, unknown>): Target[] {
   const targets = new Map<string, Target>();
   const add = (target: Target) => targets.set(target.value, target);
   const walk = (node: unknown, key: string, depth: number) => {
-    if (depth > MAX_ARG_DEPTH || FREE_TEXT_KEY.test(key)) return;
+    if (depth > MAX_ARG_DEPTH) return;
     if (Array.isArray(node)) {
       for (const item of node) walk(item, key, depth + 1);
     } else if (node && typeof node === "object") {
       for (const [childKey, child] of Object.entries(node)) walk(child, childKey, depth + 1);
-    } else if (typeof node === "string" && node.trim()) {
+    } else if (typeof node === "number" && PARTY_KEY.test(key)) {
+      // An account number typed as a number is still where the money goes.
+      if (Number.isInteger(node) && String(Math.abs(node)).length >= MIN_ACCOUNT_DIGITS)
+        add({ value: String(node) });
+    } else if (typeof node === "string" && node.trim() && !FREE_TEXT_KEY.test(key)) {
       const value = node.trim();
       const site = urlSite(value);
       const emails = value.includes("@")
@@ -73,17 +82,36 @@ export function outsideOnlyTargets(
   if (!sources.outsideText) return [];
   const words = sources.ownerWords.join("\n");
   const owner = normalize(words);
-  const targets = actionTargets(args);
+  const targets = actionTargets(args).slice(0, MAX_CHECKED_TARGETS);
   const ownerSites = targets.some((target) => target.site) ? sitesInText(words) : new Set();
   return targets
     .filter(
       ({ value, site }) =>
-        sources.outsideText.includes(value) &&
-        !owner.includes(value) &&
+        containsWhole(sources.outsideText, value) &&
+        !containsWhole(owner, value) &&
         !(site && ownerSites.has(site)),
     )
     .map(({ value }) => value)
     .slice(0, MAX_TARGETS);
+}
+
+/**
+ * Whether `text` holds `value` as a whole address, host or name: `alice@corp.co` is not in
+ * `alice@corp.com`, and `lumen.co` is not in `pay.lumen.com`. A trailing full stop ends a sentence.
+ */
+function containsWhole(text: string, value: string): boolean {
+  for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + 1)) {
+    const before = text[at - 1];
+    const after = text[at + value.length];
+    const next = text[at + value.length + 1];
+    const touchesBefore = before !== undefined && (before === "." || ADDRESS_CHAR.test(before));
+    const touchesAfter =
+      after !== undefined &&
+      (ADDRESS_CHAR.test(after) ||
+        (after === "." && next !== undefined && ADDRESS_CHAR.test(next)));
+    if (!touchesBefore && !touchesAfter) return true;
+  }
+  return false;
 }
 
 /** The text in outside content (a tool result, a message), normalized for `outsideOnlyTargets`. */

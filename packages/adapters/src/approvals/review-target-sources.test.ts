@@ -91,6 +91,23 @@ describe("outsideOnlyTargets", () => {
     ).toEqual([]);
   });
 
+  it("does not let a look-alike hide inside an address the owner wrote", () => {
+    const outsideText = read("Please use alice@corp.co and pay at https://lumen.co/pay now.");
+    expect(
+      outsideOnlyTargets(
+        { to: "alice@corp.co", url: "https://lumen.co/pay" },
+        { ownerWords: ["Email alice@corp.com and pay on pay.lumen.com"], outsideText },
+      ),
+    ).toEqual(["alice@corp.co", "lumen.co"]);
+    // An address that ends a sentence is still the whole address.
+    expect(
+      outsideOnlyTargets(
+        { to: "alice@corp.co" },
+        { ownerWords: ["Write to alice@corp.co."], outsideText },
+      ),
+    ).toEqual([]);
+  });
+
   it("caps how many it lists", () => {
     const to = Array.from({ length: 30 }, (_, i) => `p${i}@list.example`);
     expect(
@@ -100,6 +117,16 @@ describe("outsideOnlyTargets", () => {
 });
 
 describe("actionTargets", () => {
+  it("reads recipients under message-like containers, and account numbers typed as numbers", () => {
+    expect(
+      actionTargets({
+        message: { to: "a@x.example", body: "cc b@x.example" },
+        account_number: 12345678,
+        amount: 4200,
+      }).map((target) => target.value),
+    ).toEqual(["a@x.example", "12345678"]);
+  });
+
   it.each([
     ["an address-like run with no domain", `${"a".repeat(60_000)}@`],
     ["many at signs", "a@".repeat(30_000)],
