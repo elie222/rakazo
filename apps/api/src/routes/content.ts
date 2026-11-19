@@ -255,6 +255,11 @@ export function contentRoutes(ctx: RouterContext) {
         type ModelRow = TotalsRow & { provider: string; model: string };
         type TimeRow = Omit<TotalsRow, "runs"> & { bucket: string };
         type BotRow = TotalsRow & { botId: string; name: string | null; deleted: boolean };
+        type RoutineRow = TotalsRow & {
+          routineId: string | null;
+          name: string | null;
+          botName: string | null;
+        };
 
         const toNum = (v: bigint | number | null | undefined) =>
           v == null ? 0 : typeof v === "bigint" ? Number(v) : v;
@@ -284,7 +289,7 @@ export function contentRoutes(ctx: RouterContext) {
           BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
         `;
 
-        const [totalsRows, modelRows, timeRows, botRows, modelOptionRows] =
+        const [totalsRows, modelRows, timeRows, botRows, modelOptionRows, routineRows] =
           await deps.prisma.$transaction(
             (tx) =>
               Promise.all([
@@ -340,6 +345,42 @@ export function contentRoutes(ctx: RouterContext) {
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter}
             GROUP BY u.provider, u.model
+            ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
+          `),
+                // Work a routine's run handed on (a helper, a message to another bot) is a run of
+                // its own that names the run it came from, so each run is followed back to the
+                // nearest one a routine started.
+                tx.$queryRaw<RoutineRow[]>(Prisma.sql`
+            WITH RECURSIVE used AS (
+              SELECT DISTINCT COALESCE(u."parentRunId", u."runId") AS id
+              FROM usage_records u
+              WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
+                ${rangeFilter} ${modelFilter} ${botFilter}
+            ),
+            chain AS (
+              SELECT used.id AS "runId", r."routineId", r."delegatedFromRunId", 0 AS depth
+              FROM used
+              JOIN runs r ON r.id = used.id AND r."spaceId" = ${where.spaceId}
+              UNION ALL
+              SELECT chain."runId", r."routineId", r."delegatedFromRunId", chain.depth + 1
+              FROM chain
+              JOIN runs r ON r.id = chain."delegatedFromRunId" AND r."spaceId" = ${where.spaceId}
+              WHERE chain."routineId" IS NULL AND chain.depth < 16
+            ),
+            origin AS (
+              SELECT DISTINCT ON ("runId") "runId", "routineId"
+              FROM chain
+              WHERE "routineId" IS NOT NULL
+              ORDER BY "runId", depth
+            )
+            SELECT ro.id AS "routineId", ro.name AS name, b.name AS "botName", ${totalsSelect}
+            FROM usage_records u
+            LEFT JOIN origin o ON o."runId" = COALESCE(u."parentRunId", u."runId")
+            LEFT JOIN routines ro ON ro.id = o."routineId"
+            LEFT JOIN bots b ON b.id = ro."botId"
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
+              ${rangeFilter} ${modelFilter} ${botFilter}
+            GROUP BY ro.id, ro.name, b.name
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
               ]),
@@ -457,6 +498,12 @@ export function contentRoutes(ctx: RouterContext) {
               costUsd: t.costUsd,
             };
           }),
+          routines: routineRows.map((row) => ({
+            id: row.routineId,
+            name: row.name,
+            botName: row.botName,
+            ...totalsOf(row),
+          })),
           overTimeUnit,
           overTime,
           bots: botRows.map((row) => ({

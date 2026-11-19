@@ -75,6 +75,18 @@ const usageFor = (input: Input) => ({
   models: [
     { provider: input.provider ?? "p:1", model: input.model ?? "m1", ...point(3, 400, 0.04) },
   ],
+  routines: input.botId
+    ? []
+    : [
+        {
+          id: "routine-a",
+          name: "Morning brief",
+          botName: "Alpha",
+          runs: 2,
+          ...point(2, 300, 0.03),
+        },
+        { id: null, name: null, botName: null, runs: 1, ...point(2, 167, 0.01) },
+      ],
   overTimeUnit: "day",
   overTime: [{ date: "2026-11-10", ...point(3, 400, 0.04) }],
 });
@@ -151,11 +163,18 @@ it("shows every bot's usage first, then narrows it by bot, model and date range"
       [...panel.container.querySelectorAll("tbody tr")].map((row) =>
         [...row.querySelectorAll("td")].map((cell) => cell.textContent),
       ),
-    ).toEqual([["m1p:1", "3", "399", "1", "$0.04"]]);
+    ).toEqual([
+      ["m1p:1", "3", "399", "1", "$0.04"],
+      // Each routine with its bot, then everything no routine started.
+      ["Morning briefAlpha", "2", "300", "$0.03"],
+      ["Chats and other work", "1", "167", "$0.01"],
+    ]);
 
     await panel.choose("Bot", "Alpha");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({ range: "30d", botId: "bot-a" });
     expect(panel.totals()).toEqual(["2", "400", "$0.04"]);
+    // Without a routine in the selection there is nothing to split.
+    expect(panel.container.querySelectorAll("tbody tr")).toHaveLength(1);
 
     // The model list keeps every model, and a provider id with a colon survives the round trip.
     await panel.choose("Model", "m1");
