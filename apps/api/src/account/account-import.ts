@@ -83,7 +83,6 @@ export class AccountImportError extends Error {
 }
 
 const unreadable = () => new AccountImportError("The file is not a readable Rakazo export.");
-
 const invalidEntry = () => new AccountImportError("The export contains an unexpected file.");
 const outOfOrder = () => new AccountImportError("The export's files are out of order.");
 const missingRecord = () => new AccountImportError("The export refers to a missing record.");

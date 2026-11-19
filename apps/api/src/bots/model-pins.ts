@@ -1,10 +1,8 @@
 import { ORPCError } from "@orpc/server";
 import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
 import {
+  assertModelProviderAllowed,
   findConnectedModelCredential,
-  ModelProviderNotAllowedError,
-  modelProviderAllowed,
-  modelProviderAllowlist,
   validateConnectedModelChoice,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -148,9 +146,7 @@ export async function assertRoutineModel(
   codexCatalog: CodexLiveCatalog,
 ) {
   if (!model.modelProvider || !model.modelId) return;
-  if (!modelProviderAllowed(modelProviderAllowlist(), model.modelProvider)) {
-    throw new ModelProviderNotAllowedError();
-  }
+  assertModelProviderAllowed(model.modelProvider);
   const message = await validateConnectedModelChoice(
     deps.prisma,
     deps.secrets,

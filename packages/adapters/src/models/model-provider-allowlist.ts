@@ -27,6 +27,13 @@ export function modelProviderAllowed(
   return allowlist === null || allowlist.has(canonicalPiProviderId(provider));
 }
 
+/** Refuses a provider this deployment's allowlist leaves out. */
+export function assertModelProviderAllowed(provider: string) {
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+    throw new ModelProviderNotAllowedError();
+  }
+}
+
 /**
  * The model pin a copy or a restored bot may be born with. The provider and model stay only
  * while the deployment allowlist offers that provider, so the copy follows the account's main
