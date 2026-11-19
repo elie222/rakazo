@@ -1,9 +1,13 @@
 import { ORPCError } from "@orpc/server";
 import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
 import { findConnectedModelCredential, validateConnectedModelChoice } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
-import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
-import { modelRoleTarget, runAsSystem } from "@rakazo/db";
+import type { Actor, ModelDisconnectPreview } from "@rakazo/contracts";
+import {
+  MAX_MODEL_DISCONNECT_NAMES,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  usableModelId,
+} from "@rakazo/contracts";
+import { modelCredentialProviderFilter, modelRoleTarget, runAsSystem } from "@rakazo/db";
 import type { RouterDeps } from "../router.js";
 
 /**
@@ -132,6 +136,70 @@ export async function assertCompatibleDefaultChange(
     },
     () => true,
   );
+}
+
+/**
+ * What disconnecting one connection takes with it. The main and backup choices it serves are
+ * deleted with it, in the account's models and in every Space that has its own, and connecting
+ * again does not bring them back. The member's bots and routines set to the provider stop only
+ * when this is the provider's last connection, since any other one serves them.
+ */
+export async function modelDisconnectPreview(
+  deps: RouterDeps,
+  actor: Actor,
+  input: { provider: string; credentialId: string },
+): Promise<ModelDisconnectPreview> {
+  const provider = modelCredentialProviderFilter(input.provider);
+  const connections = await deps.prisma.userModelCredential.findMany({
+    where: { userId: actor.userId, provider },
+    select: { id: true },
+  });
+  if (!connections.some((row) => row.id === input.credentialId)) {
+    return { mainModel: false, backupModel: false, usedBy: [] };
+  }
+  const last = connections.length === 1;
+  // The same rows `models.disconnect` deletes.
+  const roles = {
+    userId: actor.userId,
+    provider,
+    OR: [
+      { credentialId: input.credentialId },
+      ...(last ? [{ credentialId: null, creditOfferingId: null }] : []),
+    ],
+  };
+  const position = { role: true, position: true } as const;
+  const named = { select: { name: true }, orderBy: { name: "asc" } } as const;
+  const pinned = { userId: actor.userId, modelProvider: provider };
+  // A connection is the account's, so its uses are read in every Space it serves.
+  const [accountRoles, spaceRoles, bots, routines] = await runAsSystem(
+    "what disconnecting a model connection takes with it",
+    () =>
+      Promise.all([
+        deps.prisma.userModelRoleChoice.findMany({ where: roles, select: position }),
+        deps.prisma.spaceModelRoleChoice.findMany({
+          where: { ...roles, spaceMember: { settingOverrides: { some: { setting: "models" } } } },
+          select: position,
+        }),
+        last ? deps.prisma.bot.findMany({ where: { ...pinned, archivedAt: null }, ...named }) : [],
+        last
+          ? deps.prisma.routine.findMany({
+              where: { ...pinned, bot: { archivedAt: null } },
+              ...named,
+            })
+          : [],
+      ]),
+  );
+  const served = [...accountRoles, ...spaceRoles];
+  const runsMain = (row: { role: string; position: number }) =>
+    row.role === "main" && row.position === 0;
+  return {
+    mainModel: served.some(runsMain),
+    backupModel: served.some((row) => !runsMain(row)),
+    usedBy: [...new Set([...bots, ...routines].map((row) => row.name))].slice(
+      0,
+      MAX_MODEL_DISCONNECT_NAMES,
+    ),
+  };
 }
 
 /** A routine may only name a model the space has connected. */

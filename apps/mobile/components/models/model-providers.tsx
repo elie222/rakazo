@@ -7,6 +7,7 @@ import {
   MAX_MODEL_CONNECTION_LABEL,
 } from "@rakazo/contracts";
 import { Alert, Platform } from "react-native";
+import { confirmModelDisconnect } from "../../lib/models/model-disconnect";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 import { RowMenu } from "./model-role-settings";
 
@@ -69,10 +70,7 @@ export function ModelProviders({
         credential.label,
       );
     else if (id === "disconnect")
-      Alert.alert(t`Disconnect ${name}?`, t`This removes the connection from every space.`, [
-        { text: t`Cancel`, style: "cancel" },
-        { text: t`Disconnect`, style: "destructive", onPress: () => onDisconnect(credential) },
-      ]);
+      void confirmModelDisconnect(name, credential, () => onDisconnect(credential));
   }
 
   return (

@@ -18,6 +18,7 @@ import {
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
+import { modelDisconnectWarning } from "@rakazo/i18n/model-disconnect";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
@@ -273,6 +274,18 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       )
     : selectedProviderName;
   const disconnectName = selectedConnectionName;
+  // Read when the question opens. A failed read must not keep Disconnect disabled.
+  const disconnectPreview = useQuery({
+    ...queries.models.disconnectPreview.queryOptions({
+      input: { provider: credential?.provider ?? "", credentialId: credential?.id ?? "" },
+    }),
+    enabled: confirmDisconnect && Boolean(credential),
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+  });
+  const disconnectPreviewLoading = confirmDisconnect && disconnectPreview.isFetching;
+  const disconnectWarning = modelDisconnectWarning(disconnectPreview.data ?? null);
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
@@ -475,6 +488,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     defaultModelOptions,
     disconnectCredential,
     disconnectName,
+    disconnectPreviewLoading,
+    disconnectWarning,
     endpointPreset,
     endpointPresets,
     effectiveBaseUrl,

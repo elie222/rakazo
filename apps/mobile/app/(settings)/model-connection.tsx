@@ -50,6 +50,7 @@ import {
   MODEL_CONNECT_TIMEOUT_MS,
   modelConnectionRequest,
 } from "../../lib/models/model-connection-request";
+import { confirmModelDisconnect } from "../../lib/models/model-disconnect";
 import { analyticsSurface } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
@@ -752,17 +753,10 @@ export default function ModelConnection() {
         fill={false}
         label={pending === "disconnect" ? t`Disconnecting…` : t`Disconnect`}
         onPress={() => {
-          Alert.alert(
-            t`Disconnect ${ph({ name: selectedProviderLabel })}?`,
-            t`This removes the connection from every space.`,
-            [
-              { text: t`Cancel`, style: "cancel" },
-              {
-                text: t`Disconnect`,
-                style: "destructive",
-                onPress: () => void disconnectCredential(),
-              },
-            ],
+          void confirmModelDisconnect(
+            selectedProviderLabel,
+            credential,
+            () => void disconnectCredential(),
           );
         }}
         prominence="destructive"
