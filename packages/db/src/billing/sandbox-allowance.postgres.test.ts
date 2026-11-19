@@ -210,6 +210,21 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
       expect(
         await sandboxAllowancePlan(prisma, organizationId, new Date("2026-08-05T00:00:00Z")),
       ).toMatchObject({ limitCents: 1_000 + 300, extraCents: 300 });
+
+      // A plan that stopped mid-period still has a future end; a grant after it stopped counts.
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          currentPeriodStartsAt: new Date("2026-08-01T00:00:00.000Z"),
+          currentPeriodEndsAt: new Date("2026-09-01T00:00:00.000Z"),
+        },
+      });
+      await prisma.computerAllowanceGrant.create({
+        data: { organizationId, amountCents: 200, createdAt: new Date("2026-08-10T00:00:00Z") },
+      });
+      expect(
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-08-12T00:00:00Z")),
+      ).toMatchObject({ limitCents: 1_000 + 500, extraCents: 500 });
     } finally {
       await prisma.billingAccount.deleteMany({ where: { organizationId } });
       await prisma.accessGrant.deleteMany({ where: { organizationId } });

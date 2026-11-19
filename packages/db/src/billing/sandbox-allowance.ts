@@ -91,12 +91,12 @@ export async function sandboxAllowancePlan(
     });
     if (granted._sum.creditCents && granted._min.appliedAt) {
       const since = granted._min.appliedAt;
-      // Grants made during a paid plan belonged to periods that already reset.
-      const planEnded = billing?.currentPeriodEndsAt;
+      // Grants from a paid plan's earlier periods already reset; its last period's still count.
+      const lastPeriod = billing?.currentPeriodStartsAt;
       const extraCents = await grantedAllowanceCents(
         prisma,
         organizationId,
-        planEnded && planEnded > since ? planEnded : since,
+        lastPeriod && lastPeriod > since ? lastPeriod : since,
       );
       return {
         limitCents: creditShare(granted._sum.creditCents) + extraCents,
