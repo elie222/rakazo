@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging";
 import { createRowId } from "../database/row-id.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
 import { Prisma } from "../generated/prisma/client.js";
@@ -184,11 +185,12 @@ export function contentEncryptionOf(prisma: unknown): ContentEncryption | undefi
 /**
  * Loads a Space's content keys before a transaction seals its rows, so the transaction does not
  * wait on the key store or, for keys no longer in memory, the key manager. A Space without keys
- * yet is left for the transaction to create them.
+ * yet is left for the transaction to create them. A load that fails changes nothing: the
+ * transaction makes its own checks first and meets the same failure only where it seals.
  */
 export async function loadSpaceContentKeys(prisma: unknown, spaceId: string): Promise<void> {
   const ring = contentEncryptionOf(prisma)?.ring;
-  if (ring?.encryptWrites) await ring.all(spaceId);
+  if (ring?.encryptWrites) await bestEffort("load a Space's content keys", ring.all(spaceId));
 }
 
 /**

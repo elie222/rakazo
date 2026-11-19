@@ -253,6 +253,18 @@ describe("loadSpaceContentKeys", () => {
     expect(unwrap).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves a key that cannot be loaded for the transaction to meet where it seals", async () => {
+    const failing = new ContentKeyRing(new LocalKeyProvider([{ id: "a", key: randomBytes(32) }]), {
+      ...store,
+      forSpace: () => Promise.reject(new Error("key store unavailable")),
+    });
+    const client = withContentEncryption(
+      new PrismaClient({ adapter: new PrismaPg(pool) }),
+      failing,
+    );
+    await expect(loadSpaceContentKeys(client, "s")).resolves.toBeUndefined();
+  });
+
   it("does nothing for clients without content encryption", async () => {
     await expect(loadSpaceContentKeys({}, "s")).resolves.toBeUndefined();
   });
