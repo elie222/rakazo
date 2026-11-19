@@ -279,20 +279,22 @@ async function dispatchTool(
   if ("result" in gate) {
     const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
     if (gate.replayed && toolResultTaintsRun(request.name) && !ownProfile) {
-      await markReadOutsideContent(ctx);
+      await markReadOutsideContent(ctx, gate.result);
     }
     return refuse(gate.result, request.name);
   }
   // Only a call that ran can have taken in outside content; one refused above, or whose approval
   // was denied, never did. A call that failed partway still counts.
   const runHandler = async () => {
+    let result: unknown;
     try {
-      return await toolHandler(gate.call.name)(ctx, gate.call);
+      result = await toolHandler(gate.call.name)(ctx, gate.call);
+      return result;
     } finally {
       // Editing its own profile returns only what this run wrote; a child's profile is another
       // bot's.
       const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
-      if (toolResultTaintsRun(name) && !ownProfile) await markReadOutsideContent(ctx);
+      if (toolResultTaintsRun(name) && !ownProfile) await markReadOutsideContent(ctx, result);
     }
   };
   if (!gate.call.applied) return runHandler();

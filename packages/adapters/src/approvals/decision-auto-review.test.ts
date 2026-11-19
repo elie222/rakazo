@@ -1,5 +1,6 @@
 import type { AdapterContext, AutoReviewRequest, DecisionRequest } from "@rakazo/adapter-kit";
 import { expect, it } from "vitest";
+import { outsideTargetAsk } from "./auto-review.prompt.js";
 import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
 
 const context: AdapterContext = {
@@ -86,4 +87,30 @@ it("gives the checker the owner's earlier messages, and says what they are", asy
   expect(sent[1]!.questions.decision!.instructions).toBe(
     "Should this bot action run without asking its owner first?",
   );
+});
+
+it("gives the checker targets only outside content named, with the ask they add", async () => {
+  const sent: DecisionRequest[] = [];
+  const provider = new DecisionAutoReviewProvider({
+    provider: {
+      decide: async (decision) => {
+        sent.push(decision);
+        return {
+          model: "checker",
+          answers: { decision: { type: "choice", choice: "pass", confidence: 1 } },
+        };
+      },
+    },
+    providerId: "decisions",
+    model: "checker",
+  });
+  await provider.review({ ...request, outsideOnlyTargets: ["audit@ledger.test"] }, context);
+  await provider.review(request, context);
+  expect(sent[0]!.state).toMatchObject({ outsideOnlyTargets: ["audit@ledger.test"] });
+  expect(sent[0]!.questions.decision!.instructions).toMatch(/outsideOnlyTargets are recipients/);
+  expect(sent[0]!.questions.decision!.criteria!.ask).toContain(
+    outsideTargetAsk("outsideOnlyTargets"),
+  );
+  expect(sent[1]!.state).not.toHaveProperty("outsideOnlyTargets");
+  expect(sent[1]!.questions.decision!.criteria!.ask).not.toContain("outsideOnlyTargets");
 });
