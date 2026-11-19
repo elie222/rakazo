@@ -12,6 +12,8 @@ import { GlassSurface } from "../native/glass-surface";
 import { NativeSymbol } from "../native/native-symbol";
 import { CREATE_MENU_GAP, createInboxStyles } from "./inbox-styles";
 
+const STATUS_BAR_HEIGHT = 24;
+
 /**
  * The inbox's own header where it has no native bar: beside a chat in split view, and before
  * iOS 26. Its controls sit on Liquid Glass wherever that exists.
@@ -44,11 +46,11 @@ export function InboxHeader({
       style={[
         styles.header,
         {
-          // The split inbox shares the native toolbar row. The window's expanded status
-          // area can extend over the chat without occupying the sidebar's controls.
+          // The window's expanded status area can extend over the chat without occupying the
+          // sidebar, so beside a chat the inset counts no more than the status bar's height.
           paddingTop:
             embedded && Platform.OS === "ios"
-              ? Math.min(insets.top, 20) + 4
+              ? Math.min(insets.top, STATUS_BAR_HEIGHT) + 8
               : Math.max(insets.top, 20) + 8,
           paddingLeft: 16 + columnInsets.left,
           paddingRight: 16 + columnInsets.right,
@@ -60,45 +62,51 @@ export function InboxHeader({
           <Text style={styles.profileInitials}>{initials}</Text>
         </HeaderButton>
       </GlassSurface>
-      {title}
-      <GlassSurface style={styles.headerActions} fallbackStyle={styles.headerFill}>
-        <HeaderButton
-          accessibilityLabel={t`Activity`}
-          active={activityMode}
-          accent
-          onPress={toggleActivityMode}
-        >
-          <NativeSymbol
-            ios={activityMode ? "bell.fill" : "bell"}
-            android={activityMode ? "notifications" : "notifications-outline"}
-            size={17}
-            color={activityMode ? tokens.primaryForeground : tokens.foreground}
-          />
-        </HeaderButton>
-        <HeaderButton
-          testID="home-search-button"
-          accessibilityLabel={t`Search`}
-          onPress={() => router.push("/search")}
-        >
-          <NativeSymbol ios="magnifyingglass" android="search" size={17} />
-        </HeaderButton>
-        <MenuView
-          actions={createMenuActions(Platform.OS)}
-          {...(Platform.OS === "android" ? { style: { marginBottom: -CREATE_MENU_GAP } } : {})}
-          colorScheme={appearance}
-          onPressAction={({ nativeEvent }) => {
-            if (isCreateAction(nativeEvent.event)) runCreateAction(nativeEvent.event);
-          }}
-        >
-          <View
-            accessibilityLabel={t`Create`}
-            accessibilityRole="button"
-            style={[styles.headerButton, Platform.OS === "android" && styles.createMenuAnchor]}
+      {/* The title gives way to the buttons when the column is narrow. */}
+      {title ? <View style={styles.headerTitle}>{title}</View> : null}
+      <View style={styles.headerActions}>
+        <GlassSurface style={styles.headerGroup} fallbackStyle={styles.headerFill}>
+          <HeaderButton
+            accessibilityLabel={t`Activity`}
+            active={activityMode}
+            accent
+            onPress={toggleActivityMode}
           >
-            <NativeSymbol ios="plus" android="add" size={18} />
-          </View>
-        </MenuView>
-      </GlassSurface>
+            <NativeSymbol
+              ios={activityMode ? "bell.fill" : "bell"}
+              android={activityMode ? "notifications" : "notifications-outline"}
+              size={17}
+              color={activityMode ? tokens.primaryForeground : tokens.foreground}
+            />
+          </HeaderButton>
+          <HeaderButton
+            testID="home-search-button"
+            accessibilityLabel={t`Search`}
+            onPress={() => router.push("/search")}
+          >
+            <NativeSymbol ios="magnifyingglass" android="search" size={17} />
+          </HeaderButton>
+        </GlassSurface>
+        {/* Creating is a different kind of action from the ways of looking at chats beside it. */}
+        <GlassSurface shape="circle" style={styles.headerCircle} fallbackStyle={styles.headerFill}>
+          <MenuView
+            actions={createMenuActions(Platform.OS)}
+            {...(Platform.OS === "android" ? { style: { marginBottom: -CREATE_MENU_GAP } } : {})}
+            colorScheme={appearance}
+            onPressAction={({ nativeEvent }) => {
+              if (isCreateAction(nativeEvent.event)) runCreateAction(nativeEvent.event);
+            }}
+          >
+            <View
+              accessibilityLabel={t`Create`}
+              accessibilityRole="button"
+              style={[styles.headerButton, Platform.OS === "android" && styles.createMenuAnchor]}
+            >
+              <NativeSymbol ios="plus" android="add" size={18} />
+            </View>
+          </MenuView>
+        </GlassSurface>
+      </View>
     </View>
   );
 }

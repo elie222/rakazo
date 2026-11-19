@@ -195,15 +195,18 @@ export async function readFileFromTool(
   sandbox: SandboxProvider,
   workspace: RunWorkspace,
   args: Record<string, unknown>,
+  readStoppedFile?: (storedPath: string, maxBytes: number) => Promise<Uint8Array | undefined>,
 ) {
   const { botId, computerMode, computer, context, runSecrets } = workspace;
   const filePath = String(args.path ?? "");
   const storedPath = resolveBotWorkspacePath(computerMode, botId, filePath);
   let bytes: Uint8Array;
   try {
-    bytes = await sandbox.readFile(await computer(), storedPath, context, {
-      maxBytes: READ_FILE_MAX_BYTES,
-    });
+    bytes =
+      (await readStoppedFile?.(storedPath, READ_FILE_MAX_BYTES)) ??
+      (await sandbox.readFile(await computer(), storedPath, context, {
+        maxBytes: READ_FILE_MAX_BYTES,
+      }));
   } catch (error) {
     if (error instanceof SandboxFileTooLargeError) {
       return { error: fileTooLarge(computerMode, botId, storedPath), path: filePath };

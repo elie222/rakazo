@@ -24,6 +24,17 @@ export function registrableDomain(hostname: string): string | undefined {
   return host ? siteOf(host, false) : undefined;
 }
 
+/**
+ * Whether `hostname` is a public suffix, including a shared-host suffix such as `github.io`.
+ * A pattern that is only a suffix matches names other people register.
+ */
+export function isPublicSuffix(hostname: string): boolean {
+  const host = normalizedHost(hostname);
+  if (!host) return false;
+  const parsed = parse(host, { allowPrivateDomains: true, validateHostname: false });
+  return parsed.domain == null && parsed.publicSuffix != null;
+}
+
 function normalizedHost(hostname: string): string | undefined {
   return hostname.trim().toLowerCase().replace(/\.$/, "") || undefined;
 }

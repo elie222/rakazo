@@ -453,6 +453,9 @@ function toAgentTool(
       if (tool.name === "shell" || tool.name === "user_computer_shell") {
         return {
           command: String(raw.command ?? ""),
+          ...(tool.name === "user_computer_shell" && raw.computerId !== undefined
+            ? { computerId: raw.computerId }
+            : {}),
           // The executor chooses the default: the bot's folder, or the user's home.
           ...(raw.cwd ? { cwd: String(raw.cwd) } : {}),
         };

@@ -141,6 +141,8 @@ const FEED_RETRY_MAX_MS = 5_000;
 // ponytail: naive fixed-threshold endpointing on the fallback path only. Swap for a VAD
 // model if rooms with steady background noise start cutting people off mid-sentence.
 const SPEECH_LEVEL_DB = -35;
+/** A level at or under this shows as silence. */
+const SILENT_LEVEL_DB = -50;
 const SILENCE_HANG_MS = 1_200;
 const METER_POLL_MS = 200;
 /** How long a starting recorder may go without a level (web reports one once it records). */
@@ -959,6 +961,8 @@ let recordingTurn: AbortSignal | undefined;
 export async function recordClip(
   signal: AbortSignal,
   until?: AbortSignal,
+  /** The microphone's loudness from 0 (silence) to 1, each time it is measured. */
+  onLevel?: (level: number) => void,
 ): Promise<CallClip | null> {
   const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
@@ -1017,6 +1021,7 @@ export async function recordClip(
         continue;
       }
       metered = true;
+      onLevel?.(Math.min(1, Math.max(0, (level - SILENT_LEVEL_DB) / -SILENT_LEVEL_DB)));
       if (level > SPEECH_LEVEL_DB) {
         heardSpeech = true;
         quietMs = 0;

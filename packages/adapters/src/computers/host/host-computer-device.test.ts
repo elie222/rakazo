@@ -66,6 +66,16 @@ describe("this computer's screen on the desktop app's own server", () => {
     expect(await gateway().pairedSince("user")).toBeNull();
   });
 
+  it("never substitutes the local host for an explicit unavailable paired id", async () => {
+    expect(await gateway().connected("user", "missing")).toBeNull();
+    expect((await gateway().connected("user", HOST_COMPUTER_DEVICE_ID))?.deviceId).toBe(
+      HOST_COMPUTER_DEVICE_ID,
+    );
+    expect(await gateway().list("user")).toEqual([
+      expect.objectContaining({ deviceId: HOST_COMPUTER_DEVICE_ID, connected: true, bound: true }),
+    ]);
+  });
+
   it("is offline while the desktop app refuses access", async () => {
     server.setEnabled(false);
     expect(await gateway().connected("user")).toBeNull();
@@ -122,6 +132,7 @@ describe("this computer's screen on the desktop app's own server", () => {
 
   it("prefers a paired computer and leaves its requests to it", async () => {
     const paired: UserDeviceGateway = {
+      list: async () => [],
       connected: async () => ({ deviceId: "laptop", name: "Laptop", platform: "darwin" }),
       pairedSince: async () => grantedAt,
       request: vi.fn(async function* () {

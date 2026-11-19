@@ -10,7 +10,7 @@ import type { createApp } from "@rakazo/api/app";
 import { abortableDelay, RESPONSE_STREAMING_STORAGE_KEY } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { createThreadEvents, createThreadMessage, runAsSystem } from "@rakazo/db";
+import { createThreadEvents, runAsSystem } from "@rakazo/db";
 import type { NumericSummary } from "./performance-report.js";
 import {
   checkBudgets,
@@ -36,9 +36,10 @@ import {
   waitForUrl,
 } from "./performance-stack.js";
 import {
-  benchmarkThreadMessages,
+  benchmarkBot,
   STREAM_END,
   STREAMED_REPLY,
+  seedBenchmarkThread,
   streamChunks,
 } from "./web-chat-fixture.js";
 
@@ -297,10 +298,10 @@ async function prepareAccount(bench: Bench, sizes: number[]): Promise<Account> {
       const created = await rpc<{ id: string }>(
         page,
         "bots/create",
-        newBot(name),
+        benchmarkBot(name),
         spaceId ? { "x-rakazo-space-id": spaceId } : undefined,
       );
-      return seedThread(bench.prisma, created.id, name, size);
+      return seedBenchmarkThread(bench.prisma, created.id, name, size);
     };
     const threads: BenchThread[] = [];
     const unopened: Account["unopened"] = {};
@@ -321,35 +322,6 @@ async function prepareAccount(bench: Bench, sizes: number[]): Promise<Account> {
   } finally {
     await context.close();
   }
-}
-
-async function seedThread(prisma: PrismaClient, botId: string, name: string, size: number) {
-  return runAsSystem("benchmark seed", async () => {
-    const bot = await prisma.bot.findUniqueOrThrow({
-      where: { id: botId },
-      select: { spaceId: true, thread: { select: { id: true } } },
-    });
-    const threadId = bot.thread?.id;
-    if (!threadId) throw new Error(`${name} has no thread`);
-    let lastMessageId = "";
-    let bytes = 0;
-    for (const message of benchmarkThreadMessages(size)) {
-      bytes += JSON.stringify(message.blocks).length;
-      const created = await createThreadMessage(prisma, {
-        threadId,
-        role: message.role,
-        blocks: message.blocks,
-        botId: message.role === "bot" ? botId : undefined,
-        markUnread: false,
-      });
-      lastMessageId = created.id;
-    }
-    return { size, name, botId, threadId, spaceId: bot.spaceId, lastMessageId, bytes };
-  });
-}
-
-function newBot(name: string) {
-  return { name, title: "", description: "", notifyOnFinish: false, computerMode: "team" };
 }
 
 async function rpc<T>(

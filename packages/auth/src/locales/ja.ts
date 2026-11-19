@@ -86,4 +86,10 @@ export const JA_MESSAGES: Record<string, string> = {
     "{inviter}さんがRakazoの{space}への参加にあなたを招待しました。",
   "Join {space}": "{space}に参加",
   "This invitation expires in 7 days.": "この招待は7日後に期限切れになります。",
+  "Connect a model to start using Rakazo": "Rakazoを使い始めるにはモデルを接続してください",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Rakazoのプランは開始していますが、モデルを接続するまでボットは返信できません。",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "{subscriptions}のサブスクリプションでサインインするか、APIキーを貼り付けてください。",
+  "Connect a model": "モデルを接続",
 };

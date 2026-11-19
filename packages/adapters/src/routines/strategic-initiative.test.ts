@@ -346,7 +346,7 @@ describe("strategic initiative tool guard", () => {
         trigger: "routine",
         clientNonce: "strategic-initiative:bot-1:123",
       }).map((tool) => tool.name),
-    ).toEqual(["ask_user", "message_user"]);
+    ).toEqual(["ask_user"]);
   });
 
   it("does not filter regular runs", () => {
@@ -435,6 +435,16 @@ it("escapes scratchpad data and keeps instructions outside its wrapper", async (
   expect(tasks[0]?.prompt?.match(/<\/scratchpad_items>/g)).toHaveLength(1);
 });
 
+it("names only the tool a check-in has and keeps the exact silence sentinel", async () => {
+  const { prisma, tasks } = strategicPrisma({ bots: [candidate] });
+  const { jobs } = publisher();
+  await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 1 });
+  const prompt = tasks[0]?.prompt ?? "";
+  expect(prompt).toContain("exactly NO_RESPONSE");
+  expect(prompt).toContain("ask_user");
+  expect(prompt).not.toContain("message_user");
+});
+
 it.each([
   "computer_shell",
   "browser_act",
@@ -444,6 +454,7 @@ it.each([
   "update_bot",
   "gmail_send",
   "catalog_execute",
+  "message_user",
 ])("denies %s at the shared dispatch boundary", (name) => {
   expect(
     strategicInitiativeToolAllowed(name, {

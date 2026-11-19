@@ -215,6 +215,31 @@ describe("T3 Code adapter over its MCP wire emulator (offline)", () => {
     }
   });
 
+  it("reads the newest run without a tracked run id and never drops a held run", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { emulator, provider } = create();
+      const first = await provider.launch(
+        {
+          idempotencyKey: "untracked",
+          prompt: "Task",
+          repository: "https://github.com/example/demo",
+        },
+        ctx,
+      );
+      await provider.cancel(first.id, ctx, first.latestRunId);
+      const held = await provider.reply(first.id, { prompt: "Started elsewhere" }, ctx);
+      vi.setSystemTime(Date.now() + 61_000);
+      // The poll worker reads this way before it sends a follow-up, to learn the newest run.
+      expect((await provider.get(first.id, ctx)).latestRunId).toBe(held.latestRunId);
+      expect((await provider.get(first.id, ctx)).latestRunId).toBe(held.latestRunId);
+      expect(emulator.calls.filter((call) => call.tool === "t3_queue")).toEqual([]);
+      expect(emulator.threads.get(first.id)!.runs.at(-1)!.status).not.toBe("cancelled");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ends a held follow-up when T3 Code refuses a later status read", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {

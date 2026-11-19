@@ -344,7 +344,7 @@ export function botsRoutes(ctx: RouterContext) {
       get: authed.bots.get.handler(async ({ context, input }) => {
         const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
         if (!found) throw new IsolationError();
-        return found;
+        return { ...found, meetingsEnabled: await deps.meetings?.visible(context.actor, found.id) };
       }),
       create: authed.bots.create.handler(async ({ context, input }) => {
         // Older apps always send Original, which would pin every new bot to it.

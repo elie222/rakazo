@@ -46,11 +46,9 @@ import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
 import {
-  isRunTainted,
   markReadOutsideContent,
   neverAsks,
   OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
-  refuseOwnerSettingsChange,
 } from "../assembly/run-context.js";
 import {
   approvalReplayEffectToolName,
@@ -82,6 +80,10 @@ export interface ToolRequest {
   fleetSummary: FleetCardSummary | undefined;
   /** Gated like a consequential action, even when the tool alone is not. */
   heldForApproval: boolean;
+  /** Changes the owner's or this bot's settings: the approval model checks it after outside text. */
+  settingsChange: boolean;
+  /** Outside text may have asked for it, so a saved Always allow rule does not skip its approval. */
+  ignoresAllowRules: boolean;
   /** This page tool call completes a purchase, which a person approves each time. */
   purchase: PurchaseApproval | undefined;
   /** This page tool call types a saved card into a checkout, which a person approves each time. */
@@ -309,6 +311,8 @@ export async function resolveToolRequest(
     replayEffectToolName,
     fleetSummary: undefined,
     heldForApproval: false,
+    settingsChange: false,
+    ignoresAllowRules: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: undefined,
@@ -405,7 +409,7 @@ export async function prepareToolRequest(
     );
   }
   // Before the gate, so a run that may never reach the user's computer shows no approval card.
-  if (USER_COMPUTER_TOOLS.has(name)) {
+  if (USER_COMPUTER_TOOLS.has(name) || name === "user_computer_list") {
     if (!ctx.source.userComputerOwner || !deps.userDevices)
       return refusal(
         "user_computer_unavailable",
@@ -442,12 +446,14 @@ export async function prepareToolRequest(
       return refusal("tool_disabled", "This tool is disabled for this bot.");
     if (!ctx.source.ownerStartedRun)
       return refusal("run_not_owner_started", "Bot management tools need a run you started.");
-    if (fleetWrite && !(await neverAsks(ctx)) && (await ctx.trust.receivedOutsideMessage()))
-      return refusal(
-        "outside_message_blocks_bot_management",
-        "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
-      );
+    // Text from a channel or webhook may have asked for it, so it goes through the approval mode,
+    // and an Always allow rule saved for calls the owner asked for does not skip it.
+    if (fleetWrite && (await ctx.trust.receivedOutsideMessage())) {
+      request.heldForApproval = true;
+      request.ignoresAllowRules = true;
+    }
   }
+  if (name === "update_preferences") request.settingsChange = true;
   if (name === "save_page") {
     const refused = await holdSharedPageSave(ctx, request);
     if (refused) return refused;
@@ -653,7 +659,7 @@ async function currentModelNames(
 
 /**
  * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
- * they go through approval like any other action, and outside runs cannot change them.
+ * they go through approval like any other action, and runs someone else started cannot change them.
  */
 async function prepareOwnBotUpdate(
   ctx: RunContext,
@@ -710,11 +716,7 @@ async function prepareOwnBotUpdate(
         "owner_only_model_settings",
         "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
       );
-    if (!unguarded && (await isRunTainted(ctx)))
-      return refuseOwnerSettingsChange(
-        ctx,
-        "Model, thinking, voice and read-aloud changes are blocked for the rest of this run because it read outside content.",
-      );
+    request.settingsChange = true;
   }
   if (!argumentGiven(args.instructions)) return undefined;
   if (isSubagentToolExecution(executionId))
@@ -729,7 +731,9 @@ async function prepareOwnBotUpdate(
     return refusal("instructions_contain_credentials", "Instructions cannot contain credentials.");
   request.args = { ...args, instructions };
   if (unguarded) return undefined;
-  if (!["created", "routine"].includes(run.trigger) && !ctx.source.ownerStartedRun)
+  // A run someone else started acts with their authority, and its card is theirs to answer. A new
+  // bot's first run sets the instructions its creator asked for.
+  if (run.trigger !== "created" && !ctx.source.ownerStartedRun)
     return refusal(
       "instructions_run_not_owner_started",
       "Instruction changes are blocked for runs someone else started.",

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import type {
   ApnsVoipConfig,
   MessagingEnvironmentValues,
@@ -14,6 +15,7 @@ import {
   resolveSandboxProvider,
   sandboxProviderOptionsFromEnv,
   secretStoreOptionsFromEnv,
+  workspaceSaveLimits,
 } from "@rakazo/adapters";
 import type { OidcConfig, SocialAuthConfig } from "@rakazo/auth";
 import { socialAuthFromFields } from "@rakazo/auth";
@@ -88,6 +90,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  /** What one computer save may copy; the worker reads the same setting. */
+  workspaceSaveLimits: WorkspaceExportLimits;
   maxAttachmentsPerMessage: number;
   /** Bot replies longer than this are read aloud as a summary; unset reads every reply in full. */
   voiceSummaryMinChars: number | undefined;
@@ -277,6 +281,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    workspaceSaveLimits: workspaceSaveLimits(source),
     maxAttachmentsPerMessage: attachmentCountFromEnv(source),
     deploymentVoice: deploymentVoiceFromEnv(
       source.DEPLOYMENT_VOICE,

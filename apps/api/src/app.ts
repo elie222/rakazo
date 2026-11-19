@@ -14,6 +14,7 @@ import type {
   RealtimeFanout,
   SandboxProvider,
   TransactionalEmailProvider,
+  WebProvider,
 } from "@rakazo/adapter-kit";
 import { EmailRecipientRejectedError } from "@rakazo/adapter-kit";
 import type {
@@ -31,6 +32,8 @@ import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
+  configuredMeetingProviders,
+  configuredMeetingSpaces,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -57,7 +60,10 @@ import {
   InMemoryRealtimeFanout,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  MeetingCalendarService,
+  MeetingService,
   machineCleanupRecords,
+  meetingCalendarScope,
   messagingAddresses,
   messagingPlatformsFromEnv,
   ObjectAgentHomeStore,
@@ -85,6 +91,7 @@ import {
   withSecretPersistence,
   withSecretWriteAhead,
 } from "@rakazo/adapters";
+import { configuredMeetingMedia } from "@rakazo/adapters/meeting-media";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import {
   buildTrustedOrigins,
@@ -100,7 +107,7 @@ import {
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
-import { encryptionKeyWarning } from "@rakazo/core/node/secrets-guard";
+import { encryptionKeyWarning, resolveMeetingSigningKey } from "@rakazo/core/node/secrets-guard";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
   configureProviderTransactionPool,
@@ -179,6 +186,9 @@ import { mountScriptAssets } from "./http/script-assets.js";
 import { SYSTEM_CONTEXT_PATHS } from "./http/system-context-routes.js";
 import { moveMcpArgsIntoSecrets } from "./integrations/mcp-args-migration.js";
 import { pluginSubmissionRoutes } from "./integrations/plugin-submissions.js";
+import { mountMeetingCalendarHttp } from "./meetings/calendar/calendar-routes.js";
+import { createMeetingAnswers } from "./meetings/meeting-answers.js";
+import { mountMeetingWebhook } from "./meetings/meeting-routes.js";
 import { startMessagingRuntime } from "./messaging/messaging-runtime.js";
 import { settleWithTimeout } from "./messaging/team-chat-startup.js";
 import { recordSignInEnded } from "./models/model-connect-analytics.js";
@@ -267,6 +277,8 @@ type CreateAppOverrides = Partial<AppEnv> & {
   userDevices?: UserDeviceGateway;
   /** Test-only present moment the agent is told. */
   now?: () => Date;
+  /** Test-only web search and fetch. */
+  web?: WebProvider;
 };
 
 async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
@@ -289,6 +301,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     runtime: runtimeOverride,
     contextStrategy,
     userDevices: userDevicesOverride,
+    web,
     now,
     ...envOverrides
   } = overrides;
@@ -409,7 +422,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const oauthLogins = new PiOAuthLogins<ModelCredential>(undefined, { prisma, secrets }, (ended) =>
     recordSignInEnded(analytics, ended),
   );
-  const home = createAgentHomeStore(env.dataDir, prisma);
+  const home = createAgentHomeStore(env.dataDir, prisma, process.env, env.workspaceSaveLimits);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const memory = new MarkdownMemoryStore(prisma);
@@ -587,8 +600,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     extraOrigins: [...MOBILE_AUTH_ORIGINS, ...env.extraAuthOrigins],
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     beforeDeleteUser: async (userId) => {
-      // Billing cancels inside, after the account's spaces are claimed and before anything is
-      // destroyed, so a provider failure aborts deletion with the account as it was.
+      // Calendar cleanup and billing run under the Space claims, before content teardown.
       await deleteAccountContent(
         {
           prisma,
@@ -602,6 +614,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           secrets,
           events,
           billing,
+          meetings,
+          meetingCalendar,
         },
         userId,
       );
@@ -674,12 +688,40 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
+  const { meeting: meetingProvider, calendar: calendarProvider } =
+    await configuredMeetingProviders();
+  const meetingMediaConfig = meetingProvider && configuredMeetingMedia();
+  const meetings = new MeetingService({
+    prisma,
+    jobs,
+    events,
+    provider: meetingProvider,
+    spaceIds: meetingProvider && configuredMeetingSpaces(meetingProvider),
+    buildJoin: meetingMediaConfig?.buildJoin,
+  });
+  const meetingCalendar =
+    calendarProvider &&
+    new MeetingCalendarService({
+      prisma,
+      jobs,
+      provider: calendarProvider,
+      webOrigin: env.webOrigin,
+      oauthStateKey: resolveMeetingSigningKey(),
+      enabled: (spaceId) => meetings.enabled(spaceId),
+      buildJoin: meetingMediaConfig?.buildJoin ?? ((input) => input),
+      publish: async ({ spaceId, userId }) => {
+        await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
+      },
+    });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
     runtimeEnv,
     connectors,
     {
       billingEnabled: modelCreditsEnabled,
       mediaGeneration,
+      meetingWork: meetingProvider && meetings.work.bind(meetings),
+      meetingCalendarSync:
+        meetingCalendar && (({ connectionId }) => meetingCalendar.sync(connectionId)),
       contextStrategy,
       prisma,
       runtime: baseRuntime,
@@ -715,6 +757,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           token: env.sandboxOptions.hostComputerToken,
         }),
       paymentWallet,
+      web,
       stoppingSignal: shutdown.signal,
       shutdownSignal: runDrain.signal,
       now,
@@ -789,7 +832,33 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     (error) => getLogger().error("stalled organization deletion failed", error),
   );
 
+  // Meeting requests use a runtime with no persistent session recording.
+  const meetingRuntime = new PiAgentRuntime();
+  const meetingMedia =
+    meetingMediaConfig &&
+    meetingProvider &&
+    (await import("./meetings/media/app-meeting-media.js")).appMeetingMedia({
+      prisma,
+      secrets,
+      env,
+      runtime: meetingRuntime,
+      resolveModel: executor.resolveModel,
+      config: meetingMediaConfig,
+      billingEnabled: modelCreditsEnabled,
+      providerId: meetingProvider.describe().id,
+      enabled: (spaceId) => meetings.enabled(spaceId),
+    });
+
   const router = createRouter({
+    meetings,
+    meetingCalendar,
+    meetingAnswers: createMeetingAnswers({
+      prisma,
+      runtime: meetingRuntime,
+      resolveModel: executor.resolveModel,
+      offline: meetingProvider?.describe().capabilities.offline === true,
+      billingEnabled: modelCreditsEnabled,
+    }),
     speechSummary:
       env.voiceSummaryMinChars === undefined
         ? undefined
@@ -1012,8 +1081,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
             pushTokens,
             devices: deviceSessions,
             events,
+            meetingCalendar,
             afterDeparture: (actor, departure) =>
-              afterSpaceDeparture({ prisma, sandbox, jobs, events }, actor, departure),
+              afterSpaceDeparture(
+                { prisma, sandbox, jobs, events, meetings, meetingCalendar },
+                actor,
+                departure,
+              ),
           },
           change,
         ).catch((error) => {
@@ -1154,6 +1228,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     },
     sessionActor,
   );
+  if (meetingProvider) mountMeetingWebhook(app, meetings);
+  meetingMedia?.mount(app);
+  if (meetingCalendar) mountMeetingCalendarHttp(app, meetingCalendar, sessionActor);
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
   if (env.inboundEmail) {
     mountEmailInboundRoute(app, {

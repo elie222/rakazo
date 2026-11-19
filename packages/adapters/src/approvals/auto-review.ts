@@ -39,6 +39,8 @@ export type AutoReviewChecker = {
   /** The connection the approval choice is pinned to. */
   credentialId?: string;
   creditOfferingId?: string;
+  /** The deployment's operator-funded reviewer, added last so a member's unusable choice still gets a decision. */
+  included?: true;
 };
 
 export type AutoReviewJudgeResult = AutoReviewResult;

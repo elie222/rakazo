@@ -962,6 +962,20 @@ describe("createAgentHomeStore", () => {
     expect(store).not.toBeInstanceOf(ObjectAgentHomeStore);
   });
 
+  it("hands the configured save limits to the home store", () => {
+    expect(createAgentHomeStore("/tmp/unused", {} as PrismaClient, {}).saveLimits).toEqual({
+      maxBytes: 5 * 1024 ** 3,
+      maxFiles: 1_000_000,
+    });
+    const store = createAgentHomeStore("/tmp/unused", {} as PrismaClient, {
+      WORKSPACE_SAVE_MAX_GB: "20",
+    });
+    expect(store.saveLimits?.maxBytes).toBe(20 * 1024 ** 3);
+    expect(() =>
+      createAgentHomeStore("/tmp/unused", {} as PrismaClient, { WORKSPACE_SAVE_MAX_GB: "0" }),
+    ).toThrow("WORKSPACE_SAVE_MAX_GB");
+  });
+
   it("refuses object storage without content keys", () => {
     expect(() =>
       createAgentHomeStore("/tmp/unused", {} as PrismaClient, {

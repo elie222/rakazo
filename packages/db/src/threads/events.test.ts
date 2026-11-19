@@ -27,6 +27,7 @@ import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
 import type { AnswerRunInput } from "./thread-ask.js";
 import {
   AnswerTooLongError,
+  APPROVAL_EXPIRED_RESULT,
   answerRunInput,
   answerWaitingRunWithTextInTransaction,
   pauseRunForInput,
@@ -2312,6 +2313,86 @@ describe("answerWaitingRunWithTextInTransaction", () => {
 });
 
 describe("answerRunInput approvals", () => {
+  function expiringCard() {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [
+            {
+              kind: "ask",
+              approvalEffectId: "effect-1",
+              text: "Review before writing",
+              status: "pending",
+              actions: [
+                { id: "allow", label: "Allow once" },
+                { id: "deny", label: "Deny" },
+              ],
+            },
+          ],
+        }),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
+      run: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-1", userId: "user-1", trigger: "routine" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+      },
+      task: { updateMany: vi.fn() },
+      externalEffect: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ id: "effect-1", kind: "connector_write", status: "intended" }),
+        update: vi.fn().mockResolvedValue({ id: "effect-1" }),
+      },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    const answer = (value: string) =>
+      answerRunInput(prisma, {
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        runId: "run-1",
+        messageId: "message-1",
+        answeredByUserId: "user-1",
+        answer: value,
+        expired: true,
+      });
+    return { tx, answer };
+  }
+
+  it("ends an expired card as a deny the bot is told nobody answered", async () => {
+    const { tx, answer } = expiringCard();
+    await expect(answer("deny")).resolves.toBe(true);
+    expect(tx.externalEffect.update).toHaveBeenCalledWith({
+      where: { id: "effect-1" },
+      data: { status: "denied", result: APPROVAL_EXPIRED_RESULT },
+    });
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: {
+        blocks: [expect.objectContaining({ status: "answered", answer: "deny", expired: true })],
+      },
+    });
+  });
+
+  it("never lets an expiry approve the action", async () => {
+    const { tx, answer } = expiringCard();
+    await expect(answer("allow")).resolves.toBe(false);
+    expect(tx.externalEffect.update).not.toHaveBeenCalled();
+  });
+
   it("approves consequential actions without overwriting the task prompt", async () => {
     const fanout = new TestFanout();
     const tx = {

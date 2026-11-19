@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import { configuredMeetingMedia } from "@rakazo/adapters/meeting-media";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
 import { startWorkerHealth } from "./health.js";
@@ -15,6 +16,8 @@ import {
   CodexCatalogCache,
   configuredBotEmailProvider,
   configuredEmailProvider,
+  configuredMeetingProviders,
+  configuredMeetingSpaces,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -42,7 +45,10 @@ import {
   InMemoryJobQueue,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  MeetingCalendarService,
+  MeetingService,
   machineCleanupRecords,
+  meetingCalendarScope,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   PiAgentRuntime,
@@ -68,7 +74,7 @@ import {
   withSecretWriteAhead,
 } from "@rakazo/adapters";
 import { abortableDelay } from "@rakazo/core";
-import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
+import { resolveMeetingSigningKey, resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createBoardEvents,
   createDb,
@@ -168,7 +174,7 @@ async function main() {
     ? new ChatSdkMessagingSurface(messagingPlatforms)
     : undefined;
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const home = createAgentHomeStore(env.dataDir, prisma);
+  const home = createAgentHomeStore(env.dataDir, prisma, process.env, env.workspaceSaveLimits);
   void home.removeStaleStaging().catch((error) => logger.error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const shutdown = new AbortController();
@@ -248,8 +254,39 @@ async function main() {
   const lifecycleEmail = accountEmail
     ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
     : undefined;
+  const { meeting: meetingProvider, calendar: calendarProvider } =
+    await configuredMeetingProviders();
+  const meetingMedia = meetingProvider && configuredMeetingMedia();
+  const meetings =
+    meetingProvider &&
+    new MeetingService({
+      prisma,
+      jobs,
+      events,
+      provider: meetingProvider,
+      spaceIds: configuredMeetingSpaces(meetingProvider),
+      buildJoin: meetingMedia?.buildJoin,
+    });
+  const meetingCalendar =
+    calendarProvider &&
+    meetings &&
+    new MeetingCalendarService({
+      prisma,
+      jobs,
+      provider: calendarProvider,
+      webOrigin: process.env.WEB_ORIGIN?.trim() || "http://127.0.0.1:5173",
+      oauthStateKey: resolveMeetingSigningKey(),
+      enabled: (spaceId) => meetings.enabled(spaceId),
+      buildJoin: meetingMedia?.buildJoin ?? ((input) => input),
+      publish: async ({ spaceId, userId }) => {
+        await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
+      },
+    });
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,
+    meetingWork: meetings?.work.bind(meetings),
+    meetingCalendarSync:
+      meetingCalendar && (({ connectionId }) => meetingCalendar.sync(connectionId)),
     prisma,
     runtime,
     // Live per-account Codex catalog; never refreshes or writes credentials.

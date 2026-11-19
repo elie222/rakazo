@@ -1,10 +1,13 @@
-import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AutoReviewRequest } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, expect, it, vi } from "vitest";
+import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
+import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
 import type * as ModelSelection from "../../models/model-selection.js";
 import { findConnectedModelCredential } from "../../models/model-selection.js";
 import { resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
-import { autoReviewCheckerProvider } from "./run-auto-review.js";
+import { autoReviewCheckerProvider, includedAutoReviewChecker } from "./run-auto-review.js";
 import type * as RunModel from "./run-model.js";
 import { resolveModelKey } from "./run-model.js";
 
@@ -16,6 +19,7 @@ afterEach(() => {
 vi.mock("../../models/model-selection.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ModelSelection>()),
   findConnectedModelCredential: vi.fn(async () => ({ id: "fixture-credential" })),
+  hasHostedModelCredits: vi.fn(async () => false),
 }));
 vi.mock("./run-model.js", async (importOriginal) => ({
   ...(await importOriginal<typeof RunModel>()),
@@ -334,13 +338,118 @@ it.each([
   },
 );
 
-const checkerContext = {
-  runId: "run-fixture",
-  spaceId: "space-fixture",
-  userId: "user-fixture",
-  botId: "bot-fixture",
-  threadId: "thread-fixture",
+const reviewRequest: AutoReviewRequest = {
+  toolName: "fixture_action",
+  connectorKind: "fixture",
+  args: {},
+  userTask: "Review action",
+  botDescription: "Fixture bot",
+  matchingRules: [],
 };
+const reviewContext = {
+  operationId: "review",
+  traceId: "review",
+  spaceId: "space",
+  userId: "user",
+  signal: new AbortController().signal,
+};
+const reviewScope = {
+  runId: "run",
+  spaceId: "space",
+  userId: "user",
+  botId: "bot",
+  threadId: "thread",
+};
+
+function reviewEachCandidate(deps: ExecutorDeps) {
+  return async (candidate: AutoReviewCandidate) => {
+    const provider = await autoReviewCheckerProvider(
+      deps,
+      reviewScope,
+      { memberChecker: candidate.role !== "default", registerSecrets: vi.fn() },
+      candidate,
+    );
+    return provider.review(reviewRequest, reviewContext);
+  };
+}
+
+it("gives a member with no connection and no credits a decision from the included reviewer", async () => {
+  vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
+  vi.stubEnv("TYPESAFE_API_KEY", "");
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "");
+  vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "");
+  vi.mocked(findConnectedModelCredential).mockResolvedValueOnce(null);
+  const fetchMock = vi.fn(async () =>
+    Response.json({
+      answers: { decision: { type: "choice", choice: "pass", confidence: 0.99 } },
+      usage: { input_tokens: 10, output_tokens: 0, cost: 0.0001 },
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const deps = {
+    billingEnabled: true,
+    prisma: {
+      $transaction: async (work: (tx: unknown) => unknown) =>
+        work({
+          usageRecord: { createMany: vi.fn(), updateMany: vi.fn() },
+          modelCreditEntry: { findUnique: async () => null },
+        }),
+    },
+    secretStore: {},
+  } as unknown as ExecutorDeps;
+  const sink = createTestSink();
+  installLogger(createLogger({ service: "test", sinks: [sink] }));
+  try {
+    const included = await includedAutoReviewChecker(deps);
+    expect(included).toEqual({
+      provider: "openrouter",
+      model: "typesafe/jev-1.14",
+      included: true,
+    });
+    const result = await reviewWithBackups(
+      [
+        { provider: "anthropic", model: "fixture-model", role: "member" },
+        { ...included!, role: "default" },
+      ],
+      reviewEachCandidate(deps),
+      new AbortController().signal,
+    );
+    expect(result).toMatchObject({ decision: "pass", model: "openrouter/typesafe/jev-1.14" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer fake-operator-key" }),
+      }),
+    );
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        "auto_review.reason": "connection_unavailable",
+        "auto_review.role": "member",
+        "error.name": "CheckerConnectionUnavailableError",
+      }),
+    ]);
+  } finally {
+    installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+  }
+});
+
+it("has no included reviewer without hosted credits", async () => {
+  vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
+  const deps = { billingEnabled: false, prisma: {} } as unknown as ExecutorDeps;
+  expect(await includedAutoReviewChecker(deps)).toBeNull();
+});
+
+it("names a decision reviewer built without a key as an authentication failure", async () => {
+  vi.mocked(resolveModelKey).mockResolvedValueOnce({ apiKey: "" } as never);
+  const deps = { billingEnabled: false, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
+  const result = await reviewWithBackups(
+    [{ provider: "openrouter", model: "typesafe/jev-1.14", role: "member" }],
+    reviewEachCandidate(deps),
+    new AbortController().signal,
+  );
+  expect(result).toMatchObject({ decision: "error", reason: "Checker could not authenticate." });
+});
+
 const checkerDeps = {
   prisma: {},
   secretStore: {},
@@ -355,7 +464,7 @@ it("refuses a decision-model checker on a connection that restricts data retenti
   await expect(
     autoReviewCheckerProvider(
       checkerDeps,
-      checkerContext,
+      reviewScope,
       { memberChecker: true, registerSecrets: vi.fn() },
       { provider: "openrouter", model: "typesafe/jev-1.14" },
     ),
@@ -369,7 +478,7 @@ it("still builds a decision-model checker when data retention is not restricted"
   await expect(
     autoReviewCheckerProvider(
       checkerDeps,
-      checkerContext,
+      reviewScope,
       { memberChecker: true, registerSecrets: vi.fn() },
       { provider: "openrouter", model: "typesafe/jev-1.14" },
     ),
@@ -389,26 +498,10 @@ it("passes the data retention choice to a language-model checker", async () => {
       ...checkerDeps,
       runtime: { describe: () => ({ capabilities: { scripted: false } }), run },
     } as unknown as ExecutorDeps,
-    checkerContext,
+    reviewScope,
     { memberChecker: true, registerSecrets: vi.fn() },
     { provider: "openrouter", model: "example/model" },
   );
-  await provider.review(
-    {
-      toolName: "fixture_action",
-      connectorKind: "fixture",
-      args: {},
-      userTask: "Review this action",
-      botDescription: "Test bot",
-      matchingRules: [],
-    },
-    {
-      operationId: "review-fixture",
-      traceId: "review-fixture",
-      spaceId: "space-fixture",
-      userId: "user-fixture",
-      signal: new AbortController().signal,
-    },
-  );
+  await provider.review(reviewRequest, reviewContext);
   expect(run.mock.calls[0]?.[0].model).toMatchObject({ zeroDataRetention: true });
 });

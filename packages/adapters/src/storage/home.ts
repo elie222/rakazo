@@ -19,7 +19,12 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
-import type { AdapterContext, AgentHomeStore, PortableFile } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  AgentHomeStore,
+  PortableFile,
+  WorkspaceExportLimits,
+} from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { fileHandlePath } from "./file-handle-path.js";
 import {
@@ -36,7 +41,10 @@ export const STALE_STAGING_MS = 5 * 60_000;
 export class LocalAgentHomeStore implements AgentHomeStore {
   private readonly botWrites = new Map<string, Promise<void>>();
 
-  constructor(protected readonly root: string) {}
+  constructor(
+    protected readonly root: string,
+    readonly saveLimits?: WorkspaceExportLimits,
+  ) {}
 
   describe() {
     return {

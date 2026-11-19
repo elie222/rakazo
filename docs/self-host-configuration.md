@@ -251,4 +251,16 @@ HTTPS_PROXY=http://proxy.example.com:3128
 NO_PROXY=localhost,127.0.0.1,postgres,supervisor,api,worker,web
 ```
 
+Guarded fetches tunnel to the address that passed the public-address check, so the proxy never
+resolves the name. A proxy that classifies traffic by the CONNECT target drops a bare address. For
+the HTTPS hosts it allows by name, set `RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS` to a
+comma-separated list of those hosts. A `*.example.com` entry matches subdomains only. A bare `*`
+and a public suffix such as `*.com` are rejected. Listed hosts are still checked against local DNS
+and their certificate, and plain HTTP stays pinned to the checked address. Leave it unset to keep
+every tunnel on the checked address.
+
+```env
+RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS=api.example.com,*.downloads.example.com
+```
+
 For mirrors of the installer and images, see [restricted networks](./self-host-restricted-network.md).

@@ -151,6 +151,7 @@ describe("shared role editor", () => {
     expect(container.querySelector('[data-testid="model-role-default"]')?.textContent).toContain(
       "Deployment default",
     );
+    expect(trigger("Add fallback")).toBeNull();
     await pick("Change Approval model", "Jev 1.14");
     expect(api.setRole).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -162,9 +163,11 @@ describe("shared role editor", () => {
       { context: { spaceId: "space" } },
     );
     expect(rows()).toEqual(["Jev 1.14OpenRouter"]);
+    expect(trigger("Add fallback")).not.toBeNull();
     await menu("Jev 1.14", "Remove");
     expect(saved.primary).toBeNull();
     expect(container.querySelector('[data-testid="model-role-default"]')).not.toBeNull();
+    expect(trigger("Add fallback")).toBeNull();
   });
   it("does not show the unconfigured label before the first load", async () => {
     const hold = new Promise<never>(() => undefined);
@@ -188,6 +191,7 @@ describe("shared role editor", () => {
     expect(api.role.mock.calls.length).toBe(loads + 1);
   });
   it("uses the same add, order and remove controls for main and approval fallbacks", async () => {
+    saved = { ...saved, deploymentPrimary: mini };
     await render();
     await pick("Add fallback", "Chat");
     await pick("Add fallback", "Jev 1.14");
@@ -195,7 +199,7 @@ describe("shared role editor", () => {
     await menu("Jev 1.14", "Move up");
     expect(saved.backups).toEqual([pin(jev), pin(chat)]);
     await menu("Chat", "Remove");
-    expect(saved).toEqual({ primary: null, backups: [pin(jev)] });
+    expect(saved).toEqual({ primary: null, backups: [pin(jev)], deploymentPrimary: mini });
     expect(api.setRole).toHaveBeenLastCalledWith(
       expect.objectContaining({ role: "main" }),
       expect.anything(),
@@ -415,7 +419,7 @@ describe("shared role editor", () => {
     api.role.mockRejectedValueOnce(new Error("offline"));
     await render({ modelRole: "approval", title: "Approval model" });
     expect(trigger("Change Approval model")?.disabled).toBe(true);
-    expect(trigger("Add fallback")?.disabled).toBe(true);
+    expect(trigger("Add fallback")).toBeNull();
     expect(api.setRole).not.toHaveBeenCalled();
     const retry = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Retry",
