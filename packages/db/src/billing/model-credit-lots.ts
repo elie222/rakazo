@@ -326,8 +326,38 @@ export async function returnCreditLots(
       data: { usedMicros, availableMicros, expiredMicros },
     });
     if (expiredMicros !== lot.expiredMicros) await setExpiredCredits(tx, lot.id, expiredMicros);
+    const owedBefore = positive(lot.usedMicros + lot.expiredMicros - lot.amountMicros);
+    const repaid = owedBefore - positive(usedMicros + expiredMicros - lot.amountMicros);
+    if (repaid > 0n) await returnDisputeRepayment(tx, lot.id, repaid, now);
     allocation.amountMicros = (held - returned).toString();
     amount -= returned;
   }
   return allocations.filter((allocation) => BigInt(allocation.amountMicros) > 0n);
+}
+
+/**
+ * Value returned to a disputed purchase's lot pays down its debt instead of being spendable, so
+ * the lots that had repaid that much of the debt get it back, each keeping its own expiry.
+ */
+async function returnDisputeRepayment(tx: Tx, lotId: string, amount: bigint, now: Date) {
+  const purchase = await tx.modelCreditEntry.findUnique({ where: { id: lotId } });
+  if (!purchase?.source.startsWith("purchase:")) return;
+  let stored: CreditAllocation[];
+  try {
+    stored = storedCreditAllocations(purchase);
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    reportJsonColumnOnce(
+      "Dispute allocations cannot be read; repayment is not returned",
+      error.row,
+    );
+    return;
+  }
+  const storedMicros = allocatedMicros(stored);
+  const remaining = await returnCreditLots(tx, stored, amount, now);
+  if (allocatedMicros(remaining) !== storedMicros)
+    await tx.modelCreditEntry.update({
+      where: { id: purchase.id },
+      data: { allocations: remaining },
+    });
 }
