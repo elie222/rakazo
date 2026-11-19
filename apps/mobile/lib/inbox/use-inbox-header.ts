@@ -6,7 +6,10 @@ import { useUiLocale } from "../i18n/i18n";
 import type { CreateAction } from "./create-chooser";
 import { createMenuItems } from "./create-chooser";
 
-/** Liquid Glass home header: account on the left; activity, search and create on the right. */
+/**
+ * Liquid Glass home header: account on the left; activity and search together on the right, and
+ * create on its own glass after them.
+ */
 export function useInboxHeader({
   nativeHeader,
   ready,
@@ -70,6 +73,8 @@ export function useInboxHeader({
           label: t`Create`,
           accessibilityLabel: t`Create`,
           icon: { type: "sfSymbol" as const, name: "plus" },
+          // Creating is a different kind of action from the ways of looking at chats beside it.
+          sharesBackground: false,
           menu: {
             items: createMenuItems.map(({ id, label, sfSymbol }) => ({
               type: "action" as const,

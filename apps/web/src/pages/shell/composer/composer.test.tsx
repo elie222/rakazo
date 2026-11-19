@@ -217,13 +217,15 @@ it.each([MODEL_REQUIRED_SEND_ERROR, `  ${MODEL_REQUIRED_SEND_ERROR}  `])(
   "links the missing-model send error to model settings: %s",
   (sendError) => {
     const onOpenModels = vi.fn();
-    renderComposer(async () => true, { sendError, onOpenModels });
+    const onOpenConnections = vi.fn();
+    renderComposer(async () => true, { sendError, onOpenModels, onOpenConnections });
     const link = container?.querySelector<HTMLButtonElement>(
       '[data-testid="composer-error-open-models"]',
     );
     expect(link?.textContent).toBe(sendError);
     act(() => link?.click());
-    expect(onOpenModels).toHaveBeenCalledOnce();
+    expect(onOpenConnections).toHaveBeenCalledOnce();
+    expect(onOpenModels).not.toHaveBeenCalled();
 
     rerenderComposer({ sendError: "Could not send the message." });
     expect(container?.querySelector('[data-testid="composer-error-open-models"]')).toBeNull();

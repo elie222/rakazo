@@ -426,11 +426,11 @@ async function notConnectedChoices() {
   await remount(async () => {
     await act(async () => root.render(createElement(Models)));
   });
-  const add = [...container.querySelectorAll("button")].find((button) =>
-    button.textContent?.includes("Add fallback"),
+  const firstModel = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Choose a model",
   );
-  expect(add).toBeDefined();
-  await act(async () => add!.click());
+  expect(firstModel).toBeDefined();
+  await act(async () => firstModel!.click());
   const route = push.mock.calls.at(-1)?.[0] as { params: { requestId: string } };
   return modelPickerRequest(route.params.requestId)!.connectChoices ?? [];
 }
@@ -1019,7 +1019,7 @@ it("offers a retry when the first load fails, then shows the model lists", async
       (button) => button.textContent === "Retry",
     );
     await act(async () => retry!.click());
-    expect(container.textContent).toContain("Add fallback");
+    expect(container.textContent).toContain("Choose a model");
     expect(container.textContent).not.toContain("Could not load model settings");
   } finally {
     saved.failMe = false;
@@ -1138,6 +1138,7 @@ describe("connection success with a failed refresh", () => {
 });
 
 it("keeps native picker credit and personal selections distinct for the same model", async () => {
+  saved.roleSettings.deploymentPrimary = { provider: "openrouter", modelId: "default-model" };
   saved.roleCatalog = [
     {
       provider: "anthropic",

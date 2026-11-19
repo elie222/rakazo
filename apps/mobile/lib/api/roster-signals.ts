@@ -2,6 +2,7 @@ import type { SpaceChangeKind } from "@rakazo/contracts";
 import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { useEffect, useRef } from "react";
 import { computerUpdates } from "../computers/computer-updates";
+import { invalidateWatchChat } from "../notifications/watch-chat";
 import { useAppForeground } from "../platform/app-foreground";
 import { refreshOrganizationReads } from "../spaces/organizations";
 import { subscribeSpaceSelection } from "./api";
@@ -51,12 +52,14 @@ async function follow(signal: AbortSignal) {
         () => {
           if (connection.signal.aborted) return;
           opened = true;
+          invalidateWatchChat("roster");
           // Each connection opens with a signal, so a reconnect catches up on what it missed.
           for (const listener of rosterListeners) listener();
         },
         connection.signal,
         (kind) => {
           if (connection.signal.aborted) return;
+          if (kind === "runs") invalidateWatchChat();
           if (kind === "computerUpdates") computerUpdates.signalled();
           else for (const listener of spaceChangeListeners) listener(kind);
         },

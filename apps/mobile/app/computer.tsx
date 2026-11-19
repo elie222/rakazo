@@ -13,6 +13,7 @@ import {
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
+import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -49,7 +50,6 @@ import {
   fromScreenPage,
   isProxiedScreenPage,
   nextLoadedScreenUrl,
-  previewPlaceholder,
   retainScreenSource,
   screenPageState,
   screenPageStatus,
@@ -437,10 +437,10 @@ export default function Computer() {
     />
   ) : null;
   const placeholder =
-    screenError ??
+    (computer?.state === "running" || !screenOriginError ? screenError : null) ??
     (unreachableScreen
       ? t`Could not load the desktop. This device cannot reach the screen URL.`
-      : previewPlaceholder(computer?.state, booting, name, computer?.mode));
+      : computerPreviewPlaceholder(computer?.state, booting, "takeControl"));
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
   // Retrying cannot help once the hours are spent; only a plan change can.

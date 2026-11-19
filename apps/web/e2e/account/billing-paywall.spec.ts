@@ -156,6 +156,25 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   await expect(settings.getByText("Computer hours left", { exact: true })).toBeVisible();
   await expect(settings.getByText("13", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-credit-balance");
+  await page.route("**/rpc/billing/computerUsage", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          computers: [
+            { id: "team", scope: "team", botName: null, hours: 8 },
+            { id: "private", scope: "dedicated", botName: "Research bot", hours: 3.5 },
+          ],
+          otherHours: 0,
+        },
+      },
+    }),
+  );
+  await expect(settings.getByText("Research bot", { exact: true })).toBeHidden();
+  await settings.getByRole("button", { name: "Hours by computer" }).click();
+  await expect(settings.getByText("Research bot", { exact: true })).toBeVisible();
+  await expect(settings.getByText("3.5 hr", { exact: true })).toBeInViewport({ ratio: 1 });
+  await captureScreenshot(page, testInfo, "billing-hours-by-computer");
+  await settings.getByRole("button", { name: "Hours by computer" }).click();
   await settings.getByRole("button", { name: "Add credits", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add credits" });
   await expect(dialog.getByRole("combobox", { name: "Credit amount" })).toHaveCSS("height", "48px");

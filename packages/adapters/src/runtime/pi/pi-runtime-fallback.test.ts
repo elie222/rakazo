@@ -192,6 +192,21 @@ function request(fallbackModels: AgentRunRequest["model"][] = []): AgentRunReque
   } as unknown as AgentRunRequest;
 }
 
+function openAiRequest(fallbackModels: AgentRunRequest["model"][] = []): {
+  model: Model<"openai-completions">;
+  input: AgentRunRequest;
+} {
+  const model = { ...primary, provider: "openai", id: "gpt-test", name: "gpt-test" };
+  providerState.models.set(
+    `${model.provider}/${model.id}`,
+    model as unknown as Record<string, unknown>,
+  );
+  const input = request(fallbackModels);
+  input.model.provider = model.provider;
+  input.model.id = model.id;
+  return { model, input };
+}
+
 async function run(
   input: AgentRunRequest,
   events: AgentRuntimeEvent[] = [],
@@ -913,6 +928,68 @@ describe("Pi runtime ordered model fallback", () => {
     expect(events.at(-1)).toEqual({ type: "done", text: "backup answer" });
     expect(providerState.stream).toHaveBeenCalledTimes(2);
     expect(providerState.delay).not.toHaveBeenCalled();
+  });
+
+  describe("openai-credits-exhausted-stream-fails-over", () => {
+    const noCredits = [
+      "You have no credits remaining. Add credits to continue using the API at",
+      "https://example.test/credits.",
+    ].join(" ");
+    const backup = [{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }];
+    const http429 = `OpenAI API error (429): ${JSON.stringify({
+      message: noCredits,
+      type: "insufficient_quota",
+      param: null,
+      code: "credit_balance_exhausted",
+    })}`;
+
+    it.each([
+      ["bare statusless no-credits message", noCredits],
+      ["response.failed credit_balance_exhausted text", `credit_balance_exhausted: ${noCredits}`],
+      ["HTTP 429 credit_balance_exhausted", http429],
+    ])("%s", async (_label, error) => {
+      const { model: openai, input } = openAiRequest(backup);
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        target.provider === openai.provider
+          ? stream(target, message(target, [], "error", error))
+          : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+      );
+      const events = await run(input);
+      expect(events.at(-1)).toEqual({ type: "done", text: "backup answer" });
+      expect(
+        providerState.stream.mock.calls.map(([target]) => [target.provider, target.id]),
+      ).toEqual([
+        [openai.provider, openai.id],
+        [backupA.provider, backupA.id],
+      ]);
+      expect(providerState.delay).not.toHaveBeenCalled();
+    });
+
+    it("does not switch on a 400 invalid request before output", async () => {
+      const error = "400 invalid_request_error: Messages must not be empty.";
+      const { model: openai, input } = openAiRequest(backup);
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [], "error", error)),
+      );
+      await expect(run(input)).rejects.toThrow(error);
+      expect(providerState.stream.mock.calls.map(([target]) => target.provider)).toEqual([
+        openai.provider,
+      ]);
+      expect(providerState.delay).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["bare statusless no-credits message", noCredits],
+      ["response.failed credit_balance_exhausted text", `credit_balance_exhausted: ${noCredits}`],
+    ])("does not retry %s without a backup", async (_label, error) => {
+      const { input } = openAiRequest();
+      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+        stream(target, message(target, [], "error", error)),
+      );
+      await expect(run(input)).rejects.toThrow(error);
+      expect(providerState.stream).toHaveBeenCalledOnce();
+      expect(providerState.delay).not.toHaveBeenCalled();
+    });
   });
 
   it("uses the configured backup for an explicit insufficient-balance error", async () => {

@@ -560,7 +560,7 @@ export class McpConnector implements ConnectorProvider {
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
-              ...mcpToolFields(tool),
+              ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
