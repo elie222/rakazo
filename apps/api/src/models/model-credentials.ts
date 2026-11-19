@@ -501,7 +501,7 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
       const allowHttpModelEndpoints = await httpModelEndpointsAllowed(deps.prisma);
       plaintext = buildModelConnectPlaintext(input, previousPlaintext, {
         omitVisionModelIds,
-        allowPrivateEndpoint: mayUsePrivateEndpoint(deps) || allowHttpModelEndpoints,
+        allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
         allowHttpEndpoint: allowHttpModelEndpoints,
       });
       if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {

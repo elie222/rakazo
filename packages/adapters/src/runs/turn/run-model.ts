@@ -350,9 +350,7 @@ async function resolveModelKeyMaterial(
         resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;
       // Recheck operator configuration for saved private connections on every run.
       const allowHttpEndpoints = baseUrl ? await httpModelEndpointsAllowed(deps.prisma) : undefined;
-      const allowPrivateEndpoint = baseUrl
-        ? deps.mcpAllowPrivateEndpoint === true || allowHttpEndpoints === true
-        : undefined;
+      const allowPrivateEndpoint = baseUrl ? deps.mcpAllowPrivateEndpoint === true : undefined;
       if (baseUrl) {
         try {
           // The public gate stays with the request-time fetch guard.

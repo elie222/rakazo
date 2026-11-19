@@ -393,7 +393,7 @@ export function modelsRoutes(ctx: RouterContext) {
               { ...input, apiKey, headers },
               compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
               context.signal,
-              { allowPrivate: mayUsePrivateEndpoint(deps) || allowHttp, allowHttp },
+              { allowPrivate: mayUsePrivateEndpoint(deps), allowHttp },
             );
             return { models };
           } catch (error) {

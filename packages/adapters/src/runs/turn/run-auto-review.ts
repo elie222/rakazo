@@ -161,6 +161,7 @@ export async function autoReviewCheckerProvider(
       baseUrl: judgeKey.baseUrl,
       headers: judgeKey.headers,
       allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,
+      allowHttpEndpoint: judgeKey.allowHttpEndpoint,
       cacheCapabilities: judgeKey.cacheCapabilities,
       contextWindow: judgeKey.contextWindow,
       maxTokens: judgeKey.maxTokens,
