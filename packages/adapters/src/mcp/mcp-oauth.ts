@@ -912,7 +912,7 @@ function oauthFetch(
   close: () => Promise<void>;
   headers: Record<string, string>;
   publicError: (error: unknown, message: string) => Error;
-  /** The authorization server's last refusal named the redirect address (RFC 7591). */
+  /** The last answer received was a refusal of the redirect address (RFC 7591). */
   refusedRedirect: () => boolean;
 } {
   const url = new URL(endpoint);
@@ -946,16 +946,21 @@ function oauthFetch(
   const networkErrors = new WeakSet<Error>();
   let rejection: OAuthRejection | undefined;
   let lastAnswerFailed = false;
+  // The most recent answer's own rejection, so an earlier one cannot explain a later failure.
+  let lastRejection: OAuthRejection | undefined;
   const recordingFetch: typeof fetch = async (input, init) => {
     try {
       const response = await fallbackFetch(input, init);
       lastAnswerFailed = !response.ok;
+      lastRejection = undefined;
       if (!response.ok) {
         const next = await readOAuthRejection(response);
         if (next) rejection = next;
+        lastRejection = next;
       }
       return response;
     } catch (error) {
+      lastRejection = undefined;
       if (error instanceof Error) networkErrors.add(error);
       throw error;
     }
@@ -964,7 +969,7 @@ function oauthFetch(
     headers,
     fetch: recordingFetch,
     close: () => safeFetch.close(),
-    refusedRedirect: () => rejection?.code === "invalid_redirect_uri",
+    refusedRedirect: () => lastRejection?.code === "invalid_redirect_uri",
     publicError: (error, message) => {
       if (error instanceof McpOAuthStoreError) return error;
       const secrets = oauthMaterialSecrets(material);

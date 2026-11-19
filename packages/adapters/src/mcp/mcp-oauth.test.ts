@@ -4205,6 +4205,33 @@ describe("MCP sign-in on a loopback redirect", () => {
     expect(server.sessions.create).not.toHaveBeenCalled();
   });
 
+  it("does not blame the redirect for a failure that came after an earlier refusal of it", async () => {
+    const server = loopbackOnlyServer();
+    const healthy = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = logicalHref(input, init);
+      // The challenge itself names the redirect; the registration then fails for another reason.
+      if (url === "https://mcp.example.test/mcp")
+        return Response.json(
+          { error: "invalid_redirect_uri" },
+          {
+            status: 401,
+            headers: {
+              "WWW-Authenticate":
+                'Bearer resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource/mcp"',
+            },
+          },
+        );
+      if (url === "https://auth.example.test/register") {
+        server.registrations.push("refused");
+        return Response.json({ error: "invalid_client_metadata" }, { status: 400 });
+      }
+      return healthy(input, init);
+    });
+    await expect(server.begin(true)).rejects.toBeInstanceOf(McpOAuthRefusedError);
+    expect(server.registrations).toEqual(["refused"]);
+  });
+
   it("tries the loopback redirect once", async () => {
     const server = loopbackOnlyServer();
     vi.mocked(fetch).mockImplementation(async (input, init) => {
