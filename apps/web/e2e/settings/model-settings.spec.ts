@@ -266,6 +266,9 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByLabel("Model id").fill("manual-model-not-listed");
 
     await expect(page.getByLabel("Model id")).toHaveValue("manual-model-not-listed");
+    await expect(
+      page.getByText("The server didn’t list this model.", { exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Use a found model" }).click();
     const discoveredModels = page.getByRole("combobox", { name: "Models from server" });
     await expect(discoveredModels).toHaveText(LOCAL_MODEL_ID);

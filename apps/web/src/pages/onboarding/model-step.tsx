@@ -1,4 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { isUnlistedCompatibleModel } from "@rakazo/core";
 import {
   Button,
   Disclosure,
@@ -311,6 +312,11 @@ function CompatibleModelSelection({ model }: { model: OnboardingModel }) {
           </Button>
         ) : null}
       </div>
+      {isUnlistedCompatibleModel(modelId, probeModels) ? (
+        <p className="mt-2 text-muted-foreground" role="status">
+          <Trans>The server didn’t list this model.</Trans>
+        </p>
+      ) : null}
       {probing ? (
         <p className="mt-2 text-muted-foreground" role="status">
           <Trans>Finding…</Trans>

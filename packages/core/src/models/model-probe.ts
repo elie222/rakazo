@@ -8,6 +8,11 @@ import {
 
 export const MODEL_DISCOVERY_DELAY_MS = 450;
 
+export function isUnlistedCompatibleModel(modelId: string, models: readonly string[]): boolean {
+  const id = modelId.trim();
+  return Boolean(id && models.length && !models.includes(id));
+}
+
 /** A key can survive an edit only when it still targets the same endpoint. */
 export function sameCompatibleModelEndpoint(previous: string, next: string): boolean {
   if (previous.trim() === next.trim()) return true;

@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ModelApiProtocol, ModelHeaderRow } from "@rakazo/contracts";
-import { toggleEnabledModelId } from "@rakazo/core";
+import { isUnlistedCompatibleModel, toggleEnabledModelId } from "@rakazo/core";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { native, useThemedStyles } from "../../lib/native/native";
@@ -186,6 +186,11 @@ export function CompatibleEndpointForm({
           ) : null}
         </>
       )}
+      {isUnlistedCompatibleModel(modelId, probeModels) ? (
+        <Text style={styles.secondary} accessibilityLiveRegion="polite">
+          {t`The server didn’t list this model.`}
+        </Text>
+      ) : null}
       {probing ? (
         <Text style={styles.secondary} accessibilityLiveRegion="polite">{t`Finding…`}</Text>
       ) : null}

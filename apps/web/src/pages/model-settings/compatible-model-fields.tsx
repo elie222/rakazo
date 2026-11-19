@@ -1,5 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import { toggleEnabledModelId } from "@rakazo/core";
+import { isUnlistedCompatibleModel, toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
   Checkbox,
@@ -192,6 +192,11 @@ export function CompatibleModelFields({
           </Button>
         ) : null}
       </div>
+      {isUnlistedCompatibleModel(modelId, probeModels) ? (
+        <p className="mt-2 text-muted-foreground" role="status">
+          <Trans>The server didn’t list this model.</Trans>
+        </p>
+      ) : null}
       {probing ? (
         <p className="mt-2" role="status">
           <Trans>Finding…</Trans>
