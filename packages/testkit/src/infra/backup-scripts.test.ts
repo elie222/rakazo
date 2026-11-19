@@ -937,7 +937,62 @@ describe("production backup deployment and archive behavior", () => {
     }
   });
 
-  it.each(["/etc/compose.yml", "../other/compose.yml", "ops/../../compose.yml", "a.yml::b.yml"])(
+  it.each([
+    ["RAKAZO_COMPOSE_FILE=a.yml:ops/b.yml\n", ["a.yml", "ops/b.yml"]],
+    [
+      'RAKAZO_COMPOSE_FILE="a.yml:ops/b.yml" # the updater reads this too\r\n',
+      ["a.yml", "ops/b.yml"],
+    ],
+    [
+      "RAKAZO_COMPOSE_FILE=old.yml\n# RAKAZO_COMPOSE_FILE=no.yml\nRAKAZO_COMPOSE_FILE = 'new.yml'",
+      ["new.yml"],
+    ],
+    [
+      "COMPOSE_PATH_SEPARATOR=;\nRAKAZO_COMPOSE_FILE=a.yml;ops/b.yml # overlay\n",
+      ["a.yml", "ops/b.yml"],
+    ],
+    ["OTHER_RAKAZO_COMPOSE_FILE=no.yml\nRAKAZO_COMPOSE_FILE=\n", ["docker-compose.images.yml"]],
+  ])("reads the file list the updater uses from the deployment environment: %j", (env, files) => {
+    const f = fixture();
+    write(path.join(f.checkout, ".env"), env);
+    write(path.join(f.checkout, "docker-compose.images.yml"), "services: {}\n");
+    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: f.checkout });
+    expect(result.status, result.stderr).toBe(0);
+    const commands = f.commands().filter((args) => args[0] === "compose");
+    expect(commands.length).toBeGreaterThan(0);
+    for (const command of commands) {
+      expect(composeFiles(command)).toEqual(files.map((file) => path.join(f.checkout, file)));
+    }
+  });
+
+  it("prefers the service's own setting and ignores spaces and empty entries, as the updater does", () => {
+    const f = fixture();
+    write(path.join(f.checkout, ".env"), "RAKAZO_COMPOSE_FILE=from-env-file.yml\n");
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_DEPLOY_DIR: f.checkout,
+      RAKAZO_COMPOSE_FILE: " a.yml : ops/b.yml ::",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    for (const command of f.commands().filter((args) => args[0] === "compose")) {
+      expect(composeFiles(command)).toEqual([
+        path.join(f.checkout, "a.yml"),
+        path.join(f.checkout, "ops/b.yml"),
+      ]);
+    }
+  });
+
+  it("rejects a list that names no Compose file", () => {
+    const f = fixture();
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_DEPLOY_DIR: f.checkout,
+      RAKAZO_COMPOSE_FILE: " : ",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("at least one Compose file");
+    expect(f.commands()).toEqual([]);
+  });
+
+  it.each(["/etc/compose.yml", "../other/compose.yml", "ops/../../compose.yml", "a.yml: /b.yml"])(
     "rejects a Compose file outside the deployment directory: %s",
     (files) => {
       const f = fixture();

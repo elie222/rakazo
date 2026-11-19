@@ -4,10 +4,40 @@ umask 077
 
 PROJECT_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
 [[ "${PROJECT_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
+ENV_FILE="${PROJECT_DIR}/.env"
+trim() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  printf '%s' "${value%"${value##*[![:space:]]}"}"
+}
+# A setting from this service's environment, else from the deployment's .env, where the updater's
+# copy of it lives. The file is read, never sourced; a later assignment wins, as in Compose.
+setting() {
+  local line value="" quoted
+  if [[ -n "${!1:-}" ]]; then
+    trim "${!1}"
+    return
+  fi
+  [[ -r "${ENV_FILE}" ]] || return 0
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="$(trim "${line%$'\r'}")"
+    [[ "${line}" == "$1="* || "${line}" == "$1 ="* ]] || continue
+    value="$(trim "${line#*=}")"
+    quoted="${value:0:1}"
+    if [[ "${quoted}" == '"' || "${quoted}" == "'" ]] && [[ "${value:1}" == *"${quoted}"* ]]; then
+      value="${value:1}"
+      value="${value%%"${quoted}"*}"
+    else
+      value="$(trim "${value%%[[:space:]]#*}")"
+    fi
+  done <"${ENV_FILE}"
+  printf '%s' "${value}"
+}
 # The stack's Compose files, as the updater takes them: paths inside the deployment directory,
 # in order, separated like Compose's own COMPOSE_FILE.
-COMPOSE_SEPARATOR="${COMPOSE_PATH_SEPARATOR:-:}"
-COMPOSE_FILES="${RAKAZO_COMPOSE_FILE:-}"
+COMPOSE_SEPARATOR="$(setting COMPOSE_PATH_SEPARATOR)"
+COMPOSE_SEPARATOR="${COMPOSE_SEPARATOR:-:}"
+COMPOSE_FILES="$(setting RAKAZO_COMPOSE_FILE)"
 if [[ -z "${COMPOSE_FILES}" ]]; then
   COMPOSE_FILES="infra/compose/docker-compose.prod.yml"
   # A published-images install has no checkout: its Compose file sits in the deployment directory.
@@ -25,12 +55,15 @@ while [[ -n "${COMPOSE_FILES}" ]]; do
   else
     COMPOSE_FILES="${COMPOSE_FILES#*"${COMPOSE_SEPARATOR}"}"
   fi
-  [[ -n "${entry}" && "${entry}" != /* && "/${entry}/" != */../* ]] || {
+  # Like the updater: surrounding spaces and empty entries are ignored.
+  entry="$(trim "${entry}")"
+  [[ -n "${entry}" ]] || continue
+  [[ "${entry}" != /* && "/${entry}/" != */../* ]] || {
     echo "RAKAZO_COMPOSE_FILE must list paths inside the deployment directory" >&2; exit 1;
   }
   compose_file_args+=(-f "${PROJECT_DIR}/${entry}")
 done
-ENV_FILE="${PROJECT_DIR}/.env"
+((${#compose_file_args[@]})) || { echo "RAKAZO_COMPOSE_FILE must name at least one Compose file" >&2; exit 1; }
 BACKUP_ROOT="/var/backups/rakazo"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 SNAPSHOT_DIR="${BACKUP_ROOT}/${STAMP}"

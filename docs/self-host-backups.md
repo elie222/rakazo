@@ -85,7 +85,9 @@ The same script backs up an install made with `install-images.sh`, which has no 
 production Compose file there, the script uses `docker-compose.images.yml` and, when present,
 `docker-compose.override.yml`. For any other set of files, list them in `RAKAZO_COMPOSE_FILE`, in
 order, as paths inside the deployment directory, separated the way the
-[updater](./self-host-upgrading.md#deployments-that-layer-a-compose-overlay) takes them.
+[updater](./self-host-upgrading.md#deployments-that-layer-a-compose-overlay) takes them. A list
+already set in the deployment's `.env` for the updater is used as it is; a value in
+`/etc/rakazo/backup.env` takes its place.
 
 Fetch the script and units for the release you run, then enable the timer:
 
