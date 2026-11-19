@@ -121,7 +121,7 @@ function ConnectionRequestText({
     </Trans>
   ) : (
     <Trans>
-      {owner}'s {peer} wants to connect to your agent
+      {owner}'s {peer} wants to connect to your bot
     </Trans>
   );
 }
@@ -523,7 +523,7 @@ export function MessagingSettingsPanel() {
                   )
                 }
               >
-                <InviteText channel={channel} agent={agent ?? t`Your agent`} />
+                <InviteText channel={channel} agent={agent ?? t`Your bot`} />
               </RequestRow>
             ))}
             {connectionRequests.map(({ connection, agent }) => (

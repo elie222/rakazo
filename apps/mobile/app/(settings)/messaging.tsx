@@ -175,7 +175,7 @@ export default function MessagingSettings() {
       .join(", ");
   const { invites, connectionRequests } = messagingRequests({ status, channels, connections });
   const inviteTitle = (channel: MessagingChannelMembership, named: string | undefined) => {
-    const agent = named ?? t`Your agent`;
+    const agent = named ?? t`Your bot`;
     const group = channel.name;
     return group ? t`${agent} was invited to ${group}` : t`${agent} was invited to a group`;
   };
@@ -191,7 +191,7 @@ export default function MessagingSettings() {
     const peer = connection.peerBotName;
     return named
       ? t`${owner}'s ${peer} wants to connect to ${named}`
-      : t`${owner}'s ${peer} wants to connect to your agent`;
+      : t`${owner}'s ${peer} wants to connect to your bot`;
   };
   const joinedChannels = channels.filter((channel) => channel.status === "approved");
   const otherConnections = connections.filter(
