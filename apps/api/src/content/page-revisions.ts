@@ -12,6 +12,7 @@ import {
   IsolationError,
   pageRevisionPendingCutoff,
   signalPage,
+  verifiedPageAccount,
 } from "@rakazo/db";
 import type { RouterDeps } from "../router.js";
 import { readPageReview, StalePageReviewError, writePageReview } from "./page-collaboration.js";
@@ -94,7 +95,7 @@ export async function askPageRevision(
               grantId: {
                 in: (
                   await tx.pageGrant.findMany({
-                    where: { pageId, user: { emailVerified: true, deactivatedAt: null } },
+                    where: { pageId, user: verifiedPageAccount },
                     select: { id: true },
                   })
                 ).map(({ id }) => id),

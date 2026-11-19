@@ -27,11 +27,10 @@ export function aiRecipient(input: {
   use: AiDataUse;
   modelId?: string;
   baseUrl?: string;
-  hideEndpoint?: boolean;
 }): Omit<AiRecipient, "allowed"> | null {
   if (input.provider === "scripted") return null;
   const endpoint = input.baseUrl ?? (input.provider === "local" ? localBaseUrl() : undefined);
-  const origin = endpoint && !input.hideEndpoint ? new URL(endpoint).origin : undefined;
+  const origin = endpoint ? new URL(endpoint).origin : undefined;
   const name = recipientName(input.provider, input.use);
   // Bind custom connections to the full endpoint without exposing private URL components.
   const key = createHash("sha256")

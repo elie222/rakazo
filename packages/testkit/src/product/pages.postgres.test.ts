@@ -383,14 +383,15 @@ describePages("pages", () => {
     });
     const { pageId } = (await lastResult(bot.id)) as { pageId: string };
     await rpc(app, owner, "models/connect", {
-      provider: "openrouter",
+      provider: "openai-compatible",
       apiKey: "test-key-not-a-real-secret",
+      baseUrl: "https://models.example.test/fixture-route/v1",
       label: "Fixture model",
       modelId: "scripted",
     });
     await db().bot.update({
       where: { id: bot.id },
-      data: { modelProvider: "openrouter", modelId: "scripted" },
+      data: { modelProvider: "openai-compatible", modelId: "scripted" },
     });
     await rpc(app, owner, "pages/setVisibility", { pageId, visibility: "people" });
     const grant = await rpc<{ id: string }>(app, owner, "pageReviews/grant", { pageId, email });
@@ -409,8 +410,14 @@ describePages("pages", () => {
     const allow = async (cookie: string) => {
       const disclosed = await status(cookie);
       expect(disclosed.recipients).toEqual([
-        expect.objectContaining({ name: "OpenRouter", use: "model", allowed: false }),
+        expect.objectContaining({
+          name: expect.stringContaining("(https://models.example.test)"),
+          use: "model",
+          allowed: false,
+        }),
       ]);
+      expect(JSON.stringify(disclosed)).not.toContain("fixture-route");
+      expect(JSON.stringify(disclosed)).not.toContain("test-key-not-a-real-secret");
       return rpc<AiConsentStatus>(app, cookie, "aiConsent/allow", {
         pageId,
         scope: disclosed.scope,

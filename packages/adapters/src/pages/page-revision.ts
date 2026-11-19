@@ -81,7 +81,6 @@ function pageRevisionRecipient(pageId: string, model: AgentRunRequest["model"]) 
     modelId: model.id,
     baseUrl: model.baseUrl,
     use: "model",
-    hideEndpoint: true,
   });
   if (!recipient) return null;
   const key = createHash("sha256")
