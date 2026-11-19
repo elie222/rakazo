@@ -3929,7 +3929,7 @@ describe("selected approval decision model execution", () => {
           expect.objectContaining({
             data: [
               expect.objectContaining({
-                operationId: "auto-review:run-1",
+                operationId: "auto-review:run-1:effect-1",
                 model: "typesafe/jev-1.14",
                 costUsd: 0.0000021,
               }),

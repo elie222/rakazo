@@ -41,7 +41,15 @@ export async function includedAutoReviewChecker(
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(
   deps: ExecutorDeps,
-  scope: { runId: string; spaceId: string; userId: string; botId: string; threadId: string },
+  scope: {
+    runId: string;
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    /** Names the reviewed action on the review's usage records. */
+    operationId: string;
+  },
   options: {
     injectedReview?: AutoReviewProvider;
     memberChecker: boolean;
@@ -49,7 +57,7 @@ export async function autoReviewCheckerProvider(
   },
   checker: AutoReviewChecker,
 ): Promise<AutoReviewProvider> {
-  const { runId, spaceId, userId, botId, threadId } = scope;
+  const { runId, spaceId, userId, botId, threadId, operationId } = scope;
   const { injectedReview, memberChecker, registerSecrets } = options;
   if (injectedReview) return injectedReview;
   const deploymentChoice = !memberChecker && !checker.credentialId && !checker.creditOfferingId;
@@ -87,7 +95,7 @@ export async function autoReviewCheckerProvider(
         botId,
         runId,
         parentRunId: runId,
-        operationId: `auto-review:${runId}`,
+        operationId,
         operationKind: "setup",
       })
     : undefined;
@@ -98,7 +106,7 @@ export async function autoReviewCheckerProvider(
       botId,
       parentRunId: runId,
       runId,
-      operationId: `auto-review:${runId}`,
+      operationId,
       operationKind: "setup",
       fundingSource: operatorFunded ? "operator" : "customer",
     });

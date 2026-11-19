@@ -50,6 +50,7 @@ it("keeps project routing from the saved checker connection through the runtime 
       userId: "user-fixture",
       botId: "bot-fixture",
       threadId: "thread-fixture",
+      operationId: "auto-review:run-fixture:effect-fixture",
     },
     { memberChecker: true, registerSecrets: vi.fn() },
     { provider: "google-vertex", model: "gemini-4-hydrogen" },
@@ -111,6 +112,7 @@ it.each([false, true])(
         userId: "user-fixture",
         botId: "bot-fixture",
         threadId: "thread-fixture",
+        operationId: "auto-review:run-fixture:effect-fixture",
       },
       options,
       { provider: "openrouter", model: "typesafe/jev-1.14" },
@@ -126,7 +128,14 @@ it("preserves personal authentication for a legacy hosted deployment checker", a
   const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
   await autoReviewCheckerProvider(
     deps,
-    { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+    {
+      runId: "run",
+      spaceId: "space",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+      operationId: "auto-review:run:effect",
+    },
     { memberChecker: false, registerSecrets: vi.fn() },
     { provider: "google-vertex", model: "gemini-4-hydrogen" },
   );
@@ -149,7 +158,14 @@ it("keeps a personal decision connection when hosted auth is unavailable", async
   const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
   await autoReviewCheckerProvider(
     deps,
-    { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+    {
+      runId: "run",
+      spaceId: "space",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+      operationId: "auto-review:run:effect",
+    },
     { memberChecker: false, registerSecrets: vi.fn() },
     { provider: "openrouter", model: "typesafe/jev-1.14" },
   );
@@ -172,7 +188,14 @@ it("keeps an explicitly credit-funded checker separate from the included checker
   const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
   await autoReviewCheckerProvider(
     deps,
-    { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+    {
+      runId: "run",
+      spaceId: "space",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+      operationId: "auto-review:run:effect",
+    },
     { memberChecker: false, registerSecrets: vi.fn() },
     { provider: "openrouter", model: "typesafe/jev-1.14", creditOfferingId: "member-offering" },
   );
@@ -213,6 +236,7 @@ it("retains direct self-hosted checker usage in the customer usage view", async 
     userId: "user",
     botId: "bot",
     threadId: "thread",
+    operationId: "auto-review:run:effect",
   };
   const checker = await autoReviewCheckerProvider(
     deps,
@@ -244,6 +268,7 @@ it("retains direct self-hosted checker usage in the customer usage view", async 
           fundingSource: "customer",
           provider: "typesafe",
           costUsd: 0.0001,
+          operationId: "auto-review:run:effect",
         }),
       ],
     }),
@@ -298,7 +323,14 @@ it.each([
     } as unknown as ExecutorDeps;
     const checker = await autoReviewCheckerProvider(
       deps,
-      { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+      {
+        runId: "run",
+        spaceId: "space",
+        userId: "user",
+        botId: "bot",
+        threadId: "thread",
+        operationId: "auto-review:run:effect",
+      },
       { memberChecker: personal, registerSecrets },
       { provider: providerId, model },
     );
@@ -359,6 +391,7 @@ const reviewScope = {
   userId: "user",
   botId: "bot",
   threadId: "thread",
+  operationId: "auto-review:run:effect",
 };
 
 function reviewEachCandidate(deps: ExecutorDeps) {
