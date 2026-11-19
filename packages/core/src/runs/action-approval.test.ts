@@ -18,6 +18,7 @@ import {
   isSecretAskBlock,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
+  ownComputerActionNeedsReview,
   planActionGate,
   receiptItems,
   repeatsDeniedAction,
@@ -983,6 +984,49 @@ describe("savedContextWriteNeedsReview", () => {
       "send_email",
     ]) {
       await expect(savedContextWriteNeedsReview(name, check)).resolves.toBe(false);
+    }
+    expect(checked).toBe(false);
+  });
+});
+
+describe("ownComputerActionNeedsReview", () => {
+  const yes = async () => true;
+  const no = async () => false;
+
+  it.each(["shell", "browser_act", "computer_act"])(
+    "reviews %s only once outside content entered the run",
+    async (name) => {
+      await expect(
+        ownComputerActionNeedsReview(name, { tainted: yes, siteGiven: yes }),
+      ).resolves.toBe(true);
+      await expect(
+        ownComputerActionNeedsReview(name, { tainted: no, siteGiven: no }),
+      ).resolves.toBe(false);
+    },
+  );
+
+  it("reviews opening a page only on a site the run was not given", async () => {
+    await expect(
+      ownComputerActionNeedsReview("browser_navigate", { tainted: yes, siteGiven: no }),
+    ).resolves.toBe(true);
+    await expect(
+      ownComputerActionNeedsReview("browser_navigate", { tainted: yes, siteGiven: yes }),
+    ).resolves.toBe(false);
+    await expect(
+      ownComputerActionNeedsReview("browser_navigate", { tainted: no, siteGiven: no }),
+    ).resolves.toBe(false);
+  });
+
+  it("leaves other tools alone and does not check the run for them", async () => {
+    let checked = false;
+    const check = async () => {
+      checked = true;
+      return true;
+    };
+    for (const name of ["write_file", "read_file", "browser_snapshot", "computer_observe"]) {
+      await expect(
+        ownComputerActionNeedsReview(name, { tainted: check, siteGiven: check }),
+      ).resolves.toBe(false);
     }
     expect(checked).toBe(false);
   });

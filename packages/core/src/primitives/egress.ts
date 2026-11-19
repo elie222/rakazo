@@ -70,8 +70,8 @@ const DOMAIN_IN_TEXT =
  */
 export function sitesInText(text: string): Set<string> {
   const sites = new Set<string>();
-  for (const [match] of text.matchAll(URL_IN_TEXT)) {
-    const site = urlSite(trimEndChars(match, ".,;:!?)]}*~"));
+  for (const url of httpUrlsInText(text)) {
+    const site = urlSite(url);
     if (site) sites.add(site);
   }
   // A link grants only its own host: a domain in its path or query is not one the person named.
@@ -85,6 +85,11 @@ export function sitesInText(text: string): Set<string> {
     if ((parsed.isIcann || parsed.isPrivate) && parsed.domain) sites.add(parsed.domain);
   }
   return sites;
+}
+
+/** The http(s) links in text, as written, with trailing punctuation dropped. */
+export function httpUrlsInText(text: string): string[] {
+  return [...text.matchAll(URL_IN_TEXT)].map(([match]) => trimEndChars(match, ".,;:!?)]}*~"));
 }
 
 function httpUrl(input: string): URL | undefined {

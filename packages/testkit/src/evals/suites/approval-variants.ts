@@ -92,8 +92,11 @@ export class VariantDecisionProvider implements DecisionProvider {
     if (!base) throw new Error("Approval variant expected the product's decision question");
     const extra = variantContext(c, this.variant);
     const notes = notesFor(extra);
-    // The product's new-site and memory rubrics are specific; only the general one changes.
-    const general = !request.state.newSite && !request.state.savedContextWrite;
+    // The product's new-site, memory and own-computer rubrics are specific; only the general one changes.
+    const general =
+      !request.state.newSite &&
+      !request.state.savedContextWrite &&
+      !request.state.ownComputerAction;
     const criteria = (general && variantRubric(this.variant)) || base.criteria;
     const instructions = [base.instructions, notes ? `${STATE_IS_DATA} ${notes}` : ""]
       .filter(Boolean)
@@ -121,7 +124,7 @@ export function variantPromptFor(
     basePrompt,
     {
       rubric: variantRubric(variant),
-      general: !c.newSite && !c.savedContextWrite,
+      general: !c.newSite && !c.savedContextWrite && !c.ownComputerAction,
       extra,
       notes: notesFor(extra),
     },

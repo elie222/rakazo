@@ -1,5 +1,5 @@
 import { BACKGROUND_HELPER_TRIGGER, HELPER_RESULT_TRIGGER } from "@rakazo/core";
-import { sitesInText, urlSite } from "@rakazo/core/egress";
+import { httpUrlsInText, sitesInText, urlSite } from "@rakazo/core/egress";
 
 /**
  * Where an action's targets came from, worked out by the server rather than asked of the reviewer.
@@ -48,6 +48,12 @@ export function actionTargets(args: Record<string, unknown>): Target[] {
         add({ value: String(node) });
     } else if (typeof node === "string" && node.trim() && !FREE_TEXT_KEY.test(key)) {
       const value = node.trim();
+      // A command line reaches every site its links name.
+      if (key === "command")
+        for (const url of httpUrlsInText(value)) {
+          const site = urlSite(url);
+          if (site) add({ value: new URL(url).hostname, site });
+        }
       const site = urlSite(value);
       const emails = value.includes("@")
         ? value

@@ -359,6 +359,29 @@ export async function savedContextWriteNeedsReview(
   );
 }
 
+const OWN_COMPUTER_ACTION_TOOLS = new Set([
+  "shell",
+  "browser_act",
+  "browser_navigate",
+  "computer_act",
+]);
+
+/**
+ * A command, page action or desktop input on the bot's own computer is checked by the approval
+ * model in Auto once outside text entered the run (see isRunTainted): text the bot read could have
+ * asked it to send data out with `curl`, a form or a URL. Like every taint check it only informs
+ * the review; Ask and Never ask treat the call as they treat any other. Opening a page is checked
+ * only on a site the run was not given (`siteGiven`, see outboundSiteGate), as a fetch is. The
+ * predicates are only checked for these tools.
+ */
+export async function ownComputerActionNeedsReview(
+  toolName: string,
+  checks: { tainted: () => Promise<boolean>; siteGiven: () => Promise<boolean> },
+): Promise<boolean> {
+  if (!OWN_COMPUTER_ACTION_TOOLS.has(toolName) || !(await checks.tainted())) return false;
+  return toolName !== "browser_navigate" || !(await checks.siteGiven());
+}
+
 /**
  * web_fetch sends its whole URL, query string included, to the site it names, so a site this run
  * was not given is a new destination that injected text could have picked. Trusted sites (named in
@@ -649,7 +672,8 @@ export function planActionGate(input: {
   consequential: boolean;
   /**
    * A call outside content may have steered (a connector read, a memory or skill save, a routine
-   * naming a new site or adding a trigger, a settings change). Only the approval model checks it.
+   * naming a new site or adding a trigger, a settings change, an action on the bot's own
+   * computer). Only the approval model checks it.
    */
   reviewOnly?: boolean;
   checkerConfigured: boolean;

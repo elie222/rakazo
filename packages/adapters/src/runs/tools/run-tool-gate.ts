@@ -18,6 +18,7 @@ import {
   humanizeToolName,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
+  ownComputerActionNeedsReview,
   planActionGate,
   redactSecrets,
   repeatsDeniedAction,
@@ -54,6 +55,7 @@ import {
 } from "../../approvals/auto-review.js";
 import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
 import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
+import { ownComputerReviewArgs } from "../../approvals/own-computer-review.js";
 import { pagePaymentPrecheck, paysWithWallet } from "../../billing/spending-gate.js";
 import { reportBotMessageWait } from "../../messaging/bot-messages.js";
 import { findConnectedModelCredential } from "../../models/model-selection.js";
@@ -134,9 +136,10 @@ type ToolReview = {
   name: string;
   args: Record<string, unknown>;
   connectorKind: ReturnType<typeof connectorKindFromToolName>;
-  newSite: boolean;
+  /** A URL to a site the run was not given, judged on its own against the owner's words. */
+  newSiteUrl: string | undefined;
   savedContextWrite: boolean;
-  fetchUrl: string | undefined;
+  ownComputerAction: boolean;
   matchingRules: ReturnType<typeof resolveActionApprovalForTools>["matchingRules"];
   gated: boolean;
   applied: AppliedEffect | undefined;
@@ -279,10 +282,28 @@ export async function gateToolCall(
   const savedContextWriteReviewed = await savedContextWriteNeedsReview(name, () =>
     isRunTainted(ctx),
   );
+  // Opening a page sends its whole URL to the site, like a fetch, so it is judged like one.
+  const navigateUrl =
+    name === "browser_navigate" ? normalizedHttpUrl(String(args.url ?? "")) : undefined;
+  const navigateSite = navigateUrl ? urlSite(navigateUrl) : undefined;
+  const ownComputerActionReviewed = await ownComputerActionNeedsReview(name, {
+    tainted: () => isRunTainted(ctx),
+    siteGiven: async () =>
+      navigateUrl !== undefined &&
+      navigateSite !== undefined &&
+      outboundSiteGate({
+        site: navigateSite,
+        trusted:
+          ctx.trust.searchResultUrls.has(navigateUrl) ||
+          (await ctx.trust.loadTrustedSites()).has(navigateSite),
+        rules: await ctx.trust.loadApprovalRules(),
+      }) === "allow",
+  });
   // Outside text only ever informs the approval model: these go to it in Auto, and nowhere else.
   const reviewOnly =
     connectorReadGated ||
     savedContextWriteReviewed ||
+    ownComputerActionReviewed ||
     (Boolean(request.settingsChange) && (await isRunTainted(ctx)));
   const { purchase, cardUse, loginUse } = request;
   // Saved logins that ask first require the owner on every use, like saved cards.
@@ -510,9 +531,15 @@ export async function gateToolCall(
       name,
       args,
       connectorKind,
-      newSite: siteGate === "new",
+      newSiteUrl:
+        siteGate === "new"
+          ? fetchUrl
+          : ownComputerActionReviewed && navigateSite
+            ? navigateUrl
+            : undefined,
       savedContextWrite: savedContextWriteReviewed,
-      fetchUrl,
+      // A page on a new site is judged as a new site, on its URL alone.
+      ownComputerAction: ownComputerActionReviewed && !navigateSite,
       matchingRules: approvalResolved.matchingRules,
       gated,
       applied,
@@ -834,7 +861,7 @@ async function reviewToolCall(
   review: ToolReview,
 ): Promise<{ reason: string | undefined; decision: "ask" | "allow" } | undefined> {
   const { deps, run, runId, bot, thread, context } = ctx;
-  const { name, args, connectorKind, fetchUrl, gated, applied } = review;
+  const { name, args, connectorKind, newSiteUrl, gated, applied } = review;
   const { injectedReview, checker, reviewSettings, memberChecker } = review;
   if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
   try {
@@ -853,12 +880,19 @@ async function reviewToolCall(
     const outsideRun = run.trigger === "webhook";
     const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
     if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
-    // A new site, or a memory or skill save after outside content, is judged on the owner's own words only:
-    // the task prompt of a webhook or bot-started run carries text someone else wrote.
-    const ownerWordsOnly = (review.newSite && fetchUrl) || review.savedContextWrite;
-    const reviewArgs =
-      review.newSite && fetchUrl
-        ? { url: redactSecrets(fetchUrl, ctx.secrets) }
+    // A new site, a memory or skill save after outside content, or an action on the bot's own
+    // computer after it, is judged on the owner's own words only: the task prompt of a webhook or
+    // bot-started run carries text someone else wrote.
+    const ownerWordsOnly =
+      Boolean(newSiteUrl) || review.savedContextWrite || review.ownComputerAction;
+    const reviewArgs = newSiteUrl
+      ? { url: redactSecrets(newSiteUrl, ctx.secrets) }
+      : review.ownComputerAction
+        ? ownComputerReviewArgs(
+            name,
+            redactToolArgsForReview(args, ctx.secrets),
+            ctx.state.pageUrl && redactSecrets(ctx.state.pageUrl, ctx.secrets),
+          )
         : redactToolArgsForReview(args, ctx.secrets);
     const reviewRequest: AutoReviewRequest = {
       toolName: name,
@@ -870,9 +904,10 @@ async function reviewToolCall(
       ),
       botDescription,
       matchingRules: review.matchingRules,
-      ...(review.newSite && fetchUrl ? { newSite: true } : {}),
+      ...(newSiteUrl ? { newSite: true } : {}),
       ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
-      ...(await reviewOwnerContext(ctx, reviewArgs, !ownerWordsOnly)),
+      ...(review.ownComputerAction ? { ownComputerAction: true } : {}),
+      ...(await reviewOwnerContext(ctx, reviewArgs, !newSiteUrl && !review.savedContextWrite)),
     };
     // The usage names the reviewed action, so a run's reviews are counted and priced one by one.
     const operationId = applied
