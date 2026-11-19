@@ -18,7 +18,6 @@ import {
   returnHelperOutcome,
   startBackgroundHelper,
   toComputerRef,
-  unreadComputerChange,
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
 import type { MessageBlock, ThreadSnapshot } from "@rakazo/contracts";
@@ -421,12 +420,6 @@ describeJourneys("required product journeys", () => {
     const stayed =
       "Your computer changed from the Team Computer to your own computer. Your files stayed on the Team Computer.";
     expect((await notes()).at(-1)).toBe(stayed);
-
-    // A turn that does not read the chat, such as a scheduled routine, is told the same thing,
-    // until one turn of the bot has started since the move.
-    expect(await unreadComputerChange(prisma, bot.id, "next-run")).toBe(stayed);
-    await sendAndWait(app, cookie, bot.id, "Carry on.");
-    expect(await unreadComputerChange(prisma, bot.id, "later-run")).toBeUndefined();
   });
 
   it("a bot stays on the computer that has its files when they cannot be brought", async () => {

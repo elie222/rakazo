@@ -87,6 +87,8 @@ export default function BotSettingsScreen() {
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   // What was answered about the bot's files when the computer was changed; sent with the save.
   const computerFiles = useRef<ComputerMoveFiles>("leave");
+  const shownBotId = useRef(botId);
+  shownBotId.current = botId;
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
@@ -308,7 +310,8 @@ export default function BotSettingsScreen() {
       return;
     }
     const files = await askComputerMoveFiles({ botId, botName: bot.name, mode });
-    if (!files) return;
+    // The screen may show another bot by the time the question is answered.
+    if (!files || shownBotId.current !== botId) return;
     computerFiles.current = files;
     setComputerMode(mode);
   }

@@ -76,6 +76,7 @@ import { loadBotForRemoval } from "../bots/bot-removal.js";
 import { createBotFromTemplate, listBotTemplates } from "../bots/bot-templates.js";
 import { botIntroPrompt } from "../bots/hidden-turns.prompt.js";
 import {
+  assertSettledForMove,
   botFilesHome,
   bringFilesToComputer,
   moveReplacesFiles,
@@ -571,6 +572,7 @@ export function botsRoutes(ctx: RouterContext) {
           if (bot.computer.controlBotId === bot.id && hasActiveComputerControl(bot.computer)) {
             throw new ORPCError("BAD_REQUEST", { message: "Release the computer first" });
           }
+          if (bring) assertSettledForMove(bot.computer);
           if (bring && bot.computer.scope === "team") {
             await saveTeamHomeForMove(deps, context.actor, bot.id, bot.computer);
           }
