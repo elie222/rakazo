@@ -90,7 +90,9 @@ async function createFirstBot(deps: FirstBotDeps, actor: Actor): Promise<string 
 export function hasChatHistory(prisma: PrismaClient, actor: Actor): Promise<boolean> {
   return runAsSystem("first bot checks the person's own Spaces for chats", async () => {
     const created = await prisma.space.findMany({
-      where: { createdByUserId: actor.userId },
+      // Still a member: a Space handed over when they left an organization is no longer theirs to
+      // look into, even as a yes or no.
+      where: { createdByUserId: actor.userId, memberships: { some: { userId: actor.userId } } },
       select: { id: true },
     });
     const where = { spaceId: { in: [actor.spaceId, ...created.map((space) => space.id)] } };

@@ -113,7 +113,9 @@ describe("ensureFirstBot", () => {
       expect.objectContaining({ where }),
     );
     expect(deps.prisma.space.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { createdByUserId: "user-1" } }),
+      expect.objectContaining({
+        where: { createdByUserId: "user-1", memberships: { some: { userId: "user-1" } } },
+      }),
     );
     expect(deps.createBot).not.toHaveBeenCalled();
   });
