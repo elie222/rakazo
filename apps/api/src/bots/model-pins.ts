@@ -163,7 +163,9 @@ export async function modelDisconnectPreview(
     return { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
   }
   const last = connections.length === 1;
-  // The same rows `models.disconnect` deletes.
+  // The rows `models.disconnect` deletes, less a Space's saved choices that are not in use
+  // because the Space follows the account's models: a warning about those would name a main
+  // model that is not the one running.
   const roles = {
     userId: actor.userId,
     provider,
