@@ -1,8 +1,24 @@
 import { ph, t } from "@lingui/core/macro";
 import type { ModelDisconnectPreview } from "@rakazo/contracts";
 import { modelDisconnectWarning } from "@rakazo/i18n/model-disconnect";
+import { useCallback, useEffect, useRef } from "react";
 import { Alert } from "react-native";
 import { rpc } from "../api/api";
+
+/**
+ * Whether the component that asked is still there, for `confirmModelDisconnect`'s `current`: a
+ * question prepared after it has gone must not open over another screen.
+ */
+export function useStillShown(): () => boolean {
+  const shown = useRef(true);
+  useEffect(() => {
+    shown.current = true;
+    return () => {
+      shown.current = false;
+    };
+  }, []);
+  return useCallback(() => shown.current, []);
+}
 
 /** Connections whose question is being prepared, so a second tap does not open a second one. */
 const asking = new Set<string>();

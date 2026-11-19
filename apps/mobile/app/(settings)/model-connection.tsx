@@ -52,7 +52,7 @@ import {
   MODEL_CONNECT_TIMEOUT_MS,
   modelConnectionRequest,
 } from "../../lib/models/model-connection-request";
-import { confirmModelDisconnect } from "../../lib/models/model-disconnect";
+import { confirmModelDisconnect, useStillShown } from "../../lib/models/model-disconnect";
 import { analyticsSurface } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
@@ -78,14 +78,7 @@ export default function ModelConnection() {
   // A new connection is managed by its id once it is saved, so later saves update it.
   const [credentialId, setCredentialId] = useState(request?.credentialId ?? null);
   const credentialIdRef = useRef(credentialId);
-  // False once this screen has gone, so a late disconnect question does not open elsewhere.
-  const shown = useRef(true);
-  useEffect(
-    () => () => {
-      shown.current = false;
-    },
-    [],
-  );
+  const stillShown = useStillShown();
   credentialIdRef.current = credentialId;
   const { t } = useLingui();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
@@ -786,7 +779,7 @@ export default function ModelConnection() {
             selectedProviderLabel,
             credential,
             () => void disconnectCredential(),
-            () => shown.current,
+            stillShown,
           );
         }}
         prominence="destructive"

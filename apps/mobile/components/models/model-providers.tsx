@@ -6,9 +6,8 @@ import {
   connectionDisplayName,
   MAX_MODEL_CONNECTION_LABEL,
 } from "@rakazo/contracts";
-import { useEffect, useRef } from "react";
 import { Alert, Platform } from "react-native";
-import { confirmModelDisconnect } from "../../lib/models/model-disconnect";
+import { confirmModelDisconnect, useStillShown } from "../../lib/models/model-disconnect";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 import { RowMenu } from "./model-role-settings";
 
@@ -29,14 +28,7 @@ export function ModelProviders({
   onDisconnect: (credential: ModelCredential) => void;
 }) {
   const { t } = useLingui();
-  // False once this list has gone, so a late disconnect question does not open elsewhere.
-  const shown = useRef(true);
-  useEffect(
-    () => () => {
-      shown.current = false;
-    },
-    [],
-  );
+  const stillShown = useStillShown();
   const providerName = (credential: ModelCredential) =>
     catalog.find(
       (entry) =>
@@ -79,12 +71,7 @@ export function ModelProviders({
         credential.label,
       );
     else if (id === "disconnect")
-      void confirmModelDisconnect(
-        name,
-        credential,
-        () => onDisconnect(credential),
-        () => shown.current,
-      );
+      void confirmModelDisconnect(name, credential, () => onDisconnect(credential), stillShown);
   }
 
   return (
