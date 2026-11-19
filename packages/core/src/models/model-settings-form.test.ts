@@ -113,10 +113,33 @@ describe("modelSettingsFields", () => {
     expect(modelSettingsFields({ reasoning: true, thinkingLevel: "max" }).thinkingLevel).toBe(
       "max",
     );
+    expect(
+      modelSettingsFields({ reasoning: true }, undefined, { level: "low" }).thinkingLevel,
+    ).toBe("low");
     expect(modelSettingsFields({ reasoning: false }, { reasoning: true }).thinkingLevel).toBe(
       "off",
     );
     expect(modelSettingsFields({}).thinkingLevel).toBe("off");
+  });
+
+  it("shows only a level the picker offers, so saving a limit keeps what the model runs at", () => {
+    const levels = ["low", "high"] as const;
+    const shown = modelSettingsFields({ reasoning: true }, undefined, { level: "medium", levels });
+    expect(shown.thinkingLevel).toBe("high");
+    expect(
+      modelSettingsFields({ reasoning: true, thinkingLevel: "max" }, undefined, {
+        level: "medium",
+        levels,
+      }).thinkingLevel,
+    ).toBe("high");
+    const kept = modelSettingsFields({ reasoning: true }, undefined, { level: "low", levels });
+    expect(
+      modelSettingsRequest({
+        fields: { ...kept, maxTokens: "2048" },
+        provider: COMPATIBLE,
+        entry: undefined,
+      }),
+    ).toMatchObject({ settings: { maxTokens: 2_048, reasoning: true, thinkingLevel: "low" } });
   });
 
   it("shows unset limits as empty fields", () => {
@@ -156,14 +179,16 @@ describe("modelSettingsThinkingLevels", () => {
 });
 
 describe("modelDefaultThinkingLevel", () => {
-  it("prefers the model's own level, then the connection's, then medium", () => {
+  it("prefers the model's own level, then the connection's for its own model, then medium", () => {
     const own = credential({
       provider: COMPATIBLE,
+      modelId: "thinker",
       thinkingLevel: "low",
       modelSettings: { thinker: { reasoning: true, thinkingLevel: "max" } },
     });
     expect(modelDefaultThinkingLevel(own, "thinker")).toBe("max");
-    expect(modelDefaultThinkingLevel(own, "other")).toBe("low");
+    expect(modelDefaultThinkingLevel({ ...own, modelSettings: undefined }, "thinker")).toBe("low");
+    expect(modelDefaultThinkingLevel(own, "other")).toBe("medium");
     expect(modelDefaultThinkingLevel(credential(), "other")).toBe("medium");
     expect(modelDefaultThinkingLevel(undefined, null)).toBe("medium");
   });

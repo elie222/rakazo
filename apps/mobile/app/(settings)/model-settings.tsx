@@ -8,6 +8,7 @@ import {
   connectionServesModel,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
+  modelDefaultThinkingLevel,
   modelHasOwnSettings,
   modelSettingsDefaults,
   modelSettingsFields,
@@ -172,7 +173,11 @@ function ModelSettingsForm(route: ModelRoute) {
   const shown = loaded;
   const { credential } = shown;
   const provider = credential.provider;
-  const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry);
+  const thinkingLevels = modelSettingsThinkingLevels(credential, entry);
+  const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry, {
+    level: modelDefaultThinkingLevel(credential, modelId),
+    levels: thinkingLevels,
+  });
   const fields = draft?.on === shown ? draft.fields : saved;
   const dirty = (Object.keys(fields) as (keyof ModelSettingsFields)[]).some(
     (key) => fields[key] !== saved[key],
@@ -245,7 +250,7 @@ function ModelSettingsForm(route: ModelRoute) {
             </View>
             <MenuPicker
               label={t`Thinking`}
-              choices={modelSettingsThinkingLevels(credential, entry).map((level) => ({
+              choices={thinkingLevels.map((level) => ({
                 key: level,
                 label: thinkingLevelLabel(level),
               }))}

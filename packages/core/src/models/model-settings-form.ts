@@ -15,7 +15,7 @@ import {
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
 } from "@rakazo/contracts";
-import { compatibleThinkingLevels } from "./model-providers.js";
+import { clampCatalogThinkingLevel, compatibleThinkingLevels } from "./model-providers.js";
 
 type SettingsCredential = Pick<
   ModelCredential,
@@ -252,31 +252,43 @@ export function modelSettingsThinkingLevels(
   return ["off", ...levels.filter((level) => level !== "off")];
 }
 
-/** The level a model thinks at when no chat, bot or role picks one. */
+/**
+ * The level a model thinks at when no chat, bot or role picks one: its own, else the one its
+ * connection keeps for the connection's own model.
+ */
 export function modelDefaultThinkingLevel(
-  credential: (SettingsCredential & Pick<ModelCredential, "thinkingLevel">) | undefined,
+  credential: (SettingsCredential & Pick<ModelCredential, "modelId" | "thinkingLevel">) | undefined,
   modelId: string | null | undefined,
 ): ThinkingLevel {
   const own = credential && modelId ? credentialModelSettings(credential, modelId) : undefined;
-  return own?.thinkingLevel ?? credential?.thinkingLevel ?? DEFAULT_THINKING_LEVEL;
+  const connection = modelId && credential?.modelId === modelId ? credential.thinkingLevel : null;
+  return own?.thinkingLevel ?? connection ?? DEFAULT_THINKING_LEVEL;
 }
 
 /**
  * The fields for a model's settings. Without its own answer for image input or thinking, a
- * field shows what the model already does, so saving a limit never turns either off.
+ * field shows what the model already does, so saving a limit never changes either. `thinking`
+ * is the level the model runs at and the levels its picker offers.
  */
 export function modelSettingsFields(
   settings: ModelSettings,
   entry?: Pick<ModelCatalogEntry, "images" | "reasoning" | "defaultCapabilities">,
+  thinking: { level: ThinkingLevel; levels?: readonly ThinkingLevel[] } = {
+    level: DEFAULT_THINKING_LEVEL,
+  },
 ): ModelSettingsFields {
   const reasoning = settings.reasoning ?? (entry?.defaultCapabilities ?? entry)?.reasoning ?? false;
+  const level = clampCatalogThinkingLevel(
+    settings.thinkingLevel ?? thinking.level,
+    thinking.levels,
+  );
   return {
     contextWindow: settings.contextWindow !== undefined ? String(settings.contextWindow) : "",
     maxTokens: settings.maxTokens !== undefined ? String(settings.maxTokens) : "",
     images: settings.images ?? (entry?.defaultCapabilities ?? entry)?.images ?? false,
     maxImagesPerPrompt:
       settings.maxImagesPerPrompt !== undefined ? String(settings.maxImagesPerPrompt) : "",
-    thinkingLevel: reasoning ? (settings.thinkingLevel ?? DEFAULT_THINKING_LEVEL) : "off",
+    thinkingLevel: reasoning && level ? (level as ThinkingLevel) : "off",
   };
 }
 

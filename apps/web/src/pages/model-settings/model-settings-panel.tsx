@@ -5,6 +5,7 @@ import type { ModelSettingsFields as Fields } from "@rakazo/core";
 import {
   credentialModelSettings,
   modelCapabilitiesConfigurable,
+  modelDefaultThinkingLevel,
   modelHasOwnSettings,
   modelSettingsDefaults,
   modelSettingsFields,
@@ -32,7 +33,11 @@ export function ModelSettingsPanel({
 }) {
   const { t } = useLingui();
   const provider = credential.provider;
-  const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry);
+  const thinkingLevels = modelSettingsThinkingLevels(credential, entry);
+  const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry, {
+    level: modelDefaultThinkingLevel(credential, modelId),
+    levels: thinkingLevels,
+  });
   // Unedited fields follow what is saved, including after a save or reset.
   const [edited, setEdited] = useState<Fields | null>(null);
   const fields = edited ?? saved;
@@ -127,7 +132,7 @@ export function ModelSettingsPanel({
         onMaxImagesPerPromptChange={(maxImagesPerPrompt) => update({ maxImagesPerPrompt })}
         maxImagesLabel={t`Maximum images per request`}
         thinkingLevel={fields.thinkingLevel}
-        thinkingLevels={modelSettingsThinkingLevels(credential, entry).map((level) => ({
+        thinkingLevels={thinkingLevels.map((level) => ({
           value: level,
           label: thinkingLevelLabel(level),
         }))}

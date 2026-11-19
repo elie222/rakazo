@@ -5,7 +5,6 @@ import type {
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
 } from "@rakazo/adapter-kit";
-import type { ThinkingLevel } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
   creditOfferingFromConnectionId,
@@ -249,6 +248,7 @@ async function resolveModelKeyMaterial(
     secretId: string;
     provider: string;
     defaultModel?: string | null;
+    thinkingLevel?: string | null;
     supportsImages?: boolean;
   } | null,
   provider: string,
@@ -272,8 +272,8 @@ async function resolveModelKeyMaterial(
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
   contextWindow?: number;
   reasoning?: boolean;
-  /** The level the model's own settings chose for runs that pick none. */
-  thinkingLevel?: ThinkingLevel | null;
+  /** The level for runs that pick none: the model's own, else its connection's for that model. */
+  thinkingLevel?: string | null;
   maxTokens?: number;
   acceptsImages?: boolean;
   maxImagesPerPrompt?: number;
@@ -399,7 +399,9 @@ async function resolveModelKeyMaterial(
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
         contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
         reasoning: liveCodex?.reasoningEfforts.length ? true : settings.reasoning,
-        thinkingLevel: settings.thinkingLevel,
+        thinkingLevel:
+          settings.thinkingLevel ??
+          (credential.defaultModel === modelId ? credential.thinkingLevel : null),
         maxTokens: settings.maxTokens,
         acceptsImages,
         maxImagesPerPrompt: settings.maxImagesPerPrompt,
@@ -452,11 +454,11 @@ async function resolveModelKeyMaterial(
 
 /**
  * Translate resolved credentials and capabilities consistently for every run path. A run that
- * chose no thinking level runs at the one the model's own settings chose.
+ * chose no thinking level runs at the model's own, else its connection's for that model.
  */
 export function resolvedModelRunFields(
   resolved: Awaited<ReturnType<typeof resolveModelKey>>,
-  thinkingLevel: string | null | undefined,
+  thinkingLevel?: string | null,
 ): Omit<AgentRunRequest["model"], "provider" | "id"> {
   return {
     connectionId: resolved.connectionId,
@@ -571,7 +573,7 @@ export async function resolveConnectedRunModel(
   /** The connection a role row is pinned to. */
   credentialId?: string,
 ): Promise<AgentRunRequest["model"]> {
-  const { credential, resolved } = await resolveConnectedModelKey(
+  const { resolved } = await resolveConnectedModelKey(
     deps,
     scope,
     provider,
@@ -584,14 +586,7 @@ export async function resolveConnectedRunModel(
     provider,
     id: modelId,
     ...(credentialId ? { connectionId: credentialId } : {}),
-    ...resolvedModelRunFields(
-      resolved,
-      thinkingLevel !== undefined
-        ? thinkingLevel
-        : credential?.defaultModel === modelId
-          ? credential?.thinkingLevel
-          : null,
-    ),
+    ...resolvedModelRunFields(resolved, thinkingLevel),
   };
 }
 
