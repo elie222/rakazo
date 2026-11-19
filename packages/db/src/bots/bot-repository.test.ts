@@ -480,13 +480,19 @@ describe("createRepos.listBots", () => {
         ]),
       },
       run: { findMany: vi.fn(async () => []) },
-      event: {
-        findFirst: vi.fn(async () => ({
-          id: "event-1",
-          payload: { text: "Reading q3-report.pdf", activity: true },
-        })),
-      },
-      $queryRaw: vi.fn(async () => []),
+      $queryRaw: vi.fn(async (query: { strings: string[] }) =>
+        query.strings.join("").includes("FROM events")
+          ? [
+              {
+                id: "event-1",
+                runId: "run-1",
+                threadId: "thread-1",
+                spaceId: "ws-1",
+                payload: { text: "Reading q3-report.pdf", activity: true },
+              },
+            ]
+          : [],
+      ),
     };
 
     await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([

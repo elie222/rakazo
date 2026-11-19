@@ -1,68 +1,99 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../database/client.js";
-import { threadLiveActivity } from "./run-live-activity.js";
+import { threadLiveActivities } from "./run-live-activity.js";
 
-function prismaWith(payload: unknown) {
-  const findFirst = vi.fn(async () => (payload === undefined ? null : { id: "event-1", payload }));
-  return { prisma: { event: { findFirst } } as unknown as Pick<PrismaClient, "event">, findFirst };
+function prismaWith(payloads: Record<string, unknown>) {
+  const $queryRaw = vi.fn(async (query: { values: unknown[] }) =>
+    (query.values[0] as string[]).flatMap((runId) =>
+      runId in payloads
+        ? [
+            {
+              id: `event-${runId}`,
+              runId,
+              threadId: "ignored",
+              spaceId: "space-1",
+              payload: payloads[runId],
+            },
+          ]
+        : [],
+    ),
+  );
+  return { prisma: { $queryRaw } as unknown as Pick<PrismaClient, "$queryRaw">, $queryRaw };
 }
 
-const running = [{ id: "run-1", status: "running", threadId: "thread-1" }];
+const running = (id: string, threadId: string) => ({ id, status: "running", threadId });
 
-describe("threadLiveActivity", () => {
-  it("reads the step the running run shows last", async () => {
-    const { prisma, findFirst } = prismaWith({ text: " Reading  q3-report.pdf\n", activity: true });
-    await expect(threadLiveActivity(prisma, running, "thread-1")).resolves.toEqual({
-      kind: "step",
-      text: "Reading q3-report.pdf",
+async function activityOf(payload: unknown) {
+  const { prisma } = prismaWith({ "run-1": payload });
+  const activities = await threadLiveActivities(prisma, [
+    { threadId: "thread-1", runs: [running("run-1", "thread-1")] },
+  ]);
+  return activities.get("thread-1");
+}
+
+describe("threadLiveActivities", () => {
+  it("reads the step each running chat shows last, in one query", async () => {
+    const { prisma, $queryRaw } = prismaWith({
+      "run-1": { text: " Reading  q3-report.pdf\n", activity: true },
+      "run-2": { delta: " sales rose", streaming: true },
     });
-    expect(findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { runId: "run-1", type: "thread.progress" },
-        orderBy: { seq: "desc" },
-      }),
+    const activities = await threadLiveActivities(prisma, [
+      { threadId: "thread-1", runs: [running("run-1", "thread-1")] },
+      { threadId: "thread-2", runs: [running("run-2", "thread-2")] },
+    ]);
+    expect(activities).toEqual(
+      new Map([
+        ["thread-1", { kind: "step", text: "Reading q3-report.pdf" }],
+        ["thread-2", { kind: "writing" }],
+      ]),
     );
+    expect($queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a long step short", async () => {
-    const { prisma } = prismaWith({ text: `Running: ${"x".repeat(300)}`, activity: true });
-    const activity = await threadLiveActivity(prisma, running, "thread-1");
+    const activity = await activityOf({ text: `Running: ${"x".repeat(300)}`, activity: true });
     expect(activity?.kind === "step" && activity.text.length).toBeLessThanOrEqual(120);
   });
 
-  it("says the bot is writing while reply text streams", async () => {
-    const { prisma } = prismaWith({ delta: " ", streaming: true });
-    await expect(threadLiveActivity(prisma, running, "thread-1")).resolves.toEqual({
-      kind: "writing",
+  it("counts only streamed reply text as writing", async () => {
+    await expect(
+      activityOf({ text: "Stopped: more than 80 tool calls in one turn." }),
+    ).resolves.toBe(undefined);
+    await expect(activityOf({ delta: " ", streaming: true })).resolves.toEqual({ kind: "writing" });
+  });
+
+  it("is empty while the bot thinks or has a stored payload it cannot read", async () => {
+    await expect(activityOf({ text: "", activity: true })).resolves.toBeUndefined();
+    await expect(activityOf(["not", "a", "payload"])).resolves.toBeUndefined();
+  });
+
+  it("reads the chat's own running work even when work in another chat is newer", async () => {
+    const { prisma } = prismaWith({
+      "group-run": { text: "Posting in the group", activity: true },
+      "own-run": { text: "Reading the brief", activity: true },
     });
+    const activities = await threadLiveActivities(prisma, [
+      {
+        threadId: "thread-1",
+        runs: [running("group-run", "group-thread"), running("own-run", "thread-1")],
+      },
+    ]);
+    expect(activities).toEqual(
+      new Map([["thread-1", { kind: "step", text: "Reading the brief" }]]),
+    );
   });
 
-  it("is empty while the bot thinks, or has shown nothing yet", async () => {
-    await expect(
-      threadLiveActivity(prismaWith({ text: "", activity: true }).prisma, running, "thread-1"),
-    ).resolves.toBeUndefined();
-    await expect(
-      threadLiveActivity(prismaWith(undefined).prisma, running, "thread-1"),
-    ).resolves.toBeUndefined();
-    await expect(
-      threadLiveActivity(prismaWith(["not", "a", "payload"]).prisma, running, "thread-1"),
-    ).resolves.toBeUndefined();
-  });
-
-  it("reads nothing for work that is not running in this chat", async () => {
-    const { prisma, findFirst } = prismaWith({ text: "Reading", activity: true });
-    await expect(threadLiveActivity(prisma, running, "group-thread")).resolves.toBeUndefined();
-    await expect(
-      threadLiveActivity(
-        prisma,
-        [
-          { id: "run-1", status: "running", threadId: "thread-1" },
-          { id: "run-2", status: "waiting_input", threadId: "thread-1" },
-        ],
-        "thread-1",
-      ),
-    ).resolves.toBeUndefined();
-    await expect(threadLiveActivity(prisma, [], "thread-1")).resolves.toBeUndefined();
-    expect(findFirst).not.toHaveBeenCalled();
+  it("queries nothing when no chat has running work", async () => {
+    const { prisma, $queryRaw } = prismaWith({});
+    const activities = await threadLiveActivities(prisma, [
+      {
+        threadId: "thread-1",
+        runs: [{ id: "run-1", status: "waiting_input", threadId: "thread-1" }],
+      },
+      { threadId: "thread-2", runs: [running("run-2", "group-thread")] },
+      { threadId: undefined, runs: [running("run-3", "thread-3")] },
+    ]);
+    expect(activities.size).toBe(0);
+    expect($queryRaw).not.toHaveBeenCalled();
   });
 });

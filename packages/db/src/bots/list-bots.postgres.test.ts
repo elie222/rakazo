@@ -254,6 +254,65 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
     expect(during.reduce((sum, read) => sum + read.contentRows, 0)).toBe(threads + receipts);
   });
 
+  it("shows what a bot running in its chat is doing, read in one query", async () => {
+    const actor = actorFor(owner);
+    const long = await asSystem(prisma).bot.findFirstOrThrow({
+      where: { spaceId: owner.spaceId, userId: owner.userId, name: "Long" },
+      select: { id: true, thread: { select: { id: true } } },
+    });
+    const threadId = long.thread!.id;
+    const run = await runAsTenant(owner, async () => {
+      const task = await prisma.task.create({
+        data: {
+          spaceId: owner.spaceId,
+          botId: long.id,
+          threadId,
+          userId: owner.userId,
+          prompt: "compare",
+          status: "running",
+        },
+      });
+      return prisma.run.create({
+        data: {
+          spaceId: owner.spaceId,
+          botId: long.id,
+          threadId,
+          taskId: task.id,
+          userId: owner.userId,
+          status: "running",
+          trigger: "user",
+        },
+      });
+    });
+    const progress = (seq: number, payload: Record<string, string | boolean>) =>
+      runAsTenant(owner, () =>
+        prisma.event.create({
+          data: {
+            spaceId: owner.spaceId,
+            threadId,
+            botId: long.id,
+            runId: run.id,
+            seq,
+            type: "thread.progress",
+            payload,
+          },
+        }),
+      );
+    const liveActivityOfLong = async () =>
+      (await runAsTenant(owner, () => createRepos(prisma).listBots(actor))).find(
+        (bot) => bot.name === "Long",
+      )?.liveActivity;
+
+    await progress(900, { text: "Searching the web", activity: true });
+    await progress(901, { text: "Reading q3-report.pdf", activity: true });
+    expect(await liveActivityOfLong()).toEqual({ kind: "step", text: "Reading q3-report.pdf" });
+    await progress(902, { text: "Q3 sales rose", streaming: true });
+    expect(await liveActivityOfLong()).toEqual({ kind: "writing" });
+
+    await asSystem(prisma).run.update({ where: { id: run.id }, data: { status: "completed" } });
+    expect(await liveActivityOfLong()).toBeUndefined();
+  });
+
   it("keeps an archived bot on the archived roster with the same preview", async () => {
     const actor = actorFor(owner);
     const short = await asSystem(prisma).bot.findFirstOrThrow({

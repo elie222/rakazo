@@ -103,9 +103,7 @@ export function SidebarRoster({
 }) {
   useRedrawAtMidnight();
   const { t } = useLingui();
-  const openChatRunning =
-    !inGroup && activeThreadRuns(activeSnapshot).some((run) => run.status === "running");
-  const openChatActivity = openChatRunning
+  const openChatActivity = activeThreadRuns(activeSnapshot).some((run) => run.status === "running")
     ? liveActivity(activeSnapshot?.messages ?? [])
     : undefined;
   return (
@@ -292,7 +290,7 @@ export function SidebarRoster({
                 const rowActivity =
                   item.kind !== "bot"
                     ? undefined
-                    : openChatRunning && active?.id === item.chat.id
+                    : !inGroup && activeSnapshot && active?.id === item.chat.id
                       ? openChatActivity
                       : item.chat.liveActivity;
                 const workStatusLabel =
