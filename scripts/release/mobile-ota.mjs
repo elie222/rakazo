@@ -27,7 +27,12 @@ const BUNDLED = [
     extensions: [".ts", ".tsx", ".css"],
   },
   {
-    prefixes: ["packages/contracts/src/", "packages/core/src/", "packages/i18n/src/", "packages/logging/src/"],
+    prefixes: [
+      "packages/contracts/src/",
+      "packages/core/src/",
+      "packages/i18n/src/",
+      "packages/logging/src/",
+    ],
     files: [],
     extensions: [".ts", ".tsx"],
   },
