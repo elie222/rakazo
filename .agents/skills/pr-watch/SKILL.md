@@ -69,10 +69,19 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
 
 1. Run `"$PRD" --watch` with **`run_in_background: true`**. It blocks until
    there is something to act on: a review finding you have not seen, a check
-   that newly failed, or every check run, commit status and workflow run on the
-   exact head SHA terminal. Then it prints the digest. You are re-invoked when it exits.
+   that newly failed, every check run, commit status and workflow run on the
+   exact head SHA terminal, or the PR closes. Then it prints the digest. You are
+   re-invoked when it exits.
    Review bots usually answer long before the slowest check, so expect to
    handle comments while CI is still running.
+
+   On GitHub.com with `gh` 2.105.0 or newer and Event Streams preview access,
+   the helper uses `gh event listen` to wake on reviews, completed check
+   suites, and PR head or state changes. It re-reads the PR after each event
+   or after 60 seconds to catch standalone comments, bot edits, commit statuses
+   and events missed while disconnected. If the stream is unavailable, the
+   helper checks every 30 seconds in the same background call.
+   [GitHub CLI manual](https://cli.github.com/manual/gh_event_listen)
 
    Never wait in the foreground. `sleep` is blocked and an `until` loop is
    killed at the execution tool's timeout, costing an error round-trip plus a
@@ -87,6 +96,7 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
    | `open-comments` | Answer them below.                                                            |
    | `pending`       | Checks are still running (you woke early, or one registered late). Back to 1. |
    | `out-of-sync`   | Push or reconcile, then back to 1.                                            |
+   | `CLOSED` or `MERGED` | Report the PR state.                                                    |
 
 3. After any push or reply, go back to 1 once. A verdict is only good for the
    SHA it was taken on; never mix observations from two commits.

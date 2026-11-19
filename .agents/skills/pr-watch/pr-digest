@@ -2,7 +2,7 @@
 # Compact PR status for agents. Prints only what needs a decision.
 #
 #   pr-digest [PR]            one-shot digest
-#   pr-digest --watch [PR]    poll until checks settle, a check newly fails, or
+#   pr-digest --watch [PR]    wait until checks settle, a check newly fails, or
 #                             an unseen review finding arrives; then digest
 #   pr-digest --all [PR]      re-print findings already shown once
 #   pr-digest --logs JOB_ID   failing CI log, stripped of timestamp noise
@@ -15,8 +15,9 @@ set -uo pipefail
 POLL=${PR_DIGEST_POLL:-30}
 BODY_CHARS=${PR_DIGEST_BODY_CHARS:-600}
 SEEN_DIR=${PR_DIGEST_SEEN_DIR:-$HOME/.cache/pr-digest}
-# How many empty polls to allow before accepting that a PR has no check runs.
+# How many empty observations to allow before accepting that a PR has no checks.
 EMPTY_POLLS=${PR_DIGEST_EMPTY_POLLS:-3}
+PR_EVENTS=com.github.pull_request.review.submitted.v1,com.github.pull_request.check_suite.status.changed.v1,com.github.pull_request.head.changed.v1,com.github.pull_request.state.changed.v1
 SHOW_ALL=0
 
 die() { echo "pr-digest: $*" >&2; exit 1; }
@@ -447,16 +448,20 @@ main() {
     || die "could not resolve authenticated user"
   case $viewer in ''|null|\{*) die "could not resolve authenticated user" ;; esac
   [ -n "$pr" ] || pr=$(gh pr view --json number --jq .number 2>/dev/null) || die "no PR for this branch"
-  FORK=$(gh pr view "$pr" --repo "$repo" --json isCrossRepository --jq .isCrossRepository) \
+  local pr_info resource
+  pr_info=$(gh pr view "$pr" --repo "$repo" --json isCrossRepository,url --jq '[.isCrossRepository, .url] | @tsv') \
     || die "could not read PR $pr"
+  IFS=$'\t' read -r FORK resource <<<"$pr_info"
   [ "$FORK" = true ] || FORK=false
 
   if [ "$watch" -eq 1 ]; then
-    local head runs statuses workflows empty=0 baseline="" first=1 seen
+    local head state revision runs statuses workflows empty=0 baseline="" first=1 seen event_status
     seen=$(seen_path "$repo" "$pr")
     while :; do
-      head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid) \
+      revision=$(gh pr view "$pr" --repo "$repo" --json headRefOid,state --jq '[.headRefOid, .state] | @tsv') \
         || die "could not read PR head"
+      IFS=$'\t' read -r head state <<<"$revision"
+      [ "$state" = OPEN ] || break
       runs=$(check_runs "$repo" "$head") || die "could not read check runs"
       statuses=$(commit_statuses "$repo" "$head") || die "could not read commit statuses"
       workflows=$(workflow_runs "$repo" "$head") || die "could not read workflow runs"
@@ -475,7 +480,7 @@ main() {
       if [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")" = "0" ] &&
          [ "$(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses")" = "0" ] &&
          [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$workflows")" = "0" ]; then
-        # Nothing outstanding. Wait a few polls before believing a PR that has
+        # Nothing outstanding. Wait a few observations before believing a PR that has
         # reported nothing at all, in case checks are still registering.
         if [ "$(jq 'length' <<<"$runs")" != "0" ] ||
            [ "$(jq 'length' <<<"$statuses")" != "0" ] ||
@@ -483,6 +488,16 @@ main() {
           break
         fi
         empty=$((empty + 1))
+      fi
+      if [[ "$resource" == https://github.com/* ]]; then
+        # Events only wake the next observation. The timeout catches standalone
+        # comments, edits, commit statuses, and changes missed between streams.
+        gh event listen --resource "$resource" --event "$PR_EVENTS" --timeout 60s >/dev/null 2>&1
+        event_status=$?
+        case "$event_status" in
+          0|8) continue ;; # An event arrived, or the listen timed out.
+          *) resource="" ;; # Older gh, no preview access, or a stream error.
+        esac
       fi
       sleep "$POLL"
     done

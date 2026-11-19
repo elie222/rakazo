@@ -13,9 +13,16 @@ const fixture = JSON.parse(readFileSync(process.env.FIXTURE, "utf8"));
 const print = (value) => console.log(typeof value === "string" ? value : JSON.stringify(value));
 if (args[0] === "repo" && args[1] === "view") print("example/project");
 else if (args[0] === "pr" && args[1] === "view") {
-  if (args.includes("isCrossRepository")) print(fixture.fork ?? false);
+  if (args.includes("isCrossRepository,url")) print((fixture.fork ?? false) + "\thttps://github.com/example/project/pull/1");
+  else if (args.includes("headRefOid,state")) print("abc\tOPEN");
   else if (args.includes("--jq")) print("abc");
   else print({ headRefOid: "abc", state: "OPEN", mergeable: "MERGEABLE", headRefName: "topic", reviewDecision: "" });
+} else if (args[0] === "event" && args[1] === "listen" && fixture.eventExits) {
+  appendFileSync(process.env.CALLS, JSON.stringify(args) + "\n");
+  const count = readFileSync(process.env.CALLS, "utf8").trim().split("\n").length;
+  const status = fixture.eventExits[count - 1];
+  if (status === 0) print({ type: "com.github.pull_request.check_suite.status.changed.v1", data: { conclusion: "success" } });
+  process.exit(status ?? 1);
 } else if (args[0] === "api") {
   const endpoint = args.find((arg) => arg === "graphql" || arg.startsWith("repos/"));
   if (endpoint === "graphql") print("viewer");
@@ -88,6 +95,7 @@ function runDigest(
     checks?: object[];
     statuses?: object[][];
     workflows?: object[][];
+    eventExits?: number[];
     fork?: boolean;
     steps?: Record<string, object[]>;
   },
@@ -515,6 +523,44 @@ describe("pr-digest", () => {
   describe("--watch", () => {
     const running = { name: "e2e", status: "in_progress", conclusion: null, html_url: "" };
     const failed = { ...running, status: "completed", conclusion: "failure" };
+
+    it("rechecks the head after an event and a timeout, even if one check suite reported success", () => {
+      const result = runDigest(
+        { checks: [running, running, [failed, running]], eventExits: [0, 8] },
+        "--watch",
+        "1",
+      );
+      expect(result.status).toBe(10);
+      const calls = result.calls
+        .trim()
+        .split("\n")
+        .map((call) => JSON.parse(call));
+      expect(calls).toHaveLength(2);
+      for (const call of calls) {
+        expect(call.slice(0, 4)).toEqual([
+          "event",
+          "listen",
+          "--resource",
+          "https://github.com/example/project/pull/1",
+        ]);
+        expect(call[5].split(",")).toContain("com.github.pull_request.review.submitted.v1");
+        expect(call[5].split(",")).toContain(
+          "com.github.pull_request.check_suite.status.changed.v1",
+        );
+        expect(call.slice(6)).toEqual(["--timeout", "60s"]);
+      }
+      expect(result.stdout).not.toContain("check_suite.status.changed.v1");
+    });
+
+    it("falls back to timed observations when the event stream is unavailable", () => {
+      const result = runDigest(
+        { checks: [running, running, [failed, running]], eventExits: [1] },
+        "--watch",
+        "1",
+      );
+      expect(result.status).toBe(10);
+      expect(result.calls.trim().split("\n")).toHaveLength(1);
+    });
 
     it("wakes for an unseen finding while checks are still running", () => {
       const result = runDigest({ check: running, conversation: [comment()] }, "--watch", "1");
