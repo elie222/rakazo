@@ -639,6 +639,48 @@ describe("composio tool mapping", () => {
       }
     });
 
+    it("keeps going when the retry names another deleted account", async () => {
+      composioSdkState.created.length = 0;
+      composioSdkState.sessions.clear();
+      const list = composioSdkState.connectedAccounts.list;
+      composioSdkState.connectedAccounts.list = async () => {
+        throw new Error("list unavailable");
+      };
+      composioSdkState.createThrows = (config) => {
+        const pinned = JSON.stringify(config.connectedAccounts ?? {});
+        const deleted = ["ca_gone1", "ca_gone2"].find((id) => pinned.includes(id));
+        return deleted
+          ? apiError(400, {
+              slug: "ToolRouterV2_InvalidConnectedAccountIds",
+              message: `Could not find connected account(s) ${deleted} belonging to user`,
+            })
+          : undefined;
+      };
+      try {
+        const tools = await new ComposioConnector().discoverTools({
+          operationId: "composio-unavailable",
+          traceId: "composio-unavailable",
+          spaceId: "workspace",
+          userId: "user-1",
+          signal: new AbortController().signal,
+          connectedConnections: ["ca_gone1", "ca_gone2", "ca_live"].map((providerRef) => ({
+            id: providerRef,
+            connectorId: "composio",
+            externalId: "github",
+            displayName: "GitHub",
+            providerRef,
+          })),
+        });
+        expect(tools).toContainEqual(expect.objectContaining({ name: "GITHUB_GET_REPOS" }));
+        expect(composioSdkState.created).toHaveLength(3);
+        expect(composioSdkState.created.at(-1)?.config.connectedAccounts).toEqual({
+          GITHUB: ["ca_live"],
+        });
+      } finally {
+        composioSdkState.connectedAccounts.list = list;
+      }
+    });
+
     it("hides the tools for this turn when the provider times out", async () => {
       composioSdkState.created.length = 0;
       composioSdkState.sessions.clear();

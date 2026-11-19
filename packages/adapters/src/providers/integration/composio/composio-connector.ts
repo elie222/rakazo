@@ -535,29 +535,36 @@ export class ComposioConnector implements ComposioProvider {
       connectedAccounts[toolkit] = [...ids].sort();
     }
     if (toolkits.length === 0) return { reconnect, connectedAccounts };
-    try {
-      return await this.executeSession(userId, toolkits, reconnect, connectedAccounts);
-    } catch (error) {
-      if (!isStaleConnectedAccountError(error) || Object.keys(connectedAccounts).length === 0)
-        throw error;
-      // The account list was unavailable, so a deleted account slipped through. Drop the
-      // accounts the refusal names (all of them when it names none): an app left with no
-      // account needs a reconnect, and the rest still get a session.
-      const named = staleAccountIds(error);
-      const kept: Record<string, string[]> = {};
-      const stale: string[] = [];
-      for (const [toolkit, ids] of Object.entries(connectedAccounts)) {
-        const live = named.size > 0 ? ids.filter((id) => !named.has(id)) : [];
-        if (live.length > 0) kept[toolkit] = live;
-        else stale.push(toolkit);
+    let accounts = connectedAccounts;
+    let remaining = toolkits;
+    let stale = reconnect;
+    for (;;) {
+      try {
+        return await this.executeSession(userId, remaining, stale, accounts);
+      } catch (error) {
+        if (!isStaleConnectedAccountError(error) || Object.keys(accounts).length === 0) throw error;
+        // The account list was unavailable, so a deleted account slipped through. Drop the
+        // accounts the refusal names (all of them when it names none we hold): an app left with
+        // no account needs a reconnect, and the rest still get a session. Each pass drops at
+        // least one account, so this ends.
+        const named = staleAccountIds(error);
+        const held = Object.values(accounts).flat();
+        const dropAll = !held.some((id) => named.has(id));
+        const kept: Record<string, string[]> = {};
+        const dropped: string[] = [];
+        for (const [toolkit, ids] of Object.entries(accounts)) {
+          const live = dropAll ? [] : ids.filter((id) => !named.has(id));
+          if (live.length > 0) kept[toolkit] = live;
+          else dropped.push(toolkit);
+        }
+        getLogger().warn("composio connected accounts need reconnect", {
+          "composio.toolkits": dropped.join(","),
+        });
+        accounts = kept;
+        remaining = remaining.filter((toolkit) => !dropped.includes(toolkit));
+        stale = [...stale, ...dropped];
+        if (remaining.length === 0) return { reconnect: stale, connectedAccounts: {} };
       }
-      getLogger().warn("composio connected accounts need reconnect", {
-        "composio.toolkits": stale.join(","),
-      });
-      const remaining = toolkits.filter((toolkit) => !stale.includes(toolkit));
-      const allStale = [...reconnect, ...stale];
-      if (remaining.length === 0) return { reconnect: allStale, connectedAccounts: {} };
-      return this.executeSession(userId, remaining, allStale, kept);
     }
   }
 
