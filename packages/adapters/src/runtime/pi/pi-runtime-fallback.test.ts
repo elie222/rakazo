@@ -3034,11 +3034,16 @@ describe("Pi runtime reasoning efforts an endpoint refuses", () => {
     '400: {"message":"reasoning_effort must be one of: low, medium, high, max","type":"invalid_request_error","param":"","code":null}';
 
   it.each([
-    ["minimal", ["minimal", "low", "low"]],
-    ["off", ["off", "off", "off"]],
+    [refused, "minimal", ["minimal", "low", "low"]],
+    [refused, "off", ["off", "off", "off"]],
+    [
+      'Compatible API error (400): {"message":"Unsupported value: \'minimal\' is not supported with this model. Supported values are: \'medium\'.","type":"invalid_request_error","param":"reasoning.effort","code":"unsupported_value"}',
+      "minimal",
+      ["minimal", "medium", "medium"],
+    ],
   ] as const)(
-    "retries a refused %s effort with one the endpoint accepts for the rest of the run",
-    async (thinkingLevel, sentLevels) => {
+    "retries %s at %s with an accepted effort for the rest of the run",
+    async (errorMessage, thinkingLevel, sentLevels) => {
       providerState.models.set(`${primary.provider}/${primary.id}`, {
         ...primary,
         reasoning: true,
@@ -3048,7 +3053,7 @@ describe("Pi runtime reasoning efforts an endpoint refuses", () => {
       input.model.thinkingLevel = thinkingLevel;
       providerState.stream
         .mockImplementationOnce((target: Model<"openai-completions">) =>
-          stream(target, message(target, [], "error", refused)),
+          stream(target, message(target, [], "error", errorMessage)),
         )
         .mockImplementationOnce((target: Model<"openai-completions">) =>
           stream(
