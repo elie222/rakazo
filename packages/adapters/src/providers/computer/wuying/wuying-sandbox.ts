@@ -875,7 +875,7 @@ export class WuyingSandboxProvider implements SandboxProvider {
   ): Promise<ComputerFileEntry[]> {
     let relative: string;
     try {
-      relative = normalizeDesktopWorkspacePath(directory, "win32");
+      relative = normalizeDesktopWorkspacePath(directory === "." ? "" : directory, "win32");
     } catch (error) {
       if (error instanceof WorkspacePathError) throw new WorkspaceDirectoryError(error.message);
       throw error;

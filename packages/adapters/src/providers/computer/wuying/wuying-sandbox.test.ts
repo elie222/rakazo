@@ -52,15 +52,20 @@ describe("WuyingSandboxProvider", () => {
     await assertSandboxReadLimit(provider, computer, ctx, note);
   });
 
-  it("reports an invalid Windows directory before calling the gateway", async () => {
+  it("lists the workspace via dot after rejecting an invalid Windows directory", async () => {
     const desktop = new FakeWuyingDesktop();
     const provider = desktop.provider();
     const computer = await provisionPrepared(provider, { botId: "portable", homePath: "/h" }, ctx);
+    await provider.writeFile(computer, { path: "note.txt", content: Uint8Array.of(1) }, ctx);
     const calls = desktop.calls.length;
     await expect(provider.listFiles(computer, "notes?", ctx)).rejects.toThrow(
       WorkspaceDirectoryError,
     );
     expect(desktop.calls).toHaveLength(calls);
+
+    const root = await provider.listFiles(computer, "", ctx);
+    expect(root).toContainEqual({ path: "note.txt", kind: "file", size: 1 });
+    expect(await provider.listFiles(computer, ".", ctx)).toEqual(root);
   });
 
   it("keeps each computer's home in its own folder under the user profile", async () => {
