@@ -1,5 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { AgentRunModel, AgentRunRequest } from "@rakazo/adapter-kit";
+import { DEFAULT_THINKING_LEVEL } from "@rakazo/contracts";
 import type {
   ComputerModeCheckpoint,
   ComputerModeSelection,
@@ -89,7 +90,7 @@ export function computerTarget(config: AgentRunModel): RuntimeModelTarget {
   if (!selected.model.input.includes("image") || config.acceptsImages === false)
     throw new Error("Computer model must support image input");
   return {
-    config: { ...config, thinkingLevel: config.thinkingLevel ?? "medium" },
+    config: { ...config, thinkingLevel: config.thinkingLevel ?? DEFAULT_THINKING_LEVEL },
     models: selected.models,
     model: modelForCompletion(selected.model, config.maxTokens),
     cardMaxTokens: cardOutputCeiling(selected.model),

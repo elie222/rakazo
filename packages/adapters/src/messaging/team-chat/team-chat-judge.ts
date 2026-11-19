@@ -27,7 +27,7 @@ import {
   hasHostedModelCredits,
   validateCreditOfferingChoice,
 } from "../../models/model-selection.js";
-import { connectionModelSettings } from "../../models/model-settings.js";
+import { connectionModelSettings, modelRunThinkingLevel } from "../../models/model-settings.js";
 import {
   cleanLine,
   renderTeamChatEngagementPrompt,
@@ -318,6 +318,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         ? { contextWindow: modelSettings.contextWindow }
         : {}),
       ...(modelSettings.reasoning !== undefined ? { reasoning: modelSettings.reasoning } : {}),
+      thinkingLevel: modelRunThinkingLevel(modelSettings, credential, modelId),
     };
     const context = parsed.kind === "oauth" ? {} : { cacheCapabilities: parsed.cacheCapabilities };
     if (parsed.kind === "oauth") {

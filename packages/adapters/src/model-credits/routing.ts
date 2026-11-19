@@ -167,6 +167,7 @@ export async function approvedModelCreditMaterial(
     contextWindow: settings.contextWindow,
     maxTokens: settings.maxTokens,
     reasoning: settings.reasoning,
+    thinkingLevel: settings.thinkingLevel,
     acceptsImages: settings.images,
     maxImagesPerPrompt: settings.maxImagesPerPrompt,
     cacheCapabilities: secret.cacheCapabilities,

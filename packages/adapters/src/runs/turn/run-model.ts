@@ -57,7 +57,7 @@ import {
   validateConnectedModelChoice,
   validateModelAuthAvailability,
 } from "../../models/model-selection.js";
-import { connectionModelSettings } from "../../models/model-settings.js";
+import { connectionModelSettings, modelRunThinkingLevel } from "../../models/model-settings.js";
 import { codexLiveModel } from "../../runtime/pi/models/pi-codex-catalog.js";
 import { LOCAL_PROVIDER_ID } from "../../runtime/pi/models/pi-local-provider.js";
 import {
@@ -399,9 +399,7 @@ async function resolveModelKeyMaterial(
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
         contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
         reasoning: liveCodex?.reasoningEfforts.length ? true : settings.reasoning,
-        thinkingLevel:
-          settings.thinkingLevel ??
-          (credential.defaultModel === modelId ? credential.thinkingLevel : null),
+        thinkingLevel: modelRunThinkingLevel(settings, credential, modelId),
         maxTokens: settings.maxTokens,
         acceptsImages,
         maxImagesPerPrompt: settings.maxImagesPerPrompt,

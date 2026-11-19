@@ -9,7 +9,11 @@ import {
 } from "./model-credential-refresh.js";
 import { keptModelSettings, parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { withLiveModelSettings } from "./model-selection.js";
-import { connectionModelSettings, withModelSettings } from "./model-settings.js";
+import {
+  connectionModelSettings,
+  modelRunThinkingLevel,
+  withModelSettings,
+} from "./model-settings.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 
 // A model the Z.AI provider lists but the bundled catalog does not describe.
@@ -496,4 +500,12 @@ it("preserves operator-enabled image input when saving a model's limits", () => 
   } finally {
     vi.unstubAllEnvs();
   }
+});
+
+it("runs a model at its own level, else its connection's for that model, ignoring unknown ones", () => {
+  const connection = { defaultModel: "served", thinkingLevel: "high" };
+  expect(modelRunThinkingLevel({ thinkingLevel: "max" }, connection, "served")).toBe("max");
+  expect(modelRunThinkingLevel({}, connection, "served")).toBe("high");
+  expect(modelRunThinkingLevel({}, connection, "other")).toBeNull();
+  expect(modelRunThinkingLevel({}, { ...connection, thinkingLevel: "turbo" }, "served")).toBeNull();
 });
