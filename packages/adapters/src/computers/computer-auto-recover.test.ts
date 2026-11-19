@@ -226,6 +226,31 @@ describe("a computer whose system is damaged", () => {
     expect(recoverySteps(sink)).toHaveLength(2);
   });
 
+  it("lets go of screen control when it is left to Recover, so Recover is not held off", async () => {
+    const { deps, row } = await damagedComputer("persists");
+    const draftRecordingsOfLease = vi.fn(async () => undefined);
+    deps.events = { draftRecordingsOfLease } as unknown as ThreadEvents;
+    Object.assign(row, {
+      controlHolder: "user",
+      controlLeaseId: "lease-1",
+      controlUserId: "user",
+      controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(provisionComputer(deps, row.id, context)).rejects.toBeInstanceOf(
+      SandboxDamagedError,
+    );
+
+    expect(row).toMatchObject({
+      state: "quarantined",
+      controlHolder: "none",
+      controlLeaseId: null,
+      controlUserId: null,
+      controlLeaseExpiresAt: null,
+    });
+    expect(draftRecordingsOfLease).toHaveBeenCalledWith({ spaceId: "space", leaseId: "lease-1" });
+  });
+
   it("is recovered once when it starts damaged from a stop, then left to Recover", async () => {
     const { api, deps, row, first, resume } = await damagedComputer("persists");
     await deps.sandbox.stop(first, context, { discardUnsaved: true });

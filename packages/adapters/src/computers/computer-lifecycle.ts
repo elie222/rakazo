@@ -214,6 +214,14 @@ async function computerOwnerLocale(
   }
 }
 
+const RELEASED_CONTROL = {
+  controlHolder: "none",
+  controlLeaseId: null,
+  controlUserId: null,
+  controlLeaseExpiresAt: null,
+  controlBotId: null,
+} as const;
+
 export async function provisionComputer(
   deps: {
     prisma: PrismaClient;
@@ -686,6 +694,8 @@ export async function provisionComputer(
       (!reconnecting || (unsafeStop && provisioned?.fresh === true)) && rollbackError
         ? provisioned
         : undefined;
+    const parked = damaged && !rollbackError;
+    let released = false;
     try {
       await deps.prisma.$transaction(async (tx) => {
         const recorded = await tx.computer.updateMany({
@@ -712,8 +722,12 @@ export async function provisionComputer(
               : {}),
             // Nothing is ever saved from a damaged machine over the stored workspace.
             ...(incomplete || damaged ? { restorePending: true } : {}),
+            // A damaged machine confirmed stopped has no screen to control, and a lease left on
+            // it would hold off Recover until it expired.
+            ...(parked ? RELEASED_CONTROL : {}),
           },
         });
+        released = parked && recorded.count === 1;
         // Stored, so its record goes too. One this write did not store keeps its record.
         if (kept && recorded.count === 1)
           await deps.jobs.cancelIn(tx, machineCleanupJobKey(kept.kind, kept.providerRef));
@@ -724,6 +738,7 @@ export async function provisionComputer(
         "Computer provisioning failed and its failure could not be recorded",
       );
     }
+    if (released) await endTeachingWithLease(deps, existing.spaceId, existing.controlLeaseId);
     if (rollbackError) {
       // The provider was still down for the cleanup, which adds nothing to why the start failed.
       if (
