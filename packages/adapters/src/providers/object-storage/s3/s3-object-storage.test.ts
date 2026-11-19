@@ -326,6 +326,8 @@ describe("S3ObjectStorage outages", () => {
     expect(isPassingStorageFailure(withStatus("AccessDenied", 403))).toBe(false);
     expect(isPassingStorageFailure(withStatus("NoSuchKey", 404))).toBe(false);
     expect(isPassingStorageFailure(withCode("ENOENT"))).toBe(false);
+    // A refused connection is as likely a wrong endpoint as an outage, so it stays reported.
+    expect(isPassingStorageFailure(withCode("ECONNREFUSED"))).toBe(false);
   });
 });
 
