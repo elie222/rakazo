@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { deferred } from "@rakazo/core/test-async";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "../database/client.js";
@@ -274,7 +275,13 @@ describe("loadSpaceContentKeys", () => {
       expect(unwrap).toHaveBeenCalledTimes(1);
 
       vi.advanceTimersByTime(40_000);
-      await loadSpaceContentKeys(client, "s");
+      const reload = deferred<(typeof record)[]>();
+      forSpace.mockReturnValueOnce(reload.promise);
+      const loading = loadSpaceContentKeys(client, "s");
+      // Sealing meanwhile still finds the keys already in memory.
+      await expect(warm.current("s")).resolves.toMatchObject({ id: "key-1" });
+      reload.resolve([record]);
+      await loading;
       expect(unwrap).toHaveBeenCalledTimes(2);
       vi.advanceTimersByTime(40_000);
       await expect(warm.current("s")).resolves.toMatchObject({ id: "key-1" });

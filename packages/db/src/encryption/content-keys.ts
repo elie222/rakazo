@@ -359,8 +359,8 @@ export class ContentKeyRing {
     return promise;
   }
 
-  private async unwrap(record: SpaceKeyRecord): Promise<DataKey> {
-    const cached = this.keys.get(record.id);
+  private async unwrap(record: SpaceKeyRecord, freshForMs = 0): Promise<DataKey> {
+    const cached = this.keys.get(record.id, freshForMs);
     if (cached) return cached;
     const key: DataKey = {
       id: record.id,
@@ -374,14 +374,16 @@ export class ContentKeyRing {
 
   /**
    * Loads a space's keys so they stay in memory at least `freshForMs` longer, reloading them when
-   * they would expire sooner.
+   * they would expire sooner. The keys in memory stay usable until their replacements are in.
    */
   async preload(spaceId: string, freshForMs: number): Promise<void> {
     const cached = this.versions.get(spaceId, freshForMs);
     if (cached?.every((key) => this.keys.get(key.id, freshForMs))) return;
-    this.versions.deleteWhere((_, key) => key === spaceId);
-    this.keys.deleteWhere((key) => key.spaceId === spaceId);
-    await this.all(spaceId);
+    await this.once(`preload:${spaceId}`, async () => {
+      const records = await this.store.forSpace(spaceId);
+      const keys = await Promise.all(records.map((record) => this.unwrap(record, freshForMs)));
+      if (keys.length) this.versions.set(spaceId, keys);
+    });
   }
 
   /** Every key version of a space, oldest first. Empty when the space has none yet. */
