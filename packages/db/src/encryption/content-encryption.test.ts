@@ -3,7 +3,11 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "../database/client.js";
-import { contentEncryptionOf, withContentEncryption } from "./content-encryption.js";
+import {
+  contentEncryptionOf,
+  loadSpaceContentKeys,
+  withContentEncryption,
+} from "./content-encryption.js";
 import type { SpaceKeyRecord, SpaceKeyStore } from "./content-keys.js";
 import { ContentKeyRing, LocalKeyProvider } from "./content-keys.js";
 
@@ -223,5 +227,33 @@ describe("withContentEncryption for bot inbox mail", () => {
       const [queryTokens] = await encryption.messageSearchTokens("s", query, "prefix");
       expect(queryTokens!.every((token) => tokens.has(token))).toBe(true);
     }
+  });
+});
+
+describe("loadSpaceContentKeys", () => {
+  it("loads a Space's keys ahead so sealing its rows asks the key manager nothing", async () => {
+    const provider = new LocalKeyProvider([{ id: "a", key: randomBytes(32) }]);
+    const record = {
+      id: "key-1",
+      spaceId: "s",
+      version: 1,
+      ...(await provider.wrap(randomBytes(32), { spaceId: "s", version: 1 })),
+    };
+    const forSpace = vi.fn(async (spaceId: string) => (spaceId === "s" ? [record] : []));
+    const unwrap = vi.spyOn(provider, "unwrap");
+    const warm = new ContentKeyRing(provider, { ...store, forSpace });
+    const client = withContentEncryption(new PrismaClient({ adapter: new PrismaPg(pool) }), warm);
+
+    await loadSpaceContentKeys(client, "s");
+    await loadSpaceContentKeys(client, "new-space");
+    expect(unwrap).toHaveBeenCalledTimes(1);
+
+    await expect(warm.current("s")).resolves.toMatchObject({ id: "key-1" });
+    expect(forSpace).toHaveBeenCalledTimes(2);
+    expect(unwrap).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing for clients without content encryption", async () => {
+    await expect(loadSpaceContentKeys({}, "s")).resolves.toBeUndefined();
   });
 });

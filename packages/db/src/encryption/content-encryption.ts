@@ -182,6 +182,16 @@ export function contentEncryptionOf(prisma: unknown): ContentEncryption | undefi
 }
 
 /**
+ * Loads a Space's content keys before a transaction seals its rows, so the transaction does not
+ * wait on the key store or, for keys no longer in memory, the key manager. A Space without keys
+ * yet is left for the transaction to create them.
+ */
+export async function loadSpaceContentKeys(prisma: unknown, spaceId: string): Promise<void> {
+  const ring = contentEncryptionOf(prisma)?.ring;
+  if (ring?.encryptWrites) await ring.all(spaceId);
+}
+
+/**
  * Boot check for composition roots. A malformed master key configuration throws,
  * so the process fails at startup instead of on the first message; master key
  * ids that stored space keys need but cannot use are returned for reporting.
