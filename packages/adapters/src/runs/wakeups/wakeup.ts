@@ -715,6 +715,7 @@ interface QueuedJob {
   queueName?: string;
   /** Its place in the queue, kept when it is replaced, as Graphile keeps a job's id. */
   place: number;
+  ended?: boolean;
   attempts: number;
   maxAttempts: number;
 }
@@ -804,10 +805,13 @@ export class InMemoryJobQueue implements JobPublisher, JobQueueOrder, JobWorkerH
   }
 
   /**
-   * Not transactional either, so the job stays: it runs when due and finds nothing to do, and a
-   * transaction that rolls back never loses the backup it still needs.
+   * Not transactional either, so the job stays and runs when due, finding nothing to do, and a
+   * rollback never loses a backup still needed. Marked ended, it holds its named queue back no more.
    */
-  async cancelIn(_tx: JobTransaction, _replaceKey: string): Promise<void> {}
+  async cancelIn(_tx: JobTransaction, replaceKey: string): Promise<void> {
+    const job = this.existingJob(replaceKey);
+    if (job) job.ended = true;
+  }
 
   async cancel(replaceKey: string): Promise<void> {
     const closing = this.closingJobs.findIndex((job) => job.replaceKey === replaceKey);
@@ -850,7 +854,7 @@ export class InMemoryJobQueue implements JobPublisher, JobQueueOrder, JobWorkerH
       ...[...this.scheduled].map(([timer, job]) => of(job, false, timer)),
       ...this.closingJobs.map((job) => of(job, false)),
       ...[...this.running].map((job) => of(job, true)),
-    ].filter(({ job }) => job.queueName === queueName) satisfies OrderedJob[];
+    ].filter(({ job }) => job.queueName === queueName && !job.ended) satisfies OrderedJob[];
   }
 
   /** Attempts and schedule for a keyed job that is still queued. */

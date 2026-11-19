@@ -1456,8 +1456,10 @@ describe("createMessagingInboundHandler DM routing", () => {
         recorded.map((job, index) => ({ ...job, availableAt: new Date(soon + index) })),
       );
       expect(dueNow()).toEqual([]);
-      // A message that comes in now is its job's, after the ones before it, and downloads nothing.
-      await handler({ ...photoEvent, handle: "handle-3" });
+      // A file message that comes in now fails its webhook, so the provider brings it to a process
+      // that can download it; a text is its job's, after the ones before it.
+      await expect(handler({ ...photoEvent, handle: "handle-4" })).rejects.toThrow("shutting down");
+      await handler({ ...dmEvent, handle: "handle-3", content: "and this one" });
       expect(handedOff(deps).at(-1)).toMatchObject({
         replaceKey: settleKey("handle-3"),
         availableAt: new Date(soon + 2),

@@ -79,7 +79,7 @@ export function queuedAhead(jobs: OrderedJob[], exceptKey?: string): QueuedAhead
 export function headFollowers<T extends OrderedJob>(jobs: T[], exceptKey?: string): T[] {
   const queued = jobs
     .filter((job) => job.key !== exceptKey || exceptKey === undefined)
-    .toSorted((a, b) => a.dueAt - b.dueAt);
+    .toSorted((a, b) => a.dueAt - b.dueAt || a.place - b.place);
   const leader = queued.find((job) => job.running || !job.follower);
   return queued.filter(
     (job) => job.follower && !job.running && (!leader || job.dueAt < leader.dueAt),

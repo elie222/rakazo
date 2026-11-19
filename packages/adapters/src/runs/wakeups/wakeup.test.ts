@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
+import type { BackgroundJobHandlers, JobTransaction } from "@rakazo/adapter-kit";
 import {
   messagingInboundSettleJob,
   messagingSendJob,
@@ -147,6 +147,36 @@ describe("InMemoryJobQueue", () => {
     running.resolve();
     await queue.awaitIdle();
     expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual(none);
+    await queue.close();
+  });
+
+  it("holds no named queue back with a job ended in a transaction", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    await queue.start(handlers());
+    const job = messagingInboundSettleJob(
+      {
+        provider: "chat",
+        handle: "message-1",
+        identityId: "identity-1",
+        ...WHERE,
+        text: "",
+        attachments: [],
+      },
+      new Date(Date.now() + 60 * 60_000),
+    );
+    await queue.enqueue(job);
+    // Not transactional, so the job stays queued, but the message it backed up has settled.
+    await queue.cancelIn({} as JobTransaction, job.replaceKey!);
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual({
+      until: null,
+      own: false,
+    });
+    // Written again under its key, it counts again.
+    await queue.enqueue(job);
+    expect((await queue.pendingUntil("messaging.inbound:identity-1")).until).toEqual(
+      job.availableAt,
+    );
     await queue.close();
   });
 

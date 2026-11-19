@@ -455,6 +455,11 @@ async function prepareDirectEvent(
       },
     };
   }
+  // Its backup job cannot download files, so while this process stops, a file message fails its
+  // webhook and the provider delivers it again to one that is up.
+  if (intake.closing && attachments.length > 0) {
+    throw new Error("messaging inbound refused a file message while shutting down");
+  }
   const message = JSON.stringify([event.provider, event.handle]);
   // The provider delivered it again while its files are still downloading here.
   if (intake.settling.has(message)) return null;
