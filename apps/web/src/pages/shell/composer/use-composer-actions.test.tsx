@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { Bot, ComputerStatus, Me, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
-import { flush as flushTimer } from "@rakazo/core/test-async";
+import { deferred, flush as flushTimer } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -582,13 +582,9 @@ function failedReply(runId: string): ThreadSnapshot {
 }
 
 function pendingRetry() {
-  let reject!: (error: Error) => void;
-  rpc.threads.retry.mockReturnValue(
-    new Promise((_, fail) => {
-      reject = fail;
-    }),
-  );
-  return reject;
+  const retry = deferred<{ runId: string }>();
+  rpc.threads.retry.mockReturnValue(retry.promise);
+  return retry.reject;
 }
 
 it("offers another chat's failed reply while a retry is still in flight", async () => {

@@ -4,12 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Alert } from "react-native";
-import { rpc } from "../../lib/api/api";
 import type { MobileSnapshot } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { computerHoursOutCopy, runErrorActionLabel } from "../../lib/cards/run-error-presentation";
 import { openModelSettings } from "../../lib/models/model-settings";
-import { queryClient, rpcQuery } from "../../lib/query/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useRunError } from "../cards/run-error-sheet";
 
 /** The chat's failed run: its error, the recovery action, retry, and whether its details are open. */
@@ -27,11 +26,8 @@ export function useThreadRunError(
   const router = useRouter();
   const [detailsOpen, setDetailsOpen] = useState(false);
   // A group keeps its failure on screen until a newer run ends, so a retried one hides here.
-  const [retried, setRetried] = useState<{ runId: string; busy: boolean } | null>(null);
-  const runError =
-    run?.status === "failed" && !(retried?.runId === run.id && !retried.busy)
-      ? (run.error ?? null)
-      : null;
+  const [retriedRunId, setRetriedRunId] = useState<string | null>(null);
+  const runError = run?.status === "failed" && retriedRunId !== run.id ? (run.error ?? null) : null;
   const classified = useRunError(runError, false);
   const failedRunId = runError ? run?.id : null;
   useEffect(() => setDetailsOpen(false), [failedRunId]);
@@ -71,24 +67,27 @@ export function useThreadRunError(
         },
       }
     : null;
+  const retrySave = useSave({
+    save: (input: { botId?: string; groupId?: string; runId: string }, send) =>
+      send("threads/retry", {
+        ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId! }),
+        runId: input.runId,
+      }),
+    onSaved: async (_, input) => {
+      setRetriedRunId(input.runId);
+      if (thread.isCurrentTarget(input.botId, input.groupId))
+        await thread.refresh().catch(() => {});
+    },
+    onFailed: (error, input) => {
+      if (thread.isCurrentTarget(input.botId, input.groupId)) Alert.alert(errorText(error));
+    },
+  });
+  const { groupId } = thread;
   const retry =
-    runError && run && canRetryRun(run, thread.userId)
+    runError && run && canRetryRun(run, thread.userId) && (botId || groupId)
       ? {
-          busy: retried?.runId === run.id,
-          onPress: () => {
-            const { groupId } = thread;
-            if (retried?.runId === run.id || (!botId && !groupId)) return;
-            setRetried({ runId: run.id, busy: true });
-            rpc("threads/retry", { ...(groupId ? { groupId } : { botId: botId! }), runId: run.id })
-              .then(async () => {
-                setRetried({ runId: run.id, busy: false });
-                if (thread.isCurrentTarget(botId, groupId)) await thread.refresh().catch(() => {});
-              })
-              .catch((error: unknown) => {
-                setRetried(null);
-                if (thread.isCurrentTarget(botId, groupId)) Alert.alert(errorText(error));
-              });
-          },
+          busy: retrySave.pending && retrySave.input?.runId === run.id,
+          onPress: () => retrySave.run({ botId, groupId, runId: run.id }),
         }
       : null;
   return { runError, normalizedRunError, runErrorAction, retry, detailsOpen, setDetailsOpen };
