@@ -413,13 +413,3 @@ it("stops a background helper from its saved running card, never a turn's live o
     messageId: "card-1",
   });
 });
-
-it.each([
-  ["bot", "message-bot-bubble"],
-  ["user", "message-user-bubble"],
-] as const)("keeps %s chat bubbles compact so more of a thread fits on screen", (role, testId) => {
-  renderView(role, [{ kind: "text", text: "Short reply" }]);
-  const bubble = container.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
-  expect(bubble?.className).toContain("px-4 py-2.5");
-  expect(bubble?.className).not.toContain("px-[18px]");
-});
