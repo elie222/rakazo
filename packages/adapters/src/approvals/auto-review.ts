@@ -212,9 +212,9 @@ function redactNestedReviewValue(value: unknown, secrets: string[]): unknown {
  * where it sends, plus every address named in the part left out, so a cut never hides where data
  * goes. The bound keeps the review fast and under the reviewer's argument limit.
  */
-export const MAX_REVIEW_COMMAND_CHARS = 4_000;
-const COMMAND_HEAD_CHARS = 2_800;
-const COMMAND_TAIL_CHARS = 1_000;
+export const MAX_REVIEW_COMMAND_CHARS = 6_000;
+const COMMAND_HEAD_CHARS = 4_200;
+const COMMAND_TAIL_CHARS = 1_600;
 const MAX_LEFT_OUT_ADDRESSES = 20;
 const MAX_ADDRESS_CHARS = 200;
 
@@ -247,9 +247,17 @@ function addressesIn(text: string): string[] | undefined {
     }
   }
   if (found.size > MAX_LEFT_OUT_ADDRESSES) return undefined;
-  return [...found].map((address) =>
-    address.length <= MAX_ADDRESS_CHARS ? address : `${address.slice(0, MAX_ADDRESS_CHARS)}…`,
-  );
+  return [...found].map(shortAddress);
+}
+
+/** An address cut short enough to list, always keeping where it goes: its host, after any user. */
+function shortAddress(address: string): string {
+  if (address.length <= MAX_ADDRESS_CHARS) return address;
+  const scheme = URL_WORD.exec(address)?.[0] ?? "";
+  const rest = address.slice(scheme.length);
+  const authority = rest.split(/[/?#]/, 1)[0]!;
+  const host = authority.slice(authority.lastIndexOf("@") + 1).slice(0, MAX_HOST_CHARS);
+  return `${scheme}${authority.includes("@") ? "…@" : ""}${host}…`;
 }
 
 /**

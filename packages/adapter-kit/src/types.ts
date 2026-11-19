@@ -1034,6 +1034,30 @@ export interface BackgroundJobPayloads {
   };
   /** Backup for one recorded outgoing chat message, and the conversation queued behind it. */
   "messaging.send": { outboundId: string };
+  /**
+   * Backup for one direct message answered before its files were in: posts it with what was
+   * stored and the rest marked, and tells the sender. It carries the file names and what the
+   * person wrote, sealed under their Space's key as message content is; never a link, a token or
+   * a provider's media id.
+   */
+  "messaging.inbound_settle": {
+    provider: string;
+    handle: string;
+    identityId: string;
+    /** The Space and bot it was sent to; a sender who re-linked since has it dropped. */
+    spaceId: string;
+    botId: string;
+    /** When it arrived (epoch ms): an owner's "stop" after this keeps it from starting a turn. */
+    receivedAt: number;
+    text: string;
+    /** Every file of the message in order, with the size its chat app reported when it did. */
+    attachments: { name: string; mimeType: string; size?: number }[];
+    /**
+     * Due late only to settle after the sender's jobs ahead of it: whichever path settles the one
+     * ahead makes it due now.
+     */
+    follower?: boolean;
+  };
   /** Backup for recording and sending what an ended run said where its turn came from. */
   "messaging.reply": { runId: string };
   /**
