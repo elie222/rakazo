@@ -403,7 +403,11 @@ export async function listSpaceArtifacts(
 ) {
   const take = Math.min(Math.max(input.limit ?? 30, 1), 60);
   const scopeBotId = input.botId ?? null;
-  const botFilter = scopeBotId ? Prisma.sql`AND "botId" = ${scopeBotId}` : Prisma.empty;
+  // A bot's own listing leaves out group files: group uploads land on a member's botId too,
+  // and they belong to the group, not to that bot.
+  const botFilter = scopeBotId
+    ? Prisma.sql`AND "botId" = ${scopeBotId} AND "groupId" IS NULL`
+    : Prisma.empty;
   const madeByBots = input.madeByBots ?? false;
   const madeByBotsFilter = madeByBots
     ? Prisma.sql`AND (latest."runId" IS NOT NULL OR latest."meetingSessionId" IS NOT NULL)`

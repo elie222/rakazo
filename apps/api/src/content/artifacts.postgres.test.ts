@@ -142,4 +142,20 @@ describePostgres("artifact upload nonce (PostgreSQL)", () => {
     await upload("send-3:0", { botId });
     await expect(upload("send-3:0", { botId: otherBotId })).rejects.toBeInstanceOf(IsolationError);
   });
+
+  it("keeps a group's files out of a member bot's own listing", async () => {
+    const group = await system.chatGroup.create({ data: { spaceId, userId, name: "Crew" } });
+    await runAsTenant(actor, () =>
+      createOwnedArtifact({ prisma, artifacts }, actor, {
+        botId,
+        groupId: group.id,
+        name: "crew-plan.txt",
+        mimeType: "text/plain",
+        contentBase64: Buffer.from("hi").toString("base64"),
+        clientNonce: "send-9:0",
+      }),
+    );
+    const listed = await runAsTenant(actor, () => listSpaceArtifacts({ prisma }, actor, { botId }));
+    expect(listed.items.map((item) => item.name)).not.toContain("crew-plan.txt");
+  });
 });

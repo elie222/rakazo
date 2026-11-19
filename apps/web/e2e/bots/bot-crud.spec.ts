@@ -165,7 +165,8 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await openBotPanel(page);
   await expect(notifications).toBeHidden();
   await expect(modelRow).toBeHidden();
-  await expect(openWork).toBeVisible();
+  // Open work lists itself only once the bot has some.
+  await expect(openWork).toHaveCount(0);
   await settings.getByRole("button", { name: "More actions", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Export", exact: true })).toBeVisible();
   await expect(
