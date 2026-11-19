@@ -143,7 +143,7 @@ describe("team chat engagement judge", () => {
         rules: "",
         messages: [],
       });
-    return { decide, run };
+    return { decide, run, prisma };
   }
 
   it("skips a bot pin the allowlist refuses and judges on the member main model", async () => {
@@ -167,7 +167,7 @@ describe("team chat engagement judge", () => {
     const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
     process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "google-vertex";
     try {
-      const { decide, run } = allowlistJudge({
+      const { decide, run, prisma } = allowlistJudge({
         memberProvider: "google-vertex",
         deploymentProvider: "google-vertex",
         deploymentModel: "gemini-4-hydrogen",
@@ -176,6 +176,10 @@ describe("team chat engagement judge", () => {
       });
       await expect(decide(null)).resolves.toEqual({ act: true });
       expect(run).toHaveBeenCalledOnce();
+      // The member's own key for the refused provider is never looked up.
+      expect(JSON.stringify(prisma.userModelPreference.findFirst.mock.calls)).not.toContain(
+        "anthropic",
+      );
     } finally {
       if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
       else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;

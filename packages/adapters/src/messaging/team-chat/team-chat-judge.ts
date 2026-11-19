@@ -210,9 +210,14 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     );
     const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
     const requestedModel = this.deps.modelOverride ?? bot.modelId;
-    const overrideCredential = requestedProvider
-      ? await findModelCredential(this.deps.prisma, scope, requestedProvider)
-      : null;
+    const allowlist = modelProviderAllowlist();
+    const refused = (provider: string | null | undefined) =>
+      provider != null && !modelProviderAllowed(allowlist, provider);
+    // A member's own key for a refused provider is never read, even for the operator's judge.
+    const overrideCredential =
+      requestedProvider && !refused(requestedProvider)
+        ? await findModelCredential(this.deps.prisma, scope, requestedProvider)
+        : null;
     const explicitJudgeOverride = Boolean(this.deps.providerOverride && this.deps.modelOverride);
     const useOverride = Boolean(
       requestedProvider &&
@@ -239,9 +244,6 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       settings,
       deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
     }).primary;
-    const allowlist = modelProviderAllowlist();
-    const refused = (provider: string | null | undefined) =>
-      provider != null && !modelProviderAllowed(allowlist, provider);
     // The operator's own judge setting is deployment configuration, not a user choice, so
     // the allowlist never refuses it. Any other pin the list refuses is skipped rather than
     // failing the decision, so a member with an allowed main model still gets one.
