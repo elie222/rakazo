@@ -8,6 +8,8 @@ import {
   findConnectedModelCredential,
   knownModelImageInput,
   modelAcceptsImageInput,
+  modelProviderAllowed,
+  modelProviderAllowlist,
   parseModelSecret,
   resolveMemberMainModel,
   runModelChoice,
@@ -54,6 +56,10 @@ export async function assertThreadImageInput(
   // A running turn has already selected its model, including any backup switch.
   const running = run?.status === "running" && run.modelProvider && run.modelId;
   const override = running ? run : run ? runModelChoice(run, bot) : bot;
+  // A refused provider's run fails with the allowlist's own refusal, so its connection is
+  // never read or probed here.
+  const allowlist = modelProviderAllowlist();
+  if (override.modelProvider && !modelProviderAllowed(allowlist, override.modelProvider)) return;
   const overrideCredential =
     override.modelProvider && override.modelId
       ? configuration
@@ -80,7 +86,7 @@ export async function assertThreadImageInput(
   });
   const provider = running ? run.modelProvider : selected.provider;
   const id = running ? run.modelId : selected.id;
-  if (!provider || !id) return;
+  if (!provider || !id || !modelProviderAllowed(allowlist, provider)) return;
   let supportsImages = knownModelImageInput(provider, id);
   const credential = running ? overrideCredential : selected.credential;
   if (supportsImages === undefined && configuration && credential) {

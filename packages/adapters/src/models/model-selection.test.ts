@@ -1435,19 +1435,6 @@ describe("bot model change validation", () => {
     }
   });
 
-  it("finds no connection for a provider the deployment allowlist leaves out", async () => {
-    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
-    try {
-      const prisma = { userModelPreference: { findFirst: vi.fn() } };
-      await expect(
-        findConnectedModelCredential(prisma as never, { load: vi.fn() }, scope, "anthropic"),
-      ).resolves.toBeNull();
-      expect(prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
   it("rejects Spark on Codex, which Pi no longer bundles", async () => {
     const deps = changeDeps({ "openai-codex": credential("openai-codex", null) });
     const result = await validateBotModelChange(deps, {

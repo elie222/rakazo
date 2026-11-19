@@ -663,8 +663,6 @@ export async function findConnectedModelCredential(
   modelId?: string | null,
   resolution: ConnectedModelResolution = {},
 ): Promise<ModelCredential> {
-  // A connection to a provider the allowlist refuses is never read or used.
-  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) return null;
   if (resolution.credentialId)
     return findModelCredentialById(prisma, actor, resolution.credentialId, provider);
   let selected = await findModelCredential(prisma, actor, provider, modelId);
