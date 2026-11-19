@@ -818,7 +818,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
     title: `${displayName(bot.name, "Bot")} needs approval`,
     // Only the action, with no verb: the card's title can name a recipient or subject, and a call
     // can decline rather than allow, so both stay on the card.
-    body: readableToolName(name),
+    body: readableToolName(redactSecrets(name, ctx.secrets)),
     botId: bot.id,
     threadId: thread.id,
   });

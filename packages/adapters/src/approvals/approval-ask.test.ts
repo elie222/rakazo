@@ -549,4 +549,14 @@ describe("approval card arguments", () => {
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.detail?.split("\n")).toEqual(["Send note", "Send note"]);
   });
+
+  it("redacts a secret in a tool name or argument key before rewording it", () => {
+    const secret = "SECRET_TOKEN";
+    const block = buildApprovalAskBlock("effect-1", `mcp__x__${secret}`, { [secret]: "value" }, [
+      secret,
+    ]);
+    const text = JSON.stringify(block).toLowerCase();
+    expect(text).not.toContain("secret token");
+    expect(text).not.toContain("secret_token");
+  });
 });

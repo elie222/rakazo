@@ -209,7 +209,7 @@ export function buildApprovalAskBlock(
     };
   }
   const fetchSite = webFetchSite(toolName, args);
-  const summary = describeApprovalAction(toolName, args, options?.batch);
+  const summary = describeApprovalAction(toolName, args, options?.batch, secrets);
   const detail = formatApprovalDetail(
     toolName,
     args,
@@ -260,11 +260,15 @@ function describeApprovalAction(
   toolName: string,
   args: Record<string, unknown>,
   batchShape: ToolBatch | undefined,
+  secrets: string[],
 ): string {
   // A batch is named by the actions it runs; "…" stands for an entry that names none.
   const batch = batchShape && batchActions(batchShape, args);
   if (batch?.actions.length) {
-    return [...batch.actions.map(readableToolName), ...(batch.complete ? [] : ["…"])].join(", ");
+    return [
+      ...batch.actions.map((action) => readableToolName(redactSecrets(action, secrets))),
+      ...(batch.complete ? [] : ["…"]),
+    ].join(", ");
   }
   if (toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
@@ -275,7 +279,7 @@ function describeApprovalAction(
     return `Create space “${name}”`;
   }
   const target = webFetchSite(toolName, args) ?? pickScopeLabel(args);
-  const action = readableToolName(toolName);
+  const action = readableToolName(redactSecrets(toolName, secrets));
   return target ? `${action} → ${target}` : action;
 }
 
@@ -320,7 +324,13 @@ function formatApprovalDetail(
       const key = JSON.stringify(item) ?? "";
       const previous = entries.at(-1);
       if (previous?.key === key) previous.runs++;
-      else entries.push({ key, name: raw ? readableToolName(raw) : "…", args: entryArgs, runs: 1 });
+      else
+        entries.push({
+          key,
+          name: raw ? readableToolName(redactSecrets(raw, secrets)) : "…",
+          args: entryArgs,
+          runs: 1,
+        });
     }
     // The title already names a lone named action that runs once, so its arguments need no heading.
     // An unnamed entry keeps its "…" heading, so the card shows the action is unknown.
@@ -403,13 +413,16 @@ function readableArgumentName(key: string): string {
     .join(" ");
 }
 
-/** Redacts every string inside a value, since JSON escaping could hide a secret from the card. */
+/** Redacts every string inside a value, keys included, since JSON escaping could hide a secret from the card. */
 function redactLeaves(value: unknown, secrets: string[]): unknown {
   if (typeof value === "string") return redactSecrets(value, secrets);
   if (Array.isArray(value)) return value.map((item) => redactLeaves(item, secrets));
   if (value && typeof value === "object")
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, redactLeaves(item, secrets)]),
+      Object.entries(value).map(([key, item]) => [
+        redactSecrets(key, secrets),
+        redactLeaves(item, secrets),
+      ]),
     );
   return value;
 }
