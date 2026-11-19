@@ -35,9 +35,9 @@ export class BoatApiError extends Error implements ResponseError {
 export function boatResumeInProgress(error: unknown): boolean {
   return (
     error instanceof BoatApiError &&
-    error.response.status === 409 &&
     (error.code === "sandbox_resuming" ||
       (error.code === "resume_failed" &&
+        error.response.status === 409 &&
         /\bAgent resume already in progress\b/i.test(error.message)))
   );
 }
