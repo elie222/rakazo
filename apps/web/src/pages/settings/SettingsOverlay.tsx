@@ -148,13 +148,14 @@ export function SettingsOverlay({
       keepComputerRecovery ||
       computersAreUnavailable(sandboxProvider));
   const cloud = useCloudComputers();
-  const pairedComputers = useQuery(userDevicesQuery(useQueryUserId())).data?.length ?? 0;
+  const devices = useQuery(userDevicesQuery(useQueryUserId()));
   const { thisComputer, plainHttp } = useThisComputer();
   const showComputer =
     showComputerSetup ||
     (cloud.data?.computers.length ?? 0) > 0 ||
     cloud.isError ||
-    pairedComputers > 0 ||
+    (devices.data?.length ?? 0) > 0 ||
+    devices.isError ||
     thisComputer !== null ||
     plainHttp;
   const showUpdates = Boolean(desktopBridge()?.update);

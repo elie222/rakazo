@@ -74,7 +74,9 @@ export function ComputerDeviceSettings() {
   const { t } = useLingui();
   const { thisComputer, plainHttp, queryKey: thisComputerKey } = useThisComputer();
   const devicesQuery = userDevicesQuery(useQueryUserId());
-  const devices = useQuery(devicesQuery).data ?? [];
+  const devicesRead = useQuery(devicesQuery);
+  const devices = devicesRead.data ?? [];
+  const devicesFailed = !devicesRead.data && devicesRead.isError;
   const switchId = useId();
 
   // Neither change goes through the API: one is the desktop app's, the other a device route.
@@ -86,7 +88,7 @@ export function ComputerDeviceSettings() {
   });
   const pending = change.pending;
 
-  if (devices.length === 0 && !thisComputer && !plainHttp) return null;
+  if (devices.length === 0 && !devicesFailed && !thisComputer && !plainHttp) return null;
 
   return (
     <SettingsGroup title={<Trans>Your devices</Trans>} data-testid="computer-devices">
@@ -114,6 +116,25 @@ export function ComputerDeviceSettings() {
                 })
               }
             />
+          }
+        />
+      ) : null}
+      {devicesFailed ? (
+        <SettingsRow
+          label={
+            <p className="text-destructive" role="alert">
+              <Trans>Could not load</Trans>
+            </p>
+          }
+          control={
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={devicesRead.isFetching}
+              onClick={() => void devicesRead.refetch()}
+            >
+              <Trans>Retry</Trans>
+            </Button>
           }
         />
       ) : null}

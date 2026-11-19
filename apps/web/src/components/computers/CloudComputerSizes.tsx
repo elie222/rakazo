@@ -77,7 +77,9 @@ function CloudComputerRow({
     onSaved: () => setChanged(true),
   });
   const name = computerName(computer);
-  const shown = beyondPlan ?? (change.pending ? change.input : undefined) ?? computer.size;
+  // A plan that grew to include the size chosen above it no longer needs the upgrade prompt.
+  const overPlan = beyondPlan && !available.includes(beyondPlan) ? beyondPlan : null;
+  const shown = overPlan ?? (change.pending ? change.input : undefined) ?? computer.size;
 
   return (
     <SettingsRow
@@ -115,7 +117,7 @@ function CloudComputerRow({
         )
       }
     >
-      {beyondPlan ? (
+      {overPlan ? (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-body-sm text-muted-foreground">
             <Trans>Your plan does not include this size.</Trans>

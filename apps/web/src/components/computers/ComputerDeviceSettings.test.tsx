@@ -108,6 +108,21 @@ it("stays hidden without any computer", async () => {
   expect(host.innerHTML).toBe("");
 });
 
+it("says the devices could not be read and reads them again on Retry", async () => {
+  vi.mocked(listUserDevices)
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce([laptop]);
+  await renderSettings();
+  await vi.waitFor(() => expect(host.textContent).toContain("Could not load"));
+
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry")?.click(),
+  );
+  await act(flush);
+  await vi.waitFor(() => expect(host.textContent).toContain("LaptopConnected"));
+  expect(host.textContent).not.toContain("Could not load");
+});
+
 it("lists computers with their status and removes one", async () => {
   vi.mocked(listUserDevices).mockResolvedValueOnce([laptop, desk]).mockResolvedValueOnce([laptop]);
   vi.mocked(removeUserDevice).mockResolvedValue();
