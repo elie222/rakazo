@@ -25,9 +25,11 @@ import {
   constants,
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -187,30 +189,38 @@ function localPostgresHome() {
   return path.join(base, MANAGED.container);
 }
 
+/** Builds the cluster beside `dataDir` and moves it in whole, so checkouts starting together never see half of one. */
 function initLocalCluster(bin, dataDir) {
   log(`Creating a shared local Postgres cluster in ${dataDir}`);
-  rmSync(dataDir, { recursive: true, force: true });
-  const passwordDir = mkdtempSync(path.join(os.tmpdir(), "rakazo-dev-postgres-"));
+  mkdirSync(path.dirname(dataDir), { recursive: true });
+  const building = mkdtempSync(`${dataDir}.init-`);
   try {
-    const passwordFile = path.join(passwordDir, "password");
+    const passwordFile = path.join(building, "password");
+    const cluster = path.join(building, "data");
     // Development only: the cluster listens on loopback and holds throwaway data.
     writeFileSync(passwordFile, MANAGED.owner, { mode: 0o600 });
     run(path.join(bin, "initdb"), [
       "-D",
-      dataDir,
+      cluster,
       "-U",
       MANAGED.owner,
       "--auth=scram-sha-256",
       `--pwfile=${passwordFile}`,
       "--encoding=UTF8",
     ]);
+    appendFileSync(
+      path.join(cluster, "postgresql.conf"),
+      `\nlisten_addresses = '127.0.0.1'\nport = ${MANAGED.localPort}\nunix_socket_directories = ''\n`,
+    );
+    try {
+      renameSync(cluster, dataDir);
+    } catch (error) {
+      // Another checkout finished first; use its cluster.
+      if (!existsSync(path.join(dataDir, "PG_VERSION"))) throw error;
+    }
   } finally {
-    rmSync(passwordDir, { recursive: true, force: true });
+    rmSync(building, { recursive: true, force: true });
   }
-  appendFileSync(
-    path.join(dataDir, "postgresql.conf"),
-    `\nlisten_addresses = '127.0.0.1'\nport = ${MANAGED.localPort}\nunix_socket_directories = ''\n`,
-  );
 }
 
 async function startLocalPostgres() {
@@ -228,14 +238,24 @@ async function startLocalPostgres() {
     const dataDir = path.join(localPostgresHome(), major ?? "unknown");
     if (!existsSync(path.join(dataDir, "PG_VERSION"))) initLocalCluster(bin, dataDir);
     log(`Starting the shared local Postgres (${dataDir})`);
-    run(path.join(bin, "pg_ctl"), [
-      "-D",
-      dataDir,
-      "-l",
-      path.join(dataDir, "server.log"),
-      "-w",
-      "start",
-    ]);
+    try {
+      run(path.join(bin, "pg_ctl"), [
+        "-D",
+        dataDir,
+        "-l",
+        path.join(dataDir, "server.log"),
+        "-w",
+        "start",
+      ]);
+    } catch (error) {
+      // Another checkout may be starting it at the same moment.
+      let started = false;
+      for (let attempt = 0; attempt < 60 && !started; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        started = await connects(adminUrl);
+      }
+      if (!started) throw error;
+    }
   }
   const admin = new Client({ connectionString: adminUrl });
   await admin.connect();
@@ -243,7 +263,14 @@ async function startLocalPostgres() {
     const { rowCount } = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [
       MANAGED.database,
     ]);
-    if (!rowCount) await admin.query(`CREATE DATABASE ${admin.escapeIdentifier(MANAGED.database)}`);
+    if (!rowCount) {
+      await admin
+        .query(`CREATE DATABASE ${admin.escapeIdentifier(MANAGED.database)}`)
+        .catch((error) => {
+          // Another checkout created it first.
+          if (error.code !== "42P04") throw error;
+        });
+    }
   } finally {
     await admin.end();
   }
