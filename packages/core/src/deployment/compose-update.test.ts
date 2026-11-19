@@ -5,6 +5,8 @@ import {
   chooseUpdateStrategy,
   commitImageTag,
   compareReleaseTags,
+  composeCopyArgv,
+  composeExecArgv,
   composePsArgv,
   composePullArgv,
   composeUpArgv,
@@ -265,6 +267,19 @@ describe("compose argv construction", () => {
         invocation.args.some((arg) => arg.includes("operator-stack") && arg !== "operator-stack"),
       ).toBe(false);
     }
+  });
+
+  it("addresses one service of the same stack when it runs a program or copies a file", () => {
+    const named = { ...target, projectName: "operator-stack" };
+    const base = composePsArgv(named).args.slice(0, -3);
+    expect(composeExecArgv(named, "postgres", ["sh", "-c", 'echo "$HOME"; id'])).toEqual({
+      command: "docker",
+      args: [...base, "exec", "-T", "postgres", "sh", "-c", 'echo "$HOME"; id'],
+    });
+    expect(composeCopyArgv(named, "postgres:/tmp/example.dump", "/srv/example.dump")).toEqual({
+      command: "docker",
+      args: [...base, "cp", "postgres:/tmp/example.dump", "/srv/example.dump"],
+    });
   });
 
   it("defaults -p to the name pinned in the compose file", () => {

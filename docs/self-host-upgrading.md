@@ -229,8 +229,9 @@ Updates and rollbacks run one at a time. A failed pull leaves running services a
 pin and attempts to redeploy the cached previous image. A failed fork build also restores the
 pre-update branch and commit (including when checkout succeeded but merge did not) so a later
 manual `--build` cannot deploy the rejected or unintended revision. Database migrations are not
-reversed. The sidecar never recreates itself, never touches Postgres or Caddy, and never runs
-migrations — that ordering belongs to the API's dependency on the `migrate` service.
+reversed. The sidecar never recreates itself, never touches Caddy, and never runs
+migrations — that ordering belongs to the API's dependency on the `migrate` service. It reads
+Postgres only for an optional [snapshot before an update](#database-snapshot-before-an-update).
 
 Only `https://` and `ssh://` git remotes are accepted. Merges are fast-forward only. A dirty or
 untracked source tree fails closed before anything runs (the application Dockerfile uses `COPY . .`).
@@ -376,6 +377,42 @@ release pin when the selected release has not changed. An `edge`, prerelease or 
 unattendedly replaced by an older stable release, even if `.env` was edited to say `latest`.
 Existing edge installations must review release notes and migrate to a compatible stable release
 manually before scheduling can proceed. Cloud CI deployment triggers remain unchanged.
+
+## Database snapshot before an update
+
+Rolling back restores the previous image, never the previous database, so an update whose
+migrations cannot be undone needs a database copy from just before it. Set
+`RAKAZO_UPDATE_DATABASE_SNAPSHOTS` in `.env` to the number of copies to keep (1 to 30; `0`, the
+default, takes none) and recreate the updater:
+
+```dotenv
+RAKAZO_UPDATE_DATABASE_SNAPSHOTS=2
+```
+
+Each scheduled or manual update then dumps the database after its images are pulled or its
+checkout is fast-forwarded and before any service is recreated, checks that the dump can be
+listed, and saves it as `backups/pre-update/<time>-<outgoing tag>.dump` in the deployment
+directory, readable only by root. The oldest files beyond the number kept are removed. If the
+snapshot fails, the update stops there with the running services untouched. A rollback takes no
+snapshot, and an update that finds nothing to change takes none either.
+
+The dump is a `pg_dump` custom-format file of the Compose `postgres` service, written inside that
+container first and then copied out, so it needs free space for about two copies. Leave the
+setting at `0` when the database runs outside this Compose stack. It is a way back from one
+update, not a backup: it holds no application data and never leaves the server, so keep the
+[scheduled backups](./self-host-backups.md) too.
+
+To go back after a bad update, pause scheduling, roll back the image as above, then stop
+`api`, `worker` and `web` and restore the snapshot over the database:
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml exec -T postgres sh -c \
+  'pg_restore --clean --if-exists --no-owner --exit-on-error --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < backups/pre-update/<time>-<outgoing tag>.dump
+```
+
+Everything written to the database after the snapshot is lost, so restore right away or roll
+forward instead.
 
 ## The deploy directory must be one path
 
