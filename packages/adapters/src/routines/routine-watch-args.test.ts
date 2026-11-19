@@ -25,6 +25,16 @@ describe("resolveWatchArgs", () => {
     ).toEqual({ params: { due_before: "2026-04-09", ids: ["2026-03-10", 4] } });
   });
 
+  it("stops at a fixed depth, so arguments nested without end cost nothing to check", () => {
+    let deep: Record<string, unknown> = { day: "{{today}}" };
+    for (let level = 0; level < 20_000; level += 1) deep = { inner: deep };
+    const resolved = resolveWatchArgs({ day: "{{today}}", deep }, now, "UTC");
+    expect(resolved.day).toBe("2026-03-10");
+    let leaf = resolved.deep as Record<string, unknown>;
+    while (leaf.inner) leaf = leaf.inner as Record<string, unknown>;
+    expect(leaf.day).toBe("{{today}}");
+  });
+
   it("leaves everything else as saved", () => {
     const args = { q: "due {{today}}", marker: "{{tomorrow}}", limit: 5, open: true, none: null };
     expect(resolveWatchArgs(args, now, "UTC")).toEqual(args);

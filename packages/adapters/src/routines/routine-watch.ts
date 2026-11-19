@@ -145,7 +145,7 @@ export async function checkRoutineWatch(
     watch.kind === "http"
       ? await readHttp(deps, watch, routine.id)
       : watch.kind === "tool"
-        ? await readTool(deps, routine, watch)
+        ? await readTool(deps, routine, watch, now)
         : await readComputer(deps, routine, watch);
   return compareReading(previous, reading, now);
 }
@@ -710,6 +710,7 @@ async function readTool(
   deps: RoutineWatchDeps,
   routine: RoutineWatchTarget,
   watch: RoutineWatch,
+  now: Date,
 ): Promise<Reading> {
   const connector = deps.connector;
   if (!connector) throw new RoutineWatchError("No integrations are available to check.");
@@ -723,7 +724,8 @@ async function readTool(
   }
   // Discovery waits on every provider; the tool call gets its own full budget.
   ctx.signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
-  const args = resolveWatchArgs(watch.args ?? {}, new Date(), routine.timezone);
+  // The check's own time, so the day asked about is the day the reading is recorded against.
+  const args = resolveWatchArgs(watch.args ?? {}, now, routine.timezone);
   const call = { tool: toolName, args, executionId: ctx.operationId };
   const tool = tools.find((candidate) => candidate.name === toolName);
   const resolved = tool
