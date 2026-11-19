@@ -33,7 +33,23 @@ describe("formatFileSize", () => {
     expect(fileSizeParts(1024, "de")).toEqual({ amount: "1", unit: "KB" });
   });
 
+  it("localises the size label without changing units or rounding", () => {
+    expect(formatFileSize(1536, "fr")).toBe("1,5 KB");
+    expect(formatFileSize(1536, "de")).toBe("1,5 KB");
+    expect(formatFileSize(1536, "en")).toBe("1.5 KB");
+    expect(formatFileSize(512, "fr")).toBe("512 B");
+    expect(formatFileSize(1024 ** 2 - 1, "fr")).toBe("1 MB");
+  });
+
+  it("keeps compact labels ungrouped even at the largest unit", () => {
+    const size = 1000 * 1024 ** 4;
+    expect(formatFileSize(size, "en")).toBe("1000 TB");
+    expect(formatFileSize(size, "de")).toBe("1000 TB");
+    expect(fileSizeParts(size, "en")).toEqual({ amount: "1,000", unit: "TB" });
+  });
+
   it("returns nothing for an unknown size", () => {
+    expect(formatFileSize(Number.NaN, "fr")).toBe("");
     expect(formatFileSize(Number.NaN)).toBe("");
     expect(formatFileSize(Number.POSITIVE_INFINITY)).toBe("");
     expect(formatFileSize(-1)).toBe("");
