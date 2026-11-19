@@ -10,7 +10,7 @@ import { rpc } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { appConnectPresentation } from "../../lib/cards/app-connect";
 import { native, useMobileTokens } from "../../lib/native/native";
-import { resetRpcQueries } from "../../lib/query/query";
+import { refreshRpcQueries } from "../../lib/query/query";
 import { useThreadReadOnly } from "../../lib/thread/thread-read-only";
 import { ConnectorIcon } from "../integrations/connector-icon";
 import { NativeActionButton } from "../native/native-action-button";
@@ -76,12 +76,12 @@ export function AppConnectCard({
         },
       );
       if (result.status === "connected") {
+        // The sidebar shows connected apps; it reads them again now rather than on its next visit,
+        // keeping what it shows until the new answer arrives.
+        void refreshRpcQueries("connections/list");
         await rpc("onboarding/appConnected", appConnectedInput(botId, threadId, block, messageId));
         if (controller.signal.aborted) return;
         setLocalStatus("connected");
-        // The sidebar shows connected apps; it reads them again now rather than on its next visit.
-        void resetRpcQueries("connections/list");
-        void resetRpcQueries("connections/catalog");
       }
     } catch (reason) {
       if (!controller.signal.aborted) {

@@ -90,7 +90,7 @@ export function InboxFooter({
 }
 
 /**
- * The apps already connected, or familiar ones to suggest. The catalog call reconciles connection
+ * The apps already connected. The catalog call reconciles connection
  * rows, so the list is read after it. Read again whenever the footer mounts (Android unmounts it
  * behind settings pages) and after leaving the apps screen.
  */
@@ -107,7 +107,7 @@ function useConnectedAppMarks() {
         const connections = await listRead.queryFn(
           context as Parameters<typeof listRead.queryFn>[0],
         );
-        return connectedAppMarks(catalog, connections);
+        return connectedAppMarks(catalog, connections, { suggest: false });
       },
       refetchOnMount: "always",
     },
