@@ -4,7 +4,7 @@ import { redactSecrets } from "../messages/events.js";
 const REDACTED_MARKER = redactSecrets("a", ["a"]);
 const CONTEXT_LINES = 2;
 /** Past this many removed plus added lines, the changed middle is shown as fully replaced. */
-const MAX_CHANGED_LINES = 2_000;
+const MAX_CHANGED_LINES = 500;
 
 /**
  * Lines match when they are equal, except one that holds the redaction marker: it may stand for a
