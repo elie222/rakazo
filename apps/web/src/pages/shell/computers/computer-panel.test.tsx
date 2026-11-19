@@ -55,6 +55,7 @@ async function render(
   status: ComputerStatus | null,
   onOpen = vi.fn(),
   disk?: { cleaningUpDisk?: boolean; onCleanUpDisk: () => void; onDismissDiskWarning: () => void },
+  embeddedScreenUrl: string | null = null,
 ) {
   await act(async () => {
     root.render(
@@ -62,6 +63,8 @@ async function render(
         bot={bot}
         computer={status}
         computerOpen={false}
+        embeddedScreenUrl={embeddedScreenUrl}
+        screenFrameRef={() => undefined}
         computerScreenError={null}
         computerBooting={null}
         booting={false}
@@ -105,10 +108,17 @@ it.each([null, computer("stopped"), computer("suspended")])(
   },
 );
 
-it("shows a running computer awake with an Open button and no live screen", async () => {
-  const onOpen = await render(computer("running"));
-  expect(container.querySelector("iframe")).toBeNull();
-  expect(container.querySelector('[data-state="running"]')?.textContent).toContain("Awake");
+it("shows a running computer's live screen with an Open button", async () => {
+  const onOpen = await render(
+    computer("running"),
+    vi.fn(),
+    undefined,
+    "https://screen.example.test/",
+  );
+  expect(container.querySelector('[data-state="running"] iframe')?.getAttribute("src")).toBe(
+    "https://screen.example.test/",
+  );
+  expect(container.querySelector("iframe")?.tabIndex).toBe(-1);
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[data-testid="computer-preview-open"]')?.click(),
   );
@@ -135,7 +145,9 @@ it("shows a computer of a kind this build does not know like any other", async (
   await render({ ...computer("stopped"), kind: "a-provider-since-removed" });
   expect(container.querySelector('[data-state="idle"]')?.textContent).toContain("Asleep");
   await render({ ...computer("running"), kind: "a-provider-since-removed" });
-  expect(container.querySelector('[data-state="running"]')?.textContent).toContain("Awake");
+  expect(container.querySelector('[data-state="running"]')?.textContent).toContain(
+    "Connecting to the screen…",
+  );
 });
 
 it.each([computer("running"), computer("suspended")])(

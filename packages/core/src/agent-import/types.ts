@@ -6,6 +6,7 @@ import type {
   AgentImportPlan,
   AgentImportSkill,
 } from "@rakazo/contracts";
+import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
 import { parse as parseYaml } from "yaml";
 import { parseSkillMd } from "../skills/agent-skill.js";
 
@@ -14,8 +15,9 @@ export type SkillFiles = Readonly<Record<string, readonly string[]>>;
 
 export type AgentImportParse = Omit<
   AgentImportPlan,
-  "source" | "model" | "mcpServers" | "routines" | "apiKeys"
->;
+  "source" | "model" | "mcpServers" | "routines" | "apiKeys" | "leftovers"
+> &
+  Partial<Pick<AgentImportPlan, "leftovers">>;
 
 const SKILL_CONTENT_MAX_LENGTH = 100_000;
 const SKILL_FILE = /^(?:\.agents\/)?skills\/(?:[^/]+\/){1,4}SKILL\.md$/;
@@ -265,3 +267,43 @@ export type AgentImportReader = {
   read: (path: string) => Promise<string> | string;
   size: (path: string) => number | undefined;
 };
+
+/**
+ * Text as a fenced block, so a reader takes it as quoted data. The fence is longer than the
+ * text's longest run of backticks, found in one pass whatever the text's length.
+ */
+function fencedBlock(text: string): string {
+  let longest = 2;
+  for (const run of text.matchAll(/`+/g)) longest = Math.max(longest, run[0].length);
+  const fence = "`".repeat(longest + 1);
+  return `${fence}\n${text}\n${fence}`;
+}
+
+/**
+ * What an import left over, as the messages posted in the new bot's chat: as many as one
+ * message's length allows, each leftover whole. Nothing runs on this text until the owner
+ * writes: an automatic turn would let an export's text act with the owner's access unasked.
+ */
+export function agentImportLeftoverMessages(
+  leftovers: readonly { title: string; content: string }[],
+): string[] {
+  const opening = "The import could not set these up:";
+  const closing = "Tell me which ones to set up.";
+  const joint = "\n\n";
+  const messages: string[][] = [[opening]];
+  let size = opening.length;
+  for (const item of leftovers) {
+    // A title sits outside the fence: its Markdown is escaped so an imported name stays a name.
+    const title = item.title.replace(/[\\`*_{}[\]()<>#+!|~]/g, "\\$&");
+    const part = `## ${title}${joint}${fencedBlock(item.content.trim())}`;
+    const room = THREAD_MESSAGE_TEXT_MAX_LENGTH - closing.length - 2 * joint.length;
+    if (size + part.length > room && messages.at(-1)!.length > (messages.length === 1 ? 1 : 0)) {
+      messages.push([]);
+      size = 0;
+    }
+    messages.at(-1)!.push(part);
+    size += part.length + joint.length;
+  }
+  messages.at(-1)!.push(closing);
+  return messages.map((parts) => parts.join(joint));
+}

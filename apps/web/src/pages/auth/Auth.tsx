@@ -33,10 +33,9 @@ import { authErrorText, credentialIssueText } from "../../lib/query/user-error";
 
 type AuthMode = "in" | "up" | "forgot";
 
-// off-scale: 16px below md stops iOS Safari zooming into a focused field.
-const fieldClass = "mt-2 h-12 rounded-xl px-4 text-[16px]/6 md:text-body-lg";
+const fieldClass = "mt-2";
 const CODE_LENGTH = 6;
-export const submitClass = "mt-3 h-12 w-full rounded-xl text-body-lg";
+export const submitClass = "mt-3 w-full";
 
 export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
@@ -390,6 +389,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={t`Your name`}
+                    size="xl"
                     className={fieldClass}
                   />
                 </div>
@@ -436,6 +436,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     placeholder={t`Your email address`}
                     type="email"
                     required
+                    size="xl"
                     className={fieldClass}
                   />
                   {emailSuggestion && emailBlurred ? (
@@ -471,6 +472,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     required={!useCode}
                     minLength={mode === "up" ? MIN_PASSWORD_LENGTH : undefined}
                     maxLength={MAX_PASSWORD_LENGTH}
+                    size="xl"
                     className={fieldClass}
                   />
                   {mode === "in" && reset?.passwordReset ? (
@@ -489,7 +491,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               ) : null}
               <Button
                 type="submit"
-                size="lg"
+                size="xl"
                 disabled={pending || (codeStep && code.length < CODE_LENGTH)}
                 className={submitClass}
               >
@@ -518,7 +520,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                 <Button
                   type="button"
                   variant="outline"
-                  size="lg"
+                  size="xl"
                   disabled={pending}
                   className={submitClass}
                   onClick={() => reset.demoAccount && void signInAsDemo(reset.demoAccount)}
@@ -543,14 +545,24 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {mode === "in" ? (
                     <>
                       <Trans>Don’t have an account?</Trans>{" "}
-                      <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                      <Link
+                        to={`/sign-up${presented ? "/email" : ""}${nextQuery}`}
+                        replace={presented}
+                        state={location.state}
+                        className="font-medium text-foreground"
+                      >
                         <Trans>Sign up</Trans>
                       </Link>
                     </>
                   ) : mode === "up" ? (
                     <>
                       <Trans>Already have an account?</Trans>{" "}
-                      <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                      <Link
+                        to={`/sign-in${presented ? "/email" : ""}${nextQuery}`}
+                        replace={presented}
+                        state={location.state}
+                        className="font-medium text-foreground"
+                      >
                         <Trans>Sign in</Trans>
                       </Link>
                     </>
@@ -637,7 +649,7 @@ export function PasswordResetPage() {
           ) : null}
           <Button
             type="submit"
-            size="lg"
+            size="xl"
             disabled={pending || !params.get("token")}
             className={submitClass}
           >
@@ -743,6 +755,7 @@ function PasswordField({
         maxLength={MAX_PASSWORD_LENGTH}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        size="xl"
         className={fieldClass}
       />
     </div>

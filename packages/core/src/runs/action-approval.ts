@@ -12,6 +12,7 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "browser_snapshot",
   "browser_act",
   "list_files",
+  "user_computer_list",
   "read_file",
   "read_history",
   "search_history",
@@ -46,6 +47,7 @@ const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
   "cloud_agent_status",
   "computer_observe",
   "list_files",
+  "user_computer_list",
   "list_fleet",
   "list_secrets",
   "message_user",
@@ -83,19 +85,16 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "user_computer_shell",
   "user_computer_observe",
   "user_computer_act",
-  "create_group",
-  "update_group",
-  "create_child_routine",
   "feedback",
   "send_email",
+  "create_space",
+  "set_child_bot_model",
 ]);
 const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
   // Permanent: the owner sees the exact address before it is theirs for good.
   "claim_email_address",
   "respond_agent_connection",
-  "create_space",
   "set_child_instructions",
-  "set_child_bot_model",
 ]);
 
 const READ_ONLY_CONNECTOR_PATTERN = /(^|[_-])(get|list|search|find|read)([_-]|$)/i;
@@ -225,12 +224,31 @@ export function toolRequiresExplicitApproval(toolName: string): boolean {
 }
 
 /**
- * A run the owner started: their own message, a follow-up they wrote, or the close of their call.
- * Bot messages, channels, spawns, tickets, webhooks and routines are not, nor is anything new.
+ * A run the owner started: their own message in the app or a chat app they linked, a follow-up
+ * they wrote, the close of their call, or a routine, whose prompt they wrote. A chat-app message
+ * from anyone else (`otherPersonChat`), bot messages, spawns, tickets and webhooks are not, nor is
+ * anything new.
  */
-export function isOwnerStartedRun(trigger: string, followUpFromUser: boolean): boolean {
+export function isOwnerStartedRun(
+  trigger: string,
+  followUpFromUser: boolean,
+  otherPersonChat = false,
+): boolean {
   if (trigger === "follow_up") return followUpFromUser;
-  return trigger === "user" || trigger === "call_end";
+  if (trigger === "messaging") return !otherPersonChat;
+  return trigger === "user" || trigger === "call_end" || trigger === "routine";
+}
+
+/**
+ * Runs nobody is watching when they ask: a schedule, a webhook, another bot (a message or a new
+ * bot's first task) or a ticket started them. An approval card one of them posts expires unanswered after this long, and the action does
+ * not run; a card from a chat someone is in stays open until answered.
+ */
+export const UNATTENDED_APPROVAL_EXPIRE_AFTER_MS = 30 * 60 * 1000;
+const UNATTENDED_TRIGGERS = new Set(["routine", "webhook", "bot_message", "spawn", "tickets"]);
+
+export function approvalCardExpires(trigger: string): boolean {
+  return UNATTENDED_TRIGGERS.has(trigger);
 }
 
 /**
@@ -305,14 +323,12 @@ const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory", "save_shared_memo
 const SKILL_WRITE_TOOLS = new Set(["skill_create", "skill_update"]);
 
 /**
- * A memory or skill save goes through the run's approval mode like any consequential action
- * whenever the run's current action permissions are reduced: fresh outside input entered it, or
- * someone other than the owner started it (another bot, a spawn, a routine). Saved text outlives
- * the run, so outside text written there would steer every later run. Saved notes, summaries and
- * recall are derived data and add no prompt by themselves. The predicate is only checked for
- * these writes.
+ * A memory or skill save is checked by the approval model in Auto once outside text entered the
+ * run (see isRunTainted): saved text outlives the run, so text written there would steer every
+ * later run. Like every taint check it only informs the review; Ask and Never ask treat the save
+ * as they treat any other. The predicate is only checked for these writes.
  */
-export async function savedContextWriteNeedsApproval(
+export async function savedContextWriteNeedsReview(
   toolName: string,
   actionTainted: () => Promise<boolean>,
 ): Promise<boolean> {
@@ -334,18 +350,6 @@ export function outboundSiteGate(input: {
   rules: ActionApprovalRule[];
 }): "allow" | "new" {
   return input.trusted || siteAlwaysAllowed(input.rules, input.site) ? "allow" : "new";
-}
-
-/**
- * A new site that Auto Review did not pass needs a person. A webhook run has nobody to ask, so
- * there it is refused.
- */
-export function newSiteOutcome(input: {
-  trigger: string;
-  decision: "ask" | "allow";
-}): "ask" | "allow" | "deny" {
-  if (input.decision === "allow") return "allow";
-  return input.trigger === "webhook" ? "deny" : "ask";
 }
 
 /**
@@ -606,11 +610,12 @@ export function approvalPreferenceFromMode(mode: ApprovalMode): {
 export type AutoReviewJudgeDecision = "pass" | "ask" | "error";
 
 /**
- * The gate after rule resolution. A block refuses in every mode. A purchase asks in every mode, Never
- * ask included, and no allow rule or review passes it. An approval a person must give
- * asks, except in Never ask, which never waits: there it runs, unless `steerable` says outside
- * text could have asked for it. Otherwise Never ask runs it, an ask rule asks, and anything that
- * would ask goes to the approval model in Auto, falling back to asking when no model is set up.
+ * The gate after rule resolution: the approval mode alone decides whether a call asks. A block
+ * refuses in every mode. Never ask runs everything else without waiting (the spending limit still
+ * applies), except a call `steerable` says outside text could have asked for. A purchase or an
+ * approval a person must give asks in Ask and Auto, and no allow rule or review passes it.
+ * Otherwise an ask rule asks, and anything that would ask goes to the approval model in Auto,
+ * falling back to asking when no model is set up.
  */
 export function planActionGate(input: {
   resolved: ActionApprovalResolved;
@@ -621,23 +626,19 @@ export function planActionGate(input: {
   steerable?: boolean;
   consequential: boolean;
   /**
-   * A read whose arguments outside content may have chosen (see connectorReadRequiresApproval).
-   * It goes to a connection the owner set up, so only the approval model checks it.
+   * A call outside content may have steered (a connector read, a memory or skill save, a routine
+   * naming a new site or adding a trigger, a settings change). Only the approval model checks it.
    */
   reviewOnly?: boolean;
   checkerConfigured: boolean;
   /** A fetch to a site the run was not given (see outboundSiteGate). */
   newDestination?: boolean;
-  /** A click that completes a purchase: a person approves it each time, in every mode. */
+  /** A click that completes a purchase: a person approves it each time in Ask and Auto. */
   purchase?: boolean;
 }): "ask" | "allow" | "judge" | "deny" {
   if (input.resolved.decision === "deny") return "deny";
-  if (input.purchase) return "ask";
-  if (input.mandatory) {
-    if (input.mode !== "never") return "ask";
-    return input.steerable ? "deny" : "allow";
-  }
-  if (input.mode === "never") return "allow";
+  if (input.mode === "never") return input.steerable ? "deny" : "allow";
+  if (input.purchase || input.mandatory) return "ask";
   if (input.resolved.decision === "ask") return "ask";
   const review = input.mode === "auto" && input.checkerConfigured ? "judge" : "ask";
   // A rule for the whole tool is not a choice of sites, so it never allows a new one; only a site

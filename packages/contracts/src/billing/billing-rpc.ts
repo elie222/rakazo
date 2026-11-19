@@ -30,6 +30,19 @@ export const billingRpc = {
     status: oc
       .input(z.object({ referralCode: z.string().min(1).max(64).optional() }).optional())
       .output(BillingStatusSchema),
+    computerUsage: oc.output(
+      z.object({
+        computers: z.array(
+          z.object({
+            id: z.string(),
+            scope: z.enum(["team", "dedicated"]),
+            botName: z.string().nullable(),
+            hours: z.number().nonnegative(),
+          }),
+        ),
+        otherHours: z.number().nonnegative(),
+      }),
+    ),
     /** Re-reads the subscription from the provider, e.g. right after a mobile checkout. */
     refresh: oc.output(BillingStatusSchema),
     selectFunding: oc

@@ -10,6 +10,7 @@ import { resetI18nForTests } from "../i18n/i18n";
 import { useInboxHeader } from "./use-inbox-header";
 
 type HeaderItem = {
+  sharesBackground?: boolean;
   label: string;
   accessibilityLabel: string;
   onPress: () => void;
@@ -118,9 +119,14 @@ it.each([false, true])(
         expect(home.options.unstable_headerLeftItems?.().map((item) => item.label)).toEqual([
           "Account",
         ]);
-        expect(
-          home.options.unstable_headerRightItems?.().map((item) => item.accessibilityLabel),
-        ).toEqual(["Activity", "Search", "Create"]);
+        const right = home.options.unstable_headerRightItems?.() ?? [];
+        expect(right.map((item) => item.accessibilityLabel)).toEqual([
+          "Activity",
+          "Search",
+          "Create",
+        ]);
+        // Activity and search share a capsule; create has its own glass.
+        expect(right.map((item) => item.sharesBackground)).toEqual([undefined, undefined, false]);
       }
     }
   },

@@ -2,7 +2,6 @@ import { TimeZoneSchema } from "@rakazo/contracts";
 import { z } from "zod";
 import { changeUserTimezone } from "../../tools/schedule-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
-import { isRunTainted, refuseOwnerSettingsChange } from "../assembly/run-context.js";
 import { isSubagentToolExecution } from "../lifecycle/run-effects.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
@@ -29,15 +28,6 @@ async function updatePreferences(ctx: RunContext, call: ToolCall) {
   const write = timezone !== undefined || marketingEmails !== undefined;
   if (write && isSubagentToolExecution(call.executionId))
     return call.finish({ error: "Helpers cannot change account preferences." });
-  // The owner already approved the change itself; its replay runs in a later attempt.
-  const approved = call.nextApprovedTool === "update_preferences";
-  if (write && !approved && (await isRunTainted(ctx)))
-    return call.finish(
-      refuseOwnerSettingsChange(
-        ctx,
-        "Account preferences are blocked for the rest of this run because it read outside content.",
-      ),
-    );
   const select = { timezone: true, marketingEmailOptOutAt: true } as const;
   let user: { timezone: string | null; marketingEmailOptOutAt: Date | null };
   if (!write) {
