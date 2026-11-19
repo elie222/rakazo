@@ -40,6 +40,7 @@ import {
   SandboxSizeUnavailableError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceSaveFailedError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
@@ -647,7 +648,10 @@ export class BoatSandboxProvider implements SandboxProvider {
     limits?: WorkspaceExportLimits,
   ): AsyncIterable<PortableFile | StreamedPortableFile> {
     const id = this.id(computer);
-    await this.desktops.stopBrowsers(computer, context);
+    await this.desktops.stopBrowsers(computer, context).catch((error: unknown) => {
+      const reason = diskFailure(error instanceof Error ? error.message : String(error));
+      throw reason ? new WorkspaceSaveFailedError(reason, { cause: error }) : error;
+    });
     // One archive, not a request per file: Boat rate limits every API call by IP, and a
     // workspace can hold thousands of files.
     const archive = `${BOAT_ARCHIVE_PREFIX}${randomUUID()}.tar.gz`;
@@ -667,7 +671,9 @@ export class BoatSandboxProvider implements SandboxProvider {
         throw new WorkspaceTooLargeError("bytes");
       }
       if (result.exitCode !== 0 || result.timedOut) {
-        throw new Error(`could not archive Boat workspace (${commandStatus(result)})`);
+        const failure = new Error(`could not archive Boat workspace (${commandStatus(result)})`);
+        const reason = result.timedOut ? "timed_out" : diskFailure(result.stderr);
+        throw reason ? new WorkspaceSaveFailedError(reason, { cause: failure }) : failure;
       }
       const response = await this.signedDownload(
         id,
@@ -1494,6 +1500,18 @@ const BOAT_SYSTEM_DAMAGED =
 
 function systemDamaged(stderr: string): boolean {
   return BOAT_SYSTEM_DAMAGED.test(stderr);
+}
+
+/** The disk failure a command's error output reports, when the computer's own disk failed it. */
+function diskFailure(output: string): "disk_full" | "disk_error" | undefined {
+  if (/\bNo space left on device\b/.test(output)) return "disk_full";
+  if (
+    /\b(?:Input\/output error|Transport endpoint is not connected|Read-only file system)\b/.test(
+      output,
+    )
+  )
+    return "disk_error";
+  return undefined;
 }
 
 /** How a listing command ended. Its output is file names, never an error message. */

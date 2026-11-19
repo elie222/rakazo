@@ -97,6 +97,21 @@ export class WorkspaceTooLargeError extends Error {
 }
 
 /**
+ * The computer's own disk failed its save: full, unreadable, or too slow to archive. The files
+ * are not saved; a provider that keeps the disk still has them.
+ */
+export class WorkspaceSaveFailedError extends Error {
+  readonly code = "WORKSPACE_SAVE_FAILED";
+  constructor(
+    readonly reason: "disk_full" | "disk_error" | "timed_out",
+    options?: { cause?: unknown },
+  ) {
+    super("The computer's files could not be saved", options);
+    this.name = "WorkspaceSaveFailedError";
+  }
+}
+
+/**
  * The computer is up but its system can no longer start programs, so nothing on it can run or
  * be saved. Waiting does not fix it; Recover rebuilds the computer from its last save.
  */
