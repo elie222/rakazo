@@ -100,6 +100,7 @@ export function ArtifactsPage() {
   // The bot filter is part of the URL, so a link to a bot's files keeps it after a reload.
   const [searchParams, setSearchParams] = useSearchParams();
   const activeBotId = searchParams.get("bot");
+  const botQuery = activeBotId ? `?bot=${activeBotId}` : "";
   function setActiveBotId(botId: string | null) {
     setSearchParams(
       (current) => {
@@ -209,7 +210,7 @@ export function ArtifactsPage() {
     // Listings for other bots may hold it too.
     stale: [queries.artifacts.listSpace.key()],
     onSaved: (_removed, artifact) => {
-      if (artifactId === artifact.id) navigate("/app/artifacts");
+      if (artifactId === artifact.id) navigate(`/app/artifacts${botQuery}`);
       setPendingDelete(null);
     },
   });
@@ -262,7 +263,7 @@ export function ArtifactsPage() {
         {showFilters ? (
           <div className="app-no-drag flex flex-wrap items-center gap-2">
             <SearchToggle query={searchQuery} onQueryChange={setSearchQuery} />
-            {bots.length > 1 ? (
+            {bots.length > 1 || activeBotId ? (
               <BotFilter bots={bots} value={activeBotId} onValueChange={setActiveBotId} />
             ) : null}
             <OptionSelect
@@ -334,6 +335,7 @@ export function ArtifactsPage() {
                 loadError={loadError}
                 botsById={botsById}
                 selectedId={artifactId}
+                botQuery={botQuery}
                 onRequestDelete={setPendingDelete}
                 nextCursor={nextCursor}
                 loadingMore={loadingMore}
@@ -354,6 +356,7 @@ export function ArtifactsPage() {
             loadError={loadError}
             viewMode={viewMode}
             botsById={botsById}
+            botQuery={botQuery}
             onRequestDelete={setPendingDelete}
             nextCursor={nextCursor}
             loadingMore={loadingMore}
@@ -395,6 +398,7 @@ function BrowsingPane({
   loadError,
   viewMode,
   botsById,
+  botQuery,
   onRequestDelete,
   nextCursor,
   loadingMore,
@@ -405,6 +409,7 @@ function BrowsingPane({
   loadError: string | null;
   viewMode: ViewMode;
   botsById: Map<string, Bot>;
+  botQuery: string;
   onRequestDelete: (artifact: ArtifactSummary) => void;
   nextCursor: string | null;
   loadingMore: boolean;
@@ -428,6 +433,7 @@ function BrowsingPane({
               key={item.id}
               artifact={item}
               bot={item.botId ? botsById.get(item.botId) : undefined}
+              botQuery={botQuery}
               onRequestDelete={onRequestDelete}
             />
           ))}
@@ -439,6 +445,7 @@ function BrowsingPane({
               key={item.id}
               artifact={item}
               bot={item.botId ? botsById.get(item.botId) : undefined}
+              botQuery={botQuery}
               onRequestDelete={onRequestDelete}
             />
           ))}
@@ -670,6 +677,7 @@ function IndexPane({
   loadError,
   botsById,
   selectedId,
+  botQuery,
   onRequestDelete,
   nextCursor,
   loadingMore,
@@ -680,6 +688,7 @@ function IndexPane({
   loadError: string | null;
   botsById: Map<string, Bot>;
   selectedId: string;
+  botQuery: string;
   onRequestDelete: (artifact: ArtifactSummary) => void;
   nextCursor: string | null;
   loadingMore: boolean;
@@ -702,6 +711,7 @@ function IndexPane({
               artifact={item}
               bot={item.botId ? botsById.get(item.botId) : undefined}
               active={item.id === selectedId}
+              botQuery={botQuery}
               onRequestDelete={onRequestDelete}
             />
           ))}
@@ -719,17 +729,19 @@ function IndexPane({
 function ArtifactCard({
   artifact,
   bot,
+  botQuery,
   onRequestDelete,
 }: {
   artifact: ArtifactSummary;
   bot: Bot | undefined;
+  botQuery: string;
   onRequestDelete: (artifact: ArtifactSummary) => void;
 }) {
   const { t } = useLingui();
   return (
     <div className="group relative">
       <Link
-        to={`/app/artifacts/${artifact.id}`}
+        to={`/app/artifacts/${artifact.id}${botQuery}`}
         className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 text-foreground hover:bg-accent/40"
       >
         <div className="flex items-start justify-between">
@@ -796,17 +808,22 @@ function ArtifactRow({
   artifact,
   bot,
   active,
+  botQuery,
   onRequestDelete,
 }: {
   artifact: ArtifactSummary;
   bot: Bot | undefined;
   active?: boolean;
+  botQuery: string;
   onRequestDelete: (artifact: ArtifactSummary) => void;
 }) {
   const { t } = useLingui();
   return (
     <div className={`group relative ${active ? "bg-accent/60" : "hover:bg-accent/40"}`}>
-      <Link to={`/app/artifacts/${artifact.id}`} className="flex flex-col gap-1 px-4 py-3 pe-10">
+      <Link
+        to={`/app/artifacts/${artifact.id}${botQuery}`}
+        className="flex flex-col gap-1 px-4 py-3 pe-10"
+      >
         <div className="flex items-center gap-2">
           <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[7px] bg-accent text-accent-foreground">
             <ArtifactMimeIcon mimeType={artifact.mimeType} small />

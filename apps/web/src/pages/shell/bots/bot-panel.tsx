@@ -20,7 +20,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@rakazo/ui-web";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
@@ -125,6 +125,18 @@ export function BotSettings({
   const modelRef = useRef<HTMLDivElement>(null);
   /** The page under the profile; whole lists (routines, pages) push over it. */
   const [tab, setTab] = useState<BotPanelTab>("details");
+  const queryClient = useQueryClient();
+  function selectTab(value: BotPanelTab) {
+    setTab(value);
+    // Files change from outside the panel; arriving on the tab reads them fresh instead of
+    // showing whatever the first visit loaded.
+    if (value === "library") {
+      void queryClient.invalidateQueries({
+        predicate: ({ queryKey: [path] }) =>
+          Array.isArray(path) && path.join(".").endsWith("artifacts.listSpace"),
+      });
+    }
+  }
   // A model deep link opens Settings, then focuses the model once Settings is shown: a control
   // inside a hidden section cannot take focus.
   const modelFocusPending = useRef(false);
@@ -617,7 +629,7 @@ export function BotSettings({
             </div>
           ) : null}
         </div>
-        <Tabs value={tab} onValueChange={(value) => setTab(value as BotPanelTab)}>
+        <Tabs value={tab} onValueChange={(value) => selectTab(value as BotPanelTab)}>
           <TabsList className="mx-auto max-w-full overflow-x-auto">
             <TabsTrigger value="details" data-testid="bot-tab-details">
               <Trans>Details</Trans>

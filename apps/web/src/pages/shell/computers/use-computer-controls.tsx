@@ -518,7 +518,9 @@ export function useComputerControls({
     showingRecoveryHint,
     embeddedScreenUrl,
     hasControl,
-    computerFailed: computerFailure !== null,
+    /** The panel flags the computer tab while any of these wait on the user. */
+    computerNeedsAttention:
+      computerFailure !== null || showingRecoveryHint || computer?.diskFullPercent !== undefined,
     computerScreenError,
     computerBooting,
   };
