@@ -346,6 +346,75 @@ describe("charts", () => {
     );
   });
 
+  it.each([
+    {
+      name: "a narrowed range",
+      from: "2026-03-02",
+      to: "2026-03-03",
+      shades: ["var(--rk-seq2)", "var(--rk-seq5)"],
+      highest: "10",
+    },
+    {
+      name: "the inferred range",
+      shades: ["var(--rk-seq5)", "var(--rk-seq1)", "var(--rk-seq1)", "var(--rk-seq5)"],
+      highest: "1,000",
+    },
+    {
+      name: "an explicit scale",
+      from: "2026-03-02",
+      to: "2026-03-03",
+      max: 20,
+      shades: ["var(--rk-seq1)", "var(--rk-seq3)"],
+      highest: "20",
+    },
+    {
+      name: "a range with no observations",
+      from: "2026-03-05",
+      to: "2026-03-05",
+      shades: ["var(--rk-fill-strong)"],
+      highest: "0",
+    },
+  ])("uses the same calendar heatmap scale for cells and the label in $name", (fixture) => {
+    const root = mount(
+      <CalendarHeatmap
+        from={fixture.from}
+        to={fixture.to}
+        max={fixture.max}
+        days={[
+          { date: "2026-03-01", value: 1000 },
+          { date: "2026-03-02", value: 4 },
+          { date: "2026-03-03", value: 10 },
+          { date: "2026-03-04", value: 1000 },
+        ]}
+      />,
+    );
+    const cells = [...root.querySelectorAll<HTMLElement>(".rk-day")];
+    expect(cells.map((cell) => cell.style.background)).toEqual(fixture.shades);
+    expect(root.querySelector('[role="img"]')?.getAttribute("aria-label")).toMatch(
+      new RegExp(`, highest ${fixture.highest}$`),
+    );
+  });
+
+  it("excludes dates beyond the calendar heatmap's rendering limit from its scale", () => {
+    const root = mount(
+      <CalendarHeatmap
+        from="2026-01-01"
+        to="2027-07-06"
+        days={[
+          { date: "2027-07-05", value: 10 },
+          { date: "2027-07-06", value: 1000 },
+        ]}
+      />,
+    );
+    const cells = [...root.querySelectorAll<HTMLElement>(".rk-day")];
+    expect(cells).toHaveLength(551);
+    expect(cells.at(-1)?.getAttribute("data-cell")).toBe("2027-07-05");
+    expect(cells.at(-1)?.style.background).toBe("var(--rk-seq5)");
+    expect(root.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
+      "Daily values from Jan 1, 2026 to Jul 5, 2027, highest 10",
+    );
+  });
+
   it("names up to three sets beside their circles with the shared figure in the middle", () => {
     const root = mount(
       <Venn
