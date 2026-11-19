@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import {
   archiveBot,
+  carriedBotModelPin,
   checkpointAndStopComputer,
   defaultVaultItemTitle,
   endTeachingWithLease,
@@ -391,9 +392,7 @@ export function botsRoutes(ctx: RouterContext) {
           avatarSet: resolveBotAvatarSet(source.avatarSet),
           avatarSetPinned: source.avatarSetPinned,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
-          modelProvider: source.modelProvider,
-          modelId: source.modelId,
-          thinkingLevel: source.thinkingLevel,
+          ...carriedBotModelPin(source),
           disabledBuiltinTools: source.disabledBuiltinTools,
           replyMode: source.replyMode,
         });
