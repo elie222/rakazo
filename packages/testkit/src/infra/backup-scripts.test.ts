@@ -952,6 +952,7 @@ describe("production backup deployment and archive behavior", () => {
       ["a.yml", "ops/b.yml"],
     ],
     ["OTHER_RAKAZO_COMPOSE_FILE=no.yml\nRAKAZO_COMPOSE_FILE=\n", ["docker-compose.images.yml"]],
+    ["exported=no\nexport RAKAZO_COMPOSE_FILE=a.yml:ops/b.yml\n", ["a.yml", "ops/b.yml"]],
   ])("reads the file list the updater uses from the deployment environment: %j", (env, files) => {
     const f = fixture();
     write(path.join(f.checkout, ".env"), env);
@@ -979,6 +980,20 @@ describe("production backup deployment and archive behavior", () => {
         path.join(f.checkout, "ops/b.yml"),
       ]);
     }
+  });
+
+  it("refuses a list it would have to expand, instead of backing up some other stack", () => {
+    const f = fixture();
+    write(
+      path.join(f.checkout, ".env"),
+      "OVERLAY=ops/b.yml\nRAKAZO_COMPOSE_FILE=a.yml:${OVERLAY}\n",
+    );
+    write(path.join(f.checkout, "docker-compose.images.yml"), "services: {}\n");
+    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: f.checkout });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("set the plain value in /etc/rakazo/backup.env");
+    expect(f.commands()).toEqual([]);
+    expect(existsSync(f.snapshots)).toBe(false);
   });
 
   it("rejects a list that names no Compose file", () => {

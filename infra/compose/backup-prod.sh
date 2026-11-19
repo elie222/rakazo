@@ -21,6 +21,7 @@ setting() {
   [[ -r "${ENV_FILE}" ]] || return 0
   while IFS= read -r line || [[ -n "${line}" ]]; do
     line="$(trim "${line%$'\r'}")"
+    [[ "${line}" != "export"[[:space:]]* ]] || line="$(trim "${line#export}")"
     [[ "${line}" == *=* && "$(trim "${line%%=*}")" == "$1" ]] || continue
     value="$(trim "${line#*=}")"
     quoted="${value:0:1}"
@@ -38,6 +39,12 @@ setting() {
 COMPOSE_SEPARATOR="$(setting COMPOSE_PATH_SEPARATOR)"
 COMPOSE_SEPARATOR="${COMPOSE_SEPARATOR:-:}"
 COMPOSE_FILES="$(setting RAKAZO_COMPOSE_FILE)"
+# Compose would expand a reference before the updater sees the list; this script does not, and
+# guessing would back up some other stack.
+[[ "${COMPOSE_FILES}${COMPOSE_SEPARATOR}" != *'$'* ]] || {
+  echo "RAKAZO_COMPOSE_FILE or COMPOSE_PATH_SEPARATOR uses a \$ reference; set the plain value in /etc/rakazo/backup.env" >&2
+  exit 1
+}
 if [[ -z "${COMPOSE_FILES}" ]]; then
   COMPOSE_FILES="infra/compose/docker-compose.prod.yml"
   # A published-images install has no checkout: its Compose file sits in the deployment directory.
