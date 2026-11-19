@@ -24,6 +24,7 @@ import {
   newClientId,
   resolveComposerSendPlan,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../../../lib/chat/run-error-storage";
@@ -177,8 +178,12 @@ export function useComposerActions({
       setDismissedRunErrorIds((current) => new Set(current).add(target.runId));
       if (!isActiveTarget(target)) return;
       if (target.groupId)
-        await refreshGroupThreadRef.current(target.groupId).catch(() => undefined);
-      else if (target.botId) await refreshThreadRef.current(target.botId).catch(() => undefined);
+        await bestEffort(
+          "thread refresh after retry",
+          refreshGroupThreadRef.current(target.groupId),
+        );
+      else if (target.botId)
+        await bestEffort("thread refresh after retry", refreshThreadRef.current(target.botId));
     },
     onFailed: (error, target) => {
       if (isActiveTarget(target) && displayedRunErrorIdRef.current === target.runId) {

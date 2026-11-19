@@ -155,7 +155,7 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
   });
 
-  it("retries a reply the sender followed up on while it ran", async () => {
+  it("retries a reply the sender followed up on while it ran, more than once", async () => {
     const { run } = await failedReply();
     const followUp = await createThreadMessage(system, {
       threadId,
@@ -164,7 +164,13 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
       blocks: [{ kind: "text", text: "Only the urgent ones." }],
     });
     await system.message.update({ where: { id: followUp.id }, data: { runId: run.id } });
-    expect((await retry(run.id)).status).toBe(200);
+    const first = await retry(run.id);
+    expect(first.status).toBe(200);
+
+    // The retry fails too; the follow-up still belongs to this reply.
+    const { runId } = first.body.json as { runId: string };
+    await system.run.update({ where: { id: runId }, data: { status: "failed", error: "again" } });
+    expect((await retry(runId)).status).toBe(200);
   });
 
   it("refuses once the conversation moved on or the run was not a typed message", async () => {

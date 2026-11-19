@@ -8,6 +8,7 @@ import {
   SpaceDeletionInProgressError,
   spaceTakesWork,
   THREAD_LOCK_TRANSACTION_OPTIONS,
+  touchGroupUpdatedAt,
   withTransactionRetry,
 } from "@rakazo/db";
 import type { ThreadTarget } from "./thread-target.js";
@@ -70,14 +71,18 @@ export async function retryThreadRun(
           ) {
             throw new StaleRetryError();
           }
+          // A follow-up or answer sent during this reply, or an earlier try of it, belongs to it.
+          const tries = await tx.run.findMany({
+            where: { threadId: target.threadId, sourceMessageId: source.id },
+            select: { id: true },
+          });
           const [newerMessage, busyRun] = await Promise.all([
             tx.message.findFirst({
               where: {
                 threadId: target.threadId,
                 role: "user",
                 seq: { gt: source.seq },
-                // A follow-up or answer sent during the failed reply belongs to it.
-                OR: [{ runId: null }, { runId: { not: failed.id } }],
+                OR: [{ runId: null }, { runId: { notIn: tries.map((run) => run.id) } }],
               },
               select: { id: true },
             }),
@@ -127,6 +132,7 @@ export async function retryThreadRun(
           if (source.runId === failed.id) {
             await tx.message.update({ where: { id: source.id }, data: { runId: run.id } });
           }
+          if (target.kind === "group") await touchGroupUpdatedAt(tx, target.groupId);
           return run;
         }, THREAD_LOCK_TRANSACTION_OPTIONS),
       );

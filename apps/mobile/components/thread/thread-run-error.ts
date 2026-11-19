@@ -1,5 +1,6 @@
 import { computerHoursOut } from "@rakazo/contracts";
 import { canRetryRun } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -76,7 +77,7 @@ export function useThreadRunError(
     onSaved: async (_, input) => {
       setRetriedRunId(input.runId);
       if (thread.isCurrentTarget(input.botId, input.groupId))
-        await thread.refresh().catch(() => {});
+        await bestEffort("thread refresh after retry", thread.refresh());
     },
     onFailed: (error, input) => {
       if (thread.isCurrentTarget(input.botId, input.groupId)) Alert.alert(errorText(error));
