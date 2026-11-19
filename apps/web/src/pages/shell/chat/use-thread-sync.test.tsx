@@ -412,6 +412,70 @@ it("anchors Load earlier on the first visible row, not the whole height delta", 
   act(() => root.unmount());
 });
 
+it.each(["history reset", "different bot", "different group", "viewport replacement"])(
+  "skips a queued Load earlier scroll adjustment after %s",
+  async (change) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const frames: FrameRequestCallback[] = [];
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const viewport = (scrollHeight: number) => ({
+      scrollTop: 120,
+      scrollHeight,
+      querySelectorAll: () => [],
+    });
+    const original = viewport(1_000);
+    const replacement = viewport(1_200);
+    const scroll = ref(original as unknown as HTMLDivElement);
+    const inGroup = change === "different group";
+    const target = inGroup ? { groupId: "group-1" } : { botId: "bot-1" };
+    const snapshot = { ...target, threadId: "thread-1", olderCursor: "cursor-1" } as never;
+    const messages = vi.fn(async () => ({ threadId: "thread-1", messages: [], olderCursor: null }));
+    const input = syncInput({
+      inGroup,
+      get: () => new Promise<ThreadSnapshot>(() => {}),
+      commitSnapshot: vi.fn(),
+    });
+    input.rpc = { threads: { get: input.rpc.threads.get, messages } } as never;
+    input.thread = {
+      ...input.thread,
+      snapshot,
+      snapshotRef: ref(snapshot),
+      updateSnapshot: vi.fn(() => {
+        original.scrollHeight += 200;
+      }),
+      messageScroll: scroll,
+    };
+    let controls!: ReturnType<typeof useThreadSync>;
+    function Probe() {
+      controls = useThreadSync(input);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root.render(createElement(Probe)));
+      await act(async () => void (await controls.loadOlder()));
+      expect(messages).toHaveBeenCalledExactlyOnceWith({ ...target, before: "cursor-1" });
+      expect(input.thread.updateSnapshot).toHaveBeenCalledTimes(1);
+      expect(frames).toHaveLength(1);
+
+      if (change === "history reset") input.thread.historyEpoch.current += 1;
+      if (change === "different bot") input.activeBotId.current = "bot-2";
+      if (change === "different group") input.activeGroupId.current = "group-2";
+      if (change === "viewport replacement")
+        scroll.current = replacement as unknown as HTMLDivElement;
+      act(() => frames[0]!(0));
+      expect(original.scrollTop).toBe(120);
+      expect(replacement.scrollTop).toBe(120);
+    } finally {
+      act(() => root.unmount());
+      raf.mockRestore();
+    }
+  },
+);
+
 it.each([false, true])("snaps a remounted transcript for group=%s", async (inGroup) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   // The reader is at the end of bot A when the refresh starts; the bot switch
