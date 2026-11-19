@@ -1902,9 +1902,26 @@ model Computer {
   maintenanceId           String?
   updates                 ComputerUpdate[]
   homeDeletionNotice      HomeDeletionNotice?
+  homeVersions            ComputerHomeVersion[]
 
   @@index([spaceId, scope])
   @@map("computers")
+}
+
+/// A stored revision of a computer's home, kept so its owner can restore an earlier one. Saves
+/// prune these; clearing or deleting the stored home deletes them with it.
+model ComputerHomeVersion {
+  id         String   @id @default(cuid())
+  computerId String
+  computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  /// The `homeStorageId` the revision was stored under.
+  storageId  String
+  revision   String
+  savedAt    DateTime
+
+  @@unique([storageId, revision])
+  @@index([computerId, savedAt])
+  @@map("computer_home_versions")
 }
 
 /// Hosted billing only: a stopped computer whose saved home is due for deletion after its plan
