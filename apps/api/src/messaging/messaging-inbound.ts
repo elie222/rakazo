@@ -313,6 +313,8 @@ async function handleDirectEvent(
       pending.splice(pending.indexOf(arrival), 1);
       if (pending.length === 0 && intake.pending.get(sender) === pending) {
         intake.pending.delete(sender);
+        // Nothing of theirs is pending here; their next message asks the job queue afresh.
+        intake.handedOff.delete(sender);
       }
     }
   });
