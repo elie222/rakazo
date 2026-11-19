@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { approvalDetailLength, buildApprovalAskBlock, readableToolName } from "./approval-ask.js";
+import {
+  approvalActionName,
+  approvalDetailLength,
+  buildApprovalAskBlock,
+  readableToolName,
+} from "./approval-ask.js";
 
 describe("buildApprovalAskBlock", () => {
   it("binds the approval to its effect and redacts secrets", () => {
@@ -569,5 +574,16 @@ describe("approval card arguments", () => {
     );
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.detail).toContain("example.test/page");
+  });
+
+  it("names a batch call's actions, not the batch tool, in its alert", () => {
+    const batch = { items: "tools", action: "tool_slug", arguments: "arguments" };
+    const args = {
+      tools: [{ tool_slug: "GMAIL_SEND_EMAIL", arguments: { to: "a@example.test" } }],
+    };
+    expect(approvalActionName("MULTI_EXECUTE", args, batch, [])).toBe("Gmail send email");
+    expect(approvalActionName("web_fetch", { url: "https://a.test" }, undefined, [])).toBe(
+      "Web fetch",
+    );
   });
 });

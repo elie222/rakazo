@@ -256,20 +256,43 @@ function webFetchSite(toolName: string, args: Record<string, unknown>): string |
     : undefined;
 }
 
+/** A batch is named by the actions it runs; "…" stands for an entry that names none. */
+function batchActionNames(
+  args: Record<string, unknown>,
+  batchShape: ToolBatch | undefined,
+  secrets: string[],
+): string | undefined {
+  const batch = batchShape && batchActions(batchShape, args);
+  if (!batch?.actions.length) return undefined;
+  return [
+    ...batch.actions.map((action) => readableToolName(redactSecrets(action, secrets))),
+    ...(batch.complete ? [] : ["…"]),
+  ].join(", ");
+}
+
+/**
+ * What an approval is for, in words and without its arguments, for an alert that leaves the card:
+ * a batch call's actions, otherwise the tool itself.
+ */
+export function approvalActionName(
+  toolName: string,
+  args: Record<string, unknown>,
+  batch: ToolBatch | undefined,
+  secrets: string[],
+): string {
+  return (
+    batchActionNames(args, batch, secrets) ?? readableToolName(redactSecrets(toolName, secrets))
+  );
+}
+
 function describeApprovalAction(
   toolName: string,
   args: Record<string, unknown>,
   batchShape: ToolBatch | undefined,
   secrets: string[],
 ): string {
-  // A batch is named by the actions it runs; "…" stands for an entry that names none.
-  const batch = batchShape && batchActions(batchShape, args);
-  if (batch?.actions.length) {
-    return [
-      ...batch.actions.map((action) => readableToolName(redactSecrets(action, secrets))),
-      ...(batch.complete ? [] : ["…"]),
-    ].join(", ");
-  }
+  const batchName = batchActionNames(args, batchShape, secrets);
+  if (batchName) return batchName;
   if (toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
     return name ? `Archive bot (${String(name)})` : "Archive bot";

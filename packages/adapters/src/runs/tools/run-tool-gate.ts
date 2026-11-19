@@ -34,9 +34,9 @@ import { recordAuditEvent, runSecretKind } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
 import {
+  approvalActionName,
   buildApprovalAskBlock,
   MAX_FETCH_URL_LENGTH,
-  readableToolName,
 } from "../../approvals/approval-ask.js";
 import {
   boundDirectApprovalDetails,
@@ -818,7 +818,7 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
     title: `${displayName(bot.name, "Bot")} needs approval`,
     // Only the action, with no verb: the card's title can name a recipient or subject, and a call
     // can decline rather than allow, so both stay on the card.
-    body: readableToolName(redactSecrets(name, ctx.secrets)),
+    body: approvalActionName(name, args, card.batch, ctx.secrets),
     botId: bot.id,
     threadId: thread.id,
   });
