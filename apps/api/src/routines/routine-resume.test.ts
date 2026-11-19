@@ -6,6 +6,7 @@ import { resumeRoutinesAfterRestore } from "./routine-resume.js";
 type Row = {
   id: string;
   botId: string;
+  userId: string;
   spaceId: string;
   crons: string[];
   timezone: string;
@@ -19,6 +20,7 @@ function routine(id: string, patch: Partial<Row> = {}): Row {
   return {
     id,
     botId: "bot-1",
+    userId: "user-1",
     spaceId: "space-1",
     crons: ["0 9 * * *"],
     timezone: "UTC",
@@ -30,11 +32,17 @@ function routine(id: string, patch: Partial<Row> = {}): Row {
   };
 }
 
-type Where = { botId: { in: string[] }; resumeOnRestore: boolean; id?: string };
+type Where = {
+  botId: { in: string[] };
+  userId: string;
+  resumeOnRestore: boolean;
+  id?: string;
+};
 
 function fixture(rows: Row[], archivedBots: string[] = []) {
   const matches = (row: Row, where: Where) =>
     where.botId.in.includes(row.botId) &&
+    row.userId === where.userId &&
     row.resumeOnRestore === where.resumeOnRestore &&
     !archivedBots.includes(row.botId) &&
     (where.id === undefined || row.id === where.id);
@@ -81,7 +89,7 @@ describe("resumeRoutinesAfterRestore", () => {
     const daily = routine("daily");
     const { deps, tx, lock, enqueueIn, publishSpaceChange } = fixture([daily]);
 
-    await resumeRoutinesAfterRestore(deps, ["bot-1"]);
+    await resumeRoutinesAfterRestore(deps, "user-1", ["bot-1"]);
 
     expect(daily).toMatchObject({
       active: true,
@@ -93,11 +101,23 @@ describe("resumeRoutinesAfterRestore", () => {
     expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith("space-1", "routines");
   });
 
+  it("leaves another member's routine off, since it would run with their accounts", async () => {
+    const mine = routine("mine");
+    const theirs = routine("theirs", { userId: "user-2" });
+    const { deps, enqueueIn } = fixture([mine, theirs]);
+
+    await resumeRoutinesAfterRestore(deps, "user-1", ["bot-1"]);
+
+    expect(mine.active).toBe(true);
+    expect(theirs).toMatchObject({ active: false, nextRunAt: null, resumeOnRestore: true });
+    expect(enqueueIn).toHaveBeenCalledOnce();
+  });
+
   it("leaves a routine that was already off before the archive off", async () => {
     const paused = routine("paused", { resumeOnRestore: false });
     const { deps, enqueueIn } = fixture([paused]);
 
-    await resumeRoutinesAfterRestore(deps, ["bot-1"]);
+    await resumeRoutinesAfterRestore(deps, "user-1", ["bot-1"]);
 
     expect(paused).toMatchObject({ active: false, nextRunAt: null });
     expect(enqueueIn).not.toHaveBeenCalled();
@@ -108,7 +128,7 @@ describe("resumeRoutinesAfterRestore", () => {
     const webhook = routine("webhook", { crons: [] });
     const { deps, enqueueIn } = fixture([watching, webhook]);
 
-    await resumeRoutinesAfterRestore(deps, ["bot-1"]);
+    await resumeRoutinesAfterRestore(deps, "user-1", ["bot-1"]);
 
     expect(watching).toMatchObject({ active: true, nextRunAt: new Date(Date.now() + 2_000) });
     expect(webhook).toMatchObject({ active: true, nextRunAt: null, resumeOnRestore: false });
@@ -124,7 +144,7 @@ describe("resumeRoutinesAfterRestore", () => {
       return [];
     });
 
-    await resumeRoutinesAfterRestore(deps, ["bot-1"]);
+    await resumeRoutinesAfterRestore(deps, "user-1", ["bot-1"]);
 
     expect(edited.nextRunAt).toEqual(new Date("2026-03-01T10:30:00.000Z"));
   });
@@ -138,7 +158,7 @@ describe("resumeRoutinesAfterRestore", () => {
       return [];
     });
 
-    await resumeRoutinesAfterRestore(deps, ["bot-1"]);
+    await resumeRoutinesAfterRestore(deps, "user-1", ["bot-1"]);
 
     expect(paused.active).toBe(false);
     expect(enqueueIn).not.toHaveBeenCalled();
@@ -148,7 +168,7 @@ describe("resumeRoutinesAfterRestore", () => {
     const once = routine("once", { crons: ["@once"] });
     const { deps, enqueueIn } = fixture([once]);
 
-    await resumeRoutinesAfterRestore(deps, ["bot-1"]);
+    await resumeRoutinesAfterRestore(deps, "user-1", ["bot-1"]);
 
     expect(once).toMatchObject({ active: false, nextRunAt: null, resumeOnRestore: false });
     expect(enqueueIn).not.toHaveBeenCalled();
@@ -158,7 +178,7 @@ describe("resumeRoutinesAfterRestore", () => {
     const daily = routine("daily");
     const { deps, enqueueIn } = fixture([daily], ["bot-1"]);
 
-    await resumeRoutinesAfterRestore(deps, ["bot-1"]);
+    await resumeRoutinesAfterRestore(deps, "user-1", ["bot-1"]);
 
     expect(daily).toMatchObject({ active: false, resumeOnRestore: true });
     expect(enqueueIn).not.toHaveBeenCalled();
