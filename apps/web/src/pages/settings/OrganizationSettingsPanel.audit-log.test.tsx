@@ -30,7 +30,7 @@ vi.mock("../../lib/query/rpc", () => ({
   clearSpaceSelection: vi.fn(),
   selectSpace: vi.fn(),
 }));
-vi.mock("../../lib/auth/organizations", () => ({
+vi.mock("../../lib/spaces/organizations", () => ({
   organizationsQuery: () => ({ queryKey: ["organizations"] }),
   useOrganizations: () => ({ organizations: api.organizations, activeOrganizationId: "org-1" }),
 }));
