@@ -1095,6 +1095,7 @@ describe("BoatSandboxProvider", () => {
     'Executable not found in $PATH: "systemd-run"',
     "ENOENT: no such file or directory, posix_spawn 'systemd-run'",
     "environment: line 7: /usr/bin/grep: cannot execute: required file not found\nenvironment: line 8: /usr/bin/grep: cannot execute: required file not found",
+    "sudo: you do not exist in the passwd database",
   ])("reports a machine that cannot start programs as damaged: %s", async (stderr) => {
     vi.spyOn(FakeBoatApi.prototype, "command").mockResolvedValue({
       ok: true,

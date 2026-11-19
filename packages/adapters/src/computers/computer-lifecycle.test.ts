@@ -1323,7 +1323,7 @@ describe("computer provisioning", () => {
         vi.mocked(sandbox.prepare).mock.invocationCallOrder[1]!,
       );
       expect(updateMany).toHaveBeenLastCalledWith(
-        expect.objectContaining({ data: { state: "error", restorePending: true } }),
+        expect.objectContaining({ data: { state: "quarantined", restorePending: true } }),
       );
     } finally {
       await rm(dataDir, { recursive: true, force: true });

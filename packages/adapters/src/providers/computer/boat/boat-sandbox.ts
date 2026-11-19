@@ -1487,10 +1487,11 @@ function commandFailure(result: BoatCommandResult): string {
 /**
  * Boat's runner starts each command with `systemd-run` and sources the machine's environment
  * before our command line runs. These failures come from that, so the machine's system files are
- * missing or broken; the command itself never started.
+ * missing or broken; the command itself never started. A machine whose account is missing from
+ * its user database is broken the same way: nothing that needs it can run again.
  */
 const BOAT_SYSTEM_DAMAGED =
-  /^(?:Executable not found in \$PATH: "systemd-run"|ENOENT: no such file or directory, posix_spawn 'systemd-run'|environment: line \d+: \/usr\/bin\/[\w.-]+: cannot execute: required file not found)$/m;
+  /^(?:Executable not found in \$PATH: "systemd-run"|ENOENT: no such file or directory, posix_spawn 'systemd-run'|environment: line \d+: \/usr\/bin\/[\w.-]+: cannot execute: required file not found|sudo: you do not exist in the passwd database)$/m;
 
 function systemDamaged(stderr: string): boolean {
   return BOAT_SYSTEM_DAMAGED.test(stderr);

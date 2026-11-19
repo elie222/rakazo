@@ -26,6 +26,11 @@ import {
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import { rejectedRequestsOf } from "../../runtime/provider-request-shape.js";
 import { returnHelperOutcome } from "../../tasks/background-helpers.js";
+import {
+  computerNeedsRecovery,
+  computerRunError,
+  RunComputerFailedError,
+} from "../assembly/run-computer.js";
 import type { RunContext, RunState } from "../assembly/run-context.js";
 import { runPromotesMidTurnNarration } from "../assembly/run-replies.prompt.js";
 import { scheduleRoutineRetry } from "../assembly/run-routines.js";
@@ -97,23 +102,29 @@ export async function failRun(
   const { deps, run, runId, bot, thread } = ctx;
   const { reply } = ctx.state;
   let error = caughtError;
-  // A refused account limit needs user/operator action, not setup-job retries.
-  // Keep the provisioning error even if aborting the model masked it.
+  let computerFailed = false;
+  // A refused account limit or a computer only Recover fixes needs user/operator action, not
+  // setup-job retries. Keep the provisioning error even if aborting the model masked it.
   try {
     ctx.computer.lazy.throwIfFailed();
   } catch (computerError) {
     if (
       !(computerError instanceof SandboxRateLimitError) &&
       !(computerError instanceof SandboxAllowanceUsedError) &&
-      !(computerError instanceof SandboxProviderAccountError)
+      !(computerError instanceof SandboxProviderAccountError) &&
+      !computerNeedsRecovery(computerError)
     )
-      throw computerError;
+      throw new RunComputerFailedError(computerError);
     error = computerError;
+    computerFailed = true;
   }
   if (!ctx.state.terminalCheckpointComplete) {
     await ctx.computer.checkpoint.flush().catch(() => undefined);
   }
-  const message = redactSecrets(userRunError(error), ctx.secrets);
+  const message = redactSecrets(
+    computerFailed ? computerRunError(error) : userRunError(error),
+    ctx.secrets,
+  );
   // Reply text the user watched stream in since the last saved message stays in the
   // thread, above the error, instead of vanishing with the live row.
   recordExplicitNoResponse(reply, reply.assistantTurnText);
@@ -147,6 +158,7 @@ export async function failRun(
   });
   if (!failed) return;
   if (
+    (computerFailed && !(error instanceof SandboxProviderAccountError)) ||
     error instanceof TransientModelError ||
     error instanceof ModelAccountError ||
     error instanceof ModelOutputError ||
@@ -154,11 +166,12 @@ export async function failRun(
     error instanceof SandboxAllowanceUsedError
   ) {
     // Provider outages that outlasted retries, provider accounts, plans and model
-    // choices the user fixes, unusable model output, the computer provider's own rate limit
-    // and a spent computer allowance are not server faults; the run error tells the user.
+    // choices the user fixes, unusable model output, the computer provider's own rate limit,
+    // a spent computer allowance and a computer awaiting Recover are not server faults; the
+    // run error tells the user.
     getLogger().warn("run.failed", {
       "run.outcome": "failed",
-      "run.failure": error.name,
+      "run.failure": error instanceof Error ? error.name : "UnknownFailure",
       reason: message,
       ...model.active,
     });

@@ -16,6 +16,7 @@ import {
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize, ComputerUpdate } from "@rakazo/contracts";
+import { COMPUTER_RECOVERY_REQUIRED_ERROR } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   abortableDelay,
@@ -173,12 +174,13 @@ export class ComputerBusyError extends ClientError {
   }
 }
 
-/** A stop was not confirmed, so this computer must remain isolated until recovery. */
+/**
+ * A stop was not confirmed, or the system stayed damaged after its automatic recovery, so this
+ * computer remains isolated until recovery.
+ */
 export class ComputerRecoveryRequiredError extends Error {
   constructor() {
-    super(
-      "Computer requires recovery after an unconfirmed stop. Recover the computer to rebuild it.",
-    );
+    super(COMPUTER_RECOVERY_REQUIRED_ERROR);
     this.name = "ComputerRecoveryRequiredError";
   }
 }
@@ -652,9 +654,13 @@ export async function provisionComputer(
       durationMs: Math.round(performance.now() - started),
       error,
     });
-    // A failed reconnect never owns an existing workspace, even if setup failed.
+    // The one automatic recovery was spent or failed, so this machine waits for Recover.
+    const damaged = isSandboxDamagedError(error);
+    // A failed reconnect never owns an existing workspace, even if setup failed. A damaged one
+    // holds nothing readable, so it is stopped back to the provider's last good copy instead of
+    // billing while it waits.
     const rollbackError =
-      provisioned && (!reconnecting || provisioned.fresh === true)
+      provisioned && (!reconnecting || provisioned.fresh === true || damaged)
         ? await rollbackProvisionedComputer(deps.sandbox, provisioned, context, error)
         : undefined;
     const unsafeStop = isSandboxUnsafeStopError(error) || isSandboxUnsafeStopError(rollbackError);
@@ -675,7 +681,7 @@ export async function provisionComputer(
           },
           data: {
             state:
-              (reconnecting || rollbackError) && unsafeStop
+              damaged || ((reconnecting || rollbackError) && unsafeStop)
                 ? "quarantined"
                 : reconnecting && !existing.restorePending && !incomplete
                   ? "running"
@@ -687,7 +693,8 @@ export async function provisionComputer(
                   restorePending: replaces(kept),
                 }
               : {}),
-            ...(incomplete ? { restorePending: true } : {}),
+            // Nothing is ever saved from a damaged machine over the stored workspace.
+            ...(incomplete || damaged ? { restorePending: true } : {}),
           },
         });
         // Stored, so its record goes too. One this write did not store keeps its record.
