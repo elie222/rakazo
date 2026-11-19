@@ -21,7 +21,7 @@ import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { accountQuery, rpcQuery, useSave } from "../../lib/query/query";
+import { accountQuery, queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 
@@ -44,7 +44,13 @@ export default function ComputersSettings() {
   const removal = useSave({
     target: ACCOUNT_SETTINGS,
     stale: [devicesRead.queryKey],
-    save: (device: UserDeviceSummary) => removeUserDevice(device.deviceId),
+    save: async (device: UserDeviceSummary) => {
+      await removeUserDevice(device.deviceId);
+      // Gone even if the read that follows fails.
+      queryClient.setQueryData(devicesRead.queryKey, (listed) =>
+        listed?.filter((kept) => kept.deviceId !== device.deviceId),
+      );
+    },
   });
   const resize = useSave({
     stale: [cloudRead.queryKey],
@@ -58,7 +64,8 @@ export default function ComputersSettings() {
   const devices = devicesQuery.data?.filter(
     (device) => !(removal.pending && removal.input?.deviceId === device.deviceId),
   );
-  const loadError = devicesQuery.error ? errorText(devicesQuery.error, t`Could not load`) : null;
+  const loadFailure = devicesQuery.error ?? cloudQuery.error;
+  const loadError = loadFailure ? errorText(loadFailure, t`Could not load`) : null;
   const error = removal.error ? errorText(removal.error, t`Could not remove`) : loadError;
   const cloudComputers = cloud?.computers ?? [];
 
@@ -142,7 +149,7 @@ export default function ComputersSettings() {
         {cloudComputers.length ? (
           <SettingsGroup label={t`Cloud computers`}>{cloudComputers.map(cloudRow)}</SettingsGroup>
         ) : null}
-        {devices?.length === 0 && cloudComputers.length === 0 ? (
+        {devices?.length === 0 && cloud !== undefined && cloudComputers.length === 0 ? (
           <Text style={styles.secondary}>{t`No paired computers`}</Text>
         ) : null}
         {devices?.length ? (
@@ -172,7 +179,7 @@ export default function ComputersSettings() {
           <NativeActionButton
             fill={false}
             label={t`Retry`}
-            onPress={() => void devicesQuery.refetch()}
+            onPress={() => void Promise.all([devicesQuery.refetch(), cloudQuery.refetch()])}
             prominence="secondary"
           />
         ) : null}

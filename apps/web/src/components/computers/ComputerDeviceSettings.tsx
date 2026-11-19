@@ -4,7 +4,7 @@ import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import { Button, Label, Switch } from "@rakazo/ui-web";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useId } from "react";
 import { listUserDevices, removeUserDevice } from "../../lib/auth/user-devices";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { useQueryUserId, useSave } from "../../lib/query/query";
@@ -47,31 +47,36 @@ export function userDevicesQuery(userId: string | null) {
   });
 }
 
-/** Whether this window can offer itself as a computer, before asking the app. */
-export function desktopOffersThisComputer(): boolean {
+function thisComputerQuery(userId: string | null) {
   const desktop = desktopBridge();
-  return Boolean(desktop?.device || desktop?.computer?.managesHostChoice);
+  return queryOptions({
+    queryKey: [`user:${userId ?? ""}`, "thisComputer"],
+    queryFn: () => thisComputerAccess(desktop),
+    enabled: Boolean(desktop?.device || desktop?.computer?.managesHostChoice),
+  });
+}
+
+/**
+ * The switch that lets bots use this computer, or null where this window cannot offer it. A failed
+ * read keeps the last known switch rather than hiding it.
+ */
+export function useThisComputer() {
+  const userId = useQueryUserId();
+  const query = thisComputerQuery(userId);
+  return {
+    thisComputer: useQuery(query).data ?? null,
+    plainHttp: plainHttpDesktop(desktopBridge()),
+    queryKey: query.queryKey,
+  };
 }
 
 export function ComputerDeviceSettings() {
   const { t } = useLingui();
-  const desktop = desktopBridge();
-  const plainHttp = plainHttpDesktop(desktop);
+  const { thisComputer, plainHttp, queryKey: thisComputerKey } = useThisComputer();
   const queryClient = useQueryClient();
   const devicesQuery = userDevicesQuery(useQueryUserId());
   const devices = useQuery(devicesQuery).data ?? [];
-  const [thisComputer, setThisComputer] = useState<ThisComputer | null>(null);
   const switchId = useId();
-
-  const loadThisComputer = useCallback(async () => {
-    // A failed profile read keeps the last known switch rather than hiding it.
-    const local = await thisComputerAccess(desktop).catch(() => undefined);
-    if (local !== undefined) setThisComputer(local);
-  }, [desktop]);
-
-  useEffect(() => {
-    void loadThisComputer();
-  }, [loadThisComputer]);
 
   // Neither change goes through the API: one is the desktop app's, the other a device route.
   const change = useSave({
@@ -81,7 +86,7 @@ export function ComputerDeviceSettings() {
       } finally {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey }),
-          loadThisComputer(),
+          queryClient.invalidateQueries({ queryKey: thisComputerKey }),
         ]);
       }
     },

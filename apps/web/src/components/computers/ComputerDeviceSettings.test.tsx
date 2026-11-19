@@ -3,6 +3,7 @@ import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { RakazoDesktop } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
+import { QueryClient } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -69,7 +70,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   host = document.createElement("div");
   document.body.append(host);
-  root = createRoot(host);
+  // A failed read settles at once instead of retrying on the library's backoff.
+  root = createRoot(host, new QueryClient({ defaultOptions: { queries: { retry: false } } }));
 });
 
 afterEach(async () => {
@@ -250,6 +252,7 @@ it("keeps the local switch when a later profile read fails", async () => {
   await act(async () =>
     host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!.click(),
   );
+  await act(flush);
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]');
   expect(toggle?.checked).toBe(true);
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");

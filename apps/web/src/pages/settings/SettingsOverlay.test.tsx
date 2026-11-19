@@ -128,11 +128,12 @@ vi.mock("../../components/computers/CloudComputerSizes", () => ({
   CloudComputerSizes: () => <div data-testid="cloud-computers" />,
   useCloudComputers: () => ({
     data: { computers: Array.from({ length: cloudComputerCount.current }) },
+    isError: false,
   }),
 }));
 vi.mock("../../components/computers/ComputerDeviceSettings", () => ({
   ComputerDeviceSettings: () => <div data-testid="computer-devices" />,
-  desktopOffersThisComputer: () => false,
+  useThisComputer: () => ({ thisComputer: null, plainHttp: false }),
   userDevicesQuery: () => ({ queryKey: ["user:", "userDevices"], queryFn: async () => [] }),
 }));
 vi.mock("../../components/computers/ComputersUnavailableHint", () => ({

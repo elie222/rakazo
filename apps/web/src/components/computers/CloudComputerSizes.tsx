@@ -14,7 +14,30 @@ export function useCloudComputers() {
 
 /** Each of the Space's cloud computers with the size it starts at next. */
 export function CloudComputerSizes({ onUpgrade }: { onUpgrade?: () => void }) {
-  const { data } = useCloudComputers();
+  const { data, error, isFetching, refetch } = useCloudComputers();
+  if (!data && error) {
+    return (
+      <SettingsGroup title={<Trans>Cloud computers</Trans>} data-testid="cloud-computers">
+        <SettingsRow
+          label={
+            <p className="text-destructive" role="alert">
+              <Trans>Could not load</Trans>
+            </p>
+          }
+          control={
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
+              <Trans>Retry</Trans>
+            </Button>
+          }
+        />
+      </SettingsGroup>
+    );
+  }
   if (!data?.computers.length) return null;
   return (
     <SettingsGroup title={<Trans>Cloud computers</Trans>} data-testid="cloud-computers">

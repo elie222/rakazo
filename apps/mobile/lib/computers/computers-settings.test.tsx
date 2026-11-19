@@ -246,6 +246,35 @@ it("hides a computer while its removal is pending and shows it again when it fai
   expect(container.textContent).toContain("offline");
 });
 
+it("keeps a removed computer gone when the list read after it fails", async () => {
+  vi.mocked(listUserDevices)
+    .mockResolvedValueOnce([laptop, desk])
+    .mockRejectedValue(new Error("offline"));
+  vi.mocked(removeUserDevice).mockResolvedValue();
+  await render();
+  await act(async () => button("Remove Desk PC, Offline")?.click());
+  await act(async () =>
+    lastAlertButtons()
+      .find((b) => b.style === "destructive")
+      ?.onPress?.(),
+  );
+  await settle();
+  expect(container.textContent).not.toContain("Desk PC");
+  expect(container.textContent).toContain("LaptopConnected");
+});
+
+it("says when the cloud computers fail to load and retries them", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  mocks.cloud.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(cloud);
+  await render();
+  expect(container.textContent).toContain("offline");
+  expect(container.textContent).not.toContain("No paired computers");
+  await act(async () => button("Retry")?.click());
+  await settle();
+  expect(container.textContent).not.toContain("offline");
+  expect(container.textContent).toContain("Cloud computers");
+});
+
 it("says when none are paired, and retries a failed load", async () => {
   vi.mocked(listUserDevices).mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce([]);
   await render();

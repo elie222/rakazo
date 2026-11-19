@@ -19,8 +19,8 @@ import {
 } from "../../components/computers/CloudComputerSizes";
 import {
   ComputerDeviceSettings,
-  desktopOffersThisComputer,
   userDevicesQuery,
+  useThisComputer,
 } from "../../components/computers/ComputerDeviceSettings";
 import { computersAreUnavailable } from "../../components/computers/ComputersUnavailableHint";
 import { ApprovalRulesSettings } from "../../components/settings/ApprovalRulesSettings";
@@ -147,10 +147,16 @@ export function SettingsOverlay({
       canChooseOwnComputer(sandboxProvider) ||
       keepComputerRecovery ||
       computersAreUnavailable(sandboxProvider));
-  const cloudComputers = useCloudComputers().data?.computers.length ?? 0;
+  const cloud = useCloudComputers();
   const pairedComputers = useQuery(userDevicesQuery(useQueryUserId())).data?.length ?? 0;
+  const { thisComputer, plainHttp } = useThisComputer();
   const showComputer =
-    showComputerSetup || cloudComputers > 0 || pairedComputers > 0 || desktopOffersThisComputer();
+    showComputerSetup ||
+    (cloud.data?.computers.length ?? 0) > 0 ||
+    cloud.isError ||
+    pairedComputers > 0 ||
+    thisComputer !== null ||
+    plainHttp;
   const showUpdates = Boolean(desktopBridge()?.update);
   // A section that isn't available yet (billing before its flag loads) shows General until it is.
   const section =
