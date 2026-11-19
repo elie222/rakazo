@@ -4,6 +4,7 @@ import type { MeetingCalendarAction } from "@rakazo/i18n/meeting";
 import {
   meetingCalendarActionLabel,
   meetingCalendarActions,
+  meetingCalendarSharingNotice,
   meetingCalendarStatusLabel,
   meetingPlatformLabel,
 } from "@rakazo/i18n/meeting";
@@ -19,7 +20,9 @@ import {
   Button,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
   SectionHeading,
 } from "@rakazo/ui-web";
@@ -75,7 +78,12 @@ export function MeetingCalendar({
         case "removeSeries":
           return rpc.meetingCalendar.removeSeries({ botId, eventId: input.eventId });
         default:
-          return rpc.meetingCalendar.select({ botId, eventId: input.eventId, scope: input.action });
+          return rpc.meetingCalendar.select({
+            botId,
+            eventId: input.eventId,
+            scope: input.action,
+            shareTranscript: true,
+          });
       }
     },
   });
@@ -148,6 +156,8 @@ export function MeetingCalendar({
                   {list.data.events.map((event) => {
                     const title = event.title || t`Untitled meeting`;
                     const status = meetingCalendarStatusLabel(event) ?? t`Choose`;
+                    const actions = meetingCalendarActions(event);
+                    const sharingNotice = meetingCalendarSharingNotice(actions);
                     return (
                       <li key={event.id} className="flex items-center justify-between gap-4 py-2">
                         <div className="min-w-0">
@@ -169,14 +179,21 @@ export function MeetingCalendar({
                             <ChevronDown className="size-3" />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-max">
-                            {meetingCalendarActions(event).map((action) => (
-                              <DropdownMenuItem
-                                key={action}
-                                onClick={() => save.run({ action, eventId: event.id })}
-                              >
-                                {meetingCalendarActionLabel(action)}
-                              </DropdownMenuItem>
-                            ))}
+                            <DropdownMenuGroup>
+                              {sharingNotice ? (
+                                <DropdownMenuLabel className="max-w-52 whitespace-normal">
+                                  {sharingNotice}
+                                </DropdownMenuLabel>
+                              ) : null}
+                              {actions.map((action) => (
+                                <DropdownMenuItem
+                                  key={action}
+                                  onClick={() => save.run({ action, eventId: event.id })}
+                                >
+                                  {meetingCalendarActionLabel(action)}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuGroup>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </li>

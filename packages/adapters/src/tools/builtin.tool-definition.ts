@@ -1,5 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
+import { meetingTranscriptTool } from "../meetings/meeting-chat.tool-definition.js";
 import { computerTools } from "./builtin-computer.tool-definition.js";
 import { conversationTools } from "./builtin-conversation.tool-definition.js";
 import { fleetTools } from "./builtin-fleet.tool-definition.js";
@@ -19,6 +20,7 @@ export const DELEGATION_TOOL_NAMES = new Set<string>([
 export const builtinAgentTools: ConnectorTool[] = [
   ...computerTools,
   ...conversationTools,
+  meetingTranscriptTool,
   ...serviceTools,
   ...memoryTools,
   ...workTools,

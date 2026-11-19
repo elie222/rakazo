@@ -6,6 +6,7 @@ import type { SpaceChangeKind } from "@rakazo/contracts";
  * where it commits.
  */
 const SPACE_CHANGE_PROCEDURES: Record<string, readonly SpaceChangeKind[]> = {
+  "artifacts.remove": ["artifacts"],
   "routines.create": ["routines"],
   "routines.update": ["routines"],
   "routines.remove": ["routines"],
