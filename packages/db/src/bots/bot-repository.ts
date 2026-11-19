@@ -13,6 +13,7 @@ import {
   InstructionVersionSchema,
   initialBotMemory,
   resolveBotAvatarSet,
+  WebhookSignatureSchema,
 } from "@rakazo/contracts";
 import { displayName, phoneCallSettings, ringingCall } from "@rakazo/core";
 import type { ComputerMode } from "../computers/computers.js";
@@ -105,6 +106,7 @@ function mapBot(
     replyMode?: string;
     disabledBuiltinTools?: string[];
     webhookSecretId?: string | null;
+    webhookSignature?: unknown;
     spawnKey?: string | null;
   },
   preview = "",
@@ -155,6 +157,7 @@ function mapBot(
     // Stored lists may name a tool that no longer exists; settings resend what they read.
     disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
     webhookConfigured: Boolean(bot.webhookSecretId),
+    webhookSignature: WebhookSignatureSchema.safeParse(bot.webhookSignature).data ?? null,
     spawnKey: bot.spawnKey ?? null,
     incomingCall,
   };

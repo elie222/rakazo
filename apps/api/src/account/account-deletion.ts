@@ -375,6 +375,7 @@ async function deleteClaimedSpaces(
       archivedAt: true,
       computerId: true,
       webhookSecretId: true,
+      webhookSigningSecretId: true,
     },
   });
   input.signal?.throwIfAborted();

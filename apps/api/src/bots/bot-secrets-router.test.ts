@@ -1008,6 +1008,110 @@ describe("vault router", () => {
     expect(secrets.load).not.toHaveBeenCalled();
   });
 
+  it("saves a sender's signing secret for the bot's creator only, and never returns it", async () => {
+    const { prisma, secrets, call } = botSecretDeps();
+    const bot = {
+      id: "bot-1",
+      userId: "user-1",
+      spaceId: "space-1",
+      archivedAt: null,
+      webhookSigningSecretId: "signing-old",
+      thread: null,
+      computer: null,
+    };
+    prisma.bot.findFirst.mockResolvedValue(bot as never);
+    // The secret replaced is the one the bot holds under its row lock, not the earlier read.
+    prisma.$queryRaw.mockResolvedValue([{ webhookSigningSecretId: "signing-current" }] as never);
+    const created: Row[] = [];
+    const deleted: Row[] = [];
+    const updates: Row[] = [];
+    Object.assign(prisma.secret, {
+      create: vi.fn(async (args: { data: Row }) => created.push(args.data)),
+      deleteMany: vi.fn(async (args: { where: Row }) => deleted.push(args.where)),
+    });
+    Object.assign(prisma.bot, {
+      update: vi.fn(async (args: { data: Row }) => updates.push(args.data)),
+    });
+    secrets.put.mockImplementation(async (plaintext: string) => {
+      expect(plaintext).toBe(FAKE_VALUE);
+      return { id: "signing-new", ref: "enc:signing-new", ciphertext: "enc:signing-new" };
+    });
+    const signature = {
+      scheme: "hmac",
+      header: "X-Signature",
+      algorithm: "sha256",
+      encoding: "hex",
+      prefix: "sha256=",
+    };
+    events.record.mockClear();
+
+    const saved = await call("bots/setWebhookSignature", {
+      botId: "bot-1",
+      signature,
+      secret: FAKE_VALUE,
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.text).not.toContain(FAKE_VALUE);
+    expect(saved.body.json).toEqual({
+      webhookSignature: { ...signature, header: "x-signature" },
+    });
+    expect(created).toEqual([
+      expect.objectContaining({
+        id: "signing-new",
+        kind: "webhook_signing",
+        ciphertext: "enc:signing-new",
+        userId: "user-1",
+        spaceId: "space-1",
+      }),
+    ]);
+    expect(updates).toEqual([
+      {
+        webhookSigningSecretId: "signing-new",
+        webhookSignature: { ...signature, header: "x-signature" },
+      },
+    ]);
+    // The secret it replaces goes in the same transaction.
+    expect(deleted).toEqual([
+      { id: "signing-current", spaceId: "space-1", userId: "user-1", kind: "webhook_signing" },
+    ]);
+    expect(events.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "credential.changed",
+        metadata: expect.objectContaining({ kind: "webhook_signing", scheme: "hmac" }),
+      }),
+    );
+    expect(JSON.stringify(events.record.mock.calls)).not.toContain(FAKE_VALUE);
+
+    // A Standard Webhooks secret must be base64, so a pasted value of the wrong kind is caught.
+    secrets.put.mockClear();
+    const invalid = await call("bots/setWebhookSignature", {
+      botId: "bot-1",
+      signature: { scheme: "standard-webhooks" },
+      secret: "whsec_not base64!",
+    });
+    expect(invalid.status).toBe(400);
+    expect(secrets.put).not.toHaveBeenCalled();
+
+    const cleared = await call("bots/clearWebhookSignature", { botId: "bot-1" });
+    expect(cleared.body.json).toEqual({ ok: true });
+    expect(updates.at(-1)).toEqual({
+      webhookSigningSecretId: null,
+      webhookSignature: expect.anything(),
+    });
+    expect(deleted.at(-1)).toEqual(expect.objectContaining({ id: "signing-current" }));
+
+    // Another member of the Space can neither set nor clear it.
+    prisma.bot.findFirst.mockResolvedValue({ ...bot, userId: "user-2" } as never);
+    for (const [path, input] of [
+      ["bots/setWebhookSignature", { botId: "bot-1", signature, secret: FAKE_VALUE }],
+      ["bots/clearWebhookSignature", { botId: "bot-1" }],
+    ] as const) {
+      const forbidden = await call(path, input);
+      expect(forbidden.status).toBe(403);
+    }
+    expect(secrets.put).not.toHaveBeenCalled();
+  });
+
   it("saves an older app's username and password as fields and reveals them", async () => {
     const { auth, call } = botSecretDeps();
     auth.hasRecentIdentityConfirmation.mockResolvedValue(true);

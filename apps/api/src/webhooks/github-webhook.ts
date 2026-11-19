@@ -184,6 +184,9 @@ export function mountGithubWebhookRoute(
       throw error;
     }
     if (!target) return unauthorized();
+    if (!target.expected) {
+      return target.unavailable ? c.json({ error: "Service unavailable" }, 503) : unauthorized();
+    }
     if (!hasValidGithubSignature(c.req.header("x-hub-signature-256"), target.expected, raw)) {
       return unauthorized();
     }

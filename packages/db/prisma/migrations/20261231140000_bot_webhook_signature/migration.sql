@@ -1,0 +1,2 @@
+ALTER TABLE "bots" ADD COLUMN IF NOT EXISTS "webhookSigningSecretId" TEXT;
+ALTER TABLE "bots" ADD COLUMN IF NOT EXISTS "webhookSignature" JSONB;

@@ -12,6 +12,7 @@ import {
   WEBHOOK_MAX_BODY_BYTES,
   webhookDeliveryResponse,
 } from "./webhook-inbound.js";
+import { verifyWebhookSignature } from "./webhook-signature.js";
 
 export {
   formatUntrustedDeliveryPayload,
@@ -25,6 +26,7 @@ export {
 export {
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
+  WEBHOOK_SIGNING_SECRET_KIND,
   type WebhookDeps,
   type WebhookEvents,
   type WebhookTarget,
@@ -52,9 +54,22 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       throw error;
     }
 
-    // Same 401 for missing bot, missing secret, and bad bearer so bot ids are not enumerable.
-    if (!target || !hasValidBearerToken(c.req.header("authorization"), target.expected)) {
-      return unauthorized();
+    // Same 401 for missing bot, missing secret, and bad credentials so bot ids are not enumerable.
+    if (!target) return unauthorized();
+    const bearer =
+      target.expected !== null &&
+      hasValidBearerToken(c.req.header("authorization"), target.expected);
+    const signed =
+      !bearer && target.signing
+        ? verifyWebhookSignature(
+            target.signing.signature,
+            target.signing.secret,
+            (name) => c.req.header(name),
+            raw,
+          )
+        : null;
+    if (!bearer && !signed) {
+      return target.unavailable ? c.json({ error: "Service unavailable" }, 503) : unauthorized();
     }
 
     const webhookRoutines = await deps.prisma.routine.findMany({
@@ -84,14 +99,18 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
     const payload = parseWebhookPayload(raw, c.req.header("content-type"));
     const eventPrompt = formatWebhookPrompt(payload);
 
-    // A payload id often names the resource, not the delivery, so only byte-identical retries collapse.
-    const idempotencyKey =
-      c.req.header("idempotency-key")?.trim() ||
-      c.req.header("x-idempotency-key")?.trim() ||
-      c.req.header("webhook-id")?.trim() ||
-      c.req.header("svix-id")?.trim() ||
-      (typeof payload.id === "string" || typeof payload.event_id === "string" ? raw : "") ||
-      undefined;
+    // A signed delivery keys on what its signature covers, so a replay under a new id header
+    // still collapses; the prefix keeps an empty signed body from falling back to those headers.
+    // Otherwise a payload id often names the resource, not the delivery, so only byte-identical
+    // retries collapse.
+    const idempotencyKey = signed
+      ? `signed:${signed.deliveryId}`
+      : c.req.header("idempotency-key")?.trim() ||
+        c.req.header("x-idempotency-key")?.trim() ||
+        c.req.header("webhook-id")?.trim() ||
+        c.req.header("svix-id")?.trim() ||
+        (typeof payload.id === "string" || typeof payload.event_id === "string" ? raw : "") ||
+        undefined;
 
     return webhookDeliveryResponse(
       c,

@@ -7,7 +7,8 @@ import {
   isPermanentDecryptFailure,
   wakeRun,
 } from "@rakazo/adapters";
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageBlock, WebhookSignature } from "@rakazo/contracts";
+import { WebhookSignatureSchema } from "@rakazo/contracts";
 import { inboundRoutineBlock } from "@rakazo/core";
 import type { PrismaClient, SendUserMessageInput } from "@rakazo/db";
 import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
@@ -15,6 +16,7 @@ import type { Context } from "hono";
 
 export const WEBHOOK_MAX_BODY_BYTES = 64 * 1024;
 export const WEBHOOK_SECRET_KIND = "webhook";
+export const WEBHOOK_SIGNING_SECRET_KIND = "webhook_signing";
 
 export type WebhookEvents = {
   sendUserMessage(input: {
@@ -47,10 +49,14 @@ export type WebhookTarget = {
     id: string;
     spaceId: string;
     userId: string;
-    webhookSecretId: string;
   };
   threadId: string;
-  expected: string;
+  /** The bot's own key: a bearer token on the webhook, the HMAC secret on the GitHub route. */
+  expected: string | null;
+  /** A secret the sender generated, and how the sender signs with it. */
+  signing: { signature: WebhookSignature; secret: string } | null;
+  /** A credential whose secret store did not answer; a delivery nothing else accepts gets 503. */
+  unavailable: boolean;
 };
 
 export type InboundTarget = {
@@ -89,7 +95,10 @@ type WebhookSecretCacheEntry = {
   expires: number;
 };
 
-/** Webhook secrets by bot id; the decrypt promise is shared so concurrent misses decrypt once. */
+/**
+ * Webhook secrets by bot id, and signing secrets by `signingCacheKey`; the decrypt promise is
+ * shared so concurrent misses decrypt once.
+ */
 export type WebhookSecretCache = Map<string, WebhookSecretCacheEntry>;
 
 const subscribedWebhookCaches = new WeakMap<SecretStore, WeakSet<WebhookSecretCache>>();
@@ -106,14 +115,23 @@ function subscribeWebhookCache(secrets: SecretStore, cache: WebhookSecretCache):
   });
 }
 
+function signingCacheKey(botId: string): string {
+  return `${botId}:signing`;
+}
+
+function forgetWebhookSecrets(cache: WebhookSecretCache, botId: string) {
+  cache.delete(botId);
+  cache.delete(signingCacheKey(botId));
+}
+
 function touchWebhookSecret(
   cache: WebhookSecretCache,
-  botId: string,
+  key: string,
   entry: WebhookSecretCacheEntry,
 ) {
   // Re-insert so the least recently delivered bot is evicted first.
-  cache.delete(botId);
-  cache.set(botId, entry);
+  cache.delete(key);
+  cache.set(key, entry);
   if (cache.size <= WEBHOOK_SECRET_CACHE_MAX) return;
   const oldest = cache.keys().next().value;
   if (oldest !== undefined) cache.delete(oldest);
@@ -122,7 +140,7 @@ function touchWebhookSecret(
 function decryptWebhookSecret(
   secrets: WebhookDeps["secrets"],
   cache: WebhookSecretCache,
-  botId: string,
+  key: string,
   secret: { id: string; ciphertext: string },
 ): WebhookSecretCacheEntry {
   const entry: WebhookSecretCacheEntry = {
@@ -135,32 +153,61 @@ function decryptWebhookSecret(
     // Auth and malformed ciphertext stay unusable. Anything else can clear, so retry it.
     if (
       (error instanceof SecretStoreUnavailableError || !isPermanentDecryptFailure(error)) &&
-      cache.get(botId) === entry
+      cache.get(key) === entry
     )
-      cache.delete(botId);
+      cache.delete(key);
     if (error instanceof SecretStoreUnavailableError) throw error;
     return null;
   });
   return entry;
 }
 
-// One decrypt per bot; v2 scrypt runs off the event loop.
+// One decrypt per secret; v2 scrypt runs off the event loop.
 function loadWebhookSecret(
   secrets: WebhookDeps["secrets"],
   cache: WebhookSecretCache,
-  botId: string,
+  key: string,
   secret: { id: string; ciphertext: string },
 ): Promise<string | null> {
   subscribeWebhookCache(secrets, cache);
-  const cached = cache.get(botId);
+  const cached = cache.get(key);
   const entry =
     cached?.secretId === secret.id &&
     cached.ciphertext === secret.ciphertext &&
     cached.expires > Date.now()
       ? cached
-      : decryptWebhookSecret(secrets, cache, botId, secret);
-  touchWebhookSecret(cache, botId, entry);
+      : decryptWebhookSecret(secrets, cache, key, secret);
+  touchWebhookSecret(cache, key, entry);
   return entry.plaintext;
+}
+
+/** The bot's secret of this kind, or null when it is unset, not the bot's own, or unreadable. */
+async function loadBotWebhookSecret(
+  deps: Pick<WebhookDeps, "prisma" | "secrets">,
+  cache: WebhookSecretCache,
+  key: string,
+  bot: { userId: string; spaceId: string },
+  secretId: string | null,
+  kind: string,
+): Promise<string | null> {
+  if (!secretId) {
+    cache.delete(key);
+    return null;
+  }
+  const secret = await deps.prisma.secret.findUnique({
+    where: { id: secretId },
+    select: { id: true, ciphertext: true, kind: true, userId: true, spaceId: true },
+  });
+  if (
+    !secret ||
+    secret.kind !== kind ||
+    secret.userId !== bot.userId ||
+    secret.spaceId !== bot.spaceId
+  ) {
+    cache.delete(key);
+    return null;
+  }
+  return loadWebhookSecret(deps.secrets, cache, key, secret);
 }
 
 export async function loadWebhookTarget(
@@ -175,53 +222,80 @@ export async function loadWebhookTarget(
       spaceId: true,
       userId: true,
       webhookSecretId: true,
+      webhookSigningSecretId: true,
+      webhookSignature: true,
       thread: { select: { id: true } },
     },
   });
+  const signature = WebhookSignatureSchema.safeParse(bot?.webhookSignature).data ?? null;
+  const signingSecretId = (signature && bot?.webhookSigningSecretId) || null;
 
   // A deactivated owner's bot takes no deliveries; callers see the usual unauthorized reply.
-  if (!bot?.thread || !bot.webhookSecretId || (await accountDeactivated(deps.prisma, bot.userId))) {
-    cache.delete(botId);
-    return null;
-  }
-
-  const secret = await deps.prisma.secret.findUnique({
-    where: { id: bot.webhookSecretId },
-    select: { id: true, ciphertext: true, kind: true, userId: true, spaceId: true },
-  });
   if (
-    !secret ||
-    secret.kind !== WEBHOOK_SECRET_KIND ||
-    secret.userId !== bot.userId ||
-    secret.spaceId !== bot.spaceId
+    !bot?.thread ||
+    (!bot.webhookSecretId && !signingSecretId) ||
+    (await accountDeactivated(deps.prisma, bot.userId))
   ) {
-    cache.delete(botId);
+    forgetWebhookSecrets(cache, botId);
     return null;
   }
 
-  const expected = await loadWebhookSecret(deps.secrets, cache, botId, secret);
-  if (expected === null) return null;
+  // An outage loading one credential must not block deliveries the other one accepts.
+  const loaded = await Promise.allSettled([
+    loadBotWebhookSecret(deps, cache, botId, bot, bot.webhookSecretId, WEBHOOK_SECRET_KIND),
+    loadBotWebhookSecret(
+      deps,
+      cache,
+      signingCacheKey(botId),
+      bot,
+      signingSecretId,
+      WEBHOOK_SIGNING_SECRET_KIND,
+    ),
+  ]);
+  for (const result of loaded) {
+    if (result.status === "rejected" && !(result.reason instanceof SecretStoreUnavailableError))
+      throw result.reason;
+  }
+  const [expected, signingSecret] = loaded.map((result) =>
+    result.status === "fulfilled" ? result.value : null,
+  );
+  if (expected == null && signingSecret == null && loaded.every((r) => r.status === "fulfilled"))
+    return null;
 
   const current = await deps.prisma.bot.findUnique({
     where: { id: botId, archivedAt: null },
-    select: { webhookSecretId: true },
+    select: { webhookSecretId: true, webhookSigningSecretId: true },
   });
-  // Rotation can commit during decrypt; the row read above may already be revoked.
-  if (current?.webhookSecretId !== secret.id) {
-    const cached = cache.get(botId);
-    if (cached?.secretId === secret.id) cache.delete(botId);
-    return null;
-  }
+  // Rotation can commit during decrypt, so a credential read above may already be revoked. Only
+  // that credential is dropped: a delivery the other one accepts still runs.
+  const revoked = (key: string, read: string | null, now: string | null | undefined) => {
+    if (read === (now ?? null)) return false;
+    if (read && cache.get(key)?.secretId === read) cache.delete(key);
+    return true;
+  };
+  const ownRevoked = revoked(botId, bot.webhookSecretId, current?.webhookSecretId);
+  const signingRevoked = revoked(
+    signingCacheKey(botId),
+    bot.webhookSigningSecretId,
+    current?.webhookSigningSecretId,
+  );
+  const [own, signing] = loaded;
+  const target = {
+    expected: ownRevoked ? null : (expected ?? null),
+    signing:
+      !signingRevoked && signature && signingSecret != null
+        ? { signature, secret: signingSecret }
+        : null,
+    unavailable:
+      (!ownRevoked && own.status === "rejected") ||
+      (!signingRevoked && signing.status === "rejected"),
+  };
+  if (target.expected === null && target.signing === null && !target.unavailable) return null;
 
   return {
-    bot: {
-      id: bot.id,
-      spaceId: bot.spaceId,
-      userId: bot.userId,
-      webhookSecretId: bot.webhookSecretId,
-    },
+    bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId },
     threadId: bot.thread.id,
-    expected,
+    ...target,
   };
 }
 
