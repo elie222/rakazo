@@ -601,8 +601,12 @@ export async function provisionComputer(
       !replacement &&
       !sizeChanged;
     const runningSince = continued ? existing.runningSince! : new Date();
+    // A sized provider may be unable to report the machine's size. Start at Standard in that
+    // case. A later confirmation of a different size starts a usage stretch at that rate.
+    const usageSize =
+      ref.size ?? (sandboxKindCapabilities(ref.kind).sizedUsage ? "standard" : null);
     const sizing =
-      !continued && ref.size ? { runningSize: ref.size, runningSizeSince: runningSince } : {};
+      !continued && usageSize ? { runningSize: usageSize, runningSizeSince: runningSince } : {};
     // One write stores the machine and leaves "booting", and the same transaction drops the
     // record that would delete the machine later: from here the computer answers for it.
     const activated = await deps.prisma.$transaction(async (tx) => {
