@@ -74,6 +74,7 @@ export function ModelRoleSettings({
   modelRole: role,
   credentials,
   title,
+  hideHeading,
   defaultLabel,
   providers,
   openPicker,
@@ -90,6 +91,7 @@ export function ModelRoleSettings({
   modelRole: ModelRole;
   credentials: ModelCredential[];
   title: string;
+  hideHeading?: boolean;
   /** What runs when the first slot is empty. */
   defaultLabel: string;
   /** Providers without a connection, offered at the end of the picker. */
@@ -158,6 +160,7 @@ export function ModelRoleSettings({
   /** The row's own connection, or the provider's newest for rows that name none. */
   const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
   const connectionName = (choice: ModelRoleChoice) => {
+    if (choice.creditOfferingId) return t`Rakazo credits`;
     const connection = choice.credentialId ? connectionFor(choice) : undefined;
     return connection
       ? connectionDisplayName(connection, providerName(choice))
@@ -240,13 +243,15 @@ export function ModelRoleSettings({
         : undefined;
     // A row that names no connection runs on its provider's, so its model is taken too.
     const taken = new Set(
-      rows.map((row) => (row.credentialId ? modelRoleChoiceKey(row) : backupChoiceKey(row))),
+      rows.map((row) =>
+        row.credentialId || row.creditOfferingId ? modelRoleChoiceKey(row) : backupChoiceKey(row),
+      ),
     );
     const offerDefault = primarySlot && role !== "main" && !narrowed && deployment !== null;
     // A row that names no connection is checked on its provider's first connection.
     const currentKey = current
       ? modelRoleChoiceKey(
-          current.credentialId
+          current.credentialId || current.creditOfferingId
             ? current
             : (pool.find((option) => backupChoiceKey(option) === backupChoiceKey(current)) ??
                 current),
@@ -274,9 +279,12 @@ export function ModelRoleSettings({
           )
           .map((option) => ({
             key: modelRoleChoiceKey(option),
-            label: withConnectionName(option.label, option.connectionName),
+            label: withConnectionName(
+              option.label,
+              option.creditOfferingId ? t`Rakazo credits` : option.connectionName,
+            ),
             modelLabel: option.label,
-            providerLabel: option.connectionName,
+            providerLabel: option.creditOfferingId ? t`Rakazo credits` : option.connectionName,
             provider: option.provider,
             modelId: option.modelId,
           })),
@@ -317,6 +325,7 @@ export function ModelRoleSettings({
         const picked: ModelRoleChoice = {
           provider: option.provider,
           modelId: option.modelId,
+          ...(option.creditOfferingId ? { creditOfferingId: option.creditOfferingId } : {}),
           ...(option.credentialId ? { credentialId: option.credentialId } : {}),
         };
         if (!current || !sameChoice(current, picked)) void fill(slot, picked);
@@ -361,7 +370,7 @@ export function ModelRoleSettings({
     </Text>
   );
   return (
-    <SettingsGroup accessibilityLabel={title} label={title}>
+    <SettingsGroup accessibilityLabel={title} label={hideHeading ? undefined : title}>
       {primary || !settings ? null : (
         <SettingsRow
           key="empty"
@@ -441,7 +450,7 @@ export function ModelRoleSettings({
           </View>
         );
       })}
-      {settings && backups.length < MAX_MODEL_BACKUPS ? (
+      {(primary || deployment) && backups.length < MAX_MODEL_BACKUPS ? (
         <SettingsRow
           key="add"
           title={t`Add fallback`}

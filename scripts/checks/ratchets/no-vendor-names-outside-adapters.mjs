@@ -102,10 +102,11 @@ const VENDORS = [
   "elevenlabs",
   "cartesia",
   "fish[-_ ]?audio",
-  // Infrastructure: secrets, payments, monitoring, web search, and the SDKs computer providers
-  // are reached through
+  // Infrastructure: secrets, payments, partner programs, monitoring, web search, and the SDKs
+  // computer providers are reached through
   "infisical",
   "stripe",
+  "dub",
   "sentry",
   "axiom(?:hq)?",
   "alicloud",

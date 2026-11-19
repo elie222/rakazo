@@ -21,7 +21,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { recordSecurityEvent, runAsSystem } from "@rakazo/db";
 import type { Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
-import { lockOwner } from "../spaces/availability.js";
+import { lockOwner } from "../spaces/name-claims.js";
 
 const FORWARD_BODY_MAX_BYTES = 13 * 1024 * 1024;
 

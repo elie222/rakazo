@@ -18,7 +18,7 @@ import type { RpcClient } from "../../lib/query/rpc";
 import { rpc as selectedSpaceRpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
 import { BuiCard } from "../ai/primitives";
-import { OptionRow, optionLetter } from "../settings/OptionRow";
+import { OptionRow, optionLetter } from "./OptionRow";
 import { SecretAskCard } from "./SecretAskCard";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
@@ -329,16 +329,18 @@ function PromptAskCard({
             "cancelled" ? null : (
             <Check aria-hidden className="size-4" />
           )}
-          {block.instructionUpdate
-            ? displayedAnswer === "deny"
-              ? t`Dismissed`
-              : t`Allowed once`
-            : formatAnsweredState(
-                displayedAnswer,
-                Boolean(approvalActions),
-                approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
-                askActions,
-              )}
+          {block.expired
+            ? t`Expired`
+            : block.instructionUpdate
+              ? displayedAnswer === "deny"
+                ? t`Dismissed`
+                : t`Allowed once`
+              : formatAnsweredState(
+                  displayedAnswer,
+                  Boolean(approvalActions),
+                  approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
+                  askActions,
+                )}
         </div>
       ) : !canAnswer ? (
         <div className="mt-3.5 text-body font-medium text-muted-foreground">

@@ -1,5 +1,5 @@
 import type { RunActivityRow } from "@rakazo/contracts";
-import { chatSnoozed } from "../messaging/chat-snooze.js";
+import { chatSnoozed } from "../threads/chat-snooze.js";
 import { isRunWaitingOnUser, isRunWorking } from "./run-state.js";
 import { isAgedStuckWork } from "./stuck-work.js";
 

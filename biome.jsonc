@@ -37,7 +37,7 @@
         "!**/*.test.tsx",
         "!**/packages/ui-web/src/bot-avatar.tsx",
         "!**/apps/mobile/components/bots/bot-avatar.tsx",
-        "!**/apps/web/src/pages/WindowChrome.tsx"
+        "!**/apps/web/src/components/WindowChrome.tsx"
       ]
     },
     {
@@ -187,7 +187,7 @@
         "packages/logging/src/sentry.ts",
         "packages/logging/src/sentry.test.ts",
         "packages/logging/src/axiom-sink.ts",
-        "packages/testkit/src/cli/ios-screenshot-publish.ts"
+        "packages/testkit/src/screenshots/ios-screenshot-publish.ts"
       ],
       "linter": {
         "rules": {

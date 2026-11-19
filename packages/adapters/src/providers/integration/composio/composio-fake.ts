@@ -7,7 +7,7 @@ import type {
   ToolRouterCreateSessionConfig,
   ToolRouterToolkitsOptions,
 } from "@composio/core";
-import { collectPages } from "../../../connectors/connector-catalog.js";
+import { collectPages } from "../../../integrations/connector-catalog.js";
 import type { EmulatedGithubRelease } from "../../../routines/release-watch.js";
 import {
   DEFAULT_RAKAZO_EMULATED_RELEASES,

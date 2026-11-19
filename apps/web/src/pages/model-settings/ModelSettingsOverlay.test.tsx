@@ -607,7 +607,7 @@ it("leaves the key field empty until a key is saved", async () => {
   }
 });
 
-it("labels the empty main slot by what runs there", async () => {
+it("shows just the connection action when no model is available", async () => {
   vi.mocked(rpc.me).mockResolvedValue({
     ...account("deepseek", "deepseek-chat"),
     needsModel: true,
@@ -615,8 +615,11 @@ it("labels the empty main slot by what runs there", async () => {
   const view = await renderSettings();
   try {
     expect(section("main").querySelector('[data-testid="model-role-default"]')?.textContent).toBe(
-      "Choose a model",
+      "Connect a model",
     );
+    expect(view.container.querySelector('[data-testid="model-role-approval"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="model-role-computer"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="model-providers"]')).toBeNull();
   } finally {
     await view.unmount();
   }
@@ -778,7 +781,7 @@ it("connects the main model from the empty default row as the space default", as
   });
   const view = await renderSettings();
   try {
-    await pick("Change Main model", "DeepSeek");
+    await pick("Connect a model", "DeepSeek");
     expect(titles(view.container)).toEqual(["Connect DeepSeek"]);
     await typeInto(keyField(view.container), "sk-fixture-deepseek");
     const loads = models.role.mock.calls.length;
@@ -1428,7 +1431,7 @@ it("keeps the Ollama preset to connect beside a saved local connection", async (
   ]);
   const view = await renderSettings(false);
   try {
-    await openPicker("Add fallback");
+    await openPicker("Change Main model");
     expect(pickerOptions()).toEqual(["fixture-model", "Ollama Cloud"]);
     await choose("Ollama Cloud");
     expect(baseUrlField(view.container).value).toBe("https://ollama.com/v1");

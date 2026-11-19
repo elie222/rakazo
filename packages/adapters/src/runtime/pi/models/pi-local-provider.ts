@@ -5,7 +5,7 @@ import type { Dispatcher } from "undici";
 import { Agent, EnvHttpProxyAgent } from "undici";
 import { pacerTokensPerMinute } from "../../../models/endpoints/token-pacer.js";
 import { declaredVisionModelIds, inputModalities } from "../../../models/model-modalities.js";
-import { fetchPairedWithDispatcher } from "../../../web/undici-fetch.js";
+import { fetchPairedWithDispatcher } from "../../../network/undici-fetch.js";
 import { MODEL_STREAM_AGENT_TIMEOUTS } from "../pi-runtime-limits.js";
 import { splitLeadingThinkBlock } from "../stream/pi-think-tags.js";
 import { LOCAL_PROVIDER_ID, localModelIds, localModelsApiKey } from "./pi-local-provider-id.js";

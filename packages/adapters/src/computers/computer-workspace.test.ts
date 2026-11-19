@@ -14,8 +14,13 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { CommandRequest, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
-import { SandboxDamagedError } from "@rakazo/adapter-kit";
+import type {
+  CommandRequest,
+  ComputerRef,
+  SandboxProvider,
+  WorkspaceExportLimits,
+} from "@rakazo/adapter-kit";
+import { SandboxDamagedError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import * as Logging from "@rakazo/logging";
@@ -81,6 +86,30 @@ describe("provider-neutral computer workspace", () => {
 
   it("limits saves to 5 GiB and one million files", () => {
     expect(WORKSPACE_SAVE_LIMITS).toEqual({ maxBytes: 5 * 1024 ** 3, maxFiles: 1_000_000 });
+  });
+
+  it("saves with the limits its home store was configured with", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-workspace-configured-"));
+    roots.push(root);
+    const provider = new FakeSandboxProvider();
+    const computer = await provider.provision(
+      { botId: "configured", homePath: "/ignored" },
+      context,
+    );
+    for (const name of ["a.txt", "b.txt"]) {
+      await provider.writeFile(computer, { path: name, content: Buffer.from("ok") }, context);
+    }
+    const original = provider.exportWorkspace.bind(provider);
+    let seen: WorkspaceExportLimits | undefined;
+    provider.exportWorkspace = (ref, ctx, limits?: WorkspaceExportLimits) => {
+      seen = limits;
+      return original(ref, ctx);
+    };
+    const home = new LocalAgentHomeStore(root, { maxBytes: 20 * 1024 ** 3, maxFiles: 1 });
+    await expect(
+      checkpointComputerWorkspace(home, provider, "configured", computer, context),
+    ).rejects.toEqual(new WorkspaceTooLargeError("files"));
+    expect(seen?.maxFiles).toBe(1);
   });
 
   it("skips dependencies and caches before counting a remote export", async () => {

@@ -21,13 +21,13 @@ import { XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { ArtifactFileCard } from "../../components/messages/ArtifactFileCard";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
+import { WindowChrome } from "../../components/WindowChrome";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/chat/transcript-layout";
 import { transcriptIsNearEnd } from "../../lib/chat/transcript-scroll";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { useSpaceQueries } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { ArtifactImage, ChartBlockView } from "../shell/chat/message-cards";
-import { WindowChrome } from "../WindowChrome";
 
 /**
  * Full-screen view-only transcript of a bot-to-bot exchange.

@@ -676,6 +676,11 @@ function connectTargetPort(args: unknown[]): number | undefined {
 }
 
 describe("outbound proxy", () => {
+  /**
+   * A CONNECT proxy in front of a plain HTTP target. An HTTPS tunnel is recorded and answered
+   * with 502: these tests establish where the proxy was asked to connect, so the tunnel's TLS
+   * handshake is not part of the assertion.
+   */
   async function withConnectProxy(
     run: (proxy: { proxied: string[]; hosts: string[]; connectHosts: string[] }) => Promise<void>,
   ): Promise<void> {
@@ -690,12 +695,17 @@ describe("outbound proxy", () => {
       proxied.push(request.url ?? "");
       response.writeHead(405).end();
     });
-    proxy.on("connect", (request, client) => {
+    proxy.on("connect", (request, client, head) => {
       proxied.push(request.url ?? "");
       connectHosts.push(request.headers.host ?? "");
+      if (request.url?.endsWith(":443")) {
+        client.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+        return;
+      }
       const upstream = new Socket();
       upstream.connect((target.address() as AddressInfo).port, "127.0.0.1", () => {
         client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        if (head.length > 0) upstream.write(head);
         upstream.pipe(client).pipe(upstream);
       });
     });
@@ -707,6 +717,8 @@ describe("outbound proxy", () => {
     const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
     vi.stubEnv("HTTP_PROXY", proxyUrl);
     vi.stubEnv("http_proxy", proxyUrl);
+    vi.stubEnv("HTTPS_PROXY", proxyUrl);
+    vi.stubEnv("https_proxy", proxyUrl);
     vi.stubEnv("NO_PROXY", "");
     vi.stubEnv("no_proxy", "");
     try {
@@ -744,6 +756,112 @@ describe("outbound proxy", () => {
       ).rejects.toThrow();
       expect(proxied).toEqual([]);
     });
+  });
+
+  it("keeps the checked-address tunnel for HTTPS when no hostname list is set", async () => {
+    await withConnectProxy(async ({ proxied, connectHosts, hosts }) => {
+      await expect(
+        fetchSafeWebText("https://example.test/page", { resolveHostname: publicResolver }),
+      ).rejects.toThrow();
+      expect(proxied).toEqual(["203.0.113.10:443"]);
+      expect(connectHosts).toEqual(["203.0.113.10:443"]);
+      expect(hosts).toEqual([]);
+    });
+  });
+
+  it("keeps the checked-address tunnel for an empty hostname list", async () => {
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS", "");
+    await withConnectProxy(async ({ proxied }) => {
+      await expect(
+        fetchSafeWebText("https://example.test/page", { resolveHostname: publicResolver }),
+      ).rejects.toThrow();
+      expect(proxied).toEqual(["203.0.113.10:443"]);
+    });
+  });
+
+  it("tunnels a listed HTTPS host by name and leaves an unlisted host pinned", async () => {
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS", "example.test, *.cdn.example.org");
+    await withConnectProxy(async ({ proxied, connectHosts }) => {
+      const fetchOne = (url: string) =>
+        fetchSafeWebText(url, { resolveHostname: publicResolver }).catch(() => undefined);
+
+      await fetchOne("https://example.test/page");
+      await fetchOne("https://files.cdn.example.org/page");
+      await fetchOne("https://other.example.org/page");
+
+      expect(proxied).toEqual([
+        "example.test:443",
+        "files.cdn.example.org:443",
+        "203.0.113.10:443",
+      ]);
+      expect(connectHosts).toEqual(proxied);
+    });
+  });
+
+  it("keeps a listed host pinned for plain HTTP", async () => {
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS", "example.test");
+    await withConnectProxy(async ({ proxied, connectHosts, hosts }) => {
+      const response = await fetchSafeWebText("http://example.test/page", {
+        resolveHostname: publicResolver,
+      });
+
+      expect(response.body).toBe("ok");
+      expect(proxied).toEqual(["203.0.113.10:80"]);
+      expect(connectHosts).toEqual(["203.0.113.10:80"]);
+      expect(hosts).toEqual(["example.test"]);
+    });
+  });
+
+  it("keeps a listed host pinned while certificate verification is off", async () => {
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS", "example.test");
+    vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
+    await withConnectProxy(async ({ proxied }) => {
+      await expect(
+        fetchSafeWebText("https://example.test/page", { resolveHostname: publicResolver }),
+      ).rejects.toThrow();
+      expect(proxied).toEqual(["203.0.113.10:443"]);
+    });
+  });
+
+  it("does not tunnel a listed host that matches NO_PROXY", async () => {
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS", "example.test");
+    await withConnectProxy(async ({ proxied }) => {
+      vi.stubEnv("NO_PROXY", "example.test");
+      vi.stubEnv("no_proxy", "example.test");
+      await expect(
+        fetchSafeWebText("https://example.test/page", {
+          resolveHostname: publicResolver,
+          timeoutMs: 500,
+        }),
+      ).rejects.toThrow();
+      expect(proxied).toEqual([]);
+    });
+  });
+
+  it("refuses a listed host that resolves to a private address before the proxy is asked", async () => {
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS", "example.test");
+    await withConnectProxy(async ({ proxied }) => {
+      await expect(
+        fetchSafeWebText("https://example.test/page", {
+          resolveHostname: async () => [{ address: "10.1.2.3", family: 4 as const }],
+        }),
+      ).rejects.toThrow(/private address/i);
+      expect(proxied).toEqual([]);
+    });
+  });
+
+  it("refuses a hostname list that is a public suffix", async () => {
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS", "*.com");
+    await expect(
+      fetchSafeWebText("https://example.test/page", { resolveHostname: publicResolver }),
+    ).rejects.toThrow(/public suffix/);
+  });
+
+  it("refuses a bare wildcard in the hostname list", async () => {
+    vi.stubEnv("RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS", "*");
+    await expect(
+      fetchSafeWebText("https://example.test/page", { resolveHostname: publicResolver }),
+    ).rejects.toThrow(/rejects "\*"/);
   });
 
   it("refuses a SOCKS proxy, which would resolve the hostname itself", async () => {

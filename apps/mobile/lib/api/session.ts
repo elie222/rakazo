@@ -5,8 +5,8 @@ import {
   rotatedArtifactCacheToken,
 } from "../artifacts/artifact-cache-session";
 import { rememberSignedIn } from "../auth/returning-user";
+import { forgetReferrals } from "../billing/referral";
 import { stopLiveNotifications } from "../notifications/live-notifications";
-import { forgetReferrals } from "../spaces/referral";
 import { clearFailedSends } from "../thread/send/thread-feedback";
 import { clearNetworkCache } from "./network-cache";
 

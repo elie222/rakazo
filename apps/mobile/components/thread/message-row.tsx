@@ -30,10 +30,7 @@ import {
   buildMessageContextMenu,
   messageMenuReaction,
 } from "../../lib/messages/message-context-menu";
-import {
-  messageHasInlineControls,
-  quotableMessageSegments,
-} from "../../lib/messages/message-presentation";
+import { hasQuotableText, messageHasInlineControls } from "../../lib/messages/message-presentation";
 import { messageRowLayout } from "../../lib/messages/message-row-layout";
 import { selectableTextFromMarkdown } from "../../lib/messages/selectable-text";
 import type { UserBubble } from "../../lib/messages/user-bubble";
@@ -194,7 +191,7 @@ export const MessageRow = memo(function MessageRow({
     const includeQuote =
       !readOnly &&
       !message.id.startsWith("progress:") &&
-      quotableMessageSegments(message.role, message.blocks).length > 0;
+      hasQuotableText(message.role, message.blocks);
     const includeReact = !readOnly && canReactToThreadMessage(message);
     // The call already reads replies aloud; a second voice would talk over it.
     const includeSpeak = message.role === "bot" && !onCall && Boolean(blockText(message));

@@ -295,7 +295,7 @@ export async function openModelConnection(
 ) {
   const section = page.getByTestId(`model-role-${role}`);
   await (slot === "main"
-    ? section.getByRole("button", { name: /^Change / }).first()
+    ? section.getByRole("button", { name: /^(Change |Connect a model$)/ }).first()
     : section.getByRole("button", { name: "Add fallback", exact: true })
   ).click();
   await page.getByRole("combobox", { name: "Search models" }).fill(search);

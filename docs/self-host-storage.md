@@ -158,14 +158,21 @@ is stopped. Remote computers save straight from their files to the bucket; the w
 their copies after an hour unread. Homes never saved to the bucket keep their only copy.
 
 **Saving large homes.** A save streams files through `DATA_DIR/staging` on the data volume,
-so memory use does not grow with file or home size. A computer with more than 5 GiB or a
-million files, or more than the volume has free, is not saved and keeps running unsaved. A system
-note in each bot’s thread asks you to remove large or unneeded files. The worker also logs
-`computer.sleep_deferred` with reason `too_large` or `too_many_files`. Saves leave out rebuildable
-caches, dependencies (`node_modules` and `.venv`), build output (`.next` and `.turbo`), logs and
-core dump files. These files stay on the running computer but are absent on a fresh restore.
+so memory use does not grow with file or home size. A computer with more than 5 GiB (the
+default; see below) or a million files, or more than the volume has free, is not saved and keeps
+running unsaved. A system note in each bot’s thread asks you to remove large or unneeded files.
+The worker also logs `computer.sleep_deferred` with reason `too_large` or `too_many_files`. Saves
+leave out rebuildable caches, dependencies (`node_modules` and `.venv`), build output (`.next`
+and `.turbo`), logs and core dump files. These files stay on the running computer but are absent
+on a fresh restore.
 Docker, Kubernetes and Railway put tool caches under `/tmp/rakazo-cache`, outside the saved home.
 Staging left by a killed process is removed at startup and by the worker within minutes.
+
+`WORKSPACE_SAVE_MAX_GB` sets the size limit in GiB. It defaults to `5` and accepts a positive
+number up to `100`, such as `20` or `0.5`; `0`, negative, non-numeric and larger values stop the
+API and worker at start. 100 GiB is the most a saved home can be restored from. The file limit
+stays one million. Set it in `.env` for both the API and the worker, then restart them. The
+volume's free space still applies, so keep the data volume larger than the limit.
 
 ### Moving existing homes
 

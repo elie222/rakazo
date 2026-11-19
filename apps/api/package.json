@@ -4,7 +4,8 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    "./app": "./src/app.ts"
+    "./app": "./src/app.ts",
+    "./test-meeting-media": "./src/meetings/media/meeting-media.test-support.ts"
   },
   "scripts": {
     "dev": "node ../../scripts/dev-watch.mjs src/index.ts",

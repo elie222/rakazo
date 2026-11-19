@@ -1,6 +1,6 @@
 import { getLogger } from "@rakazo/logging";
 import type { FleetCardSummary } from "../approvals/approval-ask.js";
-import { redactConnectorPayload } from "../connectors/connector-safety.js";
+import { redactConnectorPayload } from "../integrations/connector-safety.js";
 import type { RunContext } from "../runs/assembly/run-context.js";
 import { cardName } from "../tools/fleet-tools.js";
 

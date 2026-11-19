@@ -148,8 +148,46 @@ describe("mobile speech", () => {
     );
   });
 
+  it.each([true, false])(
+    "asks before hosted read-aloud prepares or renders speech (allowed: %s)",
+    async (allowed) => {
+      const recipient = { key: "speech", name: "Speech", use: "voice", detail: "", allowed: false };
+      vi.mocked(promptAiConsent).mockResolvedValue(allowed);
+      vi.mocked(rpc).mockImplementation(async (proc) => {
+        if (proc === "aiConsent/status")
+          return {
+            scope: "account-space",
+            version: "2026-09-14",
+            recipients: [recipient],
+          } as never;
+        if (proc === "voice/prepare") expect(allowPromptedAiConsent).toHaveBeenCalled();
+        return { ready: true, utterances: ["Synthetic reply"] } as never;
+      });
+      vi.mocked(allowPromptedAiConsent).mockClear();
+      const reading = speakText("Synthetic reply", {
+        botId: "bot-1",
+        scope: "account",
+        callId: "fake-call",
+      });
+      if (allowed) {
+        await expect(reading).resolves.toBe(true);
+        expect(promptAiConsent).toHaveBeenCalled();
+        expect(allowPromptedAiConsent).toHaveBeenCalledWith(
+          expect.objectContaining({ settingsScope: "account", keys: [recipient.key] }),
+          expect.objectContaining({ apiBase: "https://support.example" }),
+        );
+        expect(fetch).toHaveBeenCalledOnce();
+      } else {
+        await expect(reading).rejects.toBeDefined();
+        expect(allowPromptedAiConsent).not.toHaveBeenCalled();
+        expect(vi.mocked(rpc).mock.calls.some(([proc]) => proc === "voice/prepare")).toBe(false);
+        expect(fetch).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("keeps every request on the server and space captured before preparation", async () => {
-    await expect(speakText("Read this", { botId: "bot-1" })).resolves.toBe(true);
+    await expect(speakText("Read this", { botId: "bot-1", callId: "call-1" })).resolves.toBe(true);
 
     const requestContext = {
       apiBase: "https://support.example",
@@ -169,6 +207,7 @@ describe("mobile speech", () => {
     for (const [url, init] of fetchMock.mock.calls) {
       expect(url).toBe("https://support.example/api/voice/speak");
       expect(init?.headers).toMatchObject(requestContext.headers);
+      expect(JSON.parse(init?.body as string)).toMatchObject({ callId: "call-1" });
     }
   });
 

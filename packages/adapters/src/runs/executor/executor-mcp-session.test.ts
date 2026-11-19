@@ -4,8 +4,8 @@ import type { AppendEventInput, Prisma } from "@rakazo/db";
 import { appendEventInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
-import type { RemoteConnectorDependencies } from "../../connectors/installed-connectors.js";
-import { InstalledConnectorProvider } from "../../connectors/installed-connectors.js";
+import type { RemoteConnectorDependencies } from "../../integrations/installed-connectors.js";
+import { InstalledConnectorProvider } from "../../integrations/installed-connectors.js";
 import { createRunExecutor } from "./executor.js";
 
 vi.mock("../../computers/computer-lifecycle.js", async (importOriginal) => ({

@@ -14,6 +14,7 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "../database/transaction-retry.js";
+import { HOLDS_CHAT } from "../runs/chat-holding-runs.js";
 import { appendEventInTransaction } from "./events.js";
 import { mayBeChannelMessage, readMessageBlocks, storedMessageBlocks } from "./message-blocks.js";
 import { createThreadMessageInTransaction } from "./messages.js";
@@ -284,6 +285,7 @@ export async function createPendingSteeringRun(
       threadId: input.threadId,
       botId: input.botId,
       status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
+      ...HOLDS_CHAT,
     },
     select: { id: true },
   });

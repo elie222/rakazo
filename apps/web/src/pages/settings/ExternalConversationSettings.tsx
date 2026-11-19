@@ -217,7 +217,8 @@ export function ExternalConversationSettings({
                             withRollupHours(current, sender, Number(event.target.value)),
                           )
                         }
-                        className="h-7 w-16 px-2 text-end"
+                        size="sm"
+                        className="w-16 px-2 text-end"
                       />
                       <Trans>hours</Trans>
                     </label>

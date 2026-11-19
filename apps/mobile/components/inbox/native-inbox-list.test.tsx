@@ -72,8 +72,13 @@ vi.mock("react-native", () => ({
     </div>
   ),
 }));
-vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
-vi.mock("../../lib/layout/floating-header", () => ({ useFloatingHeaderInset: () => 0 }));
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ bottom: 0, left: 0, right: 0 }),
+}));
+vi.mock("../../lib/layout/floating-header", () => ({
+  useFloatingHeaderInset: () => 0,
+  useTopBarInset: () => 0,
+}));
 vi.mock("../../lib/native/native", () => ({
   native: { page: "page" },
   useResolvedAppearance: () => "light",
@@ -124,6 +129,7 @@ function render(
     header?: ReactNode;
     signals?: Array<{ unread: number; attention: number }>;
     viewport?: { update: () => void; subscribe: () => () => void; has: (key: string) => boolean };
+    width?: number;
   } = {},
 ) {
   const root = createRoot(container);
@@ -139,6 +145,7 @@ function render(
         footer={<span data-footer />}
         gutters={{ left: 8, right: 8 }}
         column={{ left: 8, right: 8 }}
+        width={extra.width ?? 378}
         avatarViewport={
           (extra.viewport ?? {
             update: vi.fn(),
@@ -189,6 +196,28 @@ it("gives hosted content the row width the list measures", () => {
   act(() => root.unmount());
 });
 
+it("follows a resize once the measured spacer has scrolled out of view", () => {
+  const props = {
+    data: [{ key: "bot:1", swipe: true }],
+    keyExtractor: (item: Item) => item.key,
+    renderItem: ({ item }: { item: Item }) => <Row item={item} />,
+    isNativeRow: (item: Item) => item.swipe,
+    gutters: { left: 8, right: 8 },
+    column: { left: 8, right: 8 },
+    avatarViewport: { update: vi.fn(), subscribe: () => () => {}, has: () => false } as never,
+    onRefresh: async () => undefined,
+    signals: [],
+    showJumpPills: false,
+  };
+  const root = createRoot(container);
+  act(() => root.render(<NativeInboxList<Item> {...props} width={378} />));
+  act(() => swift.geometry.at(-1)?.({ width: 362 }));
+  // The divider is dragged wider while the spacer is off screen, so it reports nothing.
+  act(() => root.render(<NativeInboxList<Item> {...props} width={578} />));
+  expect(container.querySelector<HTMLElement>('[data-row="bot:1"]')?.dataset.width).toBe("562");
+  act(() => root.unmount());
+});
+
 it("shows the empty state only while there are no rows", () => {
   const root = render([], { empty: <span data-empty /> });
   expect(container.querySelector("[data-empty]")).not.toBeNull();
@@ -233,6 +262,7 @@ it("draws no rows until it knows a row's width, so none keeps a wrong first layo
         isNativeRow={(item) => item.swipe}
         gutters={{ left: 0, right: 0 }}
         column={{ left: 0, right: 0 }}
+        width={362}
         avatarViewport={{ update: vi.fn(), subscribe: () => () => {}, has: () => false } as never}
         onRefresh={async () => undefined}
         signals={[]}
@@ -272,6 +302,7 @@ it("keeps the same native list when the pills hide, as during a refresh", () => 
     isNativeRow: (item: Item) => item.swipe,
     gutters: { left: 0, right: 0 },
     column: { left: 0, right: 0 },
+    width: 362,
     avatarViewport: { update: vi.fn(), subscribe: () => () => {}, has: () => false } as never,
     onRefresh: async () => undefined,
     signals: [{ unread: 0, attention: 0 }],

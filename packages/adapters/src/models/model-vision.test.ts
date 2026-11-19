@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CLAUDE_CODE_PROVIDER_ID } from "../cli-models/claude-code/provider.js";
+import { CLAUDE_CODE_PROVIDER_ID } from "../providers/cli-model/claude-code/provider.js";
 import { listAvailablePiCatalog } from "../runtime/pi/models/pi-catalog-availability.js";
 import type { CodexCatalogSpaceAuth } from "../runtime/pi/models/pi-codex-catalog.js";
 import { applyCodexLiveCatalog, parseCodexCatalog } from "../runtime/pi/models/pi-codex-catalog.js";

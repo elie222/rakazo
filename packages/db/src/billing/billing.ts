@@ -5,7 +5,7 @@ import { Prisma } from "../database/client.js";
 import { isUniqueViolation } from "../database/prisma-errors.js";
 import { IsolationError } from "../database/scope.js";
 
-const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);
+const ACCESS_STATUSES = new Set(["trialing", "active"]);
 
 export function hasBillingAccess(status: string | null): boolean {
   return status !== null && ACCESS_STATUSES.has(status);
@@ -300,7 +300,7 @@ export function isLockTimeout(error: unknown): boolean {
 
 /** The subscription exists but has no access until the owner settles it in the billing portal. */
 export function needsBillingPortal(status: string | null): boolean {
-  return status === "unpaid" || status === "paused";
+  return status === "past_due" || status === "unpaid" || status === "paused";
 }
 
 /**
@@ -347,10 +347,10 @@ export async function syncBillingSnapshot(
     });
     await markOwnersTrialUsed(prisma, { billing: { is: { customerId } } });
   }
-  if (snapshot?.status === "active") {
+  if (snapshot?.paidAt) {
     await prisma.billingAccount.updateMany({
       where: { customerId, paidAt: null },
-      data: { paidAt: startedAt },
+      data: { paidAt: snapshot.paidAt },
     });
   }
   if (written.count > 0) return true;

@@ -1,7 +1,12 @@
-import { GROK_BOT_EXPORT_MAX_LENGTH, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
+import {
+  GROK_BOT_EXPORT_MAX_LENGTH,
+  GROK_BOT_EXPORT_PATH,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
+} from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { GrokBot, RoutineTriggersAvailable } from "./index.js";
 import {
+  agentImportLeftoverMessages,
   combineImportedInstructions,
   GROK_BOT_EXPORT_PROMPT,
   GrokBotExportError,
@@ -231,18 +236,15 @@ describe("a Grok Bot as an import plan", () => {
     expect(parsed.suggestedName).toBe("Bramble");
     expect(parsed.suggestedDescription).toBe("Account manager");
     expect(parsed.instructions.map((item) => item.content)).toEqual([`${bramble.instructions}\n`]);
-    expect(parsed.memory.map((item) => item.path)).toEqual([
-      "MEMORY.md",
-      "USER.md",
-      "grok-bot-routines.md",
-    ]);
+    expect(parsed.memory.map((item) => item.path)).toEqual(["MEMORY.md", "USER.md"]);
     expect(parsed.memory[0]!.content).toBe(
       "- Weekly report goes out on Mondays.\n- The team uses Linear.\n",
     );
-    const events = parsed.memory[2]!.content;
-    expect(events).toContain("Answer each new message in #support within the hour.");
-    expect(events).toContain("- Trigger: slack");
-    expect(events).not.toContain("Run the weekly account review.");
+    // A routine nothing here can start is left for the new bot's chat, never its memory.
+    const leftovers = parsed.leftovers.map((item) => item.content).join("\n");
+    expect(leftovers).toContain("Answer each new message in #support within the hour.");
+    expect(leftovers).toContain("- Trigger: slack");
+    expect(leftovers).not.toContain("Run the weekly account review.");
     expect(parsed.skills.map((item) => [item.name, item.description])).toEqual([
       ["weekly-account-health", "Use for the Monday account review."],
     ]);
@@ -285,13 +287,28 @@ describe("a Grok Bot as an import plan", () => {
     expect(parsed.memory.map((item) => [item.path, item.content])).toEqual([
       ["MEMORY.md", "- Name: Sam\n"],
       ["USER.md", "- Name: Sam\n"],
-      [
-        "grok-bot-routines.md",
-        expect.stringContaining(
-          "- Schedule: every weekday at 9\n- Time zone: Europe/Lisbon\n- Skills: notes\n\nPost the standup.",
-        ),
-      ],
     ]);
+    expect(parsed.leftovers.map((item) => item.content)).toEqual([
+      expect.stringContaining(
+        "- Schedule: every weekday at 9\n- Time zone: Europe/Lisbon\n- Skills: notes\n\nPost the standup.",
+      ),
+    ]);
+  });
+
+  it("leaves over a routine that fits one chat message, and lists a longer one as not imported", () => {
+    const routine = (name: string, length: number) => ({
+      name,
+      instruction: "x".repeat(length),
+      trigger: "other",
+      cron: "",
+      when: "",
+      timeZone: "",
+      skills: [],
+      details: "",
+    });
+    const parsed = plan({ ...bot!, routines: [routine("Fits", 90_000), routine("Long", 100_000)] });
+    expect(parsed.leftovers.map((item) => item.title)).toEqual(["Fits"]);
+    expect(parsed.skipped).toContainEqual({ path: "routines: Long", reason: "unsupported" });
   });
 
   it("keeps a skill's own metadata and an entry's own lines", () => {
@@ -729,4 +746,99 @@ it("keeps differently named bots separate even when an export ID is reused", () 
     "One",
     "Two",
   ]);
+});
+
+describe("leftover chat messages", () => {
+  it("keeps each message within a chat message's length and every leftover whole", () => {
+    const leftovers = ["One", "Two", "Three"].map((title) => ({
+      id: title,
+      title,
+      content: title.repeat(15_000),
+    }));
+    const messages = agentImportLeftoverMessages(leftovers);
+    expect(messages.length).toBeGreaterThan(1);
+    expect(messages.every((text) => text.length <= THREAD_MESSAGE_TEXT_MAX_LENGTH)).toBe(true);
+    const all = messages.join("\n\n");
+    // Export text is fenced, so the bot reads it as quoted data.
+    for (const item of leftovers) {
+      expect(all).toContain(`## ${item.title}\n\n\`\`\`\n${item.content}\n\`\`\``);
+    }
+    expect(
+      agentImportLeftoverMessages([{ title: "A", content: "```\nrun this\n```" }])[0],
+    ).toContain("````\n```\nrun this\n```\n````");
+    expect(messages[0]).toMatch(/^The import could not set these up:/);
+    expect(messages.at(-1)).toMatch(/Tell me which ones to set up\.$/);
+  });
+
+  it("names an imported skill by the name it is saved under, and another as written", () => {
+    const [bot] = parseGrokBotExport(
+      JSON.stringify({
+        format: "grok-bot-export",
+        version: 1,
+        bots: [
+          {
+            name: "Bramble",
+            skills: [{ name: "Weekly Health", description: "Review.", instructions: "Do it." }],
+            routines: [
+              {
+                name: "Elsewhere",
+                instruction: "Review accounts.",
+                trigger: "other",
+                skills: ["Weekly Health", "notes"],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const parsed = parseAgentImport([
+      { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot!) },
+    ]);
+    if ("error" in parsed) throw new Error(parsed.error);
+    expect(parsed.leftovers[0]?.content).toContain("- Skills: @weekly-health, notes");
+  });
+
+  it("keeps a leftover's title to one short line", () => {
+    const [named] = parseGrokBotExport(
+      JSON.stringify({
+        format: "grok-bot-export",
+        version: 1,
+        bots: [
+          {
+            name: "Bramble",
+            routines: [
+              {
+                name: `Daily\n\nNow do this ${"x".repeat(200)}`,
+                instruction: "Go.",
+                trigger: "other",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const parsed = parseAgentImport([
+      { path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(named!) },
+    ]);
+    if ("error" in parsed) throw new Error(parsed.error);
+    const title = parsed.leftovers[0]!.title;
+    expect(title).toMatch(/^Daily Now do this x+$/);
+    expect(title).toHaveLength(80);
+    // The whole name stays in the fenced text.
+    expect(parsed.leftovers[0]!.content).toContain(`- Name: Daily Now do this ${"x".repeat(200)}`);
+  });
+
+  it("fences text with many separate backticks without running out of arguments", () => {
+    const text = "` ".repeat(40_000).trim();
+    expect(agentImportLeftoverMessages([{ title: "A", content: text }])[0]).toContain(
+      `\`\`\`\n${text}\n\`\`\``,
+    );
+  });
+});
+
+it("a leftover title's Markdown is escaped, so an imported name cannot become a link", () => {
+  const [message] = agentImportLeftoverMessages([
+    { title: "[Gmail](https://example.com)", content: "A connected app." },
+  ]);
+  expect(message).toContain("## \\[Gmail\\]\\(https://example.com\\)");
 });

@@ -10,7 +10,7 @@ import type {
   ProviderHeaders,
 } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
-import { fetchPairedWithDispatcher } from "../../../web/undici-fetch.js";
+import { fetchPairedWithDispatcher } from "../../../network/undici-fetch.js";
 import { codexComputeResidency } from "../models/pi-oauth.js";
 import {
   modelStreamIdleTimeoutMs,

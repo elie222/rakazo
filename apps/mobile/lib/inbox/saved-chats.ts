@@ -184,6 +184,15 @@ export function writeSavedInbox(
   } catch {}
 }
 
+/** Each Space's scope the last read found, so a chat opened later can show its copy at once. */
+const knownScopes = new Map<string, SavedChatsScope>();
+
+/** The saved-chat scope of the selected Space, when one was read in this session already. */
+export function currentSavedChatsScope(): SavedChatsScope | null {
+  const scope = knownScopes.get(selectedSpaceId() ?? "");
+  return scope && isIntegrationsScopeCurrent(scope) ? scope : null;
+}
+
 export async function savedChatsScope(): Promise<SavedChatsScope | null> {
   clearLegacySavedChats();
   const generation = currentSessionGeneration();
@@ -192,13 +201,15 @@ export async function savedChatsScope(): Promise<SavedChatsScope | null> {
   const verified = await loadVerifiedIntegrationsScope();
   const spaceId = selectionId ?? (verified?.selectionId === null ? verified.spaceId : null);
   if (!verified || verified.apiBase !== apiBase || !spaceId) return null;
-  return withSessionNamespace({
+  const scope = await withSessionNamespace({
     apiBase,
     userId: verified.userId,
     spaceId,
     sessionGeneration: generation,
     selectionId,
   });
+  if (scope) knownScopes.set(selectionId ?? "", scope);
+  return scope;
 }
 
 async function withSessionNamespace(
