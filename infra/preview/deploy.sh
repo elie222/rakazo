@@ -17,14 +17,26 @@ if ! python3 "$here/reclaim-capacity.py"; then
 fi
 
 flyctl status --app "$app" > /dev/null 2>&1 || flyctl apps create "$app" --org "$FLY_ORG"
-if [[ $(flyctl volumes list --app "$app" --json | jq length) == 0 ]]; then
-  flyctl volumes create preview_data --app "$app" --region "$REGION" --size 1 --yes
-fi
 
 flyctl auth docker
 remote="registry.fly.io/$app:$HEAD_SHA"
 docker tag "$IMAGE" "$remote"
-docker push --quiet "$remote"
+for attempt in 1 2 3; do
+  if output=$(docker push --quiet "$remote" 2>&1); then
+    printf '%s\n' "$output"
+    break
+  else
+    push_status=$?
+  fi
+  printf '%s\n' "$output" >&2
+  if [[ $attempt == 3 ]] || ! grep -Eq ': (500|502|503|504)([[:space:]]|$)' <<< "$output"; then
+    exit "$push_status"
+  fi
+  echo "Fly registry returned a server error. Retrying the image upload."
+  sleep "$((attempt * 5))"
+done
+
+# Fly can place a new volume using the Machine size and image when it provisions the mount.
 flyctl deploy --app "$app" --config "$here/fly.toml" --image "$remote" \
   --primary-region "$REGION" --ha=false
 
