@@ -535,6 +535,34 @@ export class ComposioConnector implements ComposioProvider {
       connectedAccounts[toolkit] = [...ids].sort();
     }
     if (toolkits.length === 0) return { reconnect, connectedAccounts };
+    try {
+      return await this.executeSession(userId, toolkits, reconnect, connectedAccounts);
+    } catch (error) {
+      if (!isStaleConnectedAccountError(error) || Object.keys(connectedAccounts).length === 0)
+        throw error;
+      // The account list was unavailable, so a deleted account slipped through: those apps
+      // need a reconnect, and the rest still get a session.
+      const stale = Object.keys(connectedAccounts);
+      getLogger().warn("composio connected accounts need reconnect", {
+        "composio.toolkits": stale.join(","),
+      });
+      const remaining = toolkits.filter((toolkit) => !stale.includes(toolkit));
+      const allStale = [...reconnect, ...stale];
+      if (remaining.length === 0) return { reconnect: allStale, connectedAccounts: {} };
+      return this.executeSession(userId, remaining, allStale, {});
+    }
+  }
+
+  private async executeSession(
+    userId: string,
+    toolkits: string[],
+    reconnect: string[],
+    connectedAccounts: Record<string, string[]>,
+  ): Promise<{
+    session?: ComposioSession;
+    reconnect: string[];
+    connectedAccounts: Record<string, string[]>;
+  }> {
     const key = executeSessionKey(toolkits, connectedAccounts);
     const composio = await this.sdk();
     const existing = this.executeSessions.get(userId);
@@ -705,9 +733,18 @@ export class ComposioConnector implements ComposioProvider {
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const connections = connectedComposioConnections(context);
     if (connections.length === 0) return [];
-    const { session } = await this.sessionForExecute(context.userId, connections);
-    if (!session) return [];
-    return asConnectorTools(await session.tools());
+    try {
+      const { session } = await this.sessionForExecute(context.userId, connections);
+      if (!session) return [];
+      return asConnectorTools(await session.tools());
+    } catch (error) {
+      // An outage or a cancelled run hides the tools for this turn only.
+      if (!context.signal.aborted && !isComposioOutage(error)) throw error;
+      getLogger().warn("composio tool discovery unavailable", {
+        error: sanitizeIntegrationError(error),
+      });
+      return [];
+    }
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
@@ -1004,6 +1041,25 @@ export class ComposioConnector implements ComposioProvider {
     }
     return this.client;
   }
+}
+
+/** A timeout, dropped connection, cancellation, rate limit or server error from the API. The
+ * client sets `status` on every API error and leaves it unset when no response came back. */
+function isComposioOutage(error: unknown): boolean {
+  if (!(error instanceof Error) || !("status" in error) || !("headers" in error)) return false;
+  const status = error.status;
+  if (status === undefined) return true;
+  return typeof status === "number" && (status === 408 || status === 429 || status >= 500);
+}
+
+/** The session named a connected account the provider no longer has for this user. */
+function isStaleConnectedAccountError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { status?: unknown; details?: { slug?: unknown } };
+  return (
+    candidate.status === 400 &&
+    candidate.details?.slug === "ToolRouterV2_InvalidConnectedAccountIds"
+  );
 }
 
 function isComposioNotFoundError(error: unknown): boolean {

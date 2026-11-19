@@ -248,6 +248,8 @@ export function connectionsRoutes(ctx: RouterContext) {
             description: tool.description,
           }));
         } catch (error) {
+          // The client went away before the list came back.
+          if (context.signal?.aborted) return [];
           getLogger().error("connections.tools failed", error, {
             connectorId: input.connectorId,
             provider: input.provider,
