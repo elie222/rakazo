@@ -120,7 +120,6 @@ test("a bot can choose its own voice and preview it without changing the default
       response.url().endsWith("/api/voice/speak") && response.request().method() === "POST",
   );
   await settings.getByRole("button", { name: "Hear a sample" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Allow", exact: true }).click();
   const response = await spoken;
   expect(response.status()).toBe(200);
   expect(response.request().postDataJSON()).toMatchObject({ botId });

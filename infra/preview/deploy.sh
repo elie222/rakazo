@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
-# Deploys a loaded preview image for one pull request and posts or updates its link.
+# Deploys a loaded preview image for one pull request and posts or updates its link, or, with
+# PR=main, the main branch's preview that screenshot runs compare against.
 # Runs from the base branch with deploy credentials, so it never runs the pull request's code:
 # the image only moves from the local Docker daemon to the host's registry.
 #
-# Env: PR, HEAD_SHA, IMAGE (local tag), FLY_API_TOKEN, FLY_ORG, REGION, GH_TOKEN, REPO,
+# Env: PR (a number, or main), HEAD_SHA, IMAGE (local tag), FLY_API_TOKEN, FLY_ORG, REGION, GH_TOKEN, REPO,
 # APP_PREFIX (default rakazo-pr).
 set -euo pipefail
 
-[[ $PR =~ ^[0-9]+$ ]] || { echo "Bad pull request number" >&2; exit 1; }
+[[ $PR =~ ^([0-9]+|main)$ ]] || { echo "Bad pull request number" >&2; exit 1; }
 [[ $HEAD_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Bad commit" >&2; exit 1; }
 app="${APP_PREFIX:-rakazo-pr}-$PR"
 here=$(cd "$(dirname "$0")" && pwd)
+
+# Main's preview starts empty on every deploy, so state screenshot runs leave behind never
+# accumulates.
+if [[ $PR == main ]] && flyctl status --app "$app" > /dev/null 2>&1; then
+  flyctl apps destroy "$app" --yes
+fi
 
 flyctl status --app "$app" > /dev/null 2>&1 || flyctl apps create "$app" --org "$FLY_ORG"
 if [[ $(flyctl volumes list --app "$app" --json | jq length) == 0 ]]; then
@@ -23,6 +30,8 @@ docker tag "$IMAGE" "$remote"
 docker push --quiet "$remote"
 flyctl deploy --app "$app" --config "$here/fly.toml" --image "$remote" \
   --primary-region "$REGION" --ha=false
+
+[[ $PR != main ]] || exit 0
 
 marker="<!-- rakazo-preview -->"
 commit_marker=$(python3 "$here/../../.github/scripts/pr-screenshots.py" marker "$HEAD_SHA")

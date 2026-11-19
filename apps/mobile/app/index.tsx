@@ -872,6 +872,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                     right: Math.max(0, columnInsets.right - insets.right),
                   }}
                   column={columnInsets}
+                  width={embedded ? inboxWidth : windowWidth}
                   avatarViewport={avatarViewport}
                   onRefresh={refreshInbox}
                   signals={jumpSignals}

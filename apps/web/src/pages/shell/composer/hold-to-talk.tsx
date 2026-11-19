@@ -233,7 +233,7 @@ export function HoldToTalkControls({
           size="icon"
           aria-label={t`Discard recording`}
           onClick={talk.cancel}
-          className="size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+          className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
         >
           <Trash2 size={16} strokeWidth={1.8} />
         </Button>
@@ -242,7 +242,7 @@ export function HoldToTalkControls({
           aria-label={t`Send recording`}
           disabled={talk.transcribing}
           onClick={talk.submit}
-          className="size-8 shrink-0 rounded-full shadow-sm"
+          className="shrink-0 rounded-full shadow-sm"
         >
           <ArrowUp size={16} strokeWidth={2.2} />
         </Button>
@@ -277,7 +277,7 @@ export function HoldToTalkControls({
           disabled={disabled}
           {...talk.buttonProps}
           className={cn(
-            "size-8 shrink-0 touch-none select-none rounded-full text-foreground/75 [-webkit-touch-callout:none]",
+            "shrink-0 touch-none select-none rounded-full text-foreground/75 [-webkit-touch-callout:none]",
             // The pointer is over the button while holding, so the outline variant's hover
             // colours (a grey fill in dark, dark text) must not win over the recording red.
             recording &&

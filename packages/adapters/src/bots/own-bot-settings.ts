@@ -167,7 +167,12 @@ export async function listBotVoices(
     plaintext,
     context.signal,
   );
-  return { provider: credential.provider, voices: await provider.listVoices(apiKey, context) };
+  return {
+    provider: credential.provider,
+    voices: await provider.listVoices(apiKey, context, {
+      model: credential.speechModel || undefined,
+    }),
+  };
 }
 
 const VOICES_SHOWN = 10;

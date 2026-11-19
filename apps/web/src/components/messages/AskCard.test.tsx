@@ -458,7 +458,7 @@ it("offers Always allow only when the approval card does", async () => {
   const card: AskBlock = {
     kind: "ask",
     approvalEffectId: "effect-1",
-    text: "Review before schedule_create",
+    text: "Allow Schedule create?",
     status: "pending",
     actions: [
       { id: "allow", label: "Allow once" },

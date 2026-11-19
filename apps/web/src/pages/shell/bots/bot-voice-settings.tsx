@@ -5,7 +5,7 @@ import { botVoiceChoices, botVoiceProviderChoices, botVoiceSelection } from "@ra
 import { Button, Field, FieldGroup, FieldLabel, OptionSelect } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { Play, Square } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useId, useSyncExternalStore } from "react";
 import { useCallSession } from "../../../lib/calls/call-session";
 import { speaker } from "../../../lib/calls/tts";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
@@ -48,11 +48,9 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
   const previewId = `${ids}-voice-preview`;
   const subscribe = useCallback((notify: () => void) => speaker.subscribe(notify), []);
   const playback = useSyncExternalStore(subscribe, () => speaker.state);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const previewRevision = useRef(0);
+  const previewError = playback.messageId === previewId ? playback.error : undefined;
   useEffect(
     () => () => {
-      previewRevision.current += 1;
       if (speaker.state.messageId === previewId) speaker.stop();
     },
     [previewId],
@@ -75,8 +73,6 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
   const canPreview = Boolean(connection && (current.voiceId || connection.voiceId));
 
   function stopPreview() {
-    previewRevision.current += 1;
-    setPreviewError(null);
     if (speaker.state.messageId === previewId) speaker.stop();
   }
 
@@ -140,16 +136,11 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
               else {
                 stopPreview();
                 speaker.unlock();
-                const revision = previewRevision.current;
-                void speaker
-                  .speak(t`Hi, this is how I'll sound when I read replies out loud.`, {
-                    botId: bot.id,
-                    spaceId: bot.spaceId,
-                    messageId: previewId,
-                  })
-                  .then((failure) => {
-                    if (previewRevision.current === revision) setPreviewError(failure ?? null);
-                  });
+                void speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`, {
+                  botId: bot.id,
+                  spaceId: bot.spaceId,
+                  messageId: previewId,
+                });
               }
             }}
           >

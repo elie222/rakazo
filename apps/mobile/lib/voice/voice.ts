@@ -1,6 +1,8 @@
 import { t } from "@lingui/core/macro";
 import type { RpcOutput, SettingsScope } from "@rakazo/contracts";
+import type { SpeechFeed } from "@rakazo/core";
 import {
+  createSpeechFeed,
   ensureAiDataConsent,
   isServerUnreachable,
   readVoiceAudio,
@@ -27,6 +29,7 @@ import { subscribeSessionGeneration } from "../api/session";
 import { errorText, voiceAccountErrorText } from "../api/user-error";
 import { promptAiConsent } from "../settings/ai-consent";
 import { voiceForBot } from "./bot-voices";
+import { loadExpoSpeech, speakOneUtterance } from "./device-speech";
 import { loadDeviceVoicePreference } from "./device-voice";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
@@ -433,6 +436,163 @@ async function speakCurrentOnDevice(
   return isCurrentSpeech(epoch) && spoken;
 }
 
+/** The server has no voice to speak with. */
+class NoVoice extends Error {}
+
+type QueuedSpeech = {
+  feed: SpeechFeed;
+  epoch: number;
+  options: SpeechOptions;
+  control: VoiceControl;
+  /** Texts pushed and not yet said. */
+  pending: number;
+};
+
+let queuedSpeech: QueuedSpeech | null = null;
+
+/**
+ * Says `text` once what the same owner queued before has been said, rendering the next clip
+ * while the current one plays, so a call can say a reply sentence by sentence as the bot
+ * writes it. Resolves to false when no voice is set up. Any other speech, or Stop, ends it.
+ */
+export async function queueSpeech(text: string, opts: SpeechOptions = {}): Promise<boolean> {
+  let queued = queuedSpeech;
+  if (
+    !queued ||
+    queued.feed.stopped ||
+    queued.options.owner !== opts.owner ||
+    queued.options.botId !== opts.botId ||
+    queued.options.provider !== opts.provider ||
+    queued.options.voiceId !== opts.voiceId ||
+    queued.options.scope !== opts.scope ||
+    queued.options.callId !== opts.callId ||
+    queued.options.requestContext !== opts.requestContext ||
+    !isCurrentSpeech(queued.epoch)
+  ) {
+    queued = openQueuedSpeech(opts);
+    queuedSpeech = queued;
+  }
+  const { feed, epoch, control } = queued;
+  queued.pending += 1;
+  if (activeControl !== control) {
+    setPlayback(
+      { status: "playing", botId: opts.botId, messageId: opts.messageId, canPause: false },
+      control,
+    );
+  }
+  try {
+    await feed.push(text);
+    return true;
+  } catch (error) {
+    if (error instanceof NoVoice) return false;
+    // A newer Play or Stop owns the outcome, as in speakQueue.
+    if (!isCurrentSpeech(epoch)) return true;
+    throw error;
+  } finally {
+    queued.pending -= 1;
+    if (queued.pending === 0 && isCurrentSpeech(epoch) && activeControl === control) {
+      setPlayback(IDLE_PLAYBACK, null);
+    }
+  }
+}
+
+function openQueuedSpeech(opts: SpeechOptions): QueuedSpeech {
+  const epoch = beginSpeech(opts.owner);
+  announcedSpeaker =
+    opts.botId && opts.speaker ? { botId: opts.botId, speaker: opts.speaker } : undefined;
+  // Device-only speech never captures a hosted context, even when its preference cannot be read.
+  const preference = opts.provider
+    ? Promise.resolve(false)
+    : loadDeviceVoicePreference().catch(() => true);
+  let context: Promise<ApiRequestContext> | undefined;
+  const requestContext = () =>
+    (context ??= opts.requestContext
+      ? Promise.resolve(opts.requestContext)
+      : captureApiRequestContext());
+  let readiness: Promise<{ device: boolean; utterances: string[] }> | undefined;
+  const session = new HostedSession(startHostedSpeechSession());
+  let engine: Promise<{ Speech: typeof ExpoSpeech; voice?: string }> | undefined;
+  const deviceEngine = () => {
+    engine ??= loadExpoSpeech().then(async (Speech) => ({
+      Speech,
+      voice: opts.botId ? await voiceForBot(opts.botId).catch(() => undefined) : undefined,
+    }));
+    return engine;
+  };
+  const prepare = async (text: string, signal: AbortSignal) => {
+    const hostedContext = await requestContext();
+    if (signal.aborted || !isCurrentSpeech(epoch)) return { ready: false, utterances: [] };
+    await ensureVoiceConsent(hostedContext, opts.scope, opts);
+    if (signal.aborted || !isCurrentSpeech(epoch)) return { ready: false, utterances: [] };
+    return rpc(
+      "voice/prepare",
+      {
+        text,
+        voiceId: opts.voiceId,
+        provider: opts.provider,
+        botId: opts.botId,
+        scope: opts.scope,
+      },
+      { requestContext: hostedContext, signal },
+    );
+  };
+  const selectVoice = async (text: string, signal: AbortSignal) => {
+    const device = await preference;
+    if (device === true || signal.aborted || !isCurrentSpeech(epoch))
+      return { device: true, utterances: [] };
+    try {
+      const prepared = await prepare(text, signal);
+      if (prepared.ready) return { device: false, utterances: prepared.utterances };
+      if (device !== undefined) throw new NoVoice();
+    } catch (error) {
+      if (device !== undefined || !isServerUnreachable(error)) throw error;
+    }
+    return { device: true, utterances: [] };
+  };
+  // Share the first readiness answer: later sentences must not change engines mid-reply.
+  const feed = createSpeechFeed<string | Uint8Array>({
+    prepare: async (text, signal) => {
+      const first = readiness === undefined;
+      readiness ??= selectVoice(text, signal);
+      const selected = await readiness;
+      if (signal.aborted || !isCurrentSpeech(epoch)) return [];
+      if (selected.device) return toUtterances(text);
+      if (first) return selected.utterances;
+      const prepared = await prepare(text, signal);
+      if (!prepared.ready) throw new NoVoice();
+      return prepared.utterances;
+    },
+    render: async (utterance, signal) => {
+      const selected = await readiness;
+      signal.throwIfAborted();
+      return selected?.device
+        ? utterance
+        : renderUtterance(utterance, opts, await requestContext(), signal);
+    },
+    play: async (clip, _utterance, signal) => {
+      const device = typeof clip === "string" ? await deviceEngine() : undefined;
+      if (signal.aborted || !isCurrentSpeech(epoch)) return;
+      const stop = () => (device ? void device.Speech.stop() : session.stop());
+      signal.addEventListener("abort", stop, { once: true });
+      try {
+        if (typeof clip !== "string") await playSpeechClip(clip, session);
+        else if (device) await speakOneUtterance(device.Speech, clip, device.voice);
+      } finally {
+        signal.removeEventListener("abort", stop);
+      }
+    },
+  });
+  const control: VoiceControl = {
+    pause() {},
+    resume() {},
+    stop() {
+      feed.stop();
+      setPlayback(IDLE_PLAYBACK, null);
+    },
+  };
+  return { feed, epoch, options: opts, control, pending: 0 };
+}
+
 let deviceSpeechSession = 0;
 
 function startDeviceSpeechSession(): number {
@@ -514,32 +674,6 @@ async function speakOnDevice(
   }
 }
 
-async function loadExpoSpeech(): Promise<typeof ExpoSpeech> {
-  let Speech: Partial<typeof ExpoSpeech>;
-  try {
-    Speech = await import("expo-speech");
-  } catch (error) {
-    throw error instanceof Error ? error : new Error(t`Could not play that clip.`);
-  }
-  if (typeof Speech.speak !== "function" || typeof Speech.stop !== "function") {
-    throw new Error(t`Could not play that clip.`);
-  }
-  return Speech as typeof ExpoSpeech;
-}
-
-function speakOneUtterance(Speech: typeof ExpoSpeech, text: string, voice?: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    // Only offline voices are assigned; without one, use the engine default.
-    Speech.speak(text, {
-      ...(voice ? { voice } : {}),
-      onDone: () => resolve(),
-      // Speech.stop() reports onStopped, not onDone.
-      onStopped: () => resolve(),
-      onError: (error) => reject(error instanceof Error ? error : new Error(String(error))),
-    });
-  });
-}
-
 export async function speakUtterance(
   text: string,
   opts: SpeechOptions & { requestContext?: ApiRequestContext } = {},
@@ -575,8 +709,10 @@ async function renderUtterance(
   text: string,
   opts: SpeechOptions,
   requestContext: ApiRequestContext,
+  /** Stopping the speech it is for cancels the request. */
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
-  const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS, "Voice request timed out.");
+  const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS, "Voice request timed out.", signal);
   try {
     const res = await withAbort(
       fetchServer(

@@ -14,6 +14,8 @@ export function signInNext(next: string | null): string | null {
     next === "/admin/access" ||
     // The model-connection email opens the connect step.
     next === "/onboarding/model" ||
+    // The agent-import email opens the import.
+    next === "/app?import" ||
     next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`) ||
     next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`) ||
     INVITE_PATH.test(next)

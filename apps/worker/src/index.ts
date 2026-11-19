@@ -16,7 +16,7 @@ import {
   CodexCatalogCache,
   configuredBotEmailProvider,
   configuredEmailProvider,
-  configuredMeetingProvider,
+  configuredMeetingProviders,
   configuredMeetingSpaces,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
@@ -45,8 +45,10 @@ import {
   InMemoryJobQueue,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  MeetingCalendarService,
   MeetingService,
   machineCleanupRecords,
+  meetingCalendarScope,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   PiAgentRuntime,
@@ -72,7 +74,7 @@ import {
   withSecretWriteAhead,
 } from "@rakazo/adapters";
 import { abortableDelay } from "@rakazo/core";
-import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
+import { resolveMeetingSigningKey, resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createBoardEvents,
   createDb,
@@ -252,7 +254,9 @@ async function main() {
   const lifecycleEmail = accountEmail
     ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
     : undefined;
-  const meetingProvider = await configuredMeetingProvider();
+  const { meeting: meetingProvider, calendar: calendarProvider } =
+    await configuredMeetingProviders();
+  const meetingMedia = meetingProvider && configuredMeetingMedia();
   const meetings =
     meetingProvider &&
     new MeetingService({
@@ -261,11 +265,28 @@ async function main() {
       events,
       provider: meetingProvider,
       spaceIds: configuredMeetingSpaces(meetingProvider),
-      buildJoin: configuredMeetingMedia()?.buildJoin,
+      buildJoin: meetingMedia?.buildJoin,
+    });
+  const meetingCalendar =
+    calendarProvider &&
+    meetings &&
+    new MeetingCalendarService({
+      prisma,
+      jobs,
+      provider: calendarProvider,
+      webOrigin: process.env.WEB_ORIGIN?.trim() || "http://127.0.0.1:5173",
+      oauthStateKey: resolveMeetingSigningKey(),
+      enabled: (spaceId) => meetings.enabled(spaceId),
+      buildJoin: meetingMedia?.buildJoin ?? ((input) => input),
+      publish: async ({ spaceId, userId }) => {
+        await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
+      },
     });
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,
     meetingWork: meetings?.work.bind(meetings),
+    meetingCalendarSync:
+      meetingCalendar && (({ connectionId }) => meetingCalendar.sync(connectionId)),
     prisma,
     runtime,
     // Live per-account Codex catalog; never refreshes or writes credentials.

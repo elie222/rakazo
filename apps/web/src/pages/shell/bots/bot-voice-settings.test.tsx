@@ -36,7 +36,7 @@ vi.mock("../../../lib/query/rpc", () => {
   };
 });
 
-import { Speaker } from "../../../lib/calls/tts";
+import { Speaker, speaker } from "../../../lib/calls/tts";
 import { spaceQueries } from "../../../lib/query/query";
 import { rpc } from "../../../lib/query/rpc";
 import { BotVoiceSettings } from "./bot-voice-settings";
@@ -81,6 +81,7 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root.unmount());
+  speaker.stop();
   client.clear();
   container.remove();
   vi.unstubAllGlobals();
@@ -167,6 +168,41 @@ it("keeps the accepted voice after a failed save and previews that bot, not the 
     spaceId: "space-1",
     messageId: expect.any(String),
   });
+});
+
+it("shows only its current preview's shared playback error", async () => {
+  const held = deferred<string[]>();
+  vi.spyOn(speaker as unknown as { prepare: () => Promise<string[]> }, "prepare")
+    .mockRejectedValueOnce(new Error("Could not play preview"))
+    .mockReturnValueOnce(held.promise)
+    .mockRejectedValueOnce(new Error("Could not read reply"));
+  vi.spyOn(speaker, "unlock").mockImplementation(() => undefined);
+  await render();
+  const sample = container.querySelector<HTMLButtonElement>('[aria-label="Hear a sample"]')!;
+  await act(async () => sample.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not play preview");
+  expect(speaker.state.error).toBe("Could not play preview");
+
+  await act(async () => sample.click());
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(sample.getAttribute("aria-label")).toBe("Stop");
+  await act(async () => {
+    await speaker.speak("A chat reply.", { botId: "bot-1", messageId: "message-1" });
+    held.reject(new Error("Stale preview failure"));
+  });
+  await act(flush);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(sample.getAttribute("aria-label")).toBe("Hear a sample");
+  const replyError = speaker.state;
+  expect(replyError).toMatchObject({
+    messageId: "message-1",
+    error: "Could not read reply",
+  });
+
+  await choose("voice", "Calm");
+  expect(speaker.state).toBe(replyError);
+  act(() => root.render(null));
+  expect(speaker.state).toBe(replyError);
 });
 
 it("pins a custom voice chosen under Default until the provider is reset", async () => {

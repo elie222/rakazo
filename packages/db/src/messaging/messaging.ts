@@ -53,7 +53,9 @@ export async function provisionMessagingIdentity(
 ): Promise<ProvisionedMessagingIdentity> {
   const { provider, address } = request;
   if (!ADDRESS_PATTERN.test(address)) {
-    throw new Error(`Invalid messaging address for ${provider}: ${address}`);
+    // The address is the sender's phone number or platform id, and this message is logged:
+    // name the provider only, never the value the inbound request chose.
+    throw new Error(`Invalid messaging address for ${provider}`);
   }
 
   const where = { provider_address: { provider, address } } as const;
@@ -146,7 +148,8 @@ export async function provisionMessagingIdentity(
     // A concurrent first-inbound won the (provider, address) race; report its result.
     const winner = await prisma.messagingIdentity.findUnique({ where });
     if (!winner) {
-      throw new Error(`messaging identity for ${provider}:${address} vanished after create failed`);
+      // Same reason as the invalid-address throw above: provider only, never the address.
+      throw new Error(`messaging identity for ${provider} vanished after create failed`);
     }
     // The winner's bot can differ from the bot this attempt found or
     // created; pair the result with the winning bot's own thread.

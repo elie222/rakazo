@@ -12,6 +12,7 @@ import { messages as nl } from "@rakazo/i18n/locales/nl/messages.po";
 import { messages as pl } from "@rakazo/i18n/locales/pl/messages.po";
 import { messages as ptBR } from "@rakazo/i18n/locales/pt-BR/messages.po";
 import { messages as ru } from "@rakazo/i18n/locales/ru/messages.po";
+import { messages as th } from "@rakazo/i18n/locales/th/messages.po";
 import { messages as tr } from "@rakazo/i18n/locales/tr/messages.po";
 import { messages as zhCN } from "@rakazo/i18n/locales/zh-CN/messages.po";
 import { messages as zhTW } from "@rakazo/i18n/locales/zh-TW/messages.po";
@@ -36,6 +37,7 @@ const catalogs: Record<UiLocale, Messages> = {
   ko,
   "pt-BR": ptBR,
   tr,
+  th,
 };
 
 installPluralRules();

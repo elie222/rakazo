@@ -1,5 +1,9 @@
 import type { Message } from "@earendil-works/pi-ai";
-import { SCREENSHOT_REMOVED_NOTE, STALE_PAGE_STATE_NOTE } from "./runtime-context.prompt.js";
+import {
+  SCREENSHOT_REMOVED_NOTE,
+  STALE_PAGE_STATE_NOTE,
+  TOOL_IMAGE_REMOVED_NOTE,
+} from "./runtime-context.prompt.js";
 
 type ToolResultMessage = Extract<Message, { role: "toolResult" }>;
 
@@ -67,10 +71,12 @@ function textLength(message: ToolResultMessage): number {
 }
 
 /**
- * Keep the latest screenshots within an optional model image budget. The runtime context policy
- * applies this only when it rebuilds a run's transcript; between rebuilds screenshots accumulate
- * up to the model's limit, so a rebuild keeps at most the default two to leave room for more.
- * An older frame keeps its result text and gains a one-line note.
+ * Keep the latest tool images (screenshots, and images a connected tool returned) within an
+ * optional model image budget. The runtime context policy applies this only when it rebuilds a
+ * run's transcript; between rebuilds they accumulate up to the model's limit, so a rebuild keeps
+ * at most the default two to leave room for more. An older one keeps its result text and gains a
+ * one-line note. A user's images are never dropped: a tool can produce its image again, a user's
+ * cannot.
  */
 export function pruneComputerScreenshotContext(
   messages: Message[],
@@ -79,22 +85,21 @@ export function pruneComputerScreenshotContext(
   const imageLimit = normalizedImageLimit(maxImagesPerPrompt);
   let remaining = DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP;
   if (imageLimit !== undefined) {
-    const nonScreenshotImages = messages.reduce(
-      (count, message) =>
-        isComputerScreenshotMessage(message) ? count : count + imagePartCount(message),
+    const userImages = messages.reduce(
+      (count, message) => (isToolImageMessage(message) ? count : count + imagePartCount(message)),
       0,
     );
-    if (nonScreenshotImages > imageLimit) {
+    if (userImages > imageLimit) {
       throw new ModelImageLimitError(
-        `The configured model image limit is ${imageLimit}, but the prompt contains ${nonScreenshotImages} non-screenshot images.`,
+        `The configured model image limit is ${imageLimit}, but the prompt contains ${userImages} user images.`,
       );
     }
-    remaining = Math.min(remaining, imageLimit - nonScreenshotImages);
+    remaining = Math.min(remaining, imageLimit - userImages);
   }
   let transformed: Message[] | undefined;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (!isComputerScreenshotMessage(message)) continue;
+    if (!isToolImageMessage(message)) continue;
     const images = imagePartCount(message);
     if (remaining >= images) {
       remaining -= images;
@@ -105,14 +110,17 @@ export function pruneComputerScreenshotContext(
       ...message,
       content: [
         ...message.content.filter((part) => part.type !== "image"),
-        { type: "text", text: SCREENSHOT_REMOVED_NOTE },
+        {
+          type: "text",
+          text: isComputerScreenshot(message) ? SCREENSHOT_REMOVED_NOTE : TOOL_IMAGE_REMOVED_NOTE,
+        },
       ],
     };
   }
   return transformed ?? messages;
 }
 
-/** What a rebuild drops: stale page state, and screenshots over the default or model limit. */
+/** What a rebuild drops: stale page state, and tool images over the default or model limit. */
 export function pruneForRebuild(messages: Message[], maxImagesPerPrompt?: number): Message[] {
   return pruneComputerScreenshotContext(pruneStalePageStateContext(messages), maxImagesPerPrompt);
 }
@@ -129,10 +137,11 @@ export function imagePartCount(message: Message): number {
     .length;
 }
 
-function isComputerScreenshotMessage(message: Message | undefined): message is ToolResultMessage {
-  if (message?.role !== "toolResult" || !message.content.some((part) => part.type === "image")) {
-    return false;
-  }
+function isToolImageMessage(message: Message | undefined): message is ToolResultMessage {
+  return message?.role === "toolResult" && message.content.some((part) => part.type === "image");
+}
+
+function isComputerScreenshot(message: ToolResultMessage): boolean {
   const details = message.details;
   return Boolean(
     details &&

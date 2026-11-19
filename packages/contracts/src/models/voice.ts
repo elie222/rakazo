@@ -16,6 +16,10 @@ export const VoiceCatalogEntrySchema = z.object({
   modelConnection: z.boolean().optional(),
   /** The provider can list its voices for one language, so the picker may offer a filter. */
   languages: z.boolean().optional(),
+  /** The provider lists its speech models, so the model field can suggest them. */
+  speechModels: z.boolean().optional(),
+  /** A voice id can be typed, because a model's voices may be missing from its listing. */
+  freeformVoice: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
@@ -25,6 +29,12 @@ export const VoiceInfoSchema = z.object({
   description: z.string().optional(),
 });
 export type VoiceInfo = z.infer<typeof VoiceInfoSchema>;
+
+export const VoiceModelInfoSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+});
+export type VoiceModelInfo = z.infer<typeof VoiceModelInfoSchema>;
 
 export const VoiceCredentialSchema = z.object({
   id: Id,
