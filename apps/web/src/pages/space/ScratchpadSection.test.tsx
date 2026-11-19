@@ -132,23 +132,21 @@ it("stays folded behind its count until the heading is opened", async () => {
   const root = createRoot(host);
   try {
     await mount(root, "bot-fixture");
-    const heading = host.querySelector<HTMLButtonElement>("[aria-expanded]")!;
-    const list = host.querySelector<HTMLElement>(
-      `#${CSS.escape(heading.getAttribute("aria-controls")!)}`,
-    )!;
-    expect(heading.textContent).toBe("Open work2");
+    const heading = host.querySelector<HTMLButtonElement>('[data-slot="collapsible-trigger"]')!;
+    const list = host.querySelector<HTMLElement>('[data-slot="collapsible-content"]')!;
+    expect(heading.closest("h3")?.textContent).toBe("Open work2");
     expect(heading.getAttribute("aria-expanded")).toBe("false");
-    expect(list.hidden).toBe(true);
+    expect(list.getAttribute("hidden")).toBe("until-found");
     await act(async () => heading.click());
     expect(heading.getAttribute("aria-expanded")).toBe("true");
-    expect(list.hidden).toBe(false);
+    expect(list.hasAttribute("hidden")).toBe(false);
     await act(async () => heading.click());
-    expect(list.hidden).toBe(true);
+    expect(heading.getAttribute("aria-expanded")).toBe("false");
     // Adding opens the list, so the new field is never hidden behind the fold.
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[aria-label="Add open work"]')!.click(),
     );
-    expect(list.hidden).toBe(false);
+    expect(heading.getAttribute("aria-expanded")).toBe("true");
     expect(host.querySelector('[aria-label="New open-work item"]')).not.toBeNull();
   } finally {
     await act(async () => root.unmount());

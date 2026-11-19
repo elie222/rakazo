@@ -732,7 +732,9 @@ describe("bot settings device voice menu", () => {
     await expand();
     expect(container.textContent).not.toContain("Task 0");
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Open work"]')!.click(),
+      [...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")]
+        .find((button) => button.textContent?.startsWith("Open work"))!
+        .click(),
     );
     expect(container.textContent).toContain("Task 0");
     expect(container.textContent).not.toContain("Task 6");

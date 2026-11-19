@@ -125,7 +125,11 @@ afterEach(() => {
 const work = [{ id: "work-a", title: "Review draft", notes: "", status: "open" }];
 const memory = [{ id: "memory-a", path: "notes.md", content: "Saved context" }];
 
-const workHeading = () => container.querySelector<HTMLButtonElement>('[aria-label="Open work"]');
+// The heading has no label of its own, so its spoken name is its text and count.
+const workHeading = () =>
+  [
+    ...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]:not([aria-label])"),
+  ].find((button) => button.textContent?.startsWith("Open work"));
 
 /** Renders with the work list opened, as most cases act on its rows. */
 async function render(botId = "bot-a", section: "work" | "memory" = "work") {

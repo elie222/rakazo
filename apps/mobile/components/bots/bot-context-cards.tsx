@@ -83,7 +83,6 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t`Open work`}
               accessibilityState={{ expanded: workOpen }}
               onPress={() => setWorkOpen((open) => !open)}
               style={{ flex: 1, minHeight: 44, flexDirection: "row", alignItems: "center", gap: 6 }}
