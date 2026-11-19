@@ -31,7 +31,7 @@ function linkUrl(text: string, start: number, end: number): string | null {
     !(beforeOpener === "`" && text[end] === "`");
   if (!hasBoldWrapper) return url;
 
-  const unwrapped = url.slice(0, -2).replace(TRAILING_LINK_PUNCTUATION, "");
+  const unwrapped = url.slice(0, -2);
   return /^https?:\/\/$/i.test(unwrapped) ? null : unwrapped;
 }
 
