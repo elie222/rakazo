@@ -1,4 +1,4 @@
-import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type {
   Api,
@@ -106,7 +106,10 @@ import {
   computerTransitionTool,
   restoreComputerModels,
 } from "./tools/pi-runtime-computer-mode.js";
-import { parametersFor } from "./tools/pi-runtime-tool-parameters.js";
+import {
+  matchToolDeclarations,
+  modelToolDeclarations,
+} from "./tools/pi-runtime-tool-declarations.js";
 import type { ToolCallBudget, ToolHost } from "./tools/pi-runtime-tools.js";
 import {
   agentToolDefinitions,
@@ -148,22 +151,6 @@ export interface PiAgentRuntimeOptions {
       usage: AgentUsage;
     },
   ) => void;
-}
-
-// Pi copies its initial tools. Keep any temporarily disabled tools out of the next request.
-function matchToolDeclarations(
-  current: AgentTool[] | undefined,
-  from: AgentTool[],
-  to: AgentTool[],
-) {
-  if (!current?.length || from === to) return current;
-  if (
-    current === from ||
-    (current.length === from.length && current.every((tool, index) => tool === from[index]))
-  )
-    return to;
-  const replacements = new Map(from.map((tool, index) => [tool, to[index]!]));
-  return current.map((tool) => replacements.get(tool) ?? tool);
 }
 
 export class PiAgentRuntime implements AgentRuntime {
@@ -349,18 +336,7 @@ export class PiAgentRuntime implements AgentRuntime {
         let modelTools = tools;
         const refreshModelTools = (offered = request.getBuiltinToolDeclarations?.()) => {
           declarations = offered;
-          modelTools = offered?.size
-            ? tools.map((tool) => {
-                const declaration = offered.get(tool.name);
-                return declaration && !toolsByAgentName.get(tool.name)?.route
-                  ? {
-                      ...tool,
-                      description: declaration.description,
-                      parameters: parametersFor(declaration),
-                    }
-                  : tool;
-              })
-            : tools;
+          modelTools = modelToolDeclarations(tools, toolsByAgentName, offered);
         };
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
