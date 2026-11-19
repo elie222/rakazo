@@ -40,12 +40,20 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
   );
   const change = useSave({
     save: async (
-      action: { kind: "create"; title: string } | { kind: "complete"; itemId: string },
+      action:
+        | { kind: "create"; title: string }
+        | { kind: "complete"; itemId: string }
+        | { kind: "reopen"; itemId: string },
       send,
     ) => {
       if (action.kind === "create") {
         const item = await send("scratchpad/create", { botId, title: action.title });
         await writeSaved(queryClient, workRead.queryKey, (items) => [item, ...(items ?? [])]);
+      } else if (action.kind === "reopen") {
+        const item = await send("scratchpad/update", { itemId: action.itemId, status: "open" });
+        await writeSaved(queryClient, workRead.queryKey, (items) =>
+          (items ?? []).map((entry) => (entry.id === item.id ? item : entry)),
+        );
       } else {
         await send("scratchpad/update", { itemId: action.itemId, status: "done" });
         await writeSaved(queryClient, workRead.queryKey, (items) =>
@@ -139,6 +147,22 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
                     </Text>
                   ) : null}
                 </View>
+                {item.status === "parked" ? (
+                  <Pressable
+                    accessibilityLabel={`${t`Reopen`} ${item.title}`}
+                    accessibilityRole="button"
+                    hitSlop={11}
+                    disabled={busy}
+                    onPress={() => change.run({ kind: "reopen", itemId: item.id })}
+                  >
+                    <NativeSymbol
+                      ios="arrow.uturn.backward"
+                      android="arrow-undo-outline"
+                      size={18}
+                      color={tokens.mutedForeground}
+                    />
+                  </Pressable>
+                ) : null}
               </View>
             ))}
             {work.length > shownWork.length ? (

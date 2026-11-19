@@ -4,7 +4,7 @@ import { shownOpenWork } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
+import { Plus, Undo2, X } from "lucide-react";
 import { useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 
@@ -118,6 +118,19 @@ export function ScratchpadSection({ botId }: { botId: string }) {
                 </div>
               ) : null}
             </div>
+            {item.status === "parked" ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t`Reopen`}
+                title={t`Reopen`}
+                disabled={busy}
+                onClick={() => run({ item, status: "open" })}
+                className="-mt-0.5 shrink-0 text-muted-foreground"
+              >
+                <Undo2 />
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="icon-xs"

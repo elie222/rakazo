@@ -152,6 +152,19 @@ describe("bot context cards", () => {
     );
     expect(container.textContent).toContain("Old idea");
     expect(container.textContent).not.toContain("Show more");
+
+    rpc.mockImplementation(async (method: string) =>
+      method === "scratchpad/update"
+        ? { id: "parked", title: "Old idea", notes: "", status: "open" }
+        : [],
+    );
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Reopen Old idea"]')!.click(),
+    );
+    const updates = rpc.mock.calls.filter(([method]) => method === "scratchpad/update");
+    expect(updates.map(([, input]) => input)).toEqual([{ itemId: "parked", status: "open" }]);
+    expect(container.querySelector('[aria-label="Reopen Old idea"]')).toBeNull();
+    expect(container.textContent).toContain("Old idea");
   });
 
   it.each(["work", "memory"] as const)("shows a failed %s load", async (section) => {

@@ -7,7 +7,7 @@ import {
   STRATEGIC_INITIATIVE_NONCE_PREFIX,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { modelCreditBillingEnabled } from "../runs/turn/run-model.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { initiativePrompt } from "./strategic-initiative.prompt.js";
@@ -145,8 +145,9 @@ export function createStrategicInitiativeReconciler(deps: {
     // Runs beside the reconciler pass so a large sweep never delays run recovery.
     void (async () => {
       // Parked first, so a check-in is never spent on work that has just been set aside.
-      await parkForgottenOpenWork({ prisma: deps.prisma, now, pageSize: 100 }).catch((error) =>
-        getLogger().error("park forgotten open work", error),
+      await bestEffort(
+        "park forgotten open work",
+        parkForgottenOpenWork({ prisma: deps.prisma, now, pageSize: 100 }),
       );
       return reconcileStrategicInitiatives({
         prisma: deps.prisma,

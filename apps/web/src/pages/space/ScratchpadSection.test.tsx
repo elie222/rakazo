@@ -109,7 +109,8 @@ it("keeps parked work behind Show more, without status chrome, and removes a wra
     expect(container.textContent).toContain("Compare both themes");
     expect(container.textContent).not.toContain("parked");
     expect(container.querySelector('[aria-label="Park"]')).toBeNull();
-    expect(container.querySelector('[aria-label="Reopen"]')).toBeNull();
+    // Parking can happen without the person, so a parked item offers the way back.
+    expect(container.querySelector('[aria-label="Reopen"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Complete"]')).not.toBeNull();
     const remove = container.querySelector<HTMLButtonElement>('[aria-label="Remove"]')!;
     expect(remove).not.toBeNull();
@@ -120,6 +121,39 @@ it("keeps parked work behind Show more, without status chrome, and removes a wra
   } finally {
     await act(async () => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reopens a parked item from behind Show more", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const parked = { ...workItem("parked", "Old idea"), status: "parked" as const };
+  rpcMock.scratchpad.list.mockResolvedValue([parked, workItem("a", "First")]);
+  rpcMock.scratchpad.update.mockReset().mockResolvedValue({ ...parked, status: "open" });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await mount(root, "bot-fixture");
+    expect(host.querySelector('[aria-label="Reopen"]')).toBeNull();
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((node) => node.textContent === "Show more")!
+        .click(),
+    );
+    rpcMock.scratchpad.list.mockResolvedValue([
+      { ...parked, status: "open" },
+      workItem("a", "First"),
+    ]);
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Reopen"]')!.click());
+    await act(flush);
+    expect(rpcMock.scratchpad.update).toHaveBeenCalledExactlyOnceWith({
+      itemId: "parked",
+      status: "open",
+    });
+    expect(host.querySelector('[aria-label="Reopen"]')).toBeNull();
+    expect(host.textContent).toContain("Old idea");
+  } finally {
+    await act(async () => root.unmount());
     vi.unstubAllGlobals();
   }
 });
