@@ -630,3 +630,15 @@ it("shows a retry error for the failure still on screen", async () => {
   expect(latest.sendError).toBeTruthy();
   expect(latest.retryRun).toBeUndefined();
 });
+
+it("holds the retry while a new message is sending", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  const send = deferred<unknown>();
+  rpc.threads.send.mockReturnValue(send.promise);
+  act(() => root.render(<Harness />));
+  expect(latest.retryRun).toBeDefined();
+  act(() => void latest.sendMessage("Never mind.", [], "nonce-retry"));
+  await flush();
+  expect(latest.retryRun).toBeUndefined();
+});

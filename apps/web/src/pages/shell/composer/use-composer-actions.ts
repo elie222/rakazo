@@ -650,7 +650,8 @@ export function useComposerActions({
     const runId = displayedRunErrorId;
     const botId = activeBotId.current;
     const groupId = activeGroupId.current;
-    if (runId && (botId || groupId)) retrySave.run({ botId, groupId, runId });
+    if (runId && (botId || groupId) && !sendingRef.current)
+      retrySave.run({ botId, groupId, runId });
   }
 
   return {
@@ -680,7 +681,7 @@ export function useComposerActions({
     displayedRunErrorId,
     handleRunErrorPresented,
     dismissComposerError,
-    retryRun: runRetryable && !retryingDisplayedRun ? retryRun : undefined,
+    retryRun: runRetryable && !retryingDisplayedRun && !sending ? retryRun : undefined,
     startFocusPrompt,
   };
 }
