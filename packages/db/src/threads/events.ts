@@ -245,6 +245,8 @@ export interface SendUserMessageResult {
   seq: number;
   taskId: string | null;
   runId: string | null;
+  /** A replay of a message history retention deleted: messageId no longer exists. */
+  pruned?: true;
 }
 
 export function createThreadEvents(
@@ -449,7 +451,13 @@ export async function sendUserMessage(
         },
       });
       return pruned
-        ? { messageId: pruned.messageId, seq: pruned.seq, taskId: null, runId: null }
+        ? {
+            messageId: pruned.messageId,
+            seq: pruned.seq,
+            taskId: null,
+            runId: null,
+            pruned: true as const,
+          }
         : null;
     }
     const created = await prisma.run.findFirst({

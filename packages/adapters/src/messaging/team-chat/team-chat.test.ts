@@ -610,6 +610,25 @@ describe("TeamChat.mirrorTranscript", () => {
       expect(chat.row(message.id)?.threadMessageId).toBe(visible[0]?.id);
     },
   );
+
+  it("completes a redelivery whose transcript history retention deleted, linking nothing", async () => {
+    const chat = setup();
+    const message = chat.record({ content: "Status?" });
+    chat.sendUserMessage.mockResolvedValueOnce({
+      messageId: "message-pruned",
+      seq: 0,
+      taskId: null,
+      runId: null,
+      pruned: true,
+    });
+    const update = vi.spyOn(chat.tables.externalMessage, "update");
+
+    await chat.teamChat.mirrorTranscript(chat.view(message.id));
+
+    expect(update).not.toHaveBeenCalled();
+    expect(chat.row(message.id)?.threadMessageId).toBeNull();
+    expect(chat.threadMessages.size).toBe(0);
+  });
 });
 
 describe("TeamChat.routeToAgent and drop", () => {

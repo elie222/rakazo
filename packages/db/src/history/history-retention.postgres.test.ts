@@ -189,7 +189,13 @@ describePostgres("chat history retention (PostgreSQL)", () => {
         clientNonce,
       }),
     );
-    expect(replayed).toEqual({ messageId: `${threadId}-m0`, seq: 0, taskId: null, runId: null });
+    expect(replayed).toEqual({
+      messageId: `${threadId}-m0`,
+      seq: 0,
+      taskId: null,
+      runId: null,
+      pruned: true,
+    });
     expect(await seqs()).toEqual([1]);
     expect(await system.run.count({ where: { threadId } })).toBe(0);
   });
