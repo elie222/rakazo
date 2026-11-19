@@ -105,6 +105,9 @@ remains enabled, and sharing knowledge never bypasses the receiving Space's acce
 Separate from memory, each bot keeps a short list of **Open work**: things it has started and not
 finished. It is in the bot's settings. You can add items for it, or mark them complete.
 
+When the bot adds an item, the chat shows a small row naming it. On the web the row has a
+**Remove** button while the item is still on the list.
+
 ## Memory across spaces
 
 Memory never crosses [spaces](./spaces.md). A bot in one space can't read notes from another.

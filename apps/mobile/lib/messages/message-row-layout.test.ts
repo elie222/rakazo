@@ -12,6 +12,12 @@ describe("messageRowLayout", () => {
     expect(row.menuFullWidth).toBe(true);
   });
 
+  it("lets an open-work row span the column so its line centers", () => {
+    const row = layout([{ kind: "open_work_event", itemId: "item-1", title: "Compare vendors" }]);
+    expect(row.width).toBe("100%");
+    expect(row.menuFullWidth).toBe(true);
+  });
+
   it("keeps an ordinary text bubble to its content", () => {
     expect(layout([{ kind: "text", text: "Hi" }]).menuFullWidth).toBe(false);
   });

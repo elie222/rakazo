@@ -3,6 +3,7 @@ import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
+import { postOpenWorkNotice } from "../../tasks/open-work-notice.js";
 import {
   addScratchpadItemFromTool,
   completeScratchpadItemFromTool,
@@ -91,7 +92,7 @@ export const taskTools: ToolHandlers = {
     });
   },
   async scratchpad_add(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run, bot, thread } = ctx;
     const { args } = call;
     const created = await addScratchpadItemFromTool(deps, {
       spaceId: run.spaceId,
@@ -101,6 +102,16 @@ export const taskTools: ToolHandlers = {
       status: args.status ? String(args.status) : undefined,
       notes: args.notes !== undefined ? String(args.notes) : undefined,
     });
+    // The person sees what was kept while they still remember why, and can drop it there.
+    if (created.item && created.item.status !== "done") {
+      await postOpenWorkNotice(deps, {
+        spaceId: run.spaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        itemId: created.item.id,
+        title: created.item.title,
+      });
+    }
     return call.finish(created);
   },
   async scratchpad_update(ctx, call) {

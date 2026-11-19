@@ -604,6 +604,25 @@ const routines: Scenario = {
   ],
 };
 
+const openWork: Scenario = {
+  id: "open-work",
+  label: "Open work",
+  messages: [
+    user("Look into the two vendors when you get a chance."),
+    message(
+      "system",
+      [{ kind: "open_work_event", itemId: "work-1", title: "Compare the two vendors" }],
+      { botId: BOT.botId },
+    ),
+    say("I've noted it and will come back with a comparison."),
+    message(
+      "system",
+      [{ kind: "open_work_event", itemId: "work-done", title: "Draft the summary" }],
+      { botId: BOT.botId },
+    ),
+  ],
+};
+
 const rich: Scenario = {
   id: "rich",
   label: "Rich content",
@@ -779,6 +798,7 @@ const SCENARIOS: Scenario[] = [
   working,
   team,
   routines,
+  openWork,
   rich,
   calls,
 ];
@@ -795,6 +815,21 @@ window.fetch = async (input, init) => {
   if (url.pathname === "/rpc/artifacts/get")
     return Response.json({
       json: { contentBase64: btoa(IMAGE_SVG), mimeType: "image/svg+xml" },
+    });
+  // One item is still open, so only its row offers Remove.
+  if (url.pathname === "/rpc/scratchpad/list")
+    return Response.json({
+      json: [
+        {
+          id: "work-1",
+          botId: BOT.botId,
+          title: "Compare the two vendors",
+          status: "open",
+          notes: "",
+          createdAt: "2026-10-26T09:00:00.000Z",
+          updatedAt: "2026-10-26T09:00:00.000Z",
+        },
+      ],
     });
   if (url.pathname === "/rpc/computer/preview")
     return Response.json({ json: { image: `data:image/svg+xml;base64,${btoa(SCREEN_SVG)}` } });

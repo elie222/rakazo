@@ -55,6 +55,7 @@ import {
   McpApprovalCard,
 } from "./message-cards";
 import { MessageHoverActions } from "./message-hover-actions";
+import { OpenWorkEventRow } from "./open-work-event-row";
 import { RoutineEventRow } from "./routine-event-row";
 
 export const MessageView = memo(function MessageView({
@@ -423,6 +424,9 @@ export const MessageView = memo(function MessageView({
             );
           }
           if (block.kind === "routine_event") return <RoutineEventRow key={i} block={block} />;
+          if (block.kind === "open_work_event") {
+            return <OpenWorkEventRow key={i} block={block} botId={message.botId} />;
+          }
           if (block.kind === "meta") {
             return (
               <div

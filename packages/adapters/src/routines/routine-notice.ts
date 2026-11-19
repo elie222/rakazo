@@ -1,4 +1,4 @@
-import type { RoutineEventChange } from "@rakazo/contracts";
+import type { MessageBlock, RoutineEventChange } from "@rakazo/contracts";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -84,7 +84,21 @@ async function writeRoutineNotice(deps: RoutineNoticeDeps, input: RoutineNoticeI
   const threadId = input.threadId ?? (await botThreadId(deps.prisma, input.botId));
   if (!threadId) return;
   const name = input.name.slice(0, 200);
-  const blocks = [{ kind: "routine_event" as const, change: input.change, name }];
+  await writeChatRow(deps, {
+    spaceId: input.spaceId,
+    threadId,
+    botId: input.botId,
+    block: { kind: "routine_event", change: input.change, name },
+  });
+}
+
+/** One system message holding one block, and its thread event, written together. */
+export async function writeChatRow(
+  deps: RoutineNoticeDeps,
+  input: { spaceId: string; threadId: string; botId: string; block: MessageBlock },
+) {
+  const { threadId } = input;
+  const blocks = [input.block];
   const seq = await deps.prisma.$transaction(async (tx) => {
     const message = await createThreadMessageInTransaction(tx, {
       threadId,
@@ -101,5 +115,5 @@ async function writeRoutineNotice(deps: RoutineNoticeDeps, input: RoutineNoticeI
     });
     return event.seq;
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  await bestEffort("routine notice notify", deps.events.notify(threadId, seq));
+  await bestEffort("chat row notify", deps.events.notify(threadId, seq));
 }

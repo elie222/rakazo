@@ -44,6 +44,20 @@ test("gallery shows routine changes as small rows", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "routine-change-rows");
 });
 
+test("gallery shows an open-work save as a small row, removable while open", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?scenario=open-work&theme=light");
+  const rows = page.getByTestId("open-work-event-row");
+  await expect(rows).toHaveText([
+    'Added to open work "Compare the two vendors"',
+    'Added to open work "Draft the summary"',
+  ]);
+  await expect(rows.nth(0).getByRole("button", { name: "Remove" })).toBeVisible();
+  await expect(rows.nth(1).getByRole("button", { name: "Remove" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "open-work-save-rows");
+});
+
 test("gallery renders every chat scenario in both themes", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

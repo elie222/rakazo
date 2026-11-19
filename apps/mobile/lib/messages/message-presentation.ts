@@ -9,7 +9,8 @@ export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
       block.kind === "bot_message_sent" ||
       block.kind === "bot_message_received" ||
       block.kind === "channel_message" ||
-      block.kind === "routine_event",
+      block.kind === "routine_event" ||
+      block.kind === "open_work_event",
   );
 }
 

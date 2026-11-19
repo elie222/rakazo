@@ -654,7 +654,8 @@ export const Transcript = memo(function Transcript({
                                   block.kind === "app_connect" ||
                                   block.kind === "page" ||
                                   block.kind === "computer" ||
-                                  block.kind === "routine_event",
+                                  block.kind === "routine_event" ||
+                                  block.kind === "open_work_event",
                               ) || pageView.pages.has(message.id)
                                 ? "w-full"
                                 : "w-fit"

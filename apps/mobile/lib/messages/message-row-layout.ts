@@ -33,8 +33,10 @@ export function messageRowLayout(
         !block.instructionUpdate &&
         !block.settingsUpdate),
   );
-  // A routine row is one centered line, so its menu host spans the column instead of the text.
-  const routineRow = blocks.some((block) => block.kind === "routine_event");
+  // A routine or open-work row is one centered line, so its menu host spans the column instead of the text.
+  const routineRow = blocks.some(
+    (block) => block.kind === "routine_event" || block.kind === "open_work_event",
+  );
   const gutter = activityBotId ? (inGroup ? 28 : 36) : 0;
   return {
     width: full ? "100%" : fillsBubble && !activityBotId ? "90%" : undefined,
