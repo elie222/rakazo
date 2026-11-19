@@ -215,16 +215,17 @@ export function ComposerError({
           </details>
         ) : null}
       </div>
-      {!sendError && runError && onRetryRun ? (
-        <button
+      {!sendError && runError && !recovery && onRetryRun ? (
+        <Button
           type="button"
-          aria-label={t`Try again`}
+          variant="outline"
+          size="sm"
           data-testid="composer-error-retry"
           onClick={onRetryRun}
-          className="shrink-0 text-destructive hover:text-foreground"
         >
-          <RotateCw size={13} strokeWidth={2} />
-        </button>
+          <RotateCw data-icon="inline-start" aria-hidden="true" />
+          {t`Try again`}
+        </Button>
       ) : null}
       <button
         type="button"

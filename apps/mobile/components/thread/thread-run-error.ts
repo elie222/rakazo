@@ -84,7 +84,11 @@ export function useThreadRunError(
   });
   const { groupId } = thread;
   const retry =
-    runError && run && canRetryRun(run, thread.userId) && (botId || groupId)
+    runError &&
+    run &&
+    !normalizedRunError?.recovery &&
+    canRetryRun(run, thread.userId) &&
+    (botId || groupId)
       ? {
           busy: retrySave.pending && retrySave.input?.runId === run.id,
           onPress: () => retrySave.run({ botId, groupId, runId: run.id }),

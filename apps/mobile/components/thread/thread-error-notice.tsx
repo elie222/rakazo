@@ -4,7 +4,6 @@ import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useUiLocale } from "../../lib/i18n/i18n";
 import { native, useMobileTokens } from "../../lib/native/native";
 import { RunErrorAction, RunErrorTextAction } from "../cards/run-error-actions";
-import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
 
 /** A list item: its full height participates in scrolling above the composer. */
@@ -40,7 +39,7 @@ export function ThreadErrorNotice({
           }).format(resetAt),
         })}.`
       : null;
-  const hasBody = (summary && error) || upcomingReset || action || (summary && onDetails);
+  const hasBody = (summary && error) || upcomingReset || action || retry || (summary && onDetails);
   return (
     <View
       accessibilityRole="alert"
@@ -62,16 +61,6 @@ export function ThreadErrorNotice({
           />
         </View>
         <Text style={[styles.headline, { color: tokens.foreground }]}>{summary ?? error}</Text>
-        {retry ? (
-          <NativeActionButton
-            accessibilityLabel={t`Try again`}
-            icon={{ ios: "arrow.clockwise", android: "refresh" }}
-            prominence="quiet"
-            size="compact"
-            busy={retry.busy}
-            onPress={retry.onPress}
-          />
-        ) : null}
       </View>
       {hasBody ? (
         <View style={[styles.body, { marginLeft: 18 * fontScale + 8 }]}>
@@ -81,7 +70,11 @@ export function ThreadErrorNotice({
           {upcomingReset ? (
             <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{upcomingReset}</Text>
           ) : null}
-          {action ? <RunErrorAction label={action.label} onPress={action.onPress} /> : null}
+          {action ? (
+            <RunErrorAction label={action.label} onPress={action.onPress} />
+          ) : retry ? (
+            <RunErrorAction label={t`Try again`} onPress={retry.onPress} busy={retry.busy} />
+          ) : null}
           {summary && onDetails ? (
             <RunErrorTextAction label={t`Details`} onPress={onDetails} />
           ) : null}

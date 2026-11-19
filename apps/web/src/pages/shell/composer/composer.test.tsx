@@ -153,7 +153,7 @@ it("offers to try a failed reply again only while it is retryable", () => {
   });
   const retry = () =>
     container?.querySelector<HTMLButtonElement>('[data-testid="composer-error-retry"]');
-  expect(retry()?.getAttribute("aria-label")).toBe("Try again");
+  expect(retry()?.textContent).toBe("Try again");
   act(() => retry()?.click());
   expect(onRetryRun).toHaveBeenCalledOnce();
 
@@ -161,6 +161,18 @@ it("offers to try a failed reply again only while it is retryable", () => {
   expect(retry()).toBeNull();
   rerenderComposer({ onRetryRun, sendError: "Could not send the message." });
   expect(retry()).toBeNull();
+});
+
+it("offers the fix instead of a retry when trying again would fail the same way", () => {
+  renderComposer(async () => true, {
+    runError: '401: {"message":"Invalid API key"}',
+    runErrorId: "failed-run",
+    onRetryRun: vi.fn(),
+  });
+  expect(container?.querySelector('[data-testid="composer-error-action"]')?.textContent).toBe(
+    "Replace key",
+  );
+  expect(container?.querySelector('[data-testid="composer-error-retry"]')).toBeNull();
 });
 
 it.each([
