@@ -28,6 +28,11 @@ import {
   createToolkitDirectoryCache,
   mergeCatalogWithConnected,
 } from "./composio-catalog-cache.js";
+import {
+  isComposioOutage,
+  isStaleConnectedAccountError,
+  staleAccountIds,
+} from "./composio-errors.js";
 
 type SdkSession = Awaited<ReturnType<Composio["create"]>>;
 
@@ -535,6 +540,49 @@ export class ComposioConnector implements ComposioProvider {
       connectedAccounts[toolkit] = [...ids].sort();
     }
     if (toolkits.length === 0) return { reconnect, connectedAccounts };
+    let accounts = connectedAccounts;
+    let remaining = toolkits;
+    let stale = reconnect;
+    for (;;) {
+      try {
+        return await this.executeSession(userId, remaining, stale, accounts);
+      } catch (error) {
+        if (!isStaleConnectedAccountError(error) || Object.keys(accounts).length === 0) throw error;
+        // The account list was unavailable, so a deleted account slipped through. Drop the
+        // accounts the refusal names (all of them when it names none we hold): an app left with
+        // no account needs a reconnect, and the rest still get a session. Each pass drops at
+        // least one account, so this ends.
+        const named = staleAccountIds(error);
+        const held = Object.values(accounts).flat();
+        const dropAll = !held.some((id) => named.has(id));
+        const kept: Record<string, string[]> = {};
+        const dropped: string[] = [];
+        for (const [toolkit, ids] of Object.entries(accounts)) {
+          const live = dropAll ? [] : ids.filter((id) => !named.has(id));
+          if (live.length > 0) kept[toolkit] = live;
+          else dropped.push(toolkit);
+        }
+        getLogger().warn("composio connected accounts need reconnect", {
+          "composio.toolkits": dropped.join(","),
+        });
+        accounts = kept;
+        remaining = remaining.filter((toolkit) => !dropped.includes(toolkit));
+        stale = [...stale, ...dropped];
+        if (remaining.length === 0) return { reconnect: stale, connectedAccounts: {} };
+      }
+    }
+  }
+
+  private async executeSession(
+    userId: string,
+    toolkits: string[],
+    reconnect: string[],
+    connectedAccounts: Record<string, string[]>,
+  ): Promise<{
+    session?: ComposioSession;
+    reconnect: string[];
+    connectedAccounts: Record<string, string[]>;
+  }> {
     const key = executeSessionKey(toolkits, connectedAccounts);
     const composio = await this.sdk();
     const existing = this.executeSessions.get(userId);
@@ -705,9 +753,18 @@ export class ComposioConnector implements ComposioProvider {
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const connections = connectedComposioConnections(context);
     if (connections.length === 0) return [];
-    const { session } = await this.sessionForExecute(context.userId, connections);
-    if (!session) return [];
-    return asConnectorTools(await session.tools());
+    try {
+      const { session } = await this.sessionForExecute(context.userId, connections);
+      if (!session) return [];
+      return asConnectorTools(await session.tools());
+    } catch (error) {
+      // An outage or a cancelled request hides the tools for this turn only.
+      if (!isComposioOutage(error)) throw error;
+      getLogger().warn("composio tool discovery unavailable", {
+        error: sanitizeIntegrationError(error),
+      });
+      return [];
+    }
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
