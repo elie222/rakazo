@@ -880,6 +880,7 @@ describe("role-based model settings API", () => {
     const { call, prisma, roles } = setup({
       compatible: { enabledModelIds: ["model-a"], defaultModel: "model-a" },
     });
+    const preference = { modelId: "model-a", thinkingLevel: null, updatedAt: new Date(0) };
     const connection = (id: string) => ({
       id,
       userId: owner.userId,
@@ -888,6 +889,7 @@ describe("role-based model settings API", () => {
       secretId: `secret-${id}`,
       createdAt: new Date(0),
       updatedAt: new Date(0),
+      userPreferences: id === "a" ? [preference] : [],
     });
     const [connectionA, connectionB] = [connection("a"), connection("b")];
     const client = prisma as unknown as {
@@ -901,9 +903,7 @@ describe("role-based model settings API", () => {
     client.userModelCredential.findMany.mockResolvedValue([connectionA, connectionB]);
     client.userModelPreference.findMany.mockResolvedValue([
       {
-        modelId: "model-a",
-        thinkingLevel: null,
-        updatedAt: new Date(0),
+        ...preference,
         credential: connectionA,
       },
     ]);
