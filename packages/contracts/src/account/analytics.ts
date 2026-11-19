@@ -159,6 +159,17 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
       errorKind: AnalyticsErrorKind,
     })
     .strict(),
+  // An app connection turning connected. Only an id from the fixed integrations catalog, checked
+  // by the caller; never the account or its name.
+  z
+    .object({
+      name: z.literal("tool_connected"),
+      app: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
+        .optional(),
+    })
+    .strict(),
   // A manual edit in bot settings; which setting only, never its value.
   z.object({ name: z.literal("bot_setting_changed"), setting: AnalyticsBotSetting }).strict(),
   // Someone asked for a computer to be repaired; whether it worked shows in the logs.

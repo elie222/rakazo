@@ -45,8 +45,10 @@ describe("connections.begin", () => {
         return fn(tx);
       }),
     } as unknown as PrismaClient;
+    const analytics = { capture: vi.fn(), flush: vi.fn() };
     const deps = {
       prisma,
+      analytics,
       connectors: {
         managed: vi.fn(() => ({ begin })),
       },
@@ -92,6 +94,14 @@ describe("connections.begin", () => {
     expect(vi.mocked(prisma.$transaction).mock.calls.map((call) => call[1])).toEqual([
       { timeout: 60_000 },
       { timeout: 60_000 },
+    ]);
+    // Keyed to the reused row's creation, so a reconnect repeats the earlier event and is deduped.
+    expect(analytics.capture.mock.calls).toEqual([
+      [
+        "user-1",
+        { name: "tool_connected", app: "gmail" },
+        { id: "conn-old", at: new Date("2026-08-26T00:00:00.000Z") },
+      ],
     ]);
     expect(create).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledWith({
