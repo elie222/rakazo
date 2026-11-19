@@ -83,7 +83,7 @@ async function request(
   }
 }
 
-function boundedLimit(limit: number): number {
+export function boundedLimit(limit: number): number {
   return Number.isFinite(limit)
     ? Math.min(Math.max(1, Math.floor(limit)), MAX_RECALL_LIMIT)
     : DEFAULT_RECALL_LIMIT;

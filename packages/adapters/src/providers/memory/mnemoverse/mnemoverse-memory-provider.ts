@@ -13,6 +13,7 @@ import type {
 import { getLogger } from "@rakazo/logging";
 import type { MnemoverseConnectionConfig } from "./mnemoverse-client.js";
 import {
+  boundedLimit,
   deleteMnemoverseAtom,
   getMnemoverseAtomDomain,
   probeMnemoverse,
@@ -114,7 +115,8 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
       ),
     );
     const failed: Array<{ domain: string; error: string }> = [];
-    const byAtom = new Map<string, SemanticMemoryResult>();
+    // Keyed by text: the same fact saved under both scopes sits in two domains as two atoms.
+    const byContent = new Map<string, SemanticMemoryResult>();
     for (const [index, response] of responses.entries()) {
       const domain = domains[index]!;
       if (!response.ok) {
@@ -124,7 +126,9 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
       for (const item of response.value) {
         // Only what the requested domain holds belongs to this bot, whatever the service sends back.
         if (item.domain !== domain) continue;
-        byAtom.set(item.atomId, {
+        const seen = byContent.get(item.content);
+        if (seen && seen.score >= item.relevance) continue;
+        byContent.set(item.content, {
           memory: item.content,
           score: item.relevance,
           id: item.atomId,
@@ -140,7 +144,9 @@ export class MnemoverseMemoryProvider implements SemanticMemoryProvider {
     if (failed.length > 0) {
       getLogger().warn("Mnemoverse recall is missing a domain that did not answer", { failed });
     }
-    const value = [...byAtom.values()].sort((a, b) => b.score - a.score).slice(0, request.limit);
+    const value = [...byContent.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, boundedLimit(request.limit));
     return { ok: true, value };
   }
 

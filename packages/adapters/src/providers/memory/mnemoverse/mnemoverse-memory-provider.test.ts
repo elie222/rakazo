@@ -131,6 +131,26 @@ describe("Mnemoverse recall", () => {
     expect(result.ok && result.value.map((item) => item.id)).toEqual(["high", "mid"]);
   });
 
+  it("lists a fact saved in both domains once and never returns more than the cap", async () => {
+    const atoms = [
+      { id: "own", domain: BOT, content: "Team uses UTC" },
+      { id: "shared", domain: SPACE, content: "Team uses UTC" },
+      ...Array.from({ length: 30 }, (_, index) => ({
+        id: `fact-${index}`,
+        domain: index % 2 ? BOT : SPACE,
+        content: `Fact ${index}`,
+      })),
+    ];
+    mnemoverse(atoms);
+    const result = await provider().recall(
+      { query: "q", scope: "shared", botId: "bot-1", limit: 50 },
+      context,
+    );
+    const memories = result.ok ? result.value.map((item) => item.memory) : [];
+    expect(memories.filter((memory) => memory === "Team uses UTC")).toHaveLength(1);
+    expect(memories).toHaveLength(20);
+  });
+
   it("skips replaced revisions, blank content and malformed rows", async () => {
     mnemoverse([], {
       "POST /memory/read": () =>
@@ -346,15 +366,19 @@ describe("Mnemoverse save", () => {
   });
 
   it("does not wait on a response body that will not close", async () => {
-    const stuck = new ReadableStream({ cancel: () => new Promise<void>(() => {}) });
-    mnemoverse([], { "POST /memory/read": () => new Response(stuck, { status: 500 }) });
     const controller = new AbortController();
-    const pending = provider().recall(
+    // The abort lands only once the cancel has started and will never settle.
+    const stuck = new ReadableStream({
+      cancel: () => {
+        controller.abort();
+        return new Promise<void>(() => {});
+      },
+    });
+    mnemoverse([], { "POST /memory/read": () => new Response(stuck, { status: 500 }) });
+    const result = await provider().recall(
       { query: "coffee", scope: "isolated", botId: "bot-1", limit: 5 },
       { ...context, signal: controller.signal },
     );
-    setTimeout(() => controller.abort(), 10);
-    const result = await pending;
     expect(result.ok).toBe(false);
   });
 
