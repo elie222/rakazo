@@ -75,7 +75,7 @@ export function ShellSidePanel({
   return (
     <ResizableSidePanel open={open} panel={panel ?? "closed"}>
       {open ? (
-        <div className="rk-scroll h-full w-full overflow-y-auto px-5 py-[17px]">
+        <div className="rk-scroll h-full w-full overflow-y-auto px-5 pt-3.5 pb-[17px]">
           {!(botView && active) &&
           panel !== "routine" &&
           panel !== "create-group" &&
@@ -89,11 +89,11 @@ export function ShellSidePanel({
               <div className="ml-auto flex gap-1">
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   aria-label={t`Close panel`}
                   onClick={() => setPanel(null)}
                 >
-                  <X size={16} strokeWidth={1.8} />
+                  <X className="size-4.5" strokeWidth={1.75} />
                 </Button>
               </div>
             </div>
