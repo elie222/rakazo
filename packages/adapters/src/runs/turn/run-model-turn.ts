@@ -156,7 +156,9 @@ function modelTurnRequest(
   const { ctx } = turn;
   const { script, state } = turn.ctx;
   const { effects } = turn.ctx.state;
-  const currentTurnDataInPrompt = run.trigger === "user" || run.trigger === "follow_up";
+  // The scripted runtime interprets the prompt as fixture commands.
+  const currentTurnDataInPrompt =
+    !scripted && (run.trigger === "user" || run.trigger === "follow_up");
   const redactedMemoryContext = memoryContext
     ? redactSecrets(memoryContext, runSecrets)
     : undefined;

@@ -665,6 +665,24 @@ describeJourneys("required product journeys", () => {
     ).toMatchObject({ content: "legacy", revision: doc.revision + 3 });
   });
 
+  it("keeps saved memory from triggering scripted run commands", async () => {
+    const cookie = await signup(app, `memory-scripted-${stamp}@rakazo.test`, "Memory fixture");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Memory",
+      description: "",
+      instructions: "",
+    });
+    const [doc] = await rpc<Array<{ id: string }>>(app, cookie, "memory/list", {
+      botId: bot.id,
+    });
+    await rpc(app, cookie, "memory/update", {
+      documentId: doc!.id,
+      content: "The phrase for the failure drill is “fail this run”.",
+    });
+    await sendAndWait(app, cookie, bot.id, "Are you ready?");
+  });
+
   it("clears a conversation without removing the bot, computer, memory, or routines", async () => {
     const cookie = await signup(app, `clear-j-${stamp}@rakazo.test`, "Clear Journey");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
