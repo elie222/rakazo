@@ -36,7 +36,9 @@ Cards never block the chat. Keep talking to the bot, and answer the card wheneve
 get a notification when a bot is waiting on you, if notifications are on in the bot's settings.
 
 An approval card from a run nobody is watching, such as a routine, a webhook or another bot's
-message, expires after 30 minutes. The bot doesn't do that action and says so in its reply.
+message, expires after 30 minutes by default. The bot doesn't do that action and says so in its
+reply. `UNATTENDED_APPROVAL_EXPIRE_AFTER_MS` changes that window for the whole deployment (see
+[configuration](./self-host-configuration.md)); a card from a chat someone is in stays open until answered.
 
 ## Allow and Block lists
 

@@ -245,6 +245,28 @@ export function isOwnerStartedRun(
  * not run; a card from a chat someone is in stays open until answered.
  */
 export const UNATTENDED_APPROVAL_EXPIRE_AFTER_MS = 30 * 60 * 1000;
+
+/** One minute to thirty days, the same span the stuck-work settings accept. */
+const UNATTENDED_APPROVAL_MIN_MS = 60 * 1000;
+const UNATTENDED_APPROVAL_MAX_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * How long an unattended approval card stays open, in ms: the deployment's
+ * `UNATTENDED_APPROVAL_EXPIRE_AFTER_MS` when it names a span from one minute to thirty days,
+ * else the 30-minute default. A routine that should wait for an evening approval and one that
+ * should give up before the next tick cannot both use one constant.
+ */
+export function unattendedApprovalExpireAfterMs(
+  raw: string | undefined = process.env.UNATTENDED_APPROVAL_EXPIRE_AFTER_MS,
+): number {
+  const value = raw?.trim() ? Number(raw) : Number.NaN;
+  return Number.isFinite(value) &&
+    value >= UNATTENDED_APPROVAL_MIN_MS &&
+    value <= UNATTENDED_APPROVAL_MAX_MS
+    ? value
+    : UNATTENDED_APPROVAL_EXPIRE_AFTER_MS;
+}
+
 const UNATTENDED_TRIGGERS = new Set(["routine", "webhook", "bot_message", "spawn", "tickets"]);
 
 export function approvalCardExpires(trigger: string): boolean {
