@@ -59,3 +59,9 @@ type RpcInputs = { [Path in RpcPath]: AtPath<InferContractRouterInputs<AppContra
 type RpcOutputs = { [Path in RpcPath]: AtPath<InferContractRouterOutputs<AppContract>, Path> };
 export type RpcInput<Path extends RpcPath> = RpcInputs[Path];
 export type RpcOutput<Path extends RpcPath> = RpcOutputs[Path];
+
+export const DEPLOYMENT_MODEL_READS = [
+  "me",
+  "models/role",
+  "models/sharedDeployment",
+] as const satisfies readonly RpcPath[];

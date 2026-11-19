@@ -10,7 +10,6 @@ import {
   completeOnboarding,
   manageModelConnection,
   modelConnectionDialog,
-  modelConnectOption,
   openBotSettings,
   openModelConnection,
   openUserSettings,
@@ -26,6 +25,55 @@ const LOCAL_MODEL_REPLY = "OpenAI-compatible endpoint verified end to end.";
 test.afterEach(async ({ page }) => {
   // Finish intercepted responses before the browser context is disposed.
   await page.unrouteAll({ behavior: "wait" });
+});
+
+test("sets the deployment model from a supported OAuth binding", async ({ page }, testInfo) => {
+  let connection: { provider: string; modelId: string; method: string } | null = null;
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    await route.fulfill({
+      response,
+      json: {
+        json: { ...body.json, isAdmin: true, billingEnabled: false, needsModel: !connection },
+      },
+    });
+  });
+  await page.route("**/rpc/models/sharedDeployment", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          connection,
+          providers: [{ id: "openai", methods: ["api_key", "oauth"], bindings: ["fixture"] }],
+        },
+      },
+    }),
+  );
+  await page.route("**/rpc/models/setSharedDeployment", (route) => {
+    const input = route.request().postDataJSON().json;
+    expect(input).toEqual({
+      provider: "openai",
+      modelId: "fixture-model",
+      method: "oauth",
+      binding: "fixture",
+    });
+    connection = { provider: input.provider, method: input.method, modelId: input.modelId };
+    return route.fulfill({ json: { json: { ok: true } } });
+  });
+  await signup(page, `shared-model-${Date.now()}@rakazo.test`, "password12", "Deployment Admin");
+  await expect(page).toHaveURL(/\/onboarding\/model$/);
+  const panel = page.getByRole("region", { name: "Deployment default" });
+  await panel.getByRole("button", { name: "Connect provider" }).click();
+  await panel.getByRole("combobox", { name: "Provider" }).click();
+  await page.getByRole("option", { name: /OpenAI|openai/ }).click();
+  await panel.getByRole("combobox", { name: "Authentication" }).click();
+  await page.getByRole("option", { name: "OAuth" }).click();
+  await panel.getByRole("combobox", { name: "Workload identity" }).click();
+  await page.getByRole("option", { name: "fixture" }).click();
+  await panel.getByRole("textbox", { name: "Model ID" }).fill("fixture-model");
+  await captureScreenshot(page, testInfo, "deployment-model-oauth");
+  await panel.getByRole("button", { name: "Test and save" }).click();
+  await expect(page).toHaveURL(/\/app\//);
 });
 
 test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, testInfo) => {

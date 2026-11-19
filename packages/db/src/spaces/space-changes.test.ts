@@ -1,7 +1,11 @@
 import { SpaceChangeKind } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
 import { describe, expect, it } from "vitest";
-import { followSpaceChanges, publishSpaceChange } from "./space-changes.js";
+import {
+  followSpaceChanges,
+  publishDeploymentModelChange,
+  publishSpaceChange,
+} from "./space-changes.js";
 
 function fakeFanout() {
   const subscribers = new Map<string, Set<(payload: string) => void>>();
@@ -51,6 +55,18 @@ describe("followSpaceChanges", () => {
     expect(fanout.topics()).toEqual([]);
   });
 
+  it("signals a deployment model update in every open Space", async () => {
+    const fanout = fakeFanout();
+    const one = followSpaceChanges(fanout as never, "space-1");
+    const two = followSpaceChanges(fanout as never, "space-2");
+    await Promise.all([opened(one), opened(two)]);
+    await publishDeploymentModelChange(fanout as never);
+    expect((await one.next()).value).toBe("deploymentModel");
+    expect((await two.next()).value).toBe("deploymentModel");
+    await Promise.all([one.return(undefined), two.return(undefined)]);
+    expect(fanout.topics()).toEqual([]);
+  });
+
   it("coalesces a burst of one kind and keeps kinds apart", async () => {
     const fanout = fakeFanout();
     const controller = new AbortController();
@@ -85,12 +101,25 @@ describe("followSpaceChanges", () => {
     await iterator.return(undefined);
   });
 
-  it("signals every kind when the fanout asks subscribers to catch up", async () => {
+  it("catches up on deployment changes only from the deployment-wide topic", async () => {
     const fanout = fakeFanout();
     const iterator = followSpaceChanges(fanout as never, "space-1");
     await opened(iterator);
     await fanout.publish("space-changes:space-1", "");
-    expect(await opened(iterator)).toEqual(SpaceChangeKind.options);
+    for (const kind of SpaceChangeKind.options.filter((kind) => kind !== "deploymentModel")) {
+      expect((await iterator.next()).value).toBe(kind);
+    }
+
+    const next = iterator.next();
+    let signalled = false;
+    void next.then(() => {
+      signalled = true;
+    });
+    await flush();
+    expect(signalled).toBe(false);
+
+    await fanout.publish("deployment-model-changes", "");
+    expect((await next).value).toBe("deploymentModel");
     await iterator.return(undefined);
   });
 });

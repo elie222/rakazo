@@ -7,6 +7,8 @@ import { ChangeLatch } from "../threads/event-stream.js";
 const IDLE_WAIT_MS = 60_000;
 
 const spaceChangesTopic = (spaceId: string) => `space-changes:${spaceId}`;
+const DEPLOYMENT_MODEL_TOPIC = "deployment-model-changes";
+const perSpaceKinds = SpaceChangeKind.options.filter((kind) => kind !== "deploymentModel");
 
 const PUBLISH_RETRY_MS = 15_000;
 
@@ -21,8 +23,21 @@ export function publishSpaceChange(
   kind: SpaceChangeKind,
   options: { sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<void> {
+  return publishChange(realtime, spaceChangesTopic(spaceId), kind, options);
+}
+
+export function publishDeploymentModelChange(realtime: RealtimeFanout | undefined) {
+  return publishChange(realtime, DEPLOYMENT_MODEL_TOPIC, "deploymentModel");
+}
+
+function publishChange(
+  realtime: RealtimeFanout | undefined,
+  topic: string,
+  kind: SpaceChangeKind,
+  options: { sleep?: (ms: number) => Promise<void> } = {},
+): Promise<void> {
   if (realtime)
-    void retryWhileDatabaseUnavailable(() => realtime.publish(spaceChangesTopic(spaceId), kind), {
+    void retryWhileDatabaseUnavailable(() => realtime.publish(topic, kind), {
       source: `${kind} signal`,
       waitMs: PUBLISH_RETRY_MS,
       ...options,
@@ -41,18 +56,24 @@ export async function* followSpaceChanges(
   signal?: AbortSignal,
 ): AsyncGenerator<SpaceChangeKind> {
   const latch = new ChangeLatch();
+  // A client reopening its stream may have missed a deployment-wide change while offline.
   const pending = new Set<SpaceChangeKind>(SpaceChangeKind.options);
   const changed = (kind: SpaceChangeKind) => {
     pending.add(kind);
     latch.notify();
   };
   const unsubscribe = await realtime.subscribe(spaceChangesTopic(spaceId), (payload) => {
-    // An empty payload is the fanout's catch-up after its listener reconnects: anything may have changed.
-    if (payload === "") for (const kind of SpaceChangeKind.options) changed(kind);
+    // The deployment-wide topic handles its own catch-up after a listener reconnects.
+    if (payload === "") for (const kind of perSpaceKinds) changed(kind);
     const kind = SpaceChangeKind.safeParse(payload);
-    if (kind.success) changed(kind.data);
+    if (kind.success && kind.data !== "deploymentModel") changed(kind.data);
   });
+  let unsubscribeDeployment: (() => Promise<void>) | undefined;
   try {
+    // The same content-free signal reaches every authenticated Space stream.
+    unsubscribeDeployment = await realtime.subscribe(DEPLOYMENT_MODEL_TOPIC, () =>
+      changed("deploymentModel"),
+    );
     while (!signal?.aborted) {
       const seen = latch.generation;
       const kinds = [...pending];
@@ -61,6 +82,6 @@ export async function* followSpaceChanges(
       await latch.waitForChange(seen, IDLE_WAIT_MS, signal);
     }
   } finally {
-    await unsubscribe();
+    await Promise.all([unsubscribe(), unsubscribeDeployment?.()]);
   }
 }

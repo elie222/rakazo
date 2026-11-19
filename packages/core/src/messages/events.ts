@@ -807,37 +807,68 @@ export function sanitizeJsonValue<T>(value: T): T {
   return value;
 }
 
-export function createStreamingRedactor(secrets: string[]) {
+type RedactedStreamChunk = { start: number; text: string; replacement: boolean };
+
+/** Optional source offsets let a caller route safe output back to the blocks it came from. */
+export function createStreamingRedactor(
+  secrets: string[],
+  onOutput?: (chunks: readonly RedactedStreamChunk[], consumed: number) => void,
+) {
   const values = protectedValues(secrets);
   const maxLength = Math.max(0, ...values.map((value) => value.length));
   let buffer = "";
   let covered = 0;
+  let sourceOffset = 0;
 
-  const drain = (final: boolean) => {
-    let output: string;
-    if (values.length === 0) {
-      output = buffer;
-      buffer = "";
-    } else {
-      // A match a later chunk completes starts in the last maxLength - 1 units, so text before
-      // that is final. A stretch reaching past it is shown now and its rest kept as `covered`: a
-      // later match starting inside it extends the same placeholder, so nothing is held for long.
-      const cut = final ? buffer.length : Math.max(0, buffer.length - maxLength + 1);
-      let offset = covered;
-      output = "";
-      for (const [start, end] of redactedRanges(buffer, values)) {
-        if (start >= cut) break;
-        if (start >= offset) output += `${buffer.slice(offset, start)}[redacted]`;
-        offset = Math.max(offset, end);
-      }
-      output += buffer.slice(Math.min(offset, cut), cut);
-      covered = Math.max(0, offset - cut);
-      buffer = buffer.slice(cut);
+  // On a failed stream, a retry could supply the rest of a credential prefix.
+  // Match the possible completion without consuming or exposing synthetic input.
+  function withPartialMatch() {
+    for (let at = Math.max(0, buffer.length - maxLength + 1); at < buffer.length; at += 1) {
+      const suffix = buffer.slice(at);
+      const match = values.find(
+        (value) => value.length > suffix.length && value.startsWith(suffix),
+      );
+      if (match) return buffer + match.slice(suffix.length);
     }
-    // No-secret path emits the whole buffer; hold a trailing high until the next chunk.
+    return buffer;
+  }
+
+  const drain = (final: boolean, redactPartial: boolean) => {
+    // A match a later chunk completes starts in the last maxLength - 1 units, so text before
+    // that is final. A stretch reaching past it is shown now and its rest kept as `covered`: a
+    // later match starting inside it extends the same placeholder, so nothing is held for long.
+    let cut = final || !maxLength ? buffer.length : Math.max(0, buffer.length - maxLength + 1);
+    const chunks = onOutput ? ([] as RedactedStreamChunk[]) : undefined;
+    let output = "";
+    const append = (start: number, text: string, replacement = false) => {
+      if (!text) return;
+      output += text;
+      chunks?.push({ start: sourceOffset + start, text, replacement });
+    };
+    let offset = maxLength ? covered : 0;
+    for (const [start, end] of redactedRanges(
+      redactPartial ? withPartialMatch() : buffer,
+      values,
+    )) {
+      if (start >= cut) break;
+      if (start >= offset) {
+        append(offset, buffer.slice(offset, start));
+        append(start, "[redacted]", true);
+      }
+      offset = Math.max(offset, end);
+    }
+    append(Math.min(offset, cut), buffer.slice(Math.min(offset, cut), cut));
     if (!final && endsWithHighSurrogate(output)) {
-      buffer = output.slice(-1) + buffer;
+      cut -= 1;
       output = output.slice(0, -1);
+      const last = chunks?.at(-1);
+      if (last) last.text = last.text.slice(0, -1);
+    }
+    covered = final ? 0 : Math.max(0, offset - cut);
+    buffer = buffer.slice(cut);
+    if (onOutput && chunks) {
+      sourceOffset += cut;
+      onOutput(chunks, sourceOffset);
     }
     return sanitizeUtf16ForJson(output);
   };
@@ -845,10 +876,10 @@ export function createStreamingRedactor(secrets: string[]) {
   return {
     push(chunk: string) {
       buffer += chunk;
-      return drain(false);
+      return drain(false, false);
     },
-    finish() {
-      return drain(true);
+    finish(redactPartial = false) {
+      return drain(true, redactPartial);
     },
     /**
      * Drops what is held back without showing it, but keeps matching against it, so a value

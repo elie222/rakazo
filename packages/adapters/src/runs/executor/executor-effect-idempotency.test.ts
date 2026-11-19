@@ -207,6 +207,7 @@ function fixture(runId = "run-1") {
     userModelPreference: { findFirst: vi.fn(async () => null) },
     userModelRoleChoice: { findMany: vi.fn(async () => []) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

@@ -14,6 +14,8 @@ import {
   ModelSettingsSaveSchema,
   modelChoiceListSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  SharedModelInputSchema,
+  SharedModelSettingsSchema,
 } from "./model-connections.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import {
@@ -32,6 +34,10 @@ import {
 
 export const modelsRpc = {
   models: {
+    sharedDeployment: oc.output(SharedModelSettingsSchema),
+    setSharedDeployment: oc
+      .input(SharedModelInputSchema.nullable())
+      .output(z.object({ ok: z.literal(true) })),
     forRole: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),

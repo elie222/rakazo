@@ -45,6 +45,7 @@ function fixture() {
     spaceSettingOverride: { findUnique: vi.fn(async () => null) },
     userModelRoleChoice: { findMany: vi.fn(async () => []) },
     deploymentSettings: { findUnique: vi.fn(async () => null) },
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
     $queryRaw: vi.fn(async () => []),
     spaceMember: { count: vi.fn(async () => 1) },
     message: { findMany: findMessages },

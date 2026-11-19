@@ -213,6 +213,7 @@ async function runTool(
           return { count };
         },
       },
+      deploymentModelConnection: { findUnique: async () => null },
       deploymentSettings: {
         findUnique: async () => ({
           defaultModelProvider: "local",

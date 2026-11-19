@@ -5,6 +5,7 @@ import {
   hasHostedModelCredits,
   hostCredentialSource,
   mcpStdioAvailable,
+  readSharedDeploymentModel,
   resolveMemberMainModel,
   selectConfiguredModel,
 } from "@rakazo/adapters";
@@ -73,6 +74,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     // Set only while the active default is the deployment's own, running on host credentials.
     ...hostCredentials(
       !setup.main &&
+        !setup.shared &&
         !setup.settings?.defaultModelProvider &&
         Boolean(deps.env.deploymentModelHostCredentials),
       deps.env.defaultProvider,
@@ -114,21 +116,27 @@ function computerHostFor(
 
 /** Whether this member can use the deployment's model under the current funding mode. */
 export async function deploymentModelAccess(deps: RouterDeps, actor: Actor) {
-  const funding = deps.billing ? await deps.billing.status(actor) : null;
+  const [settings, shared, funding] = await Promise.all([
+    deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+    readSharedDeploymentModel(deps.prisma),
+    deps.billing ? deps.billing.status(actor) : null,
+  ]);
   const creditsAvailable = modelCreditsUsd(funding) !== null;
   return {
     creditsAvailable,
+    settings,
+    shared,
     hasDeployment:
-      Boolean(deps.env.deploymentModelConfigured) &&
+      Boolean(shared || deps.env.deploymentModelConfigured) &&
       (!funding?.creditPurchasesEnabled || creditsAvailable),
   };
 }
 
 /** The main model chat runs: the member's while it can run, else the deployment's. */
 export async function modelSetup(deps: RouterDeps, actor: Actor) {
-  const [member, settings] = await Promise.all([
+  const [member, deploymentAccess] = await Promise.all([
     resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, actor),
-    deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+    deploymentModelAccess(deps, actor),
   ]);
   const main =
     member &&
@@ -137,16 +145,15 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         (await hasHostedModelCredits(deps.prisma, actor, member.provider))))
       ? member
       : null;
-  const deploymentAccess = await deploymentModelAccess(deps, actor);
   return {
     main,
     model:
       main ??
       deploymentModelRole("main", {
-        settings,
+        settings: deploymentAccess.settings,
+        shared: deploymentAccess.shared,
         deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
       }).primary,
-    settings,
     ...deploymentAccess,
     needsModel: deps.env.agentRuntime !== "scripted" && !main && !deploymentAccess.hasDeployment,
   };

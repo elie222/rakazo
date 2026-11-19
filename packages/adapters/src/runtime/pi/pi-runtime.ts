@@ -414,12 +414,14 @@ export class PiAgentRuntime implements AgentRuntime {
         }
 
         let contextPolicy = createRuntimeContextPolicy(request, context, {
-          credentialScope: apiKey,
+          credentialScope: request.model.deploymentCredential ? request.model.connectionId : apiKey,
           imageTokens: estimatePiImageTokens,
         });
         const contextPolicyFor = (target: RuntimeModelTarget) =>
           createRuntimeContextPolicy({ ...request, model: target.config }, context, {
-            credentialScope: target.credentials?.accessToken ?? target.apiKey,
+            credentialScope: target.config.deploymentCredential
+              ? target.config.connectionId
+              : (target.credentials?.accessToken ?? target.apiKey),
             imageTokens: estimatePiImageTokens,
           });
         let sentContext: { context: Context; sourceLength: number } | undefined;
@@ -492,12 +494,18 @@ export class PiAgentRuntime implements AgentRuntime {
                     target.config.callObserver ?? this.modelCallObserver,
                     {
                       operationKind: request.usageOperationKind ?? "answer",
+                      fundingSource: target.config.deploymentCredential ? "operator" : undefined,
                       userId: context?.userId,
                       runId: request.runId,
                     },
                     {
                       ...usageHooks,
                       prepareContext,
+                      deploymentApiKey: target.config.deploymentCredential
+                        ? preparedOptions.apiKey
+                        : undefined,
+                      onDeploymentCredentialRejected:
+                        target.config.deploymentCredential?.invalidate,
                       onProviderError: (message) => providerFailures.set(message.content, accepted),
                       onRejectedRequest: (rejection, model) => {
                         accepted = !rejection;

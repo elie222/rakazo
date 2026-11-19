@@ -22,6 +22,7 @@ type MockClient = {
     findMany?: (args: unknown) => Promise<unknown>;
   };
   userModelRoleChoice?: unknown;
+  deploymentModelConnection?: unknown;
   spaceModelRoleChoice?: unknown;
   spaceSettingOverride?: unknown;
   $transaction?: ((...args: unknown[]) => Promise<unknown>) & { modelRoles?: true };
@@ -85,6 +86,7 @@ export function withModelRoles<T>(prisma: T, rows: RoleRow[] = []): T {
     }),
   };
   const augment = (target: MockClient) => {
+    target.deploymentModelConnection ??= { findUnique: vi.fn(async () => null) };
     const own = target.userModelRoleChoice as
       | { findMany?: (args: { where: RoleWhere }) => Promise<unknown>; modelRoles?: true }
       | undefined;

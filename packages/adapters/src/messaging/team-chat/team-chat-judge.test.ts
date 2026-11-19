@@ -17,6 +17,66 @@ class ModelTeamChatEngagementJudge extends Judge {
 }
 
 describe("team chat engagement judge", () => {
+  it.each([undefined, "former-offering"])(
+    "uses the shared deployment connection without a runnable member model (offering=%s)",
+    async (creditOfferingId) => {
+      const deploymentModelConnection = {
+        findUnique: vi.fn(async () => ({
+          provider: "openai",
+          modelId: "gpt-5",
+          method: "api_key",
+          revision: "fixture",
+          credentialCipher: "encrypted",
+        })),
+      };
+      const run = vi.fn(async function* (request: AgentRunRequest) {
+        expect(request.model).toMatchObject({ provider: "openai", id: "gpt-5" });
+        await expect(
+          request.model.deploymentCredential?.resolve(new AbortController().signal),
+        ).resolves.toBe("shared-fixture-key");
+        yield { type: "done", text: '{"act":true}' };
+      });
+      const prisma = {
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
+        deploymentModelConnection,
+      };
+      if (creditOfferingId) {
+        const row = {
+          ...mainRole(
+            { spaceId: "space-fixture", userId: "user-fixture" },
+            "openrouter",
+            "old-model",
+          ),
+          creditOfferingId,
+        };
+        withModelRoles(prisma, [row]);
+      }
+      const judge = new ModelTeamChatEngagementJudge({
+        prisma: prisma as never,
+        runtime: { run } as never,
+        secrets: { load: async () => "shared-fixture-key" } as never,
+        deploymentProvider: "anthropic",
+        deploymentModel: "unused",
+      });
+      await expect(
+        judge.decide({
+          bot: {
+            id: "bot-fixture",
+            spaceId: "space-fixture",
+            userId: "user-fixture",
+            name: "Fixture",
+            modelProvider: null,
+            modelId: null,
+          },
+          channelId: "channel-fixture",
+          rules: "",
+          messages: [],
+        }),
+      ).resolves.toEqual({ act: true });
+      expect(run).toHaveBeenCalledOnce();
+    },
+  );
+
   it("keeps saved project routing when deciding whether to engage", async () => {
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },

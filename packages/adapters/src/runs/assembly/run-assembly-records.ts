@@ -31,6 +31,7 @@ import {
   runModelChoice,
   UNKNOWN_PROVIDER_MODEL,
 } from "../../models/model-selection.js";
+import { readSharedDeploymentModel } from "../../models/shared-deployment-model.js";
 import { loadPurchaseRedactions } from "../../payments/purchase-service.js";
 import {
   mergeConnectedPlugins,
@@ -183,6 +184,7 @@ export async function loadRunRecords(
     storedConnections,
     main,
     settings,
+    shared,
     configuredMemory,
     savedSkills,
     agentSkills,
@@ -250,6 +252,7 @@ export async function loadRunRecords(
     deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
     }),
+    pinnedComputerModels ? Promise.resolve(null) : readSharedDeploymentModel(deps.prisma),
     deps.memoryProviders.resolve(run.spaceId),
     deps.prisma.taughtSkill.findMany({
       where: { botId: run.botId, spaceId: run.spaceId, status: "saved" },
@@ -338,6 +341,7 @@ export async function loadRunRecords(
     storedConnections,
     main,
     settings,
+    shared,
     configuredMemory,
     savedSkills,
     agentSkills,

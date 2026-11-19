@@ -109,6 +109,28 @@ describe("usage ledger", () => {
     });
     expect(data?.runId).toBeUndefined();
   });
+  it("records calls to a shared model as operator funded", async () => {
+    const createMany = vi.fn(async (_args: { data: Prisma.UsageRecordCreateManyInput[] }) => ({
+      count: 1,
+    }));
+    await recordUsage(
+      client(createMany),
+      {
+        type: "usage",
+        fundingSource: "operator",
+        provider: "fixture",
+        model: "test",
+        inputTokens: 1,
+        outputTokens: 1,
+      },
+      { spaceId: "space-fixture", userId: "team-member" },
+    );
+    expect(createMany.mock.calls[0]?.[0].data[0]).toMatchObject({
+      fundingSource: "operator",
+      userId: "team-member",
+    });
+  });
+
   it("records usage whose first transaction lost a deadlock", async () => {
     const createMany = vi
       .fn()

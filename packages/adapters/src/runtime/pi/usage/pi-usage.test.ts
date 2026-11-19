@@ -1,6 +1,14 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
-import type { Api, Context, Model, Models, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  AssistantMessage,
+  AssistantMessageEvent,
+  Context,
+  Model,
+  Models,
+  SimpleStreamOptions,
+} from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRuntimeEvent, AgentUsage } from "@rakazo/adapter-kit";
@@ -156,6 +164,161 @@ describe("Pi usage accounting", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ operationKind: "retrieval", totalTokens: 12 });
   });
+  it.each(["done", "error", "error-with-content", "throw"] as const)(
+    "flushes redacted text and thinking into their original blocks on %s",
+    async (terminal) => {
+      const key = "opaque-deployment-credential-fixture";
+      const prefix = key.slice(0, 11);
+      const suffix = key.slice(prefix.length);
+      const truncated = terminal === "done" ? "" : ` Cut ${prefix}`;
+      const snapshot: AssistantMessage = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop",
+        timestamp: 1,
+        content: [
+          { type: "thinking", thinking: `Idea ${prefix}` },
+          { type: "thinking", thinking: `${suffix} done.` },
+          { type: "text", text: `See ${prefix}` },
+          { type: "text", text: `${suffix} here.${truncated}` },
+        ],
+      };
+      const models = {
+        streamSimple: () => ({
+          async *[Symbol.asyncIterator](): AsyncGenerator<AssistantMessageEvent> {
+            yield { type: "start", partial: { ...snapshot, content: [] } };
+            for (const [contentIndex, part] of snapshot.content.entries()) {
+              if (part.type === "toolCall") throw new Error("Unexpected fixture content");
+              const text = part.type === "text" ? part.text : part.thinking;
+              const type = part.type === "text" ? "text_delta" : "thinking_delta";
+              yield { type, contentIndex, delta: text, partial: snapshot };
+              yield {
+                type: part.type === "text" ? "text_end" : "thinking_end",
+                contentIndex,
+                content: text,
+                partial: snapshot,
+              };
+            }
+            if (terminal === "done") {
+              yield { type: "done", reason: "stop", message: snapshot };
+            } else if (terminal !== "throw") {
+              yield {
+                type: "error",
+                reason: "error",
+                error: {
+                  ...snapshot,
+                  content: terminal === "error" ? [] : snapshot.content,
+                  stopReason: "error",
+                  errorMessage: key,
+                },
+              };
+            } else {
+              throw new Error(key);
+            }
+          },
+        }),
+      } as unknown as Models;
+      const stream = observedPiStream(
+        models,
+        model,
+        { messages: [] },
+        { apiKey: key },
+        vi.fn(),
+        undefined,
+        undefined,
+        { deploymentApiKey: key, onProviderError: vi.fn() },
+      );
+      const deltas = new Map<number, string>();
+      const completed = new Set<number>();
+      for await (const event of stream) {
+        const encoded = JSON.stringify(event);
+        expect(encoded).not.toContain(prefix);
+        expect(encoded).not.toContain(suffix);
+        if (event.type === "text_delta" || event.type === "thinking_delta") {
+          expect(completed.has(event.contentIndex)).toBe(false);
+          deltas.set(event.contentIndex, (deltas.get(event.contentIndex) ?? "") + event.delta);
+        }
+        if (event.type === "text_end" || event.type === "thinking_end") {
+          expect(event.content).toBe(deltas.get(event.contentIndex));
+          completed.add(event.contentIndex);
+        }
+      }
+      expect(deltas).toEqual(
+        new Map([
+          [0, "Idea [redacted]"],
+          [1, " done."],
+          [2, "See [redacted]"],
+          [3, terminal === "done" ? " here." : " here. Cut [redacted]"],
+        ]),
+      );
+      expect(completed.size).toBe(4);
+      expect((await stream.result()).stopReason).toBe(terminal === "done" ? "stop" : "error");
+    },
+  );
+
+  it("streams complete redacted tool arguments before the tool call ends", async () => {
+    const key = "opaque-deployment-credential-fixture";
+    const prefix = key.slice(0, 8);
+    const argumentsChunks = [`{"value":"${prefix}`, `${key.slice(prefix.length)}"}`];
+    const frames = argumentsChunks.map((argumentsDelta, index) => ({
+      id: "fixture",
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                ...(index === 0 ? { id: "tool-1", type: "function" } : {}),
+                function: { ...(index === 0 ? { name: "record" } : {}), arguments: argumentsDelta },
+              },
+            ],
+          },
+          finish_reason: index === 0 ? null : "tool_calls",
+        },
+      ],
+    }));
+    const stream = observedPiStream(
+      builtinModels(),
+      model,
+      { messages: [] },
+      {
+        apiKey: key,
+        fetch: async () =>
+          new Response(
+            frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("") +
+              "data: [DONE]\n\n",
+            {
+              headers: { "content-type": "text/event-stream" },
+            },
+          ),
+      },
+      vi.fn(),
+      undefined,
+      undefined,
+      { deploymentApiKey: key },
+    );
+    let deltas = "";
+    for await (const event of stream) {
+      if (event.type === "toolcall_delta") deltas += event.delta;
+      if (event.type === "toolcall_end") {
+        expect(JSON.parse(deltas)).toEqual({ value: "[redacted]" });
+        expect(event.toolCall.arguments).toEqual({ value: "[redacted]" });
+      }
+    }
+    expect(deltas).toBe('{"value":"[redacted]"}');
+  });
+
   it("accounts a cancelled model call even when the event consumer closes before usage arrives", async () => {
     const onUsage = vi.fn();
     const server = createServer((_request, response) => {

@@ -617,6 +617,12 @@ export interface AgentRunModel {
   /** Opaque id of the stored connection serving it, so a model can fall back to another account. */
   connectionId?: string;
   apiKey?: string;
+  /** Deployment-owned authorization, revalidated at each model dispatch. */
+  deploymentCredential?: {
+    resolve(signal: AbortSignal): Promise<string>;
+    /** Drop the cached credential if the provider refused this exact value. */
+    invalidate?(apiKey: string): void;
+  };
   /** Cloudflare account id stored with a gateway BYOK credential. */
   accountId?: string;
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */
@@ -878,6 +884,7 @@ export type AgentRuntimeEvent =
       type: "usage";
       /** Producer-side onUsage completed; consumers must not account it again. */
       accounted?: boolean;
+      fundingSource?: "operator";
       provider: string;
       model: string;
       callId?: string;

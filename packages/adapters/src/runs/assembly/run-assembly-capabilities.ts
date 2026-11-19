@@ -116,21 +116,10 @@ export async function startTurnModel(
 ) {
   const { deps, run, runId, workerId, fence, attempt, secrets: runSecrets } = hold;
   const { pinnedComputerFailure, pinnedComputerModels } = parts.saved;
-  const { bot, main, modelChoice, overrideCredential, settings } = parts.records;
+  const { bot, main, modelChoice, overrideCredential, settings, shared } = parts.records;
   const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
   const runtimeFallback = runtimeFallbackModel(deps.runtime);
-  const pinError =
-    !pinnedComputerModels &&
-    run.modelPinned &&
-    !(
-      (await modelCreditBillingEnabled(deps)) &&
-      (modelChoice.modelProvider === runDeployment?.provider ||
-        (modelChoice.modelProvider &&
-          modelChoice.modelId &&
-          approvedModelCreditOffering(modelChoice.modelProvider, modelChoice.modelId)))
-    )
-      ? pinnedModelCredentialError(modelChoice, overrideCredential)
-      : undefined;
+  const creditsEnabled = !pinnedComputerModels && (await modelCreditBillingEnabled(deps));
   const selected = pinnedComputerModels
     ? {
         provider: pinnedComputerModels.main.provider,
@@ -142,12 +131,29 @@ export async function startTurnModel(
     : selectConfiguredModel({
         override: modelChoice,
         overrideCredential,
+        pinned: run.modelPinned,
         main,
-        hostedProvider: (await modelCreditBillingEnabled(deps))
-          ? resolveDeploymentModel().provider
-          : undefined,
-        defaults: { settings, deployment: runDeployment },
+        hostedProvider: creditsEnabled ? resolveDeploymentModel().provider : undefined,
+        defaults: { settings, deployment: runDeployment, shared },
       });
+  const usesSharedPin =
+    "deploymentConnection" in selected &&
+    selected.deploymentConnection &&
+    selected.provider === modelChoice.modelProvider &&
+    selected.id === modelChoice.modelId;
+  const pinError =
+    !pinnedComputerModels &&
+    run.modelPinned &&
+    !usesSharedPin &&
+    !(
+      creditsEnabled &&
+      (modelChoice.modelProvider === runDeployment?.provider ||
+        (modelChoice.modelProvider &&
+          modelChoice.modelId &&
+          approvedModelCreditOffering(modelChoice.modelProvider, modelChoice.modelId)))
+    )
+      ? pinnedModelCredentialError(modelChoice, overrideCredential)
+      : undefined;
   const selectedProvider = selected.provider ?? runtimeFallback?.provider;
   const selectedModelId = selected.id ?? runtimeFallback?.id;
   // A missing or refused connection of the user's own fails every scheduled run alike.
@@ -199,6 +205,8 @@ export async function startTurnModel(
       id: selectedModelId,
       credential: selected.credential,
       connectionId: selected.connectionId,
+      deploymentConnection:
+        "deploymentConnection" in selected ? selected.deploymentConnection : undefined,
       thinkingLevel: selected.thinkingLevel,
     },
     pinnedComputerModels?.main,

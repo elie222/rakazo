@@ -1,7 +1,7 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { modelRoleConnectionId } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, redactSecrets } from "@rakazo/core";
-import { isDatabaseUnavailable, recordUsage } from "@rakazo/db";
+import { isDatabaseUnavailable, recordAuditEvent, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import { personSpeaker } from "../../runtime/context/history-speakers.js";
@@ -63,7 +63,17 @@ export async function runModelTurn(
         }),
       )
       .catch((error: unknown) => getLogger().warn("run.prompt_version_failed", { error }));
-    const runtimeEvents = deps.runtime.run(modelTurnRequest(services, hold, turn), {
+    const request = modelTurnRequest(services, hold, turn);
+    if (request.model.deploymentCredential) {
+      await recordAuditEvent({
+        action: "deployment.model.selected",
+        actor: { type: "user", id: hold.run.userId },
+        spaceId: hold.run.spaceId,
+        runId,
+        target: { type: "model_connection", id: request.model.connectionId },
+      });
+    }
+    const runtimeEvents = deps.runtime.run(request, {
       ...context,
       signal: AbortSignal.any([context.signal, ctx.runtimeAbortController.signal]),
     });

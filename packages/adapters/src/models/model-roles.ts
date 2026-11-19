@@ -12,6 +12,7 @@ import { resolveAutoReviewChecker } from "../approvals/auto-review.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "../model-credits/offerings.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
+import type { SharedDeploymentModel } from "./shared-deployment-model.js";
 
 /** The deployment's configuration that stands in for a member who chose nothing. */
 export type DeploymentModelDefaults = {
@@ -19,6 +20,7 @@ export type DeploymentModelDefaults = {
   settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
   /** The environment's model, when the deployment can run it. */
   deployment?: { provider: string; model: string } | null;
+  shared?: SharedDeploymentModel | null;
   env?: NodeJS.ProcessEnv;
   includedApproval?: boolean;
 };
@@ -37,6 +39,11 @@ export function deploymentModelRole(
   }
   // No computer model means the main model works the screen itself.
   if (role === "computer") return { primary: null, backups: [] };
+  if (defaults.shared)
+    return {
+      primary: { provider: defaults.shared.provider, modelId: defaults.shared.modelId },
+      backups: [],
+    };
   const provider = defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
   const modelId =
     usableModelId(defaults.settings?.defaultModelId) ?? usableModelId(defaults.deployment?.model);
@@ -109,6 +116,8 @@ export async function resolveMemberMainModel(
 export function selectConfiguredModel(input: {
   /** The bot's or the run's own model; null follows the main model. */
   override: ModelChoice | null;
+  /** An explicit run pin can use an exact match on the shared deployment connection. */
+  pinned?: boolean;
   hostedProvider?: string;
   overrideCredential: ModelCredential;
   main: MemberMainModel | null;
@@ -131,18 +140,32 @@ export function selectConfiguredModel(input: {
             : provider === input.hostedProvider)),
     );
   // The override provider, model and credential must win together.
-  const useOverride = hasOverride && runnable(bot?.modelProvider, overrideCredential, bot?.modelId);
+  const useOwnOverride =
+    hasOverride && runnable(bot?.modelProvider, overrideCredential, bot?.modelId);
+  const { shared } = input.defaults;
+  const sharedOverride =
+    input.pinned &&
+    !useOwnOverride &&
+    shared &&
+    bot?.modelProvider === shared.provider &&
+    bot?.modelId === shared.modelId
+      ? shared
+      : undefined;
+  const useOverride = useOwnOverride || sharedOverride !== undefined;
   const useMain =
     !useOverride &&
     main !== null &&
-    (Boolean(main.credentialId || main.creditOfferingId) ||
-      runnable(main.provider, main.credential, main.modelId));
+    // A shared connection is self-hosted, so a saved hosted-credit choice cannot run here.
+    (main.creditOfferingId
+      ? !input.defaults.shared
+      : Boolean(main.credentialId) || runnable(main.provider, main.credential, main.modelId));
   const fallback = deploymentModelRole("main", input.defaults).primary;
   const selected = useOverride
     ? {
         provider: bot!.modelProvider!,
         id: usableModelId(bot!.modelId),
         credential: overrideCredential,
+        ...(sharedOverride ? { deploymentConnection: sharedOverride } : {}),
       }
     : useMain
       ? {
@@ -151,7 +174,12 @@ export function selectConfiguredModel(input: {
           credential: main.credential,
           connectionId: modelRoleConnectionId(main),
         }
-      : { provider: fallback?.provider, id: fallback?.modelId ?? null, credential: null };
+      : {
+          provider: fallback?.provider,
+          id: fallback?.modelId ?? null,
+          credential: null,
+          ...(input.defaults.shared ? { deploymentConnection: input.defaults.shared } : {}),
+        };
   // The main model's effort belongs to that model, so an override of the same model keeps it.
   const mainThinking =
     main &&

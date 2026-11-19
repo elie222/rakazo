@@ -1,26 +1,15 @@
-import type { SpaceChangeKind } from "@rakazo/contracts";
+import type { RpcPath, SpaceChangeKind } from "@rakazo/contracts";
+import { DEPLOYMENT_MODEL_READS } from "@rakazo/contracts";
 import { queryClient } from "./query";
-import type { RpcClient } from "./rpc";
 
 type ReadChangeKind = Exclude<SpaceChangeKind, "computerUpdates">;
-/** A procedure as its query key ends, typed so a renamed procedure fails to compile here. */
-type Procedure = {
-  [Router in keyof RpcClient & string]: readonly [Router, keyof RpcClient[Router] & string];
-}[keyof RpcClient & string];
-
-const READS: Record<ReadChangeKind, readonly Procedure[]> = {
-  runs: [
-    ["runs", "list"],
-    ["routines", "history"],
-    ["usage", "breakdown"],
-  ],
-  routines: [["routines", "list"]],
-  meetingCalendar: [["meetingCalendar", "upcoming"]],
-  meetings: [
-    ["meetings", "list"],
-    ["meetings", "transcript"],
-  ],
-  artifacts: [["artifacts", "listSpace"]],
+const READS: Record<ReadChangeKind, readonly RpcPath[]> = {
+  runs: ["runs/list", "routines/history", "usage/breakdown"],
+  routines: ["routines/list"],
+  meetingCalendar: ["meetingCalendar/upcoming"],
+  meetings: ["meetings/list", "meetings/transcript"],
+  artifacts: ["artifacts/listSpace"],
+  deploymentModel: DEPLOYMENT_MODEL_READS,
 };
 
 export const isReadChangeKind = (kind: string): kind is ReadChangeKind =>
@@ -28,9 +17,9 @@ export const isReadChangeKind = (kind: string): kind is ReadChangeKind =>
 
 /** Reads again what the server says may have changed; only screens showing it refetch. */
 export function spaceChanged(kind: ReadChangeKind, client = queryClient): Promise<void> {
-  const procedures = READS[kind].map((procedure) => procedure.join("."));
   return client.invalidateQueries({
+    // Space RPC query paths start with the user and Space scopes.
     predicate: ({ queryKey: [path] }) =>
-      Array.isArray(path) && procedures.includes(path.slice(-2).join(".")),
+      Array.isArray(path) && READS[kind].some((procedure) => procedure === path.slice(2).join("/")),
   });
 }

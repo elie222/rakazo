@@ -194,6 +194,7 @@ async function runAfterFill(
         screenGeneration: 0,
       })),
     },
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

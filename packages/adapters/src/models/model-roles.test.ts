@@ -420,6 +420,27 @@ it.each([undefined, "personal", "credits"])(
   },
 );
 
+it("uses a shared deployment connection when the saved main model requires hosted credits", () => {
+  const shared = {
+    provider: "deployment-provider",
+    modelId: "shared-model",
+    method: "api_key" as const,
+    revision: "shared-revision",
+  };
+  const selected = selectConfiguredModel({
+    ...defaults,
+    main: { ...main, credential: null, creditOfferingId: "former-offering" },
+    defaults: { ...deploymentDefaults, shared },
+  });
+  expect(selected).toMatchObject({
+    provider: shared.provider,
+    id: shared.modelId,
+    credential: null,
+    deploymentConnection: shared,
+  });
+  expect(selected.connectionId).toBeUndefined();
+});
+
 it("uses the approved default when owner settings name an unapproved model", () => {
   const entry = {
     id: "default-offering",

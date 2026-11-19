@@ -85,6 +85,7 @@ function executorFixture(
     spaceSettingOverride: { findUnique: vi.fn(async () => null) },
     userModelRoleChoice: { findMany: async () => [] },
     userModelCredential: { findFirst: async () => null },
+    deploymentModelConnection: { findUnique: async () => null },
     deploymentSettings: {
       findUnique: async () => ({ defaultModelProvider: "scripted", defaultModelId: "scripted" }),
     },

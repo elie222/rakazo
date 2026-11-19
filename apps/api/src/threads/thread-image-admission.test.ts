@@ -7,7 +7,10 @@ import { sendThreadMessage } from "./thread-target.js";
 // Exercise the shared production send entrypoint with an owned stored image.
 // No model transport or credential material is needed to reject known text-only input.
 function fixture(group = false) {
-  const model = { modelProvider: "openrouter", modelId: "deepseek/deepseek-v4-pro" };
+  const model: { modelProvider: string | null; modelId: string | null } = {
+    modelProvider: "openrouter",
+    modelId: "deepseek/deepseek-v4-pro",
+  };
   const tx = {
     space: { findUnique: vi.fn(async () => null) },
     user: { findMany: vi.fn().mockResolvedValue([]) },
@@ -113,6 +116,40 @@ function fixture(group = false) {
 }
 
 describe("current image send admission", () => {
+  it.each([undefined, "former-offering"])(
+    "admits images using the shared deployment model (former offering=%s)",
+    async (creditOfferingId) => {
+      const { tx, send } = fixture();
+      tx.bot.findFirst.mockResolvedValue({
+        id: "bot-1",
+        modelProvider: null,
+        modelId: null,
+      });
+      if (creditOfferingId) {
+        tx.userModelRoleChoice.findMany.mockResolvedValue([
+          {
+            position: 0,
+            provider: "openrouter",
+            modelId: "deepseek/deepseek-v4-pro",
+            thinkingLevel: null,
+            creditOfferingId,
+          },
+        ]);
+      }
+      await expect(
+        send({
+          secrets: { load: vi.fn() },
+          deployment: null,
+          shared: {
+            provider: "openai",
+            modelId: "gpt-6-luna",
+            method: "oauth",
+            revision: "fixture",
+          },
+        }),
+      ).resolves.toMatchObject({ runId: "run-1" });
+    },
+  );
   it("preserves legacy clients that omit image handling", async () => {
     const { tx, send } = fixture();
     await expect(send(undefined, null)).resolves.toMatchObject({ runId: "run-1" });

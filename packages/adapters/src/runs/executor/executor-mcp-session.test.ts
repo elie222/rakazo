@@ -234,6 +234,7 @@ async function executorHarness(server: ReturnType<typeof statefulMcpServer>) {
     userModelCredential: { findFirst: vi.fn(async () => null) },
     spaceSettingOverride: { findUnique: vi.fn(async () => null) },
     userModelRoleChoice: { findMany: vi.fn(async () => []) },
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

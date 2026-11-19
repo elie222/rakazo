@@ -463,6 +463,7 @@ function fixture({
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     modelCreditEntry: { findUnique: vi.fn(async () => null) },
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

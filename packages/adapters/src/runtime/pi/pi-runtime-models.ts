@@ -13,6 +13,7 @@ import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "../../models/deployment-model.js";
 import { withDataRetention } from "../../models/endpoints/data-retention.js";
 import { withVertexRouting } from "../../models/endpoints/google-vertex-routing.js";
+import { piRuntimeEnvironmentKey } from "../../models/model-provider-registry.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./models/pi-credentials.js";
 import {
   liveModelSibling,
@@ -129,14 +130,12 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   if (model && !listed && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
     model = withModelCapabilities(model, modelConfig);
   }
-  const apiKey = modelConfig.oauth
-    ? undefined
-    : modelConfig.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? modelConfig.apiKey || "local"
-      : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
-        // another provider would ship our key to a vendor it was not issued for.
-        (modelConfig.apiKey ??
-        (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
+  const apiKey =
+    modelConfig.oauth || modelConfig.deploymentCredential
+      ? undefined
+      : modelConfig.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+        ? modelConfig.apiKey || "local"
+        : (modelConfig.apiKey ?? piRuntimeEnvironmentKey(provider));
   if (model) model = withVertexRouting(model, modelConfig);
   if (model) model = withDataRetention(model, modelConfig);
   return { provider, modelId, models, model, apiKey, credentials };

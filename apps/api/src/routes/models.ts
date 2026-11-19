@@ -70,6 +70,7 @@ import {
   saveConnectionModelSettings,
   throwIfAborted,
 } from "../models/model-credentials.js";
+import { configureSharedModel, sharedModelSettings } from "../models/shared-deployment-model.js";
 import type { RouterContext } from "./context.js";
 
 /** A secret store outage is answered as one the member waits out; any other failure is unchanged. */
@@ -152,6 +153,12 @@ export function modelsRoutes(ctx: RouterContext) {
     };
   return {
     models: {
+      sharedDeployment: authed.models.sharedDeployment.handler(({ context }) =>
+        sharedModelSettings(deps, context.actor),
+      ),
+      setSharedDeployment: authed.models.setSharedDeployment.handler(({ context, input }) =>
+        configureSharedModel(deps, context.actor, input, context.signal),
+      ),
       list: authed.models.list.handler(async ({ context }) =>
         withServingConnections(context.actor, await chatCatalog(context.actor)),
       ),

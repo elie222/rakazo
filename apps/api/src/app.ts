@@ -52,6 +52,7 @@ import {
   createRunSecretWriter,
   createSecretStore,
   createTicketChangeNotifier,
+  DEPLOYMENT_MODEL_CONNECTION_ID,
   drainRuns,
   EmailEmulator,
   ExpoPushProvider,
@@ -504,11 +505,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
   await prisma.deploymentSettings.upsert({
     where: { id: "default" },
-    create: {
-      id: "default",
-      modelCreditsEnabled,
-    },
+    create: { id: "default", modelCreditsEnabled },
     update: { modelCreditsEnabled },
+  });
+  await prisma.deploymentModelConnection.updateMany({
+    where: { id: DEPLOYMENT_MODEL_CONNECTION_ID, disabled: !billing },
+    data: { disabled: Boolean(billing) },
   });
   const connectors = createConnectorRuntime(
     runtimeEnv,

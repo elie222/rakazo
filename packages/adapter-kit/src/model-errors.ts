@@ -30,6 +30,14 @@ export class ModelOutputError extends Error {
   }
 }
 
+/** A deployment credential was unavailable before dispatch, so a backup may serve the call. */
+export class SharedModelCredentialUnavailable extends Error {
+  constructor(message = "The deployment model could not obtain an OAuth access token.") {
+    super(message);
+    this.name = "SharedModelCredentialUnavailable";
+  }
+}
+
 function errorFacts(value: unknown) {
   const text: string[] = [];
   const statuses = new Set<number>();

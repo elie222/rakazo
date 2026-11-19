@@ -14,6 +14,7 @@ import {
   isModelCredentialRejected,
   isRetryableProviderUnavailable,
   isTransientModelError,
+  SharedModelCredentialUnavailable,
 } from "@rakazo/adapter-kit";
 import type { ModelBackupOutcome } from "@rakazo/core";
 import {
@@ -22,6 +23,7 @@ import {
   MODEL_OUTPUT_CUT_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
   MODEL_REQUEST_LIMIT_ERROR,
+  redactSecrets,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { groqRequestContextWindow } from "../../models/endpoints/groq-request-budget.js";
@@ -351,8 +353,13 @@ export function fallbackAwareModelStream(
       reason: sanitizeProviderError(target.config.provider, error),
     });
   };
-  const finishWithThrownError = (target: RuntimeModelTarget, error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
+  const finishWithThrownError = (
+    target: RuntimeModelTarget,
+    error: unknown,
+    deploymentApiKey?: string,
+  ) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    const message = deploymentApiKey ? redactSecrets(detail, [deploymentApiKey]) : detail;
     recordFailure(target, message);
     const aborted = signalAborted() || /abort|cancel/i.test(message);
     const stopReason: "aborted" | "error" = aborted ? "aborted" : "error";
@@ -415,7 +422,12 @@ export function fallbackAwareModelStream(
         }
         // Never borrow the primary or process-wide key for a backup. Production resolves
         // each candidate lazily from the authenticated user's Space-scoped credential store.
-        if (!config.apiKey && !config.oauth && config.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+        if (
+          !config.apiKey &&
+          !config.deploymentCredential &&
+          !config.oauth &&
+          config.provider !== OPENAI_COMPATIBLE_PROVIDER_ID
+        ) {
           skip("No credential is available for the backup model.");
           continue;
         }
@@ -570,14 +582,22 @@ export function fallbackAwareModelStream(
           });
         }
       }
+      const credential = target.config.deploymentCredential;
+      let deploymentApiKey: string | undefined;
       try {
-        const apiKey = target.credentials?.accessToken ?? target.apiKey;
+        if (credential) {
+          deploymentApiKey = await credential.resolve(signal);
+          signal.throwIfAborted();
+        }
+        const apiKey = credential
+          ? deploymentApiKey
+          : (target.credentials?.accessToken ?? target.apiKey);
         const reasoning = thinkingLevel === "off" ? undefined : thinkingLevel;
         stream = state.stream(
           sentTarget,
           requestContext(),
           // With backups the switch replaces the SDK's retry, so a hung model is not waited on twice.
-          state.request.fallbackModels?.length
+          state.request.fallbackModels?.length || credential
             ? { ...attemptOptions, apiKey, reasoning, maxRetries: 0 }
             : thinkingOverride
               ? { ...attemptOptions, reasoning }
@@ -585,7 +605,17 @@ export function fallbackAwareModelStream(
         );
       } catch (error) {
         paceSlot?.release();
-        finishWithThrownError(target, error);
+        if (error instanceof SharedModelCredentialUnavailable && !signalAborted()) {
+          recordFailure(target, error.message);
+          state.primaryFailure ??= error.message;
+          if (await switchToNext(target)) {
+            resetForBackup();
+            buffered = [];
+            continue;
+          }
+          if (failIfAborted(target)) return;
+        }
+        finishWithThrownError(target, error, deploymentApiKey);
         return;
       }
       try {
@@ -953,7 +983,7 @@ export function fallbackAwareModelStream(
         }
       } catch (error) {
         for (const pending of buffered) output.push(pending);
-        finishWithThrownError(target, error);
+        finishWithThrownError(target, error, deploymentApiKey);
         return;
       }
       if (restart) continue;

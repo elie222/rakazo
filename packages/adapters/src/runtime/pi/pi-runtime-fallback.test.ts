@@ -5,11 +5,13 @@ import type {
   Context,
   Model,
   ModelThinkingLevel,
+  SimpleStreamOptions,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent, ModelCallObserver } from "@rakazo/adapter-kit";
+import { SharedModelCredentialUnavailable } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
 import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
@@ -749,6 +751,221 @@ describe("Pi runtime ordered model fallback", () => {
       initialStream.push({ type: "done", reason: "stop", message: initialMessage });
       initialStream.end(initialMessage);
       await initialRun;
+    },
+  );
+
+  it.each([
+    new SharedModelCredentialUnavailable(),
+    new SharedModelCredentialUnavailable("The deployment model credential could not be read."),
+  ])("uses a configured backup for an unavailable shared credential: %s", async (unavailable) => {
+    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+    delete input.model.apiKey;
+    input.model.deploymentCredential = {
+      resolve: async () => {
+        throw unavailable;
+      },
+    };
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+    );
+    await run(input);
+    expect(providerState.stream).toHaveBeenCalledOnce();
+    expect(providerState.stream.mock.lastCall?.[0]).toMatchObject({ id: backupA.id });
+    expect(providerState.stream.mock.lastCall?.[2]).toMatchObject({ apiKey: "backup-key" });
+  });
+
+  it.each([
+    { status: 401, rejected: true },
+    { status: 400, rejected: false },
+  ])(
+    "uses the provider's HTTP $status to decide whether to invalidate a deployment token",
+    async ({ status, rejected }) => {
+      const input = request();
+      delete input.model.apiKey;
+      const key = "rejected-shared-token-fixture";
+      const invalidate = vi.fn();
+      input.model.deploymentCredential = { resolve: async () => key, invalidate };
+      providerState.stream.mockImplementation(
+        (target: Model<"openai-completions">, _context: Context, options: SimpleStreamOptions) => {
+          const upstream = stream(target, message(target, [], "error", `Refused value ${key}`));
+          return {
+            async *[Symbol.asyncIterator]() {
+              await options.onResponse?.({ status, headers: {} }, target);
+              yield* upstream;
+            },
+            result: () => upstream.result(),
+          };
+        },
+      );
+
+      await expect(run(input)).rejects.toThrow("Refused value [redacted]");
+      expect(providerState.stream).toHaveBeenCalledOnce();
+      if (rejected) expect(invalidate).toHaveBeenCalledExactlyOnceWith(key);
+      else expect(invalidate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not invalidate a deployment token when the provider stream fails before dispatch", async () => {
+    const input = request();
+    const invalidate = vi.fn();
+    input.model.deploymentCredential = {
+      resolve: async () => "shared-bearer-fixture",
+      invalidate,
+    };
+    providerState.stream.mockImplementation(() => {
+      throw Object.assign(new Error("Local stream setup failed"), { status: 401 });
+    });
+
+    await expect(run(input)).rejects.toThrow("Local stream setup failed");
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("authorizes a deployment model at dispatch and stops sending after revocation", async () => {
+    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+    delete input.model.apiKey;
+    const revoked = "The deployment model connection changed. Start a new run.";
+    const resolve = vi
+      .fn<(signal: AbortSignal) => Promise<string>>()
+      .mockResolvedValueOnce("shared-bearer")
+      .mockRejectedValueOnce(new Error(revoked));
+    input.model.deploymentCredential = { resolve };
+    const first = new AssistantMessageEventStream();
+    providerState.stream.mockReturnValue(first);
+    const initialRun = run(input);
+    await vi.waitFor(() => expect(providerState.stream).toHaveBeenCalledOnce());
+    expect(providerState.stream.mock.lastCall?.[2]).toMatchObject({
+      apiKey: "shared-bearer",
+      maxRetries: 0,
+    });
+    expect(resolve).toHaveBeenCalledBefore(providerState.stream);
+    expect(resolve).toHaveBeenCalledWith(expect.any(AbortSignal));
+    const agentOptions = providerState.agentOptions!;
+    const second = await agentOptions.streamFn(
+      primary,
+      { messages: [] } as unknown as TranscriptContext,
+      {},
+    );
+    expect(await second.result()).toMatchObject({ stopReason: "error", errorMessage: revoked });
+    expect(providerState.stream).toHaveBeenCalledOnce();
+    const reply = message(primary, [{ type: "text", text: "Ready" }], "stop");
+    first.push({ type: "done", reason: "stop", message: reply });
+    first.end(reply);
+    await initialRun;
+  });
+
+  it("redacts an opaque deployment key split across provider deltas and persisted blocks", async () => {
+    const token = "opaqueFixtureCredential";
+    const first = token.slice(0, 10);
+    const last = token.slice(10);
+    const prefix = "A visible response that arrives before the key: ";
+    const input = request();
+    delete input.model.apiKey;
+    input.model.deploymentCredential = { resolve: async () => token };
+    const providerStream = new AssistantMessageEventStream();
+    const events: AgentRuntimeEvent[] = [];
+    providerState.stream.mockReturnValue(providerStream);
+    const runResult = run(input, events);
+    await vi.waitFor(() => expect(providerState.stream).toHaveBeenCalledOnce());
+    const response = message(primary, [], "stop");
+    providerStream.push({ type: "start", partial: response });
+    response.content = [{ type: "text", text: prefix + first }];
+    providerStream.push({
+      type: "text_delta",
+      contentIndex: 0,
+      delta: prefix + first,
+      partial: response,
+    });
+    await vi.waitFor(() => expect(events.some((event) => event.type === "text")).toBe(true));
+    expect(JSON.stringify(events)).not.toContain(first);
+    providerStream.push({
+      type: "text_end",
+      contentIndex: 0,
+      content: prefix + first,
+      partial: response,
+    });
+    response.content.push({ type: "text", text: last + " at the end." });
+    providerStream.push({
+      type: "text_delta",
+      contentIndex: 1,
+      delta: last + " at the end.",
+      partial: response,
+    });
+    response.content.push({ type: "thinking", thinking: "Reasoning about " + token });
+    providerStream.push({ type: "done", reason: "stop", message: response });
+    providerStream.end(response);
+    await runResult;
+
+    expect(
+      events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join(""),
+    ).toBe(prefix + "[redacted] at the end.");
+    expect(events).toContainEqual({ type: "done", text: prefix + "[redacted] at the end." });
+    expect(JSON.stringify(events)).not.toContain(first);
+    expect(JSON.stringify(events)).not.toContain(last);
+    expect(providerState.agent?.state.messages.at(-1)).toMatchObject({
+      content: expect.arrayContaining([
+        { type: "thinking", thinking: "Reasoning about [redacted]" },
+      ]),
+    });
+    expect(JSON.stringify(providerState.agent?.state.messages)).not.toContain(token);
+  });
+
+  it("preserves streamed narration before a tool call on a deployment model", async () => {
+    const key = "opaqueFixtureCredential";
+    const narration = "I will save the requested result now.";
+    const input = request();
+    delete input.model.apiKey;
+    input.model.deploymentCredential = { resolve: async () => key };
+    providerState.stream
+      .mockImplementationOnce(() => {
+        const events = new AssistantMessageEventStream();
+        const reply = message(primary, [{ type: "text", text: narration }], "toolUse");
+        events.push({ type: "start", partial: { ...reply, content: [] } });
+        events.push({ type: "text_delta", contentIndex: 0, delta: narration, partial: reply });
+        const toolCall = {
+          type: "toolCall" as const,
+          id: "narrated-write",
+          name: "write_effect",
+          arguments: { value: "once" },
+        };
+        const completed = { ...reply, content: [...reply.content, toolCall] };
+        events.push({ type: "done", reason: "toolUse", message: completed });
+        events.end(completed);
+        return events;
+      })
+      .mockImplementation(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Saved." }], "stop")),
+      );
+
+    const events = await run(input);
+    const firstTurn = events.findIndex((event) => event.type === "turn");
+    expect(firstTurn).toBeGreaterThan(0);
+    expect(
+      events
+        .slice(0, firstTurn)
+        .flatMap((event) => (event.type === "text" ? [event.text] : []))
+        .join(""),
+    ).toBe(narration);
+    expect(input.executeTool).toHaveBeenCalledOnce();
+  });
+
+  it.each(["terminal event", "provider throw"])(
+    "redacts an opaque deployment key in a %s without an executor",
+    async (mode) => {
+      const token = "opaqueFixtureCredential";
+      const input = request();
+      delete input.model.apiKey;
+      input.model.deploymentCredential = { resolve: async () => token };
+      input.usageOperationKind = "compaction";
+      const detail = "Provider stream rejected fixture " + token;
+      providerState.stream.mockImplementation(() => {
+        if (mode === "provider throw") throw new Error(detail);
+        return stream(primary, message(primary, [], "error", detail));
+      });
+      await expect(run(input)).rejects.toThrow("Provider stream rejected fixture [redacted]");
+      expect(providerState.stream.mock.lastCall?.[2]).toMatchObject({ apiKey: token });
     },
   );
 

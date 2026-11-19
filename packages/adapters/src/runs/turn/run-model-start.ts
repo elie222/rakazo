@@ -8,6 +8,7 @@ import { getLogger } from "@rakazo/logging";
 import { HostedModelCreditsRequiredError } from "../../models/credits/model-credit-observer.js";
 import type { DeploymentModelDefaults } from "../../models/model-roles.js";
 import { effectiveModelRole } from "../../models/model-roles.js";
+import type { SharedDeploymentModel } from "../../models/shared-deployment-model.js";
 import { isRetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
 import type { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
@@ -90,6 +91,7 @@ export async function startRunModel(
     credential: Awaited<ReturnType<typeof resolveConnectedModelKey>>["credential"];
     thinkingLevel: AgentRunRequest["model"]["thinkingLevel"];
     connectionId?: string;
+    deploymentConnection?: SharedDeploymentModel;
   },
   pinned: Awaited<ReturnType<typeof restoreComputerModels>>["main"] | undefined,
   backups: ReturnType<typeof runModelBackups>,
@@ -131,6 +133,7 @@ export async function startRunModel(
               selected.id,
               registerSecrets,
               {
+                deploymentConnection: selected.deploymentConnection,
                 creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
                 requireStoredSecret: Boolean(
                   selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),

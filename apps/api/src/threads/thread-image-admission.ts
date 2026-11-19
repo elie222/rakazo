@@ -1,6 +1,10 @@
 import { ORPCError } from "@orpc/server";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { CodexLiveCatalog } from "@rakazo/adapters";
+import type {
+  CodexLiveCatalog,
+  DeploymentModelDefaults,
+  SharedDeploymentModel,
+} from "@rakazo/adapters";
 import {
   CHATGPT_OAUTH_PROVIDER,
   codexLiveModel,
@@ -43,6 +47,8 @@ export async function assertThreadImageInput(
   configuration?: {
     secrets: Pick<SecretStore, "load">;
     deployment: { provider: string; model: string } | null;
+    settings?: DeploymentModelDefaults["settings"];
+    shared?: SharedDeploymentModel | null;
     hostedProvider?: string;
     codexCatalog?: CodexLiveCatalog;
   },
@@ -75,8 +81,12 @@ export async function assertThreadImageInput(
       ? await resolveMemberMainModel({ prisma, secretStore: configuration.secrets }, actor)
       : await mainModelWithoutSecrets(prisma, actor),
     defaults: {
-      settings: await prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+      settings:
+        configuration?.settings !== undefined
+          ? configuration.settings
+          : await prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
       deployment: configuration?.deployment ?? null,
+      shared: configuration?.shared,
     },
     hostedProvider: configuration?.hostedProvider,
   });

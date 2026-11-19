@@ -49,7 +49,11 @@ import {
   followOrganizationChanges,
   publishOrganizationChange,
 } from "../spaces/organization-changes.js";
-import { followSpaceChanges, publishSpaceChange } from "../spaces/space-changes.js";
+import {
+  followSpaceChanges,
+  publishDeploymentModelChange,
+  publishSpaceChange,
+} from "../spaces/space-changes.js";
 import { SpaceDeletionInProgressError, spaceTakesWork } from "../spaces/spaces.js";
 import { createChatAlerts } from "./chat-alerts.js";
 import {
@@ -130,6 +134,7 @@ export interface ThreadEvents {
   followRosterChanges?(userId: string, signal?: AbortSignal): AsyncGenerator<void>;
   publishSpaceChange?(spaceId: string, kind: SpaceChangeKind): Promise<void>;
   followSpaceChanges?(spaceId: string, signal?: AbortSignal): AsyncGenerator<SpaceChangeKind>;
+  publishDeploymentModelChange?(): Promise<void>;
   publishOrganizationChange?(
     organizationId: string,
     alsoUserIds?: readonly string[],
@@ -273,6 +278,7 @@ export function createThreadEvents(
         followOrganizationChanges(realtime, userId, signal),
     }),
     publishSpaceChange: (spaceId, kind) => publishSpaceChange(realtime, spaceId, kind),
+    publishDeploymentModelChange: () => publishDeploymentModelChange(realtime),
     publishOrganizationChange: (organizationId, alsoUserIds) =>
       publishOrganizationChange(prisma, realtime, organizationId, alsoUserIds),
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),

@@ -145,5 +145,6 @@ export const SpaceChangeKind = z.enum([
   "meetings",
   "artifacts",
   "meetingCalendar",
+  "deploymentModel",
 ]);
 export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;

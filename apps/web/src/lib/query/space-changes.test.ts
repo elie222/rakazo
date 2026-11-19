@@ -18,6 +18,12 @@ it("marks only the reads a change kind covers as stale", async () => {
     usage: key("usage", "breakdown"),
     routines: key("routines", "list"),
     bots: key("bots", "list"),
+    meetings: key("meetings", "list"),
+    transcript: key("meetings", "transcript"),
+    me: key("me"),
+    roles: key("models", "role"),
+    deployment: key("models", "sharedDeployment"),
+    calendar: key("meetingCalendar", "upcoming"),
   };
   for (const queryKey of Object.values(keys)) client.setQueryData(queryKey, []);
   const invalidated = () =>
@@ -29,6 +35,41 @@ it("marks only the reads a change kind covers as stale", async () => {
   expect(invalidated()).toEqual(["runs", "history", "usage"]);
   await spaceChanged("routines", client);
   expect(invalidated()).toEqual(["runs", "history", "usage", "routines"]);
+  await spaceChanged("deploymentModel", client);
+  expect(invalidated()).toEqual([
+    "runs",
+    "history",
+    "usage",
+    "routines",
+    "me",
+    "roles",
+    "deployment",
+  ]);
+  await spaceChanged("meetings", client);
+  expect(invalidated()).toEqual([
+    "runs",
+    "history",
+    "usage",
+    "routines",
+    "meetings",
+    "transcript",
+    "me",
+    "roles",
+    "deployment",
+  ]);
+  await spaceChanged("meetingCalendar", client);
+  expect(invalidated()).toEqual([
+    "runs",
+    "history",
+    "usage",
+    "routines",
+    "meetings",
+    "transcript",
+    "me",
+    "roles",
+    "deployment",
+    "calendar",
+  ]);
 });
 
 it("knows which frames are read changes", () => {

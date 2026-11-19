@@ -273,6 +273,7 @@ async function runLoop(
         screenGeneration: 0,
       })),
     },
+    deploymentModelConnection: { findUnique: vi.fn(async () => null) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "local",
