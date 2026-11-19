@@ -730,7 +730,10 @@ describe("BoatSandboxProvider", () => {
     expect(error).toBeInstanceOf(SandboxUnavailableError);
   });
 
-  it("waits for a resume another job already started instead of failing", async () => {
+  it.each([
+    ["sandbox_resuming", "A resume for this sandbox is already in progress."],
+    ["resume_failed", "Agent resume already in progress"],
+  ])("waits for a resume another job already started (%s)", async (code, message) => {
     const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
     const { api, provider, computer } = await boat();
     await provider.prepare(computer, context);
@@ -739,7 +742,7 @@ describe("BoatSandboxProvider", () => {
     resume.mockImplementationOnce(async ({ sandboxId }) => {
       // The other resume finishes while this one is refused.
       api.setState(sandboxId, "provisioning");
-      throw boatError(409, "sandbox_resuming", "A resume for this sandbox is already in progress.");
+      throw boatError(409, code, message);
     });
 
     const sink = createTestSink();
