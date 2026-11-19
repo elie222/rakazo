@@ -1022,14 +1022,12 @@ export async function validateRoutineWatch(
   const routine = { ...target, id: "validate", watch, watchState: null };
   const ctx = deps.prisma ? await toolContext(deps.prisma, routine) : context(routine);
   const name = watch.tool ?? "";
+  // Checked with the dates a check would send, so an argument that must be a date passes.
+  const args = resolveWatchArgs(watch.args ?? {}, new Date());
   const tool =
     (await deps.connector.discoverTools(ctx)).find((tool) => tool.name === name) ??
-    (
-      await deps.connector.resolveCall?.(
-        { tool: name, args: watch.args ?? {}, executionId: ctx.operationId },
-        ctx,
-      )
-    )?.tool;
+    (await deps.connector.resolveCall?.({ tool: name, args, executionId: ctx.operationId }, ctx))
+      ?.tool;
   if (!tool) throw new RoutineWatchError(`No connected integration has a tool named ${name}.`);
   assertWatchToolReadOnly(name, declaredRead(tool));
 }

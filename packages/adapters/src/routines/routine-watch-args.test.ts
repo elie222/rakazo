@@ -1,5 +1,28 @@
-import { describe, expect, it } from "vitest";
+import { RoutineWatchSchema } from "@rakazo/contracts";
+import { describe, expect, it, vi } from "vitest";
+import type { RoutineWatchDeps } from "./routine-watch.js";
+import { validateRoutineWatch } from "./routine-watch.js";
 import { resolveWatchArgs } from "./routine-watch-args.js";
+
+it("validates a tool watch with the dates a check would send", async () => {
+  const resolveCall = vi.fn(async (call: { tool: string; args: Record<string, unknown> }) => ({
+    call,
+    tool: { name: call.tool, readOnly: true },
+  }));
+  const deps = {
+    connector: { discoverTools: vi.fn(async () => []), resolveCall },
+  } as unknown as RoutineWatchDeps;
+  const watch = RoutineWatchSchema.parse({
+    kind: "tool",
+    tool: "calendar_list_events",
+    args: { from: "{{today}}", calendar: "primary" },
+  });
+  await validateRoutineWatch(deps, watch, { spaceId: "s", userId: "u", botId: "b" });
+  expect(resolveCall.mock.calls[0]?.[0].args).toEqual({
+    from: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    calendar: "primary",
+  });
+});
 
 describe("resolveWatchArgs", () => {
   const now = new Date("2026-03-10T03:30:00Z");
