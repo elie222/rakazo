@@ -20,6 +20,7 @@ import {
   hasHostedModelCredits,
   hasReadyModelCredential,
   hiddenCatalogModel,
+  httpModelEndpointsAllowed,
   isAutoReviewCheckerConfigured,
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
@@ -336,7 +337,11 @@ export function createRouterContext(deps: RouterDeps) {
           actor,
           deploymentPrimary.provider,
           deploymentPrimary.modelId,
-          { codexCatalog, allowPrivateEndpoint: deps.env.mcpAllowPrivateEndpoint },
+          {
+            codexCatalog,
+            allowPrivateEndpoint: deps.env.mcpAllowPrivateEndpoint,
+            allowHttpEndpoint: await httpModelEndpointsAllowed(deps.prisma),
+          },
         );
         if (!ready) deploymentPrimary = null;
       } catch (error) {

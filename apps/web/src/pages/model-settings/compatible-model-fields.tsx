@@ -12,6 +12,7 @@ import {
 import { ModelPreflightFeedback } from "../../components/models/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
 import { useListSearch } from "../../lib/use-list-search";
+import { HttpEndpointsSwitch } from "./http-endpoints-switch";
 
 import type { ModelSettingsState } from "./use-model-settings";
 
@@ -257,6 +258,7 @@ export function CompatibleModelFields({
             setNotice(null);
           }}
         />
+        <HttpEndpointsSwitch />
       </Disclosure>
     </div>
   );

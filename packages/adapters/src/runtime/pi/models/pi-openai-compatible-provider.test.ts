@@ -222,6 +222,87 @@ describe("model connect", () => {
       else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
     }
   });
+
+  it("allows keyed public http connects when the deployment permits HTTP endpoints", () => {
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    try {
+      const prepared = prepareOpenAiCompatibleConnect(
+        {
+          provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+          baseUrl: "http://gateway.intranet.example/v1",
+          modelId: "my-model-id",
+          apiKey: "secret-key",
+        },
+        { allowHttp: true },
+      );
+      expect(prepared).toEqual({
+        baseUrl: "http://gateway.intranet.example/v1",
+        modelId: "my-model-id",
+        apiKey: "secret-key",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
+  });
+
+  it("probes a keyed public http endpoint when the deployment permits HTTP endpoints", async () => {
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    const fetchImpl = vi.fn(async () => Response.json({ data: [{ id: "m" }] }));
+    try {
+      await expect(
+        probeOpenAiCompatibleModels(
+          {
+            baseUrl: "http://gateway.intranet.example/v1",
+            apiKey: "secret-key",
+          },
+          fetchImpl,
+          undefined,
+          { allowPublic: true, allowHttp: true },
+        ),
+      ).resolves.toEqual(["m"]);
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
+  });
+
+  it("keeps a keyed public http request on the policy that permits it", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 200 }));
+    const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, {
+      allowPublic: true,
+      allowHttp: true,
+    });
+    await safeFetch("http://gateway.intranet.example/v1/models", {
+      headers: { Authorization: "Bearer secret-key" },
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("saves a keyed public http endpoint only when the deployment permits it", () => {
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    const input = {
+      provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+      baseUrl: "http://gateway.intranet.example/v1",
+      modelId: "my-model-id",
+      apiKey: "secret-key",
+    };
+    try {
+      expect(() => buildModelConnectPlaintext(input)).toThrow(/must use HTTPS/);
+      const plaintext = buildModelConnectPlaintext(input, undefined, { allowHttpEndpoint: true });
+      expect(parseModelSecret(plaintext)).toMatchObject({
+        baseUrl: "http://gateway.intranet.example/v1",
+        apiKey: "secret-key",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
+  });
 });
 
 describe("private model endpoints", () => {

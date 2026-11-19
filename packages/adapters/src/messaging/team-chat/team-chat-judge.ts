@@ -10,6 +10,7 @@ import {
 } from "../../model-credits/offerings.js";
 import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
+import { httpModelEndpointsAllowed } from "../../models/http-model-endpoints.js";
 import {
   persistRefreshedModelCredential,
   refreshStoredModelCredential,
@@ -355,6 +356,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           baseUrl: parsed.baseUrl,
           headers: parsed.headers,
           allowPrivateEndpoint: this.deps.allowPrivateEndpoint === true,
+          allowHttpEndpoint: await httpModelEndpointsAllowed(this.deps.prisma),
 
           ...limit,
           ...context,

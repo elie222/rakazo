@@ -241,7 +241,9 @@ describe("team chat engagement judge", () => {
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
-      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      deploymentSettings: {
+        findUnique: vi.fn(async () => ({ httpModelEndpointsAllowed: true })),
+      },
       userModelPreference: {
         findFirst: vi.fn(async () => ({
           credential: {
@@ -304,6 +306,7 @@ describe("team chat engagement judge", () => {
         model: {
           headers: { "x-route": "route-value-fixture", "x-boundary": "12345678", "x-region": "us" },
           reasoning: true,
+          allowHttpEndpoint: true,
         },
       });
       expect(sink.events).toHaveLength(1);
