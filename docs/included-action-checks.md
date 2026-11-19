@@ -97,21 +97,24 @@ SELECT
   s.metadata->>'shadowDecision' AS shadow_decision,
   CASE
     WHEN e."reviewDecision" <> 'ask' THEN NULL
-    WHEN e.status = 'denied' AND e.result IS NULL THEN 'denied'
-    WHEN e.status = 'denied' THEN 'expired'
-    WHEN e.status IN ('approved', 'executing', 'completed', 'uncertain') THEN 'allowed'
-    ELSE 'unanswered'
+    WHEN e.status = 'denied' AND e.result IS NOT NULL THEN 'expired'
+    ELSE COALESCE(d.metadata->>'decision', 'unanswered')
   END AS owner_answer,
   count(*) AS reviews,
   round(avg((s.metadata->>'latencyMs')::numeric)) AS latency_ms,
   round(avg((s.metadata->>'shadowLatencyMs')::numeric)) AS shadow_latency_ms
 FROM s
 LEFT JOIN external_effects e ON e.id = s.metadata->>'effectId'
+LEFT JOIN LATERAL (
+  SELECT metadata FROM audit_events
+  WHERE action = 'approval.decided' AND metadata->>'effectId' = e.id
+  ORDER BY "createdAt" DESC LIMIT 1
+) d ON true
 GROUP BY 1, 2, 3
 ORDER BY 1, 2, 3;
 ```
 
-A `pass` from the trial model where the person denied is the wrong pass to watch for. The
+A `pass` from the trial model where the person answered `deny` is the wrong pass to watch for. The
 included reviewer's own verdict is `decision`; when it failed and a backup decided, the action's
 final verdict is `external_effects."reviewDecision"`.
 
