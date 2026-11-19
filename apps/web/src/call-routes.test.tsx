@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
+
 import type { IncomingBotCall } from "@rakazo/contracts";
 import type * as CoreModule from "@rakazo/core";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -36,12 +39,12 @@ vi.mock("@rakazo/core", async (importOriginal) => ({
   ...(await importOriginal<typeof CoreModule>()),
   runThreadSubscription: vi.fn(async () => undefined),
 }));
-vi.mock("./lib/call-pickup.js", () => ({ pickUp: () => new Promise(() => undefined) }));
-vi.mock("./lib/dictation.js", () => ({
+vi.mock("./lib/calls/call-pickup.js", () => ({ pickUp: () => new Promise(() => undefined) }));
+vi.mock("./lib/calls/dictation.js", () => ({
   dictation: { listen: vi.fn(), stop: vi.fn(), subscribe: () => () => undefined },
   usesServerDictation: () => false,
 }));
-vi.mock("./lib/tts.js", () => ({
+vi.mock("./lib/calls/tts.js", () => ({
   speaker: {
     speak: vi.fn(),
     stop: vi.fn(),
@@ -50,7 +53,7 @@ vi.mock("./lib/tts.js", () => ({
     subscribe: () => () => {},
   },
 }));
-vi.mock("./lib/auth", () => ({
+vi.mock("./lib/auth/auth", () => ({
   authClient: {
     useSession: () => ({
       isPending: false,
@@ -64,7 +67,7 @@ vi.mock("./lib/bootstrap", () => ({
   getLabs: () => [],
   subscribeLabs: () => () => {},
 }));
-vi.mock("./lib/rpc", () => {
+vi.mock("./lib/query/rpc", () => {
   const client = {
     me: mocks.me,
     voice: { status: mocks.voiceStatus },
@@ -86,20 +89,20 @@ vi.mock("./lib/rpc", () => {
     selectedSpaceId: () => null,
   };
 });
-vi.mock("./lib/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
-vi.mock("./components/SubscriptionGate", () => ({
+vi.mock("./lib/platform/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
+vi.mock("./components/billing/SubscriptionGate", () => ({
   SubscriptionGate: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("./components/markdown-link-prompt", () => ({
+vi.mock("./components/messages/markdown-link-prompt", () => ({
   MarkdownLinkPrompt: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("./pages/Shell", () => ({
   ShellPage: () => <Link to="/app/artifacts">Artifacts</Link>,
 }));
-vi.mock("./pages/Artifacts", () => ({ ArtifactsPage: () => <div>Artifacts page</div> }));
+vi.mock("./pages/space/Artifacts", () => ({ ArtifactsPage: () => <div>Artifacts page</div> }));
 
 import { App } from "./App";
-import { endCall, startCall } from "./lib/call-session";
+import { endCall, startCall } from "./lib/calls/call-session";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -115,7 +118,7 @@ function button(name: string): HTMLButtonElement | null {
 async function settle() {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
   }
 }
@@ -124,20 +127,20 @@ async function settle() {
 let pushCalls: (calls: IncomingBotCall[]) => void = () => {};
 function callStream(signal: AbortSignal) {
   const frames: IncomingBotCall[][] = [];
-  let wake: (() => void) | undefined;
+  let wake: Deferred | undefined;
   pushCalls = (calls) => {
     frames.push(calls);
-    wake?.();
+    wake?.resolve();
   };
-  signal.addEventListener("abort", () => wake?.());
+  signal.addEventListener("abort", () => wake?.resolve());
   return (async function* () {
     while (!signal.aborted) {
       const calls = frames.shift();
       if (calls) yield { type: "incoming.calls" as const, payload: { calls } };
-      else
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
+      else {
+        wake = deferred();
+        await wake.promise;
+      }
     }
   })();
 }

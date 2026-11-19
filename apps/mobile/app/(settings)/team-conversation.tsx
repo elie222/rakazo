@@ -16,22 +16,19 @@ import {
   withSenderMode,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import type { NativeStackNavigationOptions } from "expo-router";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useContext, useLayoutEffect, useRef, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useContext, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { glassHeaderOptions } from "../../components/glass-title";
-import { LoadFailure } from "../../components/load-failure";
-import { MenuPickerMenu } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { mobileTokens } from "../../lib/appearance";
-import { CallKeyboardContext } from "../../lib/call-keyboard-context";
-import { native, useMobileTokens, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query";
-import { errorText } from "../../lib/user-error";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { MenuPickerMenu } from "../../components/ui/menu-picker";
+import { errorText } from "../../lib/api/user-error";
+import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
+import { native, useMobileTokens, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
 
 /** Reply mode, instructions, and automated-sender handling for one team chat room. */
 export default function TeamConversationSettings() {
@@ -44,7 +41,6 @@ function RoomSettings({ conversationId }: { conversationId: string }) {
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const { t } = useLingui();
   const router = useRouter();
-  const navigation = useNavigation();
   const tokens = useMobileTokens();
   const styles = useThemedStyles(createStyles);
   const spacesQuery = useQuery(formRead(rpcQuery("spaces/list")), queryClient);
@@ -77,36 +73,10 @@ function RoomSettings({ conversationId }: { conversationId: string }) {
   const saveRef = useRef(() => {});
   const title = loaded ? loaded.conversation.displayName || t`External conversation` : "";
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      ...glassHeaderOptions(title),
-      ...(!ready
-        ? { headerRight: undefined, unstable_headerRightItems: undefined }
-        : iosAtLeast(26)
-          ? {
-              unstable_headerRightItems: () => [
-                {
-                  type: "button" as const,
-                  label: t`Save`,
-                  variant: "prominent" as const,
-                  tintColor: mobileTokens().primary,
-                  disabled: saving,
-                  onPress: () => saveRef.current(),
-                },
-              ],
-            }
-          : {
-              headerRight: () => (
-                <NativeActionButton
-                  disabled={saving}
-                  fill={false}
-                  label={t`Save`}
-                  onPress={() => saveRef.current()}
-                />
-              ),
-            }),
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, title, ready, saving, t]);
+  useScreenHeader({
+    title,
+    action: ready ? { label: t`Save`, busy: saving, onPress: () => saveRef.current() } : null,
+  });
 
   if (!loaded) {
     return loadError ? (

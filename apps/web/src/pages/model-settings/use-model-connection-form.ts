@@ -11,17 +11,24 @@ import {
   openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
-import { createModelProbe, initialModelProbeState, savedCompatibleModelIds } from "@rakazo/core";
+import {
+  createModelProbe,
+  initialModelProbeState,
+  modelConnectionFormSecrets,
+  sanitizeModelConnectionError,
+  savedCompatibleModelIds,
+} from "@rakazo/core";
 import { useMemo, useRef, useState } from "react";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import type { ModelPreflightFailure } from "../../lib/models/model-connection-preflight";
 import {
   classifyModelConnectionFailure,
   modelPreflightSuccessMessage,
   runModelConnectionPreflight,
   unavailableSelectedModel,
-} from "../../lib/model-connection-preflight";
-import type { RpcClient } from "../../lib/rpc";
+} from "../../lib/models/model-connection-preflight";
+import type { RpcClient } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 
 type PreflightOutcome = { success: string } | { failure: ModelPreflightFailure };
 
@@ -61,9 +68,7 @@ export function useModelConnectionForm({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [preflightTesting, setPreflightTesting] = useState(false);
-  const [preflightTarget, setPreflightTarget] = useState<
-    "api-key" | "sign-in" | "compatible" | null
-  >(null);
+  const [preflightTarget, setPreflightTarget] = useState<"api-key" | "compatible" | null>(null);
   const [preflightSuccess, setPreflightSuccess] = useState<string | null>(null);
   const [preflightFailure, setPreflightFailure] = useState<ModelPreflightFailure | null>(null);
   const preflightRevisionRef = useRef(0);
@@ -141,6 +146,14 @@ export function useModelConnectionForm({
     invalidatePreflight();
   }
 
+  /** A failed connection's message, without the credentials this form holds. */
+  function connectionErrorText(err: unknown, fallback: string): string {
+    return sanitizeModelConnectionError(
+      errorText(err, fallback),
+      modelConnectionFormSecrets({ apiKey, headerRows }),
+    );
+  }
+
   async function probeServerModels() {
     if (!baseUrl.trim()) return;
     const revision = preflightRevisionRef.current;
@@ -178,7 +191,12 @@ export function useModelConnectionForm({
       },
       onError: (err) => {
         if (!stillCurrent()) return;
-        setPreflightFailure(classifyModelConnectionFailure(err, { modelId }));
+        setPreflightFailure(
+          classifyModelConnectionFailure(err, {
+            modelId,
+            secrets: modelConnectionFormSecrets({ apiKey, headerRows }),
+          }),
+        );
         setNotice(null);
       },
     });
@@ -186,7 +204,7 @@ export function useModelConnectionForm({
 
   /** Shows `test`'s result unless the form changed while it ran; `test` may stop early the same way. */
   async function runPreflight(
-    target: "api-key" | "sign-in",
+    target: "api-key",
     test: (stillCurrent: () => boolean) => Promise<PreflightOutcome | undefined>,
   ) {
     const revision = preflightRevisionRef.current;
@@ -208,7 +226,6 @@ export function useModelConnectionForm({
     if (!selected?.catalogProbe) return;
     await runPreflight("api-key", async () => {
       const result = await runModelConnectionPreflight({
-        authKind: "api-key",
         provider: selected.provider,
         apiKey,
         modelId: selected.id,
@@ -227,6 +244,7 @@ export function useModelConnectionForm({
     apiProtocol,
     applyFields,
     baseUrl,
+    connectionErrorText,
     routingReady,
     enabledModelIds,
     error,

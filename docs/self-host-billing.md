@@ -118,9 +118,15 @@ deployment credential; no Redis or external accounting service is required.
 The adapter pins Stripe API `2026-09-30.endive`. Configure webhook destinations for your own account,
 using snapshot payloads on the same API version. Subscribe to all `customer.subscription` events,
 `customer.deleted`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
-`invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.dispute.created`, and
-`charge.dispute.closed`. Credit Checkout restricts payment methods to cards. New subscriptions
+`invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.dispute.created`,
+`charge.dispute.closed`, `charge.dispute.funds_withdrawn`, and `charge.dispute.funds_reinstated`.
+Credits a dispute holds back return if it is won. Credit Checkout restricts payment methods to cards. New subscriptions
 explicitly retain classic billing mode so API upgrades do not change invoice/proration behavior.
+
+A subscription whose charge failed (past due, unpaid or paused) has no access until the payment
+goes through; its owner is sent to the billing portal to update the card, and Stripe's own retry
+and cancellation settings decide when it ends. A plan counts as paid once an invoice that charged
+something is paid, not when a trial turns active.
 
 For local testing, forward Stripe test events to `/api/v1/billing/webhook`. Use the signing secret
 from `stripe listen` and test API credentials; keep them in an ignored environment file.

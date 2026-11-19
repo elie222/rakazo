@@ -27,14 +27,13 @@ import {
   DialogTitle,
   Input,
   Label,
-  NativeSelect,
-  NativeSelectOption,
+  OptionSelect,
   Switch,
 } from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import type { AgentAccess } from "../integrations/agent-access";
-import { SettingsPageHeader } from "../SettingsPageHeader";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
 import { LoginFieldsInput } from "./LoginFieldsInput";
 import { VaultItemAccess } from "./VaultItemAccess";
@@ -568,7 +567,7 @@ function EditorForm({
               <Input
                 id={id("number")}
                 inputMode="numeric"
-                autoComplete="off"
+                autoComplete="cc-number"
                 spellCheck={false}
                 disabled={busy}
                 value={groupedCardNumber(cardDigits)}
@@ -595,37 +594,33 @@ function EditorForm({
                 const digits = digitsOf(next, 6);
                 setExpiry(digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits);
               },
-              { inputMode: "numeric", placeholder: "MM/YY" },
+              { inputMode: "numeric", placeholder: "MM/YY", autoComplete: "cc-exp" },
             )}
             <FormField id={id("cvc")} label={t`Security code`}>
               <Input
                 id={id("cvc")}
                 type="password"
                 inputMode="numeric"
-                autoComplete="new-password"
+                autoComplete="cc-csc"
                 disabled={busy}
                 value={cvc}
                 onChange={(event) => setCvc(digitsOf(event.target.value, 4))}
               />
             </FormField>
           </div>
-          {text("card-name", t`Name on card`, cardName, setCardName)}
+          {text("card-name", t`Name on card`, cardName, setCardName, { autoComplete: "cc-name" })}
           {contacts?.length ? (
             <FormField id={id("billing")} label={t`Billing address`}>
-              <NativeSelect
+              <OptionSelect
                 id={id("billing")}
-                className="w-full"
                 disabled={busy}
                 value={billing}
-                onChange={(event) => setBilling(event.target.value)}
-              >
-                <NativeSelectOption value="">{t`None`}</NativeSelectOption>
-                {contacts.map((saved) => (
-                  <NativeSelectOption key={saved.name} value={saved.name}>
-                    {saved.title}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                onValueChange={setBilling}
+                options={[
+                  { value: "", label: t`None` },
+                  ...contacts.map((saved) => ({ value: saved.name, label: saved.title })),
+                ]}
+              />
             </FormField>
           ) : null}
         </>
@@ -651,18 +646,18 @@ function EditorForm({
         <>
           {siteField("https://api.example.com")}
           <FormField id={id("auth")} label={t`Type`}>
-            <NativeSelect
+            <OptionSelect<ApiAuthType>
               id={id("auth")}
               data-testid="vault-editor-auth"
-              className="w-full"
               disabled={busy || editing || asking}
               value={apiType}
-              onChange={(event) => setApiType(event.target.value as ApiAuthType)}
-            >
-              <NativeSelectOption value="bearer">{t`Bearer token`}</NativeSelectOption>
-              <NativeSelectOption value="header">{t`Custom header`}</NativeSelectOption>
-              <NativeSelectOption value="basic">{t`Basic auth`}</NativeSelectOption>
-            </NativeSelect>
+              onValueChange={setApiType}
+              options={[
+                { value: "bearer", label: t`Bearer token` },
+                { value: "header", label: t`Custom header` },
+                { value: "basic", label: t`Basic auth` },
+              ]}
+            />
           </FormField>
           {apiType === "header"
             ? text("header", t`Header name`, headerName, setHeaderName, {

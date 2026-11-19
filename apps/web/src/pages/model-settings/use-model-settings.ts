@@ -21,16 +21,13 @@ import { fetchFresh } from "@rakazo/core/query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/localized-provider-hint";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import {
-  loadStoredModelAuth,
-  runModelConnectionPreflight,
-} from "../../lib/model-connection-preflight";
-import { useSpaceQueries } from "../../lib/query";
-import { useSpaceRpc } from "../../lib/space-rpc";
-import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
-import { errorText } from "../../lib/user-error";
+import { providerDisplayName } from "../../lib/models/localized-provider-hint";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
+import { analyticsSurface } from "../../lib/platform/desktop";
+import { useSpaceQueries } from "../../lib/query/query";
+import { useSpaceRpc } from "../../lib/query/space-rpc";
+import { errorText } from "../../lib/query/user-error";
 import { useModelConnectionForm } from "./use-model-connection-form";
 
 const NO_CATALOG: ModelCatalogEntry[] = [];
@@ -88,6 +85,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     apiProtocol,
     applyFields,
     baseUrl,
+    connectionErrorText,
     enabledModelIds,
     gatewayId,
     projectId,
@@ -103,7 +101,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     probeModels,
     provider,
     resetOpenAiCompatibleProbe,
-    runPreflight,
     selected,
     setApiKey,
     setError,
@@ -114,7 +111,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     setThinkingLevel,
     thinkingLevel,
   } = form;
-  const [codeCopied, copyOAuthCode] = useCopyText();
+  const [codeCopied, copyText] = useCopyText();
   const [loading, setLoading] = useState(
     () =>
       queryClient.getQueryData(catalogQuery.queryKey) === undefined ||
@@ -135,6 +132,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     oauthPending,
     popupBlocked,
     cancelOAuthAttempt,
+    reportSignInStep,
     startSubscriptionSignIn,
     submitOAuthCode,
   } = useModelOAuthSignIn({
@@ -149,6 +147,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       if (started) await started.intent?.onConnected?.({ ...started.choice, credentialId });
     },
   });
+  const copyOAuthCode = (code: string) => {
+    const loginId = oauth?.loginId;
+    void copyText(code).then((copied) => {
+      if (copied) reportSignInStep("code_copied", loginId);
+    });
+  };
 
   /**
    * `keepForm` reloads the lists without resetting the open connection's fields. Every refresh but
@@ -339,27 +343,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     );
   }
 
-  async function testOAuthConnection() {
-    if (!selected) return;
-    await runPreflight("sign-in", async (stillCurrent) => {
-      const stored = await loadStoredModelAuth(
-        selected.provider,
-        () => rpc.models.credentials(),
-        selected.id,
-        credentialIdRef.current,
-      );
-      if (!stillCurrent()) return undefined;
-      const result = await runModelConnectionPreflight({
-        authKind: "oauth",
-        provider: selected.provider,
-        ...stored,
-      });
-      return result.ok
-        ? { success: t`A subscription credential is stored securely.` }
-        : { failure: result.failure };
-    });
-  }
-
   // settingsOnly saves a connected catalog provider's gateway ids without touching
   // the key field; key replacement stays on its own button.
   async function connectKey({ settingsOnly = false }: { settingsOnly?: boolean } = {}) {
@@ -396,7 +379,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     const form = formRevisionRef.current;
     const stillSelected = () => form === formRevisionRef.current;
     try {
-      const saved = await rpc.models.connect(input);
+      const saved = await rpc.models.connect({ ...input, surface: analyticsSurface() });
       if (!stillSelected()) {
         await refresh({ keepForm: true });
         return;
@@ -415,7 +398,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       // A fresh connection speaks for itself through the Active model row.
       if (isOpenAiCompatible || savingWithoutKey) setNotice(t`Saved.`);
     } catch (err) {
-      if (stillSelected()) setError(errorText(err, t`Could not connect this provider`));
+      if (stillSelected()) setError(connectionErrorText(err, t`Could not connect this provider`));
     } finally {
       setPending(null);
     }
@@ -484,6 +467,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     confirmDisconnect,
     connectKey,
     copyOAuthCode,
+    reportSignInStep,
     credential,
     credentialByProvider,
     credentials,
@@ -513,7 +497,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     settingsDirty,
     submitOAuthCode,
     subscriptionSignIn,
-    testOAuthConnection,
     usingServerCredentials,
   };
 }

@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { SignupSurvey as SignupSurveyAnswers } from "@rakazo/contracts";
 import { signupSurveyAsksTeamSize } from "@rakazo/contracts";
-import { useContext, useRef, useState } from "react";
+import { useContext, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -10,17 +10,22 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { MenuPickerMenu } from "../../components/menu-picker";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
-import { CallKeyboardContext } from "../../lib/call-keyboard-context";
-import { native, useThemedStyles } from "../../lib/native";
-import { closeSettingsSheet } from "../../lib/settings-sheet";
-import { useSideInsets } from "../../lib/side-insets";
-import type { SignupSurveyTeamSize } from "../../lib/signup-survey";
-import { SIGNUP_SURVEY_TEAM_SIZE_CHOICES, signupSurveyAnswers } from "../../lib/signup-survey";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { MenuPickerMenu } from "../../components/ui/menu-picker";
+import type { SignupSurveyTeamSize } from "../../lib/auth/signup-survey";
+import { SIGNUP_SURVEY_TEAM_SIZE_CHOICES, signupSurveyAnswers } from "../../lib/auth/signup-survey";
+import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useSave } from "../../lib/query/query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
+import { closeSettingsSheet } from "../../lib/settings/settings-sheet";
 
 type Use = NonNullable<SignupSurveyAnswers["use"]>;
 
@@ -35,7 +40,15 @@ export default function SignupSurvey() {
   const [use, setUse] = useState<Use>();
   const [teamSize, setTeamSize] = useState<SignupSurveyTeamSize>();
   const [source, setSource] = useState("");
-  const finished = useRef(false);
+  const answers = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (survey: SignupSurveyAnswers, send) => {
+      // Answers are optional, so a slow or failed save never holds up the new account.
+      closeSettingsSheet();
+      await send("onboarding/signupSurvey", survey);
+    },
+    closesScreen: true,
+  });
   const uses: { key: Use; label: string }[] = [
     { key: "personal", label: t`Personal` },
     { key: "work", label: t`Work` },
@@ -43,14 +56,7 @@ export default function SignupSurvey() {
   ];
 
   function finish() {
-    if (finished.current) return;
-    finished.current = true;
-    // Answers are optional, so a slow or failed save never holds up the new account.
-    void rpc(
-      "onboarding/signupSurvey",
-      signupSurveyAnswers({ reason, use, teamSize, source }),
-    ).catch(() => undefined);
-    closeSettingsSheet();
+    answers.run(signupSurveyAnswers({ reason, use, teamSize, source }));
   }
 
   return (

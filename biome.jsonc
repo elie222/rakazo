@@ -21,7 +21,9 @@
       "!**/verify-report",
       "!**/data",
       "!**/*.astro",
-      "!**/apps/www"
+      "!**/apps/www/.astro",
+      "!**/apps/www/.vercel",
+      "!**/apps/www/**/*.{css,json,mjs}"
     ]
   },
   "plugins": [
@@ -34,8 +36,8 @@
         "**/packages/chat-ui/**/*.tsx",
         "!**/*.test.tsx",
         "!**/packages/ui-web/src/bot-avatar.tsx",
-        "!**/apps/mobile/components/bot-avatar.tsx",
-        "!**/apps/web/src/pages/WindowChrome.tsx"
+        "!**/apps/mobile/components/bots/bot-avatar.tsx",
+        "!**/apps/web/src/components/WindowChrome.tsx"
       ]
     },
     {
@@ -62,7 +64,7 @@
             "patterns": [
               {
                 "group": [
-                  "@{alicloud,aws-sdk,axiomhq,boatdev,boxd-sh,chat-adapter}/**",
+                  "@{alicloud,aws-sdk,axiomhq,azure,boatdev,boxd-sh,chat-adapter}/**",
                   "@{composio,darabonba,daytona,e2b,insforge,kubernetes}/**",
                   "@{larksuiteoapi,opentelemetry,photon-ai,sentry,stripe}/**",
                   "{chat-adapter-sendblue,mppx,novita-sandbox,railway,sendblue}",
@@ -179,13 +181,13 @@
     {
       "includes": [
         "packages/adapters/**",
-        "apps/desktop/src/monitoring.ts",
-        "apps/web/src/lib/monitoring.ts",
-        "apps/mobile/lib/monitoring.ts",
+        "apps/desktop/src/main/system/monitoring.ts",
+        "apps/web/src/lib/platform/monitoring.ts",
+        "apps/mobile/lib/platform/monitoring.ts",
         "packages/logging/src/sentry.ts",
         "packages/logging/src/sentry.test.ts",
         "packages/logging/src/axiom-sink.ts",
-        "packages/testkit/src/cli/ios-screenshot-publish.ts"
+        "packages/testkit/src/screenshots/ios-screenshot-publish.ts"
       ],
       "linter": {
         "rules": {

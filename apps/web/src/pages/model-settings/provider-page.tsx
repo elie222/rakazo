@@ -1,24 +1,27 @@
-import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionModel } from "@rakazo/core";
 import { ListSearchInput, SectionHeading } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
-import { SettingsPageHeader } from "../../components/SettingsPageHeader";
+import { SettingsPageHeader } from "../../components/settings/SettingsPageHeader";
 import { useListSearch } from "../../lib/use-list-search";
 import { SettingsListRow } from "./providers-section";
 
 type ProviderModel = ConnectionModel;
 
-/** One connection: its own settings, then every model it runs, each opening its settings. */
+/** One connection: its own settings, then the models that have settings of their own. */
 export function ProviderPage({
   title,
   connection,
+  footer,
   models,
   onBack,
   onOpenModel,
 }: {
   title: string;
-  /** The connection's name, key and disconnect controls. */
+  /** The connection's sign-in or key controls. */
   connection: ReactNode;
+  /** Rename and disconnect, after everything else. */
+  footer: ReactNode;
   models: ProviderModel[];
   onBack: () => void;
   onOpenModel: (modelId: string) => void;
@@ -72,15 +75,7 @@ export function ProviderPage({
           </ul>
         </section>
       ) : null}
+      {footer}
     </div>
-  );
-}
-
-/** The number of models available on a connection. */
-export function ProviderModelCount({ models }: { models: ProviderModel[] }) {
-  return (
-    <span className="shrink-0 text-body-sm text-muted-foreground">
-      <Plural value={models.length} one="# model" other="# models" />
-    </span>
   );
 }

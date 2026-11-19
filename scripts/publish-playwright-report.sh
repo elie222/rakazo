@@ -174,7 +174,7 @@ PLAYWRIGHT_SCREENSHOTS_URL="$screenshots_url" \
 PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \
 PLAYWRIGHT_PR_URL="$pull_request_url" \
   pnpm exec tsx \
-    packages/testkit/src/cli/generate-playwright-report-dashboard.ts \
+    packages/testkit/src/screenshots/generate-playwright-report-dashboard.ts \
     "$history_path" \
     "$dashboard_path" \
     "$test_results_dir" \

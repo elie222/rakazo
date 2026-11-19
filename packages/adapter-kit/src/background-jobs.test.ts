@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  connectionCleanupJob,
+  connectionCleanupJobKey,
   dispatchBackgroundJob,
   HISTORY_COMPACT_MAX_ATTEMPTS,
   historyCompactJob,
@@ -28,6 +30,8 @@ function handlers(): BackgroundJobHandlers {
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
+    "run.forget-secrets": vi.fn(async () => undefined),
+    "approval.expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "memory.retain-turn": vi.fn(async () => undefined),
@@ -38,13 +42,17 @@ function handlers(): BackgroundJobHandlers {
     "messaging.progress": vi.fn(async () => undefined),
     "secret.cleanup": vi.fn(async () => undefined),
     "messaging.credential-cleanup": vi.fn(async () => undefined),
+    "connection.cleanup": vi.fn(async () => undefined),
     "computer.machine-cleanup": vi.fn(async () => undefined),
     "team_chat.engage": vi.fn(async () => undefined),
     "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
+    "meeting.calendar-sync": vi.fn(async () => undefined),
+    "meeting.work": vi.fn(async () => undefined),
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
+    "email.lifecycle": vi.fn(async () => undefined),
   };
 }
 
@@ -118,6 +126,8 @@ describe("background job contracts", () => {
     const payload = { kind: "secret_row", recordId: "secret-a", ref: "remote-reference" } as const;
     await dispatchBackgroundJob(target, "secret.cleanup", payload);
     expect(target["secret.cleanup"]).toHaveBeenCalledWith(payload);
+    const shared = { ...payload, kind: "secret_tables" };
+    expect(parseBackgroundJob("secret.cleanup", shared).payload).toEqual(shared);
     expect(() => parseBackgroundJob("secret.cleanup", { ...payload, kind: "unknown" })).toThrow();
     expect(() => parseBackgroundJob("secret.cleanup", { ...payload, recordId: "" })).toThrow();
   });
@@ -130,6 +140,27 @@ describe("background job contracts", () => {
     expect(() =>
       parseBackgroundJob("messaging.credential-cleanup", { ref: "encrypted-reference" }),
     ).toThrow();
+  });
+
+  it("keys connection cleanup by what it removes, so a retry replaces its backup", async () => {
+    const app = {
+      spaceId: "space-1",
+      userId: "user-1",
+      connectorId: "connector-1",
+      provider: "mail",
+    };
+    const request = { ...app, ref: "request-1" };
+    const backup = connectionCleanupJob(request, new Date(60_000));
+    const retry = connectionCleanupJob(request);
+    expect(backup).toMatchObject({ payload: request, availableAt: new Date(60_000) });
+    expect(retry).not.toHaveProperty("availableAt");
+    expect(retry.replaceKey).toBe(backup.replaceKey);
+    expect(connectionCleanupJobKey(app)).not.toBe(backup.replaceKey);
+
+    const target = handlers();
+    await dispatchBackgroundJob(target, "connection.cleanup", app);
+    expect(target["connection.cleanup"]).toHaveBeenCalledWith(app);
+    expect(() => parseBackgroundJob("connection.cleanup", { ...app, userId: "" })).toThrow();
   });
 
   it("keys a machine's cleanup by provider and machine, so a new delete time replaces the old", async () => {

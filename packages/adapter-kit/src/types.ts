@@ -4,9 +4,12 @@ import type {
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   HistoryToolStep,
+  LifecycleEmailKind,
   ModelApiProtocol,
   PurchaseCardField,
   SandboxKind,
+  ToolQuestion,
+  ToolQuestionAnswer,
   VoiceAccountErrorCode,
 } from "@rakazo/contracts";
 
@@ -24,11 +27,16 @@ export interface AdapterContext {
   /** When releasing a screen after cancel, also stop orphaned browser work on that screen. */
   cancelRunWork?: boolean;
   signal: AbortSignal;
+  /** Asks the person who owns the run a tool server's question and waits for the answer. Absent
+   * when the run has nobody to ask; the question is then declined. */
+  askPerson?: ToolAsk;
   /** Connected external accounts available to this run, including their owning connector. */
   connectedConnections?: ConnectedConnector[];
   /** @deprecated Prefer connectedConnections so providers with the same app slug cannot collide. */
   connectedProviders?: string[];
 }
+
+export type ToolAsk = (question: ToolQuestion, signal: AbortSignal) => Promise<ToolQuestionAnswer>;
 
 /**
  * A provider machine no stored computer points at: one a start created and has not stored, or a
@@ -290,6 +298,8 @@ export interface SandboxKindCapabilities {
   serverOwnsStoredTeamHome: boolean;
   /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
   storedHomeIsBackup: boolean;
+  /** The provider can read the disk of a stopped sandbox without starting it. */
+  readStoppedFiles?: boolean;
 }
 
 export interface SandboxCapabilities {
@@ -306,6 +316,8 @@ export interface ConnectorTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Editable, fully previewable outgoing arguments selected by the adapter. */
+  outgoingDraft?: OutgoingDraftDescriptor;
   /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
   readOnly?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
@@ -318,6 +330,14 @@ export interface ConnectorTool {
   appResourceUri?: string;
 }
 
+export interface OutgoingDraftDescriptor {
+  kind: "email" | "message";
+  source: string;
+  keys: { to: string; body: string; subject?: string };
+  defaults?: Record<string, string | boolean>;
+  recipientAlias?: string;
+}
+
 /**
  * Where a batch tool's arguments name the actions it runs: `args[items][i][action]`, each with
  * its own arguments at `args[items][i][arguments]`. Approval rules and the read/write check judge
@@ -327,6 +347,7 @@ export interface ToolBatch {
   items: string;
   action: string;
   arguments: string;
+  outgoingDrafts?: Readonly<Record<string, OutgoingDraftDescriptor>>;
 }
 
 export interface ConnectorRoute {
@@ -406,9 +427,16 @@ export interface MemorySearchResult {
   score: number;
 }
 
-/** A full-document save lost the race to another writer. The caller should read again. */
 export const MEMORY_REVISION_CONFLICT_ERROR =
   "Shared memory changed since it was read. Read the latest version and save again.";
+
+/** A full-document save lost the race to another writer. The caller should read again. */
+export class MemoryRevisionConflictError extends Error {
+  constructor() {
+    super(MEMORY_REVISION_CONFLICT_ERROR);
+    this.name = "MemoryRevisionConflictError";
+  }
+}
 
 export interface MemoryCommitRequest {
   scope: "bot" | "user";
@@ -569,7 +597,7 @@ export interface AgentSteeringMessage {
    * Who sent it. Only the run's own person ("user") is framed as a message to answer; anything
    * else, or no origin, is passed on as a neutral note.
    */
-  origin?: "user" | "member" | "messaging" | "webhook";
+  origin?: "user" | "member" | "messaging" | "webhook" | "routine";
   /** Persisted history text before attachment paths are appended. */
   historyText?: string;
   images?: AgentInputImage[];
@@ -709,6 +737,12 @@ export interface AgentRunRequest {
   turnCheckpoint?: string;
   /** Cheap per-call capture; serialize only when persisting that call’s human pause. */
   onCheckpoint?: (capture: () => string, executionId: string) => Promise<void>;
+  /**
+   * Aborts when the process running the turn begins to stop. A runtime that supports it ends
+   * the turn at its next step boundary with a `yielded` event instead of starting another model
+   * call; one that does not keeps going until the turn ends or `signal` aborts.
+   */
+  yieldSignal?: AbortSignal;
   /** Human answer or takeover outcome for the pending interaction. Never secret input. */
   resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
   script?: ScriptedTurn[];
@@ -787,13 +821,18 @@ export interface ModelCallObserver {
     provider: string;
     modelId: string;
     inputTokensEstimate: number;
-    maxOutputTokens: number;
+    /** Null when the protocol cannot enforce an output bound. */
+    maxOutputTokens: number | null;
     /** Conservative dollar bound from the resolved model pricing; absent means unknown. */
     maxCostUsd?: number;
     /** Explicit adapter-known write bucket required by this request, not a billing prediction. */
     cacheWriteRetention?: "1h";
   }): string | Promise<string>;
-  afterCall(reservationId: string, usage: AgentUsage | null): void | Promise<void>;
+  afterCall(
+    reservationId: string,
+    /** Null proves the call did not start; uncertain dispatched usage needs an explicit receipt. */
+    usage: AgentUsage | null,
+  ): void | AgentUsage | Promise<void> | Promise<AgentUsage | undefined>;
   onRequestId?(reservationId: string, providerRequestId: string): void | Promise<void>;
 }
 
@@ -844,6 +883,13 @@ export type AgentRuntimeEvent =
       agentId?: string;
     } & AgentUsage)
   | { type: "checkpoint"; blob: string }
+  /**
+   * The turn reached a step boundary after `yieldSignal` aborted. Every step so far is in
+   * `checkpoint`; a run resumed with it as `turnCheckpoint` continues with the next model call.
+   * The consumer calls `answer(true)` once it saved the turn and handed the run back, and the
+   * turn ends; `answer(false)` keeps the turn going here.
+   */
+  | { type: "yielded"; checkpoint: string; answer: (handedBack: boolean) => void }
   | {
       type: "subagent";
       agentId: string;
@@ -868,7 +914,20 @@ export interface VoiceInfo {
   description?: string;
 }
 
+/** Provider evidence only; no transcript, audio or credentials. */
+export interface VoiceUsage {
+  model: string;
+  unit: "characters" | "seconds" | "tokens";
+  units: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  inputAudioTokens?: number;
+  inputTextTokens?: number;
+}
+
 export interface SpeechClip {
+  providerRequestId?: string;
+  usage?: VoiceUsage;
   bytes: Uint8Array;
   mimeType: "audio/mpeg" | "audio/wav" | "audio/ogg";
   /** The voice actually used, when the provider substituted one for the requested voice. */
@@ -903,6 +962,7 @@ export interface VoiceSynthesizeRequest {
 }
 
 export interface VoiceTranscribeRequest {
+  model?: string;
   audio: Uint8Array;
   mimeType: string;
   apiKey: string;
@@ -924,6 +984,9 @@ export interface BackgroundJobPayloads {
   "computer.update": { updateId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
   "skill.teaching-expire": { skillId: string };
+  /** Drop the run-only logins and codes of a run still waiting on someone after the expiry. */
+  "run.forget-secrets": { runId: string };
+  "approval.expire": { runId: string; effectId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string; userId?: string };
@@ -961,9 +1024,15 @@ export interface BackgroundJobPayloads {
   "messaging.send": { outboundId: string };
   /** Backup for recording and sending what an ended run said where its turn came from. */
   "messaging.reply": { runId: string };
-  /** The previous release's outbox drain; drained by the new delivery path. */
+  /**
+   * The previous release's outbox drain, drained by the new path.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.deliver": { runId?: string };
-  /** The previous release's interim-message mirror; drained by the new delivery path. */
+  /**
+   * The previous release's interim-message mirror.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.progress": { runId: string };
   /**
    * Backup for deleting one secret-store entry that nothing refers to any more. `kind` names what
@@ -971,8 +1040,23 @@ export interface BackgroundJobPayloads {
    * unreferenced. `ref` is the store's reference to a remote entry, never a value.
    */
   "secret.cleanup": { kind: SecretCleanupKind; recordId: string; ref: string };
-  /** The previous release's `secret.cleanup` for a messaging installation. */
+  /**
+   * The previous release's `secret.cleanup` for a messaging install.
+   * Jobs under this name can stay queued across releases, so it goes only once none are left.
+   */
   "messaging.credential-cleanup": { installationId: string; ref: string };
+  /**
+   * Backup for removing an authorization a connection flow left at the provider with no local
+   * row. `ref` names one authorization request or account; without it, the app's accounts that
+   * no local row references.
+   */
+  "connection.cleanup": {
+    spaceId: string;
+    userId: string;
+    connectorId: string;
+    provider: string;
+    ref?: string;
+  };
   /** Deletes a provider machine once no stored computer points at it and none may still keep it. */
   "computer.machine-cleanup": UnreferencedMachine;
   /** Backup for answering one inbound team-chat message, and the end of its routine routing. */
@@ -981,22 +1065,51 @@ export interface BackgroundJobPayloads {
   "team_chat.ambient": { conversationId: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  "meeting.calendar-sync": { connectionId: string };
+  "meeting.work": {
+    sessionId: string;
+    action:
+      | "join"
+      | "leave"
+      | "expire"
+      | "reconcile"
+      | "transcript"
+      | "transcript-check"
+      | "cleanup";
+    detached?: { provider: string; externalId?: string; recordingId?: string };
+  };
   "purchase.poll": { purchaseId: string };
   /** Check a submitted video and post it when ready; the ID is the bot-visible job ID. */
   "media.poll": { jobId: string };
   /** Read an Expo push receipt; the token is identified by its digest, never stored. */
   "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
+  /**
+   * One lifecycle mail to an organization's owner, re-checked when it fires. The API writes the
+   * message when it schedules: only it holds the templates and the key that signs the
+   * unsubscribe link. The address is read when the mail is sent.
+   */
+  "email.lifecycle": {
+    kind: LifecycleEmailKind;
+    organizationId: string;
+    userId: string;
+    message: Pick<TransactionalEmail, "subject" | "text" | "html" | "headers">;
+  };
 }
 
-/** What held a secret-store reference before it was replaced or dropped. */
+/**
+ * What held a secret-store reference before it was replaced or dropped. `store_write` is an entry
+ * written before any record held it, which every record that can hold a reference may claim.
+ */
 export type SecretCleanupKind =
   | "secret_row"
+  | "secret_tables"
   | "messaging_installation"
   | "deployment_computer_provider"
   | "purchase_request"
   | "purchase_card"
   | "purchase_token"
-  | "payment_wallet";
+  | "payment_wallet"
+  | "store_write";
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
 
@@ -1054,6 +1167,11 @@ export type SecretContext = string | { recordId: string; signal?: AbortSignal };
 export interface SecretPutOptions {
   recordId?: string;
   ephemeral?: boolean;
+  /**
+   * A store that keeps entries remotely calls this with the new entry before writing it, and does
+   * not write when it rejects, so a backup can name the entry before it exists.
+   */
+  beforeWrite?: (entry: { recordId: string; ref: string }) => Promise<void>;
 }
 export type SecretChangeListener = (ref: string) => void;
 
@@ -1588,10 +1706,16 @@ export interface AutoReviewRequest {
    */
   newSite?: boolean;
   /**
-   * A save to the bot's memory after the run took in outside content. The bot reads saved memory
-   * as trusted context in every later run, so the saved text is judged as a standing instruction.
+   * A save to the bot's memory or skills after the run took in outside content. The bot reads
+   * both as trusted context in every later run, so the saved text is judged as a standing
+   * instruction.
    */
-  memoryWrite?: boolean;
+  savedContextWrite?: boolean;
+  /**
+   * The owner's own earlier messages in this chat, oldest first, before `userTask`: never a tool
+   * result or anyone else's message. Redacted and capped by the caller.
+   */
+  ownerMessages?: string[];
 }
 
 export interface AutoReviewResult {
@@ -1604,9 +1728,9 @@ export interface AutoReviewResult {
 export type BillingSubscriptionStatus =
   | "trialing"
   | "active"
-  | "past_due"
   | "incomplete"
   /** No access; the subscription resumes from the billing portal, so a new checkout would double-bill. */
+  | "past_due"
   | "unpaid"
   | "paused"
   | "canceled";
@@ -1622,9 +1746,23 @@ export interface BillingPrice {
 export interface BillingCreditPurchase {
   /** Stable provider payment identity, including any subsequent refund adjustment. */
   id: string;
+  /** Paid net of refunds and lost disputes; a reduction is final. */
   amountCents: number;
+  /** Part of `amountCents` an open payment dispute holds back; it returns if the dispute is won. */
+  disputedCents?: number;
   /** Subscription service-period end; absent for non-expiring top-ups. */
   expiresAt?: string;
+}
+
+export interface BillingPlanPayment {
+  invoiceId: string;
+  /** Paid before tax, in the currency's minor units. */
+  amountCents: number;
+  /** Lowercase ISO 4217 code. */
+  currency: string;
+  createdAt: Date;
+  /** Every payment on it refunded in full, or lost to a dispute. */
+  reversed: boolean;
 }
 
 export interface BillingCreditCheckoutRequest {
@@ -1658,6 +1796,8 @@ export interface BillingSubscriptionSnapshot {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
+  /** When the latest invoice was settled, if it billed anything: a trial's free invoice is no payment. */
+  paidAt?: Date;
   /** The flat own-key plan, which grants access without credits. */
   byokPlan?: boolean;
   /** What the own-key plan bills each period, which stays at the price it was bought at. */

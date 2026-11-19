@@ -64,12 +64,12 @@ entries on that pull request, or in a separate translation-only pull request onc
 Web, the Electron-hosted UI and Expo mobile share one set of Lingui catalogs. Register a new
 locale in these places:
 
-- `AppLocaleSchema` in `packages/contracts/src/domain.ts` and `APP_LOCALE_LABELS` in
-  `packages/core/src/ui-locale.ts`. The web language list comes from the shared schema;
-  `apps/web/src/lib/ui-locale.ts` is not a separate registry.
-- `lingui.config.ts` and the catalog loaders in `apps/web/src/lib/i18n.ts`.
-- Mobile's `SHIPPED_LOCALES` in `apps/mobile/lib/ui-locale.ts` and catalog imports/map in
-  `apps/mobile/lib/i18n.ts`. Check the new language's rules in `apps/mobile/lib/plural-rules.ts`,
+- `AppLocaleSchema` in `packages/contracts/src/account/preferences.ts` and `APP_LOCALE_LABELS` in
+  `packages/core/src/locale/ui-locale.ts`. The web language list comes from the shared schema;
+  `apps/web/src/lib/locale/ui-locale.ts` is not a separate registry.
+- `lingui.config.ts` and the catalog loaders in `apps/web/src/lib/locale/i18n.ts`.
+- Mobile's `SHIPPED_LOCALES` in `apps/mobile/lib/i18n/ui-locale.ts` and catalog imports/map in
+  `apps/mobile/lib/i18n/i18n.ts`. Check the new language's rules in `apps/mobile/lib/i18n/plural-rules.ts`,
   which supplies the fallback when Hermes has no `Intl.PluralRules`.
 - The PageKit locale list and `PAGE_MESSAGES` in `packages/page-kit/src/kit/labels.ts`, with a
   message table in `packages/page-kit/src/kit/locales/`. Pages use these tables, not Lingui catalogs.
@@ -82,7 +82,7 @@ generated `*.js`/`*.mjs` catalog files or unrelated changes to existing catalogs
 
 Update the shared and platform locale tests, including normalization and plural rules, and a
 UI E2E scenario for each supported surface. The marketing homepage in `apps/www` and the
-native Electron setup window and menus (`apps/desktop/src/i18n.ts` and `locales/`) have
+native Electron setup window and menus (`apps/desktop/src/main/i18n.ts` and `apps/desktop/src/main/locales/`) have
 separate localization paths; scope and test those changes explicitly instead of assuming the
 web catalog covers them.
 

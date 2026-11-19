@@ -8,20 +8,19 @@ import {
   approvalRuleLabel,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useLayoutEffect, useMemo } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useMemo } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LoadFailure } from "../../components/load-failure";
-import { NativeActionButton } from "../../components/native-action-button";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { mobileTokens } from "../../lib/appearance";
-import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, targetRpcQuery, useSave } from "../../lib/query";
-import { settingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { queryClient, targetRpcQuery, useSave } from "../../lib/query/query";
+import { settingsTarget } from "../../lib/query/settings-target";
 
 type RuleAction = ActionApprovalRule["effect"] | "remove";
 
@@ -35,7 +34,6 @@ export default function ApprovalRules() {
   const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
   const scope = target.scope;
   const { t } = useLingui();
-  const navigation = useNavigation();
   const router = useRouter();
   const colorScheme = useResolvedAppearance();
   const sideInsets = useSideInsets();
@@ -104,37 +102,19 @@ export default function ApprovalRules() {
   const error = change.error ? errorText(change.error, t`Could not save that preference`) : null;
 
   const canAdd = rules !== null && !loadError;
-  useLayoutEffect(() => {
-    if (!canAdd) {
-      navigation.setOptions(
-        iosAtLeast(26) ? { unstable_headerRightItems: () => [] } : { headerRight: () => null },
-      );
-      return;
-    }
-    const open = () =>
-      router.push({
-        pathname: "/approval-rule-add",
-        params: target.scope === "space" ? { spaceId: target.spaceId } : {},
-      });
-    navigation.setOptions(
-      iosAtLeast(26)
-        ? {
-            unstable_headerRightItems: () => [
-              { type: "button" as const, label: t`Add rule`, onPress: open },
-            ],
-          }
-        : {
-            headerRight: () => (
-              <NativeActionButton
-                fill={false}
-                label={t`Add rule`}
-                onPress={open}
-                prominence="secondary"
-              />
-            ),
-          },
-    );
-  }, [canAdd, navigation, router, t, target]);
+  useScreenHeader({
+    action: canAdd
+      ? {
+          label: t`Add rule`,
+          prominence: "secondary",
+          onPress: () =>
+            router.push({
+              pathname: "/approval-rule-add",
+              params: target.scope === "space" ? { spaceId: target.spaceId } : {},
+            }),
+        }
+      : null,
+  });
 
   const groupTitles: Record<ActionApprovalRule["effect"], string> = {
     always_allow: t`Always allow`,

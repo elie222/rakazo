@@ -9,15 +9,8 @@ import {
   isCatalogItemConnected,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import type { NativeStackNavigationOptions } from "expo-router";
-import {
-  Redirect,
-  useFocusEffect,
-  useLocalSearchParams,
-  useNavigation,
-  useRouter,
-} from "expo-router";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -29,26 +22,27 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { PluginIcon } from "../../components/plugin-icon";
-import { SkillSymbol } from "../../components/skill-symbol";
+import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { SkillSymbol } from "../../components/integrations/skill-symbol";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
 import {
   reachesOtherSpaces,
   SpaceAvailabilityPicker,
   useOwnSpaces,
-} from "../../components/space-availability";
-import { mobileTokens } from "../../lib/appearance";
-import { loadLastBotId } from "../../lib/last-bot";
-import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import type { PluginParams } from "../../lib/plugin-marketplace";
-import { sourceHref } from "../../lib/plugin-marketplace";
-import type { SaveSend } from "../../lib/query";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../components/settings/space-availability";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { loadLastBotId } from "../../lib/inbox/last-bot";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
+import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
+import { sourceHref } from "../../lib/integrations/plugin-marketplace";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import type { SaveSend } from "../../lib/query/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
 
 const SKILLS_SHOWN = 5;
 
@@ -60,7 +54,6 @@ export default function PluginRoute() {
 
 function PluginScreen() {
   const params = useLocalSearchParams<PluginParams>();
-  const navigation = useNavigation();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
@@ -213,14 +206,7 @@ function PluginScreen() {
     run(
       server.id,
       async (send) => {
-        const { webUrl } = await send("integrationSetup/get", undefined);
-        const started = await send("mcp/oauth/begin", {
-          serverId: server.id,
-          redirectUri: new URL("/mcp/oauth/callback", webUrl).toString(),
-        });
-        if (started.status === "authorization_required")
-          await Linking.openURL(started.authorizationUrl);
-        else if (started.status === "authorization_not_requested")
+        if ((await signInToMcpServer(send, server.id)) === "authorization_not_requested")
           setNoAuth((current) => new Set([...current, server.id]));
       },
       t`Could not sign in`,
@@ -291,46 +277,16 @@ function PluginScreen() {
             void setParts("header", toggle(headerPart, true), t`Could not install plugin`),
           destructive: false,
         };
-  const actionDisabled = busy || (managed ? !managedApp : !ready);
-
-  // The header reads the latest action through a ref, so it only re-renders when it looks different.
-  const actionRef = useRef(action);
-  actionRef.current = action;
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: params.name,
-      headerRight: iosAtLeast(26)
-        ? undefined
-        : () => (
-            <NativeActionButton
-              disabled={actionDisabled}
-              fill={false}
-              label={action.label}
-              onPress={() => void actionRef.current.onPress()}
-              prominence={
-                action.destructive ? "destructive" : managedConnected ? "secondary" : "primary"
-              }
-            />
-          ),
-      ...(iosAtLeast(26)
-        ? {
-            unstable_headerRightItems: () => [
-              {
-                type: "button" as const,
-                label: action.label,
-                ...(action.destructive
-                  ? { tintColor: mobileTokens().destructive }
-                  : managedConnected
-                    ? {}
-                    : { variant: "prominent" as const, tintColor: mobileTokens().primary }),
-                disabled: actionDisabled,
-                onPress: () => void actionRef.current.onPress(),
-              },
-            ],
-          }
-        : {}),
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, params.name, action.label, action.destructive, actionDisabled, managedConnected]);
+  useScreenHeader({
+    title: params.name,
+    action: {
+      label: action.label,
+      prominence: action.destructive ? "destructive" : managedConnected ? "secondary" : "primary",
+      disabled: managed ? !managedApp : !ready,
+      busy,
+      onPress: action.onPress,
+    },
+  });
 
   const description = detail?.description || params.description;
   const skills = detail?.skills ?? [];
@@ -375,9 +331,7 @@ function PluginScreen() {
             kind="install"
             id={install.id}
             availability={install.availability}
-            onChanged={() =>
-              Promise.all(reads.map((queryKey) => queryClient.invalidateQueries({ queryKey })))
-            }
+            stale={reads}
           />
         ) : null}
 

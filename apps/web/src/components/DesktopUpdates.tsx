@@ -1,9 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { DesktopUpdateState } from "@rakazo/contracts";
 import { Button, SectionHeading, toast } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { desktopBridge } from "../lib/desktop";
+import { desktopBridge } from "../lib/platform/desktop";
 
 function useDesktopUpdates() {
   const { t } = useLingui();
@@ -15,36 +16,33 @@ function useDesktopUpdates() {
   const pending = useRef(false);
   const revision = useRef(0);
 
-  useEffect(() => {
+  // Each finished read schedules the next one, two seconds on.
+  const [nextRefresh, setNextRefresh] = useState<object | null>(null);
+  async function refresh() {
     if (!bridge) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    async function refresh() {
-      const started = revision.current;
-      try {
-        const next = await bridge!.state();
-        if (!stopped && started === revision.current && !pending.current) {
-          setState((current) =>
-            current &&
-            Object.entries(next).every(
-              ([key, value]) => current[key as keyof DesktopUpdateState] === value,
-            )
-              ? current
-              : next,
-          );
-        }
-      } catch {
-        // A disappearing bridge during shutdown should not interrupt the app.
-      } finally {
-        if (!stopped) timer = setTimeout(refresh, 2_000);
+    const started = revision.current;
+    try {
+      const next = await bridge.state();
+      if (started === revision.current && !pending.current) {
+        setState((current) =>
+          current &&
+          Object.entries(next).every(
+            ([key, value]) => current[key as keyof DesktopUpdateState] === value,
+          )
+            ? current
+            : next,
+        );
       }
+    } catch {
+      // A disappearing bridge during shutdown should not interrupt the app.
+    } finally {
+      setNextRefresh({});
     }
+  }
+  useEffect(() => {
     void refresh();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
   }, [bridge]);
+  useTimeout(() => void refresh(), bridge && nextRefresh ? 2_000 : null, nextRefresh);
 
   async function act(action: "check" | "install") {
     if (!bridge || pending.current) return;

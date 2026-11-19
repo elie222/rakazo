@@ -1,4 +1,4 @@
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { WAITING_ON_USER_RUN_STATUSES, WORKING_RUN_STATUSES } from "@rakazo/core";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -36,7 +36,7 @@ describe("BotAvatar", () => {
     expect(shape).toMatch(/style="[^"]*width:26px;height:26px/);
   });
 
-  it.each([...ACTIVE_RUN_STATUSES])("marks active run status %s as working", (status) => {
+  it.each([...WORKING_RUN_STATUSES])("marks run status %s as working", (status) => {
     const html = renderToString(<BotAvatar color="#3B82F6" status={status} />);
     expect(html).toContain("<svg");
     expect(html).toContain('data-working="true"');
@@ -98,6 +98,16 @@ describe("BotAvatar", () => {
     expect(html.indexOf("rakazo-bot-avatar-picture")).toBeLessThan(
       html.indexOf("rakazo-bot-avatar-ring"),
     );
+  });
+
+  it("keeps the ring off while a bot waits on the user", () => {
+    for (const status of WAITING_ON_USER_RUN_STATUSES) {
+      const html = renderToString(
+        <BotAvatar color="data:image/png;base64,abc" identity="maya" size={32} status={status} />,
+      );
+      expect(html).toContain('data-working="false"');
+      expect(html).not.toContain("rakazo-bot-avatar-ring");
+    }
   });
 
   it("keeps idle photo avatars ring-free", () => {

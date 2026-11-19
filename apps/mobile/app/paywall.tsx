@@ -7,16 +7,17 @@ import {
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
+  paymentOverdue,
 } from "@rakazo/contracts";
 import { canDeleteOrganization } from "@rakazo/core";
+import { writeSaved } from "@rakazo/core/query";
 import { botColors, botEyeColor, typeScale } from "@rakazo/ui-tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { ComponentProps, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  AppState,
   BackHandler,
   Linking,
   Pressable,
@@ -26,18 +27,18 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAccountDeletion } from "../components/account-deletion";
-import { BotAvatar } from "../components/bot-avatar";
-import { GlassIconButton } from "../components/glass-icon-button";
-import { NativeActionButton } from "../components/native-action-button";
-import { NativeSegmentedControl } from "../components/native-segmented-control";
-import { NativeSymbol } from "../components/native-symbol";
-import { useOrganizationMenuAction } from "../components/organization-menu";
-import { FORM_COLUMN_WIDTH } from "../lib/adaptive-layout";
-import { rpc } from "../lib/api";
-import { signOut } from "../lib/api-auth";
-import { replaceWithSignIn } from "../lib/auth-routing";
-import type { Plan } from "../lib/billing";
+import { BotAvatar } from "../components/bots/bot-avatar";
+import { useOrganizationMenuAction } from "../components/inbox/organization-menu";
+import { GlassIconButton } from "../components/native/glass-icon-button";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { NativeSegmentedControl } from "../components/native/native-segmented-control";
+import { NativeSymbol } from "../components/native/native-symbol";
+import { useAccountDeletion } from "../components/settings/account-deletion";
+import { errorText } from "../lib/api/user-error";
+import { translucentColor } from "../lib/appearance/color";
+import { signOut } from "../lib/auth/api-auth";
+import { replaceWithSignIn } from "../lib/auth/auth-routing";
+import type { Plan } from "../lib/billing/billing";
 import {
   currentPlan,
   openBillingPage,
@@ -46,19 +47,20 @@ import {
   purchaseCompleted,
   setPaywallShown,
   subscribedPlan,
-} from "../lib/billing";
-import { endCallBeforeSessionEnd } from "../lib/call-session";
-import { translucentColor } from "../lib/color";
-import { useContentBottomInset } from "../lib/content-bottom-inset";
-import { dateLocaleForUi } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+} from "../lib/billing/billing";
+import { endCallBeforeSessionEnd } from "../lib/calls/call-session";
+import { dateLocaleForUi } from "../lib/i18n/i18n";
+import { FORM_COLUMN_WIDTH } from "../lib/layout/adaptive-layout";
+import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
+import { useMobileTokens } from "../lib/native/native";
+import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 import {
   activeOrganization,
   organizationSwitchActions,
   useOrganizations,
-} from "../lib/organizations";
-import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
-import { errorText } from "../lib/user-error";
+} from "../lib/spaces/organizations";
+import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
 
 type Amount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 type SymbolName = ComponentProps<typeof NativeSymbol>["android"];
@@ -85,11 +87,9 @@ export default function Paywall() {
   const contentBottomInset = useContentBottomInset();
   const router = useRouter();
   const dismissible = useLocalSearchParams<{ dismissible?: string }>().dismissible === "1";
-  const [status, setStatus] = useState<BillingStatus | null>(null);
   const [plan, setPlan] = useState<Plan>("byok");
   const [amount, setAmount] = useState<Amount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
-  const [pending, setPending] = useState(false);
   const leaving = useRef(false);
   const deletion = useAccountDeletion();
   const organizations = useOrganizations(!dismissible).data;
@@ -102,7 +102,6 @@ export default function Paywall() {
     if (deletion.error) Alert.alert(deletion.error);
   }, [deletion.error]);
   const [started, setStarted] = useState<Plan | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
   const planPicked = useRef(false);
 
   useEffect(() => {
@@ -117,61 +116,72 @@ export default function Paywall() {
     return () => subscription.remove();
   }, [dismissible]);
 
-  const load = useCallback(() => {
-    setLoadFailed(false);
-    rpc("billing/status")
-      .then((next) => {
-        // Changing plans from Billing starts on the plan the organization is not on yet.
-        if (!planPicked.current) {
-          planPicked.current = true;
-          if (
-            dismissible &&
-            currentPlan(next) === "byok" &&
-            !next.byokFreeUntil &&
-            next.creditPurchasesEnabled !== false
-          )
-            setPlan("credits");
-        }
-        setStatus(next);
-        // Only the required paywall gives way once access lands (e.g. a Safari checkout);
-        // from Billing, an organization that already has access is here to change plans.
-        if (next.access && !dismissible)
-          setStarted((current) => current ?? (next.funding === "credits" ? "credits" : "byok"));
-      })
-      .catch(() => setLoadFailed(true));
-  }, [dismissible]);
-
-  // Older binaries finish checkout in Safari, so look again when the app comes back.
+  // Older binaries finish checkout in Safari, so this reads again when the app comes back.
+  const statusRead = formRead(rpcQuery("billing/status"));
+  const statusQuery = useScreenQuery(statusRead);
+  const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
+  const loadFailed = Boolean(statusQuery.error) && !statusQuery.isFetching;
+  const { refetch } = statusQuery;
+  const load = () => void refetch();
   useEffect(() => {
-    load();
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") load();
-    });
-    return () => subscription.remove();
-  }, [load]);
+    if (!status) return;
+    // Changing plans from Billing starts on the plan the organization is not on yet.
+    if (!planPicked.current) {
+      planPicked.current = true;
+      if (
+        dismissible &&
+        currentPlan(status) === "byok" &&
+        !status.byokFreeUntil &&
+        status.creditPurchasesEnabled !== false
+      )
+        setPlan("credits");
+    }
+    // Only the required paywall gives way once access lands (e.g. a Safari checkout);
+    // from Billing, an organization that already has access is here to change plans.
+    if (status.access && !dismissible)
+      setStarted((current) => current ?? (status.funding === "credits" ? "credits" : "byok"));
+  }, [status, dismissible]);
 
-  async function choose() {
-    if (!status || pending) return;
-    setPending(true);
-    try {
+  const checkout = useSave({
+    save: async (
+      input: { before: BillingStatus; plan: Plan; amount: Amount; interval: ByokInterval },
+      send,
+    ) => {
+      const { before, plan, amount, interval } = input;
       const { url } =
         plan === "credits"
-          ? await rpc("billing/purchaseCredits", {
+          ? await send("billing/purchaseCredits", {
               amountCents: amount,
               monthly: true,
               client: "mobile",
             })
-          : status.byokFreeUntil
-            ? await rpc("billing/checkout", { client: "mobile", interval })
-            : await rpc("billing/selectFunding", { funding: "byok", client: "mobile", interval });
-      const next = url ? await openBillingPage(url) : await rpc("billing/refresh");
-      setStatus(next);
-      if (purchaseCompleted(status, next)) setStarted(plan);
-    } catch (err) {
-      Alert.alert(errorText(err, t`Could not open billing`));
-    } finally {
-      setPending(false);
-    }
+          : before.byokFreeUntil
+            ? await send("billing/checkout", { client: "mobile", interval })
+            : await send("billing/selectFunding", { funding: "byok", client: "mobile", interval });
+      const next = url
+        ? await openBillingPage(url, send)
+        : await send("billing/refresh", undefined);
+      await writeSaved(queryClient, statusRead.queryKey, () => next);
+      return next;
+    },
+    onSaved: (next, input) => {
+      if (purchaseCompleted(input.before, next)) setStarted(input.plan);
+    },
+    onFailed: (err) => Alert.alert(errorText(err, t`Could not open billing`)),
+  });
+  const pending = checkout.pending;
+  const portal = useSave({
+    save: async (_, send) => {
+      const { url } = await send("billing/portal", { client: "mobile" });
+      const next = await openBillingPage(url, send);
+      await writeSaved(queryClient, statusRead.queryKey, () => next);
+      return next;
+    },
+    onFailed: (err) => Alert.alert(errorText(err, t`Could not open billing`)),
+  });
+
+  function choose() {
+    if (status) checkout.run({ before: status, plan, amount, interval });
   }
 
   async function leave() {
@@ -311,6 +321,34 @@ export default function Paywall() {
             }}
           />
         </View>
+      </View>
+    );
+  }
+
+  // A new plan would bill beside the overdue one, so only the billing portal is offered.
+  if (paymentOverdue(status) && !dismissible) {
+    return (
+      <View
+        style={[
+          styles.screen,
+          { backgroundColor: tokens.background, paddingBottom: contentBottomInset + 16 },
+        ]}
+      >
+        {topBar}
+        <View style={styles.done}>
+          <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
+            {t`Payment failed`}
+          </Text>
+        </View>
+        {status.canManage ? (
+          <View style={styles.footer}>
+            <NativeActionButton
+              label={t`Manage billing`}
+              busy={portal.pending}
+              onPress={() => portal.run()}
+            />
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -535,7 +573,7 @@ export default function Paywall() {
                 label={cta}
                 busy={pending}
                 disabled={plan === subscribed}
-                onPress={() => void choose()}
+                onPress={choose}
               />
               {terms && plan !== subscribed ? (
                 <Text style={[styles.terms, { color: tokens.mutedForeground }]}>{terms}</Text>
