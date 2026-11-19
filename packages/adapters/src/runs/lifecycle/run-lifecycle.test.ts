@@ -1,5 +1,6 @@
 import {
   runContinueJob,
+  SandboxDiskTooLargeError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
@@ -223,6 +224,7 @@ describe("retrying a run whose setup failed", () => {
   it.each([
     ["an unexpected failure", () => new Error(`boom ${SECRET}`), true, "error"],
     ["a computer that did not start", () => new SandboxUnavailableError(), true, "warn"],
+    ["a computer too large to start", () => new SandboxDiskTooLargeError(), true, "warn"],
     [
       "an unreachable computer provider",
       () => new SandboxUnresponsiveError(`unreachable ${SECRET}`),

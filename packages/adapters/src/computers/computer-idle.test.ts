@@ -5,6 +5,7 @@ import { FetchError } from "@boatdev/sdk";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxProviderAccountError,
   SandboxRateLimitError,
   SandboxUnavailableError,
@@ -523,6 +524,27 @@ describe("sandbox idle", () => {
         level: "warn",
         message: "computer.checkpoint_skipped",
         reason: "damaged",
+      }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
+  it("stops a computer too large to start again without a checkpoint or a retry", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const tooLarge = new SandboxDiskTooLargeError();
+    const harness = idleHarness({ probeError: tooLarge, exportError: tooLarge });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.state).toBe("suspended");
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.checkpoint_skipped",
+        reason: "disk_too_large",
       }),
     );
     expect(sink.events.some((event) => event.level === "error")).toBe(false);
