@@ -26,7 +26,7 @@ import {
   McpServerSchema,
   McpSourcePresetSchema,
 } from "./mcp.js";
-import { McpOAuthClientKindSchema } from "./mcp-oauth-return.js";
+import { McpCapturesLoopbackSchema, McpOAuthClientKindSchema } from "./mcp-oauth-return.js";
 import {
   MessagingAgentConnectionSchema,
   MessagingChannelMembershipSchema,
@@ -124,6 +124,7 @@ export const integrationsRpc = {
             botId: Id.optional(),
             redirectUri: z.string().url().optional(),
             client: McpOAuthClientKindSchema,
+            capturesLoopback: McpCapturesLoopbackSchema,
           }),
         )
         .output(z.object({ server: McpServerSchema, signIn: McpOAuthBeginSchema })),
@@ -174,6 +175,7 @@ export const integrationsRpc = {
             serverId: Id,
             redirectUri: z.string().url().optional(),
             client: McpOAuthClientKindSchema,
+            capturesLoopback: McpCapturesLoopbackSchema,
           }),
         )
         .output(McpOAuthBeginSchema),
