@@ -439,6 +439,16 @@ describe("iOS swipe row", () => {
       expect(firstAction().transform[1]).toEqual({ scale: 1 });
       expect(swipe.actionStyles[2]!().opacity).toBe(0);
 
+      act(() => swipe.update({ translationX: direction * 150 }));
+      const restingWidth = direction === 1 ? 70 : 130;
+      expect(Math.abs(swipe.foreground().transform[0]!.translateX)).toBeGreaterThan(restingWidth);
+      expect(firstAction().transform[1]).toEqual({ scale: 1 });
+      act(() => swipe.update({ translationX: direction * 190 }));
+      expect(firstAction().transform[1]).toEqual({ scale: 1.2 });
+      if (direction === -1) expect(swipe.actionStyles[2]!().opacity).toBeLessThan(1);
+      act(() => swipe.update({ translationX: direction * 150 }));
+      expect(firstAction().transform[1]).toEqual({ scale: 1 });
+      if (direction === -1) expect(swipe.actionStyles[2]!().opacity).toBe(1);
       act(() => swipe.update({ translationX: direction * 190 }));
       expect(onAction).not.toHaveBeenCalled();
       act(() => swipe.end({ translationX: direction * 190 }, false));

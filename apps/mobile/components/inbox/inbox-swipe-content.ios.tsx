@@ -36,6 +36,7 @@ const LEADING_WIDTH = ACTION_DIAMETER + 2 * ACTION_INSET;
 const ACTION_REVEAL_START = 20;
 const ACTION_FADE_DISTANCE = 4;
 const OPEN_DISTANCE = 24;
+const MAX_OVERSHOOT = 24;
 const DIRECTION = I18nManager.isRTL ? -1 : 1;
 const READ_FILL = PlatformColor("systemBlue");
 const ARCHIVE_FILL = PlatformColor("systemRed");
@@ -85,6 +86,7 @@ export function InboxSwipeContent({
     scheduleOnUI(() => {
       "worklet";
       dragging.value = false;
+      armed.value = false;
       resting.value = 0;
       settleOffset(0);
     });
@@ -126,12 +128,16 @@ export function InboxSwipeContent({
         Math.abs(distance) >= Math.max(width.value * 0.55, rail + OPEN_DISTANCE);
       if (fullSwipe && !armed.value) scheduleOnRN(hapticSelection);
       armed.value = fullSwipe;
-      offset.value = Math.sign(distance) * Math.min(Math.abs(distance), rail);
+      const travel = Math.abs(distance);
+      const extra = Math.max(0, travel - rail);
+      const overshoot = (MAX_OVERSHOOT * extra) / (extra + MAX_OVERSHOOT * 4);
+      offset.value = Math.sign(distance) * (Math.min(travel, rail) + overshoot);
     })
     .onEnd(({ translationX }, success) => {
       if (!dragging.value) return;
       dragging.value = false;
       if (!success) {
+        armed.value = false;
         settleOffset(resting.value);
         return;
       }
@@ -173,6 +179,7 @@ export function InboxSwipeContent({
               label={i18n._(INBOX_ROW_ACTIONS[leading].label)}
               fill={READ_FILL}
               offset={offset}
+              armed={armed}
               edge="start"
               index={0}
               onPress={() => activate(leading)}
@@ -184,6 +191,7 @@ export function InboxSwipeContent({
                 label={i18n._(INBOX_ROW_ACTIONS[action].label)}
                 fill={action === "archive" ? ARCHIVE_FILL : PIN_FILL}
                 offset={offset}
+                armed={armed}
                 edge="end"
                 index={index}
                 onPress={() => activate(action)}
@@ -212,6 +220,7 @@ function SwipeActionButton({
   label,
   fill,
   offset,
+  armed,
   edge,
   index,
   onPress,
@@ -220,6 +229,7 @@ function SwipeActionButton({
   label: string;
   fill: ColorValue;
   offset: SharedValue<number>;
+  armed: SharedValue<boolean>;
   edge: "start" | "end";
   index: number;
   onPress: () => void;
@@ -238,11 +248,12 @@ function SwipeActionButton({
     const reveal = Math.max(0, exposed - ACTION_REVEAL_START);
     const progress = Math.min(1, reveal / (LEADING_WIDTH - ACTION_REVEAL_START));
     const center = Math.min(restingCenter, exposed / 2);
+    const commitsOnRelease = armed.value && exposed > 0;
     return {
-      opacity: Math.min(1, reveal / ACTION_FADE_DISTANCE),
+      opacity: commitsOnRelease && index > 0 ? 0.3 : Math.min(1, reveal / ACTION_FADE_DISTANCE),
       transform: [
         { translateX: (center - restingCenter) * direction * DIRECTION },
-        { scale: 0.26 + 0.74 * progress },
+        { scale: commitsOnRelease && index === 0 ? 1.2 : 0.26 + 0.74 * progress },
       ],
     };
   });
