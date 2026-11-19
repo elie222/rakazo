@@ -6,6 +6,7 @@ export const DEVICE_VOICE_KEY = "rakazo.device-voice";
 // Counts explicit choices, so a default worked out meanwhile never overwrites one.
 let choices = 0;
 let lastWrite: Promise<unknown> = Promise.resolve();
+const choiceListeners = new Set<() => void>();
 
 function write(on: boolean): Promise<void> {
   const next = lastWrite.then(() => SecureStore.setItemAsync(DEVICE_VOICE_KEY, on ? "1" : "0"));
@@ -35,5 +36,12 @@ export async function loadDeviceVoiceEnabled(): Promise<boolean> {
 
 export function saveDeviceVoiceEnabled(on: boolean): Promise<void> {
   choices += 1;
-  return write(on);
+  return write(on).then(() => {
+    for (const listener of choiceListeners) listener();
+  });
+}
+
+export function subscribeDeviceVoiceChoice(listener: () => void): () => void {
+  choiceListeners.add(listener);
+  return () => choiceListeners.delete(listener);
 }
