@@ -235,7 +235,7 @@ function RoutineView({
           }
         />
         {routine.runsAs && !routine.runsAs.isViewer ? (
-          <SettingsRow key="runs-as" title={t`Runs as ${ph({ name: routine.runsAs.name })}`} />
+          <SettingsRow key="owner" title={t`Owner`} value={routine.runsAs.name} />
         ) : null}
       </SettingsGroup>
       <View style={{ gap: 7 }}>

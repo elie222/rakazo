@@ -42,9 +42,9 @@ async function render(editing: Routine | null) {
   return container.querySelector('[data-testid="routine-owner-note"]')?.textContent ?? null;
 }
 
-it("says who owns another member's routine and that only they can change it", async () => {
+it("says that only the owner can change another member's routine", async () => {
   expect(await render(routine({ name: "Dana", isViewer: false }))).toBe(
-    "Runs as Dana. Only they can change it.",
+    "Only Dana can change this routine.",
   );
 });
 

@@ -7,7 +7,7 @@ import { Button, Empty, EmptyHeader, EmptyMedia, EmptyTitle, Switch } from "@rak
 import type { LucideIcon } from "lucide-react";
 import { Clock, Eye, GitBranch, Globe, Mail, MessageSquare, Plus, Repeat } from "lucide-react";
 import { cronLabels } from "../../lib/routines/cron";
-import { RunsAsLabel } from "./routine-editor/access-note";
+import { OwnerLabel } from "./routine-editor/access-note";
 
 export function routineTriggerSummary(
   routine: Routine,
@@ -190,7 +190,7 @@ function RoutineListRow({
           </span>
           <span className="flex min-w-0 flex-wrap gap-x-2 text-body-sm text-muted-foreground/80">
             <span className="truncate">{routineTriggerSummary(routine, scheduleLabels)}</span>
-            <RunsAsLabel routine={routine} />
+            <OwnerLabel routine={routine} />
             {routine.modelProvider && routine.modelId ? (
               <span className="truncate">{routine.modelId}</span>
             ) : null}

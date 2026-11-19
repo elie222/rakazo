@@ -142,7 +142,7 @@ it("shows another member's routine with its owner and a copy in place of the edi
   });
   await act(async () => root.render(createElement(RoutineDetail)));
   expect(container.textContent).toContain("Prepare the report.");
-  expect(container.textContent).toContain("Runs as Dana");
+  expect(container.textContent).toContain("OwnerDana");
   expect(container.textContent).toContain("Make a copy");
   expect(container.textContent).not.toContain("Edit routine");
 });
@@ -152,7 +152,7 @@ it("names no owner on the viewer's own routine", async () => {
     routines: [{ ...routine, editable: true, runsAs: { name: "Riley", isViewer: true } }],
   });
   await act(async () => root.render(createElement(RoutineDetail)));
-  expect(container.textContent).not.toContain("Runs as");
+  expect(container.textContent).not.toContain("Owner");
   expect(container.textContent).toContain("Edit routine");
 });
 

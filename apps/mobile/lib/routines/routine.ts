@@ -62,15 +62,13 @@ export function routineTriggerRows(routine: Routine, deviceTimeZone: string | un
 
 /**
  * A list row: the schedule, its zone only when it isn't the device's, "Paused" only when paused,
- * and whose routine it is only when it runs as another member.
+ * and its owner's name only when it is another member's.
  */
 export function routineRowDetail(routine: Routine, deviceTimeZone: string | undefined): string {
   return [
     routineSchedule(routine, routine.timezone === deviceTimeZone ? undefined : routine.timezone),
     routine.active ? (routine.scheduleDelayed ? t`Schedule delayed` : "") : t`Paused`,
-    routine.runsAs && !routine.runsAs.isViewer
-      ? t`Runs as ${ph({ name: routine.runsAs.name })}`
-      : "",
+    routine.runsAs && !routine.runsAs.isViewer ? routine.runsAs.name : "",
   ]
     .filter(Boolean)
     .join(", ");

@@ -1,14 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 
-/** "Runs as Dana", only for another member's routine: whose accounts and approval rules its runs use. */
-export function RunsAsLabel({ routine }: { routine: Routine }) {
-  const { t } = useLingui();
+/** The owner's name, only on another member's routine: its runs use their accounts and approval rules. */
+export function OwnerLabel({ routine }: { routine: Routine }) {
   if (!routine.runsAs || routine.runsAs.isViewer) return null;
-  const name = routine.runsAs.name;
   return (
-    <span data-testid="routine-runs-as" className="truncate" dir="auto">
-      {t`Runs as ${name}`}
+    <span data-testid="routine-owner" className="truncate" dir="auto">
+      {routine.runsAs.name}
     </span>
   );
 }
@@ -20,7 +18,7 @@ export function RoutineOwnerNote({ routine }: { routine: Routine | null }) {
   const name = routine.runsAs.name;
   return (
     <p data-testid="routine-owner-note" className="mb-5 text-body text-muted-foreground" dir="auto">
-      {t`Runs as ${name}. Only they can change it.`}
+      {t`Only ${name} can change this routine.`}
     </p>
   );
 }
