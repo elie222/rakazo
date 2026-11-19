@@ -239,9 +239,9 @@ describe("assertHttpsForKeyedOpenAiCompatibleUrl", () => {
 it("keeps API-key-only HTTPS copy separate from header-aware copy", () => {
   const url = new URL("http://models.example/v1");
   expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "key")).toThrow(
-    "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, or have an admin allow HTTP model endpoints in Settings.",
+    "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, omit the API key on a private HTTP endpoint, or have an admin allow HTTP model endpoints in Settings.",
   );
   expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, undefined, true)).toThrow(
-    "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS. Use an https:// URL, or have an admin allow HTTP model endpoints in Settings.",
+    "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS. Use an https:// URL, omit the API key and custom headers on a private HTTP endpoint, or have an admin allow HTTP model endpoints in Settings.",
   );
 });

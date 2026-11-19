@@ -38,10 +38,15 @@ export function HttpEndpointsSwitch() {
           aria-describedby={`${id}-description`}
           data-testid="http-endpoints-toggle"
           checked={setting.data?.allowed === true}
-          disabled={setting.isPending || save.pending}
+          disabled={setting.isPending || setting.isError || save.pending}
           onCheckedChange={(checked) => save.run(checked)}
         />
       </div>
+      {setting.isError ? (
+        <p role="alert" className="mt-1 text-body-sm text-destructive">
+          {t`Couldn't load this setting`}
+        </p>
+      ) : null}
       <p id={`${id}-description`} className="mt-0.5 text-body-sm text-muted-foreground">
         <Trans>
           Members can connect model servers that do not use TLS. API keys are sent to those servers

@@ -109,8 +109,8 @@ export function assertHttpsForKeyedOpenAiCompatibleUrl(
   if (isPrivateOpenAiCompatibleHostname(hostname)) return;
   throw new ConnectionSetupError(
     hasHeaders
-      ? "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS. Use an https:// URL, or have an admin allow HTTP model endpoints in Settings."
-      : "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, or have an admin allow HTTP model endpoints in Settings.",
+      ? "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS. Use an https:// URL, omit the API key and custom headers on a private HTTP endpoint, or have an admin allow HTTP model endpoints in Settings."
+      : "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, omit the API key on a private HTTP endpoint, or have an admin allow HTTP model endpoints in Settings.",
   );
 }
 
