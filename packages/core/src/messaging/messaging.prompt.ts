@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { stripDirectionalControls } from "../messages/text-safety.js";
 
 /** Instruction-stack note for bots whose owner has a messaging identity. */
 export function messagingDmSurfaceNote(): string {
@@ -19,7 +20,7 @@ export function chatAppConnectNote(
     return `${apps} They set that up themselves in Settings, under Messaging.`;
   return [
     apps,
-    "They set that up themselves in Settings, under Messaging; connect_app does not do it, it only gives you tools to read and act in an app.",
+    "They set that up themselves in Settings, under Messaging. The connect card you can show does not do it; it only gives you tools to read and act in an app.",
     "When someone asks to connect one of these, or to talk to you from it, tell them which of the two fits what they want, and ask if you cannot tell.",
   ].join(" ");
 }
@@ -56,10 +57,11 @@ export function isMessagingChannelRun(
 
 /**
  * Group names and owner names are attacker-controlled text interpolated
- * into prompts and DMs; strip framing characters before they get near one.
+ * into prompts and DMs; strip framing characters and directional controls
+ * before they get near one.
  */
 export function sanitizeMessagingLabel(value: string): string {
-  return value
+  return stripDirectionalControls(value)
     .replace(/[\r\n"[\]]/g, " ")
     .replace(/\s+/g, " ")
     .trim()

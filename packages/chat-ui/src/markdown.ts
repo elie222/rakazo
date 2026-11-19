@@ -4,7 +4,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { urlSite } from "@rakazo/core/egress";
 import LinkifyIt from "linkify-it";
 import type { ReactNode } from "react";
-import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -560,36 +560,45 @@ function requestLinkFavicon(source: LinkFavicons, origin: string, key: string, a
   );
 }
 
+function faviconKey(source: LinkFavicons | null, origin: string) {
+  return JSON.stringify([source?.endpoint ?? "", origin]);
+}
+
+/** Counts a link to this origin as on screen until the returned release runs. */
+function showFaviconLink(key: string) {
+  mountedFaviconLinks.set(key, (mountedFaviconLinks.get(key) ?? 0) + 1);
+  return () => {
+    const left = (mountedFaviconLinks.get(key) ?? 1) - 1;
+    if (left > 0) {
+      mountedFaviconLinks.set(key, left);
+      return;
+    }
+    mountedFaviconLinks.delete(key);
+    const retry = busyFaviconRetries.get(key);
+    if (retry === undefined) return;
+    clearTimeout(retry);
+    busyFaviconRetries.delete(key);
+    pendingFavicons.delete(key);
+  };
+}
+
+function askForFavicon(source: LinkFavicons, origin: string, key: string) {
+  if (linkFavicons.has(key) || pendingFavicons.has(key)) return;
+  if (Date.now() - (failedFavicons.get(key) ?? -Infinity) < FAILED_FAVICON_RETRY_MS) return;
+  requestLinkFavicon(source, origin, key, 1);
+}
+
 /** The icon for a link once the API has one, and a way to drop an image that turns out unusable. */
 export function useLinkFavicon(href: string): { icon: string | null; unusable: () => void } {
   const source = useContext(LinkFaviconsContext);
   const paused = useContext(LinkFaviconsPausedContext);
   const origin = linkFaviconOrigin(href);
-  const key = JSON.stringify([source?.endpoint ?? "", origin]);
+  const key = faviconKey(source, origin ?? "");
   const snapshot = () => (origin ? (linkFavicons.get(key) ?? null) : null);
   const icon = useSyncExternalStore(subscribeLinkFavicons, snapshot, snapshot);
+  useEffect(() => (origin ? showFaviconLink(key) : undefined), [key, origin]);
   useEffect(() => {
-    if (!origin) return;
-    mountedFaviconLinks.set(key, (mountedFaviconLinks.get(key) ?? 0) + 1);
-    return () => {
-      const left = (mountedFaviconLinks.get(key) ?? 1) - 1;
-      if (left > 0) {
-        mountedFaviconLinks.set(key, left);
-        return;
-      }
-      mountedFaviconLinks.delete(key);
-      const retry = busyFaviconRetries.get(key);
-      if (retry === undefined) return;
-      clearTimeout(retry);
-      busyFaviconRetries.delete(key);
-      pendingFavicons.delete(key);
-    };
-  }, [key, origin]);
-  useEffect(() => {
-    if (!source || paused || !origin) return;
-    if (linkFavicons.has(key) || pendingFavicons.has(key)) return;
-    if (Date.now() - (failedFavicons.get(key) ?? -Infinity) < FAILED_FAVICON_RETRY_MS) return;
-    requestLinkFavicon(source, origin, key, 1);
+    if (source && !paused && origin) askForFavicon(source, origin, key);
   }, [source, paused, origin, key]);
   return {
     icon,
@@ -597,6 +606,44 @@ export function useLinkFavicon(href: string): { icon: string | null; unusable: (
       if (origin) setLinkFavicon(key, null);
     },
   };
+}
+
+/** The icons the API has for these links so far, by link. */
+export function useLinkFavicons(hrefs: readonly string[]): ReadonlyMap<string, string> {
+  const source = useContext(LinkFaviconsContext);
+  const paused = useContext(LinkFaviconsPausedContext);
+  const origins = [...new Set(hrefs.flatMap((href) => linkFaviconOrigin(href) ?? []))].sort();
+  const originList = JSON.stringify(origins);
+  // The joined icons are a string, so an unchanged answer keeps the same snapshot.
+  const snapshot = () =>
+    JSON.stringify(origins.map((origin) => linkFavicons.get(faviconKey(source, origin)) ?? null));
+  const icons = useSyncExternalStore(subscribeLinkFavicons, snapshot, snapshot);
+  useEffect(() => {
+    const shown: string[] = JSON.parse(originList);
+    const releases = shown.map((origin) => showFaviconLink(faviconKey(source, origin)));
+    return () => {
+      for (const release of releases) release();
+    };
+  }, [source, originList]);
+  useEffect(() => {
+    if (!source || paused) return;
+    for (const origin of JSON.parse(originList) as string[]) {
+      askForFavicon(source, origin, faviconKey(source, origin));
+    }
+  }, [source, paused, originList]);
+  return useMemo(() => {
+    const byOrigin = new Map<string, string>();
+    (JSON.parse(icons) as (string | null)[]).forEach((icon, index) => {
+      const origin = (JSON.parse(originList) as string[])[index];
+      if (icon && origin) byOrigin.set(origin, icon);
+    });
+    const byHref = new Map<string, string>();
+    for (const href of hrefs) {
+      const icon = byOrigin.get(linkFaviconOrigin(href) ?? "");
+      if (icon) byHref.set(href, icon);
+    }
+    return byHref;
+  }, [icons, originList, hrefs]);
 }
 
 export function closeUnterminatedFence(markdown: string): string {

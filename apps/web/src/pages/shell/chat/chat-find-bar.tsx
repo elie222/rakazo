@@ -160,7 +160,7 @@ export function ChatFindBar({
             step(event.shiftKey ? -1 : 1);
           }
         }}
-        className="h-8 w-56 border-0 bg-transparent shadow-none focus-visible:ring-0"
+        className="w-56 border-0 bg-transparent shadow-none focus-visible:ring-0"
       />
       {query.trim() ? (
         <span

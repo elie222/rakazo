@@ -24,6 +24,7 @@ import {
 } from "./api";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
+import { loadSavedServers, recordSavedServer } from "./saved-servers";
 import { API_BASE_STORAGE_KEY as ENDPOINT_KEY } from "./server-config";
 import { loadServerHeaders, saveServerHeaders, serverHeaders } from "./server-headers";
 import {
@@ -63,6 +64,7 @@ export async function loadApiBase() {
     // SecureStore is unavailable in some test / web hosts.
   }
   await loadServerHeaders(apiBase);
+  await loadSavedServers();
   setCachedApiBase(apiBase);
   try {
     const storedSpace = (await SecureStore.getItemAsync(SPACE_KEY)) ?? "";
@@ -439,15 +441,17 @@ export async function saveApiBase(
     await clearStoredValue(SPACE_ROLLBACK_KEY);
     if (cleared?.pendingSignOut) await promotePendingSignOut(cleared.pendingSignOut);
     if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
+    await rememberServers(switching ? previous : undefined, previousHeaders, parsed.url, headers);
     return parsed;
   });
 }
 export async function resetApiBase(): Promise<EndpointResult> {
   const url = defaultApiBase();
   return queueEndpointChange(url, async (previous, switching) => {
+    const previousHeaders = serverHeaders(previous);
     let cleared: ClearedCredentials | undefined;
     if (switching) {
-      const result = await clearCredentialsForEndpointChange(previous, serverHeaders(previous));
+      const result = await clearCredentialsForEndpointChange(previous, previousHeaders);
       if (!result.ok) return result.result;
       cleared = result;
     }
@@ -475,6 +479,21 @@ export async function resetApiBase(): Promise<EndpointResult> {
     await clearStoredValue(SPACE_ROLLBACK_KEY);
     if (cleared?.pendingSignOut) await promotePendingSignOut(cleared.pendingSignOut);
     if (cleared) await clearStoredValue(ORGANIZATION_SPACES_KEY);
+    if (switching) await rememberServers(previous, previousHeaders);
     return { ok: true, url };
   });
+}
+/**
+ * Lists the server a switch left, so one set up before the list existed can be returned to, and
+ * the one it moved to. Runs only after the switch committed; the list is a convenience, so a
+ * write that fails leaves the switch standing.
+ */
+async function rememberServers(
+  left: string | undefined,
+  leftHeaders: Record<string, string>,
+  entered?: string,
+  enteredHeaders: Record<string, string> = {},
+): Promise<void> {
+  if (left) await recordSavedServer(left, leftHeaders, { keepHeaders: true });
+  if (entered) await recordSavedServer(entered, enteredHeaders);
 }

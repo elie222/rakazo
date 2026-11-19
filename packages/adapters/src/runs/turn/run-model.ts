@@ -46,6 +46,7 @@ import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
   hasHostedModelCredits,
+  ModelConnectionGoneError,
   PINNED_PROVIDER_NOT_CONNECTED,
   UnavailableModelForAuthError,
   validateConnectedModelChoice,
@@ -288,8 +289,9 @@ async function resolveModelKeyMaterial(
       });
       if (!row) {
         if (modelCreditOfferings() || (await modelCreditBillingEnabled(deps)))
-          throw new Error("Connect that model provider again.");
-        if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
+          throw new ModelConnectionGoneError("Connect that model provider again.");
+        if (requireStoredSecret)
+          throw new ModelConnectionGoneError("Backup model credential is no longer available");
         if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
           throw new UnavailableModelForAuthError("Unknown model for that provider");
         }
@@ -360,6 +362,8 @@ async function resolveModelKeyMaterial(
       const settings = connectionModelSettings(resolved.secret, provider, modelId, credential);
       // The account catalog knows what a Codex model reads; elsewhere the model's setting
       // decides wherever the bundled catalog cannot.
+      // Live-only models have no static reasoning or context card to fall back to.
+      // Keep explicit context limits; enable thinking when the account advertises efforts.
       const acceptsImages = liveCodex?.supportsImages ?? settings.images;
       const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
       const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
@@ -379,8 +383,8 @@ async function resolveModelKeyMaterial(
         allowPrivateEndpoint,
         cacheCapabilities:
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
-        contextWindow: settings.contextWindow,
-        reasoning: settings.reasoning,
+        contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
+        reasoning: liveCodex?.reasoningEfforts.length ? true : settings.reasoning,
         maxTokens: settings.maxTokens,
         acceptsImages,
         maxImagesPerPrompt: settings.maxImagesPerPrompt,
@@ -410,7 +414,8 @@ async function resolveModelKeyMaterial(
       };
     });
   }
-  if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
+  if (requireStoredSecret)
+    throw new ModelConnectionGoneError("Backup model credential is no longer available");
   if (modelCreditOfferings() && !operatorFunded) {
     if (!(await modelCreditBillingEnabled(deps)))
       throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);

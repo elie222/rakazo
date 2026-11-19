@@ -86,4 +86,16 @@ export const JA_MESSAGES: Record<string, string> = {
     "{inviter}さんがRakazoの{space}への参加にあなたを招待しました。",
   "Join {space}": "{space}に参加",
   "This invitation expires in 7 days.": "この招待は7日後に期限切れになります。",
+  "Connect a model to start using Rakazo": "Rakazoを使い始めるにはモデルを接続してください",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Rakazoのプランは開始していますが、モデルを接続するまでボットは返信できません。",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "{subscriptions}のサブスクリプションでサインインするか、APIキーを貼り付けてください。",
+  "Connect a model": "モデルを接続",
+  "Bring your old assistant to Rakazo": "これまでのアシスタントを Rakazo に引き継ぎましょう",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "{assistants} ですでにアシスタントを設定していますか？Rakazo はその指示、メモリ、スキル、ルーティンを新しいボットとして引き継げるので、最初からやり直す必要はありません。",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "ほかのアシスタントでも使えます。プロンプトを 1 つ送り、その返信を貼り付けるだけです。",
+  "Import an agent": "エージェントをインポート",
 };

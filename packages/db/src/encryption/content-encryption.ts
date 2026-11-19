@@ -67,6 +67,12 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     space: { column: "spaceId" },
     ownerRelation: "thread",
   },
+  MeetingSession: {
+    table: "meeting_sessions",
+    fields: { meetingUrl: { hidden: true }, transcript: { hidden: true } },
+    space: { column: "spaceId" },
+    ownerRelation: "user",
+  },
   MemoryDocument: {
     table: "memory_documents",
     fields: { content: {} },

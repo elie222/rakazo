@@ -34,6 +34,7 @@ infra/sandboxes/supervisor/dist
 .codebase-memory/
 .gradle/
 artifacts
+!apps/mobile/lib/artifacts
 !packages/contracts/src/artifacts
 backups
 test-report

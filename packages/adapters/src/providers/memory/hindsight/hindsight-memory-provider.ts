@@ -13,6 +13,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { truncateUtf8 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import { memoryConnectionIdentity } from "../../../memory/memory-provider-descriptor.js";
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
@@ -397,12 +398,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     local: boolean,
     connectionVersion?: string,
   ) {
-    // Bind stored metadata to the effective endpoint, never to credential plaintext.
-    this.connectionIdentity = connectionVersion
-      ? createHash("sha256")
-          .update(JSON.stringify([connectionVersion, connection.baseUrl]))
-          .digest("hex")
-      : undefined;
+    this.connectionIdentity = memoryConnectionIdentity(connectionVersion, connection.baseUrl);
     // Standalone adapters have instance-local hints; persisted cleanup requires a stored identity.
     this.stateKey = this.connectionIdentity ?? randomUUID();
     if (local) {

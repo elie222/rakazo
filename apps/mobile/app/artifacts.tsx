@@ -1,7 +1,13 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { artifactTypeLabel } from "@rakazo/core";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import {
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent, ScrollViewInstance } from "react-native";
@@ -21,6 +27,7 @@ import { NativeSegmentedControl } from "../components/native/native-segmented-co
 import { NativeSymbol } from "../components/native/native-symbol";
 import { rpc } from "../lib/api/api";
 import type { MobileBot } from "../lib/api/mobile-types";
+import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
 import { isMediaArtifact, mediaArtifactGallery } from "../lib/artifacts/artifact-gallery";
@@ -41,6 +48,7 @@ export default function ArtifactsScreen() {
   const sideInsets = useSideInsets();
   const navigation = useNavigation();
   const router = useRouter();
+  const focused = useIsFocused();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const contentBottomInset = useContentBottomInset();
@@ -83,6 +91,7 @@ export default function ArtifactsScreen() {
   const [query, setQuery] = useState("");
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
+  const loadedPagesRef = useRef(1);
   const generationRef = useRef(0);
   const loadingPageRef = useRef(false);
   const [loadingPage, setLoadingPage] = useState(false);
@@ -116,7 +125,8 @@ export default function ArtifactsScreen() {
   );
 
   const load = useCallback(
-    async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh") => {
+    async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh" | "live") => {
+      const pageCount = mode === "live" ? loadedPagesRef.current : 1;
       const generation = ++generationRef.current;
       loadingPageRef.current = true;
       setLoadingPage(true);
@@ -126,17 +136,27 @@ export default function ArtifactsScreen() {
       setSearchPageFailed(false);
       setLoadError(null);
       if (mode === "replace") {
+        loadedPagesRef.current = 1;
         setItems(null);
         setNext(null);
       }
       try {
-        const page = await listSpaceArtifacts({
+        const input = {
           botId: botId ?? undefined,
           madeByBots,
           limit: PAGE_SIZE,
-        });
+        };
+        let page = await listSpaceArtifacts(input);
+        const nextItems = [...page.items];
+        let loaded = 1;
+        while (loaded < pageCount && page.nextCursor && generation === generationRef.current) {
+          page = await listSpaceArtifacts({ ...input, cursor: page.nextCursor });
+          nextItems.push(...page.items);
+          loaded++;
+        }
         if (generation !== generationRef.current) return;
-        setItems(page.items);
+        loadedPagesRef.current = loaded;
+        setItems(nextItems);
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
       } catch (error) {
         if (generation !== generationRef.current) return;
@@ -160,6 +180,11 @@ export default function ArtifactsScreen() {
       void load(activeBotIdRef.current, madeByBotsRef.current, "refresh");
     }, [load]),
   );
+  useSpaceChanges(
+    "artifacts",
+    () => load(activeBotIdRef.current, madeByBotsRef.current, "live"),
+    focused,
+  );
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMoreRef.current || loadingPageRef.current) return;
@@ -174,6 +199,7 @@ export default function ArtifactsScreen() {
         limit: PAGE_SIZE,
       });
       if (generation !== generationRef.current) return;
+      loadedPagesRef.current++;
       setItems((current) => (current ?? []).concat(page.items));
       setNext(page.nextCursor ? { cursor: page.nextCursor, botId: activeBotId, madeByBots } : null);
       setSearchPageFailed(false);

@@ -1,16 +1,19 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
 import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ModelCreditsSettings } from "../../components/billing/ModelCredits";
 import { billingDateLabel, formatBillingPrice } from "../../lib/billing/billing";
-import { useSave } from "../../lib/query/query";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 
 /** `client` is the window's space: another tab can select another organization at any time. */
 export function BillingSettingsPanel({ client }: { client: RpcClient }) {
   const { t, i18n } = useLingui();
   const locale = i18n.locale || "en";
+  const queryClient = useQueryClient();
+  const queries = useSpaceQueries();
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Desktop opens the URL in the system browser and this page stays, so the button comes back.
@@ -55,7 +58,12 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
     return (
       <ModelCreditsSettings
         status={status}
-        refresh={async () => setStatus(await client.billing.status())}
+        refresh={async () => {
+          setStatus(await client.billing.status());
+          await queryClient.invalidateQueries({
+            queryKey: queries.billing.computerUsage.queryKey(),
+          });
+        }}
         client={client}
       />
     );

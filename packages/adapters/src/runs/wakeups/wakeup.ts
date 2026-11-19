@@ -13,7 +13,7 @@ import type { DatabaseOutage, PrismaClient } from "@rakazo/db";
 import { databaseCapacityBackoffMs, databaseOutage, runAsSystem } from "@rakazo/db";
 import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
 import type { JobHelpers, Runner, WorkerUtils } from "graphile-worker";
-import { consoleLogFactory, Logger, makeWorkerUtils, run } from "graphile-worker";
+import { Logger, makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
 import { recordConnectionCleanupAttemptsExhausted } from "../../integrations/connection-cleanup.js";
 import { recordHistoryCompactAttemptsExhausted } from "../../runtime/context/history-compaction.js";
@@ -230,23 +230,32 @@ export async function migrateJobQueue(connectionString: string): Promise<void> {
 }
 
 /**
- * Graphile's console logging, except that the database being unavailable goes to the process's
- * outage streak: its own polling would otherwise log every poll interval until it is back. A
- * failed task's error came from the job, so only its database errors count, not its sockets.
+ * Graphile's own log lines as events of the process's logger, so they are one structured line each
+ * like the rest: its console logging prints plain text followed by the whole job, payload included.
+ * The database being unavailable goes to the process's outage streak instead: its own polling
+ * would otherwise log every poll interval until it is back. A failed task's error came from the
+ * job, so only its database errors count, not its sockets.
  */
 export function jobQueueLogger(outage: DatabaseOutage): Logger {
-  return new Logger((scope) => {
-    const log = consoleLogFactory(scope);
-    return (level, message, meta) => {
-      const error = (meta as { error?: unknown } | undefined)?.error ?? new Error(message);
-      const fromDatabaseConnection = !(meta as { failure?: unknown } | undefined)?.failure;
-      if (
-        (level === "error" || level === "warning") &&
-        outage.failed(error, "job queue", { fromDatabaseConnection })
-      )
-        return;
-      log(level, message, meta);
+  return new Logger((scope) => (level, message, meta) => {
+    const failure = (meta as { error?: unknown } | undefined)?.error;
+    const fromDatabaseConnection = !(meta as { failure?: unknown } | undefined)?.failure;
+    if (
+      (level === "error" || level === "warning") &&
+      outage.failed(failure ?? new Error(message), "job queue", { fromDatabaseConnection })
+    )
+      return;
+    // As with its console logging, the queue's debug lines are for debugging the queue itself.
+    if (level === "debug" && !process.env.GRAPHILE_LOGGER_DEBUG) return;
+    const bindings = {
+      "queue.message": message,
+      ...(scope.workerId ? { "queue.worker_id": scope.workerId } : {}),
+      ...(scope.taskIdentifier ? { "queue.task": scope.taskIdentifier } : {}),
+      ...(scope.jobId ? { "queue.job_id": scope.jobId } : {}),
+      // Serialized like any logged failure, whatever the level it came at.
+      ...(failure === undefined ? {} : { error: failure }),
     };
+    getLogger()[level === "warning" ? "warn" : level]("job_queue.log", bindings);
   });
 }
 

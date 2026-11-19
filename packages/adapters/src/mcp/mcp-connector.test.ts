@@ -3946,7 +3946,12 @@ it("preserves explicit MCP read-only annotations for unattended consumers", asyn
   }
 });
 
-it("marks a Composio MCP server's multi-execute tool as a batch under its prefixed name", async () => {
+it.each([
+  ["https://connect.composio.dev/mcp", true],
+  ["https://app.composio.dev/tool_router/v3/trs_example/mcp", true],
+  ["https://mcp.example.test/mcp", false],
+  ["https://connect.composio.dev.example.test/mcp", false],
+])("recognizes batch shape and checks draft eligibility for %s", async (endpoint, hasDrafts) => {
   const state = {
     failNext: false,
     initializations: 0,
@@ -3955,11 +3960,13 @@ it("marks a Composio MCP server's multi-execute tool as a batch under its prefix
       { name: "COMPOSIO_SEARCH_TOOLS", inputSchema: { type: "object" } },
     ],
   };
-  vi.stubGlobal("fetch", mcpFetch(state));
+  vi.stubGlobal("fetch", mcpFetch(state, endpoint));
   const connector = new McpConnector(
     {
       mcpServer: NO_SHARED_SERVERS,
-      botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+      botMcpServer: {
+        findMany: vi.fn(async () => [{ ...ASSIGNMENT, server: { ...SERVER, endpoint } }]),
+      },
     } as never,
     new EncryptedSecretStore("fake-key"),
     { network: TEST_NETWORK },
@@ -3982,6 +3989,7 @@ it("marks a Composio MCP server's multi-execute tool as a batch under its prefix
       [true, "tool_slug"],
       [false, undefined],
     ]);
+    expect(Boolean(tools[0]?.batch?.outgoingDrafts?.GMAIL_SEND_EMAIL)).toBe(hasDrafts);
   } finally {
     await connector.close();
   }

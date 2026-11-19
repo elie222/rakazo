@@ -52,6 +52,8 @@ function ownBotUpdateCall() {
     replayEffectToolName: "update_bot",
     fleetSummary: undefined,
     heldForApproval: false,
+    settingsChange: false,
+    ignoresAllowRules: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: undefined,
@@ -60,23 +62,11 @@ function ownBotUpdateCall() {
 }
 
 describe("prepareToolRequest: update_bot owner settings after outside content", () => {
-  it("refuses once, then ends the turn instead of repeating the refusal", async () => {
+  it("prepares the change and marks it for the approval model to check", async () => {
     const { ctx, request } = ownBotUpdateCall();
-    await expect(prepareToolRequest(ctx as never, request())).resolves.toEqual({
-      error: expect.stringContaining("outside content"),
-    });
-    const repeat = await prepareToolRequest(ctx as never, request());
-    expect(repeat).toMatchObject({
-      kind: "agent_tool_result",
-      terminate: true,
-      content: [
-        {
-          type: "text",
-          text: expect.stringContaining("Settings"),
-        },
-      ],
-    });
-    expect(JSON.stringify(repeat)).not.toContain("outside content");
+    const prepared = request();
+    await expect(prepareToolRequest(ctx as never, prepared)).resolves.toBeUndefined();
+    expect(prepared.settingsChange).toBe(true);
   });
 
   it("keeps preparing the change while the run is untainted", async () => {
@@ -211,6 +201,8 @@ describe("prepareToolRequest: a saved login that asks first", () => {
       replayEffectToolName: "browser_act",
       fleetSummary: undefined,
       heldForApproval: false,
+      settingsChange: false,
+      ignoresAllowRules: false,
       purchase: undefined,
       cardUse: undefined,
       loginUse: undefined,

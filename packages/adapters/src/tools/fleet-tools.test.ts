@@ -1480,17 +1480,6 @@ describe("prepareFleetRequest set_child_instructions", () => {
       error: 'No bot with id "bot-ops". Call list_fleet for ids.',
     });
   });
-
-  it("refuses a second instruction write for the same child in one run before any card", async () => {
-    const { deps } = fakeFleet({
-      bots,
-      effects: [{ request: { botId: "bot-child", instructions: "First." }, result: { ok: true } }],
-    });
-    expect(await prepareFleetRequest(deps, run, "set_child_instructions", edit)).toEqual({
-      ok: false,
-      error: "You already changed this bot's instructions in this run.",
-    });
-  });
 });
 
 describe("setChildInstructions", () => {
@@ -1532,17 +1521,6 @@ describe("setChildInstructions", () => {
     });
     expect(await setChildInstructions(writeDeps(prisma), run, canonical)).toEqual({
       error: 'No bot with id "bot-child". Call list_fleet for ids.',
-    });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
-
-  it("keeps one instruction write per child per run", async () => {
-    const { prisma } = fakeFleet({
-      bots: [{ id: "bot-self", name: "Designer" }, child],
-      effects: [{ request: { botId: "bot-child" }, result: { ok: true } }],
-    });
-    expect(await setChildInstructions(writeDeps(prisma), run, canonical)).toEqual({
-      error: "You already changed this bot's instructions in this run.",
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });

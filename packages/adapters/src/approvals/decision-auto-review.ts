@@ -23,7 +23,7 @@ import {
 
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v3";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v5";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(
     private readonly options: {
@@ -68,6 +68,9 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             })),
             ...(request.newSite ? { newSite: true } : {}),
             ...(request.savedContextWrite ? { savedContextWrite: true } : {}),
+            ...(request.ownerMessages?.length
+              ? { ownerEarlierMessages: request.ownerMessages }
+              : {}),
           },
           questions: { decision: autoReviewDecisionQuestion(request) },
         },
@@ -88,7 +91,8 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
         typeof answer.confidence !== "number" ||
         answer.confidence < (this.options.minConfidence ?? autoReviewMinConfidence())
       )
-        return { decision: "ask", model, reason: "Checker is unsure." };
+        // An unsure checker asks like any other ask: a reason saying so tells the person nothing.
+        return { decision: "ask", model };
       return { decision: "pass", model };
     } catch (error) {
       const reason =

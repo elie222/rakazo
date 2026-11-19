@@ -65,4 +65,10 @@ const visit = (from, [name, version]) => {
 if (!importers.has(ROOT)) throw new Error(`${ROOT} is missing from the lockfile`);
 seen.add(ROOT);
 for (const dep of importers.get(ROOT)) visit(ROOT, dep);
-console.log([...seen].sort().join("\n"));
+const workspaceOnly = process.argv.includes("--workspace-only");
+console.log(
+  [...seen]
+    .filter((entry) => !workspaceOnly || importers.has(entry))
+    .sort()
+    .join("\n"),
+);
