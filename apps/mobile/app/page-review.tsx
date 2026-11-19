@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { pageReviewSections } from "@rakazo/core";
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
@@ -43,25 +43,29 @@ function Review({ pageId }: { pageId: string }) {
   const source = draftId ? (draft.isError ? undefined : draft.data?.code) : page?.code;
   const apiBase = currentApiBase();
   const runtimeError = t`This page couldn't be shown.`;
-  const document = useQuery({
-    queryKey: [
-      ...read.queryKey,
-      "document",
-      apiBase,
-      source,
-      theme,
-      !draftId,
-      runtimeError,
-      revision?.section,
-    ],
-    enabled: source !== undefined && !showComments,
-    gcTime: 0,
-    queryFn: () =>
-      pageDocument(apiBase, source!, theme, runtimeError, {
-        review: !draftId,
-        reviewAnchor: revision?.section,
-      }),
-  });
+  const document = useScreenQuery(
+    {
+      queryKey: queryOptions<string>({
+        queryKey: [
+          ...read.queryKey,
+          "document",
+          apiBase,
+          source,
+          theme,
+          !draftId,
+          runtimeError,
+          revision?.section,
+        ],
+      }).queryKey,
+      gcTime: 0,
+      queryFn: () =>
+        pageDocument(apiBase, source!, theme, runtimeError, {
+          review: !draftId,
+          reviewAnchor: revision?.section,
+        }),
+    },
+    { enabled: source !== undefined && !showComments },
+  );
   usePageReviewSignals();
   const publish = useSave({
     target: ACCOUNT_SETTINGS,

@@ -54,6 +54,7 @@ export * from "./composer/composer-slash.js";
 export * from "./composer/group-mentions.js";
 export * from "./computers/artifact-sandbox.js";
 export * from "./computers/computer-updates.js";
+export * from "./computers/page-review.js";
 export * from "./computers/screen-reconnect.js";
 export * from "./deployment/compose-update.js";
 export * from "./deployment/self-update.js";

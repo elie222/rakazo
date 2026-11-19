@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PageComment, PageReview } from "@rakazo/contracts";
-import { newClientId } from "@rakazo/core";
+import { canPostPageComment, newClientId, pageCommentActions } from "@rakazo/core";
 import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
 import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
@@ -136,11 +136,7 @@ export function PageReviewComments({
             key="post"
             title={t`Post comment`}
             prominent
-            disabled={
-              save.pending ||
-              !body.trim() ||
-              !(sections.length ? sections.includes(section) : section.trim())
-            }
+            disabled={save.pending || !canPostPageComment(sections, section, body)}
             onPress={() =>
               save.run({ kind: "add", id, section: section.trim(), body: body.trim() })
             }
@@ -162,7 +158,7 @@ export function PageReviewComments({
         >{t`No comments yet.`}</Text>
       ) : null}
       {rows.map((comment) => {
-        const canAct = page.owner || comment.mine;
+        const { canResolve, canAsk, draftId } = pageCommentActions(page, comment);
         const version = comment.version;
         return (
           <SettingsGroup key={comment.id}>
@@ -185,25 +181,15 @@ export function PageReviewComments({
               chevron="right"
               onPress={() => onRevision(version, comment.section)}
             />
-            {page.owner &&
-            current &&
-            version === page.version &&
-            comment.revision?.status === "ready" ? (
+            {draftId ? (
               <SettingsRow
                 key="draft"
                 title={t`Preview draft`}
                 chevron="right"
-                onPress={() => onDraft(comment.revision!.id)}
+                onPress={() => onDraft(draftId)}
               />
             ) : null}
-            {canAct &&
-            page.canRequestRevision &&
-            current &&
-            version === page.version &&
-            (!comment.revision ||
-              comment.revision.status === "failed" ||
-              comment.revision.status === "cancelled") &&
-            !comment.resolvedAt ? (
+            {canAsk ? (
               <SettingsRow
                 key="ask"
                 title={t`Ask bot to revise`}
@@ -213,7 +199,7 @@ export function PageReviewComments({
                 }
               />
             ) : null}
-            {canAct ? (
+            {canResolve ? (
               <SettingsRow
                 key="resolve"
                 title={comment.resolvedAt ? t`Reopen` : t`Resolve`}

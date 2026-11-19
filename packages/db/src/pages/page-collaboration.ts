@@ -57,6 +57,32 @@ export async function lockPage(tx: Prisma.TransactionClient, pageId: string) {
 export const activePageAccount = { deactivatedAt: null };
 export const verifiedPageAccount = { ...activePageAccount, emailVerified: true };
 
+export const pageRevisionBotSelect = {
+  user: { select: { deactivatedAt: true } },
+  bot: { select: { id: true, spaceId: true, archivedAt: true } },
+} satisfies Prisma.PageSelect;
+
+export async function canPageRequestRevision(
+  tx: Prisma.TransactionClient,
+  page: Prisma.PageGetPayload<{
+    select: typeof pageRevisionBotSelect & { spaceId: true; userId: true };
+  }>,
+) {
+  if (
+    page.user.deactivatedAt ||
+    !page.bot ||
+    page.bot.archivedAt ||
+    page.bot.spaceId !== page.spaceId
+  )
+    return false;
+  return Boolean(
+    await tx.spaceMember.findFirst({
+      where: { spaceId: page.spaceId, userId: page.userId },
+      select: { userId: true },
+    }),
+  );
+}
+
 export const pageOwnerWhere = ({
   userId,
   spaceId,

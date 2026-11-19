@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageComment, PageReview } from "@rakazo/contracts";
-import { newClientId } from "@rakazo/core";
+import { canPostPageComment, newClientId, pageCommentActions } from "@rakazo/core";
 import { pageCommentStatusLabel } from "@rakazo/i18n/page-review";
 import { Button, Input, OptionSelect, Spinner, Textarea } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -67,6 +67,7 @@ export function PageReviewComments({
     },
   });
   const current = page.currentVersion === page.version;
+  const canPost = !save.pending && canPostPageComment(sections, section, body);
   const rows = comments.isError ? [] : (comments.data?.pages.flatMap(({ items }) => items) ?? []);
   const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
   return (
@@ -76,7 +77,7 @@ export function PageReviewComments({
           className="flex flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            save.run({ kind: "add", id, section: section.trim(), body: body.trim() });
+            if (canPost) save.run({ kind: "add", id, section: section.trim(), body: body.trim() });
           }}
         >
           {sections.length ? (
@@ -108,15 +109,7 @@ export function PageReviewComments({
             readOnly={save.pending}
             onChange={(event) => setBody(event.target.value)}
           />
-          <Button
-            type="submit"
-            className="self-end"
-            disabled={
-              save.pending ||
-              !body.trim() ||
-              !(sections.length ? sections.includes(section) : section.trim())
-            }
-          >
+          <Button type="submit" className="self-end" disabled={!canPost}>
             <Trans>Post comment</Trans>
           </Button>
         </form>
@@ -129,65 +122,60 @@ export function PageReviewComments({
       {comments.isPending ? <Spinner /> : null}
       {rows.length ? (
         <ul className="divide-y">
-          {rows.map((comment) => (
-            <li key={comment.id} className="flex flex-col gap-1 py-3">
-              <div className="break-words font-medium">{comment.section}</div>
-              <div className="flex flex-wrap items-center gap-x-2 text-label text-muted-foreground">
-                <span>{comment.author || t`Deleted account`}</span>
-                <time dateTime={comment.createdAt}>{date.format(new Date(comment.createdAt))}</time>
-                <Button
-                  variant="link"
-                  size="xs"
-                  onClick={() => onRevision(comment.version, comment.section)}
-                >
-                  <Trans>Revision {comment.version}</Trans>
-                </Button>
-              </div>
-              <p className="whitespace-pre-wrap break-words text-body-sm">{comment.body}</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <ReviewStatus comment={comment} currentVersion={page.currentVersion} />
-                {page.owner &&
-                current &&
-                comment.version === page.version &&
-                comment.revision?.status === "ready" ? (
-                  <Button variant="outline" size="xs" onClick={() => onDraft(comment.revision!.id)}>
-                    <Trans>Preview draft</Trans>
-                  </Button>
-                ) : null}
-                {(page.owner || comment.mine) &&
-                page.canRequestRevision &&
-                current &&
-                comment.version === page.version &&
-                (!comment.revision ||
-                  comment.revision.status === "failed" ||
-                  comment.revision.status === "cancelled") &&
-                !comment.resolvedAt ? (
+          {rows.map((comment) => {
+            const { canResolve, canAsk, draftId } = pageCommentActions(page, comment);
+            return (
+              <li key={comment.id} className="flex flex-col gap-1 py-3">
+                <div className="break-words font-medium">{comment.section}</div>
+                <div className="flex flex-wrap items-center gap-x-2 text-label text-muted-foreground">
+                  <span>{comment.author || t`Deleted account`}</span>
+                  <time dateTime={comment.createdAt}>
+                    {date.format(new Date(comment.createdAt))}
+                  </time>
                   <Button
-                    variant="outline"
+                    variant="link"
                     size="xs"
-                    disabled={save.pending}
-                    onClick={() =>
-                      save.run({ kind: "ask", id: comment.id, retryOf: comment.revision?.id })
-                    }
+                    onClick={() => onRevision(comment.version, comment.section)}
                   >
-                    <Trans>Ask bot to revise</Trans>
+                    <Trans>Revision {comment.version}</Trans>
                   </Button>
-                ) : null}
-                {page.owner || comment.mine ? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    disabled={save.pending}
-                    onClick={() =>
-                      save.run({ kind: "resolve", id: comment.id, resolved: !comment.resolvedAt })
-                    }
-                  >
-                    {comment.resolvedAt ? <Trans>Reopen</Trans> : <Trans>Resolve</Trans>}
-                  </Button>
-                ) : null}
-              </div>
-            </li>
-          ))}
+                </div>
+                <p className="whitespace-pre-wrap break-words text-body-sm">{comment.body}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ReviewStatus comment={comment} currentVersion={page.currentVersion} />
+                  {draftId ? (
+                    <Button variant="outline" size="xs" onClick={() => onDraft(draftId)}>
+                      <Trans>Preview draft</Trans>
+                    </Button>
+                  ) : null}
+                  {canAsk ? (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      disabled={save.pending}
+                      onClick={() =>
+                        save.run({ kind: "ask", id: comment.id, retryOf: comment.revision?.id })
+                      }
+                    >
+                      <Trans>Ask bot to revise</Trans>
+                    </Button>
+                  ) : null}
+                  {canResolve ? (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      disabled={save.pending}
+                      onClick={() =>
+                        save.run({ kind: "resolve", id: comment.id, resolved: !comment.resolvedAt })
+                      }
+                    >
+                      {comment.resolvedAt ? <Trans>Reopen</Trans> : <Trans>Resolve</Trans>}
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       {comments.hasNextPage ? (

@@ -10,8 +10,10 @@ import { containsSecret, deadlineSignal, withAbort } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   assertLeaseHeld,
+  canPageRequestRevision,
   lockPage,
   memberHasModelAccess,
+  pageRevisionBotSelect,
   recordUsage,
   runAsSystem,
   runAsTenant,
@@ -57,8 +59,7 @@ const requestSelect = {
           spaceId: true,
           currentVersion: true,
           visibility: true,
-          user: { select: { deactivatedAt: true } },
-          bot: { select: { id: true, spaceId: true, archivedAt: true } },
+          ...pageRevisionBotSelect,
         },
       },
     },
@@ -70,14 +71,8 @@ type Request = Prisma.PageRevisionRequestGetPayload<{ select: typeof requestSele
 export async function pageRevisionAuthorized(tx: Prisma.TransactionClient, row: Request) {
   const { comment, requesterId, grantId } = row;
   const { page } = comment;
-  if (comment.resolvedAt || page.currentVersion !== comment.version || page.user.deactivatedAt)
-    return false;
-  if (!page.bot || page.bot.archivedAt || page.bot.spaceId !== page.spaceId) return false;
-  const membership = await tx.spaceMember.findFirst({
-    where: { spaceId: page.spaceId, userId: page.userId },
-    select: { userId: true },
-  });
-  if (!membership) return false;
+  if (comment.resolvedAt || page.currentVersion !== comment.version) return false;
+  if (!(await canPageRequestRevision(tx, page))) return false;
   if (!grantId) return requesterId === page.userId;
   if (page.visibility !== "people") return false;
   return Boolean(

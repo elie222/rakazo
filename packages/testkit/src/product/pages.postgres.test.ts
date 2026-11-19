@@ -245,6 +245,14 @@ describePages("pages", () => {
       (await raw(app, outsider, "pageReviews/askRevision", { ...input, commentId })).status,
     ).toBe(404);
     const reviewRequest = { ...input, commentId };
+    await db().bot.update({ where: { id: bot.id }, data: { archivedAt: new Date() } });
+    expect(await rpc(app, reviewer, "pageReviews/get", input)).toMatchObject({
+      canRequestRevision: false,
+    });
+    expect((await raw(app, reviewer, "pageReviews/askRevision", reviewRequest)).status).toBe(404);
+    expect(await db().pageRevisionRequest.count({ where: { commentId } })).toBe(0);
+    expect(revisionCalls).not.toHaveBeenCalled();
+    await db().bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
     const newestRequest = (id: string) =>
       db().pageRevisionRequest.findFirstOrThrow({
         where: { commentId: id },

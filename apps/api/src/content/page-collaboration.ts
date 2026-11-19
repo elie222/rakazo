@@ -5,9 +5,11 @@ import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   cancelPageGrantRequests,
+  canPageRequestRevision,
   IsolationError,
   lockPage,
   pageOwnerWhere,
+  pageRevisionBotSelect,
   runAsSystem,
   signalPage,
   signalPageUsers,
@@ -39,7 +41,7 @@ async function reviewAccess(db: Db, actor: Actor, pageId: string, ownerOnly = fa
       id: true,
       userId: true,
       spaceId: true,
-      botId: true,
+      ...pageRevisionBotSelect,
       title: true,
       visibility: true,
       currentVersion: true,
@@ -125,7 +127,7 @@ export function getPageReview(
       currentVersion: page.currentVersion,
       version: reviewed,
       owner,
-      canRequestRevision: page.botId !== null,
+      canRequestRevision: await canPageRequestRevision(tx, page),
     };
   });
 }
