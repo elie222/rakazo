@@ -1,12 +1,14 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, ThinkingLevel } from "@rakazo/contracts";
 import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
-import { Command, CommandGroup, CommandItem, CommandList, toast } from "@rakazo/ui-web";
+import { Command, CommandGroup, CommandItem, CommandList, Kbd, toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { thinkingLevelLabel } from "../../../lib/models/model-catalog";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
 import { ChatModelPicker } from "../chat/chat-model-picker";
+import { chordKeys, chordLabel, isApplePlatform } from "../shell-shortcuts";
 
 /**
  * The chat's model beside Send, for people who turned it on. Its panel lists the models with the
@@ -17,12 +19,19 @@ export function ComposerModelPicker({
   disabled,
   onSaved,
   onConnect,
+  open,
+  onOpenChange,
+  onThinkingStepChange,
 }: {
   bot: Bot;
   disabled?: boolean;
   onSaved: (bot: Bot) => void;
   /** Opens the model connections, offered when no provider is connected yet. */
   onConnect: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Receives what moves to the next thinking level, or null while there is none to move to. */
+  onThinkingStepChange?: (step: (() => boolean) | null) => void;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -44,7 +53,17 @@ export function ComposerModelPicker({
     onFailed,
   });
 
-  if (!credentials || !catalog || !me) return null;
+  // The shell's key press calls the latest step, which reads this render's levels.
+  const thinkingStep = useRef<(() => boolean) | null>(null);
+  useEffect(() => {
+    onThinkingStepChange?.(() => thinkingStep.current?.() ?? false);
+    return () => onThinkingStepChange?.(null);
+  }, [onThinkingStepChange]);
+
+  if (!credentials || !catalog || !me) {
+    thinkingStep.current = null;
+    return null;
+  }
   const savedKey =
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "";
   const pendingModel = saveModel.pending ? saveModel.input : undefined;
@@ -74,6 +93,22 @@ export function ComposerModelPicker({
     ? thinkingLevelLabel(thinking ?? defaultThinkingLevel)
     : undefined;
   const defaultLabel = thinkingLevelLabel(defaultThinkingLevel);
+  const busy = disabled || saveModel.pending || saveThinking.pending;
+  // Steps from the level in use (the default's when none is saved) to the next, wrapping.
+  thinkingStep.current =
+    thinkingLevels.length && !busy
+      ? () => {
+          const inUse = thinking ?? defaultThinkingLevel;
+          const current = thinkingLevels.findIndex((level) => level === inUse);
+          const next = thinkingLevels[(current + 1) % thinkingLevels.length];
+          if (next === undefined) return false;
+          saveThinking.run(next);
+          return true;
+        }
+      : null;
+  const apple = isApplePlatform();
+  const modelKeys = chordKeys({ apple }, "M", true);
+  const thinkingKeys = chordKeys({ apple }, "E", true);
   return (
     <ChatModelPicker
       compact
@@ -84,7 +119,22 @@ export function ComposerModelPicker({
       selectedLabel={selectedName}
       mark={selectedMark}
       detail={shownThinking}
-      disabled={disabled || saveModel.pending || saveThinking.pending}
+      disabled={busy}
+      open={open}
+      onOpenChange={onOpenChange}
+      keyShortcuts={apple ? "Meta+Shift+M" : "Control+Shift+M"}
+      hint={
+        <>
+          {t`Model`}
+          <Kbd>{chordLabel({ apple }, modelKeys)}</Kbd>
+          {thinkingLevels.length ? (
+            <>
+              <span className="ms-1">{t`Thinking`}</span>
+              <Kbd>{chordLabel({ apple }, thinkingKeys)}</Kbd>
+            </>
+          ) : null}
+        </>
+      }
       onChange={(key) => {
         if (key !== selectedModelKey) saveModel.run(key);
       }}

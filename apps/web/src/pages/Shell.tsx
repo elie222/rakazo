@@ -102,6 +102,7 @@ import { rightPanelStorageKey } from "./shell/right-panel-state";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import type { SettingsSection } from "./shell/shell-overlay-url";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
+import type { ShellShortcut } from "./shell/shell-shortcuts";
 import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
 import { ArchivedChats } from "./shell/sidebar/archived-chats";
@@ -134,6 +135,10 @@ export function ShellPage() {
   // A new key per space switch, so nothing from the previous space survives it.
   const spaceEpoch = useSpaceEpoch();
   return <SpaceShell key={spaceEpoch} />;
+}
+
+function isModelShortcut(shortcut: ShellShortcut) {
+  return shortcut.type === "model-picker" || shortcut.type === "thinking-level";
 }
 
 function SpaceShell() {
@@ -330,6 +335,12 @@ function SpaceShell() {
   );
   const dialogs = useShellDialogs();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // The bot whose model list the keyboard opened, so switching bots leaves the next one closed.
+  const [modelPickerBotId, setModelPickerBotId] = useState<string | null>(null);
+  const thinkingStepRef = useRef<(() => boolean) | null>(null);
+  const registerThinkingStep = useCallback((step: (() => boolean) | null) => {
+    thinkingStepRef.current = step;
+  }, []);
   const [findOpen, setFindOpen] = useState(false);
   const findInputRef = useRef<HTMLInputElement>(null);
   const chatColumnRef = useRef<HTMLDivElement>(null);
@@ -377,8 +388,12 @@ function SpaceShell() {
         focusSidebarSearch();
         return true;
       }
+      // The open model list is a dialog too, but its own chords still close it or step its thinking.
+      const modelListOpen = Boolean(active && modelPickerBotId === active.id);
       // The command menu picks its own Cmd/Ctrl+1–9 from what it lists.
-      if (hasOpenDialog(document, true)) return false;
+      if (hasOpenDialog(document, true) && !(modelListOpen && isModelShortcut(shortcut))) {
+        return false;
+      }
       switch (shortcut.type) {
         case "new-group":
           // A space without bots has nobody to add, and the side panel needs a chat to open in.
@@ -394,6 +409,13 @@ function SpaceShell() {
           return toggleChatPanel();
         case "focus-composer":
           return focusComposer();
+        case "model-picker":
+          if (!showComposerModel || !active || inGroup) return false;
+          setModelPickerBotId((open) => (open === active.id ? null : active.id));
+          return true;
+        case "thinking-level":
+          if (!showComposerModel || inGroup) return false;
+          return thinkingStepRef.current?.() ?? false;
         case "quote-selection":
           if (mobileSidebarOpen || (isMobileSidebar && panel)) return false;
           return quoteShortcutRef.current?.() ?? false;
@@ -1238,6 +1260,9 @@ function SpaceShell() {
                   <ComposerModelPicker
                     bot={active}
                     disabled={Boolean(recordingSkill)}
+                    open={modelPickerBotId === active.id && !recordingSkill}
+                    onOpenChange={(open) => setModelPickerBotId(open ? active.id : null)}
+                    onThinkingStepChange={registerThinkingStep}
                     onConnect={() => openSettings("models")}
                     onSaved={(updated) =>
                       setBots((current) =>
@@ -1500,6 +1525,7 @@ function SpaceShell() {
         onOpenChange={setShortcutsOpen}
         host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
         dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
+        modelPicker={showComposerModel}
       />
 
       {computerOpen && computerBot ? (
