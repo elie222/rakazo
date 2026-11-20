@@ -11,6 +11,7 @@ loadRootEnv();
 await unwrapEnvFromKeyManager();
 
 import {
+  apnsDesktopConfig,
   apnsVoipConfig,
   ChatSdkMessagingSurface,
   CodexCatalogCache,
@@ -21,6 +22,7 @@ import {
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
+  createApnsDesktopProvider,
   createApnsVoipProvider,
   createArtifactStore,
   createCloudAgentConnection,
@@ -243,6 +245,7 @@ async function main() {
     jobs,
     accessToken: process.env.EXPO_ACCESS_TOKEN,
     voip: await createApnsVoipProvider(apnsVoipConfig(process.env)),
+    desktop: await createApnsDesktopProvider(apnsDesktopConfig(process.env)),
   });
   const activityPush = await createApnsActivityProvider(apnsVoipConfig(process.env));
   if (activityPush) workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);

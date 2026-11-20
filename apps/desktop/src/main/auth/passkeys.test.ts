@@ -57,6 +57,19 @@ describe("passkeyEntitlements", () => {
     );
   });
 
+  it("adds the push entitlement only when asked, in the environment the build is signed for", () => {
+    expect(passkeyEntitlements(base, "ABCDE12345", pkg.build.appId)).not.toContain(
+      "aps-environment",
+    );
+    expect(
+      passkeyEntitlements(base, "ABCDE12345", pkg.build.appId, { push: "production" }),
+    ).toContain("<key>com.apple.developer.aps-environment</key>\n    <string>production</string>");
+    // A development-signed build with a public passkey domain still needs the sandbox.
+    expect(
+      passkeyEntitlements(base, "ABCDE12345", pkg.build.appId, { push: "development" }),
+    ).toContain("<key>com.apple.developer.aps-environment</key>\n    <string>development</string>");
+  });
+
   it("keeps helpers on the base entitlements", () => {
     expect(pkg.build.mac.entitlementsInherit).toBe(pkg.build.mac.entitlements);
     expect(base).not.toContain("associated-domains");

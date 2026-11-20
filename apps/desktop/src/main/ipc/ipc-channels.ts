@@ -91,6 +91,8 @@ export const ipcChannels = {
   "desktop.oauth.cancel": appPage<NonNullable<Desktop["oauth"]["cancel"]>>(undefined),
   "desktop.oauth.open": appPage<NonNullable<Desktop["oauth"]["open"]>>(REJECTS),
   "desktop.passkeys.rpIds": appPage<Desktop["passkeys"]["rpIds"]>([]),
+  "desktop.push.takeOpened": appPage<Desktop["push"]["takeOpened"]>(null),
+  "desktop.push.token": appPage<Desktop["push"]["token"]>(null),
   "desktop.server.change": appPage<Desktop["server"]["change"]>(undefined),
   "desktop.speech.abort": appPage<Desktop["speech"]["abort"]>(undefined),
   "desktop.speech.start": appPage<Desktop["speech"]["start"]>(false),

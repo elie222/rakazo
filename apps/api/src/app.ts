@@ -37,6 +37,7 @@ import {
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
+  createApnsDesktopProvider,
   createApnsVoipProvider,
   createArtifactStore,
   createCloudAgentConnection,
@@ -538,6 +539,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       jobs,
       accessToken: env.expoAccessToken,
       voip: await createApnsVoipProvider(env.apnsVoip),
+      desktop: await createApnsDesktopProvider(env.apnsDesktop),
     });
   const activityPush = await createApnsActivityProvider(env.apnsVoip);
   if (activityPush) workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
@@ -922,6 +924,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       deploymentLabs: env.deploymentLabs,
       deploymentVoice: env.deploymentVoice,
       phoneCallsEnabled: env.phoneCallsEnabled,
+      desktopPushEnabled: Boolean(env.apnsDesktop),
       phoneCallRingSeconds: env.phoneCallRingSeconds,
       navLinks: env.navLinks,
       adminEmails: env.adminEmails,

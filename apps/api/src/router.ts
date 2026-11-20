@@ -149,6 +149,8 @@ export interface RouterDeps {
     /** Labs features this deployment turns on for every account. */
     deploymentLabs?: LabFeature[];
     phoneCallsEnabled?: boolean;
+    /** Desktop apps can get notifications while closed. */
+    desktopPushEnabled?: boolean;
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
     maxAttachmentsPerMessage?: number;

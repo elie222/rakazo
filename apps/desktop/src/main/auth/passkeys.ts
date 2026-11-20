@@ -37,7 +37,7 @@ export function passkeyEntitlements(
   base: string,
   teamId: string,
   bundleId: string,
-  options: { developerMode?: boolean } = {},
+  options: { developerMode?: boolean; push?: "development" | "production" } = {},
 ): string {
   if (!TEAM_ID.test(teamId))
     throw new Error("Apple Team ID must be 10 uppercase letters or digits");
@@ -58,6 +58,14 @@ export function passkeyEntitlements(
   ];
   if (options.developerMode) {
     entries.push("    <key>com.apple.security.get-task-allow</key>", "    <true/>");
+  }
+  if (options.push) {
+    // It must match the signing: development profiles grant only "development" (sandbox tokens).
+    entries.push(
+      "    <!-- Notifications while closed (RAKAZO_DESKTOP_PUSH); the profile must allow Push. -->",
+      "    <key>com.apple.developer.aps-environment</key>",
+      `    <string>${options.push}</string>`,
+    );
   }
   return `${base.slice(0, end).trimEnd()}\n${entries.join("\n")}\n  ${base.slice(end)}`;
 }

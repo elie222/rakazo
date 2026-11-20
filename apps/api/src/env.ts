@@ -6,6 +6,7 @@ import type {
   SandboxProviderOptions,
 } from "@rakazo/adapters";
 import {
+  apnsDesktopConfig,
   apnsVoipConfig,
   autoReviewMinConfidence,
   deploymentLabsFromEnv,
@@ -135,6 +136,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   pipedreamEnvironment: "development" | "production";
   expoAccessToken: string | undefined;
   apnsVoip?: ApnsVoipConfig;
+  /** Signing key for desktop app notifications while the app is closed. */
+  apnsDesktop?: ApnsVoipConfig;
   smtpUrl: string | undefined;
   botEmailSmtpUrl?: string;
   emailProvider?: string;
@@ -345,6 +348,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       source.PIPEDREAM_ENVIRONMENT === "production" ? "production" : "development",
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     apnsVoip: apnsVoipConfig(source),
+    apnsDesktop: apnsDesktopConfig(source),
     smtpUrl: optional(source.SMTP_URL),
     botEmailSmtpUrl: optional(source.BOT_EMAIL_SMTP_URL),
     emailProvider: optional(source.EMAIL_PROVIDER),

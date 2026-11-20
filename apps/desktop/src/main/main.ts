@@ -21,6 +21,7 @@ import {
   nativeImage,
   net,
   powerMonitor,
+  pushNotifications,
   safeStorage,
   session,
   shell,
@@ -56,6 +57,7 @@ import {
 import { destroySetupWindow, registerSetupIpc, showSetupWindow } from "./setup/setup-window.js";
 import { createBadgeHandler } from "./system/badge.js";
 import { createClipboardHandler } from "./system/clipboard.js";
+import { createDesktopPush, DESKTOP_PUSH_BUILD } from "./system/desktop-push.js";
 import {
   configureDesktopMonitoring,
   desktopReportsErrors,
@@ -562,6 +564,15 @@ if (!hasSingleInstanceLock) {
     revealSecondInstanceWindow(win);
   });
 }
+
+// Notifications while the app is closed. `ready` carries the one a click launched the app from.
+const desktopPush = createDesktopPush({
+  enabled: process.platform === "darwin" && DESKTOP_PUSH_BUILD,
+  getTarget: permissionTarget,
+  register: () => pushNotifications.registerForAPNSNotifications(),
+});
+app.once("ready", (_event, launchInfo) => desktopPush.launched(launchInfo));
+
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
   installSessionPermissions(session.defaultSession, permissionTarget);
@@ -969,6 +980,8 @@ app.whenReady().then(async () => {
     createClipboardHandler(permissionTarget, (text) => clipboard.writeText(text)),
   );
   handleIpc("desktop.passkeys.rpIds", () => passkeyRpIds);
+  handleIpc("desktop.push.token", (event) => desktopPush.token(event));
+  handleIpc("desktop.push.takeOpened", (event) => desktopPush.takeOpened(event));
   handleIpc("desktop.monitoring.enabled", () => reportsErrors);
   handleIpc("desktop.server.change", () => {
     showSetupWindow();

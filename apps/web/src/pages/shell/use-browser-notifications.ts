@@ -1,5 +1,5 @@
 import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
-import { chatSnoozed } from "@rakazo/core";
+import { abortableDelay, chatSnoozed, isRetryableError, retryDelayMs } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import { computerUpdates } from "../../lib/computers/computer-updates";
@@ -8,6 +8,7 @@ import {
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/platform/browser-notifications";
+import { desktopBridge } from "../../lib/platform/desktop";
 import { notificationIcon, prepareNotificationIcons } from "../../lib/platform/notification-icon";
 import { followStream } from "../../lib/query/follow-stream";
 import type { RpcClient } from "../../lib/query/rpc";
@@ -27,7 +28,8 @@ type ChatAlertOptions = {
   rpc: Pick<RpcClient, "notifications">;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
-  openChat: (chat: Pick<ChatAlert, "botId" | "groupId">) => void;
+  /** `spaceId` is set when the chat may belong to another Space than the shell's. */
+  openChat: (chat: Pick<ChatAlert, "botId" | "groupId"> & { spaceId?: string }) => void;
   /** The signed-in person, whose own messages never notify them. */
   meId: string | undefined;
   /** Current groups, so a snooze that lands after a reply was queued is still honored. */
@@ -134,6 +136,35 @@ export function useBrowserNotifications(
     return () => {
       stop();
       for (const notification of shown.current) notification.close();
+    };
+  }, [rpc]);
+  // Notifications while the desktop app is closed: open the chat a click launched the app for,
+  // then register its token. A server that cannot send them answers NOT_FOUND.
+  useEffect(() => {
+    const push = desktopBridge()?.push;
+    if (!push) return;
+    const stopped = new AbortController();
+    // First and on its own: a slow token or server must not hold up the clicked chat.
+    void push
+      .takeOpened()
+      .then((opened) => {
+        if (opened && !stopped.signal.aborted) openChatRef.current(opened);
+      })
+      .catch(() => undefined);
+    void (async () => {
+      const token = await push.token().catch(() => null);
+      for (let attempt = 0; token && !stopped.signal.aborted && attempt < 5; attempt++) {
+        try {
+          await rpc.notifications.registerDesktopPush({ token });
+          return;
+        } catch (error) {
+          if (!isRetryableError(error)) return;
+          await abortableDelay(retryDelayMs(error, 2_000 * 2 ** attempt), stopped.signal);
+        }
+      }
+    })();
+    return () => {
+      stopped.abort();
     };
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());

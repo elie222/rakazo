@@ -142,6 +142,10 @@ export * from "./models/model-settings.js";
 export * from "./models/model-vision.js";
 export { MODEL_CANNOT_SEE_MESSAGE } from "./models/model-vision.prompt.js";
 export { dispatcherFetch } from "./network/undici-fetch.js";
+export {
+  apnsDesktopConfig,
+  createApnsDesktopProvider,
+} from "./notifications/apns-desktop-config.js";
 export * from "./notifications/expo-push.js";
 export * from "./notifications/push-token-store.js";
 export * from "./notifications/realtime.js";
