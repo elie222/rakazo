@@ -1766,12 +1766,33 @@ describe("own instructions through update_bot", () => {
     const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
     await f.run();
+    // A short text is reviewed whole, beside the text it replaces.
+    expect(reviewMock.mock.calls[0]?.[0].args).toEqual({
+      ...held,
+      previousInstructionsFromBaseline: true,
+    });
     expect(f.results).toEqual([updated]);
     expect(f.instructionState.instructions).toBe(first);
     expect(f.instructionState.instructionHistory).toEqual([
       expect.objectContaining({ instructions: "Draft only", reason: "Set in chat" }),
     ]);
     expect(f.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
+  });
+  it("shows Auto Review only the changed lines of long instructions", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
+    const kept = Array.from({ length: 40 }, (_, i) => `Rule ${i + 1}: keep drafts short.`);
+    f.instructionState.instructions = kept.join("\n");
+    const next = [...kept, "Ask before sending."].join("\n");
+    f.setCalls([{ args: { instructions: next }, executionId: "call-1" }]);
+    await f.run();
+    expect(reviewMock.mock.calls[0]?.[0].args).toEqual({
+      reason: "Set in chat",
+      instructions: {
+        changes:
+          "… 38 unchanged lines\n  Rule 39: keep drafts short.\n  Rule 40: keep drafts short.\n+ Ask before sending.",
+      },
+    });
+    expect(f.instructionState.instructions).toBe(next);
   });
   it("sets them after a profile edit earlier in the run", async () => {
     const f = emptyBot({ autoReview: true });
