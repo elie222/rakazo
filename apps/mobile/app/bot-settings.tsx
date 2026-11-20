@@ -871,9 +871,12 @@ export default function BotSettingsScreen() {
                 fontSize={17}
               />
             </View>
-            <SettingsGroup label={t`How other bots see it`}>
+            <SettingsGroup
+              label={t`Description`}
+              footer={t`Other bots read this when deciding whom to ask.`}
+            >
               <GrowingTextInput
-                label={t`How other bots see it`}
+                label={t`Description`}
                 value={description}
                 maxLength={BOT_DESCRIPTION_MAX_LENGTH}
                 onChangeText={setDescription}

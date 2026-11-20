@@ -772,7 +772,7 @@ describe("bot settings device voice menu", () => {
     mocks.instructions = "First line\nSecond line\nThird line\nFourth line\nFifth line";
     mocks.description = mocks.instructions;
     await render();
-    for (const label of ["Instructions", "How other bots see it"]) {
+    for (const label of ["Instructions", "Description"]) {
       const input = container.querySelector<HTMLElement>(`[aria-label="${label}"]`)!;
       const style = Object.assign({}, ...JSON.parse(input.dataset.style!).flat(Infinity));
       expect(style).toMatchObject({ position: "absolute", top: 0, bottom: 0, lineHeight: 22 });

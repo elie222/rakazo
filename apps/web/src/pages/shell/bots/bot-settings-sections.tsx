@@ -215,10 +215,10 @@ export function DescriptionGroup({
 }) {
   const { t } = useLingui();
   return (
-    <PanelSection label={t`How other bots see it`}>
+    <PanelSection label={t`Description`}>
       <Textarea
         id={`${ids}-description`}
-        aria-label={t`How other bots see it`}
+        aria-label={t`Description`}
         value={description}
         maxLength={BOT_DESCRIPTION_MAX_LENGTH}
         onChange={(e) => onDescriptionChange(e.target.value)}
@@ -227,6 +227,9 @@ export function DescriptionGroup({
         rows={2}
         className="min-h-16 max-h-96 resize-none field-sizing-content"
       />
+      <p className="mt-2 text-body-sm text-muted-foreground">
+        <Trans>Other bots read this when deciding whom to ask.</Trans>
+      </p>
     </PanelSection>
   );
 }

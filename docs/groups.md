@@ -26,7 +26,7 @@ The other bot does the work in its own chat and sends the answer back, and the b
 carries on with it. The chat shows **Messaged** or **Message from** with the other bot's name. Click it to read the
 exchange; it is view-only.
 
-Bots decide whom to ask from each bot's **How other bots see it** description in its settings
+Bots decide whom to ask from each bot's **Description** in its settings
 under **Advanced**. Keep it to one line about what the bot is for.
 
 A bot messages your other bots (**Messaged** / **Message from**) only inside its own
