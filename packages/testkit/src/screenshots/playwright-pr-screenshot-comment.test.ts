@@ -213,6 +213,25 @@ describe("selectPlaywrightPrFeatureFrames", () => {
     expect(selection.frames.map((frame) => frame.title)).toEqual(["shell collapsed"]);
   });
 
+  it("matches a name written as a PNG file name", () => {
+    const selection = selectPlaywrightPrFeatureFrames({
+      changedFiles: [
+        {
+          filename: "apps/web/e2e/tool-activity-shell.spec.ts",
+          patch: '+  const path = testInfo.outputPath("instruction-update-diff.png");',
+        },
+      ],
+      screenshots: [
+        screenshot({
+          source: "tool-activity-shell-x/instruction-update-diff.png",
+          title: "instruction update diff",
+        }),
+      ],
+    });
+
+    expect(selection.frames.map((frame) => frame.title)).toEqual(["instruction update diff"]);
+  });
+
   it("keeps every checkpoint of a spec whose patch GitHub left out", () => {
     const selection = selectPlaywrightPrFeatureFrames({
       changedFiles: [{ filename: "apps/web/e2e/tool-activity-shell.spec.ts" }],

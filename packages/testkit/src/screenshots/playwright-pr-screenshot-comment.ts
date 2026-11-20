@@ -37,7 +37,8 @@ function captureNamesFromPatch(patch: string): CaptureNames {
     for (const [, quote, value = ""] of line.matchAll(STRING_LITERAL)) {
       const templateStart = quote === "`" ? value.indexOf("${") : -1;
       if (templateStart < 0) {
-        if (CAPTURE_NAME.test(value)) exact.add(value.toLowerCase());
+        const name = value.replace(/\.png$/i, "");
+        if (CAPTURE_NAME.test(name)) exact.add(name.toLowerCase());
         continue;
       }
       const prefix = value.slice(0, templateStart);
