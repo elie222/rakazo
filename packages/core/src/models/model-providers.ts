@@ -401,7 +401,38 @@ export function groupModelChoices(choices: readonly ChatModelChoice[], query: st
       title: choice.title ?? vendor?.[2] ?? choice.modelLabel ?? choice.label,
     });
   }
+  // The ungrouped section holds the default and saved choices, which stay first. A compatible
+  // endpoint's models stay in the order its owner enabled them.
+  for (const section of sections) {
+    if (section.heading && !section.data.some((c) => c.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
+      section.data = newestModelsFirst(
+        section.data.map((choice) => ({ id: choice.modelId ?? "", choice })),
+      ).map((entry) => entry.choice);
+  }
   return sections;
+}
+
+/**
+ * The version a model id starts with, such as `[6, 1]` for `gpt-6.1-sol` or `[4, 5]` for
+ * `x-4-5`. A part followed by letters is a size or variant, as in `llama-3-8b`, not a version.
+ */
+function modelVersion(id: string): number[] {
+  const match = /\d+(?:[.-]\d{1,2}(?![\da-z]))*/i.exec(id);
+  return match ? match[0].split(/[.-]/).map(Number) : [];
+}
+
+/** Models with a higher version in their id first; the catalog's order otherwise stays. */
+export function newestModelsFirst<T extends { id: string }>(models: readonly T[]): T[] {
+  const versions = new Map(models.map((model) => [model.id, modelVersion(model.id)]));
+  return [...models].sort((left, right) => {
+    const a = versions.get(left.id) ?? [];
+    const b = versions.get(right.id) ?? [];
+    for (let index = 0; index < Math.max(a.length, b.length); index++) {
+      const difference = (b[index] ?? -1) - (a[index] ?? -1);
+      if (difference) return difference;
+    }
+    return 0;
+  });
 }
 
 /**

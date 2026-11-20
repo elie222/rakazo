@@ -497,6 +497,47 @@ it("offers Azure catalog models for a credential saved with the old provider id"
   expect(pickCatalogModelId(catalog, "azure-openai-responses", "gpt-4o")).toBe("gpt-4o");
 });
 
+describe("groupModelChoices order", () => {
+  const entry = (id: string) => ({
+    provider: "zai",
+    providerName: "Z.AI",
+    id,
+    label: id.toUpperCase(),
+  });
+
+  it("lists a provider's newest models first and keeps default choices on top", () => {
+    const connected = connectedModelChoices(
+      [{ provider: "zai", label: "Z.AI" }],
+      [entry("glm-4.5"), entry("glm-5"), entry("glm-4.6")],
+    );
+    const sections = groupModelChoices(chatModelChoices(connected, "", "Space default"), "");
+    expect(sections[0]?.data.map((choice) => choice.key)).toEqual([""]);
+    expect(sections[1]?.data.map((choice) => choice.modelId)).toEqual([
+      "glm-5",
+      "glm-4.6",
+      "glm-4.5",
+    ]);
+  });
+
+  it("keeps a compatible endpoint's models in the order they were enabled", () => {
+    const connected = connectedModelChoices(
+      [
+        {
+          provider: "openai-compatible",
+          label: "Local",
+          enabledModelIds: ["model-1", "model-3", "model-2"],
+        },
+      ],
+      [],
+    );
+    expect(groupModelChoices(connected, "")[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "model-1",
+      "model-3",
+      "model-2",
+    ]);
+  });
+});
+
 describe("groupModelChoices", () => {
   const connected = connectedModelChoices(
     [{ provider: "openrouter", label: "OpenRouter" }],
