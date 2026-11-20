@@ -1,3 +1,4 @@
+import { MODEL_SIGN_IN_EXPIRED_ERROR } from "@rakazo/contracts";
 import { pollUntil } from "../primitives/retry.js";
 import { isRetryableError } from "../primitives/retry-policy.js";
 
@@ -55,7 +56,7 @@ export async function waitForModelOAuthCompletion(
       timeoutMs: options.expiresInSeconds * 1000 + EXPIRY_GRACE_MS,
       signal,
       onTimeout: () => {
-        throw new Error("This code expired. Start again.");
+        throw new Error(MODEL_SIGN_IN_EXPIRED_ERROR);
       },
     },
   );

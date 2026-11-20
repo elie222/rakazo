@@ -101,15 +101,31 @@ describe("ChatGPT device-code sign-in", () => {
         status(400, JSON.stringify({ error: { code: "access_denied", detail: PROVIDER_BODY } })),
       ],
     });
-    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
-    const failed = login.catch((error: unknown) => error as Error);
+    const error = await createChatGptDeviceCodeLogin({ fetch: provider.fetch })(
+      interaction().value,
+    ).catch((failure: unknown) => failure as Error);
 
-    await vi.advanceTimersByTimeAsync(0);
-
-    const error = await failed;
-    expect(error.message).toContain("status 400");
+    expect(error.message).toContain("status 400): access_denied");
     expect(error.message).not.toContain(PROVIDER_BODY);
     expect(provider.count("poll")).toBe(1);
+  });
+
+  it("keeps waiting when a response body is cut off mid-read", async () => {
+    const cutOff = () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError("terminated"));
+          },
+        }),
+      );
+    const provider = fakeProvider({ poll: [cutOff(), approved()] });
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await expect(login).resolves.toMatchObject({ accountId: "acct-1" });
+    expect(provider.count("poll")).toBe(2);
   });
 
   it("slows down when the provider asks", async () => {
@@ -157,7 +173,7 @@ describe("ChatGPT device-code sign-in", () => {
     );
     const rejected = expect(login).rejects.toThrow("Sign-in cancelled.");
 
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(provider.count("poll")).toBe(1));
     controller.abort(new Error("Sign-in cancelled."));
     await rejected;
     await vi.advanceTimersByTimeAsync(60_000);

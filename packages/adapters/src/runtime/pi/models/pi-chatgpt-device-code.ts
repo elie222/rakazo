@@ -4,6 +4,7 @@ import {
   deadlineSignal,
   isRetryableError,
   pollUntil,
+  ResponseBodyTooLargeError,
   readBoundedJsonResponse,
   retry,
 } from "@rakazo/core";
@@ -36,7 +37,8 @@ export class SignInHttpError extends Error {
     readonly status: number,
     readonly code?: string,
   ) {
-    super(`Device sign-in ${step} failed (status ${status}).`);
+    // The code is the provider's fixed OAuth error name, never free text from its response.
+    super(`Device sign-in ${step} failed (status ${status})${code ? `: ${code}` : ""}.`);
     this.name = "SignInHttpError";
   }
 }
@@ -97,6 +99,10 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
         );
       } catch (error) {
         signal.throwIfAborted();
+        // A body cut off mid-read is a dropped connection; malformed JSON is the provider's answer.
+        if (!(error instanceof SyntaxError) && !(error instanceof ResponseBodyTooLargeError)) {
+          throw new SignInNetworkError("read", { cause: error });
+        }
         throw new Error("Device sign-in returned an unreadable response.", { cause: error });
       }
     };
