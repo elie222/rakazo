@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ComputerMode, ThinkingLevel } from "@rakazo/contracts";
+import type { ComputerMode, ThinkingLevel, UserDeviceSummary } from "@rakazo/contracts";
 import {
   BOT_COMPUTER_MODES,
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -354,6 +354,60 @@ export function WorkspacePathRow({
         <Trans>The bot's commands and files start here. Leave empty for the default folder.</Trans>
       </p>
       {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Which of the owner's paired computers this bot reaches: theirs by name, or whichever is
+ * connected. Hidden while the account has none and the bot is bound to none.
+ */
+export function DeviceRow({
+  id,
+  value,
+  devices,
+  boundName,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  /** The bound device id, null for any connected computer. */
+  value: string | null;
+  devices: readonly UserDeviceSummary[];
+  /** The bound device's saved name, used when it is not in `devices`. */
+  boundName?: string;
+  disabled?: boolean;
+  onChange: (deviceId: string | null) => void;
+}) {
+  const { t } = useLingui();
+  const options = [
+    { value: "", label: t`Any connected computer` },
+    ...devices.map((device) => ({
+      value: device.deviceId,
+      label: device.connected ? device.name : t`${device.name} (offline)`,
+    })),
+  ];
+  if (value && !devices.some((device) => device.deviceId === value))
+    options.push({
+      value,
+      label: boundName ? t`${boundName} (offline)` : t`Unavailable computer`,
+    });
+  return (
+    <div className="flex min-h-12 items-center justify-between gap-3 py-2 text-body">
+      <label htmlFor={id} className="text-foreground">
+        <Trans>Your computer</Trans>
+      </label>
+      <OptionSelect
+        id={id}
+        data-testid="bot-host-device"
+        aria-label={t`Your computer`}
+        value={value ?? ""}
+        disabled={disabled}
+        onValueChange={(next) => {
+          if (next !== (value ?? "")) onChange(next || null);
+        }}
+        options={options}
+      />
     </div>
   );
 }

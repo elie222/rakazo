@@ -16,7 +16,11 @@ import {
 
 const environment = { platform: "darwin", home: "/Users/fake", shell: "/bin/zsh" };
 
-function setup(execute: (signal: AbortSignal) => AsyncIterable<unknown>, secrets: string[] = []) {
+function setup(
+  execute: (signal: AbortSignal) => AsyncIterable<unknown>,
+  secrets: string[] = [],
+  pinnedDeviceId?: string,
+) {
   const controller = new AbortController();
   const requests: HostComputerRequest[] = [];
   const signals: AbortSignal[] = [];
@@ -43,7 +47,7 @@ function setup(execute: (signal: AbortSignal) => AsyncIterable<unknown>, secrets
     deps: { userDevices: gateway },
     bot: { id: "bot-1" },
     runId: "run-1",
-    source: { userComputerOwner: "user-1" },
+    source: { userComputerOwner: "user-1", userComputerDeviceId: pinnedDeviceId },
     context: { signal: controller.signal },
     secrets,
   } as unknown as RunContext;
@@ -291,5 +295,63 @@ describe("explicit computer targeting", () => {
     expect(ctx.deps.userDevices!.list).toHaveBeenCalledWith("user-1");
     ctx.source.userComputerOwner = undefined;
     expect(await userComputerList(ctx, call({}))).toHaveProperty("error");
+  });
+});
+
+describe("a bot bound to one computer", () => {
+  it("reaches only that computer, even when no id is named", async () => {
+    const { ctx, call, deviceIds } = setup(
+      async function* () {
+        yield { type: "exit", code: 0 };
+      },
+      [],
+      "device-9",
+    );
+    const connected = vi.fn(async (owner: string, id?: string) => ({
+      deviceId: id ?? "other",
+      name: "Desk PC",
+      platform: "linux",
+    }));
+    ctx.deps.userDevices!.connected = connected;
+    await userComputerShell(ctx, call({ command: "pwd" }));
+    expect(connected).toHaveBeenCalledWith("user-1", "device-9");
+    expect(deviceIds).toEqual(["device-9", "device-9", "device-9"]);
+  });
+
+  it.each([userComputerShell, userComputerObserve, userComputerAct])(
+    "refuses another named computer without reaching it",
+    async (tool) => {
+      const { ctx, call, requests } = setup(async function* () {}, [], "device-9");
+      const connected = vi.fn(async () => ({
+        deviceId: "device-2",
+        name: "Other",
+        platform: "darwin",
+      }));
+      ctx.deps.userDevices!.connected = connected;
+      const result = await tool(
+        ctx,
+        call({
+          command: "pwd",
+          app: "Notes",
+          actions: [{ kind: "wait", ms: 1 }],
+          computerId: "device-2",
+        }),
+      );
+      expect(result).toMatchObject({ error: expect.stringContaining("selected computer") });
+      expect(connected).not.toHaveBeenCalled();
+      expect(requests).toEqual([]);
+    },
+  );
+
+  it("lists only the bound computer", async () => {
+    const { ctx, call } = setup(async function* () {}, [], "d2");
+    ctx.deps.userDevices!.list = vi.fn(async () => [
+      { deviceId: "d1", name: "Laptop", connected: true },
+      { deviceId: "d2", name: "Desk PC", connected: true },
+      { deviceId: "d3", name: "Offline PC", connected: false },
+    ]);
+    expect(await userComputerList(ctx, call({}))).toEqual({
+      computers: [{ computerId: "d2", name: "Desk PC", bound: false }],
+    });
   });
 });

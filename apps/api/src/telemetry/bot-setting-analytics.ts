@@ -23,6 +23,7 @@ const SETTINGS: Partial<Record<Field, AnalyticsBotSetting>> = {
   fleetManagement: "fleet_management",
   replyMode: "reply_mode",
   disabledBuiltinTools: "tools",
+  hostDeviceId: "computer",
 };
 
 /** Settings an update actually changes; clients resend unchanged fields with every save. */

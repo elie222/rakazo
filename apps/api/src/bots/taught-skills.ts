@@ -157,7 +157,7 @@ async function ensureGraphicalComputer(
     }
     bot = await deps.prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
-      include: { thread: true, computer: true },
+      include: { thread: true, computer: true, hostDevice: true },
     });
   }
   if (!bot.computer?.providerRef || bot.computer.state !== "running") {
@@ -343,7 +343,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
     async start(actor: Actor, botId: string, goal: string): Promise<TaughtSkill> {
       let bot = await deps.prisma.bot.findFirst({
         where: { id: botId, spaceId: actor.spaceId },
-        include: { thread: true, computer: true },
+        include: { thread: true, computer: true, hostDevice: true },
       });
       if (!bot) throw new IsolationError();
       const alreadyRecording = await deps.prisma.taughtSkill.findFirst({

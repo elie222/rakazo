@@ -683,6 +683,15 @@ export default function BotSettingsScreen() {
                 onChangeText={setWorkspacePath}
               />
             </SettingsGroup>
+            {bot?.hostDevice ? (
+              <SettingsGroup>
+                <SettingsRow
+                  title={t`Your computer`}
+                  value={bot.hostDevice.name}
+                  accessibilityLabel={t`Your computer`}
+                />
+              </SettingsGroup>
+            ) : null}
             {changed?.readAloud || deviceVoiceEnabled ? (
               <SettingsGroup label={t`Voice`}>
                 {changed?.readAloud ? (

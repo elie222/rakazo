@@ -67,6 +67,11 @@ loopback server.
 Using apps on screen works on Mac and Windows; on a Mac, allow Rakazo under **Accessibility** and
 **Screen Recording** in System Settings.
 
+When your account has more than one computer paired, a bot's **Your computer** setting (on its
+**Computer** tab, next to **Own computer**) picks which one that bot uses; leave it on
+**Any connected computer** to use whichever connects first. A bot bound to a computer that is
+offline waits for it rather than switching to another.
+
 In every [approval mode](./approvals.md), a bot asks before it first uses each app in a space, and
 on a connected server before its first command there too, unless a Block rule refuses it. **Allow
 in this space** covers the rest of that space, in any chat. Bots use your apps only in chats you

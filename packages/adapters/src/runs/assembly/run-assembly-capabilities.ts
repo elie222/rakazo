@@ -586,13 +586,20 @@ export async function resolveRunCapabilities(
     deps.userDevices &&
     !disabledBuiltinTools.has(USER_COMPUTER_SHELL_TOOL)
   ) {
-    const device = await deps.userDevices.connected(userComputerOwnerId).catch(() => null);
+    const pinnedDeviceId = bot.hostDeviceId ?? undefined;
+    const device = await deps.userDevices
+      .connected(userComputerOwnerId, pinnedDeviceId)
+      .catch(() => null);
     if (device) {
       userComputer = "connected";
       userComputerShell = !device.screenOnly;
       // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
-      const computers = await deps.userDevices.list(userComputerOwnerId);
-      userComputerScreen = [device, ...computers.filter((computer) => computer.connected)].some(
+      const computers = pinnedDeviceId
+        ? [device]
+        : await deps.userDevices
+            .list(userComputerOwnerId)
+            .then((listed) => [device, ...listed.filter((computer) => computer.connected)]);
+      userComputerScreen = computers.some(
         (computer) => computer.platform === "darwin" || computer.platform === "win32",
       );
     } else userComputer = "offline";

@@ -74,6 +74,9 @@ const COMPUTER_COMMAND_HISTORY_EVENTS = 200;
 export function computerRoutes(ctx: RouterContext) {
   const { deps, repos, taughtSkills, authed } = ctx;
   return {
+    devices: authed.devices.handler(async ({ context }) => ({
+      devices: (await deps.userDevices?.list(context.actor.userId)) ?? [],
+    })),
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
         computerStatus(deps, context.actor, input.botId),

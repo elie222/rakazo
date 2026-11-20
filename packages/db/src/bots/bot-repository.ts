@@ -92,6 +92,7 @@ function mapBot(
     updatedAt: Date;
     thread: { id: string; reads: Array<{ unread: boolean; snoozedUntil: Date | null }> } | null;
     computer: { scope: string } | null;
+    hostDevice?: { id: string; userId: string; name: string; platform: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
     modelProvider?: string | null;
@@ -140,6 +141,14 @@ function mapBot(
     status,
     runErrorId,
     computerMode: bot.computer ? parseComputerMode(bot.computer.scope) : "team",
+    hostDevice: bot.hostDevice
+      ? {
+          id: bot.hostDevice.id,
+          name: bot.hostDevice.name,
+          platform: bot.hostDevice.platform,
+          ownerUserId: bot.hostDevice.userId,
+        }
+      : null,
     createdAt: bot.createdAt.toISOString(),
     updatedAt: updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
@@ -367,6 +376,7 @@ export function createRepos(
             thread: { include: { reads: readStateFor(actor.userId) } },
             runs: activeRunSelection,
             computer: { select: { scope: true } },
+            hostDevice: true,
           },
           orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
         }),
@@ -421,7 +431,7 @@ export function createRepos(
           spaceId: actor.spaceId,
           ...(options.includeArchived ? {} : { archivedAt: null }),
         },
-        include: { thread: true, computer: true },
+        include: { thread: true, computer: true, hostDevice: true },
       });
       if (!bot) throw new IsolationError();
       return bot;
@@ -451,6 +461,7 @@ export function createRepos(
         thinkingLevel?: string | null;
         disabledBuiltinTools?: string[];
         workspacePath?: string | null;
+        hostDeviceId?: string | null;
         initialMessage?: {
           role: "user" | "bot" | "system";
           blocks: MessageBlock[];
@@ -563,6 +574,7 @@ export function createRepos(
               thinkingLevel,
               disabledBuiltinTools,
               ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
+              ...(input.hostDeviceId ? { hostDeviceId: input.hostDeviceId } : {}),
             },
           });
           const thread = await tx.thread.create({

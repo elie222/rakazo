@@ -208,6 +208,7 @@ export async function createRunContext(
       callClientNonce: callClientNonceForRun,
       peerMessage,
       userComputerOwner: userComputerOwnerId,
+      userComputerDeviceId: userComputerOwnerId ? (bot.hostDeviceId ?? undefined) : undefined,
     },
     computer: {
       stored: storedComputer,

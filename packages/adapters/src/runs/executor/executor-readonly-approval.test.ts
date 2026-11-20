@@ -4188,7 +4188,7 @@ describe("user_computer_shell", () => {
       expect(f.instructions()).toContain(line);
       expect(f.instructions()).not.toContain(offlineLine);
     }
-    expect(gateway.connected).toHaveBeenCalledWith("user-1");
+    expect(gateway.connected).toHaveBeenCalledWith("user-1", undefined);
   });
 
   it.each([

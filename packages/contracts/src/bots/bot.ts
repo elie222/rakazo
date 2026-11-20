@@ -56,6 +56,11 @@ export const BotSchema = z.object({
   threadStatus: z.string().optional(),
   runErrorId: Id.nullable().default(null),
   computerMode: ComputerModeSchema,
+  /** The paired computer this bot's tools reach, from its owner's account; null uses any. */
+  hostDevice: z
+    .object({ id: Id, name: z.string(), platform: z.string(), ownerUserId: Id })
+    .nullable()
+    .default(null),
   updatedAt: z.string(),
   createdAt: z.string(),
   voiceId: z.string().nullable(),
@@ -170,6 +175,8 @@ export const UpdateBotInput = z
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
     /** Set the bot's workspace folder; null restores the default. */
     workspacePath: BotWorkspacePathSchema.nullable().optional(),
+    /** A paired computer of the bot owner's account; null reaches whichever connects first. */
+    hostDeviceId: Id.nullable().optional(),
     teamChatAmbientEnabled: z.boolean().optional(),
     teamChatRules: z.string().max(TEAM_CHAT_RULES_MAX_LENGTH).optional(),
     crossSpaceCommunication: z.boolean().optional(),

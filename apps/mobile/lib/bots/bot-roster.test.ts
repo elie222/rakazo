@@ -37,6 +37,7 @@ function bot(id = "bot-1"): Bot {
     replyMode: "chat",
     disabledBuiltinTools: [],
     workspacePath: null,
+    hostDevice: null,
     webhookConfigured: false,
     spawnKey: null,
   };

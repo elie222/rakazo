@@ -547,6 +547,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const userDevices = userDeviceHub
     ? new UserDevices({ prisma, forwardSecret: userDeviceSecret, hub: userDeviceHub })
     : undefined;
+  // What runs reach: the deployment's own host computer plus paired devices, or a test override.
+  const effectiveUserDevices =
+    userDevicesOverride ??
+    withHostComputerScreen(userDevices, {
+      prisma,
+      sandboxKind: env.sandboxProvider,
+      url: env.sandboxOptions.hostComputerUrl,
+      token: env.sandboxOptions.hostComputerToken,
+    });
   const deviceSessions = {
     prisma,
     devices: userDevices ?? new UserDevices({ prisma, forwardSecret: userDeviceSecret }),
@@ -748,14 +757,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         ? (id: string) => messagingInstallations.isActive(id)
         : undefined,
       cloudAgent,
-      userDevices:
-        userDevicesOverride ??
-        withHostComputerScreen(userDevices, {
-          prisma,
-          sandboxKind: env.sandboxProvider,
-          url: env.sandboxOptions.hostComputerUrl,
-          token: env.sandboxOptions.hostComputerToken,
-        }),
+      userDevices: effectiveUserDevices,
       paymentWallet,
       web,
       stoppingSignal: shutdown.signal,
@@ -875,6 +877,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     pluginMarketplaceRead,
     cloudAgent,
     userCloudAgents,
+    userDevices: effectiveUserDevices,
     paymentWallet,
     codexCatalog,
     prisma,

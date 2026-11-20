@@ -1,5 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
+import { userDeviceListSchema } from "../account/user-devices.js";
 import { Id } from "../ids.js";
 import { botId } from "../rpc/inputs.js";
 import {
@@ -13,6 +14,8 @@ import {
 import { ComputerCommandSchema } from "./computer-command.js";
 
 export const computersRpc = {
+  /** The signed-in account's paired computers, for picking one a bot may use. */
+  devices: oc.output(userDeviceListSchema),
   /** Admin choice of where new computers run, with that provider's connection settings. */
   computerProvider: {
     get: oc.output(ComputerProviderSettingsSchema),

@@ -270,6 +270,8 @@ export interface RunSource {
   peerMessage: Awaited<ReturnType<typeof loadBotMessageContext>>;
   /** Whose own computer user_computer_shell may reach (see userComputerOwner). */
   userComputerOwner: string | undefined;
+  /** The paired computer the bot is pinned to; unset reaches whichever connects first. */
+  userComputerDeviceId: string | undefined;
 }
 
 export interface RunTools {

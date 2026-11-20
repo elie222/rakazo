@@ -145,8 +145,13 @@ async function lastValue<T>(values: AsyncIterable<T>): Promise<T> {
 async function connectedUserComputer(ctx: RunContext, computerId?: string) {
   const owner = ctx.source.userComputerOwner;
   const devices = ctx.deps.userDevices;
+  const pinned = ctx.source.userComputerDeviceId;
+  // A bot bound to one computer never reaches another, even when a call names one.
+  if (pinned && computerId && computerId !== pinned) return undefined;
   const device =
-    owner && devices ? await devices.connected(owner, computerId).catch(() => null) : null;
+    owner && devices
+      ? await devices.connected(owner, pinned ?? computerId).catch(() => null)
+      : null;
   return owner && devices && device ? { owner, devices, deviceId: device.deviceId } : undefined;
 }
 
@@ -163,9 +168,10 @@ function requestedComputer(args: Record<string, unknown>): { computerId?: string
 export async function userComputerList(ctx: RunContext, call: ToolCall) {
   const owner = ctx.source.userComputerOwner;
   const devices = ctx.deps.userDevices;
+  const pinned = ctx.source.userComputerDeviceId;
   if (!owner || !devices) return call.finish({ error: USER_COMPUTER_UNAVAILABLE });
   const computers = (await devices.list(owner))
-    .filter((device) => device.connected)
+    .filter((device) => device.connected && (!pinned || device.deviceId === pinned))
     .map((device) => ({
       computerId: device.deviceId,
       name: device.name,

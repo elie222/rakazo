@@ -110,6 +110,7 @@ function fakeBot(id: string, name: string): Bot {
     fleetManagement: false,
     replyMode: "chat",
     workspacePath: null,
+    hostDevice: null,
     spawnKey: null,
   };
 }

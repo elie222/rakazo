@@ -32,6 +32,7 @@ import type {
   RemoteConnectorDependencies,
   TicketChangeNotifier,
   UserCloudAgents,
+  UserDeviceGateway,
   verifyModelServesAgents,
   WorkActivities,
 } from "@rakazo/adapters";
@@ -84,6 +85,8 @@ export interface RouterDeps {
   analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
   userCloudAgents?: UserCloudAgents;
+  /** The signed-in person's paired computers; absent when nothing pairs one. */
+  userDevices?: UserDeviceGateway;
   /** The deployment's wallet provider; absent hides purchases. */
   paymentWallet?: PaymentWalletProvider | null;
   prisma: PrismaClient;

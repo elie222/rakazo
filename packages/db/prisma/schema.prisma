@@ -249,6 +249,7 @@ model UserDevice {
   /// Who revoked it: "owner", "device" or "session" (its sign-in ended). Null when unknown.
   revokedBy   String?
   connections UserDeviceConnection[]
+  boundBots   Bot[]                  @relation("BotHostDevice")
 
   @@index([userId, revokedAt])
   @@map("user_devices")
@@ -1028,6 +1029,10 @@ model Bot {
   computerId        String?
   computer          Computer?         @relation(fields: [computerId], references: [id], onDelete: SetNull)
   computerSwitching Boolean           @default(false)
+  /// The paired computer this bot's own tools reach, from its owner's account; null uses
+  /// whichever one connects first.
+  hostDeviceId      String?
+  hostDevice        UserDevice?       @relation("BotHostDevice", fields: [hostDeviceId], references: [id], onDelete: SetNull)
   /// The bot's own folder on its computer; null uses the default (bots/<id> on a Team Computer,
   /// the home root on a private one).
   workspacePath     String?

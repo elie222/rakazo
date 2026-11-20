@@ -384,6 +384,7 @@ export function botsRoutes(ctx: RouterContext) {
       ),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
+        const sourceHostDevice = source.hostDevice;
         const duplicate = await repos.createBot(context.actor, {
           name: duplicateBotName(source.name),
           description: source.description,
@@ -398,6 +399,13 @@ export function botsRoutes(ctx: RouterContext) {
           disabledBuiltinTools: source.disabledBuiltinTools,
           replyMode: source.replyMode,
           workspacePath: source.workspacePath,
+          // The paired computer belongs to an account; a duplicate reaches it only from there.
+          hostDeviceId:
+            sourceHostDevice &&
+            sourceHostDevice.userId === context.actor.userId &&
+            !sourceHostDevice.revokedAt
+              ? sourceHostDevice.id
+              : undefined,
         });
         const assignments = await deps.prisma.botMcpServer.findMany({
           where: {
@@ -426,6 +434,17 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
+        if (input.hostDeviceId) {
+          const device = await deps.prisma.userDevice.findFirst({
+            where: { id: input.hostDeviceId, userId: existing.userId, revokedAt: null },
+            select: { id: true },
+          });
+          if (!device)
+            throw new ClientError(
+              "BAD_REQUEST",
+              "That computer is not paired to this bot's owner.",
+            );
+        }
         if (input.sectionId) {
           const section = await deps.prisma.botSection.findFirst({
             where: {
@@ -504,6 +523,7 @@ export function botsRoutes(ctx: RouterContext) {
               ? { disabledBuiltinTools: input.disabledBuiltinTools }
               : {}),
             ...(input.workspacePath !== undefined ? { workspacePath: input.workspacePath } : {}),
+            ...(input.hostDeviceId !== undefined ? { hostDeviceId: input.hostDeviceId } : {}),
           },
         }).catch((error) => {
           if (input.expectedSettings && isRecordNotFound(error))
