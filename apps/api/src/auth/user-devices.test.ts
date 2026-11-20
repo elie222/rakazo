@@ -221,11 +221,35 @@ describe("device pairing", () => {
     const body = { name: "Laptop", platform: "darwin", pairingKey: "b".repeat(64) };
     expect((await pair("user-1", { body, session: "desktop" })).status).toBe(201);
     expect((await pair("user-2", { body, session: "desktop" })).status).toBe(201);
-    expect((await pair("user-1", { body, session: "other" })).status).toBe(201);
+    expect((await pair("user-1", { body, session: "other" })).status).toBe(401);
+    expect(
+      (await pair("user-1", { body: { ...body, pairingKey: "c".repeat(64) }, session: "other" }))
+        .status,
+    ).toBe(201);
     rows[0]!.revokedAt = new Date();
     expect((await pair("user-1", { body, session: "desktop" })).status).toBe(409);
     expect(new Set(rows.map((row) => row.tokenHash)).size).toBe(3);
   });
+
+  it.each([1, 10])(
+    "recovers a lost response after session replacement with %i active devices",
+    async (count) => {
+      const { pair, rows, store } = setup();
+      const body = { name: "Laptop", platform: "darwin", pairingKey: "e".repeat(64) };
+      const first = await (await pair("user-1", { body, session: "original" })).json();
+      for (let index = 1; index < count; index += 1) await pair("user-1");
+      await endUserDeviceSession(
+        store,
+        { id: "original", userId: "user-1" },
+        { id: "replacement" },
+      );
+      const recovered = await pair("user-1", { body, session: "replacement" });
+      expect(recovered.status).toBe(201);
+      expect(await recovered.json()).toEqual(first);
+      expect(rows).toHaveLength(count);
+      expect((await pair("user-1", { body, session: "unrelated" })).status).toBe(401);
+    },
+  );
 
   it("rejects malformed retry credentials", async () => {
     const { pair, rows } = setup();

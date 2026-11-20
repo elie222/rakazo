@@ -147,7 +147,7 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
     if (!input.success) return c.json({ error: "Invalid device" }, 400);
     const token = input.data.pairingKey
       ? createHmac("sha256", deps.pairingSecret)
-          .update(JSON.stringify(["user-device-pair:v1", userId, sessionId, input.data.pairingKey]))
+          .update(JSON.stringify(["user-device-pair:v1", userId, input.data.pairingKey]))
           .digest("hex")
       : createUserDeviceToken();
     const tokenHash = hashUserDeviceToken(token);
@@ -158,12 +158,9 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
         await lockOwner(tx, userId, "user-devices");
         const existing = await tx.userDevice.findUnique({ where: { tokenHash } });
         if (existing) {
-          if (
-            existing.userId !== userId ||
-            existing.sessionId !== sessionId ||
-            existing.revokedAt !== null
-          )
-            return null;
+          if (existing.revokedAt !== null) return null;
+          if (existing.userId !== userId || existing.sessionId !== sessionId)
+            return { sessionMismatch: true };
           return { id: existing.id, reused: true };
         }
         const active = await tx.userDevice.count({ where: { userId, revokedAt: null } });
@@ -181,6 +178,7 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
       }),
     );
     if (!device) return c.json({ error: "Remove a computer before adding another" }, 409);
+    if ("sessionMismatch" in device) return c.json({ error: "Unauthorized" }, 401);
     if (!("reused" in device))
       await recordSecurityEvent({
         type: "device.paired",

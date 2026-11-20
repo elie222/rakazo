@@ -555,6 +555,26 @@ describe("remote computer access", () => {
     expect(clients).toHaveLength(1);
   });
 
+  it("starts a fresh pairing after the server refuses recovery by another sign-in", async () => {
+    const keys: string[] = [];
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
+      keys.push(JSON.parse(init!.body as string).pairingKey);
+      if (keys.length === 1) throw new Error("response lost");
+      if (keys.length === 2) return new Response(null, { status: 401 });
+      return Response.json({ deviceId: "device-1", token: "server-token" });
+    });
+    const { access, clients } = setup({ fetch });
+    await access.select(other);
+    await access.pair();
+    await access.pair();
+    await access.pair();
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
+    expect(clients).toHaveLength(1);
+  });
+
   it("never pairs without secure storage", async () => {
     const { access, requests } = setup({ cipher: { ...cipher, available: async () => false } });
     await access.select(origin);

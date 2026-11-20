@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EmailEmulator, FakeSandboxProvider } from "@rakazo/adapters";
+import { EmailEmulator, FakeSandboxProvider, USER_DEVICE_LIMIT } from "@rakazo/adapters";
 import { USER_DEVICE_PAIR_PATH, USER_DEVICE_PATH } from "@rakazo/contracts";
 import { runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -65,11 +65,11 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
   }
 
   /** What the desktop app does with the window's sign-in. */
-  async function pair(cookie: string) {
+  async function pair(cookie: string, pairingKey?: string) {
     const response = await handles.app.request(USER_DEVICE_PAIR_PATH, {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ name: "Desktop", platform: "darwin" }),
+      body: JSON.stringify({ name: "Desktop", platform: "darwin", pairingKey }),
     });
     expect(response.status).toBe(201);
     return (await response.json()) as { deviceId: string; token: string; userId: string };
@@ -139,6 +139,33 @@ describe.skipIf(!databaseUrl)("paired computers end with the sign-in that paired
     );
     expect(sessions.map((session) => session.id)).toContain(moved.sessionId);
   });
+
+  it.each([1, USER_DEVICE_LIMIT])(
+    "recovers a lost pairing after a password change with %i active devices",
+    async (count) => {
+      const owner = await newAccount();
+      const desktop = await owner.signIn();
+      const pairingKey = "f".repeat(64);
+      const first = await pair(desktop, pairingKey);
+      for (let index = 1; index < count; index += 1) await pair(desktop);
+      const changed = await auth(
+        "/change-password",
+        {
+          currentPassword: owner.password,
+          newPassword: "test-password-456",
+          revokeOtherSessions: true,
+        },
+        desktop,
+      );
+      const replacement = sessionCookieHeader(changed);
+      expect(replacement).not.toBe("");
+      expect(await pair(replacement, pairingKey)).toEqual(first);
+      const devices = await runAsSystem("count paired computers after password change", () =>
+        handles.prisma.userDevice.count({ where: { userId: first.userId, revokedAt: null } }),
+      );
+      expect(devices).toBe(count);
+    },
+  );
 
   it("a password reset ends every paired computer, including one paired before sessions were recorded", async () => {
     const owner = await newAccount();
