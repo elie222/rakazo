@@ -131,6 +131,11 @@ export interface ComputerRef {
   started?: boolean;
   /** Size the provider confirmed for this running machine. */
   size?: ComputerSize;
+  /**
+   * Size to start the machine at when a call finds it stopped and wakes it. A running machine
+   * keeps the size it has, and without one a woken machine keeps it too.
+   */
+  startSize?: ComputerSize;
 }
 
 export type WorkspaceDirectoryRequest =
@@ -1752,6 +1757,13 @@ export interface AutoReviewRequest {
    * instruction.
    */
   savedContextWrite?: boolean;
+  /**
+   * A command, page action or desktop input on the bot's own computer after the run took in
+   * outside content. `userTask` is then only the owner's own words; `args` is bounded by the
+   * caller, a browser action names the page it acts on, and a long command keeps every address
+   * it names.
+   */
+  ownComputerAction?: boolean;
   /**
    * The owner's own earlier messages in this chat, oldest first, before `userTask`: never a tool
    * result or anyone else's message. Redacted and capped by the caller.

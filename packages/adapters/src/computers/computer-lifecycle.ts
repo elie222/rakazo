@@ -279,6 +279,7 @@ export async function provisionComputer(
     }
   }
   const homePath = resolveAgentHomePath(deps.home, existing.homeKey, deps.dataDir ?? "./data");
+  const size = await planComputerSize(deps.prisma, computerId);
 
   // Re-provisioning a live computer enters booting and revokes its screen URLs.
   // A provider-confirmed live reference needs setup, not a new lifecycle claim.
@@ -288,7 +289,7 @@ export async function provisionComputer(
     !existing.restorePending &&
     deps.sandbox.isRunning
   ) {
-    const ref = toComputerRef(existing);
+    const ref: ComputerRef = { ...toComputerRef(existing), startSize: size };
     const checking = performance.now();
     const running = await confirmedRunning(deps.sandbox, ref, context);
     providerReadyMs += performance.now() - checking;
@@ -339,7 +340,6 @@ export async function provisionComputer(
   const startKind = (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? existing.kind;
   if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
     throw new SandboxAllowanceUsedError();
-  const size = await planComputerSize(deps.prisma, computerId);
 
   // If we first observe abandoned "booting", remember that stamp before waiting. A concurrent
   // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait
@@ -674,7 +674,7 @@ export async function provisionComputer(
       existing.state === "running" ? "gone" : "reconciled",
     );
     logProvisioned(ref, replacement ? "create" : ref.started ? "resume" : "reuse");
-    return ref;
+    return { ...ref, startSize: size };
   } catch (error) {
     log.warn("computer.provision_failed", {
       provider: existing.kind,

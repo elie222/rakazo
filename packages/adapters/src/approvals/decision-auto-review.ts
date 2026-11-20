@@ -17,15 +17,14 @@ import {
 } from "./auto-review.js";
 import {
   autoReviewDecisionQuestion,
-  MAX_OWNER_WORDS_CHARS,
+  reviewTaskMaxChars,
   truncateReviewText,
 } from "./auto-review.prompt.js";
 import { passConfidenceFloor, passProbability } from "./decision-models.js";
 import type { DecisionCalibration } from "./model-descriptor.js";
 
-const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v8";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v9";
 
 /** A decision model's verdict and, when it answered, its probability that the action may pass. */
 export interface DecisionVerdict {
@@ -70,10 +69,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             toolName: request.toolName,
             connectorKind: request.connectorKind,
             args: request.args,
-            userTask: truncateReviewText(
-              request.userTask,
-              request.newSite || request.savedContextWrite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
-            ),
+            userTask: truncateReviewText(request.userTask, reviewTaskMaxChars(request)),
             botDescription: truncateReviewText(request.botDescription, MAX_BOT_CHARS),
             matchingRules: request.matchingRules.map((rule) => ({
               effect: rule.effect,
@@ -82,6 +78,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             })),
             ...(request.newSite ? { newSite: true } : {}),
             ...(request.savedContextWrite ? { savedContextWrite: true } : {}),
+            ...(request.ownComputerAction ? { ownComputerAction: true } : {}),
             ...(request.ownerMessages?.length
               ? { ownerEarlierMessages: request.ownerMessages }
               : {}),
