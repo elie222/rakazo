@@ -70,13 +70,15 @@ export async function reviewToolCall(
     // A new site, a write that outlives the run (a memory or skill save, a routine, the bot's own
     // instructions), or an action on the bot's own computer after outside content, is judged on the
     // owner's own words only: the task prompt of a webhook or bot-started run carries text someone
-    // else wrote, which must not authorize a write that later runs with the owner's trust.
+    // else wrote, which must not authorize a write that later runs with the owner's trust. A new
+    // bot's intro run keeps its task, the product's own prompt, which can set its first instructions.
     const ownerWordsOnly =
       Boolean(newSiteUrl) ||
       review.ownComputerAction ||
-      Boolean(
-        lastingWriteKind({ toolName: name, args, savedContextWrite: review.savedContextWrite }),
-      );
+      (run.trigger !== "created" &&
+        Boolean(
+          lastingWriteKind({ toolName: name, args, savedContextWrite: review.savedContextWrite }),
+        ));
     const reviewArgs = newSiteUrl
       ? { url: redactSecrets(newSiteUrl, ctx.secrets) }
       : review.ownComputerAction

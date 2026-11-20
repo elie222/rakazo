@@ -1750,6 +1750,11 @@ describe("own instructions through update_bot", () => {
       expect(f.instructionState.instructionHistory).toHaveLength(1);
     },
   );
+  it("judges a new bot's first instructions on its intro run's own prompt", async () => {
+    const f = emptyBot({ trigger: "created", autoReview: true, prompt: "You were just created." });
+    await f.run();
+    expect(reviewMock.mock.calls[0]?.[0]).toMatchObject({ userTask: "You were just created." });
+  });
   it("sets them after outside content entered the run, once Auto Review passes them", async () => {
     const f = emptyBot({ autoReview: true });
     f.claimedOutsideSteering(true);

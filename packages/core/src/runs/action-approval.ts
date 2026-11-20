@@ -387,11 +387,14 @@ export function lastingWriteKind(input: {
     (Boolean(input.args.prompt) || Boolean(input.args.on))
   )
     return "routine";
-  // A blank value leaves the instructions as they are, as the update itself treats it.
+  // A blank value leaves the instructions as they are, as the update itself treats it, and a paged
+  // read (an offset) only returns the settings.
   if (
     input.toolName === "update_bot" &&
     typeof input.args.instructions === "string" &&
-    input.args.instructions.trim()
+    input.args.instructions.trim() &&
+    input.args.instructions_offset === undefined &&
+    input.args.instructionsOffset === undefined
   )
     return "instructions";
   return undefined;
