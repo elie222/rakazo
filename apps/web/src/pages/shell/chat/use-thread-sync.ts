@@ -373,7 +373,15 @@ export function useThreadSync({
       updateSnapshot((prev) => prependThreadMessagePage(prev, page));
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (!element) return;
+        // The saved row and height belong to this history and this particular viewport.
+        if (
+          !element ||
+          element !== scrollElement ||
+          epoch !== historyEpoch.current ||
+          activeBotId.current !== targetBotId ||
+          activeGroupId.current !== targetGroupId
+        )
+          return;
         element.scrollTop +=
           anchorRow?.isConnected && anchorTop !== null
             ? anchorRow.offsetTop - anchorTop
