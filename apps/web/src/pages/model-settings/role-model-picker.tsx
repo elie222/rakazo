@@ -93,7 +93,8 @@ export function RoleModelPicker({
     ...groups.flatMap(([, entries]) => entries.map(optionValue)),
     ...matchingProviders.map((provider) => `connect:${provider.id}:${provider.baseUrl ?? ""}`),
   ];
-  // A pinned model is the one on its connection; otherwise the first row of that model.
+  // The model in use is the row with the same connection or credit offering; no connection
+  // matches only a row with none, so an included model never marks someone's own connection.
   const currentValue = current
     ? values.find((value) =>
         options.some(
@@ -101,7 +102,7 @@ export function RoleModelPicker({
             optionValue(option) === value &&
             option.provider === current.provider &&
             option.id === current.modelId &&
-            (!current.credentialId || option.credentialId === current.credentialId) &&
+            option.credentialId === current.credentialId &&
             option.creditOfferingId === current.creditOfferingId,
         ),
       )

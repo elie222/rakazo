@@ -209,3 +209,40 @@ it("moves the active row to the first match when searching", async () => {
   await type("newest");
   expect(rowState()).toEqual([["Newest", "false", "true"]]);
 });
+
+it("does not mark or pick a connection of your own when the included model is in use", async () => {
+  const onPick = vi.fn();
+  await act(async () =>
+    root.render(
+      <RoleModelPicker
+        trigger={<button type="button">Choose</button>}
+        label="Choose"
+        options={[
+          {
+            id: "included",
+            label: "Own",
+            provider: "fixture",
+            providerName: "Fixture",
+            billing: "",
+            credentialId: "cred-1",
+          },
+          ...currentModels.slice(0, 1),
+        ]}
+        providers={[]}
+        defaultOption={{ label: "Included" }}
+        current={{ provider: "fixture", modelId: "included" }}
+        onPick={onPick}
+        onConnect={() => {}}
+      />,
+    ),
+  );
+  await click("Choose");
+  expect(document.querySelector('[data-checked="true"]')).toBeNull();
+  expect(rowState().some(([text]) => text === "Own")).toBe(false);
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>("[cmdk-root]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onPick).toHaveBeenCalledWith(null);
+});
