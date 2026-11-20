@@ -1,10 +1,9 @@
 import { deadlineSignal, withAbort } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
+import type { StatusLineWriter } from "./status-lines.js";
 
 /** How long showing one status may take before later ones go ahead without it. */
 const SHOW_TIMEOUT_MS = 5_000;
-
-import type { StatusLineWriter } from "./status-lines.js";
 
 export type LiveStatusLines = {
   /**
