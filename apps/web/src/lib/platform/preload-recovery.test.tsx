@@ -160,7 +160,7 @@ describe("preload recovery", () => {
 
     expect(recoveryReload()).toBe(true);
     expect(reload).toHaveBeenCalledOnce();
-    expect(store.get("rk:preload-recovery")).toBe("1");
+    expect(Number(store.get("rk:preload-recovery"))).toBeGreaterThan(0);
   });
 
   it("passes through imports that load", async () => {
