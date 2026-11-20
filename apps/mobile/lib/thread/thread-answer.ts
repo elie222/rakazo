@@ -1,6 +1,6 @@
 import type { LoginFieldInput, RpcInput } from "@rakazo/contracts";
 import { newClientId } from "@rakazo/core";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { MobileMessage } from "../api/mobile-types";
 import { hapticSuccess } from "../native/haptics";
 

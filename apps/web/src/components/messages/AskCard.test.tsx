@@ -474,7 +474,7 @@ it("sends a typed answer from an option card through onTypeAnswer and keeps opti
   expect(onAnswer).not.toHaveBeenCalled();
   // The card keeps its options, dimmed and unselected, like a typed chat reply does.
   expect(button("AParis")!.disabled).toBe(true);
-  expect(button("AParis")!.hasAttribute("aria-pressed")).toBe(false);
+  expect(button("AParis")!.getAttribute("aria-pressed")).toBe("false");
   expect(button("BLondon")!.disabled).toBe(true);
   expect(button("Type your answer")).toBeUndefined();
   expect(container.querySelector('input[aria-label="Answer"]')).toBeNull();
