@@ -80,6 +80,11 @@ msgstr "{0} (נמחק)"
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (עד {ATTACHMENT_MAX_COUNT} קבצים מצורפים)"
 
+#. placeholder {0}: device.name
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "{0} (offline)"
+msgstr "{0} (לא מקוון)"
+
 #. placeholder {0}: file.name
 #. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
 #: apps/web/src/pages/shell/composer/use-composer-actions.ts
@@ -232,6 +237,10 @@ msgstr "{botCount, plural, one {למחוק את {name} ואת הבוט שלו?} 
 #: apps/web/src/pages/shell/computers/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "המחשב של {botName}"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "{boundName} (offline)"
+msgstr "{boundName} (לא מקוון)"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{calls} calls, {tokens} tokens"
@@ -915,6 +924,14 @@ msgstr "כלי אחד"
 msgid "1 unread"
 msgstr "1 לא נקראה"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "100K"
+msgstr "100K"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "200K"
+msgstr "200K"
+
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "3 hours"
@@ -975,6 +992,7 @@ msgid "About {label}"
 msgstr "על {label}"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
 msgid "About you"
 msgstr "עליך"
 
@@ -1417,7 +1435,7 @@ msgstr "לאפשר"
 msgid "Allow {name} on mobile"
 msgstr "לאפשר את {name} בנייד"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "לאפשר תקשורת בין בוטים ממרחבים שונים"
@@ -1439,6 +1457,10 @@ msgstr "יש לאפשר גישה למיקרופון כדי להכתיב."
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Allow once"
 msgstr "אישור חד-פעמי"
+
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Allow plain-HTTP endpoints"
+msgstr "אפשר קצוות HTTP ללא הצפנה"
 
 #: apps/web/src/lib/calls/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
@@ -1599,6 +1621,10 @@ msgstr "Anthropic API"
 msgid "Anthropic Messages"
 msgstr "Anthropic Messages"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Any connected computer"
+msgstr "כל מחשב מחובר"
+
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr "כל מודל, עם מפתח משלך"
@@ -1681,6 +1707,11 @@ msgstr "החלה"
 msgid "Approval boundaries"
 msgstr "גבולות אישור"
 
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Approval mode"
+msgstr "מצב אישור"
+
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Approval model"
@@ -1761,7 +1792,9 @@ msgid "Artifacts"
 msgstr "תוצרים"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Ask"
 msgstr "לשאול"
 
@@ -1856,9 +1889,16 @@ msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "יש לתת הרשאה לשרת הזה כדי שסוכנים יוכלו להשתמש בכלים שלו. ייפתח חלון קופץ."
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Auto"
 msgstr "אוטומטי"
+
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Auto needs an approval model; until one is set, this bot asks."
+msgstr "המצב האוטומטי דורש מודל אישור; עד שיוגדר אחד, הבוט הזה שואל."
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/meeting-calendar.tsx
@@ -1871,6 +1911,11 @@ msgstr "הצטרפות אוטומטית"
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "Automated senders"
 msgstr "שולחים אוטומטיים"
+
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Automatic (default)"
+msgstr "אוטומטי (ברירת מחדל)"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Available after saving"
@@ -1937,6 +1982,15 @@ msgstr "חזרה לפגישות"
 msgid "Back to sign in"
 msgstr "חזרה להתחברות"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Background tasks this bot can run at the same time. 3 by default."
+msgstr "משימות רקע שהבוט הזה יכול להריץ בו־זמנית. 3 כברירת מחדל."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Background work"
+msgstr "עבודת רקע"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Base URL"
 msgstr "Base URL"
@@ -1964,6 +2018,14 @@ msgstr "Bearer"
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Between chats the bot tidies its memory from your own words."
+msgstr "בין צ'אטים, הבוט מסדר את הזיכרון שלו לפי המילים שלך."
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Between conversations, the bot rewrites its notes from your own words."
+msgstr "בין שיחות, הבוט כותב מחדש את ההערות שלו לפי המילים שלך."
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2417,6 +2479,11 @@ msgstr "שינוי תוכנית"
 msgid "Change server"
 msgstr "החלפת שרת"
 
+#. placeholder {0}: dream.changedPaths.join(", ")
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Changed: {0}"
+msgstr "שונה: {0}"
+
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "משנה…"
@@ -2833,6 +2900,11 @@ msgstr "תקשורת"
 msgid "Compact"
 msgstr "צפוף"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Compact conversation"
+msgstr "דחס שיחה"
+
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Complete"
@@ -2900,6 +2972,10 @@ msgstr "מודל לשימוש במחשב"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Computer-use model…"
 msgstr "מודל לשימוש במחשב…"
+
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Computer, needs attention"
+msgstr "המחשב דורש תשומת לב"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -3196,6 +3272,11 @@ msgstr "המשך עם מפתח גישה"
 msgid "Control"
 msgstr "Control"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-conversation-settings.tsx
+msgid "Conversation"
+msgstr "שיחה"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Conversations"
@@ -3224,7 +3305,7 @@ msgstr "שיחות, שמות, זיכרונות, חיפושים ומזהי בוט
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Copied"
 msgstr "הועתק"
 
@@ -3242,7 +3323,7 @@ msgid "Copy"
 msgstr "העתקה"
 
 #. placeholder {0}: state.artifact.name
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Copy {0}"
 msgstr "העתקת {0}"
 
@@ -3767,6 +3848,10 @@ msgstr "לא ניתן לטעון הודעות קודמות"
 msgid "Could not load earlier versions"
 msgstr "לא ניתן לטעון גרסאות קודמות"
 
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Could not load files"
+msgstr "לא ניתן היה לטעון קבצים"
+
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
 msgstr "לא ניתן לטעון את הקבוצה"
@@ -3864,7 +3949,7 @@ msgid "Could not load the log."
 msgstr "לא ניתן לטעון את יומן הפעילות."
 
 #: apps/mobile/app/artifact.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Could not load this artifact."
 msgstr "לא ניתן לטעון את התוצר הזה."
 
@@ -4120,6 +4205,7 @@ msgstr "לא ניתן להריץ את הרוטינה"
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-conversation-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/use-chat-snooze.ts
@@ -4132,6 +4218,10 @@ msgstr "השמירה נכשלה"
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Could not save {0}"
 msgstr "לא ניתן לשמור את {0}"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Could not save agent settings"
+msgstr "לא ניתן היה לשמור את הגדרות הסוכן"
 
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
@@ -4209,6 +4299,10 @@ msgstr "לא ניתן לשמור את פרטי הגישה"
 #: apps/mobile/lib/inbox/use-inbox.ts
 msgid "Could not save the default space"
 msgstr "לא ניתן לשמור את מרחב ברירת המחדל"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Could not save the dream limit"
+msgstr "לא ניתן היה לשמור את מגבלת החלומות"
 
 #: apps/mobile/lib/api/api-server.ts
 msgid "Could not save the previous server session"
@@ -4301,6 +4395,10 @@ msgstr "לא ניתן להקריא"
 #: apps/mobile/lib/voice/voice.ts
 msgid "Could not speak that."
 msgstr "לא ניתן להקריא את זה."
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Could not start a dream"
+msgstr "לא ניתן היה להתחיל חלום"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not start MCP OAuth"
@@ -4458,6 +4556,10 @@ msgstr "לא ניתן לטעון את ההגשות"
 msgid "Couldn't load this page. Try again."
 msgstr "לא ניתן היה לטעון את הדף. נסו שוב."
 
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Couldn't load this setting"
+msgstr "לא ניתן היה לטעון הגדרה זו"
+
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "לא ניתן לטעון את הארנק"
@@ -4487,6 +4589,10 @@ msgstr "לא ניתן לעדכן את Labs"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "לא ניתן לעדכן את הגדרות ההודעות"
+
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Couldn't update this setting"
+msgstr "לא ניתן היה לעדכן הגדרה זו"
 
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -4644,6 +4750,11 @@ msgstr "סיסמה נוכחית"
 msgid "Current plan"
 msgstr "התוכנית הנוכחית"
 
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Custom amount"
+msgstr "כמות מותאמת"
+
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Custom connector"
 msgstr "חיבור מותאם"
@@ -4688,7 +4799,7 @@ msgstr "התאמת תמונת הבוט"
 msgid "Daily"
 msgstr "יומי"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "מעקב יומי אחר עבודה שלא הושלמה"
@@ -4748,6 +4859,7 @@ msgstr "נדחה"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -4982,7 +5094,10 @@ msgstr "נדחה"
 msgid "Deny"
 msgstr "דחייה"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 #: apps/web/src/pages/space/Board.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Description"
 msgstr "תיאור"
 
@@ -5005,6 +5120,7 @@ msgstr "עדכון לאפליקציית הדסקטופ"
 
 #: apps/mobile/components/thread/thread-error-notice.tsx
 #: apps/web/src/pages/routines/RoutineRunHistory.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Details"
 msgstr "פרטים"
@@ -5233,7 +5349,7 @@ msgstr "למטה"
 msgid "Downgrade at renewal"
 msgstr "שנמוך בחידוש"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Download"
 msgstr "הורדה"
@@ -5267,6 +5383,32 @@ msgstr "טיוטת מיומנות"
 msgid "Drag, drop, or paste an image"
 msgstr "אפשר לגרור, לשחרר או להדביק תמונה"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dream now"
+msgstr "חלום עכשיו"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dreaming now uses one model call."
+msgstr "לחלום עכשיו משתמש בקריאת מודל אחת."
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Dreaming uses one model call."
+msgstr "לחלום משתמש בקריאת מודל אחת."
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dreams"
+msgstr "חלומות"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Dreams kept"
+msgstr "חלומות שנשמרים"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Dreams per bot"
+msgstr "חלומות לכל בוט"
+
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Duplicate"
 msgstr "שכפול"
@@ -5274,6 +5416,11 @@ msgstr "שכפול"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Each name can be used once."
 msgstr "ניתן להשתמש בכל שם פעם אחת בלבד."
+
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Earlier"
+msgstr "מוקדם יותר"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/bot-profile.tsx
@@ -5285,6 +5432,7 @@ msgstr "ניתן להשתמש בכל שם פעם אחת בלבד."
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
 msgid "Edit"
 msgstr "עריכה"
 
@@ -5494,6 +5642,7 @@ msgstr "כל {n} {unit}"
 msgid "Every {n} hours at :{minute}"
 msgstr "כל {n} שעות בדקה {minute}"
 
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "כל הבוטים במרחב הזה קוראים את ההערות האלה ומעדכנים אותן."
@@ -5684,6 +5833,14 @@ msgstr "שדות להשוואה (אופציונלי)"
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "File"
 msgstr "קובץ"
+
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Files"
+msgstr "קבצים"
+
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Files {botName} makes and receives show here."
+msgstr "קבצים ש{botName} יוצר ומקבל מוצגים כאן."
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
@@ -5956,7 +6113,6 @@ msgstr "הקבוצה לא נמצאה"
 #: apps/mobile/app/group-settings.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
 #: apps/mobile/components/thread/header/thread-header-right.tsx
-#: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Group settings"
 msgstr "הגדרות קבוצה"
 
@@ -6096,6 +6252,10 @@ msgstr "גבוהה"
 msgid "High"
 msgstr "גבוה"
 
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "History"
+msgstr "היסטוריה"
+
 #: apps/web/src/pages/shell/composer/hold-to-talk.tsx
 msgid "Hold to talk"
 msgstr "לחיצה ארוכה לדיבור"
@@ -6137,15 +6297,14 @@ msgstr "מה גודל הצוות שלך?"
 msgid "How did you hear about us?"
 msgstr "איך שמעת עלינו?"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "How many dreams each bot keeps, from {MIN_DREAM_RETENTION} to {MAX_DREAM_RETENTION}. Older ones are deleted with their hidden chats."
+msgstr "כמה חלומות כל בוט שומר, מ־{MIN_DREAM_RETENTION} עד {MAX_DREAM_RETENTION}. ישנים יותר נמחקים יחד עם הצ'אטים המוסתרים שלהם."
+
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "How often"
 msgstr "תדירות"
-
-#: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
-msgid "How other bots see it"
-msgstr "איך בוטים אחרים רואים אותו"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -6343,6 +6502,10 @@ msgstr "הוראות לחדר הזה"
 msgid "Instructions updated"
 msgstr "ההנחיות עודכנו"
 
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+msgid "Instructions view"
+msgstr "תצוגת הוראות"
+
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Integration domain"
 msgstr "דומיין האינטגרציה"
@@ -6423,7 +6586,7 @@ msgstr "הוזמן"
 msgid "Isolated"
 msgstr "מבודד"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Isolated preview — no access to your account"
 msgstr "תצוגה מקדימה מבודדת — ללא גישה לחשבון"
 
@@ -6525,6 +6688,10 @@ msgstr "שמירת הזיכרונות"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "שמירת תוצאות כלים במלואן"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Keeps the latest 50 messages and summarizes older ones."
+msgstr "שומר את 50 ההודעות האחרונות ומסכם את הישנות יותר."
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -6637,6 +6804,10 @@ msgstr "שמאלה"
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "לאפשר לבוטים להשתמש במחשב הזה"
+
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Library"
+msgstr "ספרייה"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -6803,6 +6974,7 @@ msgstr "טוען ספקי קול…"
 #: apps/web/src/pages/settings/PeerMessagesOverlay.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 #: packages/i18n/src/computer-usage.ts
 msgid "Loading…"
@@ -6910,7 +7082,7 @@ msgstr "ניהול שרתי MCP"
 msgid "Manage model"
 msgstr "ניהול מודל"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Manage other bots"
 msgstr "ניהול בוטים אחרים"
@@ -6961,7 +7133,7 @@ msgstr "מקסימלי"
 msgid "Max"
 msgstr "מקסימלי"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Maximize"
 msgstr "הגדלה"
 
@@ -7060,13 +7232,20 @@ msgstr "חברים ({0})"
 msgid "Members ({count})"
 msgstr "חברים ({count})"
 
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Members can connect model servers that do not use TLS. API keys are sent to those servers unencrypted; only enable this on a trusted network."
+msgstr "חברים יכולים לחבר שרתי מודלים שאינם משתמשים ב־TLS. מפתחות API נשלחים לשרתים אלה ללא הצפנה; אפשר זאת רק ברשת מהימנה."
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+#: apps/web/src/pages/space/GroupPanel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Memory"
 msgstr "זיכרון"
@@ -7078,6 +7257,11 @@ msgstr "זיכרון {position}"
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "זיכרון עבור {title}"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Memory is off, so dreams are paused."
+msgstr "הזיכרון כבוי, לכן החלומות מושהים."
 
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
@@ -7426,6 +7610,11 @@ msgstr "יש לתת שם לרוטינה."
 msgid "Name your Bot"
 msgstr "שם לבוט"
 
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Near the limit"
+msgstr "קרוב למגבלה"
+
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
 msgstr "ממתין לתשובה"
@@ -7478,7 +7667,9 @@ msgid "Needs: {names}"
 msgstr "דורש: {names}"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Never ask"
 msgstr "לא לשאול אף פעם"
 
@@ -7673,6 +7864,27 @@ msgstr "אין בוטים תואמים"
 msgid "No computer hours used yet"
 msgstr "עדיין לא נוצלו שעות מחשב"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "No dreams yet"
+msgstr "אין עדיין חלומות"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "No dreams yet."
+msgstr "אין עדיין חלומות."
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "No history yet."
+msgstr "אין עדיין היסטוריה."
+
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+msgid "No instructions"
+msgstr "אין הוראות"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "No limit"
+msgstr "אין מגבלה"
+
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -7728,6 +7940,10 @@ msgstr "עדיין אין הודעות"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "No model catalog is available."
 msgstr "אין קטלוג מודלים זמין."
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "No notes match."
+msgstr "אין הערות תואמות."
 
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
@@ -8270,6 +8486,11 @@ msgstr "OTA {id}"
 msgid "OTA {id}, {date}"
 msgstr "OTA {id}, {date}"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Other bots read this when deciding whom to ask."
+msgstr "בוטים אחרים קוראים זאת כשהם מחליטים למי לפנות."
+
 #: packages/i18n/src/computer-usage.ts
 msgid "Other computers"
 msgstr "מחשבים אחרים"
@@ -8468,7 +8689,8 @@ msgstr "התשלום נכשל"
 msgid "Pending"
 msgstr "בהמתנה"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Permissions"
 msgstr "הרשאות"
 
@@ -8616,7 +8838,8 @@ msgstr "מכין תמליל…"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/pages/plugins/github-import.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview"
 msgstr "תצוגה מקדימה"
 
@@ -8625,7 +8848,7 @@ msgstr "תצוגה מקדימה"
 msgid "Preview {0}"
 msgstr "תצוגה מקדימה של {0}"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "תצוגה מקדימה אינה זמינה לסוג הקובץ הזה — אפשר להוריד אותו כדי לצפות בו."
 
@@ -8677,6 +8900,7 @@ msgstr "פרודוקטיביות"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Profile"
 msgstr "פרופיל"
 
@@ -8690,6 +8914,11 @@ msgstr "תוכנה: {name}"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Project ID"
 msgstr "מזהה פרויקט"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "projects/website"
+msgstr "projects/website"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
@@ -9344,6 +9573,7 @@ msgstr "הפעלה מחדש לעדכון"
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 #: apps/web/src/pages/shell/bots/instruction-settings.tsx
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Restore"
 msgstr "שחזור"
 
@@ -9642,6 +9872,10 @@ msgstr "שמירה"
 msgid "Save and sign in"
 msgstr "שמירה והתחברות"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Save limit"
+msgstr "מגבלת שמירה"
+
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
 msgstr "שמירת הגרסה שלי"
@@ -9822,6 +10056,10 @@ msgstr "חיפוש ב-integrations.sh"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
 msgstr "חיפוש „{query}” בשרתי MCP"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "Search memory"
+msgstr "חפש בזיכרון"
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -10029,6 +10267,7 @@ msgstr "הגדרה"
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: apps/web/src/pages/shell/shell-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
+#: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Settings"
 msgstr "הגדרות"
 
@@ -10126,6 +10365,7 @@ msgstr "שיתוף, כל מי שיש לו את הקישור יכול לצפות"
 msgid "Shared"
 msgstr "משותף"
 
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
 msgstr "זיכרון משותף"
@@ -10167,7 +10407,7 @@ msgstr "הצגת המפתח"
 msgid "Show keyboard"
 msgstr "הצגת המקלדת"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Show list"
 msgstr "הצגת רשימה"
 
@@ -10516,9 +10756,11 @@ msgid "Space created"
 msgstr "המרחב נוצר"
 
 #: apps/mobile/app/chat-model.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/mobile/lib/composer/composer-model.ts
 #: apps/mobile/lib/models/chat-model.ts
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 #: apps/web/src/pages/shell/composer/composer-model-picker.tsx
 msgid "Space default"
 msgstr "ברירת המחדל של המרחב"
@@ -10651,6 +10893,7 @@ msgid "Starting"
 msgstr "מתחיל"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/components/bots/bot-dreams-section.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/lib/chat/roster-status.ts
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -10784,6 +11027,22 @@ msgstr "סיכומים"
 msgid "Summaries and facts"
 msgstr "סיכומים ועובדות"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches 80% of the model's context window."
+msgstr "מסכם כאשר ההנחיה מגיעה ל־80% מחלון ההקשר של המודל."
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches half the model's context window."
+msgstr "מסכם כאשר ההנחיה מגיעה לחצי מחלון ההקשר של המודל."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Summarizes when the prompt reaches the chosen share of the model's context window."
+msgstr "מסכם כאשר ההנחיה מגיעה לחלק שנבחר מחלון ההקשר של המודל."
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches this many tokens."
+msgstr "מסכם כאשר ההנחיה מגיעה לכמות האסימונים הזו."
+
 #: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
 msgid "Sunday"
@@ -10881,6 +11140,15 @@ msgstr "הקשה לפתיחה"
 msgid "Target"
 msgstr "יעד"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Task limit"
+msgstr "מגבלת משימות"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Tasks at once"
+msgstr "משימות בו־זמנית"
+
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "לימוד משימה"
@@ -10962,6 +11230,11 @@ msgstr "בכתובת הזו חסר מארח"
 msgid "That voice isn't offered by this server, so it used {served} instead."
 msgstr "השרת הזה לא מציע את הקול הזה, לכן נעשה שימוש ב־{served} במקום."
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "The agent stops after this many tool calls in one turn. Empty means no limit."
+msgstr "הסוכן נעצר אחרי מספר זה של קריאות לכלים בסיבוב אחד. ריק פירושו ללא מגבלה."
+
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
@@ -10991,6 +11264,10 @@ msgstr "הבוט לא הצליח לענות כי הספק שלו הגיע למג
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "The bot's browser stays signed in for everyone in this space"
 msgstr "הדפדפן של הבוט נשאר מחובר לכל מי שבמרחב הזה"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "The bot's commands and files start here. Leave empty for the default folder."
+msgstr "הפקודות והקבצים של הבוט מתחילים כאן. השאר ריק לתיקיית ברירת המחדל."
 
 #: apps/web/src/lib/calls/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
@@ -11161,6 +11438,10 @@ msgstr "לא ניתן לקרוא את מפתח המאמת הזה."
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "לא ניתן לקרוא את הגיבוי הזה."
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "This bot"
+msgstr "הבוט הזה"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -11499,7 +11780,9 @@ msgstr "היום"
 msgid "Toggle sidebar"
 msgstr "הצגה או הסתרה של סרגל הצד"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Tokens"
 msgstr "טוקנים"
 
@@ -11527,6 +11810,11 @@ msgstr "הארגומנטים של הכלי חייבים להיות אובייק�
 #: apps/web/src/lib/routines/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "הארגומנטים של הכלי חייבים להיות JSON"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Tool calls per turn"
+msgstr "קריאות לכלים לכל סיבוב"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Tool name"
@@ -11729,8 +12017,13 @@ msgstr "יש להקליד תשובה"
 msgid "Unassigned"
 msgstr "ללא שיוך"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Unavailable computer"
+msgstr "מחשב לא זמין"
+
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
 msgid "Undo"
 msgstr "ביטול"
 
@@ -11968,6 +12261,25 @@ msgstr "שימוש בשרת מותאם"
 msgid "Use a found model"
 msgstr "שימוש במודל שנמצא"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a relative folder path without \"..\" segments."
+msgstr "השתמש בנתיב תיקייה יחסי ללא מקטעי \"..\"."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from {MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS} to {MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS}."
+msgstr "השתמש במספר שלם מ־{MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS} עד {MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS}."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from 1 to {MAX_CONCURRENT_HELPERS_LIMIT}."
+msgstr "השתמש במספר שלם מ־1 עד {MAX_CONCURRENT_HELPERS_LIMIT}."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from 1 to {MAX_TOOL_CALLS_PER_TURN_LIMIT}."
+msgstr "השתמש במספר שלם מ־1 עד {MAX_TOOL_CALLS_PER_TURN_LIMIT}."
+
 #: apps/mobile/lib/api/user-error.ts
 #: apps/web/src/lib/query/user-error.ts
 msgid "Use an account with the same email address"
@@ -11993,6 +12305,11 @@ msgstr "שימוש בברירות המחדל עבור {label}"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr "שימוש בבוט הזה"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Use its own memory"
+msgstr "השתמש בזיכרון משלו"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Use latest"
@@ -12023,6 +12340,11 @@ msgstr "לסיסמאות יש להשתמש בקלט מוגן."
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use Rakazo credits"
 msgstr "שימוש בקרדיטים של Rakazo"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Use shared notes"
+msgstr "השתמש בהערות משותפות"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
@@ -12059,6 +12381,10 @@ msgstr "שם משתמש"
 msgid "Uses files that are not imported"
 msgstr "משתמש בקבצים שלא מיובאים"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Uses one model call."
+msgstr "משתמש בקריאת מודל אחת."
+
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Uses paths on your computer"
@@ -12071,6 +12397,10 @@ msgstr "משתמש בפרטי הגישה של {hostCredentialSource} של השר
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Uses this server's own {source} credentials to access {provider}."
 msgstr "משתמש בפרטי הגישה של {source} בשרת הזה כדי לגשת אל {provider}."
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "Using {usedTokens} of {tokenCap} tokens."
+msgstr "נעשה שימוש ב־{usedTokens} מתוך {tokenCap} אסימונים."
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Using your API key"
@@ -12128,7 +12458,7 @@ msgstr "אימות והוספה"
 msgid "Verifying…"
 msgstr "מאמת…"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Version"
 msgstr "גרסה"
 
@@ -12306,6 +12636,14 @@ msgstr "מה הרוטינה הזו צריכה לעשות בכל הרצה?"
 msgid "What this bot is for"
 msgstr "למה הבוט הזה משמש"
 
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "What this bot learned about you. Tell it in the chat to change a note."
+msgstr "מה הבוט למד עליך. אמור לו בצ'אט כדי לשנות הערה."
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "What this note holds"
+msgstr "מה מכילה ההערה הזו"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "What to recall"
 msgstr "מה לשלוף"
@@ -12457,6 +12795,15 @@ msgstr "עובד עם המינוי שלך ל-ChatGPT או ל-Claude."
 msgid "Workspace"
 msgstr "סביבת עבודה"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Workspace folder"
+msgstr "תיקיית סביבת העבודה"
+
+#: apps/mobile/app/bot-settings.tsx
+msgid "Workspace folder must be a relative path without \"..\" segments."
+msgstr "תיקיית סביבת העבודה חייבת להיות נתיב יחסי ללא מקטעי \"..\"."
+
 #: apps/mobile/app/routine.tsx
 msgid "Write what this routine should do."
 msgstr "יש לכתוב מה הרוטינה הזו צריכה לעשות."
@@ -12556,6 +12903,11 @@ msgstr "הכרטיס שלך יחויב היום בהפרש היחסי."
 msgid "Your card was not charged"
 msgstr "הכרטיס שלך לא חויב"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Your computer"
+msgstr "המחשב שלך"
+
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
@@ -12595,6 +12947,10 @@ msgstr "ספק המודל"
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Your name"
 msgstr "שם"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Your name, timezone, important people and long-term preferences, shared by every bot in this space. Tell the bot to change them."
+msgstr "השם שלך, אזור הזמן, אנשים חשובים והעדפות ארוכות טווח, משותפים לכל בוט במרחב הזה. אמור לבוט לשנות אותם."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts

@@ -80,6 +80,11 @@ msgstr "{0}（已删除）"
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0}（最多 {ATTACHMENT_MAX_COUNT} 个附件）"
 
+#. placeholder {0}: device.name
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "{0} (offline)"
+msgstr "{0}（离线）"
+
 #. placeholder {0}: file.name
 #. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
 #: apps/web/src/pages/shell/composer/use-composer-actions.ts
@@ -232,6 +237,10 @@ msgstr "{botCount, plural, other {删除 {name} 及其 # 个 Bot？}}"
 #: apps/web/src/pages/shell/computers/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "{botName} 的电脑"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "{boundName} (offline)"
+msgstr "{boundName}（离线）"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{calls} calls, {tokens} tokens"
@@ -915,6 +924,14 @@ msgstr "1 个工具"
 msgid "1 unread"
 msgstr "1 条未读"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "100K"
+msgstr "100K"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "200K"
+msgstr "200K"
+
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "3 hours"
@@ -975,6 +992,7 @@ msgid "About {label}"
 msgstr "关于{label}"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
 msgid "About you"
 msgstr "关于你"
 
@@ -1417,7 +1435,7 @@ msgstr "允许"
 msgid "Allow {name} on mobile"
 msgstr "在手机上允许 {name}"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "允许跨空间 Bot 通信"
@@ -1439,6 +1457,10 @@ msgstr "允许访问麦克风以进行听写。"
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Allow once"
 msgstr "允许一次"
+
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Allow plain-HTTP endpoints"
+msgstr "允许明文 HTTP 端点"
 
 #: apps/web/src/lib/calls/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
@@ -1599,6 +1621,10 @@ msgstr "Anthropic API"
 msgid "Anthropic Messages"
 msgstr "Anthropic Messages"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Any connected computer"
+msgstr "任何已连接的电脑"
+
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr "任意模型，使用你自己的密钥"
@@ -1681,6 +1707,11 @@ msgstr "应用"
 msgid "Approval boundaries"
 msgstr "审批边界"
 
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Approval mode"
+msgstr "审批模式"
+
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Approval model"
@@ -1761,7 +1792,9 @@ msgid "Artifacts"
 msgstr "产物"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Ask"
 msgstr "询问"
 
@@ -1856,9 +1889,16 @@ msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "授权此服务器后，智能体才能使用其工具。将打开弹窗。"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Auto"
 msgstr "自动"
+
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Auto needs an approval model; until one is set, this bot asks."
+msgstr "自动模式需要一个审批模型；在设置之前，此机器人会询问。"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/meeting-calendar.tsx
@@ -1871,6 +1911,11 @@ msgstr "自动加入"
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "Automated senders"
 msgstr "自动发送者"
+
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Automatic (default)"
+msgstr "自动（默认）"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Available after saving"
@@ -1937,6 +1982,15 @@ msgstr "返回会议"
 msgid "Back to sign in"
 msgstr "返回登录"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Background tasks this bot can run at the same time. 3 by default."
+msgstr "此机器人可同时运行的后台任务数。默认为 3。"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Background work"
+msgstr "后台工作"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Base URL"
 msgstr "Base URL"
@@ -1964,6 +2018,14 @@ msgstr "Bearer"
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Between chats the bot tidies its memory from your own words."
+msgstr "在聊天之间，机器人会根据你自己的话整理记忆。"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Between conversations, the bot rewrites its notes from your own words."
+msgstr "在对话之间，机器人会根据你自己的话重写笔记。"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2417,6 +2479,11 @@ msgstr "更改方案"
 msgid "Change server"
 msgstr "更换服务器"
 
+#. placeholder {0}: dream.changedPaths.join(", ")
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Changed: {0}"
+msgstr "已更改：{0}"
+
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "正在修改…"
@@ -2833,6 +2900,11 @@ msgstr "沟通"
 msgid "Compact"
 msgstr "紧凑"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Compact conversation"
+msgstr "压缩对话"
+
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Complete"
@@ -2900,6 +2972,10 @@ msgstr "电脑操作模型"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Computer-use model…"
 msgstr "电脑操作模型…"
+
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Computer, needs attention"
+msgstr "电脑需要关注"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -3196,6 +3272,11 @@ msgstr "通过通行密钥继续"
 msgid "Control"
 msgstr "Ctrl"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-conversation-settings.tsx
+msgid "Conversation"
+msgstr "对话"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Conversations"
@@ -3224,7 +3305,7 @@ msgstr "对话、名称、记忆、搜索内容以及 Bot 和空间 ID 会被发
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Copied"
 msgstr "已复制"
 
@@ -3242,7 +3323,7 @@ msgid "Copy"
 msgstr "复制"
 
 #. placeholder {0}: state.artifact.name
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Copy {0}"
 msgstr "复制{0}"
 
@@ -3767,6 +3848,10 @@ msgstr "无法加载更早的消息"
 msgid "Could not load earlier versions"
 msgstr "无法加载更早的版本"
 
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Could not load files"
+msgstr "无法加载文件"
+
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
 msgstr "无法加载群组"
@@ -3864,7 +3949,7 @@ msgid "Could not load the log."
 msgstr "无法加载日志。"
 
 #: apps/mobile/app/artifact.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Could not load this artifact."
 msgstr "无法加载此产物。"
 
@@ -4120,6 +4205,7 @@ msgstr "无法运行例行任务"
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-conversation-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/use-chat-snooze.ts
@@ -4132,6 +4218,10 @@ msgstr "无法保存"
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Could not save {0}"
 msgstr "无法保存 {0}"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Could not save agent settings"
+msgstr "无法保存智能体设置"
 
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
@@ -4209,6 +4299,10 @@ msgstr "无法保存凭据"
 #: apps/mobile/lib/inbox/use-inbox.ts
 msgid "Could not save the default space"
 msgstr "无法保存默认空间"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Could not save the dream limit"
+msgstr "无法保存梦境保留上限"
 
 #: apps/mobile/lib/api/api-server.ts
 msgid "Could not save the previous server session"
@@ -4301,6 +4395,10 @@ msgstr "无法朗读"
 #: apps/mobile/lib/voice/voice.ts
 msgid "Could not speak that."
 msgstr "无法朗读。"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Could not start a dream"
+msgstr "无法开始梦境"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not start MCP OAuth"
@@ -4458,6 +4556,10 @@ msgstr "无法加载提交记录"
 msgid "Couldn't load this page. Try again."
 msgstr "无法加载此页面。请重试。"
 
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Couldn't load this setting"
+msgstr "无法加载此设置"
+
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "无法加载钱包"
@@ -4487,6 +4589,10 @@ msgstr "无法更新实验室"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "无法更新消息设置"
+
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Couldn't update this setting"
+msgstr "无法更新此设置"
 
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -4644,6 +4750,11 @@ msgstr "当前密码"
 msgid "Current plan"
 msgstr "当前方案"
 
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Custom amount"
+msgstr "自定义数量"
+
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Custom connector"
 msgstr "自定义连接器"
@@ -4688,7 +4799,7 @@ msgstr "自定义 Bot 头像"
 msgid "Daily"
 msgstr "每天"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "每天跟进未完成的工作"
@@ -4748,6 +4859,7 @@ msgstr "已拒绝"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -4982,7 +5094,10 @@ msgstr "已拒绝"
 msgid "Deny"
 msgstr "拒绝"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 #: apps/web/src/pages/space/Board.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Description"
 msgstr "描述"
 
@@ -5005,6 +5120,7 @@ msgstr "桌面更新"
 
 #: apps/mobile/components/thread/thread-error-notice.tsx
 #: apps/web/src/pages/routines/RoutineRunHistory.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Details"
 msgstr "详情"
@@ -5233,7 +5349,7 @@ msgstr "向下"
 msgid "Downgrade at renewal"
 msgstr "续订时降级"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Download"
 msgstr "下载"
@@ -5267,6 +5383,32 @@ msgstr "技能草稿"
 msgid "Drag, drop, or paste an image"
 msgstr "拖放或粘贴图片"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dream now"
+msgstr "立即做梦"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dreaming now uses one model call."
+msgstr "现在做梦会使用一次模型调用。"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Dreaming uses one model call."
+msgstr "做梦会使用一次模型调用。"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dreams"
+msgstr "梦境"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Dreams kept"
+msgstr "保留的梦境"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Dreams per bot"
+msgstr "每个机器人的梦境数"
+
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Duplicate"
 msgstr "复制"
@@ -5274,6 +5416,11 @@ msgstr "复制"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Each name can be used once."
 msgstr "每个名称只能使用一次。"
+
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Earlier"
+msgstr "更早之前"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/bot-profile.tsx
@@ -5285,6 +5432,7 @@ msgstr "每个名称只能使用一次。"
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
 msgid "Edit"
 msgstr "编辑"
 
@@ -5494,6 +5642,7 @@ msgstr "每{n}{unit}"
 msgid "Every {n} hours at :{minute}"
 msgstr "每{n}小时{minute}分"
 
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "此空间中的所有 Bot 都会读取并更新这些笔记。"
@@ -5684,6 +5833,14 @@ msgstr "要比较的字段（可选）"
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "File"
 msgstr "文件"
+
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Files"
+msgstr "文件"
+
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Files {botName} makes and receives show here."
+msgstr "{botName} 制作和收到的文件显示在这里。"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
@@ -5956,7 +6113,6 @@ msgstr "找不到群组"
 #: apps/mobile/app/group-settings.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
 #: apps/mobile/components/thread/header/thread-header-right.tsx
-#: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Group settings"
 msgstr "群组设置"
 
@@ -6096,6 +6252,10 @@ msgstr "高"
 msgid "High"
 msgstr "高"
 
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "History"
+msgstr "历史记录"
+
 #: apps/web/src/pages/shell/composer/hold-to-talk.tsx
 msgid "Hold to talk"
 msgstr "按住说话"
@@ -6137,15 +6297,14 @@ msgstr "你的团队有多大？"
 msgid "How did you hear about us?"
 msgstr "你是怎么知道我们的？"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "How many dreams each bot keeps, from {MIN_DREAM_RETENTION} to {MAX_DREAM_RETENTION}. Older ones are deleted with their hidden chats."
+msgstr "每个机器人保留的梦境数量，从 {MIN_DREAM_RETENTION} 到 {MAX_DREAM_RETENTION}。更早的梦境会连同隐藏聊天一起删除。"
+
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "How often"
 msgstr "频率"
-
-#: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
-msgid "How other bots see it"
-msgstr "其他 Bot 如何了解它"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -6343,6 +6502,10 @@ msgstr "此房间的指示"
 msgid "Instructions updated"
 msgstr "指令已更新"
 
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+msgid "Instructions view"
+msgstr "指令视图"
+
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Integration domain"
 msgstr "集成域名"
@@ -6423,7 +6586,7 @@ msgstr "已邀请"
 msgid "Isolated"
 msgstr "隔离"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Isolated preview — no access to your account"
 msgstr "隔离预览，访问不了你的账户"
 
@@ -6525,6 +6688,10 @@ msgstr "保留记忆"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "保留完整工具结果"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Keeps the latest 50 messages and summarizes older ones."
+msgstr "保留最近的 50 条消息，并将更早的进行摘要。"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -6637,6 +6804,10 @@ msgstr "向左"
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "允许 Bot 使用这台电脑"
+
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Library"
+msgstr "资料库"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -6803,6 +6974,7 @@ msgstr "正在加载语音提供商…"
 #: apps/web/src/pages/settings/PeerMessagesOverlay.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 #: packages/i18n/src/computer-usage.ts
 msgid "Loading…"
@@ -6910,7 +7082,7 @@ msgstr "管理 MCP 服务器"
 msgid "Manage model"
 msgstr "管理模型"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Manage other bots"
 msgstr "管理其他 Bot"
@@ -6961,7 +7133,7 @@ msgstr "最大"
 msgid "Max"
 msgstr "最高"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Maximize"
 msgstr "最大化"
 
@@ -7060,13 +7232,20 @@ msgstr "成员（{0}）"
 msgid "Members ({count})"
 msgstr "成员 ({count})"
 
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Members can connect model servers that do not use TLS. API keys are sent to those servers unencrypted; only enable this on a trusted network."
+msgstr "成员可连接不使用 TLS 的模型服务器。API 密钥会以未加密方式发送到这些服务器；仅在可信网络上启用此选项。"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+#: apps/web/src/pages/space/GroupPanel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Memory"
 msgstr "记忆"
@@ -7078,6 +7257,11 @@ msgstr "记忆 {position}"
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "{title} 的记忆"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Memory is off, so dreams are paused."
+msgstr "记忆已关闭，因此梦境已暂停。"
 
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
@@ -7426,6 +7610,11 @@ msgstr "为此例行任务命名。"
 msgid "Name your Bot"
 msgstr "给 Bot 命名"
 
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Near the limit"
+msgstr "接近上限"
+
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
 msgstr "等你回答"
@@ -7478,7 +7667,9 @@ msgid "Needs: {names}"
 msgstr "需要：{names}"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Never ask"
 msgstr "从不询问"
 
@@ -7673,6 +7864,27 @@ msgstr "没有匹配的 Bot"
 msgid "No computer hours used yet"
 msgstr "尚未使用电脑时长"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "No dreams yet"
+msgstr "还没有梦境"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "No dreams yet."
+msgstr "还没有梦境。"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "No history yet."
+msgstr "还没有历史记录。"
+
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+msgid "No instructions"
+msgstr "没有指令"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "No limit"
+msgstr "无限制"
+
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -7728,6 +7940,10 @@ msgstr "还没有消息"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "No model catalog is available."
 msgstr "没有可用的模型目录。"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "No notes match."
+msgstr "没有匹配的笔记。"
 
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
@@ -8270,6 +8486,11 @@ msgstr "OTA {id}"
 msgid "OTA {id}, {date}"
 msgstr "OTA {id}, {date}"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Other bots read this when deciding whom to ask."
+msgstr "其他机器人决定向谁求助时会读取此项。"
+
 #: packages/i18n/src/computer-usage.ts
 msgid "Other computers"
 msgstr "其他电脑"
@@ -8468,7 +8689,8 @@ msgstr "付款失败"
 msgid "Pending"
 msgstr "待处理"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Permissions"
 msgstr "权限"
 
@@ -8616,7 +8838,8 @@ msgstr "正在准备文字记录…"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/pages/plugins/github-import.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview"
 msgstr "预览"
 
@@ -8625,7 +8848,7 @@ msgstr "预览"
 msgid "Preview {0}"
 msgstr "预览 {0}"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "这种文件无法预览，请下载后查看。"
 
@@ -8677,6 +8900,7 @@ msgstr "效率"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Profile"
 msgstr "资料"
 
@@ -8690,6 +8914,11 @@ msgstr "程序：{name}"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Project ID"
 msgstr "项目 ID"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "projects/website"
+msgstr "projects/website"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
@@ -9344,6 +9573,7 @@ msgstr "重启后更新"
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 #: apps/web/src/pages/shell/bots/instruction-settings.tsx
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Restore"
 msgstr "恢复"
 
@@ -9642,6 +9872,10 @@ msgstr "保存"
 msgid "Save and sign in"
 msgstr "保存并登录"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Save limit"
+msgstr "保存上限"
+
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
 msgstr "保存我的版本"
@@ -9822,6 +10056,10 @@ msgstr "搜索 integrations.sh"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
 msgstr "在 MCP 服务器中搜索“{query}”"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "Search memory"
+msgstr "搜索记忆"
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -10029,6 +10267,7 @@ msgstr "设置"
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: apps/web/src/pages/shell/shell-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
+#: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Settings"
 msgstr "设置"
 
@@ -10126,6 +10365,7 @@ msgstr "共享，任何拥有链接的人都可查看"
 msgid "Shared"
 msgstr "共享"
 
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
 msgstr "共享记忆"
@@ -10167,7 +10407,7 @@ msgstr "显示密钥"
 msgid "Show keyboard"
 msgstr "显示键盘"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Show list"
 msgstr "显示列表"
 
@@ -10516,9 +10756,11 @@ msgid "Space created"
 msgstr "空间已创建"
 
 #: apps/mobile/app/chat-model.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/mobile/lib/composer/composer-model.ts
 #: apps/mobile/lib/models/chat-model.ts
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 #: apps/web/src/pages/shell/composer/composer-model-picker.tsx
 msgid "Space default"
 msgstr "空间默认"
@@ -10651,6 +10893,7 @@ msgid "Starting"
 msgstr "正在开始"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/components/bots/bot-dreams-section.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/lib/chat/roster-status.ts
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -10784,6 +11027,22 @@ msgstr "摘要"
 msgid "Summaries and facts"
 msgstr "摘要和事实"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches 80% of the model's context window."
+msgstr "当提示词达到模型上下文窗口的 80% 时进行摘要。"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches half the model's context window."
+msgstr "当提示词达到模型上下文窗口的一半时进行摘要。"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Summarizes when the prompt reaches the chosen share of the model's context window."
+msgstr "当提示词达到所选模型上下文窗口比例时进行摘要。"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches this many tokens."
+msgstr "当提示词达到此 token 数量时进行摘要。"
+
 #: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
 msgid "Sunday"
@@ -10881,6 +11140,15 @@ msgstr "点按打开"
 msgid "Target"
 msgstr "目标"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Task limit"
+msgstr "任务上限"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Tasks at once"
+msgstr "同时任务数"
+
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "示范任务"
@@ -10962,6 +11230,11 @@ msgstr "该地址缺少主机名"
 msgid "That voice isn't offered by this server, so it used {served} instead."
 msgstr "此服务器不提供该语音，因此改用了 {served}。"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "The agent stops after this many tool calls in one turn. Empty means no limit."
+msgstr "智能体在一轮中的工具调用达到此数量后停止。留空表示无限制。"
+
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
@@ -10991,6 +11264,10 @@ msgstr "Bot 无法回复，因为已达到其提供商的每周限额。"
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "The bot's browser stays signed in for everyone in this space"
 msgstr "Bot 的浏览器会对此空间的所有人保持登录"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "The bot's commands and files start here. Leave empty for the default folder."
+msgstr "机器人的指令和文件从这里开始。留空使用默认文件夹。"
 
 #: apps/web/src/lib/calls/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
@@ -11161,6 +11438,10 @@ msgstr "无法读取此验证器密钥。"
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "无法读取此备份。"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "This bot"
+msgstr "此机器人"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -11499,7 +11780,9 @@ msgstr "今天"
 msgid "Toggle sidebar"
 msgstr "显示或隐藏侧边栏"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Tokens"
 msgstr "Token"
 
@@ -11527,6 +11810,11 @@ msgstr "工具参数必须是 JSON 对象"
 #: apps/web/src/lib/routines/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "工具参数必须是 JSON"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Tool calls per turn"
+msgstr "每轮工具调用次数"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Tool name"
@@ -11729,8 +12017,13 @@ msgstr "输入你的回答"
 msgid "Unassigned"
 msgstr "未分配"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Unavailable computer"
+msgstr "不可用的电脑"
+
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
 msgid "Undo"
 msgstr "撤销"
 
@@ -11968,6 +12261,25 @@ msgstr "使用自定义服务器"
 msgid "Use a found model"
 msgstr "使用找到的模型"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a relative folder path without \"..\" segments."
+msgstr "使用不包含 \"..\" 段的相对文件夹路径。"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from {MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS} to {MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS}."
+msgstr "使用从 {MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS} 到 {MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS} 的整数。"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from 1 to {MAX_CONCURRENT_HELPERS_LIMIT}."
+msgstr "使用从 1 到 {MAX_CONCURRENT_HELPERS_LIMIT} 的整数。"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from 1 to {MAX_TOOL_CALLS_PER_TURN_LIMIT}."
+msgstr "使用从 1 到 {MAX_TOOL_CALLS_PER_TURN_LIMIT} 的整数。"
+
 #: apps/mobile/lib/api/user-error.ts
 #: apps/web/src/lib/query/user-error.ts
 msgid "Use an account with the same email address"
@@ -11993,6 +12305,11 @@ msgstr "{label}使用默认设置"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr "用于此 Bot"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Use its own memory"
+msgstr "使用自己的记忆"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Use latest"
@@ -12023,6 +12340,11 @@ msgstr "输入密码时请用受保护输入。"
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use Rakazo credits"
 msgstr "使用 Rakazo 额度"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Use shared notes"
+msgstr "使用共享笔记"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
@@ -12059,6 +12381,10 @@ msgstr "用户名"
 msgid "Uses files that are not imported"
 msgstr "使用未导入的文件"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Uses one model call."
+msgstr "使用一次模型调用。"
+
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Uses paths on your computer"
@@ -12071,6 +12397,10 @@ msgstr "使用此服务器自己的 {hostCredentialSource} 凭据访问 {selecte
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Uses this server's own {source} credentials to access {provider}."
 msgstr "使用此服务器自己的 {source} 凭据访问 {provider}。"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "Using {usedTokens} of {tokenCap} tokens."
+msgstr "使用了 {tokenCap} 个 token 中的 {usedTokens} 个。"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Using your API key"
@@ -12128,7 +12458,7 @@ msgstr "校验并添加"
 msgid "Verifying…"
 msgstr "正在校验…"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Version"
 msgstr "版本"
 
@@ -12306,6 +12636,14 @@ msgstr "每次运行时，这个例行任务应做什么？"
 msgid "What this bot is for"
 msgstr "这个 Bot 是做什么的"
 
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "What this bot learned about you. Tell it in the chat to change a note."
+msgstr "这个机器人对你了解到的情况。在聊天中告诉它即可更改笔记。"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "What this note holds"
+msgstr "此笔记存放的内容"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "What to recall"
 msgstr "读取内容"
@@ -12457,6 +12795,15 @@ msgstr "可使用你的 ChatGPT 或 Claude 套餐。"
 msgid "Workspace"
 msgstr "工作区"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Workspace folder"
+msgstr "工作区文件夹"
+
+#: apps/mobile/app/bot-settings.tsx
+msgid "Workspace folder must be a relative path without \"..\" segments."
+msgstr "工作区文件夹必须是相对路径，且不含 \"..\" 段。"
+
 #: apps/mobile/app/routine.tsx
 msgid "Write what this routine should do."
 msgstr "写下此例行任务要做的事。"
@@ -12556,6 +12903,11 @@ msgstr "今天将从你的卡中扣除按比例计算的差额。"
 msgid "Your card was not charged"
 msgstr "你的银行卡未被扣款"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Your computer"
+msgstr "你的电脑"
+
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
@@ -12595,6 +12947,10 @@ msgstr "你的模型提供商"
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Your name"
 msgstr "你的名字"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Your name, timezone, important people and long-term preferences, shared by every bot in this space. Tell the bot to change them."
+msgstr "你的姓名、时区、重要的人和长期偏好，由这个空间中的每个机器人共享。告诉机器人即可更改它们。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts

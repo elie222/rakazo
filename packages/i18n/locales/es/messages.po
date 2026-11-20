@@ -80,6 +80,11 @@ msgstr "{0} (eliminado)"
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (máx. {ATTACHMENT_MAX_COUNT} archivos adjuntos)"
 
+#. placeholder {0}: device.name
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "{0} (offline)"
+msgstr "{0} (sin conexión)"
+
 #. placeholder {0}: file.name
 #. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
 #: apps/web/src/pages/shell/composer/use-composer-actions.ts
@@ -232,6 +237,10 @@ msgstr "{botCount, plural, one {¿Eliminar {name} y su # bot?} other {¿Eliminar
 #: apps/web/src/pages/shell/computers/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "Computadora de {botName}"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "{boundName} (offline)"
+msgstr "{boundName} (sin conexión)"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{calls} calls, {tokens} tokens"
@@ -915,6 +924,14 @@ msgstr "1 herramienta"
 msgid "1 unread"
 msgstr "1 sin leer"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "100K"
+msgstr "100K"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "200K"
+msgstr "200K"
+
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "3 hours"
@@ -975,6 +992,7 @@ msgid "About {label}"
 msgstr "Acerca de {label}"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
 msgid "About you"
 msgstr "Sobre ti"
 
@@ -1417,7 +1435,7 @@ msgstr "Permitir"
 msgid "Allow {name} on mobile"
 msgstr "Permitir {name} en la app móvil"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "Permitir la comunicación entre bots de distintos espacios"
@@ -1439,6 +1457,10 @@ msgstr "Permite el acceso al micrófono para dictar."
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Allow once"
 msgstr "Permitir una vez"
+
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Allow plain-HTTP endpoints"
+msgstr "Permitir endpoints HTTP sin cifrar"
 
 #: apps/web/src/lib/calls/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
@@ -1599,6 +1621,10 @@ msgstr "API de Anthropic"
 msgid "Anthropic Messages"
 msgstr "Anthropic Messages"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Any connected computer"
+msgstr "Cualquier computadora conectada"
+
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr "Cualquier modelo, con tu propia clave"
@@ -1681,6 +1707,11 @@ msgstr "Aplicar"
 msgid "Approval boundaries"
 msgstr "Límites de aprobación"
 
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Approval mode"
+msgstr "Modo de aprobación"
+
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Approval model"
@@ -1761,7 +1792,9 @@ msgid "Artifacts"
 msgstr "Artefactos"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Ask"
 msgstr "Preguntar"
 
@@ -1856,9 +1889,16 @@ msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "Autoriza este servidor para que tus agentes usen sus herramientas. Se abre una ventana emergente."
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Auto"
 msgstr "Auto"
+
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Auto needs an approval model; until one is set, this bot asks."
+msgstr "El modo automático necesita un modelo de aprobación; hasta que se configure uno, este bot pregunta."
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/meeting-calendar.tsx
@@ -1871,6 +1911,11 @@ msgstr "Unirse automáticamente"
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "Automated senders"
 msgstr "Remitentes automáticos"
+
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Automatic (default)"
+msgstr "Automático (predeterminado)"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Available after saving"
@@ -1937,6 +1982,15 @@ msgstr "Volver a las reuniones"
 msgid "Back to sign in"
 msgstr "Volver a iniciar sesión"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Background tasks this bot can run at the same time. 3 by default."
+msgstr "Tareas en segundo plano que este bot puede ejecutar a la vez. 3 por defecto."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Background work"
+msgstr "Trabajo en segundo plano"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Base URL"
 msgstr "URL base"
@@ -1964,6 +2018,14 @@ msgstr "Bearer"
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Token Bearer"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Between chats the bot tidies its memory from your own words."
+msgstr "Entre chats, el bot ordena su memoria a partir de tus propias palabras."
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Between conversations, the bot rewrites its notes from your own words."
+msgstr "Entre conversaciones, el bot reescribe sus notas a partir de tus propias palabras."
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2417,6 +2479,11 @@ msgstr "Cambiar de plan"
 msgid "Change server"
 msgstr "Cambiar servidor"
 
+#. placeholder {0}: dream.changedPaths.join(", ")
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Changed: {0}"
+msgstr "Cambiado: {0}"
+
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "Cambiando…"
@@ -2833,6 +2900,11 @@ msgstr "Comunicación"
 msgid "Compact"
 msgstr "Compacta"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Compact conversation"
+msgstr "Compactar conversación"
+
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Complete"
@@ -2900,6 +2972,10 @@ msgstr "Modelo para usar el ordenador"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Computer-use model…"
 msgstr "Modelo para usar la computadora…"
+
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Computer, needs attention"
+msgstr "Computadora necesita atención"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -3196,6 +3272,11 @@ msgstr "Continuar con llave de acceso"
 msgid "Control"
 msgstr "Control"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-conversation-settings.tsx
+msgid "Conversation"
+msgstr "Conversación"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Conversations"
@@ -3224,7 +3305,7 @@ msgstr "Las conversaciones, los nombres, las memorias, las búsquedas y los ID d
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Copied"
 msgstr "Copiado"
 
@@ -3242,7 +3323,7 @@ msgid "Copy"
 msgstr "Copiar"
 
 #. placeholder {0}: state.artifact.name
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Copy {0}"
 msgstr "Copiar {0}"
 
@@ -3767,6 +3848,10 @@ msgstr "No se pudieron cargar los mensajes anteriores"
 msgid "Could not load earlier versions"
 msgstr "No se pudieron cargar las versiones anteriores"
 
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Could not load files"
+msgstr "No se pudieron cargar los archivos"
+
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
 msgstr "No se pudo cargar el grupo"
@@ -3864,7 +3949,7 @@ msgid "Could not load the log."
 msgstr "No se pudo cargar el registro."
 
 #: apps/mobile/app/artifact.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Could not load this artifact."
 msgstr "No se pudo cargar este artefacto."
 
@@ -4120,6 +4205,7 @@ msgstr "No se pudo ejecutar la rutina"
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-conversation-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/use-chat-snooze.ts
@@ -4132,6 +4218,10 @@ msgstr "No se pudo guardar"
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Could not save {0}"
 msgstr "No se pudo guardar {0}"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Could not save agent settings"
+msgstr "No se pudieron guardar los ajustes del agente"
 
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
@@ -4209,6 +4299,10 @@ msgstr "No se pudo guardar la credencial"
 #: apps/mobile/lib/inbox/use-inbox.ts
 msgid "Could not save the default space"
 msgstr "No se pudo guardar el espacio predeterminado"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Could not save the dream limit"
+msgstr "No se pudo guardar el límite de sueños"
 
 #: apps/mobile/lib/api/api-server.ts
 msgid "Could not save the previous server session"
@@ -4301,6 +4395,10 @@ msgstr "No se pudo leer en voz alta"
 #: apps/mobile/lib/voice/voice.ts
 msgid "Could not speak that."
 msgstr "No se pudo decir eso en voz alta."
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Could not start a dream"
+msgstr "No se pudo iniciar un sueño"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not start MCP OAuth"
@@ -4458,6 +4556,10 @@ msgstr "No se pudieron cargar los envíos"
 msgid "Couldn't load this page. Try again."
 msgstr "No se pudo cargar esta página. Inténtalo de nuevo."
 
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Couldn't load this setting"
+msgstr "No se pudo cargar este ajuste"
+
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "No se pudo cargar tu billetera"
@@ -4487,6 +4589,10 @@ msgstr "No se pudo actualizar Labs"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "No se pudo actualizar la configuración de mensajería"
+
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Couldn't update this setting"
+msgstr "No se pudo actualizar este ajuste"
 
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -4644,6 +4750,11 @@ msgstr "Contraseña actual"
 msgid "Current plan"
 msgstr "Plan actual"
 
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Custom amount"
+msgstr "Cantidad personalizada"
+
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Custom connector"
 msgstr "Conector personalizado"
@@ -4688,7 +4799,7 @@ msgstr "Personalizar avatar del bot"
 msgid "Daily"
 msgstr "Diario"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "Seguimiento diario del trabajo pendiente"
@@ -4748,6 +4859,7 @@ msgstr "Rechazado"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -4982,7 +5094,10 @@ msgstr "Denegado"
 msgid "Deny"
 msgstr "Denegar"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 #: apps/web/src/pages/space/Board.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Description"
 msgstr "Descripción"
 
@@ -5005,6 +5120,7 @@ msgstr "Actualización de escritorio"
 
 #: apps/mobile/components/thread/thread-error-notice.tsx
 #: apps/web/src/pages/routines/RoutineRunHistory.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Details"
 msgstr "Detalles"
@@ -5233,7 +5349,7 @@ msgstr "Abajo"
 msgid "Downgrade at renewal"
 msgstr "Reducir al renovar"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Download"
 msgstr "Descargar"
@@ -5267,6 +5383,32 @@ msgstr "Habilidad en borrador"
 msgid "Drag, drop, or paste an image"
 msgstr "Arrastra, suelta o pega una imagen"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dream now"
+msgstr "Soñar ahora"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dreaming now uses one model call."
+msgstr "Soñar ahora usa una llamada de modelo."
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Dreaming uses one model call."
+msgstr "Soñar usa una llamada de modelo."
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dreams"
+msgstr "Sueños"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Dreams kept"
+msgstr "Sueños conservados"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Dreams per bot"
+msgstr "Sueños por bot"
+
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Duplicate"
 msgstr "Duplicar"
@@ -5274,6 +5416,11 @@ msgstr "Duplicar"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Each name can be used once."
 msgstr "Cada nombre solo se puede usar una vez."
+
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Earlier"
+msgstr "Antes"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/bot-profile.tsx
@@ -5285,6 +5432,7 @@ msgstr "Cada nombre solo se puede usar una vez."
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
 msgid "Edit"
 msgstr "Editar"
 
@@ -5494,6 +5642,7 @@ msgstr "cada {n} {unit}"
 msgid "Every {n} hours at :{minute}"
 msgstr "Cada {n} horas en el minuto :{minute}"
 
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "Todos los bots de este espacio leen estas notas y las mantienen al día."
@@ -5684,6 +5833,14 @@ msgstr "Campos para comparar (opcional)"
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "File"
 msgstr "Archivo"
+
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Files"
+msgstr "Archivos"
+
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Files {botName} makes and receives show here."
+msgstr "Los archivos que {botName} crea y recibe se muestran aquí."
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
@@ -5956,7 +6113,6 @@ msgstr "No se encontró el grupo"
 #: apps/mobile/app/group-settings.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
 #: apps/mobile/components/thread/header/thread-header-right.tsx
-#: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Group settings"
 msgstr "Configuración del grupo"
 
@@ -6096,6 +6252,10 @@ msgstr "Alto"
 msgid "High"
 msgstr "Alto"
 
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "History"
+msgstr "Historial"
+
 #: apps/web/src/pages/shell/composer/hold-to-talk.tsx
 msgid "Hold to talk"
 msgstr "Mantén pulsado para hablar"
@@ -6137,15 +6297,14 @@ msgstr "¿De qué tamaño es tu equipo?"
 msgid "How did you hear about us?"
 msgstr "¿Cómo nos conociste?"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "How many dreams each bot keeps, from {MIN_DREAM_RETENTION} to {MAX_DREAM_RETENTION}. Older ones are deleted with their hidden chats."
+msgstr "Cuántos sueños conserva cada bot, de {MIN_DREAM_RETENTION} a {MAX_DREAM_RETENTION}. Los más antiguos se eliminan junto con sus chats ocultos."
+
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "How often"
 msgstr "Con qué frecuencia"
-
-#: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
-msgid "How other bots see it"
-msgstr "Cómo lo ven otros bots"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -6343,6 +6502,10 @@ msgstr "Instrucciones para esta sala"
 msgid "Instructions updated"
 msgstr "Instrucciones actualizadas"
 
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+msgid "Instructions view"
+msgstr "Vista de instrucciones"
+
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Integration domain"
 msgstr "Dominio de la integración"
@@ -6423,7 +6586,7 @@ msgstr "Invitado"
 msgid "Isolated"
 msgstr "Aislado"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Isolated preview — no access to your account"
 msgstr "Vista previa aislada: sin acceso a tu cuenta"
 
@@ -6525,6 +6688,10 @@ msgstr "Conservar memorias"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "Mantener completos los resultados de herramientas"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Keeps the latest 50 messages and summarizes older ones."
+msgstr "Conserva los últimos 50 mensajes y resume los más antiguos."
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -6637,6 +6804,10 @@ msgstr "Izquierda"
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "Permitir que los bots usen esta computadora"
+
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Library"
+msgstr "Biblioteca"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -6803,6 +6974,7 @@ msgstr "Cargando proveedores de voz…"
 #: apps/web/src/pages/settings/PeerMessagesOverlay.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 #: packages/i18n/src/computer-usage.ts
 msgid "Loading…"
@@ -6910,7 +7082,7 @@ msgstr "Gestionar servidores MCP"
 msgid "Manage model"
 msgstr "Gestionar modelo"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Manage other bots"
 msgstr "Gestionar otros bots"
@@ -6961,7 +7133,7 @@ msgstr "Máx."
 msgid "Max"
 msgstr "Máx."
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Maximize"
 msgstr "Maximizar"
 
@@ -7060,13 +7232,20 @@ msgstr "Miembros ({0})"
 msgid "Members ({count})"
 msgstr "Miembros ({count})"
 
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Members can connect model servers that do not use TLS. API keys are sent to those servers unencrypted; only enable this on a trusted network."
+msgstr "Los miembros pueden conectar servidores de modelos que no usan TLS. Las claves API se envían a esos servidores sin cifrar; activa esto solo en una red de confianza."
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+#: apps/web/src/pages/space/GroupPanel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Memory"
 msgstr "Memoria"
@@ -7078,6 +7257,11 @@ msgstr "Memoria {position}"
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "Memoria para {title}"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Memory is off, so dreams are paused."
+msgstr "La memoria está desactivada, por lo que los sueños están en pausa."
 
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
@@ -7426,6 +7610,11 @@ msgstr "Ponle un nombre a esta rutina."
 msgid "Name your Bot"
 msgstr "Ponle nombre a tu bot"
 
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Near the limit"
+msgstr "Cerca del límite"
+
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
 msgstr "Necesita una respuesta"
@@ -7478,7 +7667,9 @@ msgid "Needs: {names}"
 msgstr "Necesita: {names}"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Never ask"
 msgstr "No preguntar nunca"
 
@@ -7673,6 +7864,27 @@ msgstr "Ningún bot coincide"
 msgid "No computer hours used yet"
 msgstr "Aún no se han usado horas de computadora"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "No dreams yet"
+msgstr "Aún no hay sueños"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "No dreams yet."
+msgstr "Aún no hay sueños."
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "No history yet."
+msgstr "Aún no hay historial."
+
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+msgid "No instructions"
+msgstr "Sin instrucciones"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "No limit"
+msgstr "Sin límite"
+
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -7728,6 +7940,10 @@ msgstr "Aún no hay mensajes"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "No model catalog is available."
 msgstr "No hay un catálogo de modelos disponible."
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "No notes match."
+msgstr "Ninguna nota coincide."
 
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
@@ -8270,6 +8486,11 @@ msgstr "OTA {id}"
 msgid "OTA {id}, {date}"
 msgstr "OTA {id}, {date}"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Other bots read this when deciding whom to ask."
+msgstr "Otros bots leen esto al decidir a quién preguntar."
+
 #: packages/i18n/src/computer-usage.ts
 msgid "Other computers"
 msgstr "Otras computadoras"
@@ -8468,7 +8689,8 @@ msgstr "El pago falló"
 msgid "Pending"
 msgstr "Pendiente"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Permissions"
 msgstr "Permisos"
 
@@ -8616,7 +8838,8 @@ msgstr "Preparando la transcripción…"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/pages/plugins/github-import.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview"
 msgstr "Vista previa"
 
@@ -8625,7 +8848,7 @@ msgstr "Vista previa"
 msgid "Preview {0}"
 msgstr "Vista previa de {0}"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "La vista previa no está disponible para este tipo de archivo; descárgalo para verlo."
 
@@ -8677,6 +8900,7 @@ msgstr "Productividad"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Profile"
 msgstr "Perfil"
 
@@ -8690,6 +8914,11 @@ msgstr "Programa: {name}"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Project ID"
 msgstr "ID del proyecto"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "projects/website"
+msgstr "projects/website"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
@@ -9344,6 +9573,7 @@ msgstr "Reiniciar para actualizar"
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 #: apps/web/src/pages/shell/bots/instruction-settings.tsx
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Restore"
 msgstr "Restaurar"
 
@@ -9642,6 +9872,10 @@ msgstr "Guardar"
 msgid "Save and sign in"
 msgstr "Guardar e iniciar sesión"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Save limit"
+msgstr "Límite de guardado"
+
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
 msgstr "Guardar la mía"
@@ -9822,6 +10056,10 @@ msgstr "Buscar en integrations.sh"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
 msgstr "Buscar «{query}» en servidores MCP"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "Search memory"
+msgstr "Buscar en la memoria"
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -10029,6 +10267,7 @@ msgstr "Establecer"
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: apps/web/src/pages/shell/shell-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
+#: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Settings"
 msgstr "Configuración"
 
@@ -10126,6 +10365,7 @@ msgstr "Compartir, cualquiera con el enlace puede verla"
 msgid "Shared"
 msgstr "Compartido"
 
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
 msgstr "Memoria compartida"
@@ -10167,7 +10407,7 @@ msgstr "Mostrar clave"
 msgid "Show keyboard"
 msgstr "Mostrar teclado"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Show list"
 msgstr "Mostrar lista"
 
@@ -10516,9 +10756,11 @@ msgid "Space created"
 msgstr "Espacio creado"
 
 #: apps/mobile/app/chat-model.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/mobile/lib/composer/composer-model.ts
 #: apps/mobile/lib/models/chat-model.ts
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 #: apps/web/src/pages/shell/composer/composer-model-picker.tsx
 msgid "Space default"
 msgstr "Predeterminado del Space"
@@ -10651,6 +10893,7 @@ msgid "Starting"
 msgstr "Iniciando"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/components/bots/bot-dreams-section.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/lib/chat/roster-status.ts
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -10784,6 +11027,22 @@ msgstr "Resúmenes"
 msgid "Summaries and facts"
 msgstr "Resúmenes y datos"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches 80% of the model's context window."
+msgstr "Resume cuando el prompt alcanza el 80 % de la ventana de contexto del modelo."
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches half the model's context window."
+msgstr "Resume cuando el prompt alcanza la mitad de la ventana de contexto del modelo."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Summarizes when the prompt reaches the chosen share of the model's context window."
+msgstr "Resume cuando el prompt alcanza la proporción elegida de la ventana de contexto del modelo."
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches this many tokens."
+msgstr "Resume cuando el prompt alcanza esta cantidad de tokens."
+
 #: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
 msgid "Sunday"
@@ -10881,6 +11140,15 @@ msgstr "Toca para abrir"
 msgid "Target"
 msgstr "Destino"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Task limit"
+msgstr "Límite de tareas"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Tasks at once"
+msgstr "Tareas a la vez"
+
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "Enseñar una tarea"
@@ -10962,6 +11230,11 @@ msgstr "A esa URL le falta el host"
 msgid "That voice isn't offered by this server, so it used {served} instead."
 msgstr "Este servidor no ofrece esa voz, así que se usó {served} en su lugar."
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "The agent stops after this many tool calls in one turn. Empty means no limit."
+msgstr "El agente se detiene después de esta cantidad de llamadas a herramientas en un turno. Vacío significa sin límite."
+
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
@@ -10991,6 +11264,10 @@ msgstr "El bot no pudo responder porque se alcanzó el límite semanal de su pro
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "The bot's browser stays signed in for everyone in this space"
 msgstr "El navegador del bot sigue con la sesión iniciada para todos en este espacio"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "The bot's commands and files start here. Leave empty for the default folder."
+msgstr "Los comandos y archivos del bot comienzan aquí. Deja vacío para la carpeta predeterminada."
 
 #: apps/web/src/lib/calls/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
@@ -11161,6 +11438,10 @@ msgstr "No se puede leer esta clave de autenticador."
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "No se pudo leer esta copia de seguridad."
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "This bot"
+msgstr "Este bot"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -11499,7 +11780,9 @@ msgstr "Hoy"
 msgid "Toggle sidebar"
 msgstr "Mostrar u ocultar barra lateral"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Tokens"
 msgstr "Tokens"
 
@@ -11527,6 +11810,11 @@ msgstr "Los argumentos deben ser un objeto JSON"
 #: apps/web/src/lib/routines/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "Los argumentos deben ser JSON"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Tool calls per turn"
+msgstr "Llamadas a herramientas por turno"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Tool name"
@@ -11729,8 +12017,13 @@ msgstr "Escribe tu respuesta"
 msgid "Unassigned"
 msgstr "Sin asignar"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Unavailable computer"
+msgstr "Computadora no disponible"
+
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
 msgid "Undo"
 msgstr "Deshacer"
 
@@ -11968,6 +12261,25 @@ msgstr "Usar un servidor personalizado"
 msgid "Use a found model"
 msgstr "Usar un modelo encontrado"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a relative folder path without \"..\" segments."
+msgstr "Usa una ruta de carpeta relativa sin segmentos \"..\"."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from {MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS} to {MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS}."
+msgstr "Usa un número entero de {MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS} a {MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS}."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from 1 to {MAX_CONCURRENT_HELPERS_LIMIT}."
+msgstr "Usa un número entero de 1 a {MAX_CONCURRENT_HELPERS_LIMIT}."
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from 1 to {MAX_TOOL_CALLS_PER_TURN_LIMIT}."
+msgstr "Usa un número entero de 1 a {MAX_TOOL_CALLS_PER_TURN_LIMIT}."
+
 #: apps/mobile/lib/api/user-error.ts
 #: apps/web/src/lib/query/user-error.ts
 msgid "Use an account with the same email address"
@@ -11993,6 +12305,11 @@ msgstr "Usar predeterminados en {label}"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr "Usar en este bot"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Use its own memory"
+msgstr "Usar su propia memoria"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Use latest"
@@ -12023,6 +12340,11 @@ msgstr "Usa Entrada protegida para las contraseñas."
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use Rakazo credits"
 msgstr "Usar créditos de Rakazo"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Use shared notes"
+msgstr "Usar notas compartidas"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
@@ -12059,6 +12381,10 @@ msgstr "Nombre de usuario"
 msgid "Uses files that are not imported"
 msgstr "Usa archivos que no se importan"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Uses one model call."
+msgstr "Usa una llamada de modelo."
+
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Uses paths on your computer"
@@ -12071,6 +12397,10 @@ msgstr "Usa las credenciales de {hostCredentialSource} propias de este servidor 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Uses this server's own {source} credentials to access {provider}."
 msgstr "Usa las credenciales de {source} de este servidor para acceder a {provider}."
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "Using {usedTokens} of {tokenCap} tokens."
+msgstr "Usando {usedTokens} de {tokenCap} tokens."
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Using your API key"
@@ -12128,7 +12458,7 @@ msgstr "Verificar y agregar"
 msgid "Verifying…"
 msgstr "Verificando…"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Version"
 msgstr "Versión"
 
@@ -12306,6 +12636,14 @@ msgstr "¿Qué debe hacer esta rutina cada vez que se ejecute?"
 msgid "What this bot is for"
 msgstr "Para qué es este bot"
 
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "What this bot learned about you. Tell it in the chat to change a note."
+msgstr "Lo que este bot aprendió sobre ti. Dilo en el chat para cambiar una nota."
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "What this note holds"
+msgstr "Lo que contiene esta nota"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "What to recall"
 msgstr "Qué recordar"
@@ -12457,6 +12795,15 @@ msgstr "Funciona con tu plan de ChatGPT o Claude."
 msgid "Workspace"
 msgstr "Espacio de trabajo"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Workspace folder"
+msgstr "Carpeta de trabajo"
+
+#: apps/mobile/app/bot-settings.tsx
+msgid "Workspace folder must be a relative path without \"..\" segments."
+msgstr "La carpeta de trabajo debe ser una ruta relativa sin segmentos \"..\"."
+
 #: apps/mobile/app/routine.tsx
 msgid "Write what this routine should do."
 msgstr "Escribe qué debe hacer esta rutina."
@@ -12556,6 +12903,11 @@ msgstr "Hoy se cobra en tu tarjeta la diferencia prorrateada."
 msgid "Your card was not charged"
 msgstr "No se hizo ningún cargo a tu tarjeta"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Your computer"
+msgstr "Tu computadora"
+
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
@@ -12595,6 +12947,10 @@ msgstr "Tu proveedor de modelos"
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Your name"
 msgstr "Tu nombre"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Your name, timezone, important people and long-term preferences, shared by every bot in this space. Tell the bot to change them."
+msgstr "Tu nombre, zona horaria, personas importantes y preferencias a largo plazo, compartidos por cada bot de este espacio. Di al bot que los cambie."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts

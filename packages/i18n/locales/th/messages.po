@@ -74,6 +74,11 @@ msgstr "{0} (ลบแล้ว)"
 msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (แนบได้สูงสุด {ATTACHMENT_MAX_COUNT} ไฟล์)"
 
+#. placeholder {0}: device.name
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "{0} (offline)"
+msgstr "{0} (ออฟไลน์)"
+
 #. placeholder {0}: file.name
 #. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
 #: apps/web/src/pages/shell/composer/use-composer-actions.ts
@@ -226,6 +231,10 @@ msgstr "{botCount, plural, other {ลบ {name} และบอท # ตัว�
 #: apps/web/src/pages/shell/computers/computer-view.tsx
 msgid "{botName}’s computer"
 msgstr "คอมพิวเตอร์ของ {botName}"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "{boundName} (offline)"
+msgstr "{boundName} (ออฟไลน์)"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{calls} calls, {tokens} tokens"
@@ -909,6 +918,14 @@ msgstr "1 เครื่องมือ"
 msgid "1 unread"
 msgstr "ยังไม่อ่าน 1 รายการ"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "100K"
+msgstr "100K"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "200K"
+msgstr "200K"
+
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "3 hours"
@@ -969,6 +986,7 @@ msgid "About {label}"
 msgstr "เกี่ยวกับ {label}"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
 msgid "About you"
 msgstr "เกี่ยวกับคุณ"
 
@@ -1411,7 +1429,7 @@ msgstr "อนุญาต"
 msgid "Allow {name} on mobile"
 msgstr "อนุญาต {name} บนมือถือ"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Allow cross-space bot communication"
 msgstr "อนุญาตให้บอทสื่อสารข้ามสเปซ"
@@ -1433,6 +1451,10 @@ msgstr "อนุญาตการเข้าถึงไมโครโฟน
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Allow once"
 msgstr "อนุญาตครั้งเดียว"
+
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Allow plain-HTTP endpoints"
+msgstr "อนุญาตปลายทาง HTTP แบบไม่เข้ารหัส"
 
 #: apps/web/src/lib/calls/dictation.ts
 msgid "Allow Rakazo to use Speech Recognition and the microphone in System Settings."
@@ -1593,6 +1615,10 @@ msgstr "Anthropic API"
 msgid "Anthropic Messages"
 msgstr "Anthropic Messages"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Any connected computer"
+msgstr "คอมพิวเตอร์ที่เชื่อมต่อใด ๆ"
+
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Any model, with your own key"
 msgstr "ใช้โมเดลใดก็ได้ ด้วย key ของคุณเอง"
@@ -1675,6 +1701,11 @@ msgstr "นำไปใช้"
 msgid "Approval boundaries"
 msgstr "ขอบเขตการอนุมัติ"
 
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Approval mode"
+msgstr "โหมดอนุมัติ"
+
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Approval model"
@@ -1755,7 +1786,9 @@ msgid "Artifacts"
 msgstr "อาร์ติแฟกต์"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Ask"
 msgstr "ถามก่อน"
 
@@ -1850,9 +1883,16 @@ msgid "Authorize this server so agents can use its tools. A popup opens."
 msgstr "ให้สิทธิ์เซิร์ฟเวอร์นี้เพื่อให้เอเจนต์ใช้เครื่องมือของเซิร์ฟเวอร์ได้ ป๊อปอัปจะเปิดขึ้น"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Auto"
 msgstr "อัตโนมัติ"
+
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Auto needs an approval model; until one is set, this bot asks."
+msgstr "โหมดอัตโนมัติต้องใช้โมเดลอนุมัติ จนกว่าจะตั้งค่า บอทนี้จะถาม"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/meeting-calendar.tsx
@@ -1865,6 +1905,11 @@ msgstr "เข้าร่วมอัตโนมัติ"
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "Automated senders"
 msgstr "ผู้ส่งอัตโนมัติ"
+
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Automatic (default)"
+msgstr "อัตโนมัติ (ค่าเริ่มต้น)"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Available after saving"
@@ -1931,6 +1976,15 @@ msgstr "กลับไปที่การประชุม"
 msgid "Back to sign in"
 msgstr "กลับไปเข้าสู่ระบบ"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Background tasks this bot can run at the same time. 3 by default."
+msgstr "งานเบื้องหลังที่บอทนี้รันพร้อมกันได้ ค่าเริ่มต้นคือ 3"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Background work"
+msgstr "งานเบื้องหลัง"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Base URL"
 msgstr "Base URL"
@@ -1958,6 +2012,14 @@ msgstr "Bearer"
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Between chats the bot tidies its memory from your own words."
+msgstr "ระหว่างแชท บอทจะจัดระเบียบความจำจากคำพูดของคุณเอง"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Between conversations, the bot rewrites its notes from your own words."
+msgstr "ระหว่างบทสนทนา บอทจะเขียนบันทึกใหม่จากคำพูดของคุณเอง"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2411,6 +2473,11 @@ msgstr "เปลี่ยนแพ็กเกจ"
 msgid "Change server"
 msgstr "เปลี่ยนเซิร์ฟเวอร์"
 
+#. placeholder {0}: dream.changedPaths.join(", ")
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Changed: {0}"
+msgstr "เปลี่ยนแปลงแล้ว: {0}"
+
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Changing…"
 msgstr "กำลังเปลี่ยน…"
@@ -2827,6 +2894,11 @@ msgstr "การสื่อสาร"
 msgid "Compact"
 msgstr "กระชับ"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Compact conversation"
+msgstr "บีบอัดบทสนทนา"
+
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Complete"
@@ -2894,6 +2966,10 @@ msgstr "โมเดลใช้งานคอมพิวเตอร์"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Computer-use model…"
 msgstr "โมเดลใช้งานคอมพิวเตอร์…"
+
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Computer, needs attention"
+msgstr "คอมพิวเตอร์ต้องการความสนใจ"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -3190,6 +3266,11 @@ msgstr "ดำเนินการต่อด้วย passkey"
 msgid "Control"
 msgstr "Control"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-conversation-settings.tsx
+msgid "Conversation"
+msgstr "บทสนทนา"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Conversations"
@@ -3218,7 +3299,7 @@ msgstr "การสนทนา ชื่อ ความจำ การค้
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Copied"
 msgstr "คัดลอกแล้ว"
 
@@ -3236,7 +3317,7 @@ msgid "Copy"
 msgstr "คัดลอก"
 
 #. placeholder {0}: state.artifact.name
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Copy {0}"
 msgstr "คัดลอก {0}"
 
@@ -3761,6 +3842,10 @@ msgstr "โหลดข้อความก่อนหน้าไม่สำ
 msgid "Could not load earlier versions"
 msgstr "โหลดเวอร์ชันก่อนหน้าไม่สำเร็จ"
 
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Could not load files"
+msgstr "ไม่สามารถโหลดไฟล์ได้"
+
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
 msgstr "โหลดกลุ่มไม่สำเร็จ"
@@ -3858,7 +3943,7 @@ msgid "Could not load the log."
 msgstr "โหลดบันทึกไม่สำเร็จ"
 
 #: apps/mobile/app/artifact.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Could not load this artifact."
 msgstr "โหลดอาร์ติแฟกต์นี้ไม่สำเร็จ"
 
@@ -4114,6 +4199,7 @@ msgstr "รันรูทีนไม่สำเร็จ"
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-conversation-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/use-chat-snooze.ts
@@ -4126,6 +4212,10 @@ msgstr "บันทึกไม่สำเร็จ"
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Could not save {0}"
 msgstr "บันทึก {0} ไม่สำเร็จ"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Could not save agent settings"
+msgstr "ไม่สามารถบันทึกการตั้งค่าเอเจนต์ได้"
 
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Could not save Auto Review"
@@ -4203,6 +4293,10 @@ msgstr "บันทึกข้อมูลลับไม่สำเร็จ
 #: apps/mobile/lib/inbox/use-inbox.ts
 msgid "Could not save the default space"
 msgstr "บันทึกสเปซเริ่มต้นไม่สำเร็จ"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Could not save the dream limit"
+msgstr "ไม่สามารถบันทึกขีดจำกัดความฝันได้"
 
 #: apps/mobile/lib/api/api-server.ts
 msgid "Could not save the previous server session"
@@ -4295,6 +4389,10 @@ msgstr "อ่านออกเสียงไม่สำเร็จ"
 #: apps/mobile/lib/voice/voice.ts
 msgid "Could not speak that."
 msgstr "อ่านออกเสียงไม่สำเร็จ"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Could not start a dream"
+msgstr "ไม่สามารถเริ่มความฝันได้"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Could not start MCP OAuth"
@@ -4452,6 +4550,10 @@ msgstr "โหลดคำขอไม่สำเร็จ"
 msgid "Couldn't load this page. Try again."
 msgstr "โหลดหน้านี้ไม่สำเร็จ ลองอีกครั้ง"
 
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Couldn't load this setting"
+msgstr "ไม่สามารถโหลดการตั้งค่านี้ได้"
+
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 msgid "Couldn't load your wallet"
 msgstr "โหลดวอลเล็ตไม่สำเร็จ"
@@ -4481,6 +4583,10 @@ msgstr "อัปเดต Labs ไม่สำเร็จ"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Couldn't update messaging settings"
 msgstr "อัปเดตการตั้งค่าข้อความไม่สำเร็จ"
+
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Couldn't update this setting"
+msgstr "ไม่สามารถอัปเดตการตั้งค่านี้ได้"
 
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -4638,6 +4744,11 @@ msgstr "รหัสผ่านปัจจุบัน"
 msgid "Current plan"
 msgstr "แผนปัจจุบัน"
 
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Custom amount"
+msgstr "จำนวนที่กำหนดเอง"
+
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Custom connector"
 msgstr "คอนเนกเตอร์แบบกำหนดเอง"
@@ -4682,7 +4793,7 @@ msgstr "ปรับแต่งอวตารของบอท"
 msgid "Daily"
 msgstr "รายวัน"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Daily check-ins on unfinished work"
 msgstr "ตรวจสอบงานที่ยังไม่เสร็จทุกวัน"
@@ -4742,6 +4853,7 @@ msgstr "ปฏิเสธแล้ว"
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -4976,7 +5088,10 @@ msgstr "ปฏิเสธแล้ว"
 msgid "Deny"
 msgstr "ปฏิเสธ"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 #: apps/web/src/pages/space/Board.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Description"
 msgstr "คำอธิบาย"
 
@@ -4999,6 +5114,7 @@ msgstr "อัปเดตเดสก์ท็อป"
 
 #: apps/mobile/components/thread/thread-error-notice.tsx
 #: apps/web/src/pages/routines/RoutineRunHistory.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Details"
 msgstr "รายละเอียด"
@@ -5227,7 +5343,7 @@ msgstr "ลง"
 msgid "Downgrade at renewal"
 msgstr "ดาวน์เกรดเมื่อต่ออายุ"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Download"
 msgstr "ดาวน์โหลด"
@@ -5261,6 +5377,32 @@ msgstr "สกิลฉบับร่าง"
 msgid "Drag, drop, or paste an image"
 msgstr "ลากและวาง หรือวางรูปภาพ"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dream now"
+msgstr "ฝันตอนนี้"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dreaming now uses one model call."
+msgstr "การฝันตอนนี้ใช้การเรียกโมเดลหนึ่งครั้ง"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Dreaming uses one model call."
+msgstr "การฝันใช้การเรียกโมเดลหนึ่งครั้ง"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Dreams"
+msgstr "ความฝัน"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Dreams kept"
+msgstr "ความฝันที่เก็บไว้"
+
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Dreams per bot"
+msgstr "ความฝันต่อบอท"
+
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Duplicate"
 msgstr "ทำสำเนา"
@@ -5268,6 +5410,11 @@ msgstr "ทำสำเนา"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Each name can be used once."
 msgstr "แต่ละชื่อใช้ได้ครั้งเดียว"
+
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Earlier"
+msgstr "ก่อนหน้านี้"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/bot-profile.tsx
@@ -5279,6 +5426,7 @@ msgstr "แต่ละชื่อใช้ได้ครั้งเดีย
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
 msgid "Edit"
 msgstr "แก้ไข"
 
@@ -5488,6 +5636,7 @@ msgstr "ทุก {n} {unit}"
 msgid "Every {n} hours at :{minute}"
 msgstr "ทุก {n} ชั่วโมง เวลา :{minute}"
 
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "บอททุกตัวในสเปซนี้อ่านโน้ตเหล่านี้และอัปเดตให้เป็นปัจจุบัน"
@@ -5678,6 +5827,14 @@ msgstr "ฟิลด์ที่จะเปรียบเทียบ (ไม�
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "File"
 msgstr "ไฟล์"
+
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Files"
+msgstr "ไฟล์"
+
+#: apps/web/src/pages/shell/bots/bot-library.tsx
+msgid "Files {botName} makes and receives show here."
+msgstr "ไฟล์ที่ {botName} สร้างและรับจะแสดงที่นี่"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Files or folders on the computer"
@@ -5950,7 +6107,6 @@ msgstr "ไม่พบกลุ่ม"
 #: apps/mobile/app/group-settings.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
 #: apps/mobile/components/thread/header/thread-header-right.tsx
-#: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Group settings"
 msgstr "การตั้งค่ากลุ่ม"
 
@@ -6090,6 +6246,10 @@ msgstr "สูง"
 msgid "High"
 msgstr "สูง"
 
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "History"
+msgstr "ประวัติ"
+
 #: apps/web/src/pages/shell/composer/hold-to-talk.tsx
 msgid "Hold to talk"
 msgstr "กดค้างเพื่อพูด"
@@ -6131,15 +6291,14 @@ msgstr "ทีมของคุณมีกี่คน"
 msgid "How did you hear about us?"
 msgstr "รู้จัก Rakazo ได้อย่างไร"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "How many dreams each bot keeps, from {MIN_DREAM_RETENTION} to {MAX_DREAM_RETENTION}. Older ones are deleted with their hidden chats."
+msgstr "แต่ละบอทเก็บความฝันกี่รายการ ตั้งแต่ {MIN_DREAM_RETENTION} ถึง {MAX_DREAM_RETENTION} รายการที่เก่ากว่าจะถูกลบพร้อมแชทที่ซ่อน"
+
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "How often"
 msgstr "ความถี่"
-
-#: apps/mobile/app/bot-settings.tsx
-#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
-msgid "How other bots see it"
-msgstr "บอทอื่นมองเห็นอย่างไร"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "How to check"
@@ -6337,6 +6496,10 @@ msgstr "คำสั่งสำหรับห้องนี้"
 msgid "Instructions updated"
 msgstr "อัปเดตคำสั่งแล้ว"
 
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+msgid "Instructions view"
+msgstr "มุมมองคำสั่ง"
+
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Integration domain"
 msgstr "โดเมนที่เชื่อมต่อ"
@@ -6417,7 +6580,7 @@ msgstr "เชิญแล้ว"
 msgid "Isolated"
 msgstr "แยกส่วน"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Isolated preview — no access to your account"
 msgstr "พรีวิวแบบแยกส่วน — ไม่สามารถเข้าถึงบัญชีได้"
 
@@ -6519,6 +6682,10 @@ msgstr "เก็บความจำไว้"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "เก็บผลลัพธ์เครื่องมือไว้ทั้งหมด"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Keeps the latest 50 messages and summarizes older ones."
+msgstr "เก็บข้อความล่าสุด 50 ข้อความและสรุปข้อความที่เก่ากว่า"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Key options"
@@ -6631,6 +6798,10 @@ msgstr "ซ้าย"
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 msgid "Let bots use this computer"
 msgstr "อนุญาตให้บอทใช้คอมพิวเตอร์เครื่องนี้"
+
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+msgid "Library"
+msgstr "คลัง"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
@@ -6797,6 +6968,7 @@ msgstr "กำลังโหลดผู้ให้บริการเสี
 #: apps/web/src/pages/settings/PeerMessagesOverlay.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 #: packages/i18n/src/computer-usage.ts
 msgid "Loading…"
@@ -6904,7 +7076,7 @@ msgstr "จัดการเซิร์ฟเวอร์ MCP"
 msgid "Manage model"
 msgstr "จัดการโมเดล"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Manage other bots"
 msgstr "จัดการบอทอื่น"
@@ -6955,7 +7127,7 @@ msgstr "สูงสุด"
 msgid "Max"
 msgstr "สูงสุด"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Maximize"
 msgstr "ขยายใหญ่สุด"
 
@@ -7054,13 +7226,20 @@ msgstr "สมาชิก ({0})"
 msgid "Members ({count})"
 msgstr "สมาชิก ({count})"
 
+#: apps/web/src/pages/model-settings/http-endpoints-switch.tsx
+msgid "Members can connect model servers that do not use TLS. API keys are sent to those servers unencrypted; only enable this on a trusted network."
+msgstr "สมาชิกสามารถเชื่อมต่อเซิร์ฟเวอร์โมเดลที่ไม่ใช้ TLS ได้ คีย์ API จะถูกส่งไปยังเซิร์ฟเวอร์เหล่านั้นแบบไม่เข้ารหัส เปิดใช้งานเฉพาะบนเครือข่ายที่เชื่อถือได้"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
+#: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
+#: apps/web/src/pages/space/GroupPanel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Memory"
 msgstr "ความจำ"
@@ -7072,6 +7251,11 @@ msgstr "ความจำ {position}"
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Memory for {title}"
 msgstr "ความจำของ {title}"
+
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Memory is off, so dreams are paused."
+msgstr "ปิดความจำแล้ว ความฝันจึงหยุดชั่วคราว"
 
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Mentions"
@@ -7420,6 +7604,11 @@ msgstr "ตั้งชื่อรูทีนนี้"
 msgid "Name your Bot"
 msgstr "ตั้งชื่อบอท"
 
+#: apps/mobile/lib/bots/bot-settings-choices.ts
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Near the limit"
+msgstr "ใกล้ขีดจำกัด"
+
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
 msgstr "ต้องการคำตอบ"
@@ -7472,7 +7661,9 @@ msgid "Needs: {names}"
 msgstr "ต้องการ: {names}"
 
 #: apps/mobile/components/settings/approval-settings-rows.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Never ask"
 msgstr "ไม่ต้องถาม"
 
@@ -7667,6 +7858,27 @@ msgstr "ไม่มีบอทที่ตรงกัน"
 msgid "No computer hours used yet"
 msgstr "ยังไม่มีการใช้ชั่วโมงคอมพิวเตอร์"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "No dreams yet"
+msgstr "ยังไม่มีความฝัน"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "No dreams yet."
+msgstr "ยังไม่มีความฝัน"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "No history yet."
+msgstr "ยังไม่มีประวัติ"
+
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+msgid "No instructions"
+msgstr "ไม่มีคำสั่ง"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "No limit"
+msgstr "ไม่มีขีดจำกัด"
+
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -7722,6 +7934,10 @@ msgstr "ยังไม่มีข้อความ"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "No model catalog is available."
 msgstr "ไม่มีแคตตาล็อกโมเดลที่ใช้งานได้"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "No notes match."
+msgstr "ไม่มีบันทึกที่ตรงกัน"
 
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
@@ -8264,6 +8480,11 @@ msgstr "OTA {id}"
 msgid "OTA {id}, {date}"
 msgstr "OTA {id}, {date}"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Other bots read this when deciding whom to ask."
+msgstr "บอทอื่นอ่านสิ่งนี้เมื่อตัดสินใจว่าจะถามใคร"
+
 #: packages/i18n/src/computer-usage.ts
 msgid "Other computers"
 msgstr "คอมพิวเตอร์อื่น ๆ"
@@ -8462,7 +8683,8 @@ msgstr "ชำระเงินไม่สำเร็จ"
 msgid "Pending"
 msgstr "รอดำเนินการ"
 
-#: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/bots/bot-permissions-section.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Permissions"
 msgstr "สิทธิ์"
 
@@ -8610,7 +8832,8 @@ msgstr "กำลังเตรียมบทถอดความ…"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/pages/plugins/github-import.tsx
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/shell/bots/instruction-settings.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview"
 msgstr "ดูตัวอย่าง"
 
@@ -8619,7 +8842,7 @@ msgstr "ดูตัวอย่าง"
 msgid "Preview {0}"
 msgstr "ดูตัวอย่าง {0}"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "ดูตัวอย่างไฟล์ประเภทนี้ไม่ได้ ดาวน์โหลดเพื่อเปิดดู"
 
@@ -8671,6 +8894,7 @@ msgstr "ผลิตภาพ"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Profile"
 msgstr "โปรไฟล์"
 
@@ -8684,6 +8908,11 @@ msgstr "โปรแกรม: {name}"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Project ID"
 msgstr "ID โปรเจกต์"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "projects/website"
+msgstr "projects/website"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Protected input"
@@ -9338,6 +9567,7 @@ msgstr "รีสตาร์ทเพื่ออัปเดต"
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 #: apps/web/src/pages/shell/bots/instruction-settings.tsx
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
+#: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Restore"
 msgstr "คืนค่า"
 
@@ -9636,6 +9866,10 @@ msgstr "บันทึก"
 msgid "Save and sign in"
 msgstr "บันทึกและเข้าสู่ระบบ"
 
+#: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+msgid "Save limit"
+msgstr "ขีดจำกัดการบันทึก"
+
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
 msgstr "บันทึกเวอร์ชันของฉัน"
@@ -9816,6 +10050,10 @@ msgstr "ค้นหา integrations.sh"
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Search MCP servers for “{query}”"
 msgstr "ค้นหาเซิร์ฟเวอร์ MCP สำหรับ “{query}”"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "Search memory"
+msgstr "ค้นหาความจำ"
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -10023,6 +10261,7 @@ msgstr "ตั้งค่า"
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: apps/web/src/pages/shell/shell-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
+#: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Settings"
 msgstr "การตั้งค่า"
 
@@ -10120,6 +10359,7 @@ msgstr "แชร์: ทุกคนที่มีลิงก์สามา�
 msgid "Shared"
 msgstr "แชร์"
 
+#: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Shared memory"
 msgstr "ความจำที่ใช้ร่วมกัน"
@@ -10161,7 +10401,7 @@ msgstr "แสดงคีย์"
 msgid "Show keyboard"
 msgstr "แสดงคีย์บอร์ด"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Show list"
 msgstr "แสดงรายการ"
 
@@ -10510,9 +10750,11 @@ msgid "Space created"
 msgstr "สร้างสเปซแล้ว"
 
 #: apps/mobile/app/chat-model.tsx
+#: apps/mobile/lib/bots/bot-settings-choices.ts
 #: apps/mobile/lib/composer/composer-model.ts
 #: apps/mobile/lib/models/chat-model.ts
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 #: apps/web/src/pages/shell/composer/composer-model-picker.tsx
 msgid "Space default"
 msgstr "ค่าเริ่มต้นของสเปซ"
@@ -10645,6 +10887,7 @@ msgid "Starting"
 msgstr "กำลังเริ่ม"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/components/bots/bot-dreams-section.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/lib/chat/roster-status.ts
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -10778,6 +11021,22 @@ msgstr "บทสรุป"
 msgid "Summaries and facts"
 msgstr "บทสรุปและข้อเท็จจริง"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches 80% of the model's context window."
+msgstr "สรุปเมื่อพรอมต์ถึง 80% ของหน้าต่างบริบทของโมเดล"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches half the model's context window."
+msgstr "สรุปเมื่อพรอมต์ถึงครึ่งหนึ่งของหน้าต่างบริบทของโมเดล"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Summarizes when the prompt reaches the chosen share of the model's context window."
+msgstr "สรุปเมื่อพรอมต์ถึงสัดส่วนที่เลือกของหน้าต่างบริบทของโมเดล"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Summarizes when the prompt reaches this many tokens."
+msgstr "สรุปเมื่อพรอมต์ถึงจำนวนโทเคนนี้"
+
 #: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
 msgid "Sunday"
@@ -10875,6 +11134,15 @@ msgstr "แตะเพื่อเปิด"
 msgid "Target"
 msgstr "เป้าหมาย"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+msgid "Task limit"
+msgstr "ขีดจำกัดงาน"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Tasks at once"
+msgstr "งานพร้อมกัน"
+
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
 msgstr "สอนงาน"
@@ -10956,6 +11224,11 @@ msgstr "URL นี้ไม่มีโฮสต์"
 msgid "That voice isn't offered by this server, so it used {served} instead."
 msgstr "เซิร์ฟเวอร์นี้ไม่มีเสียงนี้ให้ใช้ จึงใช้ {served} แทน"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "The agent stops after this many tool calls in one turn. Empty means no limit."
+msgstr "เอเจนต์จะหยุดหลังการเรียกเครื่องมือตามจำนวนนี้ในหนึ่งรอบ ว่างหมายถึงไม่มีขีดจำกัด"
+
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "The bot can use the file but won't see the picture."
@@ -10985,6 +11258,10 @@ msgstr "บอทตอบกลับไม่ได้เพราะผู้
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "The bot's browser stays signed in for everyone in this space"
 msgstr "เบราว์เซอร์ของบอทจะยังเข้าสู่ระบบค้างไว้สำหรับทุกคนในสเปซนี้"
+
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "The bot's commands and files start here. Leave empty for the default folder."
+msgstr "คำสั่งและไฟล์ของบอทเริ่มต้นที่นี่ เว้นว่างไว้เพื่อใช้โฟลเดอร์เริ่มต้น"
 
 #: apps/web/src/lib/calls/dictation.ts
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
@@ -11155,6 +11432,10 @@ msgstr "อ่าน key ของแอปยืนยันตัวตนน�
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "อ่านไฟล์สำรองนี้ไม่ได้"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "This bot"
+msgstr "บอทนี้"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -11493,7 +11774,9 @@ msgstr "วันนี้"
 msgid "Toggle sidebar"
 msgstr "สลับแถบด้านข้าง"
 
+#: apps/mobile/components/bots/bot-agent-settings.tsx
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Tokens"
 msgstr "token"
 
@@ -11521,6 +11804,11 @@ msgstr "อาร์กิวเมนต์เครื่องมือต้
 #: apps/web/src/lib/routines/routine-draft.ts
 msgid "Tool arguments must be JSON"
 msgstr "อาร์กิวเมนต์เครื่องมือต้องเป็น JSON"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Tool calls per turn"
+msgstr "การเรียกเครื่องมือต่อรอบ"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Tool name"
@@ -11723,8 +12011,13 @@ msgstr "พิมพ์คำตอบ"
 msgid "Unassigned"
 msgstr "ยังไม่ได้มอบหมาย"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Unavailable computer"
+msgstr "คอมพิวเตอร์ที่ไม่พร้อมใช้งาน"
+
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
 msgid "Undo"
 msgstr "เลิกทำ"
 
@@ -11962,6 +12255,25 @@ msgstr "ใช้เซิร์ฟเวอร์แบบกำหนดเอ
 msgid "Use a found model"
 msgstr "ใช้โมเดลที่พบ"
 
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a relative folder path without \"..\" segments."
+msgstr "ใช้เส้นทางโฟลเดอร์สัมพันธ์ที่ไม่มีส่วน \"..\""
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from {MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS} to {MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS}."
+msgstr "ใช้จำนวนเต็มตั้งแต่ {MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS} ถึง {MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS}"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from 1 to {MAX_CONCURRENT_HELPERS_LIMIT}."
+msgstr "ใช้จำนวนเต็มตั้งแต่ 1 ถึง {MAX_CONCURRENT_HELPERS_LIMIT}"
+
+#: apps/mobile/components/bots/bot-agent-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Use a whole number from 1 to {MAX_TOOL_CALLS_PER_TURN_LIMIT}."
+msgstr "ใช้จำนวนเต็มตั้งแต่ 1 ถึง {MAX_TOOL_CALLS_PER_TURN_LIMIT}"
+
 #: apps/mobile/lib/api/user-error.ts
 #: apps/web/src/lib/query/user-error.ts
 msgid "Use an account with the same email address"
@@ -11987,6 +12299,11 @@ msgstr "ใช้ค่าเริ่มต้นสำหรับ {label}"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Use in this bot"
 msgstr "ใช้ในบอทนี้"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Use its own memory"
+msgstr "ใช้ความจำของตัวเอง"
 
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Use latest"
@@ -12017,6 +12334,11 @@ msgstr "ใช้การป้อนข้อมูลแบบป้องก
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use Rakazo credits"
 msgstr "ใช้เครดิต Rakazo"
+
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Use shared notes"
+msgstr "ใช้บันทึกร่วมกัน"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Use space default"
@@ -12053,6 +12375,10 @@ msgstr "ชื่อผู้ใช้"
 msgid "Uses files that are not imported"
 msgstr "ใช้ไฟล์ที่ไม่ได้นำเข้า"
 
+#: apps/mobile/components/bots/bot-dreams-section.tsx
+msgid "Uses one model call."
+msgstr "ใช้การเรียกโมเดลหนึ่งครั้ง"
+
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Uses paths on your computer"
@@ -12065,6 +12391,10 @@ msgstr "ใช้ข้อมูลรับรอง {hostCredentialSource} ข
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Uses this server's own {source} credentials to access {provider}."
 msgstr "ใช้ข้อมูลรับรอง {source} ของเซิร์ฟเวอร์นี้เองเพื่อเข้าถึง {provider}"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "Using {usedTokens} of {tokenCap} tokens."
+msgstr "ใช้ {usedTokens} จาก {tokenCap} โทเคน"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Using your API key"
@@ -12122,7 +12452,7 @@ msgstr "ยืนยันและเพิ่ม"
 msgid "Verifying…"
 msgstr "กำลังตรวจสอบ…"
 
-#: apps/web/src/pages/space/Artifacts.tsx
+#: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Version"
 msgstr "เวอร์ชัน"
 
@@ -12300,6 +12630,14 @@ msgstr "รูทีนนี้ควรทำอะไรทุกครั้
 msgid "What this bot is for"
 msgstr "บอทนี้ใช้ทำอะไร"
 
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "What this bot learned about you. Tell it in the chat to change a note."
+msgstr "สิ่งที่บอทนี้เรียนรู้เกี่ยวกับคุณ บอกในแชทเพื่อเปลี่ยนบันทึก"
+
+#: apps/web/src/pages/space/KnowledgeSection.tsx
+msgid "What this note holds"
+msgstr "สิ่งที่บันทึกนี้เก็บไว้"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "What to recall"
 msgstr "สิ่งที่จะดึงจากความจำ"
@@ -12451,6 +12789,15 @@ msgstr "ใช้กับแผน ChatGPT หรือ Claude ของคุ�
 msgid "Workspace"
 msgstr "พื้นที่ทำงาน"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Workspace folder"
+msgstr "โฟลเดอร์พื้นที่ทำงาน"
+
+#: apps/mobile/app/bot-settings.tsx
+msgid "Workspace folder must be a relative path without \"..\" segments."
+msgstr "โฟลเดอร์พื้นที่ทำงานต้องเป็นเส้นทางสัมพันธ์ที่ไม่มีส่วน \"..\""
+
 #: apps/mobile/app/routine.tsx
 msgid "Write what this routine should do."
 msgstr "เขียนว่ารูทีนนี้ควรทำอะไร"
@@ -12550,6 +12897,11 @@ msgstr "ระบบจะตัดส่วนต่างตามสัดส
 msgid "Your card was not charged"
 msgstr "ยังไม่มีการตัดเงินจากบัตร"
 
+#: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
+msgid "Your computer"
+msgstr "คอมพิวเตอร์ของคุณ"
+
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/Shell.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
@@ -12589,6 +12941,10 @@ msgstr "ผู้ให้บริการโมเดลของคุณ"
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Your name"
 msgstr "ชื่อ"
+
+#: apps/web/src/pages/shell/bots/bot-memory-tabs.tsx
+msgid "Your name, timezone, important people and long-term preferences, shared by every bot in this space. Tell the bot to change them."
+msgstr "ชื่อ เขตเวลา คนสำคัญ และการตั้งค่าระยะยาวของคุณ ใช้ร่วมกันโดยทุกบอทในพื้นที่นี้ บอกบอทเพื่อเปลี่ยน"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/run-error.ts
