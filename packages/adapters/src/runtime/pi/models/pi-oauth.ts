@@ -13,6 +13,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { ModelOAuthBegin, SettingsScope } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { retry } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -1067,12 +1068,20 @@ export class PiOAuthLogins<T = unknown> {
     this.detachSession(session);
     if (!session.stored) return;
     try {
-      const expired = await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
-        handoff.prisma.modelOAuthSession.updateMany({
-          // A pasted code another process received is that process's to finish.
-          where: owned ? { ...rowOf(session), status: "pending" } : unclaimedRow(session),
-          data: { status: "failed", error: SIGN_IN_EXPIRED, leaseExpiresAt: null },
-        }),
+      // Unwritten, the row would read as pending and then as interrupted.
+      const expired = await retry(
+        () =>
+          runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
+            handoff.prisma.modelOAuthSession.updateMany({
+              // A pasted code another process received is that process's to finish.
+              where: owned ? { ...rowOf(session), status: "pending" } : unclaimedRow(session),
+              data: { status: "failed", error: SIGN_IN_EXPIRED, leaseExpiresAt: null },
+            }),
+          ),
+        {
+          attempts: OUTCOME_WRITE_ATTEMPTS,
+          delayMs: (attempt) => SAVE_WAIT_POLL_MS * (attempt + 1),
+        },
       );
       if (expired.count === 1) this.report(waiting, { reason: "timed_out" });
     } catch (error) {

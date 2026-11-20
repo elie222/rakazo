@@ -22,6 +22,8 @@ const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 /** How long the provider keeps a device code open. */
 export const CHATGPT_DEVICE_CODE_TTL_SECONDS = 15 * 60;
 const REQUEST_TIMEOUT_MS = 30_000;
+/** Short enough that every try fits in the time the caller waits for a code. */
+const CODE_REQUEST_TIMEOUT_MS = 8_000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const DEFAULT_INTERVAL_MS = 5_000;
 const MIN_INTERVAL_MS = 1_000;
@@ -74,21 +76,27 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
 
   return async (interaction: AuthInteraction): Promise<OAuthCredential> => {
     const signal = interaction.signal ?? new AbortController().signal;
-    const post = async (step: string, url: string, body: string, type: string) => {
+    const post = async (
+      step: string,
+      url: string,
+      body: string,
+      type: string,
+      timeoutMs = REQUEST_TIMEOUT_MS,
+    ) => {
       try {
         return await request(url, {
           method: "POST",
           headers: { accept: "application/json", "content-type": type },
           body,
-          signal: deadlineSignal(REQUEST_TIMEOUT_MS, signal),
+          signal: deadlineSignal(timeoutMs, signal),
         });
       } catch (error) {
         signal.throwIfAborted();
         throw new SignInNetworkError(step, { cause: error });
       }
     };
-    const postJson = (step: string, url: string, body: object) =>
-      post(step, url, JSON.stringify(body), "application/json");
+    const postJson = (step: string, url: string, body: object, timeoutMs?: number) =>
+      post(step, url, JSON.stringify(body), "application/json", timeoutMs);
     const readJson = async (response: Response) => {
       try {
         return await readBoundedJsonResponse<Record<string, unknown>>(
@@ -106,12 +114,17 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
       }
     };
     const failure = async (step: string, response: Response) =>
-      new SignInHttpError(step, response.status, await errorCode(step, response));
+      new SignInHttpError(step, response.status, await errorCode(step, response, signal));
     const persist = <T>(operation: () => Promise<T>) =>
       retry(operation, { attempts: REQUEST_ATTEMPTS, retryable: isTransient, signal });
 
     const device = await persist(async (): Promise<DeviceCode> => {
-      const response = await postJson("code request", USER_CODE_URL, { client_id: CLIENT_ID });
+      const response = await postJson(
+        "code request",
+        USER_CODE_URL,
+        { client_id: CLIENT_ID },
+        CODE_REQUEST_TIMEOUT_MS,
+      );
       if (!response.ok) throw await failure("code request", response);
       const json = await readJson(response);
       const interval = typeof json.interval === "string" ? Number(json.interval) : json.interval;
@@ -216,11 +229,16 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
 }
 
 /** The OAuth error code a failed answer carries, read only to decide what to do next. */
-async function errorCode(step: string, response: Response): Promise<string | undefined> {
+async function errorCode(
+  step: string,
+  response: Response,
+  signal: AbortSignal,
+): Promise<string | undefined> {
   let json: unknown;
   try {
-    json = await readBoundedJsonResponse(response, MAX_RESPONSE_BYTES);
+    json = await readBoundedJsonResponse(response, MAX_RESPONSE_BYTES, signal);
   } catch (error) {
+    signal.throwIfAborted();
     // An error page that is not JSON carries no code; a body cut off mid-read is a dropped
     // connection.
     if (error instanceof SyntaxError || error instanceof ResponseBodyTooLargeError)
