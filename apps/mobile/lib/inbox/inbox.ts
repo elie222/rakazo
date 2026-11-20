@@ -3,13 +3,17 @@ import { dateLocaleForUi } from "../i18n/i18n";
 
 const DAY_MS = 86_400_000;
 
+function rosterSearchText(text: string): string {
+  return text.normalize("NFC").toLowerCase().normalize("NFC");
+}
+
 export function filterBots<T extends { name: string; preview: string }>(
   bots: T[],
   query: string,
 ): T[] {
-  const needle = query.trim().toLowerCase();
+  const needle = rosterSearchText(query.trim());
   if (!needle) return bots;
-  return bots.filter((bot) => `${bot.name} ${bot.preview}`.toLowerCase().includes(needle));
+  return bots.filter((bot) => rosterSearchText(`${bot.name} ${bot.preview}`).includes(needle));
 }
 
 export function formatThreadTime(iso: string, now = new Date()) {
