@@ -47,14 +47,14 @@ afterEach(() => {
   delete (window as { rakazoDesktop?: unknown }).rakazoDesktop;
 });
 
-async function open() {
+async function open(onSelectBot: (id: string) => void = () => undefined) {
   await act(async () =>
     root.render(
       <CommandPalette
         open
         onOpenChange={() => undefined}
         bots={bots}
-        onSelectBot={() => undefined}
+        onSelectBot={onSelectBot}
         actions={[]}
       />,
     ),
@@ -75,4 +75,27 @@ it("shows number shortcut hints in the desktop app", async () => {
   expect(shortcutHints()).toHaveLength(2);
   expect(shortcutHints()[0]).toMatch(/1$/);
   expect(shortcutHints()[1]).toMatch(/2$/);
+});
+
+const pressMod1 = () => {
+  const event = new KeyboardEvent("keydown", { key: "1", ctrlKey: true, cancelable: true });
+  act(() => {
+    window.dispatchEvent(event);
+  });
+  return event;
+};
+
+it("leaves Cmd/Ctrl+number to the browser", async () => {
+  const onSelectBot = vi.fn();
+  await open(onSelectBot);
+  expect(pressMod1().defaultPrevented).toBe(false);
+  expect(onSelectBot).not.toHaveBeenCalled();
+});
+
+it("selects the bot on Cmd/Ctrl+number in the desktop app", async () => {
+  (window as { rakazoDesktop?: unknown }).rakazoDesktop = {};
+  const onSelectBot = vi.fn();
+  await open(onSelectBot);
+  expect(pressMod1().defaultPrevented).toBe(true);
+  expect(onSelectBot).toHaveBeenCalledWith("bot-1");
 });

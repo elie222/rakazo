@@ -131,7 +131,7 @@ export function CommandPalette({
     if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.repeat) {
       return;
     }
-    if (!/^[1-9]$/.test(event.key)) return;
+    if (!desktop || !/^[1-9]$/.test(event.key)) return;
     const bot = filteredBots[Number(event.key) - 1];
     if (!bot) return;
     event.preventDefault();
