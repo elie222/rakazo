@@ -338,7 +338,8 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         where: { id: botId, spaceId: actor.spaceId },
         include: { thread: true, computer: true },
       });
-      if (!bot) throw new IsolationError();
+      // An archived bot is not found: archiving cancelled its runs and paused its routines.
+      if (!bot || bot.archivedAt) throw new IsolationError();
       const alreadyRecording = await deps.prisma.taughtSkill.findFirst({
         where: { botId, status: "recording" },
         select: { id: true },
@@ -511,7 +512,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         where: { id: skill.botId },
         include: { thread: true },
       });
-      if (!bot?.thread) throw new IsolationError();
+      if (!bot?.thread || bot.archivedAt) throw new IsolationError();
       const playbook = parsePlaybook(skill.playbook);
       const taskPrompt =
         prompt ?? formatSkillRunPrompt(skill.name || skill.goal.slice(0, 80), playbook, true);
