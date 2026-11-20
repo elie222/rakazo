@@ -80,10 +80,16 @@ export function connectionDisplayName(
 }
 
 export function modelConnectionNames(
-  entry: Pick<ModelCatalogEntry, "provider" | "providerName" | "subscriptionName" | "auth">,
+  entry: Pick<
+    ModelCatalogEntry,
+    "provider" | "providerName" | "subscriptionName" | "auth" | "managed"
+  >,
   credential?: Pick<ModelCredential, "provider" | "label" | "endpointName"> & { authKind?: string },
 ): { providerName: string; connectionName: string } {
-  const providerName = providerDisplayName(entry, credential?.authKind);
+  const providerName =
+    !credential && entry.managed
+      ? (entry.providerName ?? entry.provider)
+      : providerDisplayName(entry, credential?.authKind);
   return {
     providerName,
     connectionName: credential

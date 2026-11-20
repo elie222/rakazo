@@ -18,8 +18,8 @@ import {
   connectedBackupOptions,
   connectionDisplayName,
   MAX_MODEL_BACKUPS,
+  modelConnectionNames,
   modelRoleChoiceKey,
-  providerDisplayName,
   withConnectionName,
 } from "@rakazo/contracts";
 import {
@@ -158,10 +158,10 @@ export function ModelRoleSettings({
   const providerName = (choice: ModelRoleChoice) => {
     const entry = entryFor(choice);
     return entry
-      ? providerDisplayName(
+      ? modelConnectionNames(
           localizeModelEntry(entry),
-          choice.credentialId ? connectionFor(choice)?.authKind : undefined,
-        )
+          choice.credentialId ? connectionFor(choice) : undefined,
+        ).providerName
       : providerNameFallback(choice);
   };
   const providerNameFallback = (choice: ModelRoleChoice) =>

@@ -1,5 +1,9 @@
 import { i18n } from "@lingui/core";
-import { connectedBackupOptions, providerDisplayName } from "@rakazo/contracts";
+import {
+  connectedBackupOptions,
+  modelConnectionNames,
+  providerDisplayName,
+} from "@rakazo/contracts";
 import { botModelState, connectedModelChoices } from "@rakazo/core";
 import { afterEach, expect, it } from "vitest";
 import { messages as germanMessages } from "../locales/de/messages.po";
@@ -229,4 +233,36 @@ it("leaves managed choices neutral while naming the member's own subscription", 
   );
   expect(overlapping).toHaveLength(1);
   expect(overlapping[0]?.providerLabel).toBe("Example subscription (Personal)");
+});
+
+it("keeps managed OAuth-only role names neutral until a sign-in is explicit", () => {
+  const entry = {
+    provider: "example",
+    providerName: "Example",
+    subscriptionName: "Example subscription",
+    auth: "oauth" as const,
+    managed: true,
+    id: "model",
+    label: "Model",
+    billing: "",
+  };
+  expect(modelConnectionNames(localizeModelEntry(entry)).providerName).toBe("Example");
+  expect(providerDisplayName(localizeModelEntry(entry))).toBe("Example subscription");
+  expect(connectedBackupOptions([entry], [])[0]).toMatchObject({
+    providerName: "Example",
+    connectionName: "Example",
+  });
+  expect(providerDisplayName(localizeModelEntry(entry), "sign-in")).toBe("Example subscription");
+  const credential = {
+    id: "signed-in",
+    provider: "example",
+    label: "Example",
+    hasKey: true,
+    isDefault: true,
+    authKind: "oauth" as const,
+  };
+  expect(connectedBackupOptions([entry], [credential])[0]).toMatchObject({
+    providerName: "Example subscription",
+    connectionName: "Example subscription",
+  });
 });
