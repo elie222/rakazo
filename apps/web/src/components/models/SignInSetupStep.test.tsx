@@ -23,8 +23,14 @@ let root: Root;
 let host: HTMLDivElement;
 const start = vi.fn();
 
-function Harness({ entrySetup }: { entrySetup: ModelCatalogEntry["signInSetup"] }) {
-  const signIn = useSignInSetup(entrySetup, "subscription", start);
+function Harness({
+  entrySetup,
+  provider = "subscription",
+}: {
+  entrySetup: ModelCatalogEntry["signInSetup"];
+  provider?: string;
+}) {
+  const signIn = useSignInSetup(entrySetup, provider, start);
   return signIn.setup ? (
     <SignInSetupStep setup={signIn.setup} onContinue={signIn.proceed} onCancel={signIn.dismiss} />
   ) : (
@@ -34,8 +40,8 @@ function Harness({ entrySetup }: { entrySetup: ModelCatalogEntry["signInSetup"] 
   );
 }
 
-function render(entrySetup: ModelCatalogEntry["signInSetup"]) {
-  act(() => root.render(<Harness entrySetup={entrySetup} />));
+function render(entrySetup: ModelCatalogEntry["signInSetup"], provider?: string) {
+  act(() => root.render(<Harness entrySetup={entrySetup} provider={provider} />));
 }
 
 function click(label: string) {
@@ -80,4 +86,12 @@ it("starts at once when the provider needs no setting", () => {
   render(undefined);
   click("Sign in");
   expect(start).toHaveBeenCalledOnce();
+});
+
+it("closes the step when another provider is chosen, so returning does not reopen it", () => {
+  render(setup);
+  click("Sign in");
+  render(setup, "another");
+  render(setup);
+  expect(host.textContent).toBe("Sign in");
 });

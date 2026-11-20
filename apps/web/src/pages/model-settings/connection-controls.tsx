@@ -179,6 +179,7 @@ export function ConnectionControls({
             <div className="w-full rounded-xl border border-border px-4 py-3">
               <SignInSetupStep
                 setup={signInSetup.setup}
+                disabled={busy}
                 onContinue={signInSetup.proceed}
                 onCancel={signInSetup.dismiss}
               />

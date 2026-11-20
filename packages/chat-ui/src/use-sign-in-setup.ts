@@ -11,6 +11,8 @@ export function useSignInSetup(
   start: () => void,
 ) {
   const [shownFor, setShownFor] = useState<string | null>(null);
+  // Choosing another provider closes the step, so returning never reopens it unasked.
+  if (shownFor !== null && shownFor !== provider) setShownFor(null);
   return {
     setup: setup && provider && shownFor === provider ? setup : undefined,
     begin: () => (setup && provider ? setShownFor(provider) : start()),

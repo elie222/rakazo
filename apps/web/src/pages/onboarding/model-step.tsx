@@ -434,6 +434,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
         <div className="rounded-lg border border-border px-3.5 py-3">
           <SignInSetupStep
             setup={signInSetup.setup}
+            disabled={oauthPending}
             onContinue={signInSetup.proceed}
             onCancel={signInSetup.dismiss}
           />

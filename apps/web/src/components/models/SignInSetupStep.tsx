@@ -6,10 +6,12 @@ import { ArrowUpRight } from "lucide-react";
 /** The setting a provider needs turned on, shown before a sign-in starts its clock. */
 export function SignInSetupStep({
   setup,
+  disabled,
   onContinue,
   onCancel,
 }: {
   setup: NonNullable<ModelCatalogEntry["signInSetup"]>;
+  disabled?: boolean;
   onContinue: () => void;
   onCancel: () => void;
 }) {
@@ -26,7 +28,7 @@ export function SignInSetupStep({
       </a>
       {setup.note ? <p className="mt-1 text-body-sm text-muted-foreground">{setup.note}</p> : null}
       <div className="mt-3 flex items-center gap-2">
-        <Button type="button" size="sm" onClick={onContinue}>
+        <Button type="button" size="sm" disabled={disabled} onClick={onContinue}>
           <Trans>I’ve turned it on</Trans>
         </Button>
         <Button

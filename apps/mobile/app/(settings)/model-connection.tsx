@@ -638,6 +638,7 @@ export default function ModelConnection() {
               </Pressable>
               {signInSetup.note ? <Text style={styles.secondary}>{signInSetup.note}</Text> : null}
               <NativeActionButton
+                disabled={busy}
                 fill
                 label={t`I’ve turned it on`}
                 onPress={proceedSignIn}
