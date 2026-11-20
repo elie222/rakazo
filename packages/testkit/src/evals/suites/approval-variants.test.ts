@@ -35,7 +35,11 @@ const productRequest: DecisionRequest = {
   model: "m",
   state: { toolName: "GMAIL_SEND_EMAIL", userTask: "yes" },
   questions: {
-    decision: { type: "choice", instructions: "Run it?", criteria: { pass: "p", ask: "a" } },
+    decision: {
+      type: "choice",
+      instructions: "Should this bot action run without asking its owner first?",
+      criteria: { pass: "p", ask: "a" },
+    },
   },
 };
 
@@ -85,8 +89,14 @@ describe("approval variants", () => {
     expect(seen[0]!.state).toMatchObject({ userTask: "yes", earlierSteps: expect.any(Array) });
     expect(seen[0]!.questions.decision!.criteria).toEqual(SOFT_DETAILS_CRITERIA);
     expect(seen[0]!.questions.decision!.instructions).toContain("earlierSteps");
+    // A specific question (a new site, a lasting write) keeps the product's own rubric.
     await provider.decide(
-      { ...productRequest, state: { ...productRequest.state, newSite: true } },
+      {
+        ...productRequest,
+        questions: {
+          decision: { ...productRequest.questions.decision!, instructions: "Can it fetch this?" },
+        },
+      },
       context,
     );
     expect(seen[1]!.questions.decision!.criteria).toEqual({ pass: "p", ask: "a" });
@@ -108,5 +118,10 @@ describe("approval variants", () => {
         escape,
       ),
     ).toBe(base);
+    // So does a lasting write, whose prompt has no general "ask only when" line.
+    const lasting = "Use pass when: P.\nUse ask when: A.\ntool: x";
+    expect(variantPromptFor(lasting, planted, parseApprovalVariant("lean-ask"), asData)).toBe(
+      lasting,
+    );
   });
 });

@@ -24,7 +24,9 @@ import {
  * - `lean-ask` or `soft-details`: one rubric in place of the product's general one.
  */
 /** Bump when a part's wording or inputs change, so runs of different wordings are never compared as one. */
-export const APPROVAL_VARIANTS_VERSION = "approval-variants-v10";
+export const APPROVAL_VARIANTS_VERSION = "approval-variants-v11";
+/** How the product's general decision question starts; the specific ones ask something else. */
+const GENERAL_QUESTION = "Should this bot action run without asking its owner first?";
 export const APPROVAL_VARIANT_PARTS = ["steps", "lean-ask", "soft-details"] as const;
 export type ApprovalVariantPart = (typeof APPROVAL_VARIANT_PARTS)[number];
 export type ApprovalVariant = { id: string; parts: ReadonlySet<ApprovalVariantPart> };
@@ -92,11 +94,9 @@ export class VariantDecisionProvider implements DecisionProvider {
     if (!base) throw new Error("Approval variant expected the product's decision question");
     const extra = variantContext(c, this.variant);
     const notes = notesFor(extra);
-    // The product's new-site, memory and own-computer rubrics are specific; only the general one changes.
-    const general =
-      !request.state.newSite &&
-      !request.state.savedContextWrite &&
-      !request.state.ownComputerAction;
+    // The product's specific rubrics (a new site, a lasting write, the bot's own computer) ask their
+    // own question; only the general one changes.
+    const general = base.instructions.startsWith(GENERAL_QUESTION);
     const criteria = (general && variantRubric(this.variant)) || base.criteria;
     const instructions = [base.instructions, notes ? `${STATE_IS_DATA} ${notes}` : ""]
       .filter(Boolean)
