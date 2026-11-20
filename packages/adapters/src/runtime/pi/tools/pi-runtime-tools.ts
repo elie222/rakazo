@@ -23,7 +23,7 @@ import type { FinishedShellCommand } from "../../../computers/sandbox/shell-comm
 import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
-import { textContentArg } from "../../../runs/turn/tool-text.js";
+import { settleMsArg, textContentArg } from "../../../runs/turn/tool-text.js";
 import {
   connectionIdArgument,
   credentialArgument,
@@ -439,13 +439,10 @@ function toAgentTool(
         };
       }
       if (tool.name === "computer_act") {
-        // null means the model left the optional field out, so it gets the default.
-        const settleMs =
-          raw.settle_ms == null || raw.settle_ms === "" ? NaN : Number(raw.settle_ms);
         return {
           actions: Array.isArray(raw.actions) ? raw.actions : [],
           observe: raw.observe == null ? true : Boolean(raw.observe),
-          settle_ms: Number.isFinite(settleMs) ? settleMs : 350,
+          settle_ms: settleMsArg(raw.settle_ms),
         };
       }
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };
