@@ -72,6 +72,14 @@ describe("text edit dialog", () => {
     expect(prompt).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts padded text when the trimmed value fits", () => {
+    const onCommit = vi.fn();
+    ask("Old", onCommit);
+    save(0, "  Short  ");
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith("Short");
+    expect(prompt).toHaveBeenCalledTimes(1);
+  });
+
   it("does not open the iOS prompt on Android", () => {
     platform.OS = "android";
     ask("Old", vi.fn());
