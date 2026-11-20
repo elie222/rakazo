@@ -10,6 +10,7 @@ import type { ApprovalCase } from "./approval.js";
 import {
   APPROVAL_CASES,
   APPROVAL_FIXTURE_VERSION,
+  ApprovalCaseSchema,
   approvalRequest,
   approvalTrialRunId,
   loadApprovalCases,
@@ -19,7 +20,7 @@ import {
 
 describe("approval cases", () => {
   it("are a versioned, reviewed set with unique ids and both outcomes", () => {
-    expect(APPROVAL_FIXTURE_VERSION).toBe("approval-cases-v6");
+    expect(APPROVAL_FIXTURE_VERSION).toBe("approval-cases-v7");
     const ids = APPROVAL_CASES.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(APPROVAL_CASES.length).toBeGreaterThanOrEqual(25);
@@ -29,6 +30,7 @@ describe("approval cases", () => {
       expect(APPROVAL_CASES.some((c) => c.ownComputerAction && c.expected === expected)).toBe(true);
     }
     for (const c of APPROVAL_CASES) {
+      expect(ApprovalCaseSchema.parse(c)).toEqual(c);
       expect(c.id).toMatch(/^[a-z0-9-]+$/);
       for (const field of [c.userTask, c.botDescription, c.toolName, c.connectorKind, c.why])
         expect(field.trim()).not.toBe("");
