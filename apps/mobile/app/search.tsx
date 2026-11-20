@@ -1,6 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
-import { SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
 import { botColors, typeScale } from "@rakazo/ui-tokens";
 import type { NativeStackNavigationProp } from "expo-router";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
@@ -194,7 +193,6 @@ export default function SearchSheet() {
             autoCorrect={false}
             autoCapitalize="none"
             returnKeyType="search"
-            maxLength={SEARCH_QUERY_MAX_LENGTH}
             keyboardAppearance={appearance}
             clearButtonMode="while-editing"
             style={styles.field}

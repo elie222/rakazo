@@ -1,6 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, NavLink } from "@rakazo/contracts";
-import { SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
 import {
   Button,
@@ -225,7 +224,6 @@ export function ShellSidebar({
               placeholder={activityMode ? t`Search runs` : t`Search`}
               aria-label={activityMode ? t`Search runs` : t`Search`}
               autoComplete="off"
-              maxLength={activityMode ? undefined : SEARCH_QUERY_MAX_LENGTH}
               name="sidebar-search"
             />
             {activityMode ? (
