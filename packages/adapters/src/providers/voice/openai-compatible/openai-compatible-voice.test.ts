@@ -949,6 +949,52 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     expect(forms[1]!.get("prompt")).toBe("Rakazo");
   });
 
+  it("asks again for plain json when the refusal is plain text", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("unsupported response_format: verbose_json", { status: 422 }),
+      )
+      .mockResolvedValueOnce(Response.json({ text: "Thank you." }));
+    await expect(
+      provider(fetchMock).transcribe(
+        {
+          audio: new Uint8Array([1]),
+          mimeType: "audio/webm",
+          apiKey: keyless,
+          minShortSegmentLogprob: -0.5,
+        },
+        ctx,
+      ),
+    ).resolves.toEqual({ text: "Thank you." });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["an empty segment list", []],
+    ["segments without text", [null, { avg_logprob: -0.9 }]],
+    [
+      "unspaced segments none of which is noise",
+      [
+        { text: "你好，", avg_logprob: -0.1 },
+        { text: "世界。", avg_logprob: -0.1 },
+      ],
+    ],
+  ])("keeps the server transcript for %s", async (_name, segments) => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ text: "你好，世界。", segments }));
+    await expect(
+      provider(fetchMock).transcribe(
+        {
+          audio: new Uint8Array([1]),
+          mimeType: "audio/webm",
+          apiKey: keyless,
+          minShortSegmentLogprob: -0.5,
+        },
+        ctx,
+      ),
+    ).resolves.toEqual({ text: "你好，世界。" });
+  });
+
   it("does not retry other refusals while filtering", async () => {
     const fetchMock = vi
       .fn()

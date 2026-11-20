@@ -567,7 +567,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     let minLogprob = request.minShortSegmentLogprob;
     let res = await send(minLogprob === undefined ? "json" : "verbose_json");
     let raw = await readVoiceText(res);
-    if (minLogprob !== undefined && isRefusal(res) && refusesVerboseJson(parseJson(raw))) {
+    if (minLogprob !== undefined && isRefusal(res) && refusesVerboseJson(parseJson(raw), raw)) {
       minLogprob = undefined;
       res = await send("json");
       raw = await readVoiceText(res);
@@ -596,8 +596,8 @@ function isRefusal(res: Response): boolean {
   return res.status === 400 || res.status === 422;
 }
 
-function refusesVerboseJson(body: unknown): boolean {
-  const text = JSON.stringify(body ?? null);
+function refusesVerboseJson(body: unknown, raw: string | null): boolean {
+  const text = `${JSON.stringify(body ?? null)} ${raw ?? ""}`;
   return text.includes("verbose_json") || text.includes("response_format");
 }
 
@@ -610,20 +610,27 @@ const NOISE_PHRASE_MAX_WORDS = 4;
  */
 function withoutNoisePhrases(body: object, minLogprob: number): string {
   const { text, segments } = body as { text?: unknown; segments?: unknown };
-  if (!Array.isArray(segments)) return String(text ?? "").trim();
-  return segments
+  const whole = String(text ?? "").trim();
+  if (!Array.isArray(segments)) return whole;
+  let dropped = 0;
+  const kept = segments
     .filter(
       (segment): segment is { text: string; avg_logprob?: unknown } =>
         Boolean(segment) && typeof (segment as { text?: unknown }).text === "string",
     )
     .filter((segment) => {
-      const words = segment.text.trim().split(/\s+/).filter(Boolean).length;
+      const words = segment.text.trim().split(/s+/).filter(Boolean).length;
       const logprob = typeof segment.avg_logprob === "number" ? segment.avg_logprob : 0;
-      return !(words <= NOISE_PHRASE_MAX_WORDS && logprob < minLogprob);
+      const noise = words <= NOISE_PHRASE_MAX_WORDS && logprob < minLogprob;
+      if (noise) dropped += 1;
+      return !noise;
     })
     .map((segment) => segment.text.trim())
     .filter(Boolean)
     .join(" ");
+  // Nothing was identified as noise (also for an empty or unusable segment list), so the server's
+  // own transcript is the better text: it keeps its spacing and anything the segments omit.
+  return dropped === 0 && whole ? whole : kept;
 }
 
 /** mp3 was requested; servers label it audio/mpeg or audio/mp3. Anything else is not a clip. */
