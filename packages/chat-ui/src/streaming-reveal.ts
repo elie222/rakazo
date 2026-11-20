@@ -56,6 +56,8 @@ type PendingBlock = {
 export type StreamingRevealState = {
   /** Rendered text of each block seen so far, by the block's stable key. */
   blocks: Map<string, string>;
+  /** Rendered text of the whole message at the last commit, in block order. */
+  renderedText: string;
   /** Progress written by render passes that have not committed yet. */
   pending: Map<string, PendingBlock>;
   /** Incremented once per render pass so an abandoned pass cannot commit its progress. */
@@ -73,6 +75,7 @@ export type StreamingRevealState = {
 export function createStreamingRevealState(): StreamingRevealState {
   return {
     blocks: new Map(),
+    renderedText: "",
     pending: new Map(),
     pass: 0,
     rate: undefined,
@@ -161,6 +164,7 @@ export function commitStreamingReveal(
     units += pending.units;
     arrival = Math.max(arrival, pending.now);
   }
+  state.renderedText = [...state.blocks.values()].join("\n");
   if (units === 0) return;
   // Only a continuous stream updates the speed. A pause keeps the previous speed, or a burst
   // after a pause would be scheduled at the slow pace it looked like it had.
@@ -189,7 +193,7 @@ function clampRevealMs(value: number, min: number, max: number): number {
  * Schedules this batch of new units and returns the arrival time and the gap between units. The
  * batch starts now and is spread to finish within the target lag, where the lag grows with arrival
  * speed. This keeps a slow model visibly typing and stops a fast burst from queueing seconds of
- * delay. Only the tail block renders through this plugin, so there is no second block to chain to.
+ * delay. Blocks render in order, so each batch starts at the current frame instead of chaining.
  */
 function planRevealSchedule(state: StreamingRevealState, count: number): RevealSchedule {
   const perUnit = state.rate !== undefined ? 1 / state.rate : REVEAL_FIRST_WINDOW_MS / count;
@@ -302,7 +306,17 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
       // text the reader already saw.
       let revealed = Number.POSITIVE_INFINITY;
       if (!tooLong && state.incremental) {
-        if (previous === undefined || previous.length === 0) {
+        if (previous === undefined) {
+          // A reference definition switches parsing from blocks to one root block. The new block
+          // still starts with the text already on screen, so settle that prefix instead of
+          // replaying the whole message.
+          revealed =
+            blockKey === "root-0" &&
+            state.renderedText.length > 0 &&
+            blockText.startsWith(state.renderedText)
+              ? state.renderedText.length
+              : 0;
+        } else if (previous.length === 0) {
           revealed = 0;
         } else {
           const prefix = revealPredecessorLength(blockText, previous);

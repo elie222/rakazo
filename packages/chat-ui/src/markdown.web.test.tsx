@@ -905,6 +905,31 @@ describe("web markdown streaming", () => {
     container.remove();
   });
 
+  it("keeps settled text when a reference definition switches to one block", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hello.\n\nWorld."}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(
+        <ChatMarkdown streaming>{"Hello.\n\nWorld.\n\n[ref]: https://example.test"}</ChatMarkdown>,
+      );
+    });
+    expect(container.querySelectorAll('[data-rk-reveal="new"]')).toHaveLength(0);
+    expect(container.textContent).toContain("Hello.");
+    expect(container.textContent).toContain("World.");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("shows a replaced snapshot at once instead of replaying it", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");
