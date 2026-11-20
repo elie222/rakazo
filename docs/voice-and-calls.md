@@ -29,8 +29,11 @@ Voice settings apply to every [space](./spaces.md). A space can customize them i
 
 ## Talk instead of typing
 
-Hold the microphone in the composer and speak; release to send. Slide up to lock recording so you
-don't have to keep holding.
+On web and desktop, hold the microphone in the composer and speak; release to send. Slide up to
+lock recording so you don't have to keep holding.
+
+On mobile, tap the microphone to dictate into the message box. Tap **Stop dictating** to finish,
+then review or send the text.
 
 ## Hear replies
 

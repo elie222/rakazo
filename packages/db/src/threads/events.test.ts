@@ -2551,7 +2551,12 @@ describe("answerRunInput approvals", () => {
         type: "approval.decided",
         userId: "user-1",
         spaceId: "workspace-1",
-        metadata: { decision: "allow", effectKind: "connector_write", runId: "run-1" },
+        metadata: {
+          decision: "allow",
+          effectKind: "connector_write",
+          effectId: "effect-1",
+          runId: "run-1",
+        },
       }),
     });
 

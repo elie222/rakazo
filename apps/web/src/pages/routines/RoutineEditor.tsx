@@ -96,24 +96,24 @@ export function RoutineEditor({
       <div className="mb-5 flex items-center justify-between">
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           onClick={onBack}
           className="text-muted-foreground"
           aria-label={t`Back`}
         >
-          <ChevronLeft />
+          <ChevronLeft className="size-4.5" strokeWidth={1.75} />
         </Button>
         <div className="text-body-lg font-medium text-foreground">
           <Trans>Routine</Trans>
         </div>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           onClick={onClose}
           className="text-muted-foreground"
           aria-label={t`Close`}
         >
-          <X />
+          <X className="size-4.5" strokeWidth={1.75} />
         </Button>
       </div>
 

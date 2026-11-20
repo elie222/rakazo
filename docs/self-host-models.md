@@ -60,8 +60,8 @@ TypeSafe direct remains available through `RAKAZO_AUTO_REVIEW_PROVIDER=jev` and
 `TYPESAFE_API_KEY`. Core runs without either hosted service.
 
 With TypeSafe, `RAKAZO_AUTO_REVIEW_MODEL` defaults to `jev-latest`, and
-`RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE` (0 to 1, default `0.5`) is the confidence below which Auto asks
-the person instead. `RAKAZO_AUTO_REVIEW_TIMEOUT_MS` (200 to 30000, default `10000`) bounds each
+`RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE` (0 to 1) is the confidence below which Auto asks the person
+instead. Unset, each decision model uses its own calibrated floor (`0.5` for Jev). `RAKAZO_AUTO_REVIEW_TIMEOUT_MS` (200 to 30000, default `10000`) bounds each
 check.
 
 ## Local models

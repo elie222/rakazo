@@ -71,5 +71,6 @@ test("board creates a ticket and opens it", async ({ page }, testInfo) => {
   await expect(detail.getByLabel("Title")).toHaveValue(title);
   await expect(detail.getByTestId("ticket-description")).toHaveValue(description);
   await expect(detail.getByTestId("ticket-comments")).toBeVisible();
+  await expect(detail.getByRole("link", { name: "Chat with Planner" })).toBeVisible();
   await captureScreenshot(page, testInfo, "board-ticket-detail");
 });

@@ -9,6 +9,7 @@ import {
   approvalRuleChoices,
   approvalRuleEffectChoices,
   batchActions,
+  clicksBeforeTyping,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -18,6 +19,7 @@ import {
   isSecretAskBlock,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
+  ownComputerActionNeedsReview,
   planActionGate,
   receiptItems,
   repeatsDeniedAction,
@@ -985,6 +987,92 @@ describe("savedContextWriteNeedsReview", () => {
       await expect(savedContextWriteNeedsReview(name, check)).resolves.toBe(false);
     }
     expect(checked).toBe(false);
+  });
+});
+
+describe("ownComputerActionNeedsReview", () => {
+  const yes = async () => true;
+  const no = async () => false;
+  const review = (name: string, args: Record<string, unknown>, tainted = yes, pageSiteGiven = no) =>
+    ownComputerActionNeedsReview(name, args, { tainted, pageSiteGiven });
+
+  it.each([
+    ["shell", { command: "ls" }],
+    [
+      "browser_act",
+      {
+        actions: [
+          { kind: "click", ref: "e1" },
+          { kind: "fill", ref: "e2", text: "x" },
+        ],
+      },
+    ],
+    ["browser_act", { actions: [{ kind: "upload", ref: "e2", paths: ["a.pdf"] }] }],
+    ["browser_navigate", { url: "https://collect.example.net/?d=1" }],
+    ["open_path", { path: "https://collect.example.net/?d=1" }],
+    ["computer_act", { actions: [{ kind: "type", text: "notes" }] }],
+    ["computer_act", { actions: [{ kind: "key", key: "v", modifiers: ["ctrl"] }] }],
+    [
+      "computer_act",
+      { actions: [{ kind: "focus", application: "Mail", uri: "mailto:a@example.com" }] },
+    ],
+    ["launch_app", { application: "Mail", uri: "mailto:a@example.com?body=notes" }],
+  ])(
+    "reviews %s that could send something only once outside content entered the run",
+    async (name, args) => {
+      await expect(review(name, args)).resolves.toBe(true);
+      await expect(review(name, args, no)).resolves.toBe(false);
+    },
+  );
+
+  it.each([
+    ["browser_act", { actions: [{ kind: "fill", ref: "e2", text: "Porto" }] }],
+    ["browser_navigate", { url: "https://shop.example.com/orders" }],
+    ["open_path", { path: "https://shop.example.com/orders" }],
+  ])("leaves %s on a site the run was given alone", async (name, args) => {
+    await expect(review(name, args, yes, yes)).resolves.toBe(false);
+  });
+
+  it("leaves calls that send nothing the bot chose alone, without checking the run", async () => {
+    let checked = false;
+    const check = async () => {
+      checked = true;
+      return true;
+    };
+    for (const [name, args] of [
+      ["browser_act", { actions: [{ kind: "click", ref: "e1" }] }],
+      [
+        "computer_act",
+        {
+          actions: [
+            { kind: "click", x: 1, y: 2 },
+            { kind: "scroll", amount: 3 },
+          ],
+        },
+      ],
+      ["open_path", { path: "reports/q4.pdf" }],
+      ["open_path", { path: "report:2026.txt" }],
+      ["open_path", { path: "mailto:a@example.com?body=notes" }],
+      ["open_path", { path: "C:\\Users\\bot\\notes.txt" }],
+      ["launch_app", { application: "Calculator" }],
+      ["write_file", { path: "a.txt" }],
+      ["browser_snapshot", {}],
+    ] as const) {
+      await expect(review(name, args, check, check)).resolves.toBe(false);
+    }
+    expect(checked).toBe(false);
+  });
+});
+
+describe("clicksBeforeTyping", () => {
+  it("is true only when a click comes before something typed or uploaded", () => {
+    const of = (...kinds: string[]) =>
+      clicksBeforeTyping({ actions: kinds.map((kind) => ({ kind })) });
+    expect(of("click", "fill")).toBe(true);
+    expect(of("click", "upload")).toBe(true);
+    expect(of("fill", "click")).toBe(false);
+    expect(of("click", "click")).toBe(false);
+    expect(of("type")).toBe(false);
   });
 });
 

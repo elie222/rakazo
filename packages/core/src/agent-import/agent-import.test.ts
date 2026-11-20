@@ -412,6 +412,30 @@ describe("skill files", () => {
     );
   });
 
+  it.each(['"name"', "'name'"])("renames a colliding skill with the YAML key %s", (key) => {
+    const markdown = (name: string) =>
+      [
+        "\uFEFF---",
+        "metadata:",
+        `  ${key}: Nested`,
+        `${key}: ${name}`,
+        "description: Check the weather.",
+        "---",
+        "",
+        `${key}: Weather`,
+      ].join("\r\n");
+    const result = plan([
+      { path: "workspace/skills/weather/SKILL.md", content: markdown("Weather") },
+    ]);
+    const renamed = resolveAgentImportNames(result, {
+      spaceMemoryPaths: [],
+      skillNames: ["Weather"],
+    });
+
+    expect(renamed.skills[0]).toMatchObject({ name: "Weather-2", content: markdown("Weather-2") });
+    expect(parseSkillMd(renamed.skills[0]!.content)).toMatchObject({ name: "Weather-2" });
+  });
+
   it("renames by rewriting only the name line", () => {
     const result = plan([
       { path: "workspace/skills/weather/SKILL.md", content: openclawSkill },
@@ -1020,10 +1044,13 @@ describe("dotenv parsing", () => {
 });
 
 describe("renameSkillMd", () => {
-  it("replaces a block scalar name and its indented lines only", () => {
-    expect(renameSkillMd("---\nname: |\n  Old\n  name\n\ndescription: d\n---\nBody", "New")).toBe(
-      "---\nname: New\ndescription: d\n---\nBody",
-    );
+  it.each([
+    ["name", "\n"],
+    ['"name"', "\r\n"],
+  ])("replaces a block scalar for %s and keeps the line endings", (key, newline) => {
+    const original = ["---", `${key}: |`, "  Old", "  name", "", "description: d", "---", "Body"];
+    const expected = ["---", `${key}: New`, "description: d", "---", "Body"];
+    expect(renameSkillMd(original.join(newline), "New")).toBe(expected.join(newline));
   });
 
   it("stays fast on a long indented block", () => {

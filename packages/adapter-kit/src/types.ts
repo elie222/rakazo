@@ -131,6 +131,11 @@ export interface ComputerRef {
   started?: boolean;
   /** Size the provider confirmed for this running machine. */
   size?: ComputerSize;
+  /**
+   * Size to start the machine at when a call finds it stopped and wakes it. A running machine
+   * keeps the size it has, and without one a woken machine keeps it too.
+   */
+  startSize?: ComputerSize;
 }
 
 export type WorkspaceDirectoryRequest =
@@ -1034,6 +1039,30 @@ export interface BackgroundJobPayloads {
   };
   /** Backup for one recorded outgoing chat message, and the conversation queued behind it. */
   "messaging.send": { outboundId: string };
+  /**
+   * Backup for one direct message answered before its files were in: posts it with what was
+   * stored and the rest marked, and tells the sender. It carries the file names and what the
+   * person wrote, sealed under their Space's key as message content is; never a link, a token or
+   * a provider's media id.
+   */
+  "messaging.inbound_settle": {
+    provider: string;
+    handle: string;
+    identityId: string;
+    /** The Space and bot it was sent to; a sender who re-linked since has it dropped. */
+    spaceId: string;
+    botId: string;
+    /** When it arrived (epoch ms): an owner's "stop" after this keeps it from starting a turn. */
+    receivedAt: number;
+    text: string;
+    /** Every file of the message in order, with the size its chat app reported when it did. */
+    attachments: { name: string; mimeType: string; size?: number }[];
+    /**
+     * Due late only to settle after the sender's jobs ahead of it: whichever path settles the one
+     * ahead makes it due now.
+     */
+    follower?: boolean;
+  };
   /** Backup for recording and sending what an ended run said where its turn came from. */
   "messaging.reply": { runId: string };
   /**
@@ -1614,6 +1643,11 @@ export interface BrowserPurchaseCheckRequest {
 /** `steps`: the indexes of the clicks that would complete the purchase. */
 export interface BrowserPurchaseCheckResult {
   purchase: (BrowserPurchase & { steps: number[] }) | null;
+  /**
+   * The page could not be read because a JavaScript dialog is open on it: its type (alert, confirm,
+   * prompt, beforeunload). The caller decides whether a press may answer it.
+   */
+  dialog?: string;
 }
 
 /** A sandbox must route these commands through its owned screen, never generic host execution. */
@@ -1723,6 +1757,13 @@ export interface AutoReviewRequest {
    * instruction.
    */
   savedContextWrite?: boolean;
+  /**
+   * A command, page action or desktop input on the bot's own computer after the run took in
+   * outside content. `userTask` is then only the owner's own words; `args` is bounded by the
+   * caller, a browser action names the page it acts on, and a long command keeps every address
+   * it names.
+   */
+  ownComputerAction?: boolean;
   /**
    * The owner's own earlier messages in this chat, oldest first, before `userTask`: never a tool
    * result or anyone else's message. Redacted and capped by the caller.

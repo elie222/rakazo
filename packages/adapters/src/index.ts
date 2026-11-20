@@ -50,6 +50,7 @@ export type {
 } from "./computers/computer-provider-descriptor.js";
 export * from "./computers/computer-provider-registry.js";
 export * from "./computers/computer-update.js";
+export * from "./computers/computer-wake.js";
 export * from "./computers/computer-workspace.js";
 export * from "./computers/host/host-computer-device.js";
 export * from "./computers/host/user-device-emulator.js";
@@ -106,6 +107,7 @@ export * from "./memory/memory-provider-factory.js";
 export * from "./messaging/bot-messages.js";
 export * from "./messaging/chat-sdk-surface.js";
 export * from "./messaging/installed-messaging-surface.js";
+export * from "./messaging/intake/settle-inbound.js";
 export * from "./messaging/messaging-composition.js";
 export * from "./messaging/messaging-context.js";
 export * from "./messaging/messaging-delivery.js";

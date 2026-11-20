@@ -32,6 +32,7 @@ function withAppleWatch(config) {
 
 function addWatchTarget(project, root, name, config) {
   const directory = path.join(root, TARGET);
+  const watchBundleIdentifier = `${config.ios.bundleIdentifier}.watchkitapp`;
   fs.cpSync(WATCH, directory, { recursive: true });
   fs.copyFileSync(
     path.join(__dirname, "..", "assets", "icon.png"),
@@ -52,12 +53,7 @@ function addWatchTarget(project, root, name, config) {
     const objects = project.hash.project.objects;
     objects.PBXTargetDependency ??= {};
     objects.PBXContainerItemProxy ??= {};
-    const target = project.addTarget(
-      TARGET,
-      "watch2_app",
-      TARGET,
-      `${config.ios.bundleIdentifier}.watchkitapp`,
-    );
+    const target = project.addTarget(TARGET, "watch2_app", TARGET, watchBundleIdentifier);
     uuid = target.uuid;
     // The library embeds it correctly but uses the legacy stub app product type.
     target.pbxNativeTarget.productType = '"com.apple.product-type.application"';
@@ -93,6 +89,7 @@ function addWatchTarget(project, root, name, config) {
       INFOPLIST_KEY_CFBundleDisplayName: config.name,
       INFOPLIST_KEY_WKCompanionAppBundleIdentifier: config.ios.bundleIdentifier,
       MARKETING_VERSION: config.version ?? "1.0",
+      PRODUCT_BUNDLE_IDENTIFIER: `"${watchBundleIdentifier}"`,
       SDKROOT: "watchos",
       SUPPORTED_PLATFORMS: '"watchos watchsimulator"',
       SWIFT_VERSION: "5.0",

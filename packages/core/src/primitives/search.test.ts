@@ -24,6 +24,16 @@ describe("search helpers", () => {
     expect(extractLinksFromText(`See **${url}**. Also see ${url}.`)).toEqual([url]);
   });
 
+  it.each([".", ",", ";", ":", "!", "?"])(
+    "keeps trailing %s inside a bold link and trims surrounding punctuation",
+    (punctuation) => {
+      const url = "https://example.com/report";
+      expect(
+        extractLinksFromText(`See **${url}${punctuation}**. Also see ${url}${punctuation}.`),
+      ).toEqual([`${url}${punctuation}`, url]);
+    },
+  );
+
   it("keeps stars and balanced parentheses in a bold link", () => {
     const url = "https://example.com/a_(b)/*.md?pattern=*";
     expect(extractLinksFromText(`(**${url}**).`)).toEqual([url]);

@@ -372,6 +372,8 @@ export async function runApprovalSuite(
         ),
         providerId: connection.provider,
         model: connection.modelId,
+        // A model not in the catalog yet is gated with Jev's calibration.
+        calibration: (catalog ?? decisionModel("openrouter", "typesafe/jev-1.14")!).calibration,
       });
     } else {
       const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");
@@ -435,10 +437,18 @@ export async function runApprovalSuite(
   );
   const request = (c: ApprovalCase): AutoReviewRequest => {
     const earlier = reviewOwnerMessages(c.earlierOwnerMessages ?? []);
+    const redacted = autoReview.redactToolArgsForReview(c.args, []);
     const args =
       c.newSite && typeof c.args.url === "string"
         ? { url: c.args.url }
-        : autoReview.redactToolArgsForReview(c.args, []);
+        : c.ownComputerAction
+          ? autoReview.ownComputerReviewArgs(
+              c.toolName,
+              redacted,
+              // A case's page stands for what the browser reported.
+              typeof c.args.page === "string" ? c.args.page : undefined,
+            )
+          : redacted;
     // What the product keeps of a run's reads: every result except the bot's own state.
     const outsideText = (c.runSteps ?? [])
       .filter((step) => step.outside || toolResultTaintsRun(step.tool))

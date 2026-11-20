@@ -1153,6 +1153,19 @@ describe("connection success with a failed refresh", () => {
   });
 });
 
+it("names a default the deployment pays for as included instead of by its provider", async () => {
+  saved.roleSettings = {
+    primary: null,
+    backups: [],
+    deploymentPrimary: { provider: "openrouter", modelId: "default-model" },
+    deploymentIncluded: true,
+  };
+  await remount(async () => {
+    await act(async () => root.render(createElement(Models)));
+  });
+  expect(container.textContent).toContain("Included");
+});
+
 it("keeps native picker credit and personal selections distinct for the same model", async () => {
   saved.roleSettings.deploymentPrimary = { provider: "openrouter", modelId: "default-model" };
   saved.roleCatalog = [

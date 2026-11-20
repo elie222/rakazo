@@ -135,7 +135,7 @@ function diffLines(before: string[], after: string[]): DiffLine[] {
  */
 export function instructionUpdateDiff(before: string, after: string): string {
   if (!before.trim()) return after;
-  const lines = diffLines(before.split("\n"), after.split("\n"));
+  const lines = diffLines(before.split(/\r?\n/), after.split(/\r?\n/));
   const shown = lines.map(() => false);
   lines.forEach((line, index) => {
     if (line.sign === " ") return;

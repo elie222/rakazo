@@ -218,7 +218,7 @@ async function commitAnswerRunInput(
 ): Promise<{
   threadId: string;
   seq: number;
-  approval?: { decision: string; effectKind: string };
+  approval?: { decision: string; effectKind: string; effectId: string };
 } | null> {
   // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
   // concurrent clear cannot deadlock against this transaction.
@@ -551,7 +551,13 @@ async function commitAnswerRunInput(
     threadId: updated.threadId,
     seq: updated.seq,
     ...(approvalEffect
-      ? { approval: { decision: approvalAnswer, effectKind: approvalEffect.kind } }
+      ? {
+          approval: {
+            decision: approvalAnswer,
+            effectKind: approvalEffect.kind,
+            effectId: approvalEffect.id,
+          },
+        }
       : {}),
   };
 }
@@ -584,6 +590,7 @@ export async function answerRunInput(
       metadata: {
         decision: committed.approval.decision,
         effectKind: committed.approval.effectKind,
+        effectId: committed.approval.effectId,
         runId: input.runId,
       },
     });

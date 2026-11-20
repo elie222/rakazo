@@ -1,11 +1,33 @@
-import type { JobPublisher, MessagingInboundMessage, SandboxProvider } from "@rakazo/adapter-kit";
-import { teamChatEngageJobKey } from "@rakazo/adapter-kit";
+import type {
+  JobPublisher,
+  JobQueueOrder,
+  MessagingInboundMessage,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
+import {
+  MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS,
+  messagingInboundSettleJobKey,
+  messagingInboundSettleQueue,
+  teamChatEngageJobKey,
+} from "@rakazo/adapter-kit";
 import type { MessagingDelivery, OutboundLane } from "@rakazo/adapters";
-import { MESSAGING_DM_OUTBOUND_CAP, messagingWakeIdempotencyKey, wakeRun } from "@rakazo/adapters";
+import {
+  filesNotReceivedReply,
+  inboundArrivalTime,
+  MESSAGING_DM_OUTBOUND_CAP,
+  messagingAttachmentClientNonce,
+  messagingMessageClientNonce,
+  messagingWakeIdempotencyKey,
+  ownerStopKey,
+  sealSettleText,
+  stoppedSince,
+  wakeRun,
+} from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { MessagingCommand } from "@rakazo/core";
 import {
+  abortableDelay,
   displayName,
   messageBlockForArtifact,
   normalizeVoiceTranscript,
@@ -30,7 +52,7 @@ import {
   SpaceDeletionInProgressError,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import {
   cancelThreadRuns,
   finishThreadStop,
@@ -40,12 +62,32 @@ import { deliverWebhookEvent } from "../webhooks/webhook-inbound.js";
 import type { InboundAttachmentStore } from "./inbound-attachments.js";
 import { storeInboundAttachments } from "./inbound-attachments.js";
 import { formatMessagingEventPrompt } from "./inbound-delivery.prompt.js";
+import {
+  DIRECT_ATTACHMENT_ATTEMPTS,
+  DIRECT_ATTACHMENT_TIMEOUT_MS,
+  DIRECT_MESSAGE_SETTLE_BUDGET_MS,
+  SHUTDOWN_DOWNLOAD_GRACE_MS,
+  SHUTDOWN_HANDOFF_MARGIN_MS,
+} from "./intake/limits.js";
+import type { SenderQueue } from "./intake/sender-queue.js";
+import { createSenderQueue } from "./intake/sender-queue.js";
+import type { SettlePayload } from "./intake/settle-job.js";
+import {
+  cancelSettleJob,
+  recordSettleJob,
+  settleJobAt,
+  settleJobDueAt,
+} from "./intake/settle-job.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
 
 export interface MessagingInboundDeps {
   prisma: PrismaClient;
   events: Pick<ThreadEvents, "sendUserMessage" | "notify">;
-  jobs: Pick<JobPublisher, "enqueue" | "cancelIn">;
+  /**
+   * The job queue, also asked whether a sender's backup jobs are still settling earlier messages,
+   * and told when one settles so the jobs waiting for it are due.
+   */
+  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn"> & JobQueueOrder;
   /** Records the replies this line sends, and sends them straight away. */
   delivery: Pick<MessagingDelivery, "recordIn" | "send">;
   sandbox: SandboxProvider;
@@ -97,14 +139,153 @@ type IdentityRow = {
  * fan out to every approved member bot's own thread.
  */
 export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
-  return async (event: MessagingInboundMessage): Promise<void> => {
+  const intake: DirectIntake = {
+    senders: createSenderQueue(),
+    settling: new Map(),
+    handedOff: new Map(),
+    pending: new Map(),
+    closing: false,
+  };
+  const handle = async (event: MessagingInboundMessage): Promise<void> => {
     if (!event.isDirect) {
       await handleChannelEvent(deps, event);
       return;
     }
-    await handleDirectEvent(deps, event).catch(droppedWhileDeleting);
+    await handleDirectEvent(deps, intake, event).catch(droppedWhileDeleting);
   };
+  return Object.assign(handle, {
+    /**
+     * The start of a shutdown, before anything waits: nothing more is posted here, and every
+     * message still settling has its backup job made due just past a short grace, so the job
+     * settles it soon even if the process is killed before `handOffPending`. Downloads get that
+     * grace, counted from now; a message that comes in after is its job's from the start.
+     */
+    prepareHandOff: async (): Promise<void> => {
+      await beginShutdown(deps, intake).recorded;
+    },
+    /**
+     * The end of a shutdown: once the downloads still running have finished or the grace is
+     * over, every message still settling has its job due now, and the job finds the files stored
+     * meanwhile.
+     */
+    handOffPending: async (): Promise<void> => {
+      const shutdown = beginShutdown(deps, intake);
+      await shutdown.recorded;
+      const graceOver = new AbortController();
+      await Promise.race([
+        // A message being handed to the bot here finishes that within the grace too.
+        Promise.allSettled(
+          shutdown.arrivals.map((arrival) =>
+            arrival.delivering ? arrival.settled : arrival.media,
+          ),
+        ),
+        abortableDelay(Math.max(0, shutdown.graceEnds - Date.now()), graceOver.signal),
+      ]);
+      graceOver.abort();
+      intake.handingOff = undefined;
+      // One at a time, so a kill partway leaves no later message due before an earlier one.
+      for (const arrival of shutdown.arrivals) {
+        // One being handed to the bot here ends its own job, or hands it off if that fails.
+        if (!arrival.delivering) await handOffToJob(deps, intake, arrival);
+      }
+    },
+  });
 }
+
+/** A shutdown, started once: its messages, in each sender's order, have their jobs due soon. */
+function beginShutdown(deps: MessagingInboundDeps, intake: DirectIntake): Shutdown {
+  if (intake.shutdown) return intake.shutdown;
+  intake.closing = true;
+  const now = Date.now();
+  const shutdown: Shutdown = {
+    arrivals: [...intake.pending.values()].flat(),
+    graceEnds: now + SHUTDOWN_DOWNLOAD_GRACE_MS,
+    dueBy: now + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS,
+    last: new Map(),
+    recorded: Promise.resolve(),
+  };
+  intake.shutdown = shutdown;
+  intake.handingOff = shutdown;
+  // One at a time, in order, as the hand-off at the end goes.
+  shutdown.recorded = (async () => {
+    for (const arrival of shutdown.arrivals) await dueByShutdown(deps, intake, shutdown, arrival);
+  })();
+  return shutdown;
+}
+
+/** The direct messages this process is still settling. */
+type DirectIntake = {
+  /** One sender's messages reach the bot in the order they arrived here. */
+  senders: SenderQueue;
+  /** Messages settling here, so a redelivery meanwhile adds nothing. */
+  settling: Map<string, Arrival>;
+  /**
+   * Senders whose messages go to their backup jobs instead of reaching the bot from here, with
+   * when the last of those jobs is due: one of their messages failed here, or the job queue
+   * still held jobs of theirs when they wrote again. Each next job is due after it, so the
+   * sender's job queue settles them in the order sent, until the sender has nothing pending here.
+   */
+  handedOff: Map<string, number>;
+  /** Each sender's messages here, from arrival until their turn in the queue is over. */
+  pending: Map<string, Arrival[]>;
+  /** Shutting down: the backup jobs settle what is left. */
+  closing: boolean;
+  /** The shutdown, once it started. */
+  shutdown?: Shutdown;
+  /** During a shutdown's grace, the messages it hands off once the grace is over. */
+  handingOff?: Shutdown;
+};
+
+/** A shutdown's hand-off: its messages, and when their jobs are due at the latest meanwhile. */
+type Shutdown = {
+  arrivals: Arrival[];
+  /** When the downloads still running stop being waited for. */
+  graceEnds: number;
+  dueBy: number;
+  /** The first writes making the jobs due by `dueBy`. */
+  recorded: Promise<void>;
+  /** When each sender's last job is due meanwhile, so the next comes after it. */
+  last: Map<string, number>;
+};
+
+/** One direct message from its arrival here. */
+type Arrival = {
+  sender: string;
+  /**
+   * When it arrived, taken again in its record turn, after the sender's earlier messages here: an
+   * owner's "stop" recorded after this keeps it from starting a turn.
+   */
+  receivedAt: number;
+  /** Being handed to the bot here, so a shutdown leaves its job alone. */
+  delivering?: boolean;
+  /** Its turn in its sender's queue, over once it settled here or went to its job. */
+  settled?: Promise<void>;
+  /** Its backup job once recorded, until the message settles here. */
+  job?: SettleJob;
+  /** Its downloads, once they started. */
+  media?: Promise<MediaOutcome>;
+  /** The writes of its job so far, which go one at a time. */
+  writes: Promise<void>;
+  /**
+   * Over once the sender's earlier arrivals here recorded their backup jobs or will record none,
+   * so the jobs keep the order the messages arrived in.
+   */
+  recordTurn: Promise<void>;
+  /** Ends its own turn: its job is recorded, or it records none. */
+  endRecordTurn: () => void;
+  /** Over once its own turn and every turn before it are. */
+  recorded: Promise<void>;
+};
+
+/** A message's backup job as last written, and when it is due. */
+type SettleJob = { payload: SettlePayload; dueAt: number };
+
+/**
+ * What is left of a direct message once its webhook can be answered. `inline` work is part of
+ * the answer, so a failure makes the provider deliver it again; any other is the message's
+ * files and turn, after the answer, with its backup job recorded.
+ */
+type DirectSettle = { inline: boolean; run: () => Promise<void> };
 
 /** A Space being deleted takes no messages; failing would only make the provider redeliver. */
 function droppedWhileDeleting(error: unknown): void {
@@ -112,10 +293,79 @@ function droppedWhileDeleting(error: unknown): void {
   getLogger().info("messaging inbound dropped", { reason: "space being deleted" });
 }
 
+/**
+ * Answers a direct message's webhook once the message is safe; its files start downloading then,
+ * and it reaches the bot in its sender's order. The sender's place is taken on arrival, before any
+ * lookup, so a quick text never overtakes the file message sent before it. Plain text from a
+ * sender with nothing pending, here or in the job queue, is still delivered within the webhook.
+ */
 async function handleDirectEvent(
   deps: MessagingInboundDeps,
+  intake: DirectIntake,
   event: MessagingInboundMessage,
 ): Promise<void> {
+  const sender = JSON.stringify([event.provider, event.from]);
+  const behind = intake.senders.busy(sender);
+  // Nothing of theirs is pending here; the job queue is asked about its own once they are known.
+  if (!behind) intake.handedOff.delete(sender);
+  const pending = intake.pending.get(sender) ?? [];
+  const arrival = arrivalAfter(sender, pending.at(-1));
+  pending.push(arrival);
+  intake.pending.set(sender, pending);
+  const prepared = prepareDirectEvent(deps, intake, event, behind, arrival);
+  // However its preparation ends, the sender's next message may record its job then.
+  void Promise.allSettled([prepared]).then(arrival.endRecordTurn);
+  const settled = intake.senders.run(sender, async () => {
+    try {
+      // A failed preparation is the webhook's failure, and the provider delivers it again.
+      const [outcome] = await Promise.allSettled([prepared]);
+      if (outcome.status === "fulfilled") await outcome.value?.run();
+    } finally {
+      pending.splice(pending.indexOf(arrival), 1);
+      if (pending.length === 0 && intake.pending.get(sender) === pending) {
+        intake.pending.delete(sender);
+        // Nothing of theirs is pending here; their next message asks the job queue afresh.
+        intake.handedOff.delete(sender);
+      }
+    }
+  });
+  arrival.settled = settled.then(
+    () => undefined,
+    () => undefined,
+  );
+  const settle = await prepared;
+  if (settle?.inline) await settled;
+}
+
+/** A direct message just arrived, whose job is recorded after that of the one before it here. */
+function arrivalAfter(sender: string, previous: Arrival | undefined): Arrival {
+  let endRecordTurn = () => {};
+  const ownTurn = new Promise<void>((resolve) => {
+    endRecordTurn = resolve;
+  });
+  const recordTurn = previous?.recorded ?? Promise.resolve();
+  return {
+    sender,
+    receivedAt: Date.now(),
+    writes: Promise.resolve(),
+    recordTurn,
+    endRecordTurn,
+    recorded: recordTurn.then(() => ownTurn),
+  };
+}
+
+/**
+ * Everything a direct message needs before its webhook is answered: the identity, owner
+ * commands and link codes, and for a message that settles later, its backup job. Returns null
+ * when nothing is left to deliver.
+ */
+async function prepareDirectEvent(
+  deps: MessagingInboundDeps,
+  intake: DirectIntake,
+  event: MessagingInboundMessage,
+  behind: boolean,
+  arrival: Arrival,
+): Promise<DirectSettle | null> {
   // Media that only the provider can download (Telegram file_id fetches) rides
   // along in event.attachments; CDN media keeps riding along as text.
   const attachments = event.attachments ?? [];
@@ -124,9 +374,9 @@ async function handleDirectEvent(
   const where = { provider_address: { provider: event.provider, address: event.from } } as const;
   const existing = await deps.prisma.messagingIdentity.findUnique({ where });
   if (existing && event.installationSpaceId && existing.spaceId !== event.installationSpaceId)
-    return;
+    return null;
   // A deactivated person's chat apps act for nobody: no commands, messages or links.
-  if (existing && (await accountDeactivated(deps.prisma, existing.userId))) return;
+  if (existing && (await accountDeactivated(deps.prisma, existing.userId))) return null;
   if (existing) {
     const command = parseMessagingCommand(event.content);
     const releasesHeld = existing.outboundSinceInbound >= MESSAGING_DM_OUTBOUND_CAP;
@@ -151,26 +401,30 @@ async function handleDirectEvent(
     });
     // Replies held behind the consecutive-outbound cap can go now.
     if (releasesHeld) await deps.delivery.send([{ identityId: existing.id }]);
-    if (!text && attachments.length === 0) return;
+    if (!text && attachments.length === 0) return null;
     // Owner commands are only parsed in the verified 1:1 conversation.
     if (command === "stop") {
       // Only a bare "stop" is the command; one carrying media is delivered as a message.
       if (attachments.length === 0 && !event.mediaUrl) {
+        // It acts once the messages sent before it have their arrival times, without waiting for
+        // their files: they still reach the chat when they settle, but start nothing
+        // (`stoppedSince`).
+        await arrival.recordTurn;
         await stopOwnerWork(deps, existing, event);
-        return;
+        return null;
       }
-    } else if (command && (await applyOwnerCommand(deps, existing, command, prompt))) return;
+    } else if (command && (await applyOwnerCommand(deps, existing, command, prompt))) return null;
     // A linked sender pasting a fresh code re-points this address at another
     // of their bots (only their own codes apply).
-    if (await tryRedeemLinkCode(deps, event)) return;
+    if (await tryRedeemLinkCode(deps, event)) return null;
   } else {
     // Unlinked senders: a valid link code binds this address to its issuer's
     // account and bot; otherwise the line is silent unless the deployment
     // explicitly runs as an open Poke-style signup line.
-    if (await tryRedeemLinkCode(deps, event)) return;
-    if (!deps.openSignup || event.installationSpaceId) return;
+    if (await tryRedeemLinkCode(deps, event)) return null;
+    if (!deps.openSignup || event.installationSpaceId) return null;
     // Media-only delivery is for linked identities; retain text-based signup.
-    if (!text) return;
+    if (!text) return null;
   }
 
   let ids: ProvisionedMessagingIdentity;
@@ -195,17 +449,350 @@ async function handleDirectEvent(
     });
   }
 
-  const stored = await storeInboundMedia(deps, ids, event);
+  const deadline = arrival.receivedAt + DIRECT_MESSAGE_SETTLE_BUDGET_MS;
+  // Earlier messages of theirs may still be with their backup jobs, after a failure here, a
+  // restart, or on another instance: this one follows them there rather than overtaking them.
+  const ownJob =
+    existing && !behind
+      ? await followQueuedJobs(deps, intake, arrival.sender, existing.id, event)
+      : false;
+  if (attachments.length === 0 && !behind && !intake.handedOff.has(arrival.sender)) {
+    return {
+      inline: true,
+      run: async () => {
+        await deliverDirectMessage(deps, ids, event, text, NO_MEDIA, false);
+        // A redelivery of a message that once went to its backup job: that job has nothing left
+        // to do, and must not hold the sender's next messages back. The message is posted
+        // already, so a failure here must not fail its webhook; the job then runs as recorded.
+        if (existing && ownJob) {
+          await bestEffort(
+            "end a redelivered inbound message's own backup job",
+            endOwnJob(deps, existing.id, event),
+          );
+        }
+      },
+    };
+  }
+  // Its backup job cannot download files, so while this process stops, a file message fails its
+  // webhook and the provider delivers it again to one that is up.
+  if (intake.closing && attachments.length > 0) {
+    throw new Error("messaging inbound refused a file message while shutting down");
+  }
+  const message = JSON.stringify([event.provider, event.handle]);
+  // The provider delivered it again while its files are still downloading here.
+  if (intake.settling.has(message)) return null;
+  intake.settling.set(message, arrival);
+  try {
+    const identityId =
+      existing?.id ??
+      (await deps.prisma.messagingIdentity.findUniqueOrThrow({ where, select: { id: true } })).id;
+    // After the jobs of the sender's earlier messages here, though this one's lookups may finish
+    // first: the job queue places a job by when it was first recorded. Its arrival time is taken
+    // then too, so it falls after a stop sent before it, which records itself in its own turn.
+    await arrival.recordTurn;
+    arrival.receivedAt = await inboundArrivalTime(deps.prisma);
+    const receivedAt = arrival.receivedAt;
+    const job = { provider: event.provider, handle: event.handle, identityId };
+    // The Space and bot it was sent to; the job drops it if the sender re-linked meanwhile.
+    // The job keeps what the person wrote, sealed, and never the media link that rides along. It
+    // names every file, those past the cap too, so it can say what became of each.
+    const payload: SettlePayload = {
+      ...job,
+      spaceId: ids.spaceId,
+      botId: ids.botId,
+      receivedAt,
+      text: await sealSettleText(deps.prisma, ids.spaceId, job, event.content),
+      attachments: attachments
+        .slice(0, MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS)
+        .map(({ name, mimeType, size }) => ({
+          name,
+          mimeType,
+          ...(size !== undefined && Number.isSafeInteger(size) && size >= 0 ? { size } : {}),
+        })),
+    };
+    const dueAt = settleJobDueAt(receivedAt);
+    try {
+      await deps.prisma.$transaction((tx) => recordSettleJob(deps.jobs, tx, payload, dueAt));
+    } finally {
+      arrival.endRecordTurn();
+    }
+    arrival.job = { payload, dueAt: dueAt.getTime() };
+    // Arriving during a shutdown, it is its backup job's, after the sender's earlier messages.
+    if (intake.closing) {
+      intake.settling.delete(message);
+      const shutdown = intake.handingOff;
+      if (!shutdown) await handOffToJob(deps, intake, arrival);
+      else {
+        // It may have been waiting for its job when the shutdown started.
+        if (!shutdown.arrivals.includes(arrival)) shutdown.arrivals.push(arrival);
+        await dueByShutdown(deps, intake, shutdown, arrival);
+      }
+      return null;
+    }
+    // The files download from now on, whatever is ahead of the message in its sender's queue;
+    // only handing the message to the bot waits its turn there.
+    const media = settledMedia(storeInboundMedia(deps, ids, event, deadline));
+    arrival.media = media;
+    return {
+      inline: false,
+      run: () =>
+        (intake.closing
+          ? Promise.resolve()
+          : intake.handedOff.has(arrival.sender)
+            ? // A shutdown meanwhile hands it off itself.
+              media.then(() => (intake.closing ? undefined : handOffToJob(deps, intake, arrival)))
+            : settleDirectMessage(deps, intake, ids, event, arrival, text, media)
+        ).finally(() => intake.settling.delete(message)),
+    };
+  } catch (error) {
+    intake.settling.delete(message);
+    throw error;
+  }
+}
 
+/**
+ * Settles a message whose webhook was answered, in its sender's turn: once its files are in, the
+ * bot's turn, and one notice to the sender when files did not arrive, which commits with the end
+ * of its backup job. Never rejects: a failure hands the message, and the sender's messages queued
+ * behind it, to their backup jobs at once.
+ */
+async function settleDirectMessage(
+  deps: MessagingInboundDeps,
+  intake: DirectIntake,
+  ids: ProvisionedMessagingIdentity,
+  event: MessagingInboundMessage,
+  arrival: Arrival,
+  text: string,
+  media: Promise<MediaOutcome>,
+): Promise<void> {
+  try {
+    const outcome = await media;
+    // A shutdown hands the message to its backup job instead.
+    if (intake.closing) return;
+    if ("error" in outcome) throw outcome.error;
+    const quiet = arrival.job
+      ? await stoppedSince(deps.prisma, arrival.job.payload.identityId, arrival.receivedAt)
+      : false;
+    if (intake.closing) return;
+    // From here the message is this path's: a shutdown must not also make its job due, which
+    // could post it a second time beside a message routine's run.
+    arrival.delivering = true;
+    const unavailable = await deliverDirectMessage(deps, ids, event, text, outcome.stored, quiet);
+    const lane = await writeJob(arrival, async (job) => {
+      const lane = { identityId: job.payload.identityId };
+      await deps.prisma.$transaction(async (tx) => {
+        if (unavailable.length > 0) {
+          await deps.delivery.recordIn(tx, lane, [
+            filesNotReceivedReply(lane.identityId, event.provider, event.handle),
+          ]);
+        }
+        await cancelSettleJob(deps.jobs, tx, job.payload);
+        // The sender's jobs that waited only for this one are due now.
+        await deps.jobs.releaseFollowersIn(
+          tx,
+          messagingInboundSettleQueue(lane.identityId),
+          messagingInboundSettleJobKey(event.provider, event.handle),
+        );
+      });
+      arrival.job = undefined;
+      return lane;
+    });
+    // The notice is recorded with its own backup, so a failed send here is retried there.
+    if (lane && unavailable.length > 0) {
+      await bestEffort("send the files-not-received notice", deps.delivery.send([lane]));
+    }
+  } catch (error) {
+    // The job drops a message for a Space being deleted, as this path would.
+    if (!(error instanceof SpaceDeletionInProgressError)) {
+      getLogger().error("messaging inbound settle failed; its backup job takes over", error);
+    }
+    await handOffToJob(deps, intake, arrival);
+  }
+}
+
+/**
+ * The sender's backup jobs still settling earlier messages, wherever those arrived: their next
+ * messages go after them, until the sender has nothing pending here. Returns whether the message
+ * has a job of its own, left from an earlier delivery of it.
+ */
+async function followQueuedJobs(
+  deps: MessagingInboundDeps,
+  intake: DirectIntake,
+  sender: string,
+  identityId: string,
+  event: MessagingInboundMessage,
+): Promise<boolean> {
+  // A redelivery of this very message does not wait on its own job.
+  const { until, own } = await deps.jobs.pendingUntil(
+    messagingInboundSettleQueue(identityId),
+    messagingInboundSettleJobKey(event.provider, event.handle),
+  );
+  if (until) {
+    intake.handedOff.set(sender, Math.max(intake.handedOff.get(sender) ?? 0, until.getTime()));
+  }
+  return own;
+}
+
+/** The message's own job, left from an earlier delivery of it, ends; its followers are due. */
+async function endOwnJob(
+  deps: MessagingInboundDeps,
+  identityId: string,
+  event: MessagingInboundMessage,
+): Promise<void> {
+  const key = messagingInboundSettleJobKey(event.provider, event.handle);
+  await deps.prisma.$transaction(async (tx) => {
+    await deps.jobs.cancelIn(tx, key);
+    await deps.jobs.releaseFollowersIn(tx, messagingInboundSettleQueue(identityId), key);
+  });
+}
+
+/**
+ * The message's backup job, already recorded, settles it instead of this process. It comes due
+ * after the sender's jobs still queued ahead of it, read again now since some may have settled
+ * after the message arrived, so their job queue keeps the order they were sent in; the sender's
+ * messages queued behind it here follow it there.
+ */
+function handOffToJob(
+  deps: MessagingInboundDeps,
+  intake: DirectIntake,
+  arrival: Arrival,
+): Promise<void> {
+  if (!arrival.job) return Promise.resolve();
+  return writeJob(arrival, async (job) => {
+    const { identityId, provider, handle } = job.payload;
+    const ahead = await bestEffort(
+      "read the backup jobs an inbound message waits for",
+      deps.jobs.pendingUntil(
+        messagingInboundSettleQueue(identityId),
+        messagingInboundSettleJobKey(provider, handle),
+      ),
+    );
+    // Without an answer, it keeps to what this process last knew of the queue.
+    const after =
+      ahead === undefined ? intake.handedOff.get(arrival.sender) : ahead.until?.getTime();
+    const now = Date.now();
+    const dueAt = Math.max(now, after === undefined ? 0 : after + 1);
+    intake.handedOff.set(
+      arrival.sender,
+      Math.max(intake.handedOff.get(arrival.sender) ?? 0, dueAt),
+    );
+    job.dueAt = dueAt;
+    const { follower: _was, ...rest } = job.payload;
+    const payload: SettlePayload = {
+      ...rest,
+      // Due later than now only to wait for the jobs ahead of it, which make it due as they settle.
+      ...(dueAt > now ? { follower: true } : {}),
+    };
+    await bestEffort(
+      "hand an inbound message to its backup job",
+      writeSettleJob(deps, payload, dueAt),
+    );
+    job.payload = payload;
+  }).then(() => undefined);
+}
+
+/**
+ * Writes the message's backup job again under its key. A follower is written together with a
+ * release of the sender's queue, so if the jobs it waits for settled after they were read, it is
+ * due now instead of at its late time.
+ */
+async function writeSettleJob(
+  deps: MessagingInboundDeps,
+  payload: SettlePayload,
+  dueAt: number,
+): Promise<void> {
+  if (!payload.follower) return settleJobAt(deps.jobs, payload, new Date(dueAt));
+  await deps.prisma.$transaction(async (tx) => {
+    await recordSettleJob(deps.jobs, tx, payload, new Date(dueAt));
+    await deps.jobs.releaseFollowersIn(tx, messagingInboundSettleQueue(payload.identityId));
+  });
+}
+
+/**
+ * During a shutdown's grace: the message's job is due by the end of it, after the sender's jobs
+ * before it, so a process killed meanwhile still leaves it settling soon. A job due sooner, or
+ * waiting for the jobs ahead of it, keeps its time. One that follows jobs queued elsewhere stays
+ * behind them, though unmarked: its files may still be downloading, so the jobs it follows must
+ * not make it due as they settle. The hand-off at the end of the grace marks it.
+ */
+function dueByShutdown(
+  deps: MessagingInboundDeps,
+  intake: DirectIntake,
+  shutdown: Shutdown,
+  arrival: Arrival,
+): Promise<void> {
+  const job = arrival.job;
+  if (!job || arrival.delivering) return Promise.resolve();
+  const after = shutdown.last.get(arrival.sender) ?? intake.handedOff.get(arrival.sender);
+  const dueAt = Math.max(shutdown.dueBy, after === undefined ? 0 : after + 1);
+  if (job.dueAt <= dueAt || job.payload.follower) {
+    shutdown.last.set(arrival.sender, Math.max(after ?? job.dueAt, job.dueAt));
+    return Promise.resolve();
+  }
+  shutdown.last.set(arrival.sender, dueAt);
+  job.dueAt = dueAt;
+  return writeJob(arrival, async (current) => {
+    // No follower, so no release goes with it either.
+    const { follower: _was, ...payload } = current.payload;
+    await bestEffort(
+      "make an inbound message's backup job due soon",
+      settleJobAt(deps.jobs, payload, new Date(current.dueAt)),
+    );
+    current.payload = payload;
+  }).then(() => undefined);
+}
+
+/**
+ * One message's job writes go one at a time, each with its latest state, so a later one never
+ * loses to an earlier one; none once the message settled here and its job is gone.
+ */
+function writeJob<T>(
+  arrival: Arrival,
+  write: (job: SettleJob) => Promise<T>,
+): Promise<T | undefined> {
+  const result = arrival.writes.then(() => (arrival.job ? write(arrival.job) : undefined));
+  arrival.writes = Promise.allSettled([result]).then(() => undefined);
+  return result;
+}
+
+/** A message's stored files and the lines of those that did not arrive. */
+type StoredMedia = Awaited<ReturnType<typeof storeInboundMedia>>;
+
+const NO_MEDIA: StoredMedia = { artifacts: [], unavailable: [] };
+
+/** How a message's downloads ended, kept until its turn in the queue comes to post it. */
+type MediaOutcome = { stored: StoredMedia } | { error: unknown };
+
+function settledMedia(media: Promise<StoredMedia>): Promise<MediaOutcome> {
+  return media.then(
+    (stored) => ({ stored }),
+    (error: unknown) => ({ error }),
+  );
+}
+
+/**
+ * Hands the message, with its stored files, to the bot or to the message routines that take
+ * it; a quiet one only joins the chat. Returns the lines of the files that did not arrive.
+ */
+async function deliverDirectMessage(
+  deps: MessagingInboundDeps,
+  ids: ProvisionedMessagingIdentity,
+  event: MessagingInboundMessage,
+  text: string,
+  stored: StoredMedia,
+  /** An owner's "stop" came after it: it joins the chat but starts nothing. */
+  quiet: boolean,
+): Promise<string[]> {
   // Message-trigger routines own the delivery when configured. Do not also
   // start a normal messaging continue for the same inbound handle.
   if (
-    await wakeMessageRoutines(deps, ids, event, {
+    !quiet &&
+    (await wakeMessageRoutines(deps, ids, event, {
       artifacts: stored.artifacts,
       unavailable: stored.unavailable,
-    })
+    }))
   )
-    return;
+    return stored.unavailable;
   const body = [text, ...stored.unavailable].filter(Boolean).join("\n");
   const sent = await deps.events.sendUserMessage({
     spaceId: ids.spaceId,
@@ -220,7 +807,8 @@ async function handleDirectEvent(
     ],
     prompt: promptTextForAttachments(body, stored.artifacts),
     trigger: "messaging",
-    clientNonce: `messaging:${event.provider}:${event.handle}`,
+    clientNonce: messagingMessageClientNonce(event.provider, event.handle),
+    ...(quiet ? { createRun: false } : {}),
   });
   if (sent.runId) {
     const runId = sent.runId;
@@ -251,6 +839,7 @@ async function handleDirectEvent(
     });
     await wakeRun(deps.jobs, sent.runId);
   }
+  return stored.unavailable;
 }
 
 /** Time for all voice note transcripts of one inbound message; files are delivered without them after it. */
@@ -267,20 +856,24 @@ async function storeInboundMedia(
   deps: MessagingInboundDeps,
   ids: ProvisionedMessagingIdentity,
   event: MessagingInboundMessage,
+  downloadDeadline: number,
 ) {
   const { stored, unavailable } = await storeInboundAttachments(
     deps.storeAttachment,
     ids,
     event.attachments ?? [],
     {
-      clientNonce: (index) => `messaging-attachment:${event.provider}:${event.handle}:${index}`,
+      clientNonce: (index) => messagingAttachmentClientNonce(event.provider, event.handle, index),
       limit: ATTACHMENT_MAX_COUNT,
-      downloadDeadline: Date.now() + 2_000,
+      downloadDeadline,
+      downloadTimeoutMs: DIRECT_ATTACHMENT_TIMEOUT_MS,
+      attempts: DIRECT_ATTACHMENT_ATTEMPTS,
+      reasons: true,
     },
   );
   // Transcribe only after every download, so a slow transcription cannot use up the
   // download deadline of the attachments that follow it. One short budget covers all
-  // transcripts, so the webhook is answered before the provider retries it.
+  // transcripts, which the message's backup job leaves time for.
   const transcribeDeadline = Date.now() + VOICE_TRANSCRIBE_BUDGET_MS;
   const artifacts: StoredAttachment[] = [];
   for (const { artifact, bytes } of stored) {
@@ -337,7 +930,9 @@ async function withVoiceTranscript(
 
 /** Wake provider-neutral message routines through the same approval boundary as webhooks. */
 export async function wakeMessageRoutines(
-  deps: Pick<MessagingInboundDeps, "prisma" | "events" | "jobs">,
+  deps: Pick<MessagingInboundDeps, "prisma" | "events"> & {
+    jobs: Pick<JobPublisher, "enqueue" | "enqueueIn" | "cancelIn">;
+  },
   target: Pick<ProvisionedMessagingIdentity, "spaceId" | "userId" | "botId" | "threadId">,
   event: MessagingInboundMessage,
   options?: {
@@ -538,7 +1133,7 @@ async function stopOwnerWork(
     where: { botId: identity.botId },
     select: { id: true },
   });
-  const key = `command:stop:${identity.id}:${event.handle}`;
+  const key = ownerStopKey(identity.id, event.handle);
   const target = { kind: "bot", botId: identity.botId, threadId: thread.id } as const;
   const stop = await deps.prisma.$transaction(async (tx) => {
     const receipt = await deps.delivery.recordIn(tx, { identityId: identity.id }, [

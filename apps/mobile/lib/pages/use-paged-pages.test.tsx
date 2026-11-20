@@ -63,6 +63,31 @@ it("runs one Show more at a time, drops a page that started before a reload, and
   expect(items()).toEqual(["f", "a"]);
 });
 
+it("waits for the refreshed cursor before reading another page", async () => {
+  const read = vi.mocked(rpc);
+  read.mockReset();
+  read.mockResolvedValue({ items: [page("unexpected")], nextCursor: null } as never);
+  read.mockResolvedValueOnce({ items: [page("a")], nextCursor: "old" } as never);
+  await act(async () => root.render(createElement(Probe)));
+  const staleShowMore = hook.showMore;
+
+  const refreshing = deferred<unknown>();
+  read.mockReturnValueOnce(refreshing.promise as never);
+  await act(async () => hook.refresh());
+  await act(async () => hook.showMore());
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(items()).toEqual(["a"]);
+
+  await act(async () => refreshing.resolve({ items: [page("b")], nextCursor: "fresh" }));
+  await act(async () => staleShowMore());
+  expect(read).toHaveBeenCalledTimes(2);
+
+  read.mockResolvedValueOnce({ items: [page("c")], nextCursor: null } as never);
+  await act(async () => hook.showMore());
+  expect(read).toHaveBeenLastCalledWith("pages/list", { botId: "b1", limit: 5, cursor: "fresh" });
+  expect(items()).toEqual(["b", "c"]);
+});
+
 it("drops a Show more failure that started before a reload", async () => {
   const read = vi.mocked(rpc);
   read.mockReset();

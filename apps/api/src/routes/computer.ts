@@ -28,6 +28,7 @@ import {
   toComputerRef,
   touchRunningComputer,
   WorkspacePathError,
+  wakeableComputerRef,
 } from "@rakazo/adapters";
 import {
   attachmentMaxBytes,
@@ -96,7 +97,7 @@ export function computerRoutes(ctx: RouterContext) {
           try {
             await ensureComputerWorkspaceLayout(
               deps.sandbox,
-              toComputerRef(bot.computer),
+              await wakeableComputerRef(deps.prisma, bot.computer),
               parseComputerMode(bot.computer.scope),
               bot.id,
               computerContext(context.actor, bot.id, "boot"),
@@ -456,7 +457,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (outcome === "stale") return { ok: true as const };
         if (outcome !== "recorded") {
           await applyTeachingDesktopInput(
-            deps.sandbox,
+            deps,
             computer,
             mapped,
             computerContext(context.actor, bot.id, "input"),
@@ -483,7 +484,7 @@ export function computerRoutes(ctx: RouterContext) {
             data: { updatedAt: new Date() },
           });
           scheduleComputerSleep(deps.jobs, computer.id);
-          const ref = toComputerRef(computer);
+          const ref = await wakeableComputerRef(deps.prisma, computer);
           await ensureComputerWorkspaceLayout(deps.sandbox, ref, computerMode, bot.id, ctx);
           entries = await deps.sandbox.listFiles(ref, storedPath, ctx);
         } else {
@@ -508,7 +509,7 @@ export function computerRoutes(ctx: RouterContext) {
           });
           scheduleComputerSleep(deps.jobs, bot.computer.id);
           const bytes = await deps.sandbox
-            .readFile(toComputerRef(bot.computer), storedPath, ctx, {
+            .readFile(await wakeableComputerRef(deps.prisma, bot.computer), storedPath, ctx, {
               maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
             })
             .catch((error: unknown) => {
@@ -557,7 +558,7 @@ export function computerRoutes(ctx: RouterContext) {
         );
         const bytes = await deps.sandbox
           .readFile(
-            toComputerRef(computer),
+            await wakeableComputerRef(deps.prisma, computer),
             storedPath,
             computerContext(context.actor, bot.id, "download"),
             { maxBytes: attachmentMaxBytes(deps.env) },
@@ -609,7 +610,7 @@ export function computerRoutes(ctx: RouterContext) {
           throw error;
         }
         await deps.sandbox.writeFile(
-          toComputerRef(computer),
+          await wakeableComputerRef(deps.prisma, computer),
           { path: storedPath, content },
           computerContext(context.actor, bot.id, "upload"),
         );
@@ -652,7 +653,7 @@ export function computerRoutes(ctx: RouterContext) {
         }
         const session = await deps.sandbox
           .connectTerminal(
-            toComputerRef(computer),
+            await wakeableComputerRef(deps.prisma, computer),
             {
               controlToken: computer.controlLeaseId,
               cwd: resolveBotWorkspaceCwd(parseComputerMode(computer.scope), bot.id, undefined),
@@ -701,7 +702,7 @@ export function computerRoutes(ctx: RouterContext) {
         const holder = holdsComputerControl(computer, bot.id, context.actor);
         const session = await deps.sandbox
           .connectScreen(
-            toComputerRef(computer),
+            await wakeableComputerRef(deps.prisma, computer),
             {
               view: "stream",
               interactive: holder,
@@ -754,7 +755,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (!(await stillWaiting())) return { image: null };
         const observation = await deps.sandbox
           .observe(
-            toComputerRef(computer),
+            await wakeableComputerRef(deps.prisma, computer),
             await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
           )
           .catch(async (error: unknown) => {
