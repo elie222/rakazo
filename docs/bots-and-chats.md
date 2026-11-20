@@ -74,6 +74,8 @@ Under **Advanced**:
   show **Undo** in the chat. Memory scope stays in Settings, since shared memory changes what the bot can read.
   **Instruction history** lets you restore an earlier version.
 - **How other bots see it**: a short description other bots read when deciding whom to ask.
+- **Parallel tasks**: how many background helpers (subagents) the bot may run at once; 3 by
+  default, up to 8.
 - **Tools**: **Disable a tool** the bot should never use.
 - **Export** downloads the bot's setup as a file. **Clear conversation** empties the chat.
 

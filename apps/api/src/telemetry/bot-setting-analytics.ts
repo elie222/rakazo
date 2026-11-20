@@ -23,6 +23,7 @@ const SETTINGS: Partial<Record<Field, AnalyticsBotSetting>> = {
   fleetManagement: "fleet_management",
   replyMode: "reply_mode",
   approvalMode: "approvals",
+  maxConcurrentHelpers: "parallel_work",
   disabledBuiltinTools: "tools",
   hostDeviceId: "computer",
 };

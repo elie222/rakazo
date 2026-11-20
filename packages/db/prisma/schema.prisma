@@ -1051,6 +1051,8 @@ model Bot {
   replyMode              String  @default("chat")
   /// "ask", "auto" or "never" to override the owner's Space mode for this bot; null follows it.
   approvalMode           String?
+  /// Background helpers this bot may run at once; null uses the deployment default.
+  maxConcurrentHelpers   Int?
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]

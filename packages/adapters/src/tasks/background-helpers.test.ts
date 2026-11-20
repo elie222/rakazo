@@ -23,7 +23,14 @@ const START = {
   effectKey: "effect-1",
 };
 
-function harness(overrides: { trigger?: string; threadBotId?: string | null } = {}) {
+function harness(
+  overrides: {
+    trigger?: string;
+    threadBotId?: string | null;
+    maxConcurrentHelpers?: number;
+    runningHelpers?: number;
+  } = {},
+) {
   const createRun = vi.fn(async (_args: unknown) => ({ id: "helper-run" }));
   const tx = {
     $queryRaw: vi.fn(async () => []),
@@ -34,7 +41,7 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
     task: { create: vi.fn(async () => ({ id: "helper-task" })) },
     run: {
       findFirst: vi.fn(async () => null),
-      count: vi.fn(async () => 0),
+      count: vi.fn(async () => overrides.runningHelpers ?? 0),
       create: createRun,
     },
   };
@@ -46,7 +53,7 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
     deps: { prisma, events: { notify: vi.fn(async () => undefined) }, jobs: { enqueue } },
     run: { id: "run-1", spaceId: "space", userId: "user", trigger: overrides.trigger ?? "user" },
     runId: "run-1",
-    bot: { id: "bot" },
+    bot: { id: "bot", maxConcurrentHelpers: overrides.maxConcurrentHelpers ?? null },
     thread: {
       id: "chat",
       botId: overrides.threadBotId === undefined ? "bot" : overrides.threadBotId,
@@ -56,6 +63,25 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
 }
 
 describe("starting a background helper", () => {
+  it("stops at three helpers when the bot has no limit of its own", async () => {
+    const h = harness({ runningHelpers: 3 });
+    await expect(startBackgroundHelper(h.ctx, START)).resolves.toEqual({
+      error: "3 subagents are already working. End your turn; their results will return later.",
+    });
+    expect(h.createRun).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { limit: 1, running: 1, allowed: false },
+    { limit: 5, running: 4, allowed: true },
+  ])("uses the bot's own limit of $limit helpers", async ({ limit, running, allowed }) => {
+    const h = harness({ maxConcurrentHelpers: limit, runningHelpers: running });
+    const result = await startBackgroundHelper(h.ctx, START);
+    if (allowed) expect(result).toMatchObject({ ok: true });
+    else expect(result).toEqual({ error: expect.stringContaining(`${limit} subagents`) });
+    expect(h.createRun).toHaveBeenCalledTimes(allowed ? 1 : 0);
+  });
+
   it("starts one from the owner's own chat and queues its run", async () => {
     const h = harness();
     await expect(startBackgroundHelper(h.ctx, START)).resolves.toMatchObject({ ok: true });

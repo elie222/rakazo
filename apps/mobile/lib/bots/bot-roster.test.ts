@@ -39,6 +39,7 @@ function bot(id = "bot-1"): Bot {
     workspacePath: null,
     hostDevice: null,
     approvalMode: null,
+    maxConcurrentHelpers: null,
     webhookConfigured: false,
     spawnKey: null,
   };

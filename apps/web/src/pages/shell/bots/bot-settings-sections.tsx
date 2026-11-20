@@ -9,6 +9,8 @@ import {
   BOT_COMPUTER_MODES,
   BOT_DESCRIPTION_MAX_LENGTH,
   BUILTIN_TOOL_NAMES,
+  DEFAULT_MAX_CONCURRENT_HELPERS,
+  MAX_CONCURRENT_HELPERS_LIMIT,
   normalizeBotWorkspacePath,
 } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
@@ -463,6 +465,86 @@ export function ApprovalModeRow({
           <Trans>Auto needs an approval model; until one is set, this bot asks.</Trans>
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * How many background helpers this bot may run at once; shows the default until one is
+ * picked and restores it when the field is emptied.
+ */
+export function ParallelWorkRow({
+  id,
+  value,
+  disabled,
+  onCommit,
+}: {
+  id: string;
+  /** This bot's own limit; null follows the default. */
+  value: number | null;
+  disabled?: boolean;
+  onCommit: (value: number | null) => void;
+}) {
+  const { t } = useLingui();
+  const [draft, setDraft] = useState(() => String(value ?? DEFAULT_MAX_CONCURRENT_HELPERS));
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  useEffect(() => {
+    if (!editing && !error) setDraft(String(value ?? DEFAULT_MAX_CONCURRENT_HELPERS));
+  }, [value, editing, error]);
+  function commit() {
+    setEditing(false);
+    const raw = draftRef.current.trim();
+    if (!raw) {
+      setError(null);
+      if (value !== null) onCommit(null);
+      return;
+    }
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_CONCURRENT_HELPERS_LIMIT) {
+      setError(t`Use a whole number from 1 to ${MAX_CONCURRENT_HELPERS_LIMIT}.`);
+      return;
+    }
+    setError(null);
+    setDraft(String(parsed));
+    const next = parsed === DEFAULT_MAX_CONCURRENT_HELPERS ? null : parsed;
+    if (next !== value) onCommit(next);
+  }
+  return (
+    <div className="flex flex-col gap-1.5 py-3">
+      <div className="flex min-h-12 items-center justify-between gap-3 text-body">
+        <label htmlFor={id} className="text-foreground">
+          <Trans>Tasks at once</Trans>
+        </label>
+        <Input
+          id={id}
+          data-testid="bot-parallel-work"
+          type="number"
+          min={1}
+          max={MAX_CONCURRENT_HELPERS_LIMIT}
+          inputMode="numeric"
+          aria-label={t`Tasks at once`}
+          value={draft}
+          disabled={disabled}
+          className="w-20 text-center"
+          onChange={(event) => setDraft(event.target.value)}
+          onFocus={() => setEditing(true)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      </div>
+      <p className="text-body-sm text-muted-foreground">
+        <Trans>Background tasks this bot can run at the same time. 3 by default.</Trans>
+      </p>
+      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
     </div>
   );
 }

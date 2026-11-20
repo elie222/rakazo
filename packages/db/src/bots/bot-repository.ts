@@ -105,6 +105,7 @@ function mapBot(
     fleetManagement?: boolean;
     replyMode?: string;
     approvalMode?: string | null;
+    maxConcurrentHelpers?: number | null;
     disabledBuiltinTools?: string[];
     workspacePath?: string | null;
     webhookSecretId?: string | null;
@@ -167,6 +168,7 @@ function mapBot(
       bot.approvalMode === "ask" || bot.approvalMode === "auto" || bot.approvalMode === "never"
         ? bot.approvalMode
         : null,
+    maxConcurrentHelpers: bot.maxConcurrentHelpers ?? null,
     // Stored lists may name a tool that no longer exists; settings resend what they read.
     disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
     workspacePath: bot.workspacePath ?? null,
@@ -454,6 +456,7 @@ export function createRepos(
         fleetManagement?: boolean;
         replyMode?: string;
         approvalMode?: string | null;
+        maxConcurrentHelpers?: number | null;
         color?: string;
         avatarSet?: BotAvatarSet;
         /** Copy a pin as is (duplicates); otherwise a set other than the default pins the bot. */
@@ -569,6 +572,9 @@ export function createRepos(
               fleetManagement: input.fleetManagement,
               replyMode: input.replyMode,
               ...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
+              ...(input.maxConcurrentHelpers
+                ? { maxConcurrentHelpers: input.maxConcurrentHelpers }
+                : {}),
               color: avatar.color,
               avatarSet,
               avatarSetPinned: input.avatarSetPinned ?? avatarSet !== defaultSet,

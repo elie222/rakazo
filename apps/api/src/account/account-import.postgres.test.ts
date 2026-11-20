@@ -61,6 +61,7 @@ function sourceRecords(): AccountExportRecord[] {
       replyMode: "messages",
       workspacePath: null,
       approvalMode: null,
+      maxConcurrentHelpers: null,
       createdAt: at,
     },
     {
@@ -92,6 +93,7 @@ function sourceRecords(): AccountExportRecord[] {
       replyMode: "chat",
       workspacePath: null,
       approvalMode: null,
+      maxConcurrentHelpers: null,
       createdAt: at,
     },
     {

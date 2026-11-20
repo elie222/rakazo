@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { DEFAULT_MAX_CONCURRENT_HELPERS } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
@@ -20,10 +21,7 @@ import type { RunContext } from "../runs/assembly/run-context.js";
 import { runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
-import {
-  helperResultText,
-  MAX_PARALLEL_SUBAGENTS,
-} from "../runtime/pi/tools/pi-runtime-subagent.js";
+import { helperResultText } from "../runtime/pi/tools/pi-runtime-subagent.js";
 import {
   backgroundHelperLimitNote,
   helperPrompt,
@@ -69,6 +67,7 @@ export async function startBackgroundHelper(
   }
   const modelProvider = input.modelProvider || (run.modelPinned ? run.modelProvider : "");
   const modelId = input.modelId || (run.modelPinned ? run.modelId : "");
+  const helperLimit = bot.maxConcurrentHelpers ?? DEFAULT_MAX_CONCURRENT_HELPERS;
   const clientNonce = `background-helper:${input.effectKey}`;
   const started = { ok: true as const, name: input.name, note: startedNote(input.name) };
   const card: HelperBlock = {
@@ -97,7 +96,7 @@ export async function startBackgroundHelper(
         status: { in: [...ACTIVE_RUN_STATUSES] },
       },
     });
-    if (running >= MAX_PARALLEL_SUBAGENTS) return "full" as const;
+    if (running >= helperLimit) return "full" as const;
     // Only this turn's live worker may start one, but the card is not part of the turn: a turn
     // ending settles its own helper cards as stopped, while this helper keeps working.
     await assertRunCanWriteHistory(tx, runId, { lease: runLeaseFor(deps, runId) });
@@ -189,7 +188,7 @@ export async function startBackgroundHelper(
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (committed === "full") {
     return {
-      error: backgroundHelperLimitNote(MAX_PARALLEL_SUBAGENTS),
+      error: backgroundHelperLimitNote(helperLimit),
     };
   }
   if (!committed) return started;

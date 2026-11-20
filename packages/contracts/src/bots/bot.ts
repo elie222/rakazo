@@ -30,6 +30,16 @@ export const InstructionVersionSchema = z.object({
   createdAt: z.string(),
 });
 
+/** Background helpers one bot may run at once when it has no setting of its own. */
+export const DEFAULT_MAX_CONCURRENT_HELPERS = 3;
+/** The most background helpers a bot's setting can ask for. */
+export const MAX_CONCURRENT_HELPERS_LIMIT = 8;
+export const BotMaxConcurrentHelpersSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_CONCURRENT_HELPERS_LIMIT);
+
 export const BotSchema = z.object({
   meetingsEnabled: z.boolean().optional(),
   id: Id,
@@ -62,6 +72,8 @@ export const BotSchema = z.object({
     .object({ id: Id, name: z.string(), platform: z.string(), ownerUserId: Id })
     .nullable()
     .default(null),
+  /** Background helpers this bot may run at once; null uses the default. */
+  maxConcurrentHelpers: BotMaxConcurrentHelpersSchema.nullable().default(null),
   updatedAt: z.string(),
   createdAt: z.string(),
   voiceId: z.string().nullable(),
@@ -180,6 +192,8 @@ export const UpdateBotInput = z
     workspacePath: BotWorkspacePathSchema.nullable().optional(),
     /** A paired computer of the bot owner's account; null reaches whichever connects first. */
     hostDeviceId: Id.nullable().optional(),
+    /** Background helpers this bot may run at once; null restores the default. */
+    maxConcurrentHelpers: BotMaxConcurrentHelpersSchema.nullable().optional(),
     teamChatAmbientEnabled: z.boolean().optional(),
     teamChatRules: z.string().max(TEAM_CHAT_RULES_MAX_LENGTH).optional(),
     crossSpaceCommunication: z.boolean().optional(),

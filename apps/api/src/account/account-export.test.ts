@@ -69,6 +69,7 @@ const botRecord = (id: string): Extract<AccountExportRecord, { type: "bot" }> =>
   replyMode: "chat",
   workspacePath: null,
   approvalMode: null,
+  maxConcurrentHelpers: null,
   createdAt,
 });
 

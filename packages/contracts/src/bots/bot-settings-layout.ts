@@ -13,6 +13,7 @@ export const BOT_SETTINGS_SECTIONS = {
     "dailyCheckIns",
     "crossSpaceCommunication",
     "fleetManagement",
+    "maxConcurrentHelpers",
     "replyMode",
     "instructions",
     "description",

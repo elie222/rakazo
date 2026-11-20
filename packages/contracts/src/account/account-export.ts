@@ -91,6 +91,8 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     replyMode: ReplyModeSchema.default("chat"),
     /** Absent in exports from older servers. */
     approvalMode: ApprovalModeSchema.nullable().default(null),
+    /** Absent in exports from older servers. */
+    maxConcurrentHelpers: z.number().int().min(1).max(8).nullable().default(null),
     /** Absent in exports from older servers; a value that could escape the workspace is dropped. */
     workspacePath: z
       .string()

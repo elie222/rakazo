@@ -11,6 +11,8 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
+  DEFAULT_MAX_CONCURRENT_HELPERS,
+  MAX_CONCURRENT_HELPERS_LIMIT,
   normalizeBotWorkspacePath,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
@@ -46,18 +48,17 @@ import {
   SettingsSwitch,
 } from "../components/settings/settings-group";
 import { GrowingTextInput } from "../components/ui/growing-text-input";
-import type { MenuPickerChoice } from "../components/ui/menu-picker";
 import { MenuPicker, MenuPickerMenu } from "../components/ui/menu-picker";
 import { Chevron } from "../components/ui/row-accessories";
 import { currentApiBase, rpc, selectedSpaceId } from "../lib/api/api";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api/mobile-types";
 import { loadSessionToken } from "../lib/api/session";
 import { errorText } from "../lib/api/user-error";
+import { useApprovalModeChoices, useThinkingChoices } from "../lib/bots/bot-settings-choices";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
-import { thinkingLevelLabel } from "../lib/models/thinking-level";
 import { native, useMobileTokens } from "../lib/native/native";
 import { afterChatNotifyChange } from "../lib/notifications/live-notifications";
 import { rpcQuery } from "../lib/query/query";
@@ -90,6 +91,7 @@ export default function BotSettingsScreen() {
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [workspacePath, setWorkspacePath] = useState("");
   const [approvalMode, setApprovalMode] = useState<ApprovalMode | "space">("space");
+  const [tasksAtOnce, setTasksAtOnce] = useState("");
   // Auto judges with a model; without one the bot asks, as the picker says.
   const autoAvailable =
     useScreenQuery(rpcQuery("autoReview/get", {})).data?.checkerAvailable ?? true;
@@ -218,6 +220,7 @@ export default function BotSettingsScreen() {
         setComputerMode(next.computerMode);
         setWorkspacePath(next.workspacePath ?? "");
         setApprovalMode(next.approvalMode ?? "space");
+        setTasksAtOnce(String(next.maxConcurrentHelpers ?? DEFAULT_MAX_CONCURRENT_HELPERS));
         setModelKey(
           next.modelProvider && next.modelId
             ? modelOptionKey(next.modelProvider, next.modelId)
@@ -294,26 +297,8 @@ export default function BotSettingsScreen() {
     [catalog, credentials, me, selectedModelKey, t],
   );
 
-  const thinkingChoices: MenuPickerChoice[] = useMemo(
-    () => [
-      { key: "", label: t`Default` },
-      ...thinkingOptions.map((level) => ({
-        key: level,
-        label: thinkingLevelLabel(level),
-      })),
-    ],
-    [t, thinkingOptions],
-  );
-
-  const approvalChoices: MenuPickerChoice[] = useMemo(
-    () => [
-      { key: "space", label: t`Space default` },
-      { key: "ask", label: t`Ask` },
-      { key: "auto", label: t`Auto` },
-      { key: "never", label: t`Never ask` },
-    ],
-    [t],
-  );
+  const thinkingChoices = useThinkingChoices(thinkingOptions);
+  const approvalChoices = useApprovalModeChoices();
 
   useEffect(() => {
     if (focus === "model") setAdvancedOpen(true);
@@ -445,6 +430,7 @@ export default function BotSettingsScreen() {
         autoSpeak?: boolean;
         workspacePath?: string | null;
         approvalMode?: ApprovalMode | null;
+        maxConcurrentHelpers?: number | null;
       } = { botId };
       const rawWorkspacePath = workspacePath.trim();
       const nextWorkspacePath = rawWorkspacePath
@@ -460,6 +446,24 @@ export default function BotSettingsScreen() {
         input.workspacePath = nextWorkspacePath;
       const nextApprovalMode = approvalMode === "space" ? null : approvalMode;
       if (nextApprovalMode !== (bot.approvalMode ?? null)) input.approvalMode = nextApprovalMode;
+      // An emptied field asks for the default, as the web row does.
+      const parsedTasksAtOnce = tasksAtOnce.trim()
+        ? Number(tasksAtOnce.trim())
+        : DEFAULT_MAX_CONCURRENT_HELPERS;
+      if (
+        !Number.isInteger(parsedTasksAtOnce) ||
+        parsedTasksAtOnce < 1 ||
+        parsedTasksAtOnce > MAX_CONCURRENT_HELPERS_LIMIT
+      ) {
+        setError(t`Use a whole number from 1 to ${MAX_CONCURRENT_HELPERS_LIMIT}.`);
+        pendingRef.current = false;
+        setPending(false);
+        return;
+      }
+      const nextTasksAtOnce =
+        parsedTasksAtOnce === DEFAULT_MAX_CONCURRENT_HELPERS ? null : parsedTasksAtOnce;
+      if (nextTasksAtOnce !== (bot.maxConcurrentHelpers ?? null))
+        input.maxConcurrentHelpers = nextTasksAtOnce;
       if (profile.description !== (bot.description ?? "")) {
         input.description = profile.description;
       }
@@ -525,6 +529,8 @@ export default function BotSettingsScreen() {
       (workspacePath.trim() ? normalizeBotWorkspacePath(workspacePath.trim()) : null) !==
         (bot.workspacePath ?? null) ||
       (approvalMode === "space" ? null : approvalMode) !== (bot.approvalMode ?? null) ||
+      (tasksAtOnce.trim() ? Number(tasksAtOnce.trim()) : DEFAULT_MAX_CONCURRENT_HELPERS) !==
+        (bot.maxConcurrentHelpers ?? DEFAULT_MAX_CONCURRENT_HELPERS) ||
       autoSpeak !== bot.autoSpeak ||
       (selectedModel?.provider ?? null) !== (bot.modelProvider ?? null) ||
       (selectedModel?.modelId ?? null) !== (bot.modelId ?? null) ||
@@ -780,6 +786,15 @@ export default function BotSettingsScreen() {
                   value={fleetManagement}
                 />
               ) : null}
+            </SettingsGroup>
+            <SettingsGroup label={t`Background work`}>
+              <SettingsInputRow
+                accessibilityLabel={t`Tasks at once`}
+                placeholder={t`Tasks at once`}
+                keyboardType="number-pad"
+                value={tasksAtOnce}
+                onChangeText={setTasksAtOnce}
+              />
             </SettingsGroup>
             <View style={{ gap: 7 }}>
               <View

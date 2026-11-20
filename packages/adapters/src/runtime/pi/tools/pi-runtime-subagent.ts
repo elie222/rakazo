@@ -1,7 +1,5 @@
 import { clipToolResultText } from "../pi-runtime-limits.js";
 
-export const MAX_PARALLEL_SUBAGENTS = 4;
-
 /**
  * A helper's result within `limit` characters. A stop text (the spent-budget message or a
  * terminating reply) stays whole when it fits and only the narration before it is shortened;

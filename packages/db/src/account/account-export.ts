@@ -179,6 +179,10 @@ async function* spaceRecords(
         bot.approvalMode === "ask" || bot.approvalMode === "auto" || bot.approvalMode === "never"
           ? bot.approvalMode
           : null,
+      maxConcurrentHelpers:
+        bot.maxConcurrentHelpers && bot.maxConcurrentHelpers >= 1 && bot.maxConcurrentHelpers <= 8
+          ? bot.maxConcurrentHelpers
+          : null,
       workspacePath: bot.workspacePath,
       createdAt: iso(bot.createdAt),
     };

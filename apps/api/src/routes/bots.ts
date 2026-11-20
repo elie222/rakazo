@@ -399,6 +399,7 @@ export function botsRoutes(ctx: RouterContext) {
           disabledBuiltinTools: source.disabledBuiltinTools,
           replyMode: source.replyMode,
           approvalMode: source.approvalMode,
+          maxConcurrentHelpers: source.maxConcurrentHelpers,
           workspacePath: source.workspacePath,
           // The paired computer belongs to an account; a duplicate reaches it only from there.
           hostDeviceId:
@@ -526,6 +527,9 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.workspacePath !== undefined ? { workspacePath: input.workspacePath } : {}),
             ...(input.hostDeviceId !== undefined ? { hostDeviceId: input.hostDeviceId } : {}),
             ...(input.approvalMode !== undefined ? { approvalMode: input.approvalMode } : {}),
+            ...(input.maxConcurrentHelpers !== undefined
+              ? { maxConcurrentHelpers: input.maxConcurrentHelpers }
+              : {}),
           },
         }).catch((error) => {
           if (input.expectedSettings && isRecordNotFound(error))
