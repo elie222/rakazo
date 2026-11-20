@@ -359,6 +359,10 @@ export class ConfiguredSandbox implements SandboxProvider {
     return (await this.route(computer)).isStopped?.(computer, context) ?? false;
   }
 
+  async runningSize(computer: ComputerRef, context: AdapterContext) {
+    return (await this.route(computer)).runningSize?.(computer, context);
+  }
+
   async hasMountedHome(computer: ComputerRef, context: AdapterContext) {
     return (await this.route(computer)).hasMountedHome?.(computer, context) ?? false;
   }

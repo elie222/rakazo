@@ -9,6 +9,7 @@ import {
   createDb,
   reconcileComputerRuns,
   recordComputerRunEnd,
+  recordComputerRunSize,
   recordComputerRunStart,
   runAsSystem,
   runAsTenant,
@@ -385,6 +386,20 @@ describePostgres("computer runs (PostgreSQL)", () => {
         lastSeenAt: runningSince,
       }),
     ]);
+  });
+
+  it("rates the open run at the size a machine came back at, and leaves ended runs", async () => {
+    const o = await owner();
+    await o.start();
+    const { runningSince } = await system.computer.findUniqueOrThrow({ where: { id: o.id } });
+    const stretch = { id: o.id, runningSince: runningSince! };
+
+    await runAsTenant(o.tenant, () => recordComputerRunSize(db.prisma, stretch, "large"));
+    expect((await o.runs()).map((run) => run.size)).toEqual(["large"]);
+
+    await o.sleep();
+    await runAsTenant(o.tenant, () => recordComputerRunSize(db.prisma, stretch, "xlarge"));
+    expect((await o.runs()).map((run) => run.size)).toEqual(["large"]);
   });
 
   it("does not let a late stop close the run of a restart that beat it", async () => {

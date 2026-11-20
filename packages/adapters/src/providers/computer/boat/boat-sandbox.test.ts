@@ -299,6 +299,62 @@ describe("BoatSandboxProvider", () => {
         provider.provision({ botId: "bot-b", homePath: "/unused", size: "xlarge" }, context),
       ).rejects.toBeInstanceOf(SandboxSizeUnavailableError);
     });
+
+    it("wakes a stopped computer at the reference's size on any call", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      expect(resume).toHaveBeenCalledWith(
+        {
+          sandboxId: computer.id,
+          resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "xlarge" },
+        },
+        { signal: expect.any(AbortSignal) },
+      );
+      await expect(provider.runningSize(computer, context)).resolves.toBe("xlarge");
+    });
+
+    it("wakes a computer at the size it has when Boat refuses the reference's size", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.tooSmallTypes.add("default");
+      const sized = { ...computer, startSize: "standard" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      try {
+        expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      } finally {
+        installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+      }
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual([
+        "default",
+        undefined,
+      ]);
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({
+          message: "sandbox.size_unavailable",
+          size: "standard",
+          reason: "too_small",
+        }),
+      );
+    });
+
+    it("reports no running size for a stopped computer", async () => {
+      const { api, provider, computer } = await boat();
+      await expect(provider.runningSize(computer, context)).resolves.toBe("standard");
+      api.setState(computer.id, "archived");
+      await expect(provider.runningSize(computer, context)).resolves.toBeUndefined();
+    });
   });
 
   it("logs actual creates and resumes without counting reuse or exposing request content", async () => {

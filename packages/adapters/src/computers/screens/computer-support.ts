@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import type { ComputerAction, ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
+import { planComputerSize } from "@rakazo/db";
 
 export function toComputerRef(computer: {
   homeKey: string;
@@ -15,6 +17,14 @@ export function toComputerRef(computer: {
     kind: computer.kind,
     providerRef: computer.providerRef,
   };
+}
+
+/** A reference to a running computer that, if a call has to wake it, starts at its planned size. */
+export async function wakeableComputerRef(
+  prisma: Pick<PrismaClient, "computer">,
+  computer: { id: string; homeKey: string; kind: string; providerRef: string | null },
+): Promise<ComputerRef> {
+  return { ...toComputerRef(computer), startSize: await planComputerSize(prisma, computer.id) };
 }
 
 const EMPTY_PNG = Uint8Array.from(

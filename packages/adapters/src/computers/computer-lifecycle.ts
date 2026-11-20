@@ -33,6 +33,7 @@ import {
   parseComputerMode,
   planComputerSize,
   recordComputerRunEnd,
+  recordComputerRunSize,
   recordComputerRunStart,
   spaceTakesWork,
   withTransactionRetry,
@@ -279,6 +280,8 @@ export async function provisionComputer(
     }
   }
   const homePath = resolveAgentHomePath(deps.home, existing.homeKey, deps.dataDir ?? "./data");
+  // Any later wake of a stopped machine through the returned reference starts it at this size.
+  const size = await planComputerSize(deps.prisma, computerId);
 
   // Re-provisioning a live computer enters booting and revokes its screen URLs.
   // A provider-confirmed live reference needs setup, not a new lifecycle claim.
@@ -288,13 +291,20 @@ export async function provisionComputer(
     !existing.restorePending &&
     deps.sandbox.isRunning
   ) {
-    const ref = toComputerRef(existing);
+    const ref: ComputerRef = { ...toComputerRef(existing), startSize: size };
     const checking = performance.now();
     const running = await confirmedRunning(deps.sandbox, ref, context);
+    // A machine woken outside a start may run at another size than the one recorded.
+    const reportedSize =
+      running && sandboxKindCapabilities(ref.kind).sizedUsage
+        ? await bestEffort("computer running size", deps.sandbox.runningSize?.(ref, context))
+        : undefined;
     providerReadyMs += performance.now() - checking;
     if (running) {
       context.signal.throwIfAborted();
       const runningSince = existing.runningSince ?? new Date();
+      const resized = changedRunningSize(existing, runningSince, reportedSize);
+      const sizing = resized ? { runningSize: resized, runningSizeSince: runningSince } : {};
       const retained = await deps.prisma.computer.updateMany({
         where: {
           id: computerId,
@@ -306,10 +316,12 @@ export async function provisionComputer(
           ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
         },
         // A row activated by an older release has no clock yet; start it now.
-        data: { updatedAt: new Date(), runningSince },
+        data: { updatedAt: new Date(), runningSince, ...sizing },
       });
       if (retained.count !== 1) throw busy("running_claim_lost");
-      await recordComputerRunStart(deps.prisma, existing, runningSince);
+      await recordComputerRunStart(deps.prisma, { ...existing, ...sizing }, runningSince);
+      if (resized)
+        await recordComputerRunSize(deps.prisma, { id: computerId, runningSince }, resized);
       const damaged = await (async () => {
         await prepare(ref);
         await ensureComputerWorkspaceLayout(
@@ -339,7 +351,7 @@ export async function provisionComputer(
   const startKind = (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? existing.kind;
   if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
     throw new SandboxAllowanceUsedError();
-  const size = await planComputerSize(deps.prisma, computerId);
+  let startSize: ComputerSize | undefined = size;
 
   // If we first observe abandoned "booting", remember that stamp before waiting. A concurrent
   // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait
@@ -511,6 +523,7 @@ export async function provisionComputer(
         // A provider that cannot move the computer to the plan's size starts it at the size it has.
         if (!(error instanceof SandboxSizeUnavailableError)) throw error;
         log.warn("computer.size_unavailable", { size, reason: error.reason });
+        startSize = undefined;
         return await provisionAt(undefined);
       } finally {
         providerReadyMs += performance.now() - start;
@@ -615,11 +628,13 @@ export async function provisionComputer(
       existing.state === "running" && existing.runningSince && !ref.started && !replacement;
     const runningSince = continued ? existing.runningSince! : new Date();
     // Set the rate at the start of a stretch. If the provider cannot confirm size then, use
-    // Standard for that stretch. Reconnects preserve both the rate and the active-lifetime clock.
+    // Standard for that stretch. Reconnects keep the active-lifetime clock, and the rate unless
+    // the provider reports the machine at another size.
     const usageSize =
       ref.size ?? (sandboxKindCapabilities(ref.kind).sizedUsage ? "standard" : null);
-    const sizing =
-      !continued && usageSize ? { runningSize: usageSize, runningSizeSince: runningSince } : {};
+    const resized = continued ? changedRunningSize(existing, runningSince, ref.size) : undefined;
+    const rated = continued ? resized : usageSize;
+    const sizing = rated ? { runningSize: rated, runningSizeSince: runningSince } : {};
     // One write stores the machine and leaves "booting", and the same transaction drops the
     // record that would delete the machine later: from here the computer answers for it.
     const activated = await deps.prisma.$transaction(async (tx) => {
@@ -673,8 +688,10 @@ export async function provisionComputer(
       runningSince,
       existing.state === "running" ? "gone" : "reconciled",
     );
+    if (resized)
+      await recordComputerRunSize(deps.prisma, { id: computerId, runningSince }, resized);
     logProvisioned(ref, replacement ? "create" : ref.started ? "resume" : "reuse");
-    return ref;
+    return { ...ref, startSize };
   } catch (error) {
     log.warn("computer.provision_failed", {
       provider: existing.kind,
@@ -762,6 +779,22 @@ export async function provisionComputer(
     }
     throw error;
   }
+}
+
+/**
+ * The size a machine reports when the stretch it continues is rated at another, which happens
+ * when it was stopped and woken outside a start.
+ */
+function changedRunningSize(
+  computer: { runningSize: string | null; runningSizeSince: Date | null },
+  runningSince: Date,
+  reported: ComputerSize | undefined,
+): ComputerSize | undefined {
+  if (!reported) return undefined;
+  const rated =
+    computer.runningSize === reported &&
+    computer.runningSizeSince?.getTime() === runningSince.getTime();
+  return rated ? undefined : reported;
 }
 
 /**

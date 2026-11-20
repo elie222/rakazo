@@ -216,6 +216,8 @@ export class BoatSandboxProvider implements SandboxProvider {
   });
   private readonly pendingProvisions = new Map<string, Promise<ComputerRef>>();
   private readonly prepared = new Set<string>();
+  /** The machine type each sandbox wakes at, from the latest reference that asked for one. */
+  private readonly startTypes = new Map<string, SandboxTypeEnum>();
   private readonly preparations = new Map<string, Promise<void>>();
   private readonly baseSnapshot = new BaseSnapshotCache({
     provider: "boat",
@@ -759,6 +761,14 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
+  async runningSize(computer: ComputerRef, context: AdapterContext) {
+    const { sandbox } = await this.client.get(
+      { sandboxId: this.id(computer) },
+      { signal: context.signal },
+    );
+    return RUNNABLE_STATES.has(sandbox.state) ? boatComputerSize(sandbox.type) : undefined;
+  }
+
   async isStopped(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
     try {
       const { sandbox } = await this.client.get(
@@ -837,6 +847,9 @@ export class BoatSandboxProvider implements SandboxProvider {
    * since a replacement restores that save in full. The rollback happens only on `reconnect`,
    * before anything runs on the sandbox; elsewhere it is reported unavailable until then. On
    * `reconnect`, a stopped sandbox whose snapshot is older than the saved workspace is gone too.
+   *
+   * A stopped sandbox resumes at the reconnect's type, or else at the type its latest reference
+   * asked for. Elsewhere a type Boat refuses is dropped and the sandbox resumes at the one it has.
    */
   private async ensureRunnable(
     id: string,
@@ -878,8 +891,7 @@ export class BoatSandboxProvider implements SandboxProvider {
       }
       if (Date.now() < deadline) logWait(sandbox);
       if (sandbox.state === "archived" && !started) {
-        // Only a reconnect moves the sandbox to another size; other wakes keep the one it has.
-        await this.resume(id, signal, reconnect?.type);
+        await this.resumeAtStartType(id, signal, reconnect);
         started = true;
       } else if (sandbox.state === "error" && !recovering) {
         logRecovery("wait", await this.recover(id, signal, reconnect?.type));
@@ -944,6 +956,28 @@ export class BoatSandboxProvider implements SandboxProvider {
         if (notRunning(retryError)) throw new SandboxUnavailableError({ cause: retryError });
         throw retryError;
       }
+    }
+  }
+
+  /** A reconnect handles a refused type itself, so it can report that it started at another. */
+  private async resumeAtStartType(
+    id: string,
+    signal: AbortSignal | undefined,
+    reconnect: { type?: SandboxTypeEnum } | undefined,
+  ): Promise<void> {
+    if (reconnect) return this.resume(id, signal, reconnect.type);
+    const type = this.startTypes.get(id);
+    try {
+      await this.resume(id, signal, type);
+    } catch (error) {
+      if (!type || !(error instanceof SandboxSizeUnavailableError)) throw error;
+      getLogger().warn("sandbox.size_unavailable", {
+        provider: "boat",
+        size: boatComputerSize(type),
+        reason: error.reason,
+      });
+      if (this.startTypes.get(id) === type) this.startTypes.delete(id);
+      await this.resume(id, signal);
     }
   }
 
@@ -1466,11 +1500,15 @@ export class BoatSandboxProvider implements SandboxProvider {
     return { id, botId, kind: "boat", providerRef: id, fresh };
   }
 
+  /** Every call names its sandbox through here, so a wake during it starts at the ref's size. */
   private id(computer: ComputerRef): string {
-    return computer.providerRef || computer.id;
+    const id = computer.providerRef || computer.id;
+    if (computer.startSize) this.startTypes.set(id, BOAT_MACHINE_TYPES[computer.startSize]);
+    return id;
   }
 
   private forget(id: string): void {
+    this.startTypes.delete(id);
     this.pendingProvisions.delete(id);
     this.prepared.delete(id);
     this.preparations.delete(id);

@@ -80,6 +80,29 @@ export async function recordComputerRunStart(
 }
 
 /**
+ * Rates the open run of the stretch that began at `runningSince` at the size the provider
+ * reports, for a machine that came back at another size than the one recorded. Never fails its
+ * caller.
+ */
+export async function recordComputerRunSize(
+  prisma: RunsClient,
+  computer: { id: string; runningSince: Date },
+  size: string,
+): Promise<void> {
+  try {
+    await prisma.computerRun.updateMany({
+      where: { computerId: computer.id, startedAt: computer.runningSince, endedAt: null },
+      data: { size },
+    });
+  } catch (error) {
+    getLogger().error("computer.run_record_failed", error, {
+      "computer.id": computer.id,
+      transition: "size",
+    });
+  }
+}
+
+/**
  * Notes that the stretch that began at `runningSince` was just seen running, so an end noticed
  * only later is placed here rather than at the moment it was noticed. Never fails its caller.
  */
