@@ -4,6 +4,9 @@ import { useEffect, useRef } from "react";
 import { rpc } from "../../lib/query/rpc";
 import { enqueueTeachComputerInput } from "./teach-computer-input-chain";
 
+// An Escape inside one of these belongs to that popup, not to the demo.
+const POPUP_SELECTOR = "[role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']";
+
 export function TeachCaptureOverlay({
   botId,
   skill,
@@ -142,6 +145,13 @@ export function TeachCaptureOverlay({
       ) {
         return;
       }
+      if (
+        event.key === "Escape" &&
+        event.target instanceof HTMLElement &&
+        event.target.closest(POPUP_SELECTOR)
+      ) {
+        return;
+      }
       const key = teachCaptureKey(event.key, event);
       if (!key) return;
       event.preventDefault();
@@ -158,7 +168,9 @@ export function TeachCaptureOverlay({
     target.addEventListener("pointercancel", onPointerUp);
     target.addEventListener("wheel", onWheel, { passive: false });
     target.addEventListener("contextmenu", onContextMenu);
-    window.addEventListener("keydown", onKeyDown);
+    // Capture phase, so the overlay marks a recorded key as handled before the page's own
+    // handlers run: the computer window closes on an Escape that is not yet prevented.
+    window.addEventListener("keydown", onKeyDown, true);
     return () => {
       target.removeEventListener("pointerdown", onPointerDown);
       target.removeEventListener("pointermove", onPointerMove);
@@ -166,7 +178,7 @@ export function TeachCaptureOverlay({
       target.removeEventListener("pointercancel", onPointerUp);
       target.removeEventListener("wheel", onWheel);
       target.removeEventListener("contextmenu", onContextMenu);
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onKeyDown, true);
     };
   }, [botId, enabled, height, skill, width]);
 

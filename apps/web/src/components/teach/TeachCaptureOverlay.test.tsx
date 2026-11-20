@@ -32,9 +32,71 @@ const skill = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 } as unknown as TaughtSkill;
 
+const escapeInput = { botId: "bot-1", kind: "key", payload: { key: "Escape" } };
+
 afterEach(() => {
   computerInput.mockClear();
   vi.unstubAllGlobals();
+});
+
+it("marks a recorded Escape as handled before the page's own Escape handler sees it", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(<TeachCaptureOverlay botId="bot-1" skill={skill} enabled />);
+  });
+  // Stands in for the computer window's Escape handler, which listens on document in the bubble
+  // phase and skips any Escape already prevented.
+  const sawPrevented: boolean[] = [];
+  const pageEscape = (event: KeyboardEvent) => {
+    if (event.key === "Escape") sawPrevented.push(event.defaultPrevented);
+  };
+  document.addEventListener("keydown", pageEscape);
+  await act(async () => {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  await vi.waitFor(() => expect(computerInput).toHaveBeenCalledWith(escapeInput));
+  expect(sawPrevented).toEqual([true]);
+  document.removeEventListener("keydown", pageEscape);
+  act(() => root.unmount());
+  container.remove();
+});
+
+it("leaves an Escape inside an open dialog to the dialog", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(<TeachCaptureOverlay botId="bot-1" skill={skill} enabled />);
+  });
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  dialog.tabIndex = -1;
+  document.body.append(dialog);
+  const dialogEscape = new KeyboardEvent("keydown", {
+    key: "Escape",
+    bubbles: true,
+    cancelable: true,
+  });
+  dialog.dispatchEvent(dialogEscape);
+  expect(dialogEscape.defaultPrevented).toBe(false);
+  // A later Escape on the page is recorded. Calls run in order, so once it is sent the dialog's
+  // Escape, had it been recorded, would already have been sent too.
+  await act(async () => {
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  await vi.waitFor(() => expect(computerInput).toHaveBeenCalledWith(escapeInput));
+  expect(computerInput).toHaveBeenCalledTimes(1);
+  dialog.remove();
+  act(() => root.unmount());
+  container.remove();
 });
 
 it("sends a wheel scroll with the screen point it was made at", async () => {
