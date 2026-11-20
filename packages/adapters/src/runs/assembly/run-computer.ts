@@ -8,10 +8,8 @@ import {
   COMPUTER_UNRESPONSIVE_ERROR,
   isComputerAllowanceUsed,
 } from "@rakazo/contracts";
-import {
-  ComputerRecoveryRequiredError,
-  ComputerWaitTimedOutError,
-} from "../../computers/computer-lifecycle.js";
+import { ComputerRecoveryRequiredError } from "../../computers/computer-lifecycle.js";
+import { ComputerWaitTimedOutError } from "../../computers/run-computer-wait.js";
 import { isSandboxDamagedError } from "../../computers/sandbox/sandbox-errors.js";
 
 const COMPUTER_RUN_ERRORS = new Set([

@@ -10,7 +10,7 @@ import { COMPUTER_DAMAGED_ERROR, COMPUTER_START_FAILED_ERROR } from "@rakazo/con
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
-import { ComputerWaitTimedOutError } from "../../computers/computer-lifecycle.js";
+import { ComputerWaitTimedOutError } from "../../computers/run-computer-wait.js";
 import { VaultKeyUnavailableError } from "../../secrets/bot-secrets.js";
 import * as runMessages from "../assembly/run-messages.js";
 import { createRunExecutor } from "./executor.js";
