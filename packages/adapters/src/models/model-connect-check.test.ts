@@ -172,6 +172,12 @@ describe("connect-time model check", () => {
 
   it.each([
     ["a rate limit", rejection(429, { error: { message: "Rate limit reached.", code: 429 } })],
+    [
+      "a concurrency limit",
+      rejection(429, {
+        error: { message: "Too many concurrent requests.", type: "exceeded_concurrent_quota" },
+      }),
+    ],
     ["an outage", rejection(503, { error: { message: "Service unavailable.", code: 503 } })],
     [
       "a provider that does not answer in time",
