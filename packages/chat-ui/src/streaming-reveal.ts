@@ -239,24 +239,6 @@ function sourceOffset(node: HastNode, fallback: number): number {
   return node.position?.start?.offset ?? fallback;
 }
 
-/** Common entities only; an unknown name stays literal, as it does in the rendered text. */
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&",
-  apos: "'",
-  copy: "\u00a9",
-  gt: ">",
-  hellip: "\u2026",
-  laquo: "\u00ab",
-  lt: "<",
-  mdash: "\u2014",
-  nbsp: "\u00a0",
-  ndash: "\u2013",
-  quot: '"',
-  raquo: "\u00bb",
-  reg: "\u00ae",
-  trade: "\u2122",
-};
-
 /** ASCII punctuation is the only set a CommonMark backslash escapes. */
 function isAsciiPunctuation(char: string | undefined): boolean {
   if (!char) return false;
@@ -267,27 +249,6 @@ function isAsciiPunctuation(char: string | undefined): boolean {
     (code >= 0x5b && code <= 0x60) ||
     (code >= 0x7b && code <= 0x7e)
   );
-}
-
-/** A character reference at `index`, or undefined when the text is literal there. */
-function entityAt(source: string, index: number): { text: string; length: number } | undefined {
-  const semicolon = source.indexOf(";", index + 1);
-  if (semicolon === -1 || semicolon - index > 34) return undefined;
-  const body = source.slice(index + 1, semicolon);
-  if (/^#\d+$/.test(body)) {
-    const codePoint = Number(body.slice(1));
-    if (codePoint <= 0x10ffff)
-      return { text: String.fromCodePoint(codePoint), length: body.length + 2 };
-    return undefined;
-  }
-  if (/^#x[0-9a-f]+$/i.test(body)) {
-    const codePoint = Number.parseInt(body.slice(2), 16);
-    if (codePoint <= 0x10ffff)
-      return { text: String.fromCodePoint(codePoint), length: body.length + 2 };
-    return undefined;
-  }
-  const named = NAMED_ENTITIES[body];
-  return named ? { text: named, length: body.length + 2 } : undefined;
 }
 
 /**
@@ -302,7 +263,7 @@ function visiblePrefix(slot: RevealTextSlot, blockSource: string, revealed: numb
   const source = blockSource.slice(slot.start, slot.end);
   let index = 0;
   let rendered = 0;
-  while (index < limit) {
+  while (index < limit && rendered < slot.value.length) {
     const char = source[index];
     // An escape or entity that crosses the boundary was still literal in the previous frame.
     if (char === "\\" && index + 1 < limit && isAsciiPunctuation(source[index + 1])) {
@@ -310,12 +271,23 @@ function visiblePrefix(slot: RevealTextSlot, blockSource: string, revealed: numb
       rendered += 1;
       continue;
     }
+    // A decoded reference no longer spells itself in the rendered text. Trusting the parser's
+    // output covers every named entity without keeping a reference table of our own.
     if (char === "&") {
-      const entity = entityAt(source, index);
-      if (entity && index + entity.length <= limit) {
-        index += entity.length;
-        rendered += entity.text.length;
-        continue;
+      const semicolon = source.indexOf(";", index + 1);
+      if (semicolon !== -1 && semicolon < limit && semicolon - index <= 34) {
+        const spelling = source.slice(index, semicolon + 1);
+        if (!slot.value.startsWith(spelling, rendered)) {
+          const next = source[semicolon + 1];
+          if (next === undefined) {
+            rendered = slot.value.length;
+          } else {
+            const nextAt = slot.value.indexOf(next, rendered);
+            rendered = nextAt > rendered ? nextAt : Math.min(slot.value.length, rendered + 1);
+          }
+          index = semicolon + 1;
+          continue;
+        }
       }
     }
     index += 1;
