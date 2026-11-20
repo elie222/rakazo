@@ -141,7 +141,7 @@ describe("bridge tool definitions", () => {
       {
         name: "find_tool",
         description:
-          "Find deferred built-in tool parameters by name or query before calling use_tool.\nmedia:\n  render_plot\nsecrets:\n  list_secrets",
+          "Find deferred tool parameters by name or query before calling use_tool.\nmedia:\n  render_plot\nsecrets:\n  list_secrets",
         inputSchema: {
           type: "object",
           properties: {

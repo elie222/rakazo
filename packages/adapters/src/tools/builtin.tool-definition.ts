@@ -37,7 +37,7 @@ export function bridgeToolDefinitions(nameIndex: string): ConnectorTool[] {
   return [
     {
       name: FIND_TOOL,
-      description: `Find deferred built-in tool parameters by name or query before calling use_tool.\n${nameIndex}`,
+      description: `Find deferred tool parameters by name or query before calling use_tool.\n${nameIndex}`,
       inputSchema: {
         type: "object",
         properties: {
