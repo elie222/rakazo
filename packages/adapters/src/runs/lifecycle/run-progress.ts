@@ -21,7 +21,7 @@ import type { ReplyState, RunContext } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
 import {
   runAllowsSilentEmpty,
-  runNarratesLive,
+  runNarratesLiveFor,
   runPromotesMidTurnNarration,
 } from "../assembly/run-replies.prompt.js";
 import {
@@ -302,6 +302,8 @@ export function isOpeningAcknowledgement(ctx: RunContext, openingText: boolean, 
     isConversationalRun(ctx.run.trigger) &&
     !runAllowsSilentEmpty(ctx.run.trigger) &&
     !ctx.groupReplyOptional &&
+    // A run whose turn may end saying nothing posts nothing early either.
+    !ctx.allowSilentEmptyRun &&
     reply.midTurnProgressCount === 0 &&
     // A resumed attempt's first step is not the run's: the opening moment has passed.
     !reply.resumesEarlierWork &&
@@ -403,8 +405,11 @@ export async function showNarrationStatus(
   // steps never shows as written. The reset below clears it from the live message either way.
   // Only a run whose model was told to narrate live leaves its notes off the line; any other
   // run was asked for notes between steps, so they still show.
-  const live =
-    runNarratesLive(run.trigger) && !ctx.groupReplyOptional && ctx.replyMode !== "messages";
+  const live = runNarratesLiveFor({
+    trigger: run.trigger,
+    replyMode: ctx.replyMode,
+    maySayNothing: ctx.groupReplyOptional || ctx.allowSilentEmptyRun,
+  });
   let shown: string;
   if (!live) shown = narrationStatusLine(note);
   // The step brought the model's own status: it stays the line.

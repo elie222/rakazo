@@ -2330,6 +2330,14 @@ describe("live narration (RAKAZO_OPENING_ACKNOWLEDGEMENT=1)", () => {
     expect(statuses(append).filter(Boolean).length).toBeGreaterThan(0);
   });
 
+  it("does not post an opening sentence on a group follow-up, which may end saying nothing", async () => {
+    const { messages } = await runTurn("Done.", false, "I will check that.", [], "request", {
+      trigger: "follow_up",
+      group: { optional: false },
+    });
+    expect(sentTexts(messages)).toEqual([]);
+  });
+
   it("does not post an opening sentence for a group message that named nobody", async () => {
     const { messages } = await runTurn("Done.", false, "I will check that.", [], "fyi", {
       group: { optional: true },

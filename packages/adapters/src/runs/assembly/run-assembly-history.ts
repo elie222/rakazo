@@ -31,7 +31,7 @@ import { threadContextForRun } from "./run-instructions.prompt.js";
 import {
   DELEGATED_EMPTY_NOTICE,
   runAllowsSilentEmpty,
-  runNarratesLive,
+  runNarratesLiveFor,
   runReplyMode,
 } from "./run-replies.prompt.js";
 
@@ -190,14 +190,6 @@ export async function loadTurnContext(
     Boolean(parts.records.conversationThread.groupId) &&
     run.trigger === "user" &&
     run.groupReplyOptional;
-  startRunStatusLines(hold, {
-    // Earlier attempts reached a step when they saved a checkpoint before it.
-    resumesEarlierWork: parts.saved.storedTurnCheckpoint || Boolean(hold.takeover.resumeCheckpoint),
-    records: parts.records,
-    connected: parts.connected,
-    turnBlocks,
-    groupReplyOptional,
-  });
   const allowSilentPeerMessage = botMessageAllowsSilence(
     peerMessage?.intent,
     peerMessage?.repliesToRequest,
@@ -207,6 +199,14 @@ export async function loadTurnContext(
     messagingChannelRun ||
     runAllowsSilentEmpty(run.trigger) ||
     (Boolean(parts.records.conversationThread.groupId) && run.trigger === "follow_up");
+  startRunStatusLines(hold, {
+    // Earlier attempts reached a step when they saved a checkpoint before it.
+    resumesEarlierWork: parts.saved.storedTurnCheckpoint || Boolean(hold.takeover.resumeCheckpoint),
+    records: parts.records,
+    connected: parts.connected,
+    turnBlocks,
+    maySayNothing: groupReplyOptional || allowSilentEmptyRun,
+  });
   const emptyResponseText = peerMessage
     ? peerMessage.intent === "result" ||
       peerMessage.intent === "status" ||
@@ -310,7 +310,7 @@ function startRunStatusLines(
     records: RunRecords;
     connected: ConnectedRun;
     turnBlocks: readonly MessageBlock[] | undefined;
-    groupReplyOptional: boolean;
+    maySayNothing: boolean;
   },
 ) {
   const { deps, run, runId, secrets } = hold;
@@ -323,9 +323,8 @@ function startRunStatusLines(
     bot.replyMode,
     disabledBuiltinToolSet(bot.disabledBuiltinTools),
   );
-  if (!runNarratesLive(run.trigger) || parts.groupReplyOptional || replyMode === "messages") {
+  if (!runNarratesLiveFor({ trigger: run.trigger, replyMode, maySayNothing: parts.maySayNothing }))
     return;
-  }
   // Set up in the background: the run never waits on the status model. Its statuses
   // show as soon as they are ready, not once the run has finished setting up.
   const writer = createStatusLineWriter(

@@ -30,6 +30,20 @@ export function runNarratesLive(trigger: string): boolean {
   );
 }
 
+/**
+ * Whether this run narrates live: its trigger does, and it is neither in messages mode nor a run
+ * that may end saying nothing (a group message that named nobody, a follow-up or peer message
+ * that allows silence, a messaging channel). The reply guidance, the opening bubble, the
+ * live_status field and the status lines all follow it.
+ */
+export function runNarratesLiveFor(run: {
+  trigger: string;
+  replyMode: ReplyMode;
+  maySayNothing: boolean;
+}): boolean {
+  return runNarratesLive(run.trigger) && run.replyMode !== "messages" && !run.maySayNothing;
+}
+
 export function longWorkProgressGuidance(
   maxLength = messageUserMaxLength(),
   live = openingAcknowledgementEnabled(),
