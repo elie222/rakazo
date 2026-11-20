@@ -82,7 +82,14 @@ const breakdown = {
     modelCalls: 180,
   },
   models: [
-    ...summary.models,
+    ...summary.models.map((model) => ({
+      ...model,
+      inputTokens: model.inputTokens - 10,
+      outputTokens: model.outputTokens - 2,
+      totalTokens: model.totalTokens - 12,
+      costUsd: model.costUsd - 0.001,
+      modelCalls: model.modelCalls - 1,
+    })),
     {
       provider: "retired",
       model: "opaque-legacy-id",
