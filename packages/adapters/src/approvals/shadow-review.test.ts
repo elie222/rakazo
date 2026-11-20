@@ -1,11 +1,16 @@
 import type { AdapterContext, AutoReviewRequest, DecisionProvider } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
 import { deferred, flush } from "@rakazo/core/test-async";
+import { installAuditEventStore } from "@rakazo/db";
 import { expect, it, vi } from "vitest";
 import { DecisionAutoReviewProvider } from "./decision-auto-review.js";
 import { decisionModel } from "./decision-models.js";
 import type { ShadowedReview } from "./shadow-review.js";
-import { autoReviewShadowModel, ShadowedAutoReviewProvider } from "./shadow-review.js";
+import {
+  autoReviewShadowModel,
+  recordShadowReview,
+  ShadowedAutoReviewProvider,
+} from "./shadow-review.js";
 
 const request: AutoReviewRequest = {
   toolName: "fixture_action",
@@ -103,7 +108,10 @@ it.each([
   });
   await expect(provider.review(request, context())).resolves.toMatchObject({ decision: "pass" });
   await vi.waitFor(() => expect(record).toHaveBeenCalledOnce());
-  expect(record.mock.calls[0]![0].shadow.result.decision).toBe("error");
+  expect(record.mock.calls[0]![0].shadow.result).toMatchObject({
+    decision: "error",
+    reason: expect.any(String),
+  });
 });
 
 it("keeps a failed record from reaching the review", async () => {
@@ -177,4 +185,41 @@ it("samples reviews at the deployment's rate, and runs none at a rate it cannot 
   expect(at("0.5", 0.4)).toBeDefined();
   expect(at("0.5", 0.6)).toBeUndefined();
   for (const rate of ["0", "5", "10%", "-1"]) expect(at(rate, 0)).toBeUndefined();
+});
+
+it("records why a trial failed beside the deciding reviewer's verdict", async () => {
+  const createMany = vi.fn();
+  installAuditEventStore({
+    auditEvent: { createMany },
+    space: { findUnique: async () => ({ organizationId: "organization", name: "Space" }) },
+    user: { findUnique: async () => null },
+    member: { findMany: async () => [] },
+  } as never);
+  try {
+    await recordShadowReview(
+      { spaceId: "space", runId: "run", threadId: "thread", effectId: "effect" },
+      {
+        request,
+        primary: { result: { decision: "pass", model: "decisions/primary" }, latencyMs: 40 },
+        shadow: {
+          result: { decision: "error", model: "decisions/trial", reason: "Checker is busy." },
+          latencyMs: 90,
+        },
+      },
+    );
+  } finally {
+    installAuditEventStore(undefined);
+  }
+  expect(createMany.mock.calls[0]?.[0].data).toEqual([
+    expect.objectContaining({
+      action: "approval.shadow_reviewed",
+      outcome: "failure",
+      metadata: expect.objectContaining({
+        effectId: "effect",
+        decision: "pass",
+        shadowDecision: "error",
+        shadowReason: "Checker is busy.",
+      }),
+    }),
+  ]);
 });

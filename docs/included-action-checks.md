@@ -95,7 +95,8 @@ WITH s AS (
 d AS (
   SELECT DISTINCT ON (metadata->>'effectId') metadata->>'effectId' AS effect_id, metadata
   FROM audit_events
-  WHERE action = 'approval.decided' AND "createdAt" > now() - interval '7 days'
+  -- A day wider than the trials: a person can answer before the trial model does.
+  WHERE action = 'approval.decided' AND "createdAt" > now() - interval '8 days'
   ORDER BY metadata->>'effectId', "createdAt" DESC
 )
 SELECT
@@ -111,7 +112,7 @@ SELECT
   round(avg((s.metadata->>'shadowLatencyMs')::numeric)) AS shadow_latency_ms
 FROM s
 LEFT JOIN external_effects e ON e.id = s.metadata->>'effectId'
-LEFT JOIN d ON d.effect_id = e.id
+LEFT JOIN d ON d.effect_id = s.metadata->>'effectId'
 GROUP BY 1, 2, 3
 ORDER BY 1, 2, 3;
 ```

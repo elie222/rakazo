@@ -107,6 +107,8 @@ export function recordShadowReview(
       passProbability: rounded(primary.passProbability),
       latencyMs: primary.latencyMs,
       shadowDecision: shadow.result.decision,
+      // Why a trial failed: a key that cannot reach the model reads apart from a slow model.
+      shadowReason: shadow.result.decision === "error" ? shadow.result.reason : undefined,
       shadowModel: shadow.result.model,
       shadowPassProbability: rounded(shadow.passProbability),
       shadowLatencyMs: shadow.latencyMs,
