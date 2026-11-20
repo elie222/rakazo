@@ -50,6 +50,7 @@ export * from "./messaging/messaging.js";
 export * from "./models/model-credentials.js";
 export * from "./models/model-roles.js";
 export * from "./models/voice-credentials.js";
+export * from "./pages/page-collaboration.js";
 export * from "./runs/cancel-runs.js";
 export * from "./runs/chat-holding-runs.js";
 export * from "./runs/expire-stuck-run.js";
