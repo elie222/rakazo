@@ -17,6 +17,7 @@ import {
   onArchivedChatsChanged,
 } from "../lib/inbox/archived/archived-chats";
 import { useSideInsets } from "../lib/layout/side-insets";
+import { announceToScreenReader } from "../lib/native/announce";
 import { native, useMobileTokens } from "../lib/native/native";
 import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";
 import type { SettingsTarget } from "../lib/query/settings-target";
@@ -49,6 +50,11 @@ export default function GroupSettingsScreen() {
     : missing
       ? t`Group not found`
       : null;
+
+  // A failed read is shown here and read out once, when it appears.
+  useEffect(() => {
+    if (loadError) announceToScreenReader(loadError);
+  }, [loadError]);
 
   useEffect(
     () =>
@@ -120,6 +126,8 @@ export default function GroupSettingsScreen() {
       if (input.name || input.botIds) await send("groups/update", input);
     },
     onSaved: () => router.back(),
+    // Each failed save is read out, so a repeat of the same failure is heard again.
+    onFailed: (failure) => announceToScreenReader(errorText(failure, t`Could not save group`)),
     closesScreen: true,
   });
   const pending = saving.pending;
@@ -203,7 +211,9 @@ export default function GroupSettingsScreen() {
           />
         ) : null}
         {error || loadError ? (
-          <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error ?? loadError}</Text>
+          <Text accessibilityRole="alert" style={{ color: tokens.destructive, marginTop: 12 }}>
+            {error ?? loadError}
+          </Text>
         ) : null}
         <NativeActionButton
           disabled={
