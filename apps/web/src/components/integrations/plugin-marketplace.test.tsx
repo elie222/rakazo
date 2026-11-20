@@ -417,6 +417,27 @@ describe("integration fallback icons", () => {
       [...container.querySelectorAll("img")].map((image) => image.getAttribute("src")),
     ).toEqual([logo, logo, logo]);
   });
+  it("names each Added button after its standalone plugin without changing the visible text", async () => {
+    await act(async () =>
+      root.render(
+        <>
+          <PluginRow name="Notes Board" description="" installed onOpen={vi.fn()} />
+          <PluginRow name="Checklist Pack" description="" installed onOpen={vi.fn()} />
+          <PluginRow name="Task Cards" description="" installed={false} onOpen={vi.fn()} />
+        </>,
+      ),
+    );
+    const actions = [
+      ...container.querySelectorAll('[data-testid="plugin-row"] > button:last-child'),
+    ];
+    expect(actions.map((node) => node.getAttribute("aria-label"))).toEqual([
+      "Added: Notes Board",
+      "Added: Checklist Pack",
+      "Add Task Cards",
+    ]);
+    expect(actions.map((node) => node.textContent)).toEqual(["Added", "Added", "Add"]);
+  });
+
   it("names each Add button after its app and hides the decorative initial", async () => {
     const item = { connectorId: "gm", slug: "gmail", name: "Gmail" } as never;
     const context = {

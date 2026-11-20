@@ -314,6 +314,7 @@ export const taskTools: ToolHandlers = {
           body: args.body !== undefined ? String(args.body) : undefined,
           content: args.content ? String(args.content) : undefined,
         },
+        deps.events,
       ),
     );
   },

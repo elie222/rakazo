@@ -3,8 +3,15 @@ import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { Ticket, TicketStatus } from "@rakazo/contracts";
 import { TICKET_STATUSES } from "@rakazo/contracts";
-import { useRef, useState } from "react";
-import { Platform, RefreshControl, ScrollView, StyleSheet, Text } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+} from "react-native";
 import {
   SettingsGroup,
   SettingsRow,
@@ -31,6 +38,10 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
   const sideInsets = useSideInsets();
   const colorScheme = useResolvedAppearance();
   const [refreshing, setRefreshing] = useState(false);
+  // A failed refresh leaves older tickets on screen, so tell screen readers it failed.
+  useEffect(() => {
+    if (error) AccessibilityInfo.announceForAccessibility(error);
+  }, [error]);
   return (
     <ScrollView
       style={[styles.screen, sideInsets]}
@@ -46,7 +57,11 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
         />
       }
     >
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
       {sections.map((section) => (
         <SettingsGroup key={section.status} label={ticketStatusLabel(section.status)}>
           {section.tickets.map((ticket) => (
