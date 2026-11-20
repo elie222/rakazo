@@ -14,7 +14,7 @@ import { replaceEqualDeep } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { takeInitialBootstrap } from "../../../lib/bootstrap";
+import { applyAccountCapabilities, takeInitialBootstrap } from "../../../lib/bootstrap";
 import {
   initialBootstrapTarget,
   linkedBotRoute,
@@ -108,16 +108,24 @@ export function useSpaceRoster({
       const botOrderEpoch = botOrderEpochRef.current;
       const preserveBotOrder = savingBotOrderRef.current || pendingBotOrderRef.current !== null;
       const archivedRequest = includeArchived ? ++archivedBotsRefreshEpoch.current : null;
-      const [navigation, archived, archivedGroupList, me] = await Promise.all([
+      if (meMissingRef.current) {
+        // Apart from the roster, so a failing account read cannot hold it back; the flag stays
+        // set on failure, and the next re-read tries again.
+        void rpc.me().then(
+          (me) => {
+            if (!meMissingRef.current) return;
+            meMissingRef.current = false;
+            applyAccountCapabilities(me);
+            setBootstrapMe((previous) => previous ?? me);
+          },
+          () => {},
+        );
+      }
+      const [navigation, archived, archivedGroupList] = await Promise.all([
         rpc.spaces.list(),
         includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
         includeArchived ? rpc.groups.listArchived() : Promise.resolve(null),
-        meMissingRef.current ? rpc.me() : Promise.resolve(null),
       ]);
-      if (me && meMissingRef.current) {
-        meMissingRef.current = false;
-        setBootstrapMe((previous) => previous ?? me);
-      }
       const { bots: list, botSections: sections, groups: groupList } = navigation.current;
       markOnce("rk:renderer:bots-response");
       const botsFresh = request === botsRefreshEpoch.current;

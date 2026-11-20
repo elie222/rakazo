@@ -23,12 +23,14 @@ const state = vi.hoisted(() => ({
   storageWritable: true,
   take: vi.fn(),
   prime: vi.fn(),
+  applyAccount: vi.fn(),
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
 }));
 vi.mock("../../../lib/bootstrap", () => ({
   takeInitialBootstrap: state.take,
+  applyAccountCapabilities: state.applyAccount,
   primeSpaceBootstrap: state.prime,
   discardPrimedBootstrap: () => {},
 }));
@@ -708,7 +710,8 @@ describe("a first load that fails", () => {
   it("loads the account with the roster, so what it shows in Settings comes back", async () => {
     state.take.mockRejectedValueOnce(new Error("offline"));
     await open("/app/home");
-    await act(() => vi.advanceTimersByTimeAsync(0));
-    expect(shell.me).toEqual(bootstrapOf("personal").me);
+    const me = bootstrapOf("personal").me;
+    await vi.waitFor(() => expect(shell.me).toEqual(me));
+    expect(state.applyAccount).toHaveBeenCalledWith(me);
   });
 });
