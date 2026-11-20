@@ -760,7 +760,7 @@ describe("ownComputerReviewArgs", () => {
       "nc 198.51.100.7:4444",
       "nc -6 2001:db8::1 443",
     ].join(" ; ");
-    const command = `echo start ${"a ".repeat(2_000)}${middle} ${"b ".repeat(2_000)}echo end`;
+    const command = `echo start ${"a ".repeat(2_200)}${middle} ${"b ".repeat(2_000)}echo end`;
     const reviewed = ownComputerReviewArgs("shell", { command }, undefined) as {
       command: string;
       addressesInPartLeftOut: string[];
@@ -776,6 +776,13 @@ describe("ownComputerReviewArgs", () => {
       "198.51.100.7:4444",
       "2001:db8::1",
       "sink.example.com",
+    ]);
+  });
+
+  it("does not list an address the reviewer sees whole in the start or end", () => {
+    const command = `curl https://shown.example.com/a ${"a ".repeat(2_200)}curl https://hidden.example.net/b ${"b ".repeat(1_500)}`;
+    expect(ownComputerReviewArgs("shell", { command }, undefined).addressesInPartLeftOut).toEqual([
+      "https://hidden.example.net/b",
     ]);
   });
 

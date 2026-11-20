@@ -280,7 +280,7 @@ const IPV6_WORD =
  * with anchored patterns, so a long command is read in linear time; each is cut short enough to
  * keep its host.
  */
-function addressesIn(text: string): string[] | undefined {
+function addressesIn(text: string, shown: string): string[] | undefined {
   const found = new Set<string>();
   // Bare names are listed but never decide the cut: code and file names (`setup.py`,
   // `self.name`) read as host names too, and a long heredoc holds many.
@@ -288,6 +288,8 @@ function addressesIn(text: string): string[] | undefined {
   for (const word of text.split(WORD_SEPARATORS)) {
     // More than the list holds could hide the one that matters behind decoys.
     if (found.size > MAX_LEFT_OUT_ADDRESSES) return undefined;
+    // One the reviewer already sees whole in the start or end was not left out.
+    if (!word || shown.includes(word)) continue;
     if (
       URL_WORD.test(word) ||
       USER_AT_HOST_WORD.test(word) ||
@@ -351,6 +353,7 @@ export function ownComputerReviewArgs(
         Math.max(0, head - MAX_ADDRESS_CHARS),
         command.length - tail + MAX_ADDRESS_CHARS,
       ),
+      `${command.slice(0, head)}\n${command.slice(command.length - tail)}`,
     );
     // Too many to list: the whole command goes, and one too long to review asks.
     if (!addresses) return shellArgs;
