@@ -13,8 +13,8 @@ it("refuses an artifact name that is only whitespace", () => {
   expect(create["~standard"].validate(upload("   "))).toMatchObject({ issues: expect.any(Array) });
 });
 
-it("stores an artifact name without the spaces around it", () => {
+it("preserves a nonblank artifact name exactly for its version history", () => {
   expect(create["~standard"].validate(upload("  Report  "))).toMatchObject({
-    value: expect.objectContaining({ name: "Report" }),
+    value: expect.objectContaining({ name: "  Report  " }),
   });
 });
