@@ -6750,7 +6750,7 @@ msgstr "正在載入模型目錄…"
 
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
-msgstr ""
+msgstr "正在載入頁面…"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
@@ -12154,7 +12154,7 @@ msgstr "檢視文字紀錄"
 
 #: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "View transcript: {platform}, {time}"
-msgstr ""
+msgstr "檢視文字紀錄: {platform}, {time}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx

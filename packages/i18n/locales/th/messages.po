@@ -6743,7 +6743,7 @@ msgstr "กำลังโหลดแคตตาล็อกโมเดล…
 
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
-msgstr ""
+msgstr "กำลังโหลดหน้า…"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
@@ -12147,7 +12147,7 @@ msgstr "ดูสคริปต์"
 
 #: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "View transcript: {platform}, {time}"
-msgstr ""
+msgstr "ดูสคริปต์: {platform}, {time}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx

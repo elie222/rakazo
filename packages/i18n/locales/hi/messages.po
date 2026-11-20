@@ -6749,7 +6749,7 @@ msgstr "मॉडल कैटलॉग लोड हो रहा है…"
 
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
-msgstr ""
+msgstr "पेज लोड हो रहा है…"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
@@ -12153,7 +12153,7 @@ msgstr "ट्रांसक्रिप्ट देखें"
 
 #: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "View transcript: {platform}, {time}"
-msgstr ""
+msgstr "ट्रांसक्रिप्ट देखें: {platform}, {time}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
