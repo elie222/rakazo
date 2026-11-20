@@ -52,6 +52,34 @@ describe("resolveScheduleTiming", () => {
     });
   });
 
+  it.each([
+    [90, "minutes", /1 hours? or every 2 hours/],
+    [120, "minutes", /exactly 2 hours: use every 2, unit "hours"/],
+    [1440, "minutes", /exactly 1 day: use every 1, unit "days"/],
+    [25, "hours", /1 days? or every 2 days/],
+    [48, "hours", /exactly 2 days: use every 2, unit "days"/],
+    [40, "days", /use cron/],
+  ])("rejects every %i %s with the intervals that work", (every, unit, hint) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(`every ${every} ${unit} is out of range`);
+    expect(result.error).toMatch(hint);
+  });
+
+  it.each([
+    [7, "minutes", "*/7 * * * *"],
+    [45, "minutes", "*/45 * * * *"],
+    [59, "minutes", "*/59 * * * *"],
+    [60, "minutes", "*/60 * * * *"],
+    [23, "hours", "0 */23 * * *"],
+    [24, "hours", "0 */24 * * *"],
+    [31, "days", "0 0 */31 * *"],
+  ])("still accepts every %i %s", (every, unit, cron) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok && result.cron).toBe(cron);
+  });
+
   it("accepts every 1 minute", () => {
     const result = resolveScheduleTiming({ every: 1, unit: "minutes" });
     expect(result.ok).toBe(true);
