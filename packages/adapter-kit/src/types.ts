@@ -754,6 +754,11 @@ export interface AgentRunRequest {
     modelId: string,
     connectionId?: string,
   ) => Promise<AgentRunModel>;
+  /**
+   * Optional per-run hook that can move the run to a stronger model between turns, on what the
+   * run has done so far. Absent, the run keeps its model.
+   */
+  modelEscalation?: ModelEscalation;
   /** Persist the selected backup against the active run lease before requesting it. */
   /** `computerMode` is set when the switch enters computer mode rather than changing the run's model. */
   onModelChange?: (provider: string, modelId: string, computerMode?: boolean) => Promise<void>;
@@ -1923,4 +1928,30 @@ export interface BillingCheckoutRequest {
 export interface ModelUsageLookup {
   provider: string;
   lookupUsage(providerRequestId: string): Promise<AgentUsage | null>;
+}
+
+/** One step a model escalation hook asks for between turns: a model to move to, or a note to add. */
+export type ModelEscalationStep =
+  | { model: Pick<AgentRunModel, "provider" | "id">; reason: string }
+  | { note: string; reason: string };
+
+/**
+ * Moves a run up to a stronger model between turns, on what the run has done so far. The runtime
+ * reports each tool call and result, asks `next()` after every turn, and switches the way it
+ * switches to a backup, so the transcript carries over. After a move, a failing model falls back
+ * to the model the run left first, then to the backups it has not used yet. The hook decides
+ * every move and is expected only to move up; the runtime never moves the run on its own.
+ */
+export interface ModelEscalation {
+  observeToolCall(name: string, args: unknown): void;
+  /** `text` joins the result's text blocks; `raw` is the result as the tool returned it. */
+  observeToolResult(name: string, result: { isError: boolean; text: string; raw: unknown }): void;
+  /** The step to take before the next turn, if any. A `note` is added to the next request. */
+  next(): ModelEscalationStep | undefined;
+  /** Resolve the model a step names, with its credentials, within the run's scope. */
+  resolve(provider: string, modelId: string): Promise<AgentRunModel>;
+  /** The run switched to this backup after a model failed, before or after a move. */
+  onFallback?(provider: string, modelId: string): void;
+  /** The move `next()` asked for could not be made, so the run stays on its model. */
+  failed?(modelId: string): void;
 }
