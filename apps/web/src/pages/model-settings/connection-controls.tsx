@@ -1,8 +1,9 @@
-import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { useSignInSetup } from "@rakazo/chat-ui/sign-in-setup";
 import { Button, Disclosure, Input, Label, OptionSelect, Switch } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
+import { PasteCodeSignIn } from "../../components/models/PasteCodeSignIn";
 import { SignInSetupStep } from "../../components/models/SignInSetupStep";
 import { CompatibleKeyField } from "./compatible-key-field";
 
@@ -114,49 +115,13 @@ export function ConnectionControls({
           {oauth ? (
             <div className="w-full rounded-xl border border-border px-4 py-3">
               {oauth.mode === "auth-url" ? (
-                <>
-                  <p className="text-body-sm leading-[1.5] text-muted-foreground">
-                    <Trans>
-                      Sign in at{" "}
-                      <a
-                        href={oauth.verificationUri}
-                        onClick={() => reportSignInStep("page_opened")}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-foreground underline"
-                      >
-                        {new URL(oauth.verificationUri).hostname}
-                      </a>
-                      , then paste the code here.
-                    </Trans>
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Input
-                      value={pasteCode}
-                      onChange={(e) => setPasteCode(e.target.value)}
-                      aria-label={t`Authorization code`}
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="text-foreground md:text-body-sm"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={!pasteCode.trim()}
-                      onClick={() => void submitOAuthCode()}
-                    >
-                      <Trans>Submit</Trans>
-                    </Button>
-                  </div>
-                  <p className="mt-2 text-body-sm leading-[1.5] text-muted-foreground">
-                    <Plural
-                      value={Math.ceil(oauth.expiresInSeconds / 60)}
-                      one="Waiting for sign-in — the link expires in about # minute."
-                      other="Waiting for sign-in — the link expires in about # minutes."
-                    />
-                  </p>
-                </>
+                <PasteCodeSignIn
+                  oauth={oauth}
+                  code={pasteCode}
+                  onCodeChange={setPasteCode}
+                  onSubmit={() => void submitOAuthCode()}
+                  onPageOpened={() => reportSignInStep("page_opened")}
+                />
               ) : (
                 <DeviceCodeSignIn
                   oauth={oauth}

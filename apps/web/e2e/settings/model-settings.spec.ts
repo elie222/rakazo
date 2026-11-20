@@ -661,3 +661,40 @@ test("a device-code sign-in shows its setup before issuing the code", async ({
   );
   await captureScreenshot(page, testInfo, "onboarding-device-code-sign-in");
 });
+
+test("a pasted-code sign-in opens its page from a click and then takes the code", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    body.json.needsModel = true;
+    body.json.needsSignupSurvey = false;
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/models/beginOAuth", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          mode: "auth-url",
+          loginId: "login-e2e",
+          provider: "anthropic",
+          verificationUri: "https://auth.example.test/oauth/authorize?state=e2e",
+          expiresInSeconds: 900,
+        },
+      },
+    }),
+  );
+  await page.route("**/rpc/models/completeOAuth", (route) =>
+    route.fulfill({ json: { json: { status: "pending" } } }),
+  );
+  await signup(page, `paste-code-${stamp}@rakazo.test`, "password12", "Paste Code Preview");
+  await chooseOption(page.getByLabel("Provider", { exact: true }), "Claude subscription");
+  await page.getByRole("button", { name: "Sign in with Claude" }).click();
+  const open = page.getByRole("link", { name: "Open auth.example.test" });
+  await expect(open).toHaveAttribute("href", "https://auth.example.test/oauth/authorize?state=e2e");
+  await expect(page.getByRole("textbox", { name: "Code from auth.example.test" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue" })).toBeHidden();
+  await captureScreenshot(page, testInfo, "onboarding-paste-code-sign-in");
+});
