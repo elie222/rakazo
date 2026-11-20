@@ -1,6 +1,5 @@
 import type { AuthInteraction, OAuthCredential } from "@earendil-works/pi-ai";
 import {
-  cancelResponseBody,
   deadlineSignal,
   isRetryableError,
   pollUntil,
@@ -107,7 +106,7 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
       }
     };
     const failure = async (step: string, response: Response) =>
-      new SignInHttpError(step, response.status, await errorCode(response));
+      new SignInHttpError(step, response.status, await errorCode(step, response));
     const persist = <T>(operation: () => Promise<T>) =>
       retry(operation, { attempts: REQUEST_ATTEMPTS, retryable: isTransient, signal });
 
@@ -152,13 +151,12 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
           value: { authorizationCode: json.authorization_code, codeVerifier: json.code_verifier },
         };
       }
-      // The person has not approved the code yet.
-      if (response.status === 403 || response.status === 404) {
-        cancelResponseBody(response);
-        return { status: "pending" };
-      }
       const error = await failure("poll", response);
       if (error.code === "deviceauth_authorization_pending") return { status: "pending" };
+      // The person has not approved the code yet, unless the answer names a refusal.
+      if ((response.status === 403 || response.status === 404) && !error.code) {
+        return { status: "pending" };
+      }
       if (error.code === "slow_down") return { status: "slow_down" };
       throw error;
     };
@@ -218,15 +216,18 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
 }
 
 /** The OAuth error code a failed answer carries, read only to decide what to do next. */
-async function errorCode(response: Response): Promise<string | undefined> {
-  let json: { error?: unknown };
+async function errorCode(step: string, response: Response): Promise<string | undefined> {
+  let json: unknown;
   try {
     json = await readBoundedJsonResponse(response, MAX_RESPONSE_BYTES);
-  } catch {
-    // An error page that is not JSON carries no code.
-    return undefined;
+  } catch (error) {
+    // An error page that is not JSON carries no code; a body cut off mid-read is a dropped
+    // connection.
+    if (error instanceof SyntaxError || error instanceof ResponseBodyTooLargeError)
+      return undefined;
+    throw new SignInNetworkError(step, { cause: error });
   }
-  const error = json.error;
+  const error = json && typeof json === "object" ? (json as { error?: unknown }).error : undefined;
   const code = error && typeof error === "object" ? (error as { code?: unknown }).code : error;
   // Only an OAuth error name is kept; anything else could be free text.
   return typeof code === "string" && /^[a-z_]{1,64}$/.test(code) ? code : undefined;
@@ -238,7 +239,8 @@ function credentialOf(json: Record<string, unknown>): OAuthCredential {
     typeof access !== "string" ||
     typeof refresh !== "string" ||
     typeof expiresIn !== "number" ||
-    !Number.isFinite(expiresIn)
+    !Number.isFinite(expiresIn) ||
+    expiresIn <= 0
   ) {
     throw new Error("Device sign-in returned an invalid credential.");
   }

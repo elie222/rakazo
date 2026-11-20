@@ -150,6 +150,42 @@ describe("ChatGPT device-code sign-in", () => {
     expect(error.message).toBe("Device sign-in poll failed (status 400).");
   });
 
+  it("ends on a refusal even when it comes as a 403", async () => {
+    const provider = fakeProvider({
+      poll: [status(403, JSON.stringify({ error: "access_denied" }))],
+    });
+    await expect(
+      createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value),
+    ).rejects.toThrow("access_denied");
+  });
+
+  it("keeps waiting through a 5xx whose body is JSON null or cut off", async () => {
+    const cutOff = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(new TypeError("terminated"));
+        },
+      }),
+      { status: 400 },
+    );
+    const provider = fakeProvider({ poll: [status(502, "null"), cutOff, approved()] });
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await expect(login).resolves.toMatchObject({ accountId: "acct-1" });
+  });
+
+  it("refuses a credential that is already expired", async () => {
+    const provider = fakeProvider({
+      poll: [approved()],
+      token: [Response.json({ access_token: "a.b.c", refresh_token: "r", expires_in: 0 })],
+    });
+    await expect(
+      createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value),
+    ).rejects.toThrow("invalid credential");
+  });
+
   it("slows down when the provider asks", async () => {
     const provider = fakeProvider({
       poll: [status(400, JSON.stringify({ error: "slow_down" })), approved()],
