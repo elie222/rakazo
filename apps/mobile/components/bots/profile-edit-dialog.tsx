@@ -24,22 +24,27 @@ export function useTextEditDialog(
     onCommit: (next: string) => void;
   } | null>(null);
   function commit(next: string, onCommit: (next: string) => void) {
-    if (next.length > maxLength) return;
+    if (next.length > maxLength) {
+      if (Platform.OS === "ios") prompt(next, onCommit, t`Use ${maxLength} characters or fewer`);
+      return;
+    }
     setAsked(null);
     onCommit(next.trim());
   }
+  function prompt(value: string, onCommit: (next: string) => void, message?: string) {
+    Alert.prompt(
+      label,
+      message,
+      [
+        { text: t`Cancel`, style: "cancel" },
+        { text: t`Save`, onPress: (next?: string) => commit(next ?? value, onCommit) },
+      ],
+      "plain-text",
+      value,
+    );
+  }
   function ask(value: string, onCommit: (next: string) => void) {
-    if (Platform.OS === "ios")
-      Alert.prompt(
-        label,
-        undefined,
-        [
-          { text: t`Cancel`, style: "cancel" },
-          { text: t`Save`, onPress: (next?: string) => commit(next ?? value, onCommit) },
-        ],
-        "plain-text",
-        value,
-      );
+    if (Platform.OS === "ios") prompt(value, onCommit);
     else setAsked({ draft: value, onCommit });
   }
   const dialog =
