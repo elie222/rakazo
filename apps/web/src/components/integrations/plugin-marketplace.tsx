@@ -120,7 +120,13 @@ function sourceHref(source: string, sha: string | undefined) {
   const [repo, subdir] = source.split("#");
   const href = subdir ? `${repo}/tree/${sha ?? "HEAD"}/${subdir}` : repo;
   // A plugin source is untrusted text; only a web address may become a link.
-  return href && /^https?:\/\//i.test(href) ? href : undefined;
+  try {
+    const { protocol } = new URL(href ?? "");
+    if (protocol === "https:" || protocol === "http:") return href;
+  } catch {
+    // Not a URL, so there is nothing to link to.
+  }
+  return undefined;
 }
 
 const SKILLS_SHOWN = 5;
