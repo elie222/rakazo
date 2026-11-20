@@ -333,21 +333,6 @@ describe("persistVoiceCredential through a model connection", () => {
     expect(saved).toMatchObject({ hasKey: false, modelCredentialId: "model-cred-2" });
   });
 
-  it("keeps the chosen voice only if the model connection it now uses offers it", async () => {
-    const { listVoices } = stubProvider();
-    const { deps } = linkedDeps();
-
-    for (const [requested, saved] of [
-      ["eve", "eve"],
-      ["gone-voice", "eve"],
-    ]) {
-      await expect(
-        persistVoiceCredential(deps, actor, { provider: "xai", plaintext: "", voiceId: requested }),
-      ).resolves.toMatchObject({ voiceId: saved });
-    }
-    expect(listVoices).toHaveBeenCalledTimes(2);
-  });
-
   it("refuses a model connection that is not the account's connection to that provider", async () => {
     const { verify } = stubProvider();
     const { deps, put } = linkedDeps([

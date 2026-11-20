@@ -486,21 +486,20 @@ export async function persistVoiceCredential(
         : (verified.message ?? "That key was rejected."),
     });
   }
-  // A link may now use another model connection, which lists its own voices, so the voice kept
-  // is checked against the connection it uses.
-  const linked = isModelConnectionVoiceSecret(plaintext);
   let voiceId = choicesChanged ? "" : (input.voiceId?.trim() ?? "");
   let validVoiceIds: string[] = [];
-  if (!voiceId || linked) {
-    const voices = await withVoiceConnection(input.provider, linked, () =>
-      provider.listVoices(apiKey, voiceContext(actor, input.signal), {
-        model: requestedSpeechModel ?? undefined,
-      }),
+  if (!voiceId) {
+    const voices = await withVoiceConnection(
+      input.provider,
+      isModelConnectionVoiceSecret(plaintext),
+      () =>
+        provider.listVoices(apiKey, voiceContext(actor, input.signal), {
+          model: requestedSpeechModel ?? undefined,
+        }),
     );
+    voiceId = voices[0]?.id ?? "";
     validVoiceIds = voices.map((voice) => voice.id);
-    if (!validVoiceIds.includes(voiceId)) voiceId = voices[0]?.id ?? "";
   }
-  const movesStaleVoices = choicesChanged || (linked && validVoiceIds.length > 0);
   const stored = await deps.secrets.put(plaintext, voiceContext(actor, input.signal));
   const cred = await withTransactionRetry(() =>
     deps.prisma.$transaction(
@@ -542,10 +541,10 @@ export async function persistVoiceCredential(
             ? requestedSpeechModel
             : previousPreference?.speechModel;
         await selectVoicePreference(tx, target, credential.id, selectedVoiceId, speechModel);
-        if (existing && movesStaleVoices) {
+        if (existing && choicesChanged) {
           // The credential is account-wide but the account and each Space that overrides
-          // voice keep their own voice. Move every other copy whose voice the new server,
-          // model or model connection lacks onto the new default.
+          // voice keep their own voice. Move every other copy whose voice the new server
+          // or model lacks onto the new default.
           const stale = {
             userId: actor.userId,
             credentialId: existing.id,
