@@ -28,7 +28,10 @@ describe("useComposerModelShortcuts", () => {
     vi.unstubAllGlobals();
   });
 
-  const ready = () => act(() => latest.pickerProps.onKeysChange(() => false));
+  const ready = (canOpen = true) =>
+    act(() =>
+      latest.pickerProps.onKeysChange({ stepThinking: () => false, canOpen: () => canOpen }),
+    );
 
   it("toggles the list and closes it for good when the chat changes", () => {
     render({ botId: "a", enabled: true });
@@ -74,8 +77,20 @@ describe("useComposerModelShortcuts", () => {
     render({ botId: "a", enabled: true });
     expect(latest.run("thinking-level")).toBe(false);
     const step = vi.fn(() => true);
-    latest.pickerProps.onKeysChange(step);
+    latest.pickerProps.onKeysChange({ stepThinking: step, canOpen: () => true });
     expect(latest.run("thinking-level")).toBe(true);
     expect(step).toHaveBeenCalledOnce();
+  });
+
+  it("does not open the list mid-save, but still closes it", () => {
+    render({ botId: "a", enabled: true });
+    ready();
+    act(() => latest.run("model-picker"));
+    expect(latest.open).toBe(true);
+    ready(false);
+    act(() => expect(latest.run("model-picker")).toBe(true));
+    expect(latest.open).toBe(false);
+    act(() => expect(latest.run("model-picker")).toBe(false));
+    expect(latest.open).toBe(false);
   });
 });

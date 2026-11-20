@@ -14,6 +14,13 @@ import { chordKeys, chordLabel, isApplePlatform } from "../shell-shortcuts";
  * The chat's model beside Send, for people who turned it on. Its panel lists the models with the
  * thinking levels beside them; each pick saves to the bot.
  */
+/** What the shell's keys can do with the picker while it is shown. */
+export type ComposerModelKeys = {
+  stepThinking: () => boolean;
+  /** Whether the list may open now; closing it always may. */
+  canOpen: () => boolean;
+};
+
 export function ComposerModelPicker({
   bot,
   disabled,
@@ -31,10 +38,10 @@ export function ComposerModelPicker({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
-   * Receives what steps to the next thinking level once the button is shown and usable, and null
-   * when it stops being either, so the keys act only on a picker that is really there.
+   * Receives what the keyboard can do once the button is shown and usable, and null when it stops
+   * being either, so the keys act only on a picker that is really there.
    */
-  onKeysChange?: (stepThinking: (() => boolean) | null) => void;
+  onKeysChange?: (keys: ComposerModelKeys | null) => void;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -58,10 +65,14 @@ export function ComposerModelPicker({
 
   // The shell's key press calls the latest step, which reads this render's levels.
   const thinkingStep = useRef<(() => boolean) | null>(null);
+  const saving = useRef(false);
   const ready = Boolean(credentials && catalog && me) && !disabled;
   useEffect(() => {
     if (!ready) return;
-    onKeysChange?.(() => thinkingStep.current?.() ?? false);
+    onKeysChange?.({
+      stepThinking: () => thinkingStep.current?.() ?? false,
+      canOpen: () => !saving.current,
+    });
     return () => onKeysChange?.(null);
   }, [onKeysChange, ready]);
 
@@ -99,16 +110,22 @@ export function ComposerModelPicker({
     : undefined;
   const defaultLabel = thinkingLevelLabel(defaultThinkingLevel);
   const busy = disabled || saveModel.pending || saveThinking.pending;
-  // Steps from the level in use (the default's when none is saved) to the next, wrapping.
+  // A pick made mid-save would be dropped, so the key opens the list only when a click could.
+  saving.current = busy;
+  // Steps from the level in use (the default's when none is saved) to the next, wrapping. Landing
+  // on the default's level saves Default, so the bot keeps following later default changes.
   thinkingStep.current =
     thinkingLevels.length && !busy
       ? () => {
-          const inUse = thinking ?? defaultThinkingLevel;
-          const current = thinkingLevels.findIndex((level) => level === inUse);
+          const current = thinkingLevels.findIndex(
+            (level) => level === (thinking ?? defaultThinkingLevel),
+          );
           const next = thinkingLevels[(current + 1) % thinkingLevels.length];
-          // A model with one level has nowhere to step, and saving it would stop following the default.
-          if (next === undefined || next === inUse) return false;
-          saveThinking.run(next);
+          if (next === undefined) return false;
+          const value = next === defaultThinkingLevel ? null : next;
+          // A model with one level has nowhere to step.
+          if (value === thinking) return false;
+          saveThinking.run(value);
           return true;
         }
       : null;

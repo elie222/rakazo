@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import type { ComposerModelKeys } from "./composer-model-picker";
 
 /**
  * Cmd/Ctrl+Shift+M and Cmd/Ctrl+Shift+E for the model beside Send: the first opens and closes its
@@ -20,10 +21,10 @@ export function useComposerModelShortcuts({
     setOpenFor(null);
   }
   // Set while the picker is shown and usable; a picker that goes away forgets an open list.
-  const thinkingStep = useRef<(() => boolean) | null>(null);
-  const onKeysChange = useCallback((step: (() => boolean) | null) => {
-    thinkingStep.current = step;
-    if (!step) setOpenFor(null);
+  const keys = useRef<ComposerModelKeys | null>(null);
+  const onKeysChange = useCallback((next: ComposerModelKeys | null) => {
+    keys.current = next;
+    if (!next) setOpenFor(null);
   }, []);
   const open = enabled && botId !== undefined && openFor === botId;
   return {
@@ -36,9 +37,12 @@ export function useComposerModelShortcuts({
     },
     /** Runs a chord, answering whether it applied. */
     run(shortcut: "model-picker" | "thinking-level") {
-      if (!enabled || !botId || !thinkingStep.current) return false;
-      if (shortcut === "thinking-level") return thinkingStep.current();
-      setOpenFor(open ? null : botId);
+      const picker = keys.current;
+      if (!enabled || !botId || !picker) return false;
+      if (shortcut === "thinking-level") return picker.stepThinking();
+      if (open) setOpenFor(null);
+      else if (picker.canOpen()) setOpenFor(botId);
+      else return false;
       return true;
     },
   };
