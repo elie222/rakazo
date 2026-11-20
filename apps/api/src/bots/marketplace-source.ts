@@ -15,10 +15,11 @@ import type { RouterDeps } from "../router.js";
 type Prisma = RouterDeps["prisma"];
 
 const SOURCE_LIMIT = 100;
+const TEMPLATE_SKILL_LIMIT = 5;
 const skillShape = BotTemplateSchema.shape.skills.element;
 const routineShape = BotTemplateSchema.shape.routines.element;
 
-/** Skills the bot's routines mention that its owner can use in the bot's Space. */
+/** Skills the owner can use in the bot's Space. A bot has no skill list of its own: it can use all of them. */
 function usableSkills(prisma: Prisma, userId: string, spaceId: string) {
   return prisma.agentSkill.findMany({
     where: {
@@ -26,21 +27,45 @@ function usableSkills(prisma: Prisma, userId: string, spaceId: string) {
       source: "user",
       OR: [{ spaceId }, { allSpaces: true }, { availableIn: { some: { spaceId } } }],
     },
+    orderBy: { name: "asc" },
     select: { name: true, content: true },
   });
 }
 
-function mentionedSkills<T extends { name: string }>(prompts: string[], skills: T[]): T[] {
-  const names = new Set<string>();
+function mentionedNames(prompts: string[], names: string[]): Set<string> {
+  const mentioned = new Set<string>();
   for (const prompt of prompts) {
-    for (const name of extractRoutineSkillMentions(
-      prompt,
-      skills.map((skill) => skill.name),
-    )) {
-      names.add(name.toLowerCase());
-    }
+    for (const name of extractRoutineSkillMentions(prompt, names))
+      mentioned.add(name.toLowerCase());
   }
-  return skills.filter((skill) => names.has(skill.name.toLowerCase()));
+  return mentioned;
+}
+
+/** The skills a template can hold, the ones the routines mention first. */
+function templateSkills(
+  rows: { name: string; content: string }[],
+  prompts: string[],
+): BotTemplate["skills"] {
+  const mentioned = mentionedNames(
+    prompts,
+    rows.map((row) => row.name),
+  );
+  const ordered = [
+    ...rows.filter((row) => mentioned.has(row.name.toLowerCase())),
+    ...rows.filter((row) => !mentioned.has(row.name.toLowerCase())),
+  ];
+  const skills: BotTemplate["skills"] = [];
+  for (const row of ordered) {
+    const file = parseSkillMd(row.content);
+    if ("error" in file) continue;
+    const parsed = skillShape.safeParse({
+      name: file.name,
+      description: file.description,
+      body: file.body,
+    });
+    if (parsed.success) skills.push(parsed.data);
+  }
+  return skills.slice(0, TEMPLATE_SKILL_LIMIT);
 }
 
 /** The bots a listing can be built from: the admin's own, in the Space they are working in. */
@@ -68,9 +93,9 @@ export async function marketplaceSources(
       botId: bot.id,
       name: bot.name,
       spaceName: bot.space.name,
-      skills: mentionedSkills(
-        routines.map((routine) => routine.prompt),
+      skills: templateSkills(
         skills,
+        routines.map((routine) => routine.prompt),
       ).length,
       routines: routines.length,
     };
@@ -79,7 +104,7 @@ export async function marketplaceSources(
 
 /**
  * The template part of one of the admin's bots. Only what a listing can hold is kept: routines
- * that run on a schedule, and the skills they mention; anything that does not fit is left out.
+ * that run on a schedule, and the owner's skills; anything that does not fit is left out.
  */
 export async function marketplaceDraftFromBot(
   prisma: Prisma,
@@ -109,25 +134,15 @@ export async function marketplaceDraftFromBot(
     if (routine.crons.length > 0 && parsed.success) routines.push(parsed.data);
   }
   const limited = routines.slice(0, 5);
-  const skills: BotTemplate["skills"] = [];
-  for (const row of mentionedSkills(
-    limited.map((routine) => routine.prompt),
+  const skills = templateSkills(
     await usableSkills(prisma, actor.userId, actor.spaceId),
-  )) {
-    const file = parseSkillMd(row.content);
-    if ("error" in file) continue;
-    const parsed = skillShape.safeParse({
-      name: file.name,
-      description: file.description,
-      body: file.body,
-    });
-    if (parsed.success) skills.push(parsed.data);
-  }
+    limited.map((routine) => routine.prompt),
+  );
   return {
     name: bot.name.slice(0, BOT_NAME_MAX_LENGTH),
     description: bot.description.slice(0, BOT_DESCRIPTION_MAX_LENGTH),
     instructions: bot.instructions,
-    skills: skills.slice(0, 5),
+    skills,
     routines: limited,
   };
 }

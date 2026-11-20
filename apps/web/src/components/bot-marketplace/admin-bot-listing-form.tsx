@@ -3,6 +3,8 @@ import type { MarketplaceBotAdminRow, MarketplaceBotSource } from "@rakazo/contr
 import { formatCron } from "@rakazo/core";
 import {
   Button,
+  Checkbox,
+  Label as ControlLabel,
   Field,
   FieldError,
   FieldGroup,
@@ -165,6 +167,8 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
   const [tried, setTried] = useState(false);
   const [exampleOpen, setExampleOpen] = useState(false);
   const [copiedOpen, setCopiedOpen] = useState(false);
+  // Every skill the chosen bot could bring; the form keeps the ones that stay ticked.
+  const [skillChoices, setSkillChoices] = useState(initial.form.skills);
   const [picking, setPicking] = useState(false);
   // A listing made before a failed publish is changed, not made again, when saved once more.
   const [createdSlug, setCreatedSlug] = useState<string | null>(null);
@@ -186,6 +190,7 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
     }),
     onSaved: ({ picked, draft }) => {
       setForm((current) => copyFromBot(current, draft, nameEdited));
+      setSkillChoices(draft.skills);
       setSource(picked);
       setPicking(false);
     },
@@ -413,17 +418,30 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
                     placeholder="gmail, googlecalendar"
                     onChange={(value) => set("apps", value)}
                   />
-                  {form.skills.length ? (
-                    <Field>
-                      <FieldLabel>
+                  {skillChoices.length ? (
+                    <fieldset className="space-y-2">
+                      <legend className="mb-2 text-body font-semibold text-foreground">
                         <Trans>Skills</Trans>
-                      </FieldLabel>
-                      <ul className="space-y-1 text-body">
-                        {form.skills.map((skill) => (
-                          <li key={skill.name}>{skill.name}</li>
-                        ))}
-                      </ul>
-                    </Field>
+                      </legend>
+                      {skillChoices.map((skill) => (
+                        <ControlLabel key={skill.name} className="font-normal text-foreground">
+                          <Checkbox
+                            checked={form.skills.some((chosen) => chosen.name === skill.name)}
+                            onCheckedChange={(checked) =>
+                              set(
+                                "skills",
+                                skillChoices.filter((choice) =>
+                                  choice.name === skill.name
+                                    ? checked
+                                    : form.skills.some((chosen) => chosen.name === choice.name),
+                                ),
+                              )
+                            }
+                          />
+                          <span className="min-w-0 break-words">{skill.name}</span>
+                        </ControlLabel>
+                      ))}
+                    </fieldset>
                   ) : null}
                   {form.routines.length ? (
                     <Field>

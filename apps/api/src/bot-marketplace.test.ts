@@ -284,19 +284,23 @@ describe("botMarketplace admin sources", () => {
     ]);
   });
 
-  it("copies instructions, scheduled routines and the skills they mention", async () => {
+  it("copies instructions, scheduled routines and the owner's skills, those the routines mention first", async () => {
     const db = fakeDb();
     db.sourceBots.push(bot);
-    db.sourceSkills.push(skill, {
-      name: "Unused",
-      content: "---\nname: Unused\ndescription: Never mentioned.\n---\nBody.",
-    });
+    db.sourceSkills.push(
+      {
+        name: "Unused",
+        content: "---\nname: Unused\ndescription: Never mentioned.\n---\nBody.",
+      },
+      skill,
+    );
     expect(await call(routesWith(db.prisma).admin.fromBot, admin, { botId: "bot-1" })).toEqual({
       name: "Morning briefing",
       description: "",
       instructions: "Summarise the day.",
       skills: [
         { name: "Calendar notes", description: "Reads the day.", body: "List the meetings." },
+        { name: "Unused", description: "Never mentioned.", body: "Body." },
       ],
       routines: [
         { name: "Daily", prompt: "Use @Calendar notes to list meetings", crons: ["0 8 * * 1-5"] },

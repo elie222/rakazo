@@ -229,6 +229,26 @@ it("copies a chosen bot, previews the listing and publishes it", async () => {
   await vi.waitFor(() => expect(api.navigate).toHaveBeenCalledWith("/admin/bots"));
 });
 
+it("leaves out a skill that is unticked", async () => {
+  await open(null);
+  await click(button("Choose a bot"));
+  await vi.waitFor(() => expect(scope().textContent).toContain("Ops"));
+  await click(scope().querySelector<HTMLElement>("li button")!);
+  await vi.waitFor(() => expect(control("Display name").value).toBe("晨间简报"));
+  const skill = scope().querySelector<HTMLElement>('[role="checkbox"]');
+  if (!skill) throw new Error("Missing skill checkbox");
+  expect(skill.getAttribute("aria-checked")).toBe("true");
+  await click(skill);
+  expect(skill.getAttribute("aria-checked")).toBe("false");
+  await writeListing();
+  await click(button("Save draft"));
+  await vi.waitFor(() =>
+    expect(api.create).toHaveBeenCalledWith({
+      listing: expect.objectContaining({ skills: [] }),
+    }),
+  );
+});
+
 it("keeps a typed name when another bot is chosen", async () => {
   await open(null);
   await fill("Display name", "My briefing");
