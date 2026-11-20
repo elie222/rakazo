@@ -355,14 +355,15 @@ async function routinesTarget(
   args: Record<string, unknown>,
 ): Promise<{ botId: string; threadId: string; groupThreadId?: string } | { error: string }> {
   const { bot, thread } = ctx;
-  if (!reachesManagedRoutines(name, args)) {
-    return {
-      botId: bot.id,
-      threadId: thread.id,
-      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
-    };
-  }
+  const own = {
+    botId: bot.id,
+    threadId: thread.id,
+    ...(thread.groupId ? { groupThreadId: thread.id } : {}),
+  };
+  if (!reachesManagedRoutines(name, args)) return own;
   const managed = await resolveBot(ctx.deps.prisma, ctx.fleetRun, args);
   if ("error" in managed) return { error: managed.error };
+  // Naming itself keeps a group run to the group's routines.
+  if (managed.id === bot.id) return own;
   return { botId: managed.id, threadId: managed.thread?.id ?? thread.id };
 }

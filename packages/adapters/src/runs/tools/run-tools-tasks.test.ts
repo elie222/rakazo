@@ -67,9 +67,18 @@ function groupRun() {
   });
   const deleteMany = vi.fn(async () => ({ count: 1 }));
   const updateMany = vi.fn(async () => ({ count: 1 }));
-  const bots = [{ id: "other", name: "Other", thread: { id: "other-thread" } }];
-  const findBots = vi.fn(async ({ where }: { where: { spaceId: string; id?: string } }) =>
-    bots.filter((row) => where.spaceId === "s" && (where.id === undefined || where.id === row.id)),
+  const bots = [
+    { id: "other", name: "Other", thread: { id: "other-thread" } },
+    { id: "b", name: "Bot", thread: { id: "dm-thread" } },
+  ];
+  const findBots = vi.fn(
+    async ({ where }: { where: { spaceId: string; id?: string; name?: string } }) =>
+      bots.filter(
+        (row) =>
+          where.spaceId === "s" &&
+          (where.id === undefined || where.id === row.id) &&
+          (where.name === undefined || where.name === row.name),
+      ),
   );
   const ctx = {
     deps: {
@@ -195,7 +204,7 @@ describe("routine tools on a bot this bot manages", () => {
     });
   });
 
-  it("finds no bot outside the space, and none of this bot's routines through it", async () => {
+  it("finds no bot outside the space, and naming itself keeps a group run to the group", async () => {
     const { ctx, call, deleteMany } = groupRun();
     await expect(
       taskTools.schedule_cancel!(
@@ -209,6 +218,14 @@ describe("routine tools on a bot this bot manages", () => {
         call("schedule_cancel", { bot_id: "other", routineId: "routine-dm" }),
       ),
     ).resolves.toEqual({ error: "Schedule not found." });
+    await expect(
+      taskTools.schedule_cancel!(
+        ctx,
+        call("schedule_cancel", { bot_id: "b", routineId: "routine-dm" }),
+      ),
+    ).resolves.toEqual({
+      error: "That routine is not this group chat's. Change it from the bot's own chat.",
+    });
     expect(deleteMany).not.toHaveBeenCalled();
   });
 });
