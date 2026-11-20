@@ -20,7 +20,7 @@ import {
   UpdateExternalConversationPolicyInput,
 } from "./external-conversations.js";
 import { MessageReactionSchema } from "./reactions.js";
-import { SearchQueryOutputSchema } from "./search.js";
+import { SEARCH_QUERY_MAX_LENGTH, SearchQueryOutputSchema } from "./search.js";
 import { ChatAlertSchema, ThreadMessagePageSchema, ThreadSnapshotSchema } from "./thread.js";
 import {
   threadSendInput,
@@ -298,7 +298,9 @@ export const threadsRpc = {
       .output(z.object({ ok: z.literal(true) })),
   },
   search: {
-    query: oc.input(z.object({ q: z.string().max(200) })).output(SearchQueryOutputSchema),
+    query: oc
+      .input(z.object({ q: z.string().max(SEARCH_QUERY_MAX_LENGTH) }))
+      .output(SearchQueryOutputSchema),
   },
   links: {
     /**

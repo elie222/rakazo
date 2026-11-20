@@ -111,7 +111,7 @@ function normalise(markdown: string): string {
 
 /** Rewrites only the value of the frontmatter `name:` entry, keeping every other byte. */
 export function renameSkillMd(content: string, name: string): string {
-  const match = /^(\uFEFF?---\r?\n)([\s\S]*?)(\r?\n---)(?=\r?\n|$)/.exec(content);
+  const match = /^(\s*---[ \t]*\r?\n)([\s\S]*?)(\r?\n---)(?=[ \t]*(?:\r?\n|$))/.exec(content);
   if (!match) return content;
   const head = match[1]!;
   const body = match[2]!;

@@ -311,14 +311,16 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     context.signal.throwIfAborted();
     // Telegram converts Markdown and retries parse errors as plain text;
     // WhatsApp renders it as its own formatting and Lark posts it as an md
-    // block; Photon's iMessage adapter renders it as native styled text. Keep
-    // the other adapters' plain payloads (Slack markdown_text has a lower
-    // limit, Sendblue's iMessage has no markup).
+    // block; Slack posts it as markdown_text (parts stay under its 12,000
+    // limit, see splitOutboundBody); Photon's iMessage adapter renders it as
+    // native styled text. Sendblue's iMessage has no markup, so it keeps a
+    // plain payload.
     const telegram = mounted.adapterName === "telegram";
     const markdown =
       telegram ||
       mounted.adapterName === "whatsapp" ||
       mounted.adapterName === "lark" ||
+      mounted.adapterName === "slack" ||
       mounted.adapterName === "imessage";
     const { attachment } = request;
     if (telegram && attachment && attachment.data.byteLength > TELEGRAM_UPLOAD_MAX_BYTES) {

@@ -11,6 +11,8 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 import { useLingui } from "@lingui/react/macro";
 import { TICKET_STATUSES } from "@rakazo/contracts";
+import { useEffect } from "react";
+import { AccessibilityInfo } from "react-native";
 import { NativeInsetList, useInsetListEdges } from "../../components/native/native-inset-list";
 import { useFloatingHeaderInset } from "../layout/floating-header";
 import { native, useMobileTokens, useResolvedAppearance } from "../native/native";
@@ -26,6 +28,10 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
   // Re-rendered with the appearance, so the rows read the new theme's `native` colours.
   useResolvedAppearance();
   const lastStatus = sections.at(-1)?.status;
+  // A failed refresh leaves older tickets on screen, so tell VoiceOver it failed.
+  useEffect(() => {
+    if (error) AccessibilityInfo.announceForAccessibility(error);
+  }, [error]);
   return (
     <NativeInsetList
       background={native.groupedPage}
