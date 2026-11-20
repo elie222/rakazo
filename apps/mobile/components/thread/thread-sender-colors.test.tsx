@@ -1,4 +1,8 @@
-import { resolvePersonaColorDef, shouldShowBotSenderName } from "@rakazo/core";
+import {
+  continuedSenderMessageIds,
+  resolvePersonaColorDef,
+  shouldShowBotSenderName,
+} from "@rakazo/core";
 import { botColors, darkTokens } from "@rakazo/ui-tokens";
 import type { ComponentProps } from "react";
 import { createContext } from "react";
@@ -66,9 +70,43 @@ vi.mock("../cards/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../native/native-action-button", () => ({ NativeActionButton: () => null }));
 
-import { MessageBubble } from "./message-bubble";
+import { hasSenderLabelContent, MessageBubble } from "./message-bubble";
 
 type BubbleProps = ComponentProps<typeof MessageBubble>;
+
+it("keeps the sender label on a reply after an unlabeled question card", () => {
+  const reply: BubbleProps["message"] = {
+    id: "reply",
+    role: "bot",
+    botId: "bot-a",
+    blocks: [{ kind: "text", text: "Here is the answer." }],
+  };
+  const questionBlocks: BubbleProps["message"]["blocks"] = [
+    { kind: "ask", text: "Which one?" },
+    { kind: "choice", question: "Which one?", options: [{ id: "yes", letter: "A", label: "Yes" }] },
+  ];
+  for (const block of questionBlocks) {
+    const question = { ...reply, id: "question", blocks: [block] };
+    const hidden = continuedSenderMessageIds(
+      [
+        { kind: "message", message: question },
+        { kind: "message", message: reply },
+      ],
+      new Set(),
+      null,
+      hasSenderLabelContent,
+    );
+    const html = renderToStaticMarkup(
+      <Bubble
+        message={reply}
+        botName="Sender"
+        showBotSenderName
+        hideSenderLabel={hidden.has(reply.id)}
+      />,
+    );
+    expect(html).toContain(">Sender</span>");
+  }
+});
 
 function Bubble(props: Partial<BubbleProps> & Pick<BubbleProps, "message">) {
   return (
