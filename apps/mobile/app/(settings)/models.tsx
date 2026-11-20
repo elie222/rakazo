@@ -191,7 +191,7 @@ export default function Models() {
   })();
 
   // Deployment-funded providers stay listed so people can still add their own key.
-  const providers = useMemo(() => {
+  const providers = (() => {
     const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
     const savedPreset = (baseUrl: string) =>
       credentials.some(
@@ -204,7 +204,7 @@ export default function Models() {
         ? !savedPreset(provider.baseUrl)
         : !connected.has(canonicalPiProviderId(provider.id)),
     );
-  }, [allProviders, credentials]);
+  })();
 
   const providerKey = (provider: ConnectableProvider) =>
     `connect:${provider.id}:${provider.baseUrl ?? ""}`;
