@@ -18,6 +18,7 @@ import { Check } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
+import { desktopBridge } from "../../lib/platform/desktop";
 import { useEventListener } from "../../lib/use-event-listener";
 import { isApplePlatform } from "./shell-shortcuts";
 
@@ -63,6 +64,7 @@ export function CommandPalette({
 }) {
   const [search, setSearch] = useState("");
   useEffect(() => onSearchChange?.(search), [search, onSearchChange]);
+  const desktop = Boolean(desktopBridge());
   const [modKey, setModKey] = useState("⌘");
 
   useEffect(() => {
@@ -164,7 +166,8 @@ export function CommandPalette({
           <CommandGroup>
             {filteredBots.map((bot, index) => {
               const subtitle = botSubtitle(bot);
-              const shortcut = index < 9 ? `${modKey}${index + 1}` : null;
+              // Browsers keep Cmd/Ctrl+1–9 for switching tabs, so only the desktop app answers them.
+              const shortcut = desktop && index < 9 ? `${modKey}${index + 1}` : null;
               return (
                 <CommandItem
                   key={bot.id}
