@@ -7,9 +7,10 @@ function message(
   role: ThreadMessage["role"],
   blocks: ThreadMessage["blocks"],
   createdAt = "2026-03-04T10:00:00.000Z",
+  extra: Partial<ThreadMessage> = {},
 ): ThreadMessage {
   seq += 1;
-  return { id: `m_${seq}`, threadId: "t_1", seq, role, blocks, createdAt };
+  return { id: `m_${seq}`, threadId: "t_1", seq, role, blocks, createdAt, ...extra };
 }
 
 const transcript = (messages: ThreadMessage[]) =>
@@ -60,6 +61,80 @@ describe("chatTranscriptMarkdown", () => {
       message("bot", [{ kind: "delivery" }]),
       message("bot", [{ kind: "steps", steps: [] }]),
       message("bot", [{ kind: "text", text: "   " }]),
+      message("bot", [{ kind: "text", text: "Done" }]),
+    ]);
+    expect(text).toBe("# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\nDone\n");
+  });
+
+  it("keeps messages that are only a card, a choice, a page or a chart", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "choice",
+          question: "Which inbox?",
+          options: [
+            { id: "o_1", letter: "A", label: "Work" },
+            { id: "o_2", letter: "B", label: "Home" },
+          ],
+          answerId: "o_2",
+        },
+      ]),
+      message("bot", [{ kind: "card", lines: [{ k: "Label", v: "Receipts" }] }]),
+      message("bot", [{ kind: "page", pageId: "p_1", version: 1, title: "Launch plan" }]),
+      message("bot", [{ kind: "chart", name: "Weekly signups", spec: {}, data: [] }]),
+    ]);
+    expect(text).toContain("Which inbox?\n- A. Work\n- B. Home ✓");
+    expect(text).toContain("- Label → Receipts");
+    expect(text).toContain("\n\nLaunch plan");
+    expect(text).toContain("\n\nWeekly signups");
+  });
+
+  it("leaves out tool activity and cards the chat hides", () => {
+    const text = transcript([
+      message("bot", [
+        { kind: "progress", text: "Searching mail", activity: true },
+        { kind: "text", text: "Found two" },
+      ]),
+      message("bot", [{ kind: "progress", text: "Reading thread 4", activity: true }]),
+      message("bot", [{ kind: "import_setup", items: [], undone: true }]),
+      message("bot", [{ kind: "choice", question: "Skip?", options: [], answerId: "_dismissed" }]),
+    ]);
+    expect(text).toBe("# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\nFound two\n");
+  });
+
+  it("shows an emoji reply under the message it reacts to, not as its own message", () => {
+    const parent = message("bot", [{ kind: "text", text: "Sent the invoice" }]);
+    const text = transcript([
+      parent,
+      message("user", [{ kind: "text", text: "👍" }], "2026-03-04T10:02:00.000Z", {
+        replyToMessageId: parent.id,
+      }),
+      message("user", [{ kind: "text", text: "👍" }], "2026-03-04T10:03:00.000Z", {
+        replyToMessageId: parent.id,
+      }),
+    ]);
+    expect(text).toBe("# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\nSent the invoice\n\n👍 2\n");
+  });
+
+  it("leaves out the work a bot did for another bot, as the chat folds it", () => {
+    const text = transcript([
+      message(
+        "bot",
+        [
+          {
+            kind: "bot_message_received",
+            fromBotId: "bot-2",
+            fromBotName: "Lee",
+            text: "Draft the brief",
+            intent: "request",
+          },
+        ],
+        "2026-03-04T10:00:00.000Z",
+        { runId: "run-peer" },
+      ),
+      message("bot", [{ kind: "text", text: "Brief for Lee" }], "2026-03-04T10:01:00.000Z", {
+        runId: "run-peer",
+      }),
       message("bot", [{ kind: "text", text: "Done" }]),
     ]);
     expect(text).toBe("# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\nDone\n");

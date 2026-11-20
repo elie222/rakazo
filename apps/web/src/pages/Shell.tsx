@@ -975,6 +975,8 @@ function SpaceShell() {
         rpc={rpc}
         bot={contextBot}
         group={contextGroup}
+        bots={bots}
+        archivedBots={archivedBots}
         sections={botSections}
         spaceId={bootstrapMe?.spaceId}
         onClose={closeBotMenu}

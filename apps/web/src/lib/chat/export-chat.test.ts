@@ -5,6 +5,7 @@ import type { RpcClient } from "../query/rpc";
 const download = vi.hoisted(() => vi.fn());
 vi.mock("../pages/artifact-open", () => ({ downloadArtifactBytes: download }));
 
+import { resolveTranscriptMemberName } from "../../pages/shell/chat/transcript-member-name";
 import { chatExportFileName, exportChat } from "./export-chat";
 
 afterEach(() => download.mockReset());
@@ -38,6 +39,7 @@ const group = {
 } as Group;
 const labels = { you: "You", system: "System" };
 const time = (createdAt: string) => createdAt.slice(11, 16);
+const noMembers = () => undefined;
 
 type Page = { messages: ThreadMessage[]; olderCursor: number | null };
 function rpcWith(pages: Page[]) {
@@ -64,7 +66,13 @@ describe("exportChat", () => {
       { messages: [second], olderCursor: 20 },
       { messages: [first], olderCursor: null },
     ]);
-    await exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time });
+    await exportChat({
+      rpc,
+      target: { kind: "bot", chat: bot },
+      labels,
+      time,
+      memberName: noMembers,
+    });
 
     expect(messages.mock.calls.map(([input]) => input)).toEqual([
       { botId: "bot-1" },
@@ -86,18 +94,30 @@ describe("exportChat", () => {
       {
         messages: [
           message("From Lee", { botId: "bot-2" }),
+          message("From a bot that left", { botId: "bot-7" }),
+          message("From an archived bot", { botId: "bot-8" }),
           message("From a removed bot", { botId: "bot-9" }),
           message("Notice", {}, "system"),
         ],
         olderCursor: null,
       },
     ]);
-    await exportChat({ rpc, target: { kind: "group", chat: group }, labels, time });
+    // The same roster lookup the menu passes: members, then the Space's bots, then archived ones.
+    const memberName = (botId: string | undefined) =>
+      resolveTranscriptMemberName({
+        botId,
+        members: group.members,
+        bots: [{ id: "bot-7", name: "Moe" }],
+        archivedBots: [{ id: "bot-8", name: "Old Ada" }],
+      });
+    await exportChat({ rpc, target: { kind: "group", chat: group }, labels, time, memberName });
     expect(messages).toHaveBeenCalledWith({ groupId: "group-1" });
     const { name, text } = exported();
     expect(name).toBe("launch-crew-chat.md");
     expect(text).toMatch(/\*\*Lee\*\* · \d\d:\d\d\n\nFrom Lee/);
-    expect(text).toMatch(/\*\*Launch crew\*\* · \d\d:\d\d\n\nFrom a removed bot/);
+    expect(text).toMatch(/\*\*Moe\*\* · \d\d:\d\d\n\nFrom a bot that left/);
+    expect(text).toMatch(/\*\*Old Ada\*\* · \d\d:\d\d\n\nFrom an archived bot/);
+    expect(text).toMatch(/\*\*Deleted bot\*\* · \d\d:\d\d\n\nFrom a removed bot/);
     expect(text).toMatch(/\*\*System\*\* · \d\d:\d\d\n\nNotice/);
   });
 
@@ -108,7 +128,7 @@ describe("exportChat", () => {
       .mockRejectedValueOnce(new Error("offline"));
     const rpc = { threads: { messages } } as unknown as RpcClient;
     await expect(
-      exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time }),
+      exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time, memberName: noMembers }),
     ).rejects.toThrow("offline");
     expect(download).not.toHaveBeenCalled();
   });
@@ -121,7 +141,7 @@ describe("exportChat", () => {
     }));
     const rpc = { threads: { messages } } as unknown as RpcClient;
     await expect(
-      exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time }),
+      exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time, memberName: noMembers }),
     ).rejects.toThrow("too long");
     expect(download).not.toHaveBeenCalled();
   });

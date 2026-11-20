@@ -9,6 +9,7 @@ import { exportChat } from "../../../lib/chat/export-chat";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import type { ShellDialogsState } from "../shell-dialogs";
 import type { SnoozeChat } from "../sidebar/use-chat-snooze";
+import { resolveTranscriptMemberName } from "./transcript-member-name";
 import type { useChatRead } from "./use-chat-read";
 
 const BotContextMenu = lazyOverlay(() =>
@@ -72,6 +73,8 @@ export function ChatContextMenu({
   rpc,
   bot,
   group,
+  bots,
+  archivedBots,
   sections,
   spaceId,
   onClose,
@@ -85,6 +88,9 @@ export function ChatContextMenu({
   rpc: ReturnType<typeof createSpaceRpc>;
   bot: Bot | undefined;
   group: Group | undefined;
+  /** The Space's bots and archived bots, to name group messages from bots that left the group. */
+  bots: readonly Bot[];
+  archivedBots: readonly Bot[];
   sections: BotSection[];
   spaceId: string | undefined;
   onClose: () => void;
@@ -170,6 +176,8 @@ export function ChatContextMenu({
           labels: { you: t`You`, system: t`System` },
           time: (createdAt) =>
             i18n.date(new Date(createdAt), { dateStyle: "medium", timeStyle: "short" }),
+          memberName: (botId) =>
+            resolveTranscriptMemberName({ botId, members: group?.members, bots, archivedBots }),
         }).catch(() => toast.error(t`Could not export chat`));
       }}
       onClear={() => {

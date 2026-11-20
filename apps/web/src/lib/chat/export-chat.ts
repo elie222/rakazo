@@ -41,12 +41,11 @@ export async function exportChat(options: {
   /** What the file calls the person exporting it when a message names no author, and the app itself. */
   labels: { you: string; system: string };
   time: (createdAt: string) => string;
+  /** A group bot's name as the transcript shows it, including bots that have left the group. */
+  memberName: (botId: string | undefined) => string | undefined;
 }): Promise<void> {
-  const { rpc, target, labels, time } = options;
+  const { rpc, target, labels, time, memberName } = options;
   const messages = await loadAllMessages(rpc, target);
-  const members = new Map(
-    target.kind === "group" ? target.chat.members.map((member) => [member.botId, member.name]) : [],
-  );
   const markdown = chatTranscriptMarkdown({
     title: target.chat.name,
     messages,
@@ -55,7 +54,7 @@ export async function exportChat(options: {
       if (message.role === "user") return message.author?.name ?? labels.you;
       if (message.role === "system") return labels.system;
       if (target.kind === "bot") return target.chat.name;
-      return (message.botId ? members.get(message.botId) : undefined) ?? target.chat.name;
+      return memberName(message.botId) ?? target.chat.name;
     },
   });
   downloadArtifactBytes(
