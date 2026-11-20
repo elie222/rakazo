@@ -24,6 +24,7 @@ import { markExpectedFailure, requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 import { handleHttpError, handleRpcError, logUnexpectedRpcError } from "./rpc-errors.js";
+import { withVoiceConnection } from "./voice/connection-errors.js";
 
 describe("logUnexpectedRpcError", () => {
   afterEach(() => {
@@ -413,6 +414,37 @@ describe("logUnexpectedRpcError", () => {
       json: { code: "VOICE_OUT_OF_CREDIT", message: "OpenAI says this account is out of credit." },
     });
     expect(sink.events.map((event) => event.level)).toEqual(["warn"]);
+  });
+
+  it("reports an unexpected linked voice failure without exposing it to the RPC client", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const failure = new TypeError("private connection state");
+    const rpc = new RPCHandler(
+      {
+        voices: os.handler(() =>
+          withVoiceConnection("voice-provider", true, () => Promise.reject(failure)),
+        ),
+      },
+      { clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))] },
+    );
+
+    const { response } = await rpc.handle(
+      new Request("http://localhost/rpc/voices", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      { prefix: "/rpc", context: {} },
+    );
+
+    expect(response?.status).toBe(500);
+    expect(await response?.json()).toMatchObject({
+      json: { message: "Internal server error" },
+    });
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "error", message: "rpc voices failed" }),
+    );
   });
 
   it("sends a missing or foreign resource to the client as HTTP 404 without an error report", async () => {

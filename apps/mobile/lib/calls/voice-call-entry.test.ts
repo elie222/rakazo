@@ -111,7 +111,7 @@ describe("mobile voice call entry", () => {
 });
 
 it.each([false, true])(
-  "uses transcription-only service for dictation (device voice=%s)",
+  "uses transcription-only service without hosted speech only for dictation or Device voice (device voice=%s)",
   async (deviceVoice) => {
     const fakes = deps({
       deviceVoice,
@@ -122,9 +122,9 @@ it.each([false, true])(
       kind: "provider",
       transcribe: true,
     });
-    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
-      kind: deviceVoice ? "dictation" : "settings",
-    });
+    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual(
+      deviceVoice ? { kind: "provider", transcribe: true } : { kind: "settings" },
+    );
   },
 );
 

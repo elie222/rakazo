@@ -37,7 +37,8 @@ export async function resolveVoiceCallPlan(
   }
 
   const status = await loadVoiceStatus();
-  if (!status.ready && !(purpose === "dictation" && status.transcribe)) {
+  // Device speech only needs hosted transcription when native recognition is unavailable.
+  if (!status.ready && !(status.transcribe && (deviceVoiceEnabled || purpose === "dictation"))) {
     return deviceVoiceEnabled ? { kind: "dictation" } : { kind: "settings" };
   }
 

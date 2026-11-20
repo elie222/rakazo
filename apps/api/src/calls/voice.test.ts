@@ -1330,20 +1330,14 @@ describe("transcribeInboundVoice", () => {
 });
 
 describe("linked voice failures", () => {
-  it("hides refresh and provider response text", async () => {
-    const sink = createTestSink();
-    installLogger(createLogger({ service: "test", level: "warn", sinks: [sink] }));
-    try {
-      await expect(
-        withVoiceConnection("xai", true, async () => {
-          throw new Error("private provider response");
-        }),
-      ).rejects.toThrow("Couldn't use the xAI connection from Models. Try again.");
-      expect(JSON.stringify(sink.events)).not.toContain("private provider response");
-    } finally {
-      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
-    }
-  });
+  it.each([new Error("private provider response"), new TypeError("invalid connection state")])(
+    "propagates unrelated linked failures unchanged: %s",
+    async (failure) => {
+      await expect(withVoiceConnection("xai", true, () => Promise.reject(failure))).rejects.toBe(
+        failure,
+      );
+    },
+  );
 
   it("offers disconnect and a key when a linked bearer is rejected", async () => {
     await expect(

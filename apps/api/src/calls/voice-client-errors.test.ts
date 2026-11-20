@@ -49,6 +49,30 @@ describe("voice HTTP routes answering a typed client error", () => {
       ...(code ? { code } : {}),
     });
   });
+
+  it("keeps unexpected linked connection failures private at the HTTP boundary", async () => {
+    const failure = new TypeError("private connection state");
+    const deps = {
+      prisma: {
+        spaceSettingOverride: {
+          findUnique: vi.fn(() =>
+            withVoiceConnection("voice-provider", true, () => Promise.reject(failure)),
+          ),
+        },
+      },
+    } as unknown as VoiceDeps;
+    const app = new Hono();
+    mountVoiceHttpRoutes(app, deps, async () => actor);
+
+    const response = await app.request("/api/voice/speak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+    });
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({ error: "Voice request failed. Try again." });
+  });
 });
 
 describe("voice HTTP routes reporting what they answer", () => {

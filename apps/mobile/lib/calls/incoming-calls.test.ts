@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const fake = vi.hoisted(() => ({
   generation: 1,
   locked: false,
+  deviceVoice: undefined as boolean | undefined,
+  dictationAvailable: vi.fn(async () => true),
   onAppState: undefined as undefined | ((state: string) => void),
   onEvent: undefined as undefined | ((event: unknown) => void),
   lastResponse: null as unknown,
@@ -19,9 +21,14 @@ const fake = vi.hoisted(() => ({
   },
   rpc: vi.fn(),
   startCall: vi.fn(),
+  setCallProviderTranscribe: vi.fn(),
   call: null as unknown,
 }));
 vi.mock("expo-modules-core", () => ({ requireOptionalNativeModule: () => fake.native }));
+vi.mock("expo-secure-store", () => ({
+  getItemAsync: async () => (fake.deviceVoice === undefined ? null : fake.deviceVoice ? "1" : "0"),
+}));
+vi.mock("../voice/dictation", () => ({ available: fake.dictationAvailable }));
 vi.mock("expo-notifications", () => ({
   setNotificationCategoryAsync: async () => {},
   getLastNotificationResponse: () => fake.lastResponse,
@@ -62,6 +69,7 @@ vi.mock("./call-session", () => ({
   hangUp: vi.fn(),
   getSnapshot: () => fake.call,
   startCall: fake.startCall,
+  setCallProviderTranscribe: fake.setCallProviderTranscribe,
   subscribe: () => () => {},
 }));
 vi.mock("../notifications/push", () => ({ registerCallPushToken: vi.fn() }));
@@ -102,17 +110,20 @@ beforeEach(() => {
   vi.useFakeTimers();
   fake.generation = 1;
   fake.locked = false;
+  fake.deviceVoice = undefined;
+  fake.dictationAvailable.mockResolvedValue(true);
   fake.onAppState = undefined;
   fake.onEvent = undefined;
   fake.lastResponse = null;
   fake.call = null;
   vi.clearAllMocks();
+  fake.startCall.mockReturnValue("call-1");
   fake.native.incomingState.mockResolvedValue({ token: "", actions: [] });
   fake.rpc.mockImplementation(async (path: string) => {
     if (path === "spaces/list") return { current: { bots: [bot] }, spaces: [] };
     if (path === "threads/get") return { cursor: 1, messages: [] };
     if (path === "threads/answerCall") return { opening: "Hello" };
-    if (path === "voice/status") return { transcribe: true };
+    if (path === "voice/status") return { ready: true, transcribe: true };
     return { ok: true };
   });
 });
@@ -165,6 +176,178 @@ describe("mobile incoming calls", () => {
     );
     expect(getIncomingCall()).toBeNull();
   });
+  it("leaves an existing call alone when the requested bot's hosted voice is unavailable", async () => {
+    const call = await ring();
+    fake.deviceVoice = false;
+    fake.call = { botId: "bot-other" };
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) =>
+      path === "voice/status" ? { ready: false, transcribe: true } : answer(path, ...rest),
+    );
+
+    await expect(respondToMobileCall(call, "answer")).rejects.toThrow(
+      "Add a voice provider in Voice settings.",
+    );
+
+    expect(fake.rpc).toHaveBeenCalledWith(
+      "voice/status",
+      { botId: bot.id },
+      {
+        requestContext: expect.objectContaining({
+          headers: expect.objectContaining({ "x-rakazo-space-id": bot.spaceId }),
+          sessionGeneration: 1,
+        }),
+      },
+    );
+    expect(fake.rpc.mock.calls.filter(([path]) => path === "voice/status")).toHaveLength(1);
+    expect(fake.rpc.mock.calls.some(([path]) => path === "threads/answerCall")).toBe(false);
+    expect(fake.rpc.mock.calls.some(([path]) => path === "threads/endCall")).toBe(false);
+    expect(fake.startCall).not.toHaveBeenCalled();
+    expect(endCall).not.toHaveBeenCalled();
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", false);
+    expect(fake.native.finishAnswer).not.toHaveBeenCalledWith("call-1", true);
+  });
+  it.each([true, undefined])(
+    "answers with native speech when hosted voice is unavailable (Device choice=%s)",
+    async (deviceVoice) => {
+      const call = await ring();
+      fake.deviceVoice = deviceVoice;
+      const answer = fake.rpc.getMockImplementation()!;
+      fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) =>
+        path === "voice/status" ? { ready: false, transcribe: true } : answer(path, ...rest),
+      );
+
+      await respondToMobileCall(call, "answer");
+      await tick();
+
+      expect(fake.startCall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          botId: bot.id,
+          transcribe: false,
+          answered: { callId: "call-1" },
+          session: 1,
+        }),
+      );
+      expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", true);
+      expect(fake.rpc.mock.calls.filter(([path]) => path === "voice/status")).toHaveLength(1);
+      expect(fake.setCallProviderTranscribe).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps explicit Device speech when a hosted bot voice is ready", async () => {
+    fake.deviceVoice = true;
+    await respondToMobileCall(await ring(), "answer");
+    await tick();
+
+    expect(fake.startCall).toHaveBeenCalledWith(expect.objectContaining({ transcribe: false }));
+    expect(fake.setCallProviderTranscribe).toHaveBeenCalledWith(true, "call-1");
+    expect(fake.rpc.mock.calls.filter(([path]) => path === "voice/status")).toHaveLength(1);
+  });
+  it("answers with Device speech and hosted transcription without a hosted bot voice", async () => {
+    const call = await ring();
+    fake.deviceVoice = true;
+    fake.dictationAvailable.mockResolvedValue(false);
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) =>
+      path === "voice/status" ? { ready: false, transcribe: true } : answer(path, ...rest),
+    );
+
+    await respondToMobileCall(call, "answer");
+
+    expect(fake.startCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        botId: bot.id,
+        transcribe: true,
+        answered: { callId: "call-1" },
+      }),
+    );
+    expect(fake.rpc.mock.calls.filter(([path]) => path === "voice/status")).toHaveLength(1);
+    expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", true);
+  });
+  it.each([true, false])(
+    "does not answer without native or hosted transcription (Device choice=%s)",
+    async (deviceVoice) => {
+      const call = await ring();
+      fake.deviceVoice = deviceVoice;
+      fake.dictationAvailable.mockResolvedValue(false);
+      fake.call = { botId: "bot-other" };
+      const answer = fake.rpc.getMockImplementation()!;
+      fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) =>
+        path === "voice/status" ? { ready: true, transcribe: false } : answer(path, ...rest),
+      );
+
+      await expect(respondToMobileCall(call, "answer")).rejects.toThrow(
+        "Allow speech recognition in Settings, or connect a voice provider that transcribes.",
+      );
+
+      expect(fake.rpc.mock.calls.some(([path]) => path === "threads/answerCall")).toBe(false);
+      expect(fake.startCall).not.toHaveBeenCalled();
+      expect(endCall).not.toHaveBeenCalled();
+      expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", false);
+    },
+  );
+  it.each(["session", "expiry"])(
+    "does not accept or replace a call after %s changes during voice setup",
+    async (change) => {
+      const call = await ring();
+      const reading = deferred<{ ready: boolean; transcribe: boolean }>();
+      fake.deviceVoice = false;
+      fake.call = { botId: "bot-other" };
+      const answer = fake.rpc.getMockImplementation()!;
+      fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) =>
+        path === "voice/status" ? reading.promise : answer(path, ...rest),
+      );
+      const response = respondToMobileCall(call, "answer");
+      const rejected = expect(response).rejects.toThrow();
+      await vi.waitFor(() =>
+        expect(fake.rpc.mock.calls.some(([path]) => path === "voice/status")).toBe(true),
+      );
+      if (change === "session") fake.generation++;
+      else await vi.advanceTimersByTimeAsync(45001);
+      reading.resolve({ ready: true, transcribe: true });
+      await rejected;
+
+      expect(fake.rpc.mock.calls.some(([path]) => path === "threads/answerCall")).toBe(false);
+      expect(fake.startCall).not.toHaveBeenCalled();
+      expect(endCall).not.toHaveBeenCalled();
+      expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", false);
+    },
+  );
+  it.each(["voice/status", "threads/answerCall"])(
+    "does not replace an unrelated call when native ends during %s",
+    async (pendingPath) => {
+      const call = await ring();
+      const pending = deferred<{ ready: boolean; transcribe: boolean; opening: string }>();
+      fake.call = { botId: "bot-other" };
+      const answer = fake.rpc.getMockImplementation()!;
+      fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) =>
+        path === pendingPath ? pending.promise : answer(path, ...rest),
+      );
+      const response = respondToMobileCall(call, "answer");
+      const rejected = expect(response).rejects.toThrow("This call is no longer ringing.");
+      await vi.waitFor(() =>
+        expect(fake.rpc.mock.calls.some(([path]) => path === pendingPath)).toBe(true),
+      );
+      fake.native.incomingState.mockResolvedValue({
+        token: "",
+        actions: [{ action: "end", callId: "call-1", botId: bot.id, expiresAt: block().expiresAt }],
+      });
+      fake.onAppState?.("active");
+      await tick();
+      pending.resolve({ ready: true, transcribe: true, opening: "Hello" });
+      await rejected;
+
+      expect(fake.startCall).not.toHaveBeenCalled();
+      expect(endCall).not.toHaveBeenCalled();
+      expect(fake.rpc.mock.calls.some(([path]) => path === "threads/answerCall")).toBe(
+        pendingPath === "threads/answerCall",
+      );
+      expect(fake.rpc.mock.calls.some(([path]) => path === "threads/endCall")).toBe(
+        pendingPath === "threads/answerCall",
+      );
+      expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", false);
+      expect(fake.native.finishAnswer).not.toHaveBeenCalledWith("call-1", true);
+    },
+  );
   it("ends the current call when a native answer arrives during it", async () => {
     await ring();
     fake.call = { botId: "bot-2" };

@@ -3,7 +3,7 @@ import { VoiceProviderUnavailableError, voiceCatalogEntry } from "@rakazo/adapte
 import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 
-/** Keep refresh failures and linked-connection refusals safe for display. */
+/** Mark provider outages and give actionable guidance for rejected linked connections. */
 export async function withVoiceConnection<T>(
   provider: string,
   linked: boolean,
@@ -21,25 +21,14 @@ export async function withVoiceConnection<T>(
       markExpectedFailure();
       throw outage;
     }
-    if (!linked) throw error;
-    const name = voiceCatalogEntry(provider)?.name ?? provider;
-    if (error instanceof VoiceAccountError) {
-      if (error.code === "VOICE_KEY_REJECTED") {
-        throw new VoiceAccountError(
-          error.code,
-          `${name} didn't accept the Models connection for voice. Disconnect and paste an API key.`,
-        );
-      }
-      throw error;
+    if (linked && error instanceof VoiceAccountError && error.code === "VOICE_KEY_REJECTED") {
+      const name = voiceCatalogEntry(provider)?.name ?? provider;
+      throw new VoiceAccountError(
+        error.code,
+        `${name} didn't accept the Models connection for voice. Disconnect and paste an API key.`,
+      );
     }
-    getLogger().warn("voice could not use the model connection", {
-      provider,
-      reason: error instanceof Error ? error.name : "unknown",
-    });
-    throw new VoiceAccountError(
-      undefined,
-      `Couldn't use the ${name} connection from Models. Try again.`,
-    );
+    throw error;
   }
 }
 
