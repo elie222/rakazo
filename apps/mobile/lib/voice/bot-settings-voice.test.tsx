@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   history: [] as unknown[],
   share: vi.fn(),
   docs: [] as unknown[],
+  dreams: [] as unknown[],
   fill: "light-fill",
   deviceVoices: vi.fn(),
   voiceForBot: vi.fn(),
@@ -99,10 +100,13 @@ vi.mock("../api/api", () => ({
         dailyCheckIns: mocks.dailyCheckIns,
         fleetManagement: mocks.fleetManagement,
         crossSpaceCommunication: mocks.crossSpaceCommunication,
+        useOwnMemory: true,
+        useSharedMemory: true,
       };
     }
     if (procedure === "scratchpad/list") return mocks.work;
     if (procedure === "memory/list") return mocks.docs;
+    if (procedure === "memory/dreams") return mocks.dreams;
     if (procedure === "me") return {};
     return [];
   },
@@ -362,6 +366,7 @@ describe("bot settings device voice menu", () => {
     mocks.work = [];
     mocks.history = [];
     mocks.docs = [];
+    mocks.dreams = [];
     mocks.fill = "light-fill";
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     mocks.deviceVoices.mockResolvedValue(offered);
@@ -381,6 +386,33 @@ describe("bot settings device voice menu", () => {
     await act(async () => root.render(<BotSettingsScreen />));
     await expand();
   };
+
+  it("shows what a dream added and removed, at most two lines each", async () => {
+    mocks.dreams = [
+      {
+        id: "dream-1",
+        status: "completed",
+        summary: null,
+        changedPaths: ["MEMORY.md"],
+        added: ["Likes tea.", "Second.", "Third."],
+        archived: ["Old note.", "Older.", "Oldest."],
+        errorKind: null,
+        startedAt: null,
+        finishedAt: null,
+        createdAt: new Date(Date.now() - 60_000).toISOString(),
+      },
+    ];
+    await render();
+    expect(container.textContent).toContain("+ Likes tea.");
+    expect(container.textContent).toContain("+ Second.");
+    expect(container.textContent).not.toContain("+ Third.");
+    expect(container.textContent).toContain("− Old note.");
+    expect(container.textContent).not.toContain("− Oldest.");
+    expect(container.textContent).toContain("…");
+    expect(container.textContent).toContain(
+      "Between chats the bot tidies its memory from your own words.",
+    );
+  });
   const menu = () => container.querySelector('[data-menu="Device voice"]');
 
   it("hides read aloud and permission switches for a bot on the defaults", async () => {

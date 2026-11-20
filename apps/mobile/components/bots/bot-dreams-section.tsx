@@ -1,12 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
 import type { MemoryDream } from "@rakazo/contracts";
+import { typeScale } from "@rakazo/ui-tokens";
+import { Text, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
+import { formatActivityRelativeTime } from "../../lib/inbox/activity";
+import { useMobileTokens } from "../../lib/native/native";
 import { rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 
 const NO_DREAMS: MemoryDream[] = [];
 const DREAM_PREVIEW_LIMIT = 5;
+const DREAM_LINE_LIMIT = 2;
 
 function statusLabel(
   t: (parts: TemplateStringsArray, ...values: unknown[]) => string,
@@ -17,9 +22,10 @@ function statusLabel(
   return dream.errorKind === "spending" ? t`Stopped at the spending limit` : t`Interrupted`;
 }
 
-/** The bot's nightly consolidations, newest first; the whole list lives on the web. */
+/** The bot's consolidations, newest first; the whole list lives on the web. */
 export function BotDreamsSection({ botId, memoryOff }: { botId: string; memoryOff: boolean }) {
   const { t } = useLingui();
+  const tokens = useMobileTokens();
   const dreamsRead = rpcQuery("memory/dreams", { botId });
   const dreams = useScreenQuery(dreamsRead).data ?? NO_DREAMS;
   const dreamNow = useSave({
@@ -29,24 +35,53 @@ export function BotDreamsSection({ botId, memoryOff }: { botId: string; memoryOf
   return (
     <SettingsGroup
       label={t`Dreams`}
-      footer={memoryOff ? t`Memory is off, so dreams are paused.` : undefined}
+      footer={
+        memoryOff
+          ? t`Memory is off, so dreams are paused.`
+          : t`Between chats the bot tidies its memory from your own words.`
+      }
     >
       {dreams.length === 0 ? (
-        <SettingsRow
-          title={t`No dreams yet`}
-          detail={t`Between conversations, the bot rewrites its notes from your own words.`}
-        />
+        <SettingsRow title={t`No dreams yet`} detail={t`Dreaming uses one model call.`} />
       ) : (
-        dreams
-          .slice(0, DREAM_PREVIEW_LIMIT)
-          .map((dream) => (
+        dreams.slice(0, DREAM_PREVIEW_LIMIT).map((dream) => (
+          <View key={dream.id}>
             <SettingsRow
-              key={dream.id}
-              title={new Date(dream.createdAt).toLocaleString()}
+              title={formatActivityRelativeTime(dream.createdAt)}
               detail={dream.summary ?? undefined}
               value={statusLabel(t, dream)}
             />
-          ))
+            {dream.added.slice(0, DREAM_LINE_LIMIT).map((line) => (
+              <Text
+                key={`a-${line}`}
+                numberOfLines={1}
+                style={{ color: tokens.success, ...typeScale.caption, paddingHorizontal: 16 }}
+              >
+                + {line}
+              </Text>
+            ))}
+            {dream.archived.slice(0, DREAM_LINE_LIMIT).map((line) => (
+              <Text
+                key={`r-${line}`}
+                numberOfLines={1}
+                style={{ color: tokens.destructive, ...typeScale.caption, paddingHorizontal: 16 }}
+              >
+                − {line}
+              </Text>
+            ))}
+            {dream.added.length > DREAM_LINE_LIMIT || dream.archived.length > DREAM_LINE_LIMIT ? (
+              <Text
+                style={{
+                  color: tokens.mutedForeground,
+                  ...typeScale.caption,
+                  paddingHorizontal: 16,
+                }}
+              >
+                …
+              </Text>
+            ) : null}
+          </View>
+        ))
       )}
       {memoryOff ? null : (
         <SettingsRow

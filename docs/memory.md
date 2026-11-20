@@ -25,7 +25,8 @@ it, and the other bank keeps working.
 **Dreams** consolidate the bot's memory from your own words: once the chat has been quiet for five
 minutes, or at once when eight of your messages are waiting. The **Dreams** tab lists each run —
 when it ran, the lines it added (`+`) and removed (`−`), and why it stopped if it could not finish.
-Dreams run only while at least one bank is on.
+Dreams run only while at least one bank is on. **Dream now** runs one consolidation immediately
+instead of waiting for a quiet chat.
 
 ## Shared memory
 
