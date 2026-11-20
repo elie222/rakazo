@@ -2,6 +2,14 @@ import { Trans } from "@lingui/react/macro";
 import type { Bot, Ticket, TicketPriority, TicketStatus } from "@rakazo/contracts";
 import { TICKET_STATUSES } from "@rakazo/contracts";
 import { Badge, Button } from "@rakazo/ui-web";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@rakazo/ui-web/components/ui/table";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { useTicketPriorityLabels } from "./ticket-priority";
@@ -140,34 +148,34 @@ export function TicketTable({ tickets, bots, onOpen }: TicketViewProps) {
   const priorities = useTicketPriorityLabels();
 
   return (
-    <div className="min-w-2xl rounded-lg border">
-      <table className="w-full table-fixed text-left text-body">
+    <div className="overflow-hidden rounded-lg border">
+      <Table className="min-w-2xl table-fixed">
         <colgroup>
           <col className="w-[46%]" />
           <col className="w-[19%]" />
           <col className="w-[20%]" />
           <col className="w-[15%]" />
         </colgroup>
-        <thead className="border-b text-label text-muted-foreground">
-          <tr>
-            <th scope="col" className="rounded-ss-lg bg-muted/60 px-4 py-3 font-medium">
+        <TableHeader className="bg-muted/60">
+          <TableRow className="hover:bg-transparent">
+            <TableHead scope="col" className="px-4 text-label text-muted-foreground">
               <Trans>Ticket</Trans>
-            </th>
-            <th scope="col" className="bg-muted/60 px-4 py-3 font-medium">
+            </TableHead>
+            <TableHead scope="col" className="px-4 text-label text-muted-foreground">
               <Trans>Status</Trans>
-            </th>
-            <th scope="col" className="bg-muted/60 px-4 py-3 font-medium">
+            </TableHead>
+            <TableHead scope="col" className="px-4 text-label text-muted-foreground">
               <Trans>Owner</Trans>
-            </th>
-            <th scope="col" className="rounded-se-lg bg-muted/60 px-4 py-3 font-medium">
+            </TableHead>
+            <TableHead scope="col" className="px-4 text-label text-muted-foreground">
               <Trans>Priority</Trans>
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y">
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {tickets.map((ticket) => (
-            <tr key={ticket.id} className="hover:bg-muted/50 focus-within:bg-muted/50">
-              <td className="px-4 py-1.5">
+            <TableRow key={ticket.id} className="focus-within:bg-muted/50">
+              <TableCell className="px-4 py-1.5">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -179,24 +187,24 @@ export function TicketTable({ tickets, bots, onOpen }: TicketViewProps) {
                   </span>
                   <span className="truncate">{ticket.title}</span>
                 </Button>
-              </td>
-              <td className="px-4 py-1.5">
+              </TableCell>
+              <TableCell className="px-4 py-1.5">
                 <TicketBadge tone={statusTones[ticket.status]}>
                   {statuses[ticket.status]}
                 </TicketBadge>
-              </td>
-              <td className="truncate px-4 py-1.5 text-muted-foreground">
+              </TableCell>
+              <TableCell className="truncate px-4 py-1.5 text-muted-foreground">
                 {bots.find((bot) => bot.id === ticket.assigneeBotId)?.name ?? "—"}
-              </td>
-              <td className="px-4 py-1.5">
+              </TableCell>
+              <TableCell className="px-4 py-1.5">
                 <TicketBadge tone={priorityTones[ticket.priority]}>
                   {priorities[ticket.priority]}
                 </TicketBadge>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

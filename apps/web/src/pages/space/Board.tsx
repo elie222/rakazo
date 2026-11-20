@@ -1,12 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type {
-  Bot,
-  Ticket,
-  TicketPriority,
-  TicketStatus,
-  UpdateTicketInput,
-} from "@rakazo/contracts";
+import type { Bot, Ticket, TicketPriority, TicketStatus } from "@rakazo/contracts";
 import {
   TICKET_COMMENT_MAX_LENGTH,
   TICKET_DESCRIPTION_MAX_LENGTH,
@@ -47,6 +41,9 @@ import { BoardColumns, TicketTable } from "./board-views";
 import { useTicketPriorityLabels } from "./ticket-priority";
 import { useTicketStatusLabels } from "./ticket-status";
 
+type TicketChange = Pick<Ticket, "id"> &
+  Partial<Pick<Ticket, "priority" | "status">> & { assigneeBotId?: string };
+
 export function BoardPage() {
   const { t } = useLingui();
   // From md up the rail holds the window controls and the way back to chats.
@@ -62,17 +59,11 @@ export function BoardPage() {
   const bots = botsQuery.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const creating = selectedId === "new";
-  const move = useTicketChange((failure) => {
-    toast.error(errorText(failure));
-  });
-  const pendingMove = move.pending ? move.input : undefined;
-  const pendingStatus = pendingMove?.status;
-  const shownTickets =
-    pendingMove && pendingStatus
-      ? tickets.map((ticket) =>
-          ticket.id === pendingMove.id ? { ...ticket, status: pendingStatus } : ticket,
-        )
-      : tickets;
+  const change = useTicketChange();
+  const pending = change.pending ? change.input : undefined;
+  const shownTickets = pending
+    ? tickets.map((ticket) => (ticket.id === pending.id ? { ...ticket, ...pending } : ticket))
+    : tickets;
   const selected = shownTickets.find((ticket) => ticket.id === selectedId);
   const [streamError, setError] = useState("");
   const loadFailed = ticketsQuery.error ?? botsQuery.error;
@@ -140,10 +131,10 @@ export function BoardPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
-      <header className="app-drag flex items-center gap-2 border-b px-3 py-3 sm:gap-3 sm:px-4">
+      <header className="app-drag flex flex-wrap items-center gap-2 border-b px-3 py-3 sm:gap-3 sm:px-4">
         {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
         {desktopBridge() ? <WindowChrome className={rail ? "md:hidden" : undefined} /> : null}
-        <div className="flex min-w-0 flex-1 items-center gap-1">
+        <div className="flex min-w-fit flex-1 items-center gap-1">
           <IconTooltip label={t`Back`}>
             <Link
               to="/app"
@@ -163,7 +154,7 @@ export function BoardPage() {
         </div>
         <OptionSelect
           aria-label={t`Board view`}
-          className="app-no-drag w-auto"
+          className="app-no-drag w-auto max-w-full"
           value={view}
           onValueChange={(value) => {
             const next = new URLSearchParams(params);
@@ -177,7 +168,7 @@ export function BoardPage() {
           ]}
         />
         <Button
-          className="app-no-drag"
+          className="app-no-drag max-w-full whitespace-normal"
           onClick={() => setSelectedId("new")}
           disabled={bots.length === 0}
         >
@@ -197,8 +188,8 @@ export function BoardPage() {
             tickets={shownTickets}
             bots={bots}
             onOpen={setSelectedId}
-            moving={move.pending}
-            onMove={(id, status) => move.run({ id, status })}
+            moving={change.pending}
+            onMove={(id, status) => change.run({ id, status })}
           />
         )}
         {tickets.length === 0 && !error ? (
@@ -211,7 +202,8 @@ export function BoardPage() {
         <TicketDialog
           key={selectedId}
           ticket={selected ?? null}
-          moving={pendingMove?.id === selectedId}
+          changing={change.pending}
+          onChange={change.run}
           bots={bots}
           onClose={() => setSelectedId(null)}
         />
@@ -220,15 +212,12 @@ export function BoardPage() {
   );
 }
 
-function useTicketChange(onFailed?: (error: Error) => void) {
+function useTicketChange() {
   const queries = useSpaceQueries();
   const client = useQueryClient();
   const list = queries.tickets.list.queryOptions({ input: {} });
   return useSave({
-    save: async (
-      input: Pick<UpdateTicketInput, "id" | "assigneeBotId" | "priority" | "status">,
-      rpc,
-    ) => {
+    save: async (input: TicketChange, rpc) => {
       const before = client
         .getQueryData(list.queryKey)
         ?.tickets.find((ticket) => ticket.id === input.id);
@@ -242,18 +231,20 @@ function useTicketChange(onFailed?: (error: Error) => void) {
       });
     },
     stale: [list.queryKey],
-    onFailed,
+    onFailed: (error) => toast.error(errorText(error)),
   });
 }
 
 function TicketDialog({
   ticket,
-  moving,
+  changing,
+  onChange,
   bots,
   onClose,
 }: {
   ticket: Ticket | null;
-  moving: boolean;
+  changing: boolean;
+  onChange: (input: TicketChange) => void;
   bots: Bot[];
   onClose: () => void;
 }) {
@@ -265,12 +256,10 @@ function TicketDialog({
   const [descriptionDraft, setDescription] = useState<string | null>(null);
   const [newOwner, setOwner] = useState(bots[0]?.id ?? "");
   const [newPriority, setPriority] = useState<TicketPriority>("normal");
-  const change = useTicketChange();
-  const pendingChange = change.pending ? change.input : undefined;
   const title = titleDraft ?? ticket?.title ?? "";
   const description = descriptionDraft ?? ticket?.description ?? "";
-  const owner = ticket ? (pendingChange?.assigneeBotId ?? ticket.assigneeBotId) : newOwner;
-  const priority = ticket ? (pendingChange?.priority ?? ticket.priority) : newPriority;
+  const owner = ticket ? ticket.assigneeBotId : newOwner;
+  const priority = ticket?.priority ?? newPriority;
   const titleChanged = title !== ticket?.title;
   const descriptionChanged = description !== (ticket?.description ?? "");
   const textChanged = titleChanged || descriptionChanged;
@@ -321,19 +310,19 @@ function TicketDialog({
     stale: [commentsOptions.queryKey],
   });
   const ownerBot = bots.find((bot) => bot.id === owner);
-  const busy = moving || saving.pending || commenting.pending || change.pending;
-  const failure = saving.error ?? change.error ?? commenting.error;
+  const busy = changing || saving.pending || commenting.pending;
+  const failure = saving.error ?? commenting.error;
   const shownError = failure
     ? errorText(failure)
     : commentsQuery.error
       ? errorText(commentsQuery.error)
       : "";
 
-  function changeField(input: Parameters<typeof change.run>[0]) {
+  function changeField(input: TicketChange) {
     if (busy) return;
     saving.reset();
     commenting.reset();
-    change.run(input);
+    onChange(input);
   }
 
   return (
@@ -352,7 +341,6 @@ function TicketDialog({
             event.preventDefault();
             if (busy || !title.trim() || (ticket ? !textChanged : !owner)) return;
             commenting.reset();
-            change.reset();
             saving.run();
           }}
         >
@@ -432,7 +420,7 @@ function TicketDialog({
                 </FieldLabel>
                 <OptionSelect<TicketStatus>
                   id={`${formId}-status`}
-                  value={pendingChange?.status ?? ticket.status}
+                  value={ticket.status}
                   onValueChange={(status) => {
                     if (status !== ticket.status) changeField({ id: ticket.id, status });
                   }}
@@ -489,7 +477,6 @@ function TicketDialog({
                 event.preventDefault();
                 if (busy || !body.trim()) return;
                 saving.reset();
-                change.reset();
                 commenting.run(body);
               }}
             >

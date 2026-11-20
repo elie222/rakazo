@@ -46,7 +46,18 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
   return {
     ...actual,
     Button: (props: ComponentProps<"button">) => <button {...props} />,
-    Dialog: Container,
+    Dialog: ({
+      children,
+      onOpenChange,
+    }: {
+      children?: ReactNode;
+      onOpenChange: (open: boolean) => void;
+    }) => (
+      <div>
+        {children}
+        <button type="button" aria-label="Close" onClick={() => onOpenChange(false)} />
+      </div>
+    ),
     DialogContent: Container,
     DialogHeader: Container,
     DialogTitle: Container,
@@ -679,6 +690,35 @@ it("keeps a live ticket update when an older save response has the same timestam
     expect(priority.disabled).toBe(false);
     expect(card().textContent).toContain("Ship today");
     expect(card().parentElement?.getAttribute("aria-labelledby")).toBe("board-column-doing");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reports a failed dropdown save after the ticket dialog closes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.mocked(toast.error).mockClear();
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  const original = ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1");
+  const response = deferred();
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [original] });
+  api.tickets.comments.mockReset().mockResolvedValue([]);
+  api.tickets.update.mockReset().mockReturnValue(response.promise);
+  const page = await renderBoard();
+  try {
+    const card = page.container.querySelector<HTMLButtonElement>(
+      '[data-testid="board-card-ticket-1"]',
+    )!;
+    await act(async () => card.click());
+    await selectHighPriority(page.container);
+    const close = page.container.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
+    await act(async () => close.click());
+    expect(page.container.querySelector('[id$="-priority"]')).toBeNull();
+
+    await act(async () => response.reject(new TypeError("Failed to fetch")));
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("Could not reach the server");
+    expect(card.textContent).not.toContain("High");
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();

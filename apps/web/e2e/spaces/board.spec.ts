@@ -49,6 +49,11 @@ test("board creates, edits, and moves a ticket across its views", async ({ page 
       (node) => node.parentElement!.scrollWidth > node.parentElement!.clientWidth,
     ),
   ).toBe(true);
+  await page.setViewportSize({ width: 320, height: 900 });
+  await expect(page.getByRole("combobox", { name: "Board view" })).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole("button", { name: "New ticket", exact: true })).toBeInViewport({
+    ratio: 1,
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await captureScreenshot(page, testInfo, "board-kanban-empty");
 
