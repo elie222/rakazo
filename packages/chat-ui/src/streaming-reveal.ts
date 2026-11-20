@@ -88,6 +88,7 @@ export function createStreamingRevealState(): StreamingRevealState {
 }
 
 let cachedWordSegmenter: Intl.Segmenter | null | undefined;
+let cachedGraphemeSegmenter: Intl.Segmenter | null | undefined;
 
 function getWordSegmenter(): Intl.Segmenter | null {
   if (cachedWordSegmenter !== undefined) return cachedWordSegmenter;
@@ -98,9 +99,26 @@ function getWordSegmenter(): Intl.Segmenter | null {
   return cachedWordSegmenter;
 }
 
+function getGraphemeSegmenter(): Intl.Segmenter | null {
+  if (cachedGraphemeSegmenter !== undefined) return cachedGraphemeSegmenter;
+  cachedGraphemeSegmenter =
+    typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+      : null;
+  return cachedGraphemeSegmenter;
+}
+
+/** A kana and its combining voiced mark are one drawn character, so they reveal together. */
+function graphemeUnits(word: string): string[] {
+  const segmenter = getGraphemeSegmenter();
+  return segmenter
+    ? Array.from(segmenter.segment(word), ({ segment }) => segment)
+    : Array.from(word);
+}
+
 /**
  * Latin text reveals by word, Chinese and Japanese by character. ICU word segmentation groups
- * words like 拍板 or 决策 into one unit, so a CJK fragment is split into code points.
+ * words like 拍板 or 决策 into one unit, so a CJK fragment is split into grapheme clusters.
  */
 export function segmentRevealUnits(text: string): string[] {
   const segmenter = getWordSegmenter();
@@ -109,7 +127,7 @@ export function segmentRevealUnits(text: string): string[] {
     : (text.match(REVEAL_FALLBACK_WORD_RE) ?? [text]);
   const units: string[] = [];
   for (const word of words) {
-    if (REVEAL_CJK_RE.test(word)) units.push(...Array.from(word));
+    if (REVEAL_CJK_RE.test(word)) units.push(...graphemeUnits(word));
     else units.push(word);
   }
   return units;

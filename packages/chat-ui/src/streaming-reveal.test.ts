@@ -12,6 +12,11 @@ describe("streaming reveal units", () => {
     expect(segmentRevealUnits("こんにちは")).toEqual(["こ", "ん", "に", "ち", "は"]);
   });
 
+  it("keeps a combining voiced mark with its kana", () => {
+    expect(segmentRevealUnits("か\u3099き")).toEqual(["\u304b\u3099", "\u304d"]);
+    expect(segmentRevealUnits("\u304c")).toEqual(["\u304c"]);
+  });
+
   it("reveals Latin text by word and keeps whitespace between units", () => {
     const units = segmentRevealUnits("Hello, world!");
     expect(units.join("")).toBe("Hello, world!");
