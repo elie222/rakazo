@@ -69,7 +69,10 @@ const breakdown = {
       modelCalls: 180,
     },
   ],
-  modelOptions: [{ provider: "subscription", model: "example-large" }],
+  modelOptions: [
+    { provider: "subscription", model: "example-large" },
+    { provider: "retired", model: "opaque-legacy-id" },
+  ],
   totals: {
     runs: 42,
     inputTokens: 910_000,
@@ -78,7 +81,18 @@ const breakdown = {
     costUsd: 4.2,
     modelCalls: 180,
   },
-  models: summary.models,
+  models: [
+    ...summary.models,
+    {
+      provider: "retired",
+      model: "opaque-legacy-id",
+      inputTokens: 10,
+      outputTokens: 2,
+      totalTokens: 12,
+      costUsd: 0.001,
+      modelCalls: 1,
+    },
+  ],
   overTimeUnit: "day",
   overTime: [
     {
@@ -202,6 +216,11 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await expect(settings.getByRole("cell", { name: /Example Large/ })).toContainText(
     "Example Provider",
   );
+  const unlisted = settings.getByRole("cell", { name: "Unlisted model", exact: true });
+  await expect(unlisted).toBeVisible();
+  await expect(settings).not.toContainText("opaque-legacy-id");
+  await unlisted.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "usage-model-labels");
   const botFilter = settings.getByRole("combobox", { name: "Bot" });
   await expect(botFilter).toHaveText("All bots");
   await botFilter.click();
