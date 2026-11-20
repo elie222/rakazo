@@ -120,18 +120,9 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           <span className="text-heading1 font-semibold text-foreground md:text-heading2" dir="auto">
             {call.botName}
           </span>
-          <span
-            className="flex gap-2 text-body tabular-nums text-muted-foreground"
-            aria-live="polite"
-          >
-            {ringing ? (
-              t`Calling…`
-            ) : (
-              <>
-                <span>{callClock(elapsed)}</span>
-                <span>{activity}</span>
-              </>
-            )}
+          <span className="flex gap-2 text-body tabular-nums text-muted-foreground">
+            {!ringing ? <span>{callClock(elapsed)}</span> : null}
+            <span aria-live="polite">{ringing ? t`Calling…` : activity}</span>
           </span>
         </div>
         {!ringing ? (
