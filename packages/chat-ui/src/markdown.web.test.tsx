@@ -910,6 +910,29 @@ describe("web markdown streaming", () => {
     container.remove();
   });
 
+  it("continues the reveal rhythm into a new paragraph", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"One.\n\nTwo."}</ChatMarkdown>);
+    });
+    const units = [...container.querySelectorAll('[data-rk-reveal="new"]')];
+    expect(units.map((unit) => unit.textContent)).toEqual(["One", ".", "Two", "."]);
+    const delayOf = (unit: Element | undefined) =>
+      Number(/--rk-reveal-delay:\s*([\d.]+)ms/.exec(unit?.getAttribute("style") ?? "")?.[1] ?? -1);
+    expect(delayOf(units[0])).toBe(0);
+    expect(delayOf(units[2])).toBeGreaterThan(0);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("draws a block too long to reveal without per-word spans", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");

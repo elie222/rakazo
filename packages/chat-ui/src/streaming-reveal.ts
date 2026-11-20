@@ -59,6 +59,8 @@ export type StreamingRevealState = {
   pending: Map<string, PendingBlock>;
   /** Incremented once per render pass so an abandoned pass cannot commit its progress. */
   pass: number;
+  /** End of the last unit scheduled in the current pass, so later blocks continue after it. */
+  passClock: number;
   /** Arrival speed in units per millisecond, smoothed; unknown until the first commit. */
   rate: number | undefined;
   /** Smoothed gap between two batches of new units, in milliseconds. */
@@ -76,6 +78,7 @@ export function createStreamingRevealState(): StreamingRevealState {
     blocks: new Map(),
     pending: new Map(),
     pass: 0,
+    passClock: Number.NEGATIVE_INFINITY,
     rate: undefined,
     gap: undefined,
     arrival: Number.NEGATIVE_INFINITY,
@@ -176,7 +179,7 @@ type RevealSlot =
   | { kind: "marker"; node: HastNode; start: number };
 type RevealTextSlot = Extract<RevealSlot, { kind: "text" }>;
 
-type RevealSchedule = { now: number; interval: number };
+type RevealSchedule = { now: number; start: number; interval: number };
 
 function clampRevealMs(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -189,15 +192,20 @@ function clampRevealMs(value: number, min: number, max: number): number {
  * delay. Blocks render in order, so each batch starts at the current frame instead of chaining.
  */
 function planRevealSchedule(state: StreamingRevealState, count: number): RevealSchedule {
+  const now = performance.now();
   const perUnit = state.rate !== undefined ? 1 / state.rate : REVEAL_FIRST_WINDOW_MS / count;
   const lag = clampRevealMs(
     Math.max(REVEAL_LAG_UNITS * perUnit, REVEAL_LAG_GAP_FACTOR * (state.gap ?? 0)),
     REVEAL_MIN_LAG_MS,
     REVEAL_MAX_LAG_MS,
   );
+  const interval = Math.min(REVEAL_MAX_INTERVAL_MS, Math.max(lag, REVEAL_MIN_SPREAD_MS) / count);
+  const start = Math.max(now, state.passClock + interval);
+  state.passClock = start + (count - 1) * interval;
   return {
-    now: performance.now(),
-    interval: Math.min(REVEAL_MAX_INTERVAL_MS, Math.max(lag, REVEAL_MIN_SPREAD_MS) / count),
+    now,
+    start,
+    interval,
   };
 }
 
@@ -440,7 +448,9 @@ export function createStreamingRevealPlugin(
 
       let revealIndex = 0;
       const nextRevealDelay = () => {
-        const delay = schedule ? revealIndex * schedule.interval : 0;
+        const delay = schedule
+          ? schedule.start + revealIndex * schedule.interval - schedule.now
+          : 0;
         revealIndex += 1;
         return `${delay.toFixed(1)}ms`;
       };

@@ -903,6 +903,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   // claim progress that never reached the screen.
   reveal.pass += 1;
   const revealPass = reveal.pass;
+  reveal.passClock = Number.NEGATIVE_INFINITY;
   const revealSourceRef = useRef<string | undefined>(undefined);
   // A re-render with the same text keeps the last verdict: its transitions may still be running,
   // and judging it again would call the whole text settled.
