@@ -38,20 +38,20 @@
 
 ## 2. 已核实的前置事实
 
-| 事实 | 位置 | 对实现的影响 |
-| --- | --- | --- |
-| Electron 运行同一份 Web UI | `docs/desktop-app.md:3` | 只改 Web，桌面端自动覆盖 |
-| 对话列是 `relative` 容器 | `apps/web/src/pages/Shell.tsx:1125` | 可以放绝对定位遮罩 |
-| 头部绝对定位在顶部，`z-10` | `apps/web/src/pages/shell/chat/chat-header.tsx:50` | 遮罩必须低于 `z-10` |
-| 头部高度 60px | `py-3` + 36px 控件 | 遮罩约 84px，下方留 24px 过渡 |
-| 内容顶部留白与滚动对齐 80/84px | `apps/web/src/pages/shell/chat/transcript.tsx:620` | 遮罩高度、留白与跳转对齐同源 |
-| 输入区在对话列之外，`z-30` | `apps/web/src/pages/Shell.tsx:1225` | 遮罩不会压到输入区 |
-| 搜索条 `z-20`、侧栏 `z-20` | `apps/web/src/pages/Shell.tsx:1133`、`apps/web/src/pages/shell/resizable-side-panel.tsx:78` | 遮罩不能高于这些层 |
-| 消息悬停操作 `z-1` | `apps/web/src/pages/shell/chat/transcript.tsx:681` | 顶部悬停按钮会被遮罩压暗，符合预期 |
-| 移动端已有 `ThreadEdgeFade` | `apps/mobile/components/thread/thread-edge-fade.tsx` | 本次不改 |
-| `chat` 目录现有 21 个非测试代码文件 | 目录统计 | 新增 1 个 `.tsx` 后为 22，低于 40 上限 |
-| `chat-header` spec 属于 nightly | `apps/web/playwright.config.ts:27` | PR CI 默认跳过；截图需手动触发 nightly |
-| Tailwind 4.3.5 支持 `pt-(--var)` | 已用同版本编译验证 | 可以用 CSS 变量统一留白与高度 |
+| 事实                                | 位置                                                                                        | 对实现的影响                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Electron 运行同一份 Web UI          | `docs/desktop-app.md:3`                                                                     | 只改 Web，桌面端自动覆盖               |
+| 对话列是 `relative` 容器            | `apps/web/src/pages/Shell.tsx:1125`                                                         | 可以放绝对定位遮罩                     |
+| 头部绝对定位在顶部，`z-10`          | `apps/web/src/pages/shell/chat/chat-header.tsx:50`                                          | 遮罩必须低于 `z-10`                    |
+| 头部高度 60px                       | `py-3` + 36px 控件                                                                          | 遮罩约 84px，下方留 24px 过渡          |
+| 内容顶部留白与滚动对齐 80/84px      | `apps/web/src/pages/shell/chat/transcript.tsx:620`                                          | 遮罩高度、留白与跳转对齐同源           |
+| 输入区在对话列之外，`z-30`          | `apps/web/src/pages/Shell.tsx:1225`                                                         | 遮罩不会压到输入区                     |
+| 搜索条 `z-20`、侧栏 `z-20`          | `apps/web/src/pages/Shell.tsx:1133`、`apps/web/src/pages/shell/resizable-side-panel.tsx:78` | 遮罩不能高于这些层                     |
+| 消息悬停操作 `z-1`                  | `apps/web/src/pages/shell/chat/transcript.tsx:681`                                          | 顶部悬停按钮会被遮罩压暗，符合预期     |
+| 移动端已有 `ThreadEdgeFade`         | `apps/mobile/components/thread/thread-edge-fade.tsx`                                        | 本次不改                               |
+| `chat` 目录现有 21 个非测试代码文件 | 目录统计                                                                                    | 新增 1 个 `.tsx` 后为 22，低于 40 上限 |
+| `chat-header` spec 属于 nightly     | `apps/web/playwright.config.ts:27`                                                          | PR CI 默认跳过；截图需手动触发 nightly |
+| Tailwind 4.3.5 支持 `pt-(--var)`    | 已用同版本编译验证                                                                          | 可以用 CSS 变量统一留白与高度          |
 
 ## 3. 实施步骤
 
@@ -252,12 +252,12 @@ import { ChatTopFade } from "./shell/chat/chat-top-fade";
 
 层级检查：
 
-| 元素 | z-index | 期望 |
-| --- | --- | --- |
-| `ChatTopFade` | 5 | 在滚动内容之上 |
-| `ChatHeader` | 10 | 在遮罩之上 |
-| 搜索条、侧栏 | 20 | 不受影响 |
-| 输入区 | 30 | 不受影响 |
+| 元素          | z-index | 期望           |
+| ------------- | ------- | -------------- |
+| `ChatTopFade` | 5       | 在滚动内容之上 |
+| `ChatHeader`  | 10      | 在遮罩之上     |
+| 搜索条、侧栏  | 20      | 不受影响       |
+| 输入区        | 30      | 不受影响       |
 
 完成后验证：
 
@@ -338,10 +338,7 @@ await transcript.evaluate((element) => {
 });
 
 for (const theme of ["light", "dark"]) {
-  await page.evaluate(
-    (value) => document.documentElement.setAttribute("data-theme", value),
-    theme,
-  );
+  await page.evaluate((value) => document.documentElement.setAttribute("data-theme", value), theme);
   await captureScreenshot(page, testInfo, `chat-header-floating-${theme}`);
 }
 ```
@@ -353,7 +350,10 @@ await transcript.evaluate((element) => {
   element.scrollTop = 0;
 });
 
-const first = await transcript.getByText(/^Question 1:/).first().boundingBox();
+const first = await transcript
+  .getByText(/^Question 1:/)
+  .first()
+  .boundingBox();
 const fadeRect = await fade.boundingBox();
 if (!first || !fadeRect) throw new Error("missing chat layout");
 expect(first.y).toBeGreaterThanOrEqual(fadeRect.y + fadeRect.height - 1);
@@ -472,84 +472,84 @@ CI 与 review：
 
 ### A. 功能与视觉
 
-| ID | 验收标准 | 验证方式 | 证据 |
-| --- | --- | --- | --- |
-| AC-01 | 遮罩只在对话列内，起点和宽度与滚动容器一致，不覆盖侧栏、侧面板或输入区 | E2E 几何断言 | `fade` 与 `transcript` 的 `top`/`left`/宽度一致 |
-| AC-02 | 1280px 下遮罩高度、内容顶部留白、滚动对齐都是 84px（±1px） | E2E 比较 `fadeHeight`、`paddingTop`、`scrollPaddingTop` | 断言通过 |
-| AC-03 | 390px 下遮罩高度、内容顶部留白、滚动对齐都是 80px | E2E 窄屏断言 | 断言通过 |
-| AC-04 | 静止在 `scrollTop = 0` 时，第一条消息顶部不低于遮罩底部 | E2E 首条消息与 `fadeRect` 比较 | 断言通过 + 截图 |
-| AC-05 | 滚动后顶部内容出现渐隐与模糊，过渡没有硬边 | 明暗两套截图 | `chat-header-floating-{light,dark}.png` |
-| AC-06 | 头部胶囊、按钮、拖拽条在遮罩之上，保持清晰 | E2E `headerZ > fadeZ` + 截图 | 断言通过 + 截图 |
-| AC-07 | 遮罩的模糊为 20px，遮罩图为纵向渐变 | E2E 读取 `::before.backdropFilter` 与 `::before.maskImage` | 断言通过 |
-| AC-08 | 点击、滚轮、文本选择仍落到对话内容上 | 现有 `elementFromPoint` 断言 + 手动滚轮 | 断言通过 |
-| AC-09 | 不产生布局位移：头部仍在顶部，滚动容器起点不变 | E2E 几何断言 | 断言通过 |
-| AC-10 | 明暗主题都使用 `--background`，没有硬编码产品色 | 代码审查 + 明暗截图 | diff 与截图 |
+| ID    | 验收标准                                                               | 验证方式                                                   | 证据                                            |
+| ----- | ---------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------- |
+| AC-01 | 遮罩只在对话列内，起点和宽度与滚动容器一致，不覆盖侧栏、侧面板或输入区 | E2E 几何断言                                               | `fade` 与 `transcript` 的 `top`/`left`/宽度一致 |
+| AC-02 | 1280px 下遮罩高度、内容顶部留白、滚动对齐都是 84px（±1px）             | E2E 比较 `fadeHeight`、`paddingTop`、`scrollPaddingTop`    | 断言通过                                        |
+| AC-03 | 390px 下遮罩高度、内容顶部留白、滚动对齐都是 80px                      | E2E 窄屏断言                                               | 断言通过                                        |
+| AC-04 | 静止在 `scrollTop = 0` 时，第一条消息顶部不低于遮罩底部                | E2E 首条消息与 `fadeRect` 比较                             | 断言通过 + 截图                                 |
+| AC-05 | 滚动后顶部内容出现渐隐与模糊，过渡没有硬边                             | 明暗两套截图                                               | `chat-header-floating-{light,dark}.png`         |
+| AC-06 | 头部胶囊、按钮、拖拽条在遮罩之上，保持清晰                             | E2E `headerZ > fadeZ` + 截图                               | 断言通过 + 截图                                 |
+| AC-07 | 遮罩的模糊为 20px，遮罩图为纵向渐变                                    | E2E 读取 `::before.backdropFilter` 与 `::before.maskImage` | 断言通过                                        |
+| AC-08 | 点击、滚轮、文本选择仍落到对话内容上                                   | 现有 `elementFromPoint` 断言 + 手动滚轮                    | 断言通过                                        |
+| AC-09 | 不产生布局位移：头部仍在顶部，滚动容器起点不变                         | E2E 几何断言                                               | 断言通过                                        |
+| AC-10 | 明暗主题都使用 `--background`，没有硬编码产品色                        | 代码审查 + 明暗截图                                        | diff 与截图                                     |
 
 ### B. 降级与性能
 
-| ID | 验收标准 | 验证方式 | 证据 |
-| --- | --- | --- | --- |
-| AC-11 | macOS“降低透明度”开启时模糊关闭、渐变保留 | 手动：系统设置 → 辅助功能 → 显示 → 降低透明度 | 手动记录；不要求自动化 |
-| AC-12 | 浏览器不支持 `backdrop-filter` 时仍有基础渐变，不出现硬边 | DevTools 临时禁用该属性 | 手动记录 |
-| AC-13 | 不新增动画，`prefers-reduced-motion` 下行为不变 | 代码审查 | CSS 无 animation/transition |
-| AC-14 | 正常滚动时不出现明显掉帧 | 在 1280×800 Chromium 下滚动长对话 | 手动观察；必要时看 Performance 面板 |
-| AC-15 | 若窄屏 Web 掉帧，可退化为窄屏只保留渐变 | 代码审查退路 | 设计文档 5.6；实现时默认不预置该分支 |
+| ID    | 验收标准                                                  | 验证方式                                      | 证据                                 |
+| ----- | --------------------------------------------------------- | --------------------------------------------- | ------------------------------------ |
+| AC-11 | macOS“降低透明度”开启时模糊关闭、渐变保留                 | 手动：系统设置 → 辅助功能 → 显示 → 降低透明度 | 手动记录；不要求自动化               |
+| AC-12 | 浏览器不支持 `backdrop-filter` 时仍有基础渐变，不出现硬边 | DevTools 临时禁用该属性                       | 手动记录                             |
+| AC-13 | 不新增动画，`prefers-reduced-motion` 下行为不变           | 代码审查                                      | CSS 无 animation/transition          |
+| AC-14 | 正常滚动时不出现明显掉帧                                  | 在 1280×800 Chromium 下滚动长对话             | 手动观察；必要时看 Performance 面板  |
+| AC-15 | 若窄屏 Web 掉帧，可退化为窄屏只保留渐变                   | 代码审查退路                                  | 设计文档 5.6；实现时默认不预置该分支 |
 
 ### C. 回归
 
-| ID | 验收标准 | 验证方式 | 证据 |
-| --- | --- | --- | --- |
-| AC-16 | 头部按钮仍可点击，面板、通话、邀请等行为不变 | 现有 E2E + 手动点击 | 现有测试通过 |
-| AC-17 | 搜索条展开时不被遮罩压暗或挡住 | 手动打开搜索 | 手动记录 |
-| AC-18 | 输入区、队列消息、通话卡片层级不变 | 代码审查 + 手动 | diff 只增加遮罩 |
-| AC-19 | 移动端原生对话不发生变化 | `git diff -- apps/mobile` 为空 | diff |
-| AC-20 | 没有新增或修改用户可见文案 | `git diff` 不含 `messages.po`；新增的 `.tsx` 没有用户可见字符串 | diff |
+| ID    | 验收标准                                     | 验证方式                                                        | 证据            |
+| ----- | -------------------------------------------- | --------------------------------------------------------------- | --------------- |
+| AC-16 | 头部按钮仍可点击，面板、通话、邀请等行为不变 | 现有 E2E + 手动点击                                             | 现有测试通过    |
+| AC-17 | 搜索条展开时不被遮罩压暗或挡住               | 手动打开搜索                                                    | 手动记录        |
+| AC-18 | 输入区、队列消息、通话卡片层级不变           | 代码审查 + 手动                                                 | diff 只增加遮罩 |
+| AC-19 | 移动端原生对话不发生变化                     | `git diff -- apps/mobile` 为空                                  | diff            |
+| AC-20 | 没有新增或修改用户可见文案                   | `git diff` 不含 `messages.po`；新增的 `.tsx` 没有用户可见字符串 | diff            |
 
 ### D. 工程质量
 
-| ID | 验收标准 | 验证方式 |
-| --- | --- | --- |
-| AC-21 | TypeScript 通过 | `pnpm --filter @rakazo/web check` |
-| AC-22 | Web 单元/组件测试通过 | `pnpm --filter @rakazo/web test` |
-| AC-23 | 仓库检查通过 | `pnpm checks` |
-| AC-24 | Biome 格式与 lint 通过 | `pnpm exec biome check`（changed files） |
-| AC-25 | 生产构建与启动体积预算通过 | `pnpm build && node scripts/checks/bundle-size.mjs` |
-| AC-26 | 新文件不超过 1,000 行；`chat` 目录代码文件不超过 40 | `pnpm checks` |
-| AC-27 | 没有新增依赖 | `git diff -- package.json pnpm-lock.yaml` 为空 |
+| ID    | 验收标准                                            | 验证方式                                            |
+| ----- | --------------------------------------------------- | --------------------------------------------------- |
+| AC-21 | TypeScript 通过                                     | `pnpm --filter @rakazo/web check`                   |
+| AC-22 | Web 单元/组件测试通过                               | `pnpm --filter @rakazo/web test`                    |
+| AC-23 | 仓库检查通过                                        | `pnpm checks`                                       |
+| AC-24 | Biome 格式与 lint 通过                              | `pnpm exec biome check`（changed files）            |
+| AC-25 | 生产构建与启动体积预算通过                          | `pnpm build && node scripts/checks/bundle-size.mjs` |
+| AC-26 | 新文件不超过 1,000 行；`chat` 目录代码文件不超过 40 | `pnpm checks`                                       |
+| AC-27 | 没有新增依赖                                        | `git diff -- package.json pnpm-lock.yaml` 为空      |
 
 ### E. PR 与评审
 
-| ID | 验收标准 | 验证方式 |
-| --- | --- | --- |
-| AC-28 | 一个 PR 只包含本功能 | PR diff |
-| AC-29 | PR 描述包含 What / Why / Changes / Tested | PR 描述 |
-| AC-30 | 明暗两套 CI 截图已附 | PR 描述 |
-| AC-31 | 没有编辑 `CHANGELOG.md` | PR diff |
-| AC-32 | 没有编辑翻译目录 | PR diff |
-| AC-33 | CI 必需检查通过，review bot 已结束且无未解决项 | PR 检查页 + `pr-watch` |
-| AC-34 | 可回滚：只回退本 PR 的代码即可恢复，无数据副作用 | PR diff 只含前端文件 |
+| ID    | 验收标准                                         | 验证方式               |
+| ----- | ------------------------------------------------ | ---------------------- |
+| AC-28 | 一个 PR 只包含本功能                             | PR diff                |
+| AC-29 | PR 描述包含 What / Why / Changes / Tested        | PR 描述                |
+| AC-30 | 明暗两套 CI 截图已附                             | PR 描述                |
+| AC-31 | 没有编辑 `CHANGELOG.md`                          | PR diff                |
+| AC-32 | 没有编辑翻译目录                                 | PR diff                |
+| AC-33 | CI 必需检查通过，review bot 已结束且无未解决项   | PR 检查页 + `pr-watch` |
+| AC-34 | 可回滚：只回退本 PR 的代码即可恢复，无数据副作用 | PR diff 只含前端文件   |
 
 ## 5. 测试矩阵
 
-| 层 | 覆盖内容 | 何时运行 | 备注 |
-| --- | --- | --- | --- |
-| TypeScript | 新组件、Shell 接入、E2E 类型 | 每次改动后 | `pnpm --filter @rakazo/web check` |
-| 单元/组件 | 现有 Web 测试回归 | 每次改动后 | `pnpm --filter @rakazo/web test` |
-| 仓库检查 | 目录大小、行数、导入边界 | push 前 | `pnpm checks` |
-| Web E2E | 遮罩几何、层级、命中、截图 | nightly / 手动单 spec | `chat-header.spec.ts` |
-| 手动 | 降低透明度、无 backdrop 支持、Electron 拖动 | 实现完成后一次 | 记录在 PR 的 Tested |
-| 构建 | CSS 打包、启动体积 | 本地可选，CI 必跑 | `pnpm build` |
+| 层         | 覆盖内容                                    | 何时运行              | 备注                              |
+| ---------- | ------------------------------------------- | --------------------- | --------------------------------- |
+| TypeScript | 新组件、Shell 接入、E2E 类型                | 每次改动后            | `pnpm --filter @rakazo/web check` |
+| 单元/组件  | 现有 Web 测试回归                           | 每次改动后            | `pnpm --filter @rakazo/web test`  |
+| 仓库检查   | 目录大小、行数、导入边界                    | push 前               | `pnpm checks`                     |
+| Web E2E    | 遮罩几何、层级、命中、截图                  | nightly / 手动单 spec | `chat-header.spec.ts`             |
+| 手动       | 降低透明度、无 backdrop 支持、Electron 拖动 | 实现完成后一次        | 记录在 PR 的 Tested               |
+| 构建       | CSS 打包、启动体积                          | 本地可选，CI 必跑     | `pnpm build`                      |
 
 ## 6. 风险与应对
 
-| 风险 | 触发信号 | 应对 |
-| --- | --- | --- |
-| 窄屏 Web 滚动掉帧 | 手机上快速滚动明显卡顿 | 只对 `md` 及以上启用模糊，窄屏保留渐变；不改结构 |
-| 磨砂胶囊叠加后发灰 | 明暗截图中胶囊边缘浑浊 | 先确认是遮罩导致；只调整遮罩的渐变/模糊，不改共享 `Button` 变体 |
-| 变量未继承导致留白为 0 | computed padding 变成 0 | 确认变量声明在 `chatColumnRef` 上，且与 `pt-(--chat-top-clearance)` 同一次提交 |
-| 遮罩盖住搜索条或侧栏 | 搜索条变暗、点击不到 | 检查 `z-[5]` 与 `z-20`；遮罩只应放在对话列内 |
-| nightly 截图拿不到 | PR CI 没有 `chat-header` | 手动 dispatch `nightly verification`，或等待每日定时任务 |
-| 旧浏览器不支持 `color-mix` | 渐变声明被忽略 | 第一条纯 `var(--background)` → `transparent` 的兜底仍在 |
+| 风险                       | 触发信号                 | 应对                                                                           |
+| -------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
+| 窄屏 Web 滚动掉帧          | 手机上快速滚动明显卡顿   | 只对 `md` 及以上启用模糊，窄屏保留渐变；不改结构                               |
+| 磨砂胶囊叠加后发灰         | 明暗截图中胶囊边缘浑浊   | 先确认是遮罩导致；只调整遮罩的渐变/模糊，不改共享 `Button` 变体                |
+| 变量未继承导致留白为 0     | computed padding 变成 0  | 确认变量声明在 `chatColumnRef` 上，且与 `pt-(--chat-top-clearance)` 同一次提交 |
+| 遮罩盖住搜索条或侧栏       | 搜索条变暗、点击不到     | 检查 `z-[5]` 与 `z-20`；遮罩只应放在对话列内                                   |
+| nightly 截图拿不到         | PR CI 没有 `chat-header` | 手动 dispatch `nightly verification`，或等待每日定时任务                       |
+| 旧浏览器不支持 `color-mix` | 渐变声明被忽略           | 第一条纯 `var(--background)` → `transparent` 的兜底仍在                        |
 
 回滚：
 
@@ -558,16 +558,16 @@ CI 与 review：
 
 ## 7. 预计工作量
 
-| 步骤 | 预计 |
-| --- | --- |
-| Step 0 基线 | 15 分钟 |
-| Step 1 留白变量 | 20 分钟 |
-| Step 2 组件与样式 | 30 分钟 |
-| Step 3 接入与层级 | 20 分钟 |
-| Step 4 E2E 与截图 | 45 分钟 |
-| Step 5 全量验证 | 30 分钟 |
-| Step 6 PR 与 CI | 30–60 分钟（含等待） |
-| 合计 | 约 3–4 小时 |
+| 步骤              | 预计                 |
+| ----------------- | -------------------- |
+| Step 0 基线       | 15 分钟              |
+| Step 1 留白变量   | 20 分钟              |
+| Step 2 组件与样式 | 30 分钟              |
+| Step 3 接入与层级 | 20 分钟              |
+| Step 4 E2E 与截图 | 45 分钟              |
+| Step 5 全量验证   | 30 分钟              |
+| Step 6 PR 与 CI   | 30–60 分钟（含等待） |
+| 合计              | 约 3–4 小时          |
 
 ## 8. 执行清单
 
