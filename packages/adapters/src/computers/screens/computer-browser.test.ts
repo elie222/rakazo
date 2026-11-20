@@ -513,11 +513,13 @@ describe("page browser safety", () => {
     expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
       purchase: null,
     });
-    // A JavaScript dialog is open, so the page underneath takes no input: nothing is bought.
-    for (const dialog of ["alert", "confirm", "beforeunload"]) {
+    // A JavaScript dialog is open, so the page underneath takes no input: its type is passed on for
+    // the gate to judge.
+    for (const dialog of ["alert", "beforeunload", "confirm", "prompt"]) {
       reply = { ok: true, url: "", title: "", site: "", purchase: null, dialog };
       expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
         purchase: null,
+        dialog,
       });
     }
     // Any other failure throws, so the press is refused: a check that started and broke, or a 500,
@@ -556,7 +558,7 @@ describe("page browser safety", () => {
       purchase: null,
     });
     // The timed-out check was probed twice.
-    expect(commands).toHaveLength(21);
+    expect(commands).toHaveLength(22);
   });
 
   describe("a timed-out purchase check", () => {

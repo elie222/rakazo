@@ -355,6 +355,48 @@ describe("purchase detection for the page tools", () => {
     expect(check).toHaveBeenCalledTimes(2);
   });
 
+  it("lets one press answer an alert or a Leave site? dialog, and refuses the rest", async () => {
+    let dialog = "alert";
+    const check = vi.fn(async () => ({ purchase: null, dialog }));
+    const ctx = contextWith(check as never);
+    const prepare = (actions: unknown[]) =>
+      prepareToolRequest(ctx, {
+        name: "computer_act",
+        args: { actions },
+      } as unknown as ToolRequest);
+    const ok = { kind: "click", x: 5, y: 6 };
+    for (dialog of ["alert", "beforeunload"]) {
+      expect(await prepare([ok])).toBeUndefined();
+      expect(await prepare([{ kind: "key", key: "Return" }])).toBeUndefined();
+    }
+    // A confirm or prompt hands its answer to the page's script, which can place an order on OK.
+    for (dialog of ["confirm", "prompt", "something-new"]) {
+      expect(await prepare([ok])).toEqual({
+        error:
+          "A confirmation dialog is open and couldn't be checked for a payment, so nothing was pressed. Press Escape to cancel it, or stop and ask the user.",
+      });
+    }
+    // Only the first press reaches the dialog; a later one would land on the page unchecked.
+    dialog = "alert";
+    for (const actions of [
+      [{ kind: "key", key: "Return" }, ok],
+      [ok, ok],
+      [ok, { kind: "type", text: "go\n" }],
+      [{ ...ok, double: true }],
+      [{ kind: "type", text: "\n\n" }],
+    ]) {
+      expect(await prepare(actions)).toEqual({
+        error:
+          "A dialog is open on the page, so nothing was pressed. Answer it with a single press in its own call, then continue.",
+      });
+    }
+    // Escape presses nothing on the page, so it is never checked and always cancels the dialog.
+    check.mockClear();
+    dialog = "confirm";
+    expect(await prepare([{ kind: "key", key: "Escape" }])).toBeUndefined();
+    expect(check).not.toHaveBeenCalled();
+  });
+
   it("reads a stored approval only when it is whole", () => {
     const good = {
       steps: [0, 3],

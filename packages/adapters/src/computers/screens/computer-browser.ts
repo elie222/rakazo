@@ -239,7 +239,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
    * Whether these clicks, or a click or key on the screen, would complete a purchase. A computer
    * image from before the check answers "unknown command": it cannot tell, so nothing is asked.
    * A check that started and could not read the page throws, and the press is refused, unless the
-   * helper found a JavaScript dialog open on it.
+   * helper found a JavaScript dialog open on it, which is reported for the caller to judge.
    */
   async purchaseCheck(
     computer: ComputerRef,
@@ -269,8 +269,9 @@ export class ComputerBrowserProvider implements BrowserProvider {
       return { purchase: null };
     }
     // A JavaScript dialog open on the page: the page takes no input until it closes, so a press reaches
-    // only the dialog or the browser around the page, and buys nothing.
-    if (typeof live.dialog === "string" && live.dialog) return { purchase: null };
+    // only the dialog. Whether it may answer it is decided with the rest of the call (detectPurchase).
+    if (typeof live.dialog === "string" && live.dialog)
+      return { purchase: null, dialog: live.dialog };
     const found = live.purchase as
       | {
           steps?: unknown;

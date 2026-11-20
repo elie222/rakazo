@@ -825,8 +825,9 @@ class PurchaseTest(unittest.TestCase):
             helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
         return json.loads(printed.call_args.args[0]), use_tab, browser
 
-    def test_a_check_that_cannot_read_the_page_because_a_dialog_is_open_finds_nothing_to_buy(self):
-        for kind in ("alert", "confirm", "beforeunload"):
+    def test_a_check_that_cannot_read_the_page_because_a_dialog_is_open_names_its_type(self):
+        # Every type is reported as it is; the adapter decides which ones a press may answer.
+        for kind in ("alert", "beforeunload", "confirm", "prompt"):
             with self.subTest(kind=kind):
                 result, use_tab, browser = self.check_that_fails({"type": kind, "message": "Sure?"})
                 self.assertEqual(result, {"ok": True, "url": "", "title": "", "site": "", "purchase": None,
@@ -845,7 +846,7 @@ class PurchaseTest(unittest.TestCase):
             result, _, _ = self.check_that_fails({"type": "confirm", "message": "Sure?"})
         self.assertEqual(result["ok"], False)
 
-    def test_an_unreadable_page_in_a_check_that_ran_names_an_open_dialog_and_nothing_to_buy(self):
+    def test_an_unreadable_page_in_a_check_that_ran_names_an_open_dialog_and_its_type(self):
         FakePurchases.on_desktop = dict(helper.UNREADABLE_PURCHASE)
         browser = FakeAgentBrowser()
         with patch.object(browser, "use_tab", create=True):

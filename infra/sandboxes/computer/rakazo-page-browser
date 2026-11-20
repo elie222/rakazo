@@ -1177,10 +1177,10 @@ class PageBrowser:
 
     def open_dialog(self) -> dict[str, Any] | None:
         """After a purchase check could not read the page: the check's answer when that is because a
-        JavaScript dialog is open on it. The page then takes no input, so a press can only reach the dialog
-        or the browser around the page, and nothing on the page is bought. Asked only once the check has
-        failed, so a slow agent-browser never holds up a check that works; one that cannot answer leaves
-        the check failed."""
+        JavaScript dialog is open on it, naming the dialog's type. The page then takes no input, so a press
+        can only reach the dialog; whether answering it could buy something (a confirm can submit an order)
+        is the caller's to decide. Asked only once the check has failed, so a slow agent-browser never holds
+        up a check that works; one that cannot answer leaves the check failed."""
         try:
             self.ab.use_tab(self.target)
         except Exception:  # noqa: BLE001
@@ -2761,7 +2761,7 @@ def run(argv: list[str]) -> int:
             except Exception:
                 saved = [{"error": DOWNLOAD_FAILED}]
         # A purchase check presses nothing, an alert's OK included. A failed one fails, unless a dialog open
-        # on the page is why it could not read it.
+        # on the page is why it could not read it: then it names the dialog's type for the caller to judge.
         if page and command == "purchase_check":
             dialog = page.open_dialog()
             if dialog:

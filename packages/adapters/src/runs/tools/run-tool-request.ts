@@ -630,15 +630,28 @@ export async function prepareToolRequest(
 
 /** What the model is told when a press could not be checked for a payment, so nothing was pressed. */
 function uncheckedPress(why: UncheckedPress): { error: string } {
-  return why === "opened"
-    ? refusal(
+  switch (why) {
+    case "opened":
+      return refusal(
         "purchase_page_opened",
         "This presses on a page the same call opens, which couldn't be checked first, so nothing was pressed. Open the page first, then press in a separate call.",
-      )
-    : refusal(
+      );
+    case "dialog":
+      return refusal(
+        "purchase_dialog_unchecked",
+        "A confirmation dialog is open and couldn't be checked for a payment, so nothing was pressed. Press Escape to cancel it, or stop and ask the user.",
+      );
+    case "dialog-batch":
+      return refusal(
+        "purchase_dialog_batch",
+        "A dialog is open on the page, so nothing was pressed. Answer it with a single press in its own call, then continue.",
+      );
+    case "unreadable":
+      return refusal(
         "purchase_page_unreadable",
         "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot and try once more; if it still can't be read, stop and tell the user.",
       );
+  }
 }
 
 /** Settings that change what this bot runs on or how it speaks; only the owner's chat sets them. */
