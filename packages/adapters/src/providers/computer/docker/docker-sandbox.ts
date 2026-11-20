@@ -15,6 +15,7 @@ import type {
   ScreenRequest,
   ScreenSession,
   TerminalRequest,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import {
   INVALID_BROWSER_REQUEST,
@@ -22,6 +23,7 @@ import {
   SandboxFileTooLargeError,
   SandboxRequestRejectedError,
   SandboxUnresponsiveError,
+  WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import { cancelResponseBody, ResponseTooLargeError, requestDeadline } from "@rakazo/core";
@@ -616,8 +618,12 @@ export class DockerSandboxProvider implements SandboxProvider {
     if (!res.ok) throw new Error(`sandbox file write failed: ${res.status}`);
   }
 
-  async *exportWorkspace(computer: ComputerRef, context: AdapterContext) {
-    yield* this.walkWorkspace(computer, "", context);
+  async *exportWorkspace(
+    computer: ComputerRef,
+    context: AdapterContext,
+    limits?: WorkspaceExportLimits,
+  ) {
+    yield* this.walkWorkspace(computer, context, limits);
   }
 
   async importWorkspace(
@@ -700,28 +706,41 @@ export class DockerSandboxProvider implements SandboxProvider {
     throw new Error(`sandbox destroy failed: ${res.status} ${body}`.trim());
   }
 
-  private async *walkWorkspace(
+  /** Every file the export keeps, in walk order, refused once it passes `limits`. */
+  private async listWorkspace(
     computer: ComputerRef,
     directory: string,
     context: AdapterContext,
-  ): AsyncIterable<PortableFile> {
+    limits: WorkspaceExportLimits | undefined,
+    found: { files: ComputerFileEntry[]; bytes: number },
+  ): Promise<void> {
     const entries = (await this.listFiles(computer, directory, context)).filter(
       (entry) => !shouldSkipPortableWorkspaceFile(entry.path, entry.kind === "dir"),
     );
-    for (let index = 0; index < entries.length; ) {
-      const entry = entries[index]!;
+    for (const entry of entries) {
       if (entry.kind === "dir") {
-        yield* this.walkWorkspace(computer, entry.path, context);
-        index += 1;
+        await this.listWorkspace(computer, entry.path, context, limits, found);
         continue;
       }
-      const files = [];
-      while (index < entries.length && entries[index]?.kind === "file" && files.length < 8) {
-        files.push(entries[index]!);
-        index += 1;
-      }
+      found.files.push(entry);
+      found.bytes += entry.size;
+      if (limits && found.files.length > limits.maxFiles) throw new WorkspaceTooLargeError("files");
+      if (limits && found.bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
+    }
+  }
+
+  // Each listing and read is a command in the container, so a home over the limits is refused
+  // from the listing alone instead of after copying gigabytes the save then throws away.
+  private async *walkWorkspace(
+    computer: ComputerRef,
+    context: AdapterContext,
+    limits: WorkspaceExportLimits | undefined,
+  ): AsyncIterable<PortableFile> {
+    const found = { files: [] as ComputerFileEntry[], bytes: 0 };
+    await this.listWorkspace(computer, "", context, limits, found);
+    for (let index = 0; index < found.files.length; index += 8) {
       const batch = await Promise.all(
-        files.map(async (file) => ({
+        found.files.slice(index, index + 8).map(async (file) => ({
           path: file.path,
           content: await this.readFile(computer, file.path, context),
           executable: file.executable,
