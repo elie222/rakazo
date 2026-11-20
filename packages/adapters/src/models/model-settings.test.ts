@@ -331,10 +331,21 @@ describe("connectionModelSettings", () => {
   it("keeps the catalog's image and thinking answer for models it knows", () => {
     const secret = withModelSettings(parseModelSecret(KEY), "glm-5.3", {
       images: true,
-      reasoning: false,
+      reasoning: true,
+      thinkingLevel: "max",
       maxTokens: 4_000,
     });
     expect(connectionModelSettings(secret, "zai", "glm-5.3")).toEqual({ maxTokens: 4_000 });
+    expect(
+      connectionModelSettings(
+        withModelSettings(parseModelSecret(KEY), LISTED_ONLY, {
+          reasoning: true,
+          thinkingLevel: "max",
+        }),
+        "zai",
+        LISTED_ONLY,
+      ),
+    ).toEqual({ reasoning: true, thinkingLevel: "max" });
   });
 
   it("reads an OpenAI-compatible connection's earlier settings for each model", () => {

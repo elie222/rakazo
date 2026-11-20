@@ -1,9 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, ThinkingLevel } from "@rakazo/contracts";
 import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { Command, CommandGroup, CommandItem, CommandList, toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { thinkingLevelLabel } from "../../../lib/models/model-catalog";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
 import { ChatModelPicker } from "../chat/chat-model-picker";

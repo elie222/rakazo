@@ -315,7 +315,10 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByRole("menuitem", { name: "Manage model", exact: true }).click();
     const modelSettings = page.getByTestId("model-settings-page");
     await expect(modelSettings).toContainText(LOCAL_MODEL_ID);
-    await modelSettings.getByRole("checkbox", { name: "Supports thinking" }).check();
+    await chooseOption(
+      modelSettings.getByRole("combobox", { name: "Thinking", exact: true }),
+      "Max",
+    );
     await modelSettings.getByLabel("Context limit").fill("200000");
     await modelSettings.getByRole("button", { name: "Save", exact: true }).click();
     await expect(modelSettings.getByText("Saved.", { exact: true })).toBeVisible();
@@ -369,7 +372,10 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );
-    await chooseOption(settings.getByRole("combobox", { name: "Thinking", exact: true }), "High");
+    // A bot that picks no level runs at the one the model's settings chose.
+    const thinking = settings.getByRole("combobox", { name: "Thinking", exact: true });
+    await expect(thinking).toHaveText("Default (Max)");
+    await chooseOption(thinking, "High");
     await botSaved;
 
     if (process.env.AGENT_RUNTIME === "pi") {
