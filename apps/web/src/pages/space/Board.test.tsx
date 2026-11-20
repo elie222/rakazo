@@ -43,14 +43,13 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
   const actual = await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    ...actual,
     Button: (props: ComponentProps<"button">) => <button {...props} />,
-    buttonVariants: actual.buttonVariants,
     Dialog: Container,
     DialogContent: Container,
     DialogHeader: Container,
     DialogTitle: Container,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    OptionSelect: actual.OptionSelect,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
   };
 });
