@@ -30,3 +30,22 @@ Pages are private at first. To share one, choose **Share**, set it to **Anyone w
 **Only you** to turn the link off.
 
 On web and desktop, **Download PDF** saves a copy through your browser's print dialog.
+
+### Share with specific people
+
+Choose **Specific people** and enter each person's verified Rakazo account email. Send the
+review link, or have them open **Pages shared with you** from their account menu. They can
+read the page from the revision you shared onward and join its review. Remove a person from
+**Share** to revoke their access. Switching away from **Specific people** removes those grants. If someone verifies their
+account after you add their address, add it again to give them access. If their account was deleted,
+adding their new verified account starts access at the current revision.
+
+### Review a page
+
+Open **Comments**, choose a section and post your comment. Each comment stays attached to the
+revision you read. Open its revision to see the original section. The page owner or the person
+who posted the comment can resolve or reopen it.
+
+Use **Ask bot to revise** on an open comment on the latest revision to request a draft. The
+bot receives the page and that comment. The page owner can preview and publish the draft as
+a new revision. Posting a comment alone leaves the bot idle.
