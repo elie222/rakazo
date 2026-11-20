@@ -861,6 +861,31 @@ describe("web markdown streaming", () => {
     container.remove();
   });
 
+  it("settles existing text when streaming starts", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{"Hello."}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hello. More"}</ChatMarkdown>);
+    });
+    expect(container.querySelectorAll('[data-rk-reveal="new"]')).toHaveLength(0);
+    expect(container.textContent).toBe("Hello. More");
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hello. More again"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["again"]);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("fades in a new paragraph even when it repeats an earlier one", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");

@@ -906,6 +906,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   if (children !== revealSourceRef.current) {
     reveal.incremental =
       revealSourceRef.current !== undefined &&
+      reveal.wasStreaming &&
       streaming &&
       isIncrementalRevealSource(revealSourceRef.current, children);
   }
@@ -916,6 +917,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
       blocks ? blocks.map((block) => block.key) : ["root-0"],
     );
     revealSourceRef.current = children;
+    reveal.wasStreaming = streaming;
   });
 
   const inlineChips = useMemo(() => ({ renderMention, onOpenPage }), [renderMention, onOpenPage]);

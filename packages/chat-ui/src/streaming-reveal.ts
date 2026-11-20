@@ -70,6 +70,8 @@ export type StreamingRevealState = {
   arrival: number;
   /** Whether this frame is a live append; a mount, backfill or session switch never animates. */
   incremental: boolean;
+  /** Whether the previous committed render was streaming. Existing text settles when it starts. */
+  wasStreaming: boolean;
 };
 
 export function createStreamingRevealState(): StreamingRevealState {
@@ -82,6 +84,7 @@ export function createStreamingRevealState(): StreamingRevealState {
     gap: undefined,
     arrival: Number.NEGATIVE_INFINITY,
     incremental: false,
+    wasStreaming: false,
   };
 }
 
