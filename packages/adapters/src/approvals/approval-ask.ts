@@ -71,6 +71,15 @@ export type ApprovalCardOptions = {
   allowOutgoingDraft?: boolean;
 };
 
+/** A review reason as one card line: dashes normalized, and no leading sign that a diff-toned
+ *  detail could color as a removed or added value. */
+function reviewReasonLine(text: string): string {
+  return text
+    .trim()
+    .replace(/\u2014|\u2013/g, "-")
+    .replace(/^[-+]\s+/, "");
+}
+
 export function buildApprovalAskBlock(
   effectId: string,
   toolName: string,
@@ -83,7 +92,7 @@ export function buildApprovalAskBlock(
     ? outgoingDraftForApproval(options, args, secrets)
     : undefined;
   if (draft) {
-    const reviewReason = options?.reviewReason?.trim();
+    const reviewReason = options?.reviewReason ? reviewReasonLine(options.reviewReason) : undefined;
     return {
       kind: "ask",
       approvalEffectId: effectId,
@@ -101,14 +110,27 @@ export function buildApprovalAskBlock(
   }
   if (options?.summary) {
     // Built from what was resolved before the effect was recorded, not from what the model typed.
+    // The review reason leads, so the approver still sees why the call was held. It is redacted
+    // like every other card text, bounded like the title, and draws on the same length budget
+    // as the lines: a reason on top of a near-limit summary cuts the lines' tail only as far as
+    // the reason is long, never more, and no reason can push the detail past the limit.
+    const reason = options.reviewReason
+      ? truncate(
+          redactSecrets(reviewReasonLine(options.reviewReason), secrets),
+          MAX_APPROVAL_SUMMARY_LENGTH,
+        )
+      : undefined;
+    const lines = truncate(
+      redactSecrets(options.summary.lines.join("\n"), secrets),
+      reason
+        ? Math.max(0, approvalDetailLength(toolName) - reason.length - 2)
+        : approvalDetailLength(toolName),
+    );
     return {
       kind: "ask",
       approvalEffectId: effectId,
       text: truncate(redactSecrets(options.summary.title, secrets), MAX_APPROVAL_SUMMARY_LENGTH),
-      detail: truncate(
-        redactSecrets(options.summary.lines.join("\n"), secrets),
-        approvalDetailLength(toolName),
-      ),
+      detail: reason ? `${reason}\n${lines}` : lines,
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       ...(options.summary.receipt
         ? { receipt: redactReceipt(options.summary.receipt, secrets) }
@@ -328,7 +350,7 @@ function formatApprovalDetail(
 ): string | undefined {
   const lines: string[] = [];
   if (reviewReason?.trim()) {
-    lines.push(reviewReason.trim().replace(/\u2014|\u2013/g, "-"));
+    lines.push(reviewReasonLine(reviewReason));
   }
   if (toolName === "create_space") {
     lines.push(

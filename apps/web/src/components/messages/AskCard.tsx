@@ -203,6 +203,18 @@ function PromptAskCard({
   }
 
   const { instructionUpdate, settingsUpdate } = block;
+  // A diff's removed and added detail lines are toned by their sign prefix — but only when the
+  // detail carries both signs, so a value's own bullet list is not mistaken for a diff.
+  const detailLines = block.detail ? block.detail.split("\n") : [];
+  const detailIsDiff =
+    detailLines.some((line) => line.startsWith("- ")) &&
+    detailLines.some((line) => line.startsWith("+ "));
+  const detailTone = (line: string) =>
+    detailIsDiff && line.startsWith("- ")
+      ? "text-destructive"
+      : detailIsDiff && line.startsWith("+ ")
+        ? "text-success"
+        : undefined;
   const undo = instructionUpdate?.undoVersionId
     ? {
         label: t`Instructions updated`,
@@ -285,7 +297,12 @@ function PromptAskCard({
               : "mt-2.5 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background px-3 py-2 font-mono text-body-sm leading-[1.6] text-foreground"
           }
         >
-          {block.detail}
+          {detailLines.map((line, index) => (
+            <span key={index} className={detailTone(line)}>
+              {index > 0 ? "\n" : ""}
+              {line}
+            </span>
+          ))}
         </pre>
       ) : null}
       {block.instructionUpdate && editing && canAnswer && !answered ? (
