@@ -93,6 +93,7 @@ import { Composer } from "./shell/composer/composer";
 import { ComposerModelPicker } from "./shell/composer/composer-model-picker";
 import { useComposerActions } from "./shell/composer/use-composer-actions";
 import { useComposerMentions } from "./shell/composer/use-composer-mentions";
+import { useComposerModelShortcuts } from "./shell/composer/use-composer-model-shortcuts";
 import { ComputerOverlay } from "./shell/computers/computer-overlay";
 import { ComputerPanel } from "./shell/computers/computer-panel";
 import { useComputerControls, useComputerState } from "./shell/computers/use-computer";
@@ -377,6 +378,13 @@ function SpaceShell() {
         focusSidebarSearch();
         return true;
       }
+      // The open model list is a dialog too, but its own chords still close it or step its thinking.
+      if (
+        (shortcut.type === "model-picker" || shortcut.type === "thinking-level") &&
+        modelShortcuts.open
+      ) {
+        return modelShortcuts.run(shortcut.type);
+      }
       // The command menu picks its own Cmd/Ctrl+1–9 from what it lists.
       if (hasOpenDialog(document, true)) return false;
       switch (shortcut.type) {
@@ -394,6 +402,9 @@ function SpaceShell() {
           return toggleChatPanel();
         case "focus-composer":
           return focusComposer();
+        case "model-picker":
+        case "thinking-level":
+          return modelShortcuts.run(shortcut.type);
         case "quote-selection":
           if (mobileSidebarOpen || (isMobileSidebar && panel)) return false;
           return quoteShortcutRef.current?.() ?? false;
@@ -559,6 +570,10 @@ function SpaceShell() {
       : (queryClient.getQueryData(queries.skills.list.queryKey({ input: { botId: active.id } })) ??
         []);
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
+  const modelShortcuts = useComposerModelShortcuts({
+    botId: inGroup ? undefined : active?.id,
+    enabled: showComposerModel && !recordingSkill,
+  });
 
   const sidebarSpaces = useMemo(
     () =>
@@ -1238,6 +1253,7 @@ function SpaceShell() {
                   <ComposerModelPicker
                     bot={active}
                     disabled={Boolean(recordingSkill)}
+                    {...modelShortcuts.pickerProps}
                     onConnect={() => openSettings("models")}
                     onSaved={(updated) =>
                       setBots((current) =>
@@ -1500,6 +1516,7 @@ function SpaceShell() {
         onOpenChange={setShortcutsOpen}
         host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
         dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
+        modelPicker={showComposerModel}
       />
 
       {computerOpen && computerBot ? (
