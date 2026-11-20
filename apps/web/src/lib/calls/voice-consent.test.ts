@@ -54,6 +54,54 @@ it("records the reviewed recipient on the captured Space and settings copy befor
   });
   expect(pendingVoiceConsent()).toBeNull();
 });
+
+it("reviews the bot's current recipient and the explicit preview recipient independently", async () => {
+  setup();
+  const preview = { ...recipient, key: "preview-speech", name: "Preview speech server" };
+  let current = recipient;
+  api.status.mockImplementation(async (input) => ({
+    scope: "account-space",
+    version: AI_DISCLOSURE_VERSION,
+    recipients: [
+      input.voiceProvider === "preview"
+        ? preview
+        : input.botId === "bot-a"
+          ? current
+          : { ...recipient, allowed: true },
+    ],
+  }));
+  const first = ensureVoiceConsent("space-a", undefined, undefined, { botId: "bot-a" });
+  await flush();
+  expect(pendingVoiceConsent()?.recipient).toEqual(recipient);
+  pendingVoiceConsent()!.finish(true);
+  await first;
+
+  current = { ...recipient, key: "new-speech", name: "New speech server" };
+  const next = ensureVoiceConsent("space-a", undefined, undefined, { botId: "bot-a" });
+  const denied = expect(next).rejects.toThrow("Voice data sharing was not allowed.");
+  await flush();
+  expect(pendingVoiceConsent()?.recipient).toEqual(current);
+  pendingVoiceConsent()!.finish(false);
+  await denied;
+  expect(api.allow).toHaveBeenCalledTimes(1);
+
+  const sample = ensureVoiceConsent("space-a", "account", undefined, {
+    botId: "bot-a",
+    voiceProvider: "preview",
+  });
+  await flush();
+  expect(pendingVoiceConsent()?.recipient).toEqual(preview);
+  pendingVoiceConsent()!.finish(true);
+  await sample;
+  expect(api.allow).toHaveBeenLastCalledWith({
+    scope: "account-space",
+    version: AI_DISCLOSURE_VERSION,
+    keys: ["preview-speech"],
+    settingsScope: "account",
+    botId: "bot-a",
+    voiceProvider: "preview",
+  });
+});
 it("cancels queued disclosures without recording a grant", async () => {
   setup();
   const first = ensureVoiceConsent("space-a");

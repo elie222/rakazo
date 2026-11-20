@@ -1,5 +1,6 @@
 import { bestEffort } from "@rakazo/logging";
 import * as SecureStore from "expo-secure-store";
+import type { ApiRequestContext } from "../api/api";
 import { rpc } from "../api/api";
 
 export const DEVICE_VOICE_KEY = "rakazo.device-voice";
@@ -16,25 +17,43 @@ function write(on: boolean): Promise<void> {
   return next;
 }
 
-/**
- * Until someone picks a voice, the phone's own is used unless a hosted voice is already set up,
- * so earlier installs keep the provider they connected. The first answer is kept, so later
- * replies don't wait on the server to decide.
- */
-export async function loadDeviceVoiceEnabled(): Promise<boolean> {
-  // A choice still being written must be what this read sees, not a default written over it.
+/** The explicit local-only choice, without probing a provider or storing an inferred default. */
+export async function loadDeviceVoicePreference(): Promise<boolean | undefined> {
   if (choiceSaving) await choiceSaving;
   const seen = choices;
   const stored = await SecureStore.getItemAsync(DEVICE_VOICE_KEY);
-  if (stored) return stored === "1";
+  if (choices !== seen) return loadDeviceVoicePreference();
+  return stored ? stored === "1" : undefined;
+}
+
+/**
+ * An explicit device-only choice always wins. Otherwise use the current effective hosted voice,
+ * including a bot override, without turning a temporary missing connection into a saved preference.
+ */
+export async function loadDeviceVoiceEnabled(
+  botId?: string,
+  requestContext?: ApiRequestContext,
+  loadVoiceStatus?: () => Promise<{ ready: boolean }>,
+): Promise<boolean> {
+  const seen = choices;
+  const stored = await loadDeviceVoicePreference();
+  if (stored !== undefined) return stored;
   let ready: boolean;
   try {
-    ready = (await rpc("voice/status", { scope: "account" })).ready;
+    ready = (
+      await (loadVoiceStatus
+        ? loadVoiceStatus()
+        : rpc(
+            "voice/status",
+            botId ? { botId } : { scope: "account" },
+            requestContext ? { requestContext } : undefined,
+          ))
+    ).ready;
   } catch {
+    if (choices !== seen) return loadDeviceVoiceEnabled(botId, requestContext, loadVoiceStatus);
     return true;
   }
-  if (choices !== seen) return loadDeviceVoiceEnabled();
-  await write(!ready).catch(() => undefined);
+  if (choices !== seen) return loadDeviceVoiceEnabled(botId, requestContext, loadVoiceStatus);
   return !ready;
 }
 

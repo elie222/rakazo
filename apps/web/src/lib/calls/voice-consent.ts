@@ -63,17 +63,19 @@ export async function ensureVoiceConsent(
   spaceId: string | null,
   scope?: SettingsScope,
   signal?: AbortSignal,
+  selection?: { botId?: string; voiceProvider?: string },
 ) {
   signal?.throwIfAborted();
-  const key = JSON.stringify([spaceId, scope]);
-  if ((allowedUntil.get(key) ?? 0) > Date.now()) return;
+  const key = JSON.stringify([spaceId, scope, selection?.botId, selection?.voiceProvider]);
+  // A bot's connection can change through its own tools, without opening Settings.
+  if (!selection?.botId && (allowedUntil.get(key) ?? 0) > Date.now()) return;
   const generation = consentGeneration;
   const client = createSpaceRpc(spaceId);
   await ensureAiDataConsent({
     uses: ["voice"],
     status: () =>
       client.aiConsent.status(
-        { uses: ["voice"], ...(scope ? { settingsScope: scope } : {}) },
+        { uses: ["voice"], ...selection, ...(scope ? { settingsScope: scope } : {}) },
         { signal },
       ),
     prompt: async (recipient, privacyUrl) => {
@@ -83,10 +85,15 @@ export async function ensureVoiceConsent(
     },
     allow: (input) => {
       signal?.throwIfAborted();
-      return client.aiConsent.allow({ ...input, ...(scope ? { settingsScope: scope } : {}) });
+      return client.aiConsent.allow({
+        ...input,
+        ...selection,
+        ...(scope ? { settingsScope: scope } : {}),
+      });
     },
-    coalesceKey: JSON.stringify([spaceId, scope, signal ? ++requestSerial : null]),
+    coalesceKey: JSON.stringify([key, signal ? ++requestSerial : null]),
   });
   signal?.throwIfAborted();
-  if (generation === consentGeneration) allowedUntil.set(key, Date.now() + CONSENT_CACHE_MS);
+  if (!selection?.botId && generation === consentGeneration)
+    allowedUntil.set(key, Date.now() + CONSENT_CACHE_MS);
 }

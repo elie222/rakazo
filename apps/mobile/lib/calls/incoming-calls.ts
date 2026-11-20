@@ -23,7 +23,17 @@ import {
   registerSessionDiskCache,
 } from "../api/session";
 import { registerCallPushToken } from "../notifications/push";
-import { endCall, getSnapshot, startCall, subscribe as subscribeCall } from "./call-session";
+import { loadDeviceVoiceEnabled } from "../voice/device-voice";
+import { available as dictationAvailable } from "../voice/dictation";
+import {
+  endCall,
+  getSnapshot,
+  setCallProviderTranscribe,
+  startCall,
+  subscribe as subscribeCall,
+} from "./call-session";
+import type { VoiceCallStatus } from "./voice-call-entry";
+import { probeProviderTranscribe, resolveVoiceCallPlan } from "./voice-call-entry";
 
 type Ringing = NonNullable<ReturnType<typeof ringingCall>>;
 export function usesNativeIncomingCallRingtone() {
@@ -285,6 +295,25 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
         ),
       );
     else {
+      if (generation !== currentSessionGeneration())
+        throw new Error(t`Something went wrong. Try again.`);
+      let statusRead: Promise<VoiceCallStatus> | undefined;
+      const loadVoiceStatus = () =>
+        (statusRead ??= rpc("voice/status", { botId: call.id }, { requestContext: context }));
+      const plan = await resolveVoiceCallPlan({
+        loadDeviceVoiceEnabled: (readStatus) =>
+          loadDeviceVoiceEnabled(call.id, context, readStatus),
+        dictationAvailable,
+        loadVoiceStatus,
+      });
+      if (generation !== currentSessionGeneration())
+        throw new Error(t`Something went wrong. Try again.`);
+      if (nativeEnded.has(target.callId)) throw new Error(t`This call is no longer ringing.`);
+      if (plan.kind === "settings") throw new Error(t`Add a voice provider in Voice settings.`);
+      if (plan.kind === "dictation")
+        throw new Error(
+          t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
+        );
       const result = await respondToIncomingCall(call.incomingCall, () =>
         rpc("threads/answerCall", target, { requestContext: context }),
       );
@@ -293,25 +322,28 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
       // context belongs to the old generation, so the server keeps the call answered.
       if (generation !== currentSessionGeneration())
         throw new Error(t`Something went wrong. Try again.`);
-      const voice = await rpc("voice/status", {}, { requestContext: context });
-      if (generation !== currentSessionGeneration())
-        throw new Error(t`Something went wrong. Try again.`);
+      // A native end can arrive while the server accepts the answer.
       if (nativeEnded.has(target.callId)) throw new Error(t`This call is no longer ringing.`);
       // Answering during a call replaces it, like a phone's end-and-accept.
       if (getSnapshot()) endCall();
       activeNativeCall = target.callId;
-      startCall({
+      const startedCallId = startCall({
         botId: call.id,
         botName: call.name,
         botColor: call.color,
         botAvatarSet: call.avatarSet,
-        transcribe: voice.transcribe,
+        transcribe: plan.transcribe,
         greeting: result.opening,
         answered: { callId: target.callId },
         session: generation,
         requestContext: context,
       });
       await native?.finishAnswer(target.callId, true);
+      if (startedCallId && plan.kind === "device") {
+        void probeProviderTranscribe(loadVoiceStatus).then((enabled) => {
+          if (enabled) setCallProviderTranscribe(true, startedCallId);
+        });
+      }
     }
     handled.add(target.callId);
     if (action === "decline") await native?.endIncomingCall(target.callId);

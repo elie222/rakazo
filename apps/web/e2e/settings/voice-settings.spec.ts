@@ -4,6 +4,7 @@ import {
   captureScreenshot,
   chooseOption,
   completeOnboarding,
+  openBotSettings,
   openUserSettings,
   rpc,
   signup,
@@ -88,4 +89,48 @@ test("read-aloud asks before sharing voice data and cancel sends no speech", asy
   await expect(speak).toBeEnabled();
   expect(speechRequests).toBe(0);
   expect(grants).toBe(0);
+});
+
+test("a bot can choose its own voice and preview it without changing the default", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `bot-voice-${Date.now()}@rakazo.test`, "password12", "Bot Voice");
+  await completeOnboarding(page);
+  await rpc(page, "voice/connect", { provider: "scripted", apiKey: "fake-bot-voice-key" });
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  const botId = new URL(page.url()).pathname.split("/").at(-1)!;
+  await openBotSettings(page);
+  const settings = page.getByTestId("bot-voice-settings");
+  const provider = settings.getByRole("combobox", { name: "Voice provider", exact: true });
+  const voice = settings.getByRole("combobox", { name: "Voice", exact: true });
+  await expect(provider).toContainText("Default (Scripted)");
+  await chooseOption(provider, "Scripted");
+  await expect(provider).toBeEnabled();
+  await chooseOption(voice, "Scripted");
+  await expect(voice).toBeEnabled();
+  expect(await rpc(page, "bots/get", { botId })).toMatchObject({
+    voiceProvider: "scripted",
+    voiceId: "alloy-test",
+  });
+  await settings.getByRole("button", { name: "Hear a sample" }).scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "bot-voice-personality");
+  const spoken = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/voice/speak") && response.request().method() === "POST",
+  );
+  await settings.getByRole("button", { name: "Hear a sample" }).click();
+  const response = await spoken;
+  expect(response.status()).toBe(200);
+  expect(response.request().postDataJSON()).toMatchObject({ botId });
+  expect(await rpc(page, "voice/status", {})).toMatchObject({
+    provider: "scripted",
+    voiceId: "alloy-test",
+  });
+  await chooseOption(provider, "Default (Scripted)");
+  await expect(provider).toBeEnabled();
+  expect(await rpc(page, "bots/get", { botId })).toMatchObject({
+    voiceProvider: null,
+    voiceId: null,
+  });
 });

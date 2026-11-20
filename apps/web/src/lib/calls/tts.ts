@@ -29,6 +29,7 @@ interface SpeakOptions {
   spaceId?: string | null;
   /** Which copy of the voice settings to use; omitted means whichever applies in the space. */
   scope?: SettingsScope;
+  provider?: string;
   voiceId?: string;
   botId?: string;
   messageId?: string;
@@ -152,7 +153,12 @@ export class Speaker {
       this.feed = null;
       this.queued = 0;
       const failure = error instanceof PlaybackError ? error.message : errorText(error);
-      this.set({ ...IDLE, error: failure });
+      this.set({
+        status: "idle",
+        botId: this.snapshot.botId,
+        messageId: this.messageId,
+        error: failure,
+      });
       // A blocked autoplay shows in the speech state; a toast for it would only repeat it.
       return error instanceof PlaybackError && error.blocked ? undefined : failure;
     }
@@ -194,10 +200,19 @@ export class Speaker {
     signal: AbortSignal,
     spaceId: string | null,
   ): Promise<string[]> {
-    await ensureVoiceConsent(spaceId, opts.scope, signal);
+    await ensureVoiceConsent(spaceId, opts.scope, signal, {
+      botId: opts.botId,
+      voiceProvider: opts.provider,
+    });
     signal.throwIfAborted();
     const body = await rpc.voice.prepare(
-      { text, voiceId: opts.voiceId, botId: opts.botId, scope: opts.scope },
+      {
+        text,
+        provider: opts.provider,
+        voiceId: opts.voiceId,
+        botId: opts.botId,
+        scope: opts.scope,
+      },
       { signal, context: { spaceId } },
     );
     if (!body.ready) {
@@ -225,6 +240,7 @@ export class Speaker {
           credentials: "include",
           body: JSON.stringify({
             text,
+            provider: opts.provider,
             voiceId: opts.voiceId,
             botId: opts.botId,
             scope: opts.scope,

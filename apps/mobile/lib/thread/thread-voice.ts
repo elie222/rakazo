@@ -5,8 +5,13 @@ import { useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { Alert, AppState } from "react-native";
-import type { ApiRequestContext } from "../api/api";
-import { captureApiRequestContext, rpc } from "../api/api";
+import {
+  captureApiRequestContext,
+  currentApiBase,
+  currentSpaceSelectionGeneration,
+  rpc,
+  selectedSpaceId,
+} from "../api/api";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../api/mobile-types";
 import { blockText } from "../api/mobile-types";
 import { currentSessionGeneration } from "../api/session";
@@ -18,6 +23,7 @@ import {
   startCall,
 } from "../calls/call-session";
 import { loadCallGreetingEnabled } from "../calls/call-sounds";
+import type { VoiceCallStatus } from "../calls/voice-call-entry";
 import {
   loadCallCallerName,
   probeProviderTranscribe,
@@ -205,26 +211,39 @@ export function useThreadVoiceCall({
 
   /**
    * `switchedHere`: the caller asked another bot to put them through, so this bot answers.
-   * `setupSession`: the session the call belongs to. The checks below wait on the server; a
-   * sign-in to another account meanwhile must not start this account's call with the new session.
+   * `setupSession`: the session the call belongs to. Planning stays pinned to its server,
+   * Space and session; a scope change while waiting must not start the call or open setup.
    */
   async function startVoiceCall(switchedHere = false, setupSession = currentSessionGeneration()) {
     if (readOnly) return;
     const targetBotId = botId;
     if (!targetBotId || voiceCallStarting.current) return;
+    const setupApiBase = currentApiBase();
+    const setupSpaceId = selectedSpaceId();
+    const setupSpaceGeneration = currentSpaceSelectionGeneration();
+    const ownsSetup = () =>
+      activeBotId.current === targetBotId &&
+      setupSession === currentSessionGeneration() &&
+      setupApiBase === currentApiBase() &&
+      setupSpaceGeneration === currentSpaceSelectionGeneration();
     voiceCallStarting.current = true;
-    const loadVoiceStatus = () => rpc("voice/status");
     try {
+      const requestContext = await captureApiRequestContext(setupSpaceId);
+      if (!ownsSetup()) return;
+      let statusRead: Promise<VoiceCallStatus> | undefined;
+      const loadVoiceStatus = () =>
+        (statusRead ??= rpc("voice/status", { botId: targetBotId }, { requestContext }));
       const [plan, callerName, greet] = await Promise.all([
         resolveVoiceCallPlan({
-          loadDeviceVoiceEnabled,
+          loadDeviceVoiceEnabled: (readStatus) =>
+            loadDeviceVoiceEnabled(targetBotId, requestContext, readStatus),
           dictationAvailable,
           loadVoiceStatus,
         }),
-        loadCallCallerName(() => rpc("me")),
+        loadCallCallerName(() => rpc("me", undefined, { requestContext })),
         loadCallGreetingEnabled().catch(() => true),
       ]);
-      if (activeBotId.current !== targetBotId) return;
+      if (!ownsSetup()) return;
       if (plan.kind === "settings") {
         router.push("/voice");
         return;
@@ -235,15 +254,18 @@ export function useThreadVoiceCall({
           t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
           [
             { text: t`Not now`, style: "cancel" },
-            { text: t`Open Voice`, onPress: () => router.push("/voice") },
+            {
+              text: t`Open Voice`,
+              onPress: () => {
+                if (ownsSetup()) router.push("/voice");
+              },
+            },
           ],
         );
         return;
       }
       const botName = displayName ?? t`Bot`;
-      // The call keeps the Space it starts in: an organization or Space switch mid-call must
-      // not move its turns, speech or hang-up to another Space.
-      const requestContext: ApiRequestContext = await captureApiRequestContext();
+      // The same context keeps turns, speech and hang-up in the call's original Space.
       const startedCallId = startCall({
         botId: targetBotId,
         botName,
@@ -268,7 +290,7 @@ export function useThreadVoiceCall({
           .catch(() => undefined);
       }
     } catch {
-      if (activeBotId.current === targetBotId) router.push("/voice");
+      if (ownsSetup()) router.push("/voice");
     } finally {
       voiceCallStarting.current = false;
     }

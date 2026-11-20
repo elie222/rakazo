@@ -10,9 +10,11 @@ import {
   effectiveVoiceStatus,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
+  prepareVoice,
   synthesizeVoice,
   transcribeInboundVoice,
   transcribeVoice,
+  voiceStatus,
 } from "../calls/voice.js";
 import { deploymentVoiceFromEnv } from "./deployment-config.js";
 
@@ -42,6 +44,7 @@ function deps(override = false, cred: unknown = null) {
   return {
     env: { deploymentVoice: deploymentVoiceFromEnv(JSON.stringify(config)) },
     prisma: {
+      bot: { findFirst: vi.fn(async () => ({ voiceProvider: null, voiceId: null })) },
       spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(override ? {} : null) },
       userVoicePreference: { findFirst: vi.fn().mockResolvedValue(cred) },
       spaceVoicePreference: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -332,6 +335,53 @@ describe("deployment speech default", () => {
     });
     expect(d.secrets.load).not.toHaveBeenCalled();
   });
+  it("inherits operator-funded speech for a bot without opening account secrets", async () => {
+    const d = deps();
+    await expect(voiceStatus(d, actor, { botId: "bot" })).resolves.toMatchObject({
+      configured: true,
+      ready: true,
+      provider: "scripted",
+      voiceId: "test-voice",
+    });
+    expect(d.secrets.load).not.toHaveBeenCalled();
+    await expect(
+      prepareVoice(d, actor, { botId: "bot", text: "Synthetic speech" }),
+    ).resolves.toMatchObject({ ready: true });
+    vi.mocked(admitSpeech).mockClear();
+    await expect(
+      synthesizeVoice(d, actor, { botId: "bot", text: "Synthetic speech" }),
+    ).resolves.toMatchObject({ mimeType: "audio/mpeg" });
+    expect(admitSpeech).toHaveBeenCalledOnce();
+    expect(d.secrets.load).not.toHaveBeenCalled();
+  });
+  it.each(["bot", "preview"])(
+    "never funds a disconnected explicit %s provider even when it matches the deployment",
+    async (selection) => {
+      const d = deps();
+      if (selection === "bot")
+        vi.mocked(d.prisma.bot.findFirst).mockResolvedValue({
+          voiceProvider: "scripted",
+          voiceId: "saved-voice",
+        } as never);
+      const input = {
+        botId: "bot",
+        text: "Synthetic speech",
+        ...(selection === "preview" ? { provider: "scripted", voiceId: "draft-voice" } : {}),
+      };
+      if (selection === "bot")
+        await expect(voiceStatus(d, actor, { botId: "bot" })).resolves.toMatchObject({
+          configured: false,
+          ready: false,
+        });
+      await expect(prepareVoice(d, actor, input)).resolves.toMatchObject({ ready: false });
+      vi.mocked(admitSpeech).mockClear();
+      await expect(synthesizeVoice(d, actor, input)).rejects.toBeInstanceOf(
+        adapters.NoVoiceConfigured,
+      );
+      expect(admitSpeech).not.toHaveBeenCalled();
+      expect(d.secrets.load).not.toHaveBeenCalled();
+    },
+  );
   it("respects an empty Space override and explicit connection requests", async () => {
     expect(await loadDefaultVoiceCredential(deps(true), actor)).toBeNull();
     expect(await loadVoiceCredential(deps(), actor, "scripted")).toBeNull();
@@ -489,7 +539,7 @@ describe("interactive included speech consent", () => {
         vi.mocked(admitSpeech).mockClear();
         const request =
           operation === "synthesize"
-            ? synthesizeVoice(d, actor, { text: "Synthetic speech" })
+            ? synthesizeVoice(d, actor, { botId: "bot", text: "Synthetic speech" })
             : transcribeVoice(d, actor, { audio: new Uint8Array([1]), mimeType: "audio/wav" });
         if (consent === "allowed") {
           await expect(request).resolves.toBeDefined();

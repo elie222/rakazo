@@ -16,7 +16,7 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "../../approvals/approval-effect.js";
 import { archiveSpawnedBot, spawnBot } from "../../bots/child-bots.js";
 import {
-  listDefaultVoices,
+  listBotVoices,
   prepareOwnBotSettings,
   readOwnBotSettings,
 } from "../../bots/own-bot-settings.js";
@@ -306,6 +306,7 @@ export const fleetTools: ToolHandlers = {
         modelId: true,
         thinkingLevel: true,
         autoSpeak: true,
+        voiceProvider: true,
         voiceId: true,
       },
     });
@@ -341,9 +342,10 @@ export const fleetTools: ToolHandlers = {
       run,
       live,
       { model, thinkingLevel, readAloud, voice },
-      () => listDefaultVoices(deps, run, context),
+      () => listBotVoices(deps, run, context, live.voiceProvider),
     );
     if ("error" in settings) return call.finish(settings);
+    // Custom voice selections include their catalog provider: guard it and show it on undo too.
     const before = BotSettingsValuesSchema.parse(
       Object.fromEntries(
         Object.keys(settings.data).map((key) => [key, live[key as keyof typeof settings.data]]),

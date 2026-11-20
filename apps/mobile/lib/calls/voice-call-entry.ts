@@ -8,7 +8,7 @@ export type VoiceCallPlan =
   | { kind: "dictation" };
 
 export type VoiceCallPlanDeps = {
-  loadDeviceVoiceEnabled: () => Promise<boolean>;
+  loadDeviceVoiceEnabled: (loadVoiceStatus: () => Promise<VoiceCallStatus>) => Promise<boolean>;
   dictationAvailable: () => Promise<boolean>;
   loadVoiceStatus: () => Promise<VoiceCallStatus>;
 };
@@ -22,9 +22,11 @@ export async function resolveVoiceCallPlan(
   deps: VoiceCallPlanDeps,
   purpose: "call" | "dictation" = "call",
 ): Promise<VoiceCallPlan> {
+  let voiceStatus: Promise<VoiceCallStatus> | undefined;
+  const loadVoiceStatus = () => (voiceStatus ??= deps.loadVoiceStatus());
   let deviceVoiceEnabled = false;
   try {
-    deviceVoiceEnabled = await deps.loadDeviceVoiceEnabled();
+    deviceVoiceEnabled = await deps.loadDeviceVoiceEnabled(loadVoiceStatus);
   } catch {
     deviceVoiceEnabled = true;
   }
@@ -34,8 +36,9 @@ export async function resolveVoiceCallPlan(
     return { kind: "device", transcribe: false };
   }
 
-  const status = await deps.loadVoiceStatus();
-  if (!status.ready && !(purpose === "dictation" && status.transcribe)) {
+  const status = await loadVoiceStatus();
+  // Device speech only needs hosted transcription when native recognition is unavailable.
+  if (!status.ready && !(status.transcribe && (deviceVoiceEnabled || purpose === "dictation"))) {
     return deviceVoiceEnabled ? { kind: "dictation" } : { kind: "settings" };
   }
 
@@ -49,13 +52,13 @@ export async function resolveVoiceCallPlan(
   return { kind: "provider", transcribe: status.transcribe };
 }
 
-/** True only when the provider is ready to transcribe. Any other outcome is false. */
+/** Device speech can use server transcription even when the bot has no hosted speaking voice. */
 export async function probeProviderTranscribe(
   loadVoiceStatus: () => Promise<VoiceCallStatus>,
 ): Promise<boolean> {
   try {
     const status = await loadVoiceStatus();
-    return status.ready && status.transcribe;
+    return status.transcribe;
   } catch {
     return false;
   }

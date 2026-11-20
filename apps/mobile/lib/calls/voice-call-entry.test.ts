@@ -111,7 +111,7 @@ describe("mobile voice call entry", () => {
 });
 
 it.each([false, true])(
-  "uses transcription-only service for dictation (device voice=%s)",
+  "uses transcription-only service without hosted speech only for dictation or Device voice (device voice=%s)",
   async (deviceVoice) => {
     const fakes = deps({
       deviceVoice,
@@ -122,9 +122,9 @@ it.each([false, true])(
       kind: "provider",
       transcribe: true,
     });
-    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual({
-      kind: deviceVoice ? "dictation" : "settings",
-    });
+    await expect(resolveVoiceCallPlan(fakes)).resolves.toEqual(
+      deviceVoice ? { kind: "provider", transcribe: true } : { kind: "settings" },
+    );
   },
 );
 
@@ -135,10 +135,10 @@ describe("probeProviderTranscribe", () => {
     await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(true);
   });
 
-  it("is false when the provider is not ready", async () => {
+  it("allows server transcription when the phone supplies speech", async () => {
     const loadVoiceStatus = vi.fn(async () => ({ ready: false, transcribe: true }));
 
-    await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(false);
+    await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(true);
   });
 
   it("is false for a speak-only provider", async () => {

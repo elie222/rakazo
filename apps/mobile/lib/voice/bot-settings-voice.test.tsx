@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   deviceVoices: vi.fn(),
   voiceForBot: vi.fn(),
   setVoiceForBot: vi.fn(),
+  deviceVoiceEnabled: vi.fn(async (_botId?: string) => true),
   rpc: vi.fn(),
   loadBot: vi.fn(),
   back: vi.fn(),
@@ -58,7 +59,7 @@ vi.mock("./bot-voices", () => ({
   voiceForBot: mocks.voiceForBot,
   setVoiceForBot: mocks.setVoiceForBot,
 }));
-vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
+vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: mocks.deviceVoiceEnabled }));
 vi.mock("./voice", () => ({ stopVoicePlayback: mocks.stopVoicePlayback }));
 vi.mock("expo-speech", () => ({ stop: mocks.stop, speak: mocks.speak }));
 vi.mock("../api/api", () => ({
@@ -367,6 +368,7 @@ describe("bot settings device voice menu", () => {
     mocks.deviceVoices.mockResolvedValue(offered);
     mocks.voiceForBot.mockResolvedValue("voice-a");
     mocks.setVoiceForBot.mockResolvedValue(undefined);
+    mocks.deviceVoiceEnabled.mockResolvedValue(true);
     mocks.stop.mockResolvedValue(undefined);
     container = document.createElement("div");
     root = createRoot(container);
@@ -396,6 +398,13 @@ describe("bot settings device voice menu", () => {
       expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
     expect(container.textContent).not.toContain("Permissions");
     expect(menu()).not.toBeNull();
+  });
+
+  it("hides device choices when this bot has hosted speech even if the global default does not", async () => {
+    mocks.deviceVoiceEnabled.mockImplementation(async (botId) => botId !== "bot-fixture");
+    await render();
+    expect(menu()).toBeNull();
+    expect(mocks.deviceVoices).not.toHaveBeenCalled();
   });
 
   it("keeps a turned-off daily check-ins switch so it can be turned back on", async () => {

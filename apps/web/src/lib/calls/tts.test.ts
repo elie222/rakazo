@@ -344,8 +344,15 @@ describe("Speaker", () => {
       "prepare",
     ).mockResolvedValue(["Hello."]);
 
-    await expect(speaker.speak("Hello.")).resolves.toBe("Could not play that clip.");
-    expect(speaker.state.error).toBe("Could not play that clip.");
+    await expect(
+      speaker.speak("Hello.", { botId: "bot-1", messageId: "voice-preview" }),
+    ).resolves.toBe("Could not play that clip.");
+    expect(speaker.state).toEqual({
+      status: "idle",
+      botId: "bot-1",
+      messageId: "voice-preview",
+      error: "Could not play that clip.",
+    });
   });
 
   it("shows a blocked autoplay in the speech state without returning it for a toast", async () => {
@@ -356,8 +363,18 @@ describe("Speaker", () => {
       "prepare",
     ).mockResolvedValue(["Hello."]);
 
-    await expect(speaker.speak("Hello.")).resolves.toBeUndefined();
-    expect(speaker.state.error).toBe("Could not play that clip.");
+    const pending = speaker.queue("Hello.", {
+      botId: "bot-1",
+      messageId: "progress:run-1",
+    });
+    speaker.relabel("message-1");
+    await expect(pending).resolves.toBeUndefined();
+    expect(speaker.state).toEqual({
+      status: "idle",
+      botId: "bot-1",
+      messageId: "message-1",
+      error: "Could not play that clip.",
+    });
   });
 
   it("does not report a clip stopped while it plays", async () => {
@@ -405,9 +422,16 @@ describe("Speaker", () => {
     vi.spyOn(
       speaker as unknown as { prepare: () => Promise<string[]> },
       "prepare",
-    ).mockRejectedValue(new Error("ElevenLabs rejected that key."));
-    await expect(speaker.speak("Hi there.")).resolves.toBe("ElevenLabs rejected that key.");
-    expect(speaker.state.error).toBe("ElevenLabs rejected that key.");
+    ).mockRejectedValue(new Error("The speech provider rejected that key."));
+    await expect(
+      speaker.speak("Hi there.", { botId: "bot-1", messageId: "voice-preview" }),
+    ).resolves.toBe("The speech provider rejected that key.");
+    expect(speaker.state).toEqual({
+      status: "idle",
+      botId: "bot-1",
+      messageId: "voice-preview",
+      error: "The speech provider rejected that key.",
+    });
   });
 
   it.each([

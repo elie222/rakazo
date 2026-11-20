@@ -2,8 +2,9 @@ import type { AdapterContext, SecretStore } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { Actor, BotSettingsValues, VoiceInfo } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
+import { botVoiceSelection } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { findDefaultVoiceCredential } from "@rakazo/db";
+import { findDefaultVoiceCredential, findVoiceCredential } from "@rakazo/db";
 import {
   connectedModelChoices,
   echoedQuery,
@@ -28,6 +29,7 @@ export type OwnBotSettingsRow = {
   modelId: string | null;
   thinkingLevel: string | null;
   autoSpeak: boolean;
+  voiceProvider: string | null;
   voiceId: string | null;
 };
 
@@ -132,8 +134,8 @@ export async function readOwnBotSettings(
   return paged(end);
 }
 
-/** The voices the settings screen offers: those of the user's default voice connection here. */
-export async function listDefaultVoices(
+/** The voices offered by this bot's connection, or the effective settings default. */
+export async function listBotVoices(
   deps: {
     prisma: PrismaClient;
     secretStore: Pick<SecretStore, "load" | "put" | "delete" | "isRemote">;
@@ -141,8 +143,11 @@ export async function listDefaultVoices(
   },
   scope: Pick<Actor, "userId" | "spaceId">,
   context: AdapterContext,
-): Promise<VoiceInfo[] | null> {
-  const credential = await findDefaultVoiceCredential(deps.prisma, scope);
+  providerId?: string | null,
+): Promise<{ provider: string; voices: VoiceInfo[] } | null> {
+  const credential = providerId
+    ? await findVoiceCredential(deps.prisma, scope, providerId)
+    : await findDefaultVoiceCredential(deps.prisma, scope);
   const secret =
     credential &&
     (await deps.prisma.secret.findFirst({
@@ -162,7 +167,12 @@ export async function listDefaultVoices(
     plaintext,
     context.signal,
   );
-  return provider.listVoices(apiKey, context, { model: credential.speechModel || undefined });
+  return {
+    provider: credential.provider,
+    voices: await provider.listVoices(apiKey, context, {
+      model: credential.speechModel || undefined,
+    }),
+  };
 }
 
 const VOICES_SHOWN = 10;
@@ -202,9 +212,9 @@ export function resolveVoiceChoice(
 export async function prepareOwnBotSettings(
   deps: FleetPrepareDeps,
   scope: Pick<Actor, "userId" | "spaceId">,
-  bot: Pick<OwnBotSettingsRow, "modelProvider" | "modelId" | "thinkingLevel">,
+  bot: Pick<OwnBotSettingsRow, "modelProvider" | "modelId" | "thinkingLevel" | "voiceProvider">,
   args: { model?: unknown; thinkingLevel?: unknown; readAloud?: unknown; voice?: unknown },
-  listVoices: () => Promise<VoiceInfo[] | null> = async () => null,
+  listVoices: () => Promise<{ provider: string; voices: VoiceInfo[] } | null> = async () => null,
 ): Promise<{ data: BotSettingsValues } | { error: string }> {
   const data: BotSettingsValues = {};
   if (args.readAloud !== undefined) {
@@ -212,17 +222,25 @@ export async function prepareOwnBotSettings(
     data.autoSpeak = args.readAloud;
   }
   if (typeof args.voice === "string" && args.voice.trim()) {
-    let voices: VoiceInfo[] | null;
+    let selection: { provider: string; voices: VoiceInfo[] } | null = null;
+    const useDefault = args.voice.trim().toLowerCase() === "default";
     try {
-      voices = args.voice.trim().toLowerCase() === "default" ? [] : await listVoices();
+      if (!useDefault) selection = await listVoices();
     } catch (error) {
       if (error instanceof VoiceAccountError) return { error: error.message };
       return { error: "Could not list voices right now; try again." };
     }
-    if (!voices) return { error: "Connect a voice provider first." };
-    const voice = resolveVoiceChoice(voices, args.voice);
+    if (!useDefault && !selection) return { error: "Connect a voice provider first." };
+    const voice = resolveVoiceChoice(selection?.voices ?? [], args.voice);
     if (!voice.ok) return { error: voice.error };
-    data.voiceId = voice.voiceId;
+    Object.assign(
+      data,
+      botVoiceSelection({
+        currentProvider: bot.voiceProvider,
+        provider: selection?.provider ?? null,
+        voiceId: voice.voiceId,
+      }),
+    );
   }
   const model = typeof args.model === "string" ? args.model.trim() : "";
   const level = typeof args.thinkingLevel === "string" ? args.thinkingLevel.trim() : "";

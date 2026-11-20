@@ -20,6 +20,7 @@ import type * as RoutineHelpers from "../routines/routine";
 import { ROUTINES_RETRY_MS } from "../routines/routine-store";
 import { onConversationCleared } from "../thread/conversation-cleared";
 
+vi.mock("../../components/bots/bot-voice-settings", () => ({ BotVoiceSettings: () => null }));
 vi.mock("../native/haptics", () => ({
   hapticImpact: vi.fn(),
   hapticSelection: vi.fn(),

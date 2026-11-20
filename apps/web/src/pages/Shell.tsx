@@ -45,7 +45,7 @@ import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
 import { authClient } from "../lib/auth/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
-import { setCallMinimized, startCall, useCallSession } from "../lib/calls/call-session";
+import { setCallMinimized, useCallSession } from "../lib/calls/call-session";
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
 import { computersAreUnavailable } from "../lib/computers/computer-sandbox";
@@ -119,6 +119,7 @@ import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/sideba
 import { markShellReady, useSpaceEpoch } from "./shell/space-switch";
 import { TimezonePrompt } from "./shell/timezone-prompt";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
+import { useCallBot } from "./shell/use-call-bot";
 import { usePaletteActions } from "./shell/use-palette-actions";
 import { useReportedUiLocale } from "./shell/use-reported-ui-locale";
 import { useRightPanel, useRightPanelRestore } from "./shell/use-right-panel";
@@ -239,21 +240,6 @@ function SpaceShell() {
         ? null
         : undefined;
   const call = useCallSession();
-  /** Calls a bot, or opens voice settings first when no voice is connected. */
-  const callBot = (bot: Bot) => {
-    if (!bootstrapMe?.phoneCallsEnabled) return;
-    if (!voiceStatus?.ready) {
-      openSettings("voice");
-      return;
-    }
-    startCall({
-      botId: bot.id,
-      botName: bot.name,
-      botColor: bot.color,
-      botAvatarSet: bot.avatarSet,
-      transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
-    });
-  };
   const voiceStatus: VoiceStatus | null =
     useQuery(queries.voice.status.queryOptions()).data ?? null;
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
@@ -290,6 +276,10 @@ function SpaceShell() {
         // With no chat named, open one that's in the list, not a snoozed one.
         bots.find((b) => !chatSnoozed(b, snoozeNow)) ??
         bots[0]);
+  const botVoiceStatus = useQuery({
+    ...queries.voice.status.queryOptions({ input: { botId: active?.id } }),
+    enabled: Boolean(active),
+  }).data;
   const selectBot = useCallback(
     (id: string) => {
       setMobileSidebarOpen(false);
@@ -304,6 +294,12 @@ function SpaceShell() {
   const activeGroup = groups.find((group) => group.id === groupId);
   const activeBotId = useRef<string | undefined>(inGroup ? undefined : active?.id);
   activeBotId.current = inGroup ? undefined : active?.id;
+  const callBot = useCallBot({
+    enabled: Boolean(bootstrapMe?.phoneCallsEnabled),
+    activeBotId,
+    queries,
+    onConfigure: () => openSettings("voice"),
+  });
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
@@ -1148,7 +1144,7 @@ function SpaceShell() {
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
             meetingsEnabled={Boolean(bootstrapMe?.meetingsEnabled)}
-            voiceReady={Boolean(voiceStatus?.ready)}
+            voiceReady={Boolean(botVoiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
             onOpenNavigation={() => setMobileSidebarOpen(true)}
@@ -1209,7 +1205,7 @@ function SpaceShell() {
               onRefresh={refreshActiveThread}
               onBotChanged={refreshBots}
               onAddRoutine={addSkillRoutine}
-              voiceReady={Boolean(voiceStatus?.ready)}
+              voiceReady={Boolean(active ? botVoiceStatus?.ready : voiceStatus?.ready)}
               speakingMessageId={speakingMessageId}
               callHoldsSpeaker={callHoldsSpeaker}
               onSpeak={speakMessage}

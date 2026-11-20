@@ -86,12 +86,21 @@ export function aiConsentTarget(input: unknown): {
   groupId?: string;
   routineId?: string;
   settingsScope?: SettingsScope;
+  voiceProvider?: string;
 } {
   if (!input || typeof input !== "object") return {};
   // A request that names a settings copy is asked about that copy's recipients.
-  const scope = SettingsScopeSchema.safeParse((input as { scope?: unknown }).scope).data;
+  const scope = SettingsScopeSchema.safeParse("scope" in input ? input.scope : undefined).data;
   const thread = threadConsentTarget(input);
-  return scope ? { ...thread, settingsScope: scope } : thread;
+  const voiceProvider =
+    "voiceProvider" in input && typeof input.voiceProvider === "string"
+      ? input.voiceProvider.trim()
+      : undefined;
+  return {
+    ...thread,
+    ...(scope ? { settingsScope: scope } : {}),
+    ...(voiceProvider ? { voiceProvider } : {}),
+  };
 }
 
 /** A send that starts routines is also checked as each routine's own test run would be. */

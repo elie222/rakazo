@@ -683,19 +683,22 @@ async function request(
   const uses = aiDataUsesForProcedure(proc, body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
-  for (const consentTarget of aiConsentTargets(body)) {
+  const consentBody =
+    proc === "voice/prepare" &&
+    body &&
+    typeof body === "object" &&
+    "provider" in body &&
+    typeof body.provider === "string"
+      ? { ...body, voiceProvider: body.provider }
+      : body;
+  for (const consentTarget of aiConsentTargets(consentBody)) {
     await ensureAiDataConsent({
       uses,
       status: () =>
         rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
       prompt: promptAiConsent,
       allow: (input) =>
-        allowPromptedAiConsent(
-          consentTarget.settingsScope
-            ? { ...input, settingsScope: consentTarget.settingsScope }
-            : input,
-          consentContext,
-        ),
+        allowPromptedAiConsent({ ...input, ...consentTarget, uses }, consentContext),
       coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
     });
   }

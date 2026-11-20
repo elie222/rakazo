@@ -11,13 +11,9 @@ import {
 } from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withVoiceConnection } from "../voice/connection-errors.js";
 import type { VoiceDeps } from "./voice.js";
-import {
-  mountVoiceHttpRoutes,
-  persistVoiceCredential,
-  voiceCredentialPlaintext,
-  withVoiceConnection,
-} from "./voice.js";
+import { mountVoiceHttpRoutes, persistVoiceCredential, voiceCredentialPlaintext } from "./voice.js";
 
 const actor = { userId: "user-1", spaceId: "space-1" } as Actor;
 
@@ -52,6 +48,30 @@ describe("voice HTTP routes answering a typed client error", () => {
       error: "Written for the person",
       ...(code ? { code } : {}),
     });
+  });
+
+  it("keeps unexpected linked connection failures private at the HTTP boundary", async () => {
+    const failure = new TypeError("private connection state");
+    const deps = {
+      prisma: {
+        spaceSettingOverride: {
+          findUnique: vi.fn(() =>
+            withVoiceConnection("voice-provider", true, () => Promise.reject(failure)),
+          ),
+        },
+      },
+    } as unknown as VoiceDeps;
+    const app = new Hono();
+    mountVoiceHttpRoutes(app, deps, async () => actor);
+
+    const response = await app.request("/api/voice/speak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Hello" }),
+    });
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({ error: "Voice request failed. Try again." });
   });
 });
 

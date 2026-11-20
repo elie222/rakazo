@@ -46,6 +46,16 @@ describe("changedBotSettings", () => {
     ).toEqual(["model"]);
   });
 
+  it("counts provider and voice changes once without capturing their values", () => {
+    expect(
+      changedBotSettings(bot, {
+        botId: bot.id,
+        voiceProvider: "provider-a",
+        voiceId: "voice-a",
+      }),
+    ).toEqual(["voice"]);
+  });
+
   it("counts the daily check-in opt-out", () => {
     expect(changedBotSettings(bot, { botId: bot.id, dailyCheckIns: false })).toEqual([
       "daily_check_ins",

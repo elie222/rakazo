@@ -4,7 +4,6 @@ import { BotAvatarSetSchema } from "../bots/bot-avatar.js";
 import { Id } from "../ids.js";
 import { LabFeatureSchema } from "../labs.js";
 import { botId } from "../rpc/inputs.js";
-import { SettingsScopeSchema } from "../settings-scope.js";
 import { ExportManifestSchema } from "./account-export.js";
 import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsModelSignInStepInput, AnalyticsScreenInput } from "./analytics.js";
@@ -25,12 +24,10 @@ export const accountRpc = {
     status: oc.input(AiConsentQuerySchema).output(AiConsentStatusSchema),
     allow: oc
       .input(
-        z.object({
+        AiConsentQuerySchema.removeDefault().extend({
           scope: z.string(),
           version: z.string(),
           keys: z.array(z.string()).min(1).max(200),
-          /** The settings copy the reviewed recipients came from, as in `status`. */
-          settingsScope: SettingsScopeSchema.optional(),
         }),
       )
       .output(AiConsentStatusSchema),

@@ -13,6 +13,8 @@ export const AiConsentQuerySchema = z
     uses: z.array(AiDataUseSchema).optional(),
     /** Which copy of the member's settings names the recipients; omitted means the one that applies. */
     settingsScope: SettingsScopeSchema.optional(),
+    /** An unsaved speech-provider choice; otherwise the bot or Settings selects it. */
+    voiceProvider: z.string().trim().min(1).max(80).optional(),
   })
   .default({});
 export type AiConsentQuery = z.infer<typeof AiConsentQuerySchema>;

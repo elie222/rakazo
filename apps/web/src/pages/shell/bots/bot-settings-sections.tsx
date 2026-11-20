@@ -151,39 +151,6 @@ export function ModelRow({
   );
 }
 
-/** The voice that reads replies aloud. */
-export function VoiceRow({
-  ids,
-  voices,
-  voiceId,
-  onVoiceIdChange,
-}: {
-  ids: string;
-  voices: ReadonlyArray<{ id: string; label: string }>;
-  voiceId: string;
-  onVoiceIdChange: (voiceId: string) => void;
-}) {
-  const { t } = useLingui();
-  return (
-    <label
-      htmlFor={`${ids}-voice`}
-      className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
-    >
-      <Trans>Voice</Trans>
-      <OptionSelect
-        id={`${ids}-voice`}
-        className="w-fit max-w-2/3"
-        value={voiceId}
-        onValueChange={onVoiceIdChange}
-        options={[
-          { value: "", label: t`Account default` },
-          ...voices.map((voice) => ({ value: voice.id, label: voice.label })),
-        ]}
-      />
-    </label>
-  );
-}
-
 export function DescriptionGroup({
   ids,
   description,

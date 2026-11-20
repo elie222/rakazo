@@ -1,6 +1,9 @@
 import { deferred } from "@rakazo/core/test-async";
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { rpc } from "../api/api";
+import { resolveVoiceCallPlan } from "../calls/voice-call-entry";
+import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "./device-voice";
 
 const store = new Map<string, string>();
 vi.mock("expo-secure-store", () => ({
@@ -21,7 +24,7 @@ vi.mock("../api/api", () => ({
   rpc: vi.fn(async () => {
     await status.gate;
     if (status.fail) throw new Error("offline");
-    return { ready: status.ready };
+    return { ready: status.ready, transcribe: true };
   }),
 }));
 
@@ -39,19 +42,38 @@ describe("device voice preference", () => {
     });
   });
 
-  it("defaults to on, and keeps that answer, when no hosted voice is ready", async () => {
+  it("inherits live hosted readiness without saving an inferred device preference", async () => {
     const { loadDeviceVoiceEnabled } = await import("./device-voice");
     expect(await loadDeviceVoiceEnabled()).toBe(true);
     status.ready = true;
-    expect(await loadDeviceVoiceEnabled()).toBe(true);
+    expect(await loadDeviceVoiceEnabled()).toBe(false);
+    expect(store.size).toBe(0);
   });
 
-  it("keeps a hosted voice that is already ready", async () => {
+  it("uses one live readiness answer for each inherited call plan", async () => {
+    vi.mocked(rpc).mockClear();
+    const plan = () =>
+      resolveVoiceCallPlan({
+        loadDeviceVoiceEnabled: (loadVoiceStatus) =>
+          loadDeviceVoiceEnabled("bot-voice", undefined, loadVoiceStatus),
+        dictationAvailable: async () => true,
+        loadVoiceStatus: () => rpc("voice/status", { botId: "bot-voice" }),
+      });
+    status.ready = true;
+    await expect(plan()).resolves.toEqual({ kind: "provider", transcribe: true });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    status.ready = false;
+    await expect(plan()).resolves.toEqual({ kind: "device", transcribe: false });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the device when the hosted default stops being ready", async () => {
     status.ready = true;
     const { loadDeviceVoiceEnabled } = await import("./device-voice");
     expect(await loadDeviceVoiceEnabled()).toBe(false);
     status.ready = false;
-    expect(await loadDeviceVoiceEnabled()).toBe(false);
+    expect(await loadDeviceVoiceEnabled()).toBe(true);
   });
 
   it("uses this device without remembering it when the server cannot answer", async () => {
@@ -61,6 +83,24 @@ describe("device voice preference", () => {
     status.fail = false;
     status.ready = true;
     expect(await loadDeviceVoiceEnabled()).toBe(false);
+  });
+
+  it("checks the bot's effective voice without requiring a global default", async () => {
+    status.ready = true;
+    const requestContext = { apiBase: "https://api.example.test", headers: {} };
+    expect(await loadDeviceVoiceEnabled("bot-voice", requestContext)).toBe(false);
+    expect(rpc).toHaveBeenLastCalledWith(
+      "voice/status",
+      { botId: "bot-voice" },
+      { requestContext },
+    );
+    expect(store.size).toBe(0);
+  });
+
+  it("honors explicit device-only speech even when the bot has a hosted voice", async () => {
+    await saveDeviceVoiceEnabled(true);
+    status.ready = true;
+    expect(await loadDeviceVoiceEnabled("bot-voice")).toBe(true);
   });
 
   it("persists on and off", async () => {
@@ -104,6 +144,22 @@ describe("device voice preference", () => {
     await saving;
     expect(await loading).toBe(true);
     expect(store.get(DEVICE_VOICE_KEY)).toBe("1");
+  });
+
+  it("keeps an explicit hosted choice when the in-flight inherited status request fails", async () => {
+    const answer = deferred();
+    status.gate = answer.promise;
+    vi.mocked(rpc).mockClear();
+    const loading = loadDeviceVoiceEnabled("bot-voice");
+    await vi.waitFor(() =>
+      expect(rpc).toHaveBeenCalledWith("voice/status", { botId: "bot-voice" }, undefined),
+    );
+    await saveDeviceVoiceEnabled(false);
+    status.fail = true;
+    answer.resolve();
+
+    await expect(loading).resolves.toBe(false);
+    expect(store.get("rakazo.device-voice")).toBe("0");
   });
 
   it("tells listeners at once and keeps a save that a listener fails in", async () => {

@@ -38,8 +38,8 @@ import {
   SettingsCard,
   SwitchRow,
   ToolsGroup,
-  VoiceRow,
 } from "./bot-settings-sections";
+import { BotVoiceSettings } from "./bot-voice-settings";
 import { InstructionSettings } from "./instruction-settings";
 
 const ScratchpadSection = lazyComponent(() =>
@@ -57,7 +57,6 @@ function advancedValues(bot: Bot) {
     bot.thinkingLevel ?? "",
     bot.computerMode,
     bot.autoSpeak,
-    bot.voiceId ?? "",
   ] as const;
 }
 
@@ -99,7 +98,6 @@ export function BotSettings({
     fleetManagement?: boolean;
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
-    voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
     thinkingLevel?: ThinkingLevel | null;
@@ -181,7 +179,6 @@ export function BotSettings({
     modelRef.current?.querySelector<HTMLElement>('[id$="-model"]')?.focus();
   }, [settingsOpen, view, focusModel]);
   const [claimingEmail, setClaimingEmail] = useState(false);
-  const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [modelKey, setModelKey] = useState(
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
   );
@@ -204,7 +201,6 @@ export function BotSettings({
   // Shared with the model and voice settings, so a revisit paints at once and refreshes behind.
   const queries = useSpaceQueries();
   const refresh = { refetchOnMount: "always" } as const;
-  const voices = useQuery({ ...queries.voice.voices.queryOptions({ input: {} }), ...refresh }).data;
   const credentialsQuery = useQuery({ ...queries.models.credentials.queryOptions(), ...refresh });
   const catalogQuery = useQuery({ ...queries.models.list.queryOptions(), ...refresh });
   const meQuery = useQuery({ ...queries.me.queryOptions(), ...refresh });
@@ -218,13 +214,7 @@ export function BotSettings({
     meQuery.data !== undefined;
   const [saving, setSaving] = useState(false);
   const [savedAdvanced, setSavedAdvanced] = useState(() => JSON.stringify(advancedValues(bot)));
-  const advancedSnapshot = JSON.stringify([
-    modelKey,
-    thinkingLevel,
-    computerMode,
-    autoSpeak,
-    voiceId,
-  ]);
+  const advancedSnapshot = JSON.stringify([modelKey, thinkingLevel, computerMode, autoSpeak]);
   const [error, setError] = useState<string | null>(null);
   const saveQueueRef = useRef(Promise.resolve());
   const executeSaveRef = useRef<
@@ -272,7 +262,6 @@ export function BotSettings({
     if (thinkingLevel === saved[1]) setThinkingLevel(next[1]);
     if (computerMode === saved[2]) setComputerMode(next[2]);
     if (autoSpeak === saved[3]) setAutoSpeak(next[3]);
-    if (voiceId === saved[4]) setVoiceId(next[4]);
     setSavedAdvanced(JSON.stringify(next));
   }, [bot]);
 
@@ -341,7 +330,6 @@ export function BotSettings({
         notifyOnFinish: nextNotify,
         computerMode,
         autoSpeak,
-        voiceId: voiceId || null,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,
         ...(modelMetaReady &&
@@ -394,7 +382,7 @@ export function BotSettings({
       };
       if (nextName) savedNameRef.current = nextName;
       savedDescriptionRef.current = nextDescription;
-      setSavedAdvanced(JSON.stringify([modelKey, thinkingLevel, computerMode, autoSpeak, voiceId]));
+      setSavedAdvanced(JSON.stringify([modelKey, thinkingLevel, computerMode, autoSpeak]));
     } catch (err) {
       if (
         patchOverrides?.color !== undefined &&
@@ -417,14 +405,13 @@ export function BotSettings({
         setDailyCheckIns(!patchOverrides.dailyCheckIns);
       if (patchOverrides?.fleetManagement !== undefined)
         setFleetManagement(!patchOverrides.fleetManagement);
-      // A refused model, computer or voice change goes back to what the server still holds.
+      // A refused model or computer change goes back to what the server still holds.
       if (!patchOverrides) {
         const saved = JSON.parse(savedAdvanced) as ReturnType<typeof advancedValues>;
         setModelKey(saved[0]);
         setThinkingLevel(saved[1]);
         setComputerMode(saved[2]);
         setAutoSpeak(saved[3]);
-        setVoiceId(saved[4]);
       }
       setError(errorText(err, t`Could not save`));
     } finally {
@@ -703,14 +690,7 @@ export function BotSettings({
                   onChange={setAutoSpeak}
                 />
               ) : null}
-              {changed.readAloud && voices?.length ? (
-                <VoiceRow
-                  ids={ids}
-                  voices={voices}
-                  voiceId={voiceId}
-                  onVoiceIdChange={setVoiceId}
-                />
-              ) : null}
+              {settingsOpen ? <BotVoiceSettings key={bot.id} bot={bot} /> : null}
               {changed.dailyCheckIns ? (
                 <SwitchRow
                   id={`${ids}-daily-check-ins`}

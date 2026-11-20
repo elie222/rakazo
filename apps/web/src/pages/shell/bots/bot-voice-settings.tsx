@@ -1,0 +1,211 @@
+import { Trans, useLingui } from "@lingui/react/macro";
+import type { Bot } from "@rakazo/contracts";
+import type { BotVoiceSelection } from "@rakazo/core";
+import { botVoiceChoices, botVoiceProviderChoices, botVoiceSelection } from "@rakazo/core";
+import { Button, Field, FieldGroup, FieldLabel, OptionSelect } from "@rakazo/ui-web";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Play, Square } from "lucide-react";
+import { useCallback, useEffect, useId, useSyncExternalStore } from "react";
+import { useCallSession } from "../../../lib/calls/call-session";
+import { speaker } from "../../../lib/calls/tts";
+import { useSave, useSpaceQueries } from "../../../lib/query/query";
+import { errorText } from "../../../lib/query/user-error";
+
+/** Voice choices save independently, so an unrelated profile draft cannot overwrite them. */
+export function BotVoiceSettings({ bot }: { bot: Bot }) {
+  const { t } = useLingui();
+  const ids = useId();
+  const queries = useSpaceQueries();
+  const client = useQueryClient();
+  const botQuery = useQuery({
+    ...queries.bots.get.queryOptions({ input: { botId: bot.id } }),
+    initialData: bot,
+  });
+  const credentials = useQuery(queries.voice.credentials.queryOptions());
+  const catalog = useQuery(queries.voice.catalog.queryOptions());
+  const status = useQuery(queries.voice.status.queryOptions({ input: { botId: bot.id } }));
+  // Roster signals can update this prop without refreshing the separate detail/readiness reads.
+  useEffect(() => {
+    void client.invalidateQueries({
+      queryKey: queries.bots.get.queryKey({ input: { botId: bot.id } }),
+    });
+    void client.invalidateQueries({
+      queryKey: queries.voice.status.queryKey({ input: { botId: bot.id } }),
+    });
+  }, [client, queries, bot.id, bot.voiceProvider, bot.voiceId]);
+  const current = botQuery.data ?? bot;
+  const selectedProvider = current.voiceProvider ?? "";
+  const providers = botVoiceProviderChoices({
+    unavailableLabel: t`Unavailable`,
+    provider: current.voiceProvider,
+    credentials: credentials.data,
+    catalog: catalog.data,
+  });
+  const connection = providers.connection;
+  const inheritedSpeech = Boolean(
+    !selectedProvider &&
+      !connection &&
+      status.data?.ready &&
+      status.data.provider &&
+      status.data.voiceId,
+  );
+  const voices = useQuery({
+    ...queries.voice.voices.queryOptions({
+      input: connection ? { provider: connection.provider } : {},
+    }),
+    enabled: Boolean(connection || inheritedSpeech),
+  });
+  const save = useSave<BotVoiceSelection, Bot>({
+    save: (choice, rpc) => rpc.bots.update({ botId: bot.id, ...choice }),
+    stale: [
+      queries.bots.get.queryKey({ input: { botId: bot.id } }),
+      queries.bots.list.queryKey(),
+      queries.bootstrap.queryKey({ input: {} }),
+      queries.voice.status.queryKey(),
+    ],
+  });
+  const previewId = `${ids}-voice-preview`;
+  const subscribe = useCallback((notify: () => void) => speaker.subscribe(notify), []);
+  const playback = useSyncExternalStore(subscribe, () => speaker.state);
+  const previewError = playback.messageId === previewId ? playback.error : undefined;
+  useEffect(
+    () => () => {
+      if (speaker.state.messageId === previewId) speaker.stop();
+    },
+    [previewId],
+  );
+  const call = useCallSession();
+  const playing = playback.messageId === previewId && playback.status !== "idle";
+  const defaultProviderName =
+    providers.defaultLabel ??
+    (inheritedSpeech
+      ? catalog.data?.find((entry) => entry.id === status.data?.provider)?.name
+      : undefined);
+  const defaultProviderLabel = defaultProviderName
+    ? t`Default (${defaultProviderName})`
+    : t`Default`;
+  const voiceChoices = botVoiceChoices({
+    unavailableLabel: t`Unavailable`,
+    voices: voices.data,
+    voiceId: current.voiceId,
+    defaultVoiceId: connection?.voiceId ?? (inheritedSpeech ? status.data?.voiceId : undefined),
+  });
+  const defaultVoiceLabel = voiceChoices.defaultLabel
+    ? t`Default (${voiceChoices.defaultLabel})`
+    : t`Default`;
+  const failure =
+    save.error ??
+    credentials.error ??
+    catalog.error ??
+    status.error ??
+    voices.error ??
+    botQuery.error;
+  const canPreview = Boolean(status.data?.ready && (connection || inheritedSpeech));
+  const editingBlocked = save.pending || botQuery.isFetching;
+
+  function stopPreview() {
+    if (speaker.state.messageId === previewId) speaker.stop();
+  }
+
+  if (catalog.isPending || credentials.isPending) return null;
+  if (providers.options.length === 0 && !inheritedSpeech) return null;
+
+  return (
+    <FieldGroup className="gap-0" data-testid="bot-voice-settings">
+      <Field orientation="horizontal" className="min-h-12 justify-between">
+        <FieldLabel htmlFor={`${ids}-provider`}>
+          <Trans>Voice provider</Trans>
+        </FieldLabel>
+        {providers.options.length ? (
+          <OptionSelect
+            id={`${ids}-provider`}
+            className="w-fit max-w-2/3"
+            value={selectedProvider}
+            disabled={editingBlocked}
+            options={[{ value: "", label: defaultProviderLabel }, ...providers.options]}
+            onValueChange={(provider) => {
+              stopPreview();
+              save.run(
+                botVoiceSelection({
+                  provider: provider || null,
+                  currentProvider: current.voiceProvider,
+                  ...(provider ? {} : { voiceId: null }),
+                }),
+              );
+            }}
+          />
+        ) : (
+          <span
+            id={`${ids}-provider`}
+            className="max-w-2/3 truncate text-body text-muted-foreground"
+          >
+            {defaultProviderLabel}
+          </span>
+        )}
+      </Field>
+      <Field orientation="horizontal" className="min-h-12 justify-between">
+        <FieldLabel htmlFor={`${ids}-voice`}>
+          <Trans>Voice</Trans>
+        </FieldLabel>
+        <div className="flex min-w-0 max-w-2/3 items-center gap-1">
+          {inheritedSpeech ? (
+            <span id={`${ids}-voice`} className="truncate text-body text-muted-foreground">
+              {defaultVoiceLabel}
+            </span>
+          ) : (
+            <OptionSelect
+              id={`${ids}-voice`}
+              className="min-w-0 flex-1"
+              value={current.voiceId ?? ""}
+              disabled={editingBlocked || !connection || voices.isPending}
+              options={[{ value: "", label: defaultVoiceLabel }, ...voiceChoices.options]}
+              onValueChange={(voiceId) => {
+                stopPreview();
+                save.run(
+                  botVoiceSelection({
+                    currentProvider: current.voiceProvider,
+                    defaultProvider: connection?.provider,
+                    voiceId: voiceId || null,
+                  }),
+                );
+              }}
+            />
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={playing ? t`Stop` : t`Hear a sample`}
+            title={playing ? t`Stop` : t`Hear a sample`}
+            disabled={
+              save.pending || status.isPending || voices.isPending || !canPreview || call !== null
+            }
+            onClick={() => {
+              if (playing) stopPreview();
+              else {
+                stopPreview();
+                speaker.unlock();
+                void speaker.speak(t`Hi, this is how I'll sound when I read replies out loud.`, {
+                  botId: bot.id,
+                  spaceId: bot.spaceId,
+                  messageId: previewId,
+                });
+              }
+            }}
+          >
+            {playing ? <Square data-icon="inline-start" /> : <Play data-icon="inline-start" />}
+          </Button>
+        </div>
+      </Field>
+      {failure || previewError ? (
+        <p role="alert" className="pb-3 text-body text-destructive">
+          {failure ? errorText(failure) : previewError}
+        </p>
+      ) : credentials.data && selectedProvider && !connection ? (
+        <p role="alert" className="pb-3 text-body text-destructive">
+          <Trans>Reconnect this provider in Settings → Voice.</Trans>
+        </p>
+      ) : null}
+    </FieldGroup>
+  );
+}

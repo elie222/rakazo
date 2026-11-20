@@ -156,6 +156,7 @@ async function* spaceRecords(
       archivedAt: isoOrNull(bot.archivedAt),
       parentBotId: ownBot(bot.parentBotId),
       memoryScope: bot.memoryScope,
+      voiceProvider: bot.voiceProvider,
       voiceId: bot.voiceId,
       autoSpeak: bot.autoSpeak,
       modelProvider: bot.modelProvider,

@@ -134,7 +134,9 @@ export const modelsRpc = {
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
-    status: oc.input(settingsScopeInput.optional()).output(VoiceStatusSchema),
+    status: oc
+      .input(settingsScopeInput.extend({ botId: Id.optional() }).optional())
+      .output(VoiceStatusSchema),
     credentials: oc.input(settingsScopeInput.optional()).output(z.array(VoiceCredentialSchema)),
     connect: oc
       .input(
@@ -202,6 +204,7 @@ export const modelsRpc = {
       .input(
         z.object({
           text: z.string().max(20000),
+          provider: z.string().trim().min(1).max(80).optional(),
           voiceId: z.string().max(120).optional(),
           botId: Id.optional(),
           scope: SettingsScopeSchema.optional(),

@@ -10,16 +10,9 @@ import {
   selectConfiguredModel,
   toStringRecord,
 } from "@rakazo/adapters";
-import type {
-  Actor,
-  AiConsentQuery,
-  AiConsentStatus,
-  AiRecipient,
-  SettingsScope,
-} from "@rakazo/contracts";
+import type { Actor, AiConsentQuery, AiConsentStatus, AiRecipient } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
 import {
-  findDefaultVoiceCredential,
   findModelCredential,
   findModelCredentialById,
   listModelRoleChoices,
@@ -28,6 +21,7 @@ import {
   voicePreferenceTarget,
 } from "@rakazo/db";
 import { includedVoice, voiceCredentialServer } from "../calls/voice.js";
+import { selectVoiceTarget } from "../calls/voice-target.js";
 import type { RouterDeps } from "../router.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
 import { deploymentVoiceRecipients } from "../voice/deployment-consent.js";
@@ -46,6 +40,14 @@ export async function aiConsentStatus(
       ? [target.botId]
       : target.memberBotIds
     : undefined;
+  const selectedVoice =
+    uses.includes("voice") && (query.uses || query.voiceProvider || query.botId)
+      ? await selectVoiceTarget(deps, actor, {
+          botId: query.botId,
+          provider: query.voiceProvider,
+          scope: query.settingsScope,
+        })
+      : null;
   const [preferences, roleChoices, main, bots, routines, voices, memory, settings, consents] =
     await Promise.all([
       modelsEnabled
@@ -93,10 +95,10 @@ export async function aiConsentStatus(
           })
         : [],
       uses.includes("voice")
-        ? query.uses
-          ? findDefaultVoiceCredential(deps.prisma, actor, query.settingsScope).then(
-              (credential) => (credential ? [{ credential, isDefault: true }] : []),
-            )
+        ? selectedVoice
+          ? selectedVoice.cred
+            ? [{ credential: selectedVoice.cred, isDefault: true }]
+            : []
           : voicePreferenceTarget(deps.prisma, actor, query.settingsScope).then((target) =>
               listVoicePreferences(deps.prisma, target),
             )
@@ -222,7 +224,11 @@ export async function aiConsentStatus(
       );
     }
   }
-  if (uses.includes("voice") && !voices.some((voice) => voice.isDefault)) {
+  if (
+    uses.includes("voice") &&
+    (!selectedVoice || selectedVoice.usesDefault) &&
+    !voices.some((voice) => voice.isDefault)
+  ) {
     const included = await includedVoice(deps, actor, query.settingsScope);
     if (included)
       for (const recipient of deploymentVoiceRecipients(included.deployment, included))
@@ -293,14 +299,17 @@ export async function aiConsentStatus(
 export async function allowAiConsent(
   deps: RouterDeps,
   actor: Actor,
-  input: { scope: string; version: string; keys: string[]; settingsScope?: SettingsScope },
+  input: AiConsentQuery & { scope: string; version: string; keys: string[] },
 ) {
   // Checked against the same settings copy the member reviewed.
-  const current = await aiConsentStatus(
-    deps,
-    actor,
-    input.settingsScope ? { settingsScope: input.settingsScope } : {},
-  );
+  const current = await aiConsentStatus(deps, actor, {
+    uses: input.uses,
+    botId: input.botId,
+    groupId: input.groupId,
+    routineId: input.routineId,
+    voiceProvider: input.voiceProvider,
+    settingsScope: input.settingsScope,
+  });
   const known = new Set(current.recipients.map((recipient) => recipient.key));
   if (
     input.scope !== current.scope ||

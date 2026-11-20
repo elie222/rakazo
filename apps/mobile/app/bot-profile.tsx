@@ -8,6 +8,7 @@ import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-nativ
 import { BotAvatar } from "../components/bots/bot-avatar";
 import { useBotEmail, useBotEmailRows } from "../components/bots/bot-email";
 import { botProfileMenuOptions, useBotProfileActions } from "../components/bots/bot-profile-menu";
+import { BotVoiceSettings } from "../components/bots/bot-voice-settings";
 import { glassHeaderOptions } from "../components/native/glass-title";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { NativeSymbol } from "../components/native/native-symbol";
@@ -217,6 +218,7 @@ export default function BotProfile() {
         />
       </SettingsGroup>
       <BotEmailGroup botId={botId} botName={name} />
+      {botId ? <BotVoiceSettings key={`${botId}-voice`} botId={botId} /> : null}
       {bot ? (
         <SettingsGroup footer={t`Get notified when this Bot finishes or needs input`}>
           <SettingsSwitch

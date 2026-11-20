@@ -1,11 +1,13 @@
+import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../threads/thread-target.js", () => ({
   resolveThreadTarget: async () => ({ kind: "bot", botId: "bot" }),
 }));
 
+import { synthesizeVoice, voiceStatus } from "../calls/voice.js";
 import type { RouterDeps } from "../router.js";
 import { deploymentVoiceFromEnv } from "../voice/deployment-config.js";
 import { aiConsentStatus, allowAiConsent } from "./ai-consent.js";
@@ -367,6 +369,220 @@ it("grants the account's voice provider when the grant names the account copy", 
   expect(upsert).toHaveBeenCalled();
 });
 
+describe("bot and preview voice consent", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function voiceSetup() {
+    const { deps, actor, upsert } = setup();
+    const bot: { voiceProvider: string | null; voiceId: string | null } = {
+      voiceProvider: "provider-b",
+      voiceId: "bot-voice",
+    };
+    const disconnected = new Set<string>();
+    const preference = (scope: string) =>
+      vi.fn(async ({ where }: { where: { credential?: { provider: string } } }) => {
+        const provider = where.credential?.provider ?? "provider-a";
+        if (disconnected.has(provider)) return null;
+        return {
+          voiceId: `${scope}-${provider}`,
+          isDefault: provider === "provider-a",
+          speechModel: null,
+          credential: {
+            id: `credential-${provider}`,
+            provider,
+            secretId: `secret-${provider}`,
+            userId: actor.userId,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          },
+        };
+      });
+    const accountPreference = preference("account");
+    const spacePreference = preference("space");
+    Object.assign(deps.prisma, {
+      bot: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => bot) },
+      userVoicePreference: { findFirst: accountPreference },
+      spaceVoicePreference: { findFirst: spacePreference },
+      userVoiceCredential: { findFirst: vi.fn(async () => null) },
+    });
+    vi.spyOn(adapters, "aiRecipient").mockImplementation(({ provider, use }) => ({
+      key: `${use}:${provider}`,
+      name: provider ?? "none",
+      use,
+      detail: "",
+    }));
+    return { deps, actor, upsert, bot, disconnected, accountPreference, spacePreference };
+  }
+
+  it("asks about the bot recipient even when the default recipient was already allowed", async () => {
+    const { deps, actor, upsert } = voiceSetup();
+    vi.mocked(deps.prisma.aiDataConsent.findMany).mockResolvedValue([
+      { recipientKey: "voice:provider-a" },
+    ] as never);
+    const query = { botId: "bot" };
+    const reviewed = await aiConsentStatus(deps, actor, { ...query, uses: ["voice"] });
+    expect(reviewed.recipients).toEqual([
+      { key: "voice:provider-b", name: "provider-b", use: "voice", detail: "", allowed: false },
+    ]);
+    expect(upsert).not.toHaveBeenCalled();
+    await expect(
+      allowAiConsent(deps, actor, {
+        ...query,
+        uses: ["voice"],
+        scope: reviewed.scope,
+        version: reviewed.version,
+        keys: ["voice:provider-a"],
+      }),
+    ).rejects.toThrow("AI data sharing changed");
+    expect(upsert).not.toHaveBeenCalled();
+    await allowAiConsent(deps, actor, {
+      ...query,
+      uses: ["voice"],
+      scope: reviewed.scope,
+      version: reviewed.version,
+      keys: ["voice:provider-b"],
+    });
+    expect(upsert).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { query: { voiceProvider: "provider-c" }, recipient: "voice:provider-c" },
+    { query: { botId: "bot" }, recipient: "voice:provider-b" },
+  ])(
+    "honors the requested speech target when uses is omitted: $recipient",
+    async ({ query, recipient }) => {
+      const { deps, actor, upsert } = voiceSetup();
+      const reviewed = await aiConsentStatus(deps, actor, query);
+      expect(reviewed.recipients.map((entry) => entry.key)).toEqual([recipient]);
+      await allowAiConsent(deps, actor, {
+        ...query,
+        scope: reviewed.scope,
+        version: reviewed.version,
+        keys: [recipient],
+      });
+      expect(upsert).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("uses the explicit preview provider and scope instead of the bot or Space default", async () => {
+    const { deps, actor, accountPreference, spacePreference } = voiceSetup();
+    vi.mocked(deps.prisma.spaceSettingOverride.findUnique).mockResolvedValue({
+      setting: "voice",
+    } as never);
+    const status = await aiConsentStatus(deps, actor, {
+      botId: "bot",
+      uses: ["voice"],
+      voiceProvider: "provider-c",
+      settingsScope: "account",
+    });
+    expect(status.recipients.map((recipient) => recipient.key)).toEqual(["voice:provider-c"]);
+    expect(accountPreference).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: actor.userId, credential: { provider: "provider-c" } },
+      }),
+    );
+    expect(spacePreference).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      provider: null,
+      preview: undefined,
+      scope: "account",
+      selected: "provider-a",
+      voice: "bot-voice",
+    },
+    {
+      provider: "provider-b",
+      preview: undefined,
+      scope: "space",
+      selected: "provider-b",
+      voice: "bot-voice",
+    },
+    {
+      provider: "provider-b",
+      preview: "provider-c",
+      scope: "account",
+      selected: "provider-c",
+      voice: "account-provider-c",
+    },
+    {
+      provider: "provider-b",
+      preview: "provider-b",
+      scope: "account",
+      selected: "provider-b",
+      voice: "account-provider-b",
+    },
+  ] as const)("discloses the playback recipient for $selected in $scope", async (testCase) => {
+    const { deps, actor, bot } = voiceSetup();
+    bot.voiceProvider = testCase.provider;
+    const load = vi.fn(async () => "synthetic-voice-key");
+    deps.secrets = { load } as unknown as RouterDeps["secrets"];
+    deps.prisma.secret.findFirst = vi.fn(async ({ where }: { where: { id: string } }) => ({
+      id: where.id,
+      ciphertext: "synthetic-ciphertext",
+    })) as never;
+    const synthesize = vi.fn(async () => ({ bytes: new Uint8Array([1]), mimeType: "audio/mpeg" }));
+    const createProvider = vi
+      .spyOn(adapters, "createVoiceProvider")
+      .mockReturnValue({ synthesize } as never);
+    const status = await aiConsentStatus(deps, actor, {
+      botId: "bot",
+      uses: ["voice"],
+      voiceProvider: testCase.preview,
+      settingsScope: testCase.scope,
+    });
+    expect(status.recipients.map((recipient) => recipient.key)).toEqual([
+      `voice:${testCase.selected}`,
+    ]);
+    if (!testCase.preview) {
+      await expect(
+        voiceStatus(deps, actor, { botId: "bot", scope: testCase.scope }),
+      ).resolves.toMatchObject({
+        ready: true,
+        provider: testCase.selected,
+        voiceId: testCase.voice,
+      });
+    }
+    expect(load).not.toHaveBeenCalled();
+    expect(createProvider).not.toHaveBeenCalled();
+    await synthesizeVoice(deps, actor, {
+      botId: "bot",
+      text: "Hello",
+      provider: testCase.preview,
+      scope: testCase.scope,
+    });
+    expect(createProvider).toHaveBeenCalledWith(testCase.selected, expect.anything());
+    expect(synthesize).toHaveBeenCalledWith(
+      expect.objectContaining({ voiceId: testCase.voice }),
+      expect.anything(),
+    );
+  });
+
+  it("does not grant the old recipient after the bot provider changes or disconnects", async () => {
+    const { deps, actor, bot, disconnected, upsert } = voiceSetup();
+    const reviewed = await aiConsentStatus(deps, actor, { botId: "bot", uses: ["voice"] });
+    const grant = {
+      botId: "bot",
+      scope: reviewed.scope,
+      version: reviewed.version,
+      keys: ["voice:provider-b"],
+    };
+    bot.voiceProvider = "provider-c";
+    await expect(allowAiConsent(deps, actor, { ...grant, uses: ["voice"] })).rejects.toThrow(
+      "AI data sharing changed",
+    );
+    bot.voiceProvider = "provider-b";
+    disconnected.add("provider-b");
+    await expect(allowAiConsent(deps, actor, { ...grant, uses: ["voice"] })).rejects.toThrow(
+      "AI data sharing changed",
+    );
+    expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
 function includedSpeechSetup() {
   const fixture = setup();
   const { deps } = fixture;
@@ -402,6 +618,45 @@ function includedSpeechSetup() {
   });
   return fixture;
 }
+
+it("discloses included speech only for an inherited bot target, not a disconnected explicit provider", async () => {
+  const { deps, actor, upsert } = includedSpeechSetup();
+  const bot: { voiceProvider: string | null; voiceId: string | null } = {
+    voiceProvider: null,
+    voiceId: null,
+  };
+  Object.assign(deps.prisma, {
+    bot: { findFirst: vi.fn(async () => bot) },
+    userVoiceCredential: { findFirst: vi.fn(async () => null) },
+  });
+  const query = { botId: "bot" };
+  const reviewed = await aiConsentStatus(deps, actor, { ...query, uses: ["voice"] });
+  expect(reviewed.recipients).toHaveLength(2);
+  bot.voiceProvider = "openai-compatible";
+  expect((await aiConsentStatus(deps, actor, { ...query, uses: ["voice"] })).recipients).toEqual(
+    [],
+  );
+  await expect(
+    allowAiConsent(deps, actor, {
+      ...query,
+      uses: ["voice"],
+      scope: reviewed.scope,
+      version: reviewed.version,
+      keys: reviewed.recipients.map((recipient) => recipient.key),
+    }),
+  ).rejects.toThrow("AI data sharing changed");
+  expect(upsert).not.toHaveBeenCalled();
+  bot.voiceProvider = null;
+  expect(
+    (
+      await aiConsentStatus(deps, actor, {
+        ...query,
+        uses: ["voice"],
+        voiceProvider: "openai-compatible",
+      })
+    ).recipients,
+  ).toEqual([]);
+});
 
 it("requires consent for included speech and a separate recognition endpoint without exposing credentials", async () => {
   const { deps, actor, upsert } = includedSpeechSetup();

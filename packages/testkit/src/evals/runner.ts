@@ -596,6 +596,7 @@ export async function runTrial(
           color: true,
           notifyOnFinish: true,
           autoSpeak: true,
+          voiceProvider: true,
           voiceId: true,
           modelProvider: true,
           modelId: true,

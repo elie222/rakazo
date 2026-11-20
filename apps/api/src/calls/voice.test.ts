@@ -6,6 +6,7 @@ import * as db from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withVoiceConnection } from "../voice/connection-errors.js";
 import { isVoiceProviderFailure } from "../voice/http-errors.js";
 import type { VoiceDeps } from "./voice.js";
 import {
@@ -18,15 +19,14 @@ import {
   prepareVoice,
   speechModelValue,
   synthesizeVoice,
-  toVoiceCredential,
   toVoiceStatus,
   transcribeInboundVoice,
   voiceChoicesChanged,
   voiceCredentialHasKey,
   voiceCredentialPlaintext,
   voiceCredentialServer,
-  withVoiceConnection,
 } from "./voice.js";
+import { toVoiceCredential } from "./voice-credential.js";
 
 describe("toVoiceStatus", () => {
   it("treats a saved key without a voice as configured but not ready", () => {
@@ -1330,20 +1330,14 @@ describe("transcribeInboundVoice", () => {
 });
 
 describe("linked voice failures", () => {
-  it("hides refresh and provider response text", async () => {
-    const sink = createTestSink();
-    installLogger(createLogger({ service: "test", level: "warn", sinks: [sink] }));
-    try {
-      await expect(
-        withVoiceConnection("xai", true, async () => {
-          throw new Error("private provider response");
-        }),
-      ).rejects.toThrow("Couldn't use the xAI connection from Models. Try again.");
-      expect(JSON.stringify(sink.events)).not.toContain("private provider response");
-    } finally {
-      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
-    }
-  });
+  it.each([new Error("private provider response"), new TypeError("invalid connection state")])(
+    "propagates unrelated linked failures unchanged: %s",
+    async (failure) => {
+      await expect(withVoiceConnection("xai", true, () => Promise.reject(failure))).rejects.toBe(
+        failure,
+      );
+    },
+  );
 
   it("offers disconnect and a key when a linked bearer is rejected", async () => {
     await expect(

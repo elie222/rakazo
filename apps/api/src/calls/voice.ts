@@ -15,20 +15,17 @@ import {
   openAiCompatibleVoiceServer,
   resolveVoiceKey,
   serializeOpenAiCompatibleVoiceSecret,
-  VoiceProviderUnavailableError,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
 import type { Actor, SettingsScope, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
 import { ConnectionSetupError, SettingsScopeSchema } from "@rakazo/contracts";
 import { ClientError, speakable, toUtterances } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, UserVoiceCredential } from "@rakazo/db";
 import {
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
   findModelCredential,
-  findVoiceCredential,
   findVoicePreference,
-  IsolationError,
   isDatabaseUnavailable,
   lockSpaceSettings,
   newestVoiceCredentialOrder,
@@ -41,14 +38,16 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
+import { withVoiceConnection } from "../voice/connection-errors.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
 import { hasDeploymentVoiceConsent } from "../voice/deployment-consent.js";
 import { voiceHttpError } from "../voice/http-errors.js";
 import { withSpeechCost } from "../voice/operator-cost.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
+import { toVoiceCredential } from "./voice-credential.js";
+import { selectVoiceTarget } from "./voice-target.js";
 
 export interface VoiceDeps {
   prisma: PrismaClient;
@@ -117,28 +116,33 @@ export function toVoiceStatus(cred: { provider: string; voiceId: string } | null
   };
 }
 
-export function toVoiceCredential(row: {
-  id: string;
-  provider: string;
+type SelectedVoiceCredential = UserVoiceCredential & {
   isDefault: boolean;
   voiceId: string;
-  speechModel?: string | null;
-  server?: { endpoint: string; sttEndpoint: string; ttsModel: string; sttModel: string };
-  /** False when the connection uses the account's model connection instead of a key. */
-  hasKey?: boolean;
-}): VoiceCredential {
+  speechModel: string;
+};
+
+/** Speech follows the bot; dictation still uses the Settings default. Never opens secrets. */
+export async function voiceStatus(
+  deps: VoiceDeps,
+  actor: Actor,
+  input?: { botId?: string; scope?: SettingsScope },
+): Promise<VoiceStatus> {
+  const target = await selectVoiceTarget(deps, actor, input);
+  const defaultStatus =
+    target.usesDefault && target.cred
+      ? toVoiceStatus(target.cred)
+      : await effectiveVoiceStatus(deps, actor, input?.scope);
+  const speechStatus = target.cred
+    ? toVoiceStatus(target.cred)
+    : target.usesDefault
+      ? defaultStatus
+      : toVoiceStatus(null);
   return {
-    id: row.id,
-    provider: row.provider,
-    hasKey: row.hasKey ?? true,
-    isDefault: row.isDefault,
-    voiceId: row.voiceId,
-    speechModel: row.speechModel ?? "",
-    transcribe: Boolean(catalogEntry(row.provider)?.transcribe),
-    endpoint: row.server?.endpoint ?? "",
-    sttEndpoint: row.server?.sttEndpoint ?? "",
-    ttsModel: row.server?.ttsModel ?? "",
-    sttModel: row.server?.sttModel ?? "",
+    ...speechStatus,
+    ready: target.cred ? Boolean(target.voiceId) : speechStatus.ready,
+    voiceId: target.voiceId || speechStatus.voiceId,
+    transcribe: defaultStatus.transcribe,
   };
 }
 
@@ -306,54 +310,6 @@ export async function loadDefaultVoiceCredential(
   return loadVoiceCredential(deps, actor, undefined, scope, signal, operation);
 }
 
-/** Keep refresh failures and linked-connection refusals safe for display. */
-export async function withVoiceConnection<T>(
-  provider: string,
-  linked: boolean,
-  run: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    const outage = voiceOutage(error);
-    if (outage) {
-      getLogger().warn("voice provider unavailable", {
-        provider,
-        reason: outage.cause instanceof Error ? outage.cause.name : "server error",
-      });
-      markExpectedFailure();
-      throw outage;
-    }
-    if (!linked) throw error;
-    const name = voiceCatalogEntry(provider)?.name ?? provider;
-    if (error instanceof VoiceAccountError) {
-      if (error.code === "VOICE_KEY_REJECTED") {
-        throw new VoiceAccountError(
-          error.code,
-          `${name} didn't accept the Models connection for voice. Disconnect and paste an API key.`,
-        );
-      }
-      throw error;
-    }
-    getLogger().warn("voice could not use the model connection", {
-      provider,
-      reason: error instanceof Error ? error.name : "unknown",
-    });
-    throw new VoiceAccountError(
-      undefined,
-      `Couldn't use the ${name} connection from Models. Try again.`,
-    );
-  }
-}
-
-/** A provider outage or a request it left unanswered past its deadline, as one error to wait out. */
-function voiceOutage(error: unknown): VoiceProviderUnavailableError | undefined {
-  if (error instanceof VoiceProviderUnavailableError) return error;
-  if (error instanceof Error && error.name === "TimeoutError")
-    return new VoiceProviderUnavailableError(undefined, { cause: error });
-  return undefined;
-}
-
 /** The connection and the bearer its provider takes, read from a model connection if linked. */
 export async function loadVoiceCredential(
   deps: VoiceDeps,
@@ -363,14 +319,27 @@ export async function loadVoiceCredential(
   signal?: AbortSignal,
   operation: "synthesize" | "transcribe" = "synthesize",
 ) {
-  const cred = provider
-    ? await findVoiceCredential(deps.prisma, actor, provider, scope)
-    : await findDefaultVoiceCredential(deps.prisma, actor, scope);
+  const { cred, usesDefault } = await selectVoiceTarget(deps, actor, { provider, scope });
+  return loadSelectedVoiceCredential(deps, actor, cred, signal, {
+    scope,
+    operation,
+    usesDefault,
+  });
+}
+
+/** Resolve authentication only after metadata has selected the exact credential. */
+async function loadSelectedVoiceCredential(
+  deps: VoiceDeps,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  cred: SelectedVoiceCredential | null,
+  signal?: AbortSignal,
+  input?: { scope?: SettingsScope; operation: "synthesize" | "transcribe"; usesDefault: boolean },
+) {
   if (!cred) {
-    // Named connections never fall back to operator funding.
-    if (provider) return null;
-    const included = await includedVoice(deps, actor, scope);
-    const deployment = included?.[operation] ? included.deployment : undefined;
+    // Named bot connections and previews never fall back to operator funding.
+    if (!input?.usesDefault) return null;
+    const included = await includedVoice(deps, actor, input.scope);
+    const deployment = included?.[input.operation] ? included.deployment : undefined;
     if (!deployment) return null;
     const apiKey = voiceCredentialPlaintext({
       provider: deployment.provider,
@@ -413,20 +382,22 @@ export async function loadVoiceCredential(
 export async function resolveVoiceTarget(
   deps: VoiceDeps,
   actor: Actor,
-  input: { botId?: string; voiceId?: string; scope?: SettingsScope; signal?: AbortSignal },
+  input: {
+    botId?: string;
+    provider?: string;
+    voiceId?: string;
+    scope?: SettingsScope;
+    signal?: AbortSignal;
+  },
 ) {
-  let botVoiceId: string | null = null;
-  if (input.botId) {
-    const bot = await deps.prisma.bot.findFirst({
-      where: { id: input.botId, spaceId: actor.spaceId },
-      select: { voiceId: true },
-    });
-    if (!bot) throw new IsolationError();
-    botVoiceId = bot.voiceId;
-  }
-  const loaded = await loadDefaultVoiceCredential(deps, actor, input.scope, input.signal);
+  const target = await selectVoiceTarget(deps, actor, input);
+  const loaded = await loadSelectedVoiceCredential(deps, actor, target.cred, input.signal, {
+    scope: input.scope,
+    operation: "synthesize",
+    usesDefault: target.usesDefault,
+  });
   if (!loaded) throw new NoVoiceConfigured("key");
-  const voiceId = input.voiceId || botVoiceId || loaded.cred.voiceId;
+  const voiceId = target.voiceId || loaded.cred.voiceId;
   if (!voiceId) throw new NoVoiceConfigured("voice");
   return { ...loaded, voiceId };
 }
@@ -733,6 +704,7 @@ export async function prepareVoice(
   actor: Actor,
   input: {
     text: string;
+    provider?: string;
     voiceId?: string;
     botId?: string;
     scope?: SettingsScope;
@@ -769,6 +741,7 @@ export async function synthesizeVoice(
   actor: Actor,
   input: {
     text: string;
+    provider?: string;
     voiceId?: string;
     botId?: string;
     scope?: SettingsScope;
@@ -915,6 +888,7 @@ export function mountVoiceHttpRoutes(
       const clip = await runAsTenant(actor, () =>
         synthesizeVoice(deps, actor, {
           text: String((body as { text?: unknown }).text ?? ""),
+          provider: optionalString(body.provider),
           callId: optionalString(body.callId)?.slice(0, 200),
           voiceId: optionalString((body as { voiceId?: unknown }).voiceId),
           botId: optionalString((body as { botId?: unknown }).botId),

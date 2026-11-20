@@ -58,26 +58,26 @@ import type { BillingService } from "../billing/billing.js";
 import {
   accountVoiceCatalog,
   disconnectVoiceCredential,
-  effectiveVoiceStatus,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
   persistVoiceCredential,
   prepareVoice,
-  toVoiceCredential,
   toVoiceStatus,
   updateVoiceSpeechModel,
   voiceContext,
   voiceCredentialHasKey,
   voiceCredentialServer,
   voiceProviderFor,
-  withVoiceConnection,
+  voiceStatus,
 } from "../calls/voice.js";
+import { toVoiceCredential } from "../calls/voice-credential.js";
 import {
   recordCreditsChoice,
   recordSignInStep,
   startModelConnect,
 } from "../models/model-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
+import { withVoiceConnection } from "../voice/connection-errors.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
@@ -582,9 +582,9 @@ export function accountRoutes(ctx: RouterContext) {
       catalog: authed.voice.catalog.handler(async ({ context }) =>
         accountVoiceCatalog(deps, context.actor),
       ),
-      status: authed.voice.status.handler(async ({ context, input }) => {
-        return effectiveVoiceStatus(deps, context.actor, input?.scope);
-      }),
+      status: authed.voice.status.handler(async ({ context, input }) =>
+        voiceStatus(deps, context.actor, input),
+      ),
       credentials: authed.voice.credentials.handler(async ({ context, input }) => {
         const target = await voicePreferenceTarget(deps.prisma, context.actor, input?.scope);
         const [rows, preferences] = await Promise.all([

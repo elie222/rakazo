@@ -11,6 +11,7 @@ const SETTINGS: Partial<Record<Field, AnalyticsBotSetting>> = {
   avatarSet: "avatar",
   notifyOnFinish: "notifications",
   memoryScope: "memory",
+  voiceProvider: "voice",
   voiceId: "voice",
   autoSpeak: "auto_speak",
   modelProvider: "model",

@@ -1,6 +1,7 @@
-import { MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
+import { AiConsentBlocked, MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
+import { getLogger } from "@rakazo/logging";
 import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
@@ -127,7 +128,7 @@ describe("mobile speech", () => {
     vi.unstubAllGlobals();
   });
 
-  it("saves an allowed voice prompt the way that tells the permissions screen", async () => {
+  it("checks and grants the actual bot preview recipient before speaking", async () => {
     const recipient = { key: "speech", name: "Speech", use: "voice", detail: "", allowed: false };
     vi.mocked(rpc).mockResolvedValue({
       scope: "account-space",
@@ -137,21 +138,42 @@ describe("mobile speech", () => {
     vi.mocked(promptAiConsent).mockResolvedValue(true);
     const requestContext = { apiBase: "https://support.example", headers: {} };
 
-    await ensureVoiceConsent(requestContext, "space");
+    await ensureVoiceConsent(requestContext, "space", {
+      botId: "bot-1",
+      provider: "sample-provider",
+    });
+    expect(rpc).toHaveBeenCalledWith(
+      "aiConsent/status",
+      {
+        uses: ["voice"],
+        settingsScope: "space",
+        botId: "bot-1",
+        voiceProvider: "sample-provider",
+      },
+      { requestContext },
+    );
     expect(allowPromptedAiConsent).toHaveBeenCalledWith(
       {
         scope: "account-space",
         version: "2026-09-14",
         keys: ["speech"],
         settingsScope: "space",
+        uses: ["voice"],
+        botId: "bot-1",
+        voiceProvider: "sample-provider",
       },
       requestContext,
     );
   });
 
-  it.each([true, false])(
-    "asks before hosted read-aloud prepares or renders speech (allowed: %s)",
-    async (allowed) => {
+  it.each([
+    { allowed: true, say: speakText },
+    { allowed: false, say: speakText },
+    { allowed: true, say: queueSpeech },
+    { allowed: false, say: queueSpeech },
+  ])(
+    "asks before hosted read-aloud prepares or renders speech (allowed: $allowed, $say)",
+    async ({ allowed, say }) => {
       const recipient = { key: "speech", name: "Speech", use: "voice", detail: "", allowed: false };
       vi.mocked(promptAiConsent).mockResolvedValue(allowed);
       vi.mocked(rpc).mockImplementation(async (proc) => {
@@ -165,7 +187,7 @@ describe("mobile speech", () => {
         return { ready: true, utterances: ["Synthetic reply"] } as never;
       });
       vi.mocked(allowPromptedAiConsent).mockClear();
-      const reading = speakText("Synthetic reply", {
+      const reading = say("Synthetic reply", {
         botId: "bot-1",
         scope: "account",
         callId: "fake-call",
@@ -199,10 +221,17 @@ describe("mobile speech", () => {
     };
     expect(rpc).toHaveBeenCalledWith(
       "voice/prepare",
-      { text: "Read this", voiceId: undefined, botId: "bot-1" },
+      {
+        text: "Read this",
+        voiceId: undefined,
+        provider: undefined,
+        botId: "bot-1",
+        scope: undefined,
+      },
       { requestContext },
     );
     expect(captureApiRequestContext).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(rpc).mock.calls.filter(([proc]) => proc === "voice/status")).toHaveLength(0);
     const fetchMock = vi.mocked(fetch);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const [url, init] of fetchMock.mock.calls) {
@@ -211,6 +240,130 @@ describe("mobile speech", () => {
       expect(JSON.parse(init?.body as string)).toMatchObject({ callId: "call-1" });
     }
   });
+
+  it.each([speakText, queueSpeech])(
+    "previews an explicit hosted provider without changing the device-only preference (%s)",
+    async (say) => {
+      vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+      await expect(
+        say("Voice sample", {
+          botId: "bot-1",
+          provider: "connected-provider",
+          voiceId: "chosen",
+        }),
+      ).resolves.toBe(true);
+      expect(rpc).toHaveBeenCalledWith(
+        "aiConsent/status",
+        {
+          uses: ["voice"],
+          botId: "bot-1",
+          voiceProvider: "connected-provider",
+        },
+        { requestContext: expect.any(Object) },
+      );
+      expect(rpc).toHaveBeenCalledWith(
+        "voice/prepare",
+        {
+          text: "Voice sample",
+          voiceId: "chosen",
+          provider: "connected-provider",
+          botId: "bot-1",
+          scope: undefined,
+        },
+        expect.objectContaining({ requestContext: expect.any(Object) }),
+      );
+      for (const [, init] of vi.mocked(fetch).mock.calls) {
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          provider: "connected-provider",
+          voiceId: "chosen",
+          botId: "bot-1",
+        });
+      }
+      expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+      expect(Speech.speak).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])(
+    "previews the saved bot on its pinned hosted recipient with Device selected (allowed: %s)",
+    async (allowed) => {
+      vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+      const requestContext = {
+        apiBase: "https://sample.example",
+        headers: { authorization: "Bearer sample-token", "x-rakazo-space-id": "sample-space" },
+      };
+      const recipient = {
+        key: "included",
+        name: "Included speech",
+        use: "voice",
+        detail: "",
+        allowed: false,
+      };
+      vi.mocked(promptAiConsent).mockResolvedValue(allowed);
+      vi.mocked(rpc).mockImplementation(
+        async (proc) =>
+          (proc === "aiConsent/status"
+            ? { scope: "account-space", version: "2026-09-14", recipients: [recipient] }
+            : { ready: true, utterances: ["Sample"] }) as never,
+      );
+      vi.mocked(captureApiRequestContext).mockClear();
+      const sample = speakText("Sample", {
+        botId: "bot-1",
+        hostedPreview: true,
+        requestContext,
+      });
+      if (allowed) {
+        await expect(sample).resolves.toBe(true);
+        expect(allowPromptedAiConsent).toHaveBeenCalledWith(
+          expect.objectContaining({ botId: "bot-1", keys: ["included"] }),
+          requestContext,
+        );
+        expect(rpc).toHaveBeenCalledWith(
+          "voice/prepare",
+          {
+            text: "Sample",
+            botId: "bot-1",
+            provider: undefined,
+            voiceId: undefined,
+            scope: undefined,
+          },
+          { requestContext },
+        );
+        const [url, init] = vi.mocked(fetch).mock.calls[0] ?? [];
+        expect(url).toBe("https://sample.example/api/voice/speak");
+        expect(init?.headers).toMatchObject(requestContext.headers);
+        expect(JSON.parse(String(init?.body))).toEqual({ text: "Sample", botId: "bot-1" });
+      } else {
+        await expect(sample).rejects.toBeDefined();
+        expect(vi.mocked(rpc).mock.calls.some(([proc]) => proc === "voice/prepare")).toBe(false);
+        expect(fetch).not.toHaveBeenCalled();
+      }
+      expect(rpc).toHaveBeenCalledWith(
+        "aiConsent/status",
+        { uses: ["voice"], botId: "bot-1" },
+        { requestContext },
+      );
+      expect(captureApiRequestContext).not.toHaveBeenCalled();
+      expect(Speech.speak).not.toHaveBeenCalled();
+      expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["unconfigured", "unreachable"])(
+    "does not replace an unavailable hosted preview with local speech (%s)",
+    async (failure) => {
+      vi.mocked(rpc).mockImplementation(async (proc) => {
+        if (proc === "aiConsent/status") return { version: "2026-09-14", recipients: [] } as never;
+        if (failure === "unreachable") throw new TypeError("Network request failed");
+        return { ready: false, utterances: [] } as never;
+      });
+      const sample = speakText("Sample", { botId: "bot-1", hostedPreview: true });
+      if (failure === "unreachable") await expect(sample).rejects.toThrow("Network request failed");
+      else await expect(sample).resolves.toBe(false);
+      expect(Speech.speak).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("plays WAV from a server that renders speech itself and MP3 otherwise", () => {
     const wav = new TextEncoder().encode("RIFF\0\0\0\0WAVEfmt ");
@@ -333,8 +486,11 @@ describe("hosted voice playback controls", () => {
         return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
       }),
     );
-    vi.mocked(rpc).mockImplementation(async (_proc, input) => {
-      return { ready: true, utterances: [(input as { text: string }).text] } as never;
+    vi.mocked(rpc).mockImplementation(async (proc, input) => {
+      if (proc === "aiConsent/status") return { version: "2026-09-14", recipients: [] } as never;
+      if (input && typeof input === "object" && "text" in input)
+        return { ready: true, utterances: [input.text] } as never;
+      throw new Error("Unexpected speech request");
     });
     const owner = createSpeechOwner();
 
@@ -366,8 +522,58 @@ describe("hosted voice playback controls", () => {
     expect(ControllableAudio.instances).toHaveLength(1);
     expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
 
-    vi.mocked(rpc).mockResolvedValue({ ready: false, utterances: [] } as never);
+    vi.mocked(rpc).mockImplementation(
+      async (proc) =>
+        (proc === "aiConsent/status"
+          ? { version: "2026-09-14", recipients: [] }
+          : { ready: false, utterances: [] }) as never,
+    );
     await expect(queueSpeech("Hello.", { owner })).resolves.toBe(false);
+  });
+
+  it("does not prepare or render a queued reply stopped while consent is pending", async () => {
+    const answer = deferred<boolean>();
+    vi.mocked(promptAiConsent).mockClear().mockReturnValue(answer.promise);
+    vi.mocked(rpc).mockImplementation(async (proc) => {
+      if (proc === "aiConsent/status")
+        return {
+          scope: "account-space",
+          version: "2026-09-14",
+          recipients: [{ key: "speech", name: "Speech", use: "voice", detail: "", allowed: false }],
+        } as never;
+      throw new Error("Stopped speech must not prepare");
+    });
+    const owner = createSpeechOwner();
+    const first = queueSpeech("Booked.", { botId: "bot-1", owner });
+    const second = queueSpeech("The hotel is close.", { botId: "bot-1", owner });
+    await waitFor(() => vi.mocked(promptAiConsent).mock.calls.length > 0);
+    stopSpeaking(owner);
+    answer.resolve(true);
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
+    await flush();
+    expect(vi.mocked(rpc).mock.calls.some(([proc]) => proc === "voice/prepare")).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(ControllableAudio.instances).toHaveLength(0);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+  });
+
+  it("starts a fresh stream when the same owner's bot or preview provider changes", async () => {
+    const owner = createSpeechOwner();
+    const first = queueSpeech("First.", { botId: "bot-1", provider: "first", owner });
+    await waitFor(() => ControllableAudio.instances[0]?.paused === false);
+    const second = queueSpeech("Second.", { botId: "bot-2", provider: "second", owner });
+    await expect(first).resolves.toBe(true);
+    await waitFor(() => ControllableAudio.instances[1]?.paused === false);
+    expect(ControllableAudio.instances[0]?.paused).toBe(true);
+    expect(rpc).toHaveBeenCalledWith(
+      "voice/prepare",
+      expect.objectContaining({ botId: "bot-2", provider: "second" }),
+      expect.anything(),
+    );
+    expect(getVoicePlaybackState()).toMatchObject({ botId: "bot-2" });
+    stopSpeaking(owner);
+    await expect(second).resolves.toBe(true);
   });
 
   it("speaks a call's later text on this device once it is chosen mid-call", async () => {
@@ -380,8 +586,11 @@ describe("hosted voice playback controls", () => {
         return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
       }),
     );
-    vi.mocked(rpc).mockImplementation(async (_proc, input) => {
-      return { ready: true, utterances: [(input as { text: string }).text] } as never;
+    vi.mocked(rpc).mockImplementation(async (proc, input) => {
+      if (proc === "aiConsent/status") return { version: "2026-09-14", recipients: [] } as never;
+      if (input && typeof input === "object" && "text" in input)
+        return { ready: true, utterances: [input.text] } as never;
+      throw new Error("Unexpected speech request");
     });
     const spokenOnDevice: string[] = [];
     vi.mocked(Speech.speak).mockImplementation((text, options) => {
@@ -402,6 +611,96 @@ describe("hosted voice playback controls", () => {
     await expect(queueSpeech("The hotel is close.", { botId: "bot-1", owner })).resolves.toBe(true);
     expect(spokenOnDevice).toEqual(["The hotel is close."]);
     expect(requested).toEqual(["Booked."]);
+  });
+
+  it.each([true, false])(
+    "drops queued consent work when the device choice changes to %s",
+    async (device) => {
+      const answer = deferred<boolean>();
+      vi.mocked(promptAiConsent).mockClear().mockReturnValue(answer.promise);
+      vi.mocked(rpc).mockImplementation(async (proc) => {
+        if (proc === "aiConsent/status")
+          return {
+            scope: "account-space",
+            version: "2026-09-14",
+            recipients: [
+              { key: "speech", name: "Speech", use: "voice", detail: "", allowed: false },
+            ],
+          } as never;
+        throw new Error("Stale speech must not prepare");
+      });
+      const owner = createSpeechOwner();
+      const first = queueSpeech("Booked.", { botId: "bot-1", owner });
+      const second = queueSpeech("The hotel is close.", { botId: "bot-1", owner });
+      await waitFor(() => vi.mocked(promptAiConsent).mock.calls.length > 0);
+
+      await saveDeviceVoiceEnabled(device);
+      await expect(first).resolves.toBe(true);
+      await expect(second).resolves.toBe(true);
+      expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+      answer.resolve(false);
+      await flush();
+      expect(vi.mocked(rpc).mock.calls.some(([proc]) => proc === "voice/prepare")).toBe(false);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(Speech.speak).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ends active queued playback and drops later clips when the device choice changes", async () => {
+    const owner = createSpeechOwner();
+    const first = queueSpeech("Booked.", { botId: "bot-1", owner });
+    const second = queueSpeech("The hotel is close.", { botId: "bot-1", owner });
+    await waitFor(() => ControllableAudio.instances[0]?.paused === false);
+
+    await saveDeviceVoiceEnabled(true);
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
+    expect(ControllableAudio.instances[0]?.paused).toBe(true);
+    expect(ControllableAudio.instances).toHaveLength(1);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+  });
+
+  it("does not stop unrelated playback that replaced a queue when the device choice changes", async () => {
+    const owner = createSpeechOwner();
+    const queued = queueSpeech("Booked.", { botId: "bot-1", owner });
+    await waitFor(() => ControllableAudio.instances[0]?.paused === false);
+    const replacement = speakText("Voice sample.", { botId: "bot-2", provider: "sample-provider" });
+    await expect(queued).resolves.toBe(true);
+    await waitFor(() => ControllableAudio.instances[1]?.paused === false);
+
+    await saveDeviceVoiceEnabled(true);
+    stopSpeaking(owner);
+    expect(ControllableAudio.instances[1]?.paused).toBe(false);
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", botId: "bot-2" });
+    stopVoicePlayback();
+    await expect(replacement).resolves.toBe(true);
+  });
+
+  it("reopens the same bot's stream on hosted speech after an explicit device choice is disabled", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+      key === DEVICE_VOICE_KEY ? "1" : null,
+    );
+    vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
+    const owner = createSpeechOwner();
+    await expect(queueSpeech("First.", { botId: "bot-1", owner })).resolves.toBe(true);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+      key === DEVICE_VOICE_KEY ? "0" : null,
+    );
+    await saveDeviceVoiceEnabled(false);
+
+    const hosted = queueSpeech("Second.", { botId: "bot-1", owner });
+    await waitFor(() => ControllableAudio.instances[0]?.paused === false);
+    expect(rpc).toHaveBeenCalledWith(
+      "voice/prepare",
+      expect.objectContaining({ botId: "bot-1", text: "Second." }),
+      {
+        requestContext: expect.objectContaining({ apiBase: "https://support.example" }),
+        signal: expect.any(AbortSignal),
+      },
+    );
+    expect(vi.mocked(Speech.speak).mock.calls.map(([text]) => text)).toEqual(["First."]);
+    stopSpeaking(owner);
+    await expect(hosted).resolves.toBe(true);
   });
 
   it("reports idle with no control before anything is speaking", () => {
@@ -737,21 +1036,16 @@ describe("hosted voice playback controls", () => {
     ]);
     expect(ControllableAudio.instances[0]!.paused).toBe(true);
 
-    const played: Array<string | undefined> = [];
-    const seen = new Set<ControllableAudio>([ControllableAudio.instances[0]!]);
-    for (let step = 0; step < 40 && played.length < 2; step++) {
-      await Promise.resolve();
-      for (const audio of ControllableAudio.instances) {
-        if (seen.has(audio) || audio.paused) continue;
-        seen.add(audio);
-        played.push(getVoicePlaybackState().messageId);
-        audio.onended?.();
-      }
+    for (const messageId of ["b1", "b2"]) {
+      await vi.waitFor(() => {
+        expect(getVoicePlaybackState()).toMatchObject({ messageId, canPause: true });
+        expect(ControllableAudio.instances.at(-1)?.paused).toBe(false);
+      });
+      ControllableAudio.instances.at(-1)!.onended?.();
     }
 
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(true);
-    expect(played).toEqual(["b1", "b2"]);
     expect(ControllableAudio.instances).toHaveLength(3);
     expect(getVoicePlaybackState().status).toBe("idle");
   });
@@ -1337,27 +1631,6 @@ describe("on-device speech", () => {
     expect(spoken.map((s) => s.text)).toEqual(["First sentence."]);
   });
 
-  it("does not continue a reply after playback is stopped for a voice sample", async () => {
-    Platform.OS = "ios";
-    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
-    const spoken: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
-    vi.mocked(Speech.speak).mockImplementation((text, options) => {
-      spoken.push({ text, options });
-    });
-    vi.mocked(Speech.stop).mockResolvedValue(undefined);
-
-    const call = speakWithDeviceVoice("First sentence. Second sentence.", "bot-1");
-    await flushDeviceSpeechImport();
-    expect(spoken.map((s) => s.text)).toEqual(["First sentence."]);
-
-    stopVoicePlayback();
-    await Speech.stop();
-    Speech.speak("Hi, this is how I'll sound.", { voice: "sample" });
-    spoken[0]?.options?.onStopped?.();
-    await expect(call).resolves.toBe(true);
-    expect(spoken.map((s) => s.text)).toEqual(["First sentence.", "Hi, this is how I'll sound."]);
-  });
-
   it("does not stop a device voice sample that replaced the owner's speech", async () => {
     Platform.OS = "ios";
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
@@ -1394,6 +1667,55 @@ describe("on-device speech", () => {
     await expect(call).resolves.toBe(false);
   });
 
+  it.each([
+    { condition: "not configured", say: speakText },
+    { condition: "offline", say: speakText },
+    { condition: "consent offline", say: speakText },
+    { condition: "not configured", say: queueSpeech },
+    { condition: "offline", say: queueSpeech },
+    { condition: "consent offline", say: queueSpeech },
+  ])(
+    "uses local speech when inherited hosted speech is $condition ($say)",
+    async ({ condition, say }) => {
+      vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
+      vi.mocked(rpc).mockImplementation(async (procedure) => {
+        if (procedure === "aiConsent/status" && condition === "consent offline") {
+          throw new TypeError("Failed to fetch");
+        }
+        if (procedure === "voice/prepare") {
+          if (condition === "offline") throw new TypeError("Failed to fetch");
+          return { ready: false, utterances: [] } as never;
+        }
+        return { version: "2026-09-14", recipients: [] } as never;
+      });
+      vi.mocked(Speech.stop).mockResolvedValue(undefined);
+      vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
+      await expect(say("Hello", { botId: "bot-1", owner: createSpeechOwner() })).resolves.toBe(
+        true,
+      );
+      expect(Speech.speak).toHaveBeenCalledWith("Hello", expect.anything());
+      expect(
+        vi.mocked(rpc).mock.calls.filter(([procedure]) => procedure === "voice/prepare"),
+      ).toHaveLength(condition === "consent offline" ? 0 : 1);
+      expect(
+        vi.mocked(rpc).mock.calls.filter(([procedure]) => procedure === "voice/status"),
+      ).toHaveLength(0);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([speakText, queueSpeech])(
+    "does not turn denied hosted preparation into device speech (%s)",
+    async (say) => {
+      vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
+      const denied = new AiConsentBlocked();
+      vi.mocked(rpc).mockRejectedValue(denied);
+      await expect(say("Hello", { botId: "bot-1" })).rejects.toBeInstanceOf(AiConsentBlocked);
+      expect(Speech.speak).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
   it("says a call's queued texts in order on the device voice, and stops them for the owner", async () => {
     vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
     const calls: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
@@ -1418,33 +1740,81 @@ describe("on-device speech", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it("speaks locally and never touches the network when the device voice is on", async () => {
-    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+  it("shares an inherited device fallback across queued sentences without rechecking readiness", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue(null);
+    vi.mocked(captureApiRequestContext).mockClear();
+    vi.mocked(rpc).mockImplementation(
+      async (proc) =>
+        (proc === "aiConsent/status"
+          ? { version: "2026-09-14", recipients: [] }
+          : { ready: false, utterances: [] }) as never,
+    );
     vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
-
-    await expect(speakText("Read this")).resolves.toBe(true);
-
-    expect(Speech.stop).toHaveBeenCalledOnce();
-    expect(Speech.speak).toHaveBeenCalledWith("Read this", expect.any(Object));
-    expect(rpc).not.toHaveBeenCalled();
+    const owner = createSpeechOwner();
+    await Promise.all([
+      queueSpeech("First.", { botId: "bot-1", owner }),
+      queueSpeech("Second.", { botId: "bot-1", owner }),
+    ]);
+    expect(vi.mocked(Speech.speak).mock.calls.map(([text]) => text)).toEqual(["First.", "Second."]);
+    expect(vi.mocked(rpc).mock.calls.filter(([proc]) => proc === "voice/prepare")).toHaveLength(1);
+    expect(captureApiRequestContext).toHaveBeenCalledOnce();
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("uses on-device speech when the preference cannot be read, and never hosts the reply", async () => {
-    vi.mocked(SecureStore.getItemAsync).mockRejectedValue(new Error("device locked"));
-    vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
-
-    await expect(speakText("Read this")).resolves.toBe(true);
-
-    expect(Speech.speak).toHaveBeenCalledWith("Read this", expect.any(Object));
+  it("does not capture or send a queued context after Stop during preference loading", async () => {
+    const preference = deferred<string | null>();
+    vi.mocked(SecureStore.getItemAsync).mockReturnValue(preference.promise);
+    vi.mocked(captureApiRequestContext).mockClear();
+    const owner = createSpeechOwner();
+    const reading = queueSpeech("First.", { botId: "bot-1", owner });
+    stopSpeaking(owner);
+    preference.resolve(null);
+    await expect(reading).resolves.toBe(true);
+    await flush();
+    expect(captureApiRequestContext).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it("resolves false on empty text without calling the OS engine", async () => {
-    await expect(speakWithDeviceVoice("   ")).resolves.toBe(false);
     expect(Speech.speak).not.toHaveBeenCalled();
   });
+
+  it.each([speakText, queueSpeech])(
+    "speaks locally without capturing a network context when the device voice is on (%s)",
+    async (say) => {
+      vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+      vi.mocked(captureApiRequestContext).mockClear();
+      vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
+
+      await expect(say("Read this")).resolves.toBe(true);
+
+      expect(Speech.stop).toHaveBeenCalledTimes(say === speakText ? 1 : 0);
+      expect(Speech.speak).toHaveBeenCalledWith("Read this", expect.any(Object));
+      expect(captureApiRequestContext).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([speakText, queueSpeech])(
+    "uses on-device speech when the preference cannot be read, and never hosts the reply (%s)",
+    async (say) => {
+      const error = new Error("device locked");
+      const warning = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+      vi.mocked(SecureStore.getItemAsync).mockRejectedValue(error);
+      vi.mocked(captureApiRequestContext).mockClear();
+      vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
+
+      await expect(say("Read this")).resolves.toBe(true);
+
+      expect(warning).toHaveBeenCalledWith(
+        "device voice preference unavailable; using device voice",
+        { error },
+      );
+      expect(Speech.speak).toHaveBeenCalledWith("Read this", expect.any(Object));
+      expect(captureApiRequestContext).not.toHaveBeenCalled();
+      expect(rpc).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects with the OS engine's own error instead of resolving false", async () => {
     vi.mocked(Speech.speak).mockImplementation((_text, options) =>
@@ -1464,25 +1834,6 @@ describe("on-device speech", () => {
     } finally {
       Object.defineProperty(Speech, "speak", { configurable: true, value: originalSpeak });
     }
-  });
-
-  it("strips markdown and splits a long reply into bounded utterances, in order", async () => {
-    const spoken: string[] = [];
-    vi.mocked(Speech.speak).mockImplementation((text, options) => {
-      spoken.push(text);
-      options?.onDone?.();
-    });
-    const longSentence = `${"word ".repeat(70).trim()}.`;
-    const text = `**Bold** intro. ${longSentence} A short close.`;
-
-    await expect(speakWithDeviceVoice(text)).resolves.toBe(true);
-
-    expect(spoken.length).toBeGreaterThan(1);
-    for (const utterance of spoken) {
-      expect(utterance.length).toBeLessThan(500);
-      expect(utterance).not.toContain("**");
-    }
-    expect(spoken.join(" ")).toContain("Bold intro");
   });
 
   it("stops queuing more chunks once a newer call interrupts it", async () => {

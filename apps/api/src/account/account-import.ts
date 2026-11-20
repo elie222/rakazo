@@ -910,6 +910,7 @@ class AccountImporter implements ArchiveSink {
             sectionId: space.optional(record.sectionId),
             archivedAt: date(record.archivedAt),
             memoryScope: record.memoryScope,
+            voiceProvider: record.voiceProvider ?? null,
             voiceId: record.voiceId,
             autoSpeak: record.autoSpeak,
             teamChatAmbientEnabled: record.teamChatAmbientEnabled,
