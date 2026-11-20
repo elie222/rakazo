@@ -544,13 +544,14 @@ it("still builds a decision-model checker when data retention is not restricted"
   ).resolves.toBeDefined();
 });
 
-it("passes the data retention choice to a language-model checker", async () => {
+it("passes the data retention choice and who pays to a language-model checker", async () => {
   const run = vi.fn(async function* (_request: AgentRunRequest) {
     yield { type: "done", text: '{"decision":"ask","reason":"Requires review."}' };
   });
   vi.mocked(resolveModelKey).mockResolvedValueOnce({
     apiKey: "fixture-model-key",
     zeroDataRetention: true,
+    billing: "api_key",
   } as Awaited<ReturnType<typeof resolveModelKey>>);
   const provider = await autoReviewCheckerProvider(
     {
@@ -562,7 +563,10 @@ it("passes the data retention choice to a language-model checker", async () => {
     { provider: "openrouter", model: "example/model" },
   );
   await provider.review(reviewRequest, reviewContext);
-  expect(run.mock.calls[0]?.[0].model).toMatchObject({ zeroDataRetention: true });
+  expect(run.mock.calls[0]?.[0].model).toMatchObject({
+    zeroDataRetention: true,
+    billing: "api_key",
+  });
 });
 
 function shadowedDeps(billingEnabled: boolean, createUsage = vi.fn()) {
