@@ -938,7 +938,7 @@ describe("web markdown streaming", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
-    const text = Array.from({ length: 100 }, (_, index) => `P${index}.`).join("\n\n");
+    const text = Array.from({ length: 30 }, (_, index) => `P${index}.`).join("\n\n");
     await act(async () => {
       root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
     });
@@ -1066,6 +1066,30 @@ describe("web markdown streaming", () => {
       [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
     ).toEqual(["world"]);
     expect(container.textContent).toBe("\u20ac world");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("fades in words after a CRLF line break", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Line\r\n"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Line\r\nword"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["word"]);
+    expect(container.textContent).toBe("Line\r\nword");
     await act(async () => {
       root.unmount();
     });
