@@ -28,6 +28,9 @@ function Harness() {
   latest = useMobileSidebar();
   return (
     <>
+      <button type="button" ref={latest.navigationTriggerRef}>
+        Open navigation
+      </button>
       <ComposerReplyPreview author="Helper" text="Quote" onDismiss={dismissReply} />
       <DropdownMenu defaultOpen={menuOpen}>
         <DropdownMenuTrigger>More</DropdownMenuTrigger>
@@ -168,4 +171,16 @@ it("does not close the drawer for the legacy composition key code", () => {
   });
 
   expect(latest.mobileSidebarOpen).toBe(true);
+});
+
+it("returns keyboard focus to the navigation opener after Escape", () => {
+  menuOpen = false;
+  mount(false);
+  act(() => latest.setMobileSidebarOpen(true));
+  const drawerControl = document.createElement("button");
+  document.body.append(drawerControl);
+  drawerControl.focus();
+  pressEscape(drawerControl);
+  expect(document.activeElement).toBe(latest.navigationTriggerRef.current);
+  drawerControl.remove();
 });

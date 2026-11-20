@@ -83,6 +83,7 @@ test("swiping inward from the mobile edge opens the bots sidebar", async ({ page
 
   await page.keyboard.press("Escape");
   await expect(closeNavigation).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
   await captureScreenshot(page, testInfo, "mobile-sidebar-escape-closed");
 
   // Right-to-left layouts swipe in from the other edge.

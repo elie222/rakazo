@@ -1,5 +1,5 @@
 import type { TouchEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useEventListener } from "../../../lib/use-event-listener";
 import { isComposingKey } from "../shell-shortcuts";
 
@@ -17,6 +17,14 @@ function isRtl() {
 /** The phone sidebar drawer, opened by its button or a swipe in from the leading edge. */
 export function useMobileSidebar() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const navigationTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!mobileSidebarOpen && restoreFocus.current) {
+      restoreFocus.current = false;
+      navigationTriggerRef.current?.focus();
+    }
+  }, [mobileSidebarOpen]);
   const swipeRef = useRef<{ startX: number; startY: number } | null>(null);
 
   const [desktop] = useState(() => window.matchMedia("(min-width: 768px)"));
@@ -32,6 +40,7 @@ export function useMobileSidebar() {
     if (event.key !== "Escape" || isComposingKey(event) || event.defaultPrevented) return;
     if (!mobileSidebarOpen || isDesktop()) return;
     event.preventDefault();
+    restoreFocus.current = true;
     setMobileSidebarOpen(false);
   });
 
@@ -66,5 +75,5 @@ export function useMobileSidebar() {
     },
   };
 
-  return { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers };
+  return { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers, navigationTriggerRef };
 }
