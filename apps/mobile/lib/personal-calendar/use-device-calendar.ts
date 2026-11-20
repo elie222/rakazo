@@ -61,14 +61,18 @@ async function serve(botId: string, signal: AbortSignal) {
   const requestContext = await captureApiRequestContext();
   if (!current()) return;
   const options = { requestContext, skipSpaceAuthRecovery: true };
+  // Charge the full request round trip against each server-reported budget.
+  // This keeps the device's wall clock out of permission and write decisions.
+  const pendingStartedAt = performance.now();
   const pending = await rpc(
     "threads/nativeCalendarPending",
     { botId, deviceKey },
     { ...options, signal },
   );
   for (const request of pending) {
-    const active = () => current() && Date.parse(request.expiresAt) > Date.now();
-    if (!active()) return;
+    if (!current()) return;
+    const active = () => current() && performance.now() - pendingStartedAt < request.remainingMs;
+    if (!active()) continue;
     const identifiers = { ...requestIds(request), deviceKey };
     const { prepareDeviceCalendar, validateDeviceCalendarResult } = await import(
       "./device-calendar"
@@ -81,14 +85,17 @@ async function serve(botId: string, signal: AbortSignal) {
         return { status: "unavailable" as const };
       },
     );
-    if (!active()) return;
+    if (!current()) return;
+    if (!active()) continue;
 
     // Confirm first. The server issues the single-use claim only while the run and
     // its original owner/device still match. Losing this response cannot replay a write.
+    const claimStartedAt = performance.now();
     const claimed = await rpc("threads/nativeCalendarClaim", identifiers, { ...options, signal });
     if (!claimed) continue;
     let response: CalendarResponse;
-    if (!active()) response = { status: "unavailable" };
+    if (!current() || performance.now() - claimStartedAt >= claimed.remainingMs)
+      response = { status: "unavailable" };
     else if ("status" in prepared) response = prepared;
     else {
       try {

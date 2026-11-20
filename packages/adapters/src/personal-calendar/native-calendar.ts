@@ -106,7 +106,10 @@ function requestDto(row: NativeCalendarRequest, threadId: string): Request {
     id: row.id,
     runId: row.runId,
     threadId,
-    expiresAt: row.expiresAt.toISOString(),
+    remainingMs: Math.min(
+      NATIVE_CALENDAR_WINDOW_MS,
+      Math.max(0, row.expiresAt.getTime() - Date.now()),
+    ),
     operation: readJsonColumn(
       CalendarOperation,
       row.operation,

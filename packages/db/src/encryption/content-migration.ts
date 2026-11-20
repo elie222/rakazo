@@ -392,6 +392,10 @@ export async function contentEncryptionStatus(
     SELECT 'meeting_sessions', count(*) FILTER (WHERE "meetingUrl" IS NOT NULL OR transcript IS NOT NULL),
       count(*) FILTER (WHERE "meetingUrl" NOT LIKE 'rkz1:%' OR transcript NOT LIKE 'rkz1:%')
       FROM meeting_sessions
+    UNION ALL
+    SELECT 'native_calendar_requests', count(*) FILTER (WHERE operation IS NOT NULL OR result IS NOT NULL),
+      count(*) FILTER (WHERE NOT jsonb_exists(operation, '$sealed') OR NOT jsonb_exists(result, '$sealed'))
+      FROM native_calendar_requests
   `;
   const keys = await prisma.spaceKey.groupBy({ by: ["masterKeyId"], _count: { _all: true } });
   return {

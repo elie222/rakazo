@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { CalendarOperation } from "@rakazo/contracts";
+import { NATIVE_CALENDAR_WINDOW_MS } from "@rakazo/contracts";
 import {
   asSystem,
+  contentEncryptionStatus,
   createDb,
   createThreadEvents,
   createThreadMessage,
@@ -123,6 +125,8 @@ describe.skipIf(!url)("phone calendar execution", () => {
         { timeout: 8_000 },
       );
       const target = { id: pending!.id, runId: record.id, threadId };
+      expect(pending!.remainingMs).toBeGreaterThan(0);
+      expect(pending!.remainingMs).toBeLessThanOrEqual(NATIVE_CALENDAR_WINDOW_MS);
       const [raw] = await inTenant(
         () =>
           db.prisma.$queryRaw<Array<{ operation: unknown }>>`
@@ -209,6 +213,14 @@ describe.skipIf(!url)("phone calendar execution", () => {
         expiresAt: new Date(0),
       },
     });
+    const status = () =>
+      contentEncryptionStatus(system).then(({ tables }) =>
+        tables.find(({ table }) => table === "native_calendar_requests"),
+      );
+    const before = await status();
+    expect(before?.rows).toBeGreaterThan(0);
+    await system.$executeRaw`UPDATE native_calendar_requests SET result = '{"status":"denied"}'::jsonb WHERE id = ${request.id}`;
+    expect(await status()).toEqual({ ...before, plaintext: before!.plaintext + 1 });
     await system.user.delete({ where: { id: departing.id } });
     expect(await system.nativeCalendarRequest.findUnique({ where: { id: request.id } })).toBeNull();
     expect(await system.run.findUnique({ where: { id: record.id } })).not.toBeNull();

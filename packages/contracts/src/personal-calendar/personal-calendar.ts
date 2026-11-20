@@ -175,7 +175,7 @@ export const NativeCalendarRequest = z.object({
   id: key,
   runId: key,
   threadId: key,
-  expiresAt: instant,
+  remainingMs: z.number().int().min(0).max(NATIVE_CALENDAR_WINDOW_MS),
   operation: CalendarOperation,
 });
 export type NativeCalendarRequest = z.infer<typeof NativeCalendarRequest>;
