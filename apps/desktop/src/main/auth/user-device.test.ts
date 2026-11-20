@@ -509,7 +509,7 @@ describe("remote computer access", () => {
     await refused.access.select(other);
     await refused.access.pair();
     await refused.access.pair();
-    expect(fetch.mock.calls.filter(([url]) => url.startsWith(other))).toHaveLength(1);
+    expect(fetch.mock.calls.filter(([url]) => new URL(url).origin === other)).toHaveLength(1);
   });
 
   it("never pairs without secure storage", async () => {

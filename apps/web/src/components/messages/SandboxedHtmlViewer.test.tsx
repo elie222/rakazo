@@ -99,7 +99,7 @@ it("keeps the nested preview opaque and blocks remote images, media and fonts", 
 });
 
 it("renders only string messages from the embedding app", () => {
-  const script = shell.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  const script = shell.match(/<script>([\s\S]*?)<\/script>/i)?.[1];
   if (!script) throw new Error("shell script missing");
   const run = (embedded: boolean) => {
     const preview = { srcdoc: "" };
@@ -137,7 +137,7 @@ it("renders only string messages from the embedding app", () => {
 });
 
 it("vouches for one click or key the guard saw, never a forged, stale or inactive one", () => {
-  const script = shell.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  const script = shell.match(/<script>([\s\S]*?)<\/script>/i)?.[1];
   if (!script) throw new Error("shell script missing");
   const preview = { srcdoc: "", contentWindow: {} };
   const posted: { type?: string; gesture?: unknown }[] = [];

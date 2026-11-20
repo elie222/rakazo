@@ -48,7 +48,10 @@ test("a mermaid fence is drawn as a themed, copyable diagram in place of its cod
   expect(text.indexOf("Here is the contribution flow:")).toBeLessThan(
     text.indexOf("Each step runs in CI."),
   );
-  const drawnText = (await diagramMarkup(page)).replace(/<[^>]+>/g, "");
+  const drawnText = await page.evaluate(
+    (markup) => new DOMParser().parseFromString(markup, "text/html").body.textContent ?? "",
+    await diagramMarkup(page),
+  );
   for (const label of ["Clone repo", "Branch", "Tests", "Pull request"]) {
     expect(drawnText).toContain(label);
   }

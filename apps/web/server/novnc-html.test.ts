@@ -72,7 +72,8 @@ describe("noVNC storage shim gate", () => {
   });
 
   function runShim() {
-    const script = injectNovncStorageShim("<head>").match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
+    const script =
+      injectNovncStorageShim("<head>").match(/<script>([\s\S]*)<\/script>/i)?.[1] ?? "";
     const listeners: ((event: unknown) => void)[] = [];
     const window = {
       addEventListener: (type: string, listener: (event: unknown) => void) => {
@@ -92,7 +93,8 @@ describe("noVNC storage shim gate", () => {
   }
 
   it("hides WebCodecs from the page so noVNC's H.264 probe cannot stall startup", () => {
-    const script = injectNovncStorageShim("<head>").match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
+    const script =
+      injectNovncStorageShim("<head>").match(/<script>([\s\S]*)<\/script>/i)?.[1] ?? "";
     const window: Record<string, unknown> = {
       addEventListener() {},
       parent: { postMessage() {} },
@@ -431,7 +433,8 @@ describe("noVNC frame state report", () => {
       }
       observe() {}
     }
-    const script = injectNovncStorageShim("<head>").match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
+    const script =
+      injectNovncStorageShim("<head>").match(/<script>([\s\S]*)<\/script>/i)?.[1] ?? "";
     new Function("window", "document", "MutationObserver", "Object", script)(
       window,
       document,

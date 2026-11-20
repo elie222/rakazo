@@ -182,9 +182,9 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
       try {
         completionBodies.push(await readJsonBody(request));
         completionHeaders.push(request.headers["x-session"]);
-      } catch (error) {
+      } catch {
         response.writeHead(400, { "content-type": "text/plain" });
-        response.end(String(error));
+        response.end("Invalid request body");
         return;
       }
       response.writeHead(200, {

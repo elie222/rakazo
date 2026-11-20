@@ -14,10 +14,11 @@ const config = chatMermaidConfig(darkTokens, "dark", { surface: darkTokens.backg
 
 function policyOf(html: string) {
   const content = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html)?.[1] ?? "";
+  // `&amp;` last, so an escaped entity such as `&amp;lt;` stays one level unescaped.
   return content
     .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<");
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&");
 }
 
 describe("diagram WebView document", () => {

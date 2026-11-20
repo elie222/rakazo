@@ -189,7 +189,8 @@ test("live page helper waits for a site's sign-in check, or says the page is sti
           res.setHeader("content-type", "application/json");
           res.end('{"name":"test-user"}');
         },
-        Number(url.searchParams.get("delay")),
+        // The delay is a test knob; clamp it so a stray value cannot park the server.
+        Math.min(Math.max(Number(url.searchParams.get("delay")) || 0, 0), 60_000),
       );
       return;
     }
