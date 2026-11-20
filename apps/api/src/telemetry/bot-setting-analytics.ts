@@ -24,6 +24,8 @@ const SETTINGS: Partial<Record<Field, AnalyticsBotSetting>> = {
   replyMode: "reply_mode",
   approvalMode: "approvals",
   maxConcurrentHelpers: "parallel_work",
+  useOwnMemory: "memory",
+  useSharedMemory: "memory",
   disabledBuiltinTools: "tools",
   hostDeviceId: "computer",
 };

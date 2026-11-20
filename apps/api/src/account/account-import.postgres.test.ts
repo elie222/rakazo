@@ -62,6 +62,8 @@ function sourceRecords(): AccountExportRecord[] {
       workspacePath: null,
       approvalMode: null,
       maxConcurrentHelpers: null,
+      useOwnMemory: true,
+      useSharedMemory: true,
       createdAt: at,
     },
     {
@@ -94,6 +96,8 @@ function sourceRecords(): AccountExportRecord[] {
       workspacePath: null,
       approvalMode: null,
       maxConcurrentHelpers: null,
+      useOwnMemory: true,
+      useSharedMemory: true,
       createdAt: at,
     },
     {

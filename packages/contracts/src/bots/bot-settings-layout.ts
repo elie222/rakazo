@@ -3,6 +3,8 @@ export const BOT_SETTINGS_SECTIONS = {
   openWork: ["scratchpad"],
   memory: ["knowledge"],
   advanced: [
+    "useOwnMemory",
+    "useSharedMemory",
     "model",
     "thinking",
     "computer",

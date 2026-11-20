@@ -88,6 +88,8 @@ function mapBot(
     archivedAt: Date | null;
     parentBotId: string | null;
     memoryScope: string | null;
+    useOwnMemory?: boolean;
+    useSharedMemory?: boolean;
     createdAt: Date;
     updatedAt: Date;
     thread: { id: string; reads: Array<{ unread: boolean; snoozedUntil: Date | null }> } | null;
@@ -138,6 +140,8 @@ function mapBot(
     snoozedUntil: snoozedUntilFor(bot.thread),
     parentBotId: bot.parentBotId,
     memoryScope: bot.memoryScope as "isolated" | "shared" | null,
+    useOwnMemory: bot.useOwnMemory ?? true,
+    useSharedMemory: bot.useSharedMemory ?? true,
     threadId: bot.thread.id,
     preview,
     status,
@@ -457,6 +461,8 @@ export function createRepos(
         replyMode?: string;
         approvalMode?: string | null;
         maxConcurrentHelpers?: number | null;
+        useOwnMemory?: boolean;
+        useSharedMemory?: boolean;
         color?: string;
         avatarSet?: BotAvatarSet;
         /** Copy a pin as is (duplicates); otherwise a set other than the default pins the bot. */
@@ -572,6 +578,8 @@ export function createRepos(
               fleetManagement: input.fleetManagement,
               replyMode: input.replyMode,
               ...(input.approvalMode ? { approvalMode: input.approvalMode } : {}),
+              ...(input.useOwnMemory === false ? { useOwnMemory: false } : {}),
+              ...(input.useSharedMemory === false ? { useSharedMemory: false } : {}),
               ...(input.maxConcurrentHelpers
                 ? { maxConcurrentHelpers: input.maxConcurrentHelpers }
                 : {}),

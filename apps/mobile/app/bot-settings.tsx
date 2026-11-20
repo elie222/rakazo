@@ -35,6 +35,7 @@ import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } fr
 import { BotAvatar } from "../components/bots/bot-avatar";
 import { BotContextCards } from "../components/bots/bot-context-cards";
 import { BotLookPicker } from "../components/bots/bot-look-picker";
+import { BotPermissionsSection } from "../components/bots/bot-permissions-section";
 import { ProfileEditDialog } from "../components/bots/profile-edit-dialog";
 import { useComputerMaintenanceRows } from "../components/computers/computer-maintenance-actions";
 import { glassHeaderOptions } from "../components/native/glass-title";
@@ -91,6 +92,8 @@ export default function BotSettingsScreen() {
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [workspacePath, setWorkspacePath] = useState("");
   const [approvalMode, setApprovalMode] = useState<ApprovalMode | "space">("space");
+  const [useOwnMemory, setUseOwnMemory] = useState(true);
+  const [useSharedMemory, setUseSharedMemory] = useState(true);
   const [tasksAtOnce, setTasksAtOnce] = useState("");
   // Auto judges with a model; without one the bot asks, as the picker says.
   const autoAvailable =
@@ -220,6 +223,8 @@ export default function BotSettingsScreen() {
         setComputerMode(next.computerMode);
         setWorkspacePath(next.workspacePath ?? "");
         setApprovalMode(next.approvalMode ?? "space");
+        setUseOwnMemory(next.useOwnMemory);
+        setUseSharedMemory(next.useSharedMemory);
         setTasksAtOnce(String(next.maxConcurrentHelpers ?? DEFAULT_MAX_CONCURRENT_HELPERS));
         setModelKey(
           next.modelProvider && next.modelId
@@ -431,6 +436,8 @@ export default function BotSettingsScreen() {
         workspacePath?: string | null;
         approvalMode?: ApprovalMode | null;
         maxConcurrentHelpers?: number | null;
+        useOwnMemory?: boolean;
+        useSharedMemory?: boolean;
       } = { botId };
       const rawWorkspacePath = workspacePath.trim();
       const nextWorkspacePath = rawWorkspacePath
@@ -464,6 +471,8 @@ export default function BotSettingsScreen() {
         parsedTasksAtOnce === DEFAULT_MAX_CONCURRENT_HELPERS ? null : parsedTasksAtOnce;
       if (nextTasksAtOnce !== (bot.maxConcurrentHelpers ?? null))
         input.maxConcurrentHelpers = nextTasksAtOnce;
+      if (useOwnMemory !== bot.useOwnMemory) input.useOwnMemory = useOwnMemory;
+      if (useSharedMemory !== bot.useSharedMemory) input.useSharedMemory = useSharedMemory;
       if (profile.description !== (bot.description ?? "")) {
         input.description = profile.description;
       }
@@ -531,6 +540,8 @@ export default function BotSettingsScreen() {
       (approvalMode === "space" ? null : approvalMode) !== (bot.approvalMode ?? null) ||
       (tasksAtOnce.trim() ? Number(tasksAtOnce.trim()) : DEFAULT_MAX_CONCURRENT_HELPERS) !==
         (bot.maxConcurrentHelpers ?? DEFAULT_MAX_CONCURRENT_HELPERS) ||
+      useOwnMemory !== bot.useOwnMemory ||
+      useSharedMemory !== bot.useSharedMemory ||
       autoSpeak !== bot.autoSpeak ||
       (selectedModel?.provider ?? null) !== (bot.modelProvider ?? null) ||
       (selectedModel?.modelId ?? null) !== (bot.modelId ?? null) ||
@@ -670,7 +681,21 @@ export default function BotSettingsScreen() {
             }}
           >
             {botId ? (
-              <BotContextCards key={`${botId}-memory`} botId={botId} section="memory" />
+              <View style={{ gap: 24 }}>
+                <SettingsGroup label={t`Memory`}>
+                  <SettingsSwitch
+                    label={t`Use its own memory`}
+                    value={useOwnMemory}
+                    onChange={setUseOwnMemory}
+                  />
+                  <SettingsSwitch
+                    label={t`Use shared notes`}
+                    value={useSharedMemory}
+                    onChange={setUseSharedMemory}
+                  />
+                </SettingsGroup>
+                <BotContextCards key={`${botId}-memory`} botId={botId} section="memory" />
+              </View>
             ) : null}
             <SettingsGroup label={t`Model`} footer={modelMetaError ?? undefined}>
               <MenuPicker
@@ -737,56 +762,21 @@ export default function BotSettingsScreen() {
                 {deviceVoiceEnabled ? voiceRow : null}
               </SettingsGroup>
             ) : null}
-            <SettingsGroup
-              label={t`Permissions`}
-              footer={
-                approvalMode === "auto" && !autoAvailable
-                  ? t`Auto needs an approval model; until one is set, this bot asks.`
-                  : undefined
-              }
-            >
-              <MenuPicker
-                choices={approvalChoices}
-                label={t`Approval mode`}
-                onChange={(key) =>
-                  setApprovalMode(key === "space" ? "space" : (key as ApprovalMode))
-                }
-                value={approvalMode}
-              />
-              {changed?.dailyCheckIns ? (
-                <SettingsSwitch
-                  label={t`Daily check-ins on unfinished work`}
-                  value={dailyCheckIns}
-                  onChange={(value) => {
-                    if (!botId) return;
-                    setError(null);
-                    dailyCheckInsSave.update(value);
-                  }}
-                />
-              ) : null}
-              {changed?.crossSpaceCommunication ? (
-                <SettingsSwitch
-                  label={t`Allow cross-space bot communication`}
-                  value={crossSpaceCommunication}
-                  onChange={(value) => {
-                    if (!botId) return;
-                    setError(null);
-                    crossSpaceSave.update(value);
-                  }}
-                />
-              ) : null}
-              {changed?.fleetManagement ? (
-                <SettingsSwitch
-                  label={t`Manage other bots`}
-                  onChange={(value) => {
-                    if (!botId) return;
-                    setError(null);
-                    fleetSave.update(value);
-                  }}
-                  value={fleetManagement}
-                />
-              ) : null}
-            </SettingsGroup>
+            <BotPermissionsSection
+              botId={botId}
+              changed={changed}
+              approvalMode={approvalMode}
+              approvalChoices={approvalChoices}
+              autoAvailable={autoAvailable}
+              onApprovalModeChange={setApprovalMode}
+              dailyCheckIns={dailyCheckIns}
+              crossSpaceCommunication={crossSpaceCommunication}
+              fleetManagement={fleetManagement}
+              dailyCheckInsSave={dailyCheckInsSave}
+              crossSpaceSave={crossSpaceSave}
+              fleetSave={fleetSave}
+              onError={setError}
+            />
             <SettingsGroup label={t`Background work`}>
               <SettingsInputRow
                 accessibilityLabel={t`Tasks at once`}

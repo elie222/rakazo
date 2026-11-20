@@ -183,6 +183,8 @@ async function* spaceRecords(
         bot.maxConcurrentHelpers && bot.maxConcurrentHelpers >= 1 && bot.maxConcurrentHelpers <= 8
           ? bot.maxConcurrentHelpers
           : null,
+      useOwnMemory: bot.useOwnMemory,
+      useSharedMemory: bot.useSharedMemory,
       workspacePath: bot.workspacePath,
       createdAt: iso(bot.createdAt),
     };

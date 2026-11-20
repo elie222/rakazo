@@ -63,6 +63,7 @@ describe("saving shared memory over a newer revision", () => {
     const finish = vi.fn((result: unknown) => result);
     const ctx = {
       runId: "run-1",
+      bot: { useSharedMemory: true },
       thread: { id: "thread-1" },
       context: {},
       deps: {
@@ -87,5 +88,33 @@ describe("saving shared memory over a newer revision", () => {
   it("lets another failure through, even one quoting the conflict", async () => {
     const failure = new Error(MEMORY_REVISION_CONFLICT_ERROR);
     await expect(save(failure)).rejects.toBe(failure);
+  });
+
+  it("refuses to write shared notes when the bot turned them off", async () => {
+    const memory = { read: vi.fn(), commit: vi.fn() };
+    const result = await memoryTools.save_shared_memory!(
+      { runId: "run-1", bot: { useSharedMemory: false }, deps: { memory } } as never,
+      {
+        args: { path: "team.md", content: "new" },
+        finish: async (value: unknown) => value,
+      } as never,
+    );
+    expect(result).toEqual({ error: "Shared memory is turned off for this bot in its settings." });
+    expect(memory.commit).not.toHaveBeenCalled();
+  });
+
+  it("refuses to write its own notes when the bot turned them off", async () => {
+    const memory = { read: vi.fn(), commit: vi.fn() };
+    const result = await memoryTools.remember!(
+      {
+        runId: "run-1",
+        bot: { id: "bot-1", useOwnMemory: false },
+        thread: { id: "thread-1" },
+        deps: { memory },
+      } as never,
+      { args: { content: "fact" }, finish: async (value: unknown) => value } as never,
+    );
+    expect(result).toEqual({ error: "This bot's own memory is turned off in its settings." });
+    expect(memory.commit).not.toHaveBeenCalled();
   });
 });

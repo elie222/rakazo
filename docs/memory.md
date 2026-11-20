@@ -18,6 +18,10 @@ To see what a bot remembers, click its name at the top of the chat and open **Me
 be edited, downloaded or deleted. In the mobile app, the notes are in the bot's chat settings, where
 you can edit or delete them.
 
+**Memory** has two banks: **This bot**, the notes it wrote itself, and **About you**, the notes
+every bot in the space shares. Each bank has a switch; turned off, the bot neither reads nor writes
+it, and the other bank keeps working.
+
 ## Shared memory
 
 Some things every bot should know, such as your name, your company, or how you like reports

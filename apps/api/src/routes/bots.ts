@@ -400,6 +400,8 @@ export function botsRoutes(ctx: RouterContext) {
           replyMode: source.replyMode,
           approvalMode: source.approvalMode,
           maxConcurrentHelpers: source.maxConcurrentHelpers,
+          useOwnMemory: source.useOwnMemory,
+          useSharedMemory: source.useSharedMemory,
           workspacePath: source.workspacePath,
           // The paired computer belongs to an account; a duplicate reaches it only from there.
           hostDeviceId:
@@ -529,6 +531,10 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.approvalMode !== undefined ? { approvalMode: input.approvalMode } : {}),
             ...(input.maxConcurrentHelpers !== undefined
               ? { maxConcurrentHelpers: input.maxConcurrentHelpers }
+              : {}),
+            ...(input.useOwnMemory !== undefined ? { useOwnMemory: input.useOwnMemory } : {}),
+            ...(input.useSharedMemory !== undefined
+              ? { useSharedMemory: input.useSharedMemory }
               : {}),
           },
         }).catch((error) => {

@@ -223,7 +223,12 @@ export async function loadTurnContext(
     await Promise.all([
       discoveredPromise,
       loadCurrentTurnImages(deps, turnBlocks, context),
-      nonOwnerChatRun ? Promise.resolve("") : loadAgentMemoryContext(deps.memory, bot.id, context),
+      nonOwnerChatRun
+        ? Promise.resolve("")
+        : loadAgentMemoryContext(deps.memory, bot.id, context, undefined, {
+            includeBot: bot.useOwnMemory,
+            includeUser: bot.useSharedMemory,
+          }),
       nonOwnerChatRun
         ? Promise.resolve("")
         : loadAgentScratchpadContext(deps, {

@@ -61,6 +61,10 @@ export const BotSchema = z.object({
   snoozedUntil: z.string().nullable().optional(),
   parentBotId: Id.nullable(),
   memoryScope: MemoryScopeSchema.nullable(),
+  /** The bot's own notes reach its prompt; its settings turn this off. */
+  useOwnMemory: z.boolean().default(true),
+  /** The Space's shared notes reach its prompt; its settings turn this off. */
+  useSharedMemory: z.boolean().default(true),
   threadId: Id,
   preview: z.string(),
   status: z.string(),
@@ -182,6 +186,8 @@ export const UpdateBotInput = z
     avatarSet: BotAvatarSetSchema.optional(),
     pinned: z.boolean().optional(),
     memoryScope: MemoryScopeSchema.nullable().optional(),
+    useOwnMemory: z.boolean().optional(),
+    useSharedMemory: z.boolean().optional(),
     sectionId: Id.nullable().optional(),
     voiceId: z.string().max(120).nullable().optional(),
     autoSpeak: z.boolean().optional(),

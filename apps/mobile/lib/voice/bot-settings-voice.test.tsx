@@ -832,6 +832,8 @@ describe("bot settings device voice menu", () => {
     });
     const labels = {
       instructions: "Instructions",
+      useOwnMemory: "Use its own memory",
+      useSharedMemory: "Use shared notes",
       computer: "Own computer",
       model: "Model",
       readAloud: "Read replies aloud",
@@ -856,6 +858,8 @@ describe("bot settings device voice menu", () => {
         .filter((key) => key in labels && key !== "instructions"),
     );
     expect(actual).toEqual([
+      "useOwnMemory",
+      "useSharedMemory",
       "model",
       "computer",
       "readAloud",

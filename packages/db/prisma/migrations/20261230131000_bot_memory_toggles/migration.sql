@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "bots" ADD COLUMN "useOwnMemory" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "useSharedMemory" BOOLEAN NOT NULL DEFAULT true;

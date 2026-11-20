@@ -917,6 +917,8 @@ class AccountImporter implements ArchiveSink {
             replyMode: record.replyMode,
             approvalMode: record.approvalMode,
             maxConcurrentHelpers: record.maxConcurrentHelpers,
+            useOwnMemory: record.useOwnMemory,
+            useSharedMemory: record.useSharedMemory,
             workspacePath: record.workspacePath,
             createdAt: new Date(record.createdAt),
           },

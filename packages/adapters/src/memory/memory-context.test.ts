@@ -34,6 +34,31 @@ describe("agent memory context", () => {
     expect(result!.indexOf("user fact")).toBeLessThan(result!.indexOf("bot fact"));
   });
 
+  it("leaves out a bank the bot's settings turned off", async () => {
+    const read = vi.fn(async ({ scope }: { scope: "bot" | "user" }) =>
+      snapshot([
+        document(`${scope}-doc`, `${scope}.md`, `${scope} fact`, 1, "2026-08-14T12:00:00.000Z"),
+      ]),
+    );
+
+    const ownOnly = await loadAgentMemoryContext(storeWith(read), "bot-1", context, undefined, {
+      includeBot: true,
+      includeUser: false,
+    });
+    expect(read).toHaveBeenCalledExactlyOnceWith({ scope: "bot", botId: "bot-1" }, context);
+    expect(ownOnly).toContain("bot fact");
+    expect(ownOnly).not.toContain("user fact");
+
+    read.mockClear();
+    const sharedOnly = await loadAgentMemoryContext(storeWith(read), "bot-1", context, undefined, {
+      includeBot: false,
+      includeUser: true,
+    });
+    expect(read).toHaveBeenCalledExactlyOnceWith({ scope: "user" }, context);
+    expect(sharedOnly).toContain("user fact");
+    expect(sharedOnly).not.toContain("bot fact");
+  });
+
   it("caps the complete memory block without splitting UTF-8 characters", async () => {
     const read = vi.fn(async ({ scope }: { scope: "bot" | "user" }) =>
       snapshot(

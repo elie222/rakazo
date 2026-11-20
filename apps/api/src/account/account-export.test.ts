@@ -70,6 +70,8 @@ const botRecord = (id: string): Extract<AccountExportRecord, { type: "bot" }> =>
   workspacePath: null,
   approvalMode: null,
   maxConcurrentHelpers: null,
+  useOwnMemory: true,
+  useSharedMemory: true,
   createdAt,
 });
 

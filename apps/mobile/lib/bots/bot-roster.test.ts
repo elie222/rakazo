@@ -40,6 +40,8 @@ function bot(id = "bot-1"): Bot {
     hostDevice: null,
     approvalMode: null,
     maxConcurrentHelpers: null,
+    useOwnMemory: true,
+    useSharedMemory: true,
     webhookConfigured: false,
     spawnKey: null,
   };

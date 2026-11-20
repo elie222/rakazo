@@ -89,6 +89,8 @@ function inboxBot(): Bot {
     hostDevice: null,
     approvalMode: null,
     maxConcurrentHelpers: null,
+    useOwnMemory: true,
+    useSharedMemory: true,
     updatedAt: "2026-10-07T00:00:00.000Z",
     createdAt: "2026-10-07T00:00:00.000Z",
     voiceId: null,
