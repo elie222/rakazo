@@ -6,6 +6,7 @@ import * as db from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withVoiceConnection } from "../voice/connection-errors.js";
 import { isVoiceProviderFailure } from "../voice/http-errors.js";
 import type { VoiceDeps } from "./voice.js";
 import {
@@ -24,7 +25,6 @@ import {
   voiceCredentialHasKey,
   voiceCredentialPlaintext,
   voiceCredentialServer,
-  withVoiceConnection,
 } from "./voice.js";
 import { toVoiceCredential } from "./voice-credential.js";
 

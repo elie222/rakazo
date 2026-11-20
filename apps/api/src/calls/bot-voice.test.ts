@@ -1,6 +1,13 @@
 import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { IsolationError } from "@rakazo/db";
+import {
+  createLogger,
+  createTestSink,
+  getLogContext,
+  installLogger,
+  runWithLogContext,
+} from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "./voice.js";
@@ -272,4 +279,52 @@ describe("bot voice", () => {
     expect(secrets.load).not.toHaveBeenCalled();
     expect(synthesize).not.toHaveBeenCalled();
   });
+});
+
+describe("bot voice HTTP outages", () => {
+  afterEach(() => installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] })));
+
+  it.each([
+    [
+      "a provider outage",
+      () =>
+        new adapters.VoiceProviderUnavailableError(undefined, {
+          cause: new Error("private provider response"),
+        }),
+    ],
+    ["a timeout", () => new DOMException("private provider response", "TimeoutError")],
+  ] as const)(
+    "answers %s as an expected 503 without exposing provider text",
+    async (_name, failure) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+      const { deps, synthesize, createProvider } = fixture({
+        voiceProvider: "provider-b",
+        voiceId: "bot-voice",
+      });
+      synthesize.mockRejectedValue(failure());
+      const app = new Hono();
+      mountVoiceHttpRoutes(app, deps, async () => actor);
+
+      await runWithLogContext({}, async () => {
+        const response = await app.request("/api/voice/speak", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: "Hello", botId: "bot-1" }),
+        });
+
+        expect(response.status).toBe(503);
+        await expect(response.json()).resolves.toEqual({
+          error: "The voice service is not responding. Try again in a moment.",
+        });
+        expect(getLogContext()["error.expected"]).toBe(true);
+      });
+      expect(createProvider).toHaveBeenCalledWith("provider-b", expect.anything());
+      expect(synthesize.mock.calls[0]?.[0].voiceId).toBe("bot-voice");
+      expect(sink.events).toEqual([
+        expect.objectContaining({ level: "warn", message: "voice provider unavailable" }),
+      ]);
+      expect(JSON.stringify(sink.events)).not.toContain("private provider response");
+    },
+  );
 });

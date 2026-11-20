@@ -37,6 +37,8 @@ const fixtures = {
       WHATSAPP_PHONE_NUMBER_ID: "wa-phone-id",
       WHATSAPP_APP_SECRET: "wa-app-secret",
       WHATSAPP_VERIFY_TOKEN: "wa-verify",
+      WHATSAPP_API_URL: "https://graph.example.test",
+      WHATSAPP_BOT_USERNAME: "wa-bot",
     },
   },
   telegram: {

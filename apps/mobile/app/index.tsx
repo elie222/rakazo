@@ -29,9 +29,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotOrganizeModal } from "../components/inbox/bot-organize-modal";
 import { ActivitySection } from "../components/inbox/inbox-activity";
 import { InboxErrorState } from "../components/inbox/inbox-error-state";
+import { InboxFooter } from "../components/inbox/inbox-footer";
 import { InboxHeader } from "../components/inbox/inbox-header";
 import {
   InboxListFooter,
+  InboxNewBot,
   SWIPE_ROWS,
   useInboxRenderItem,
 } from "../components/inbox/inbox-render-item";
@@ -189,6 +191,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     badgeLoad,
     inboxRequestId,
     inboxLoaded,
+    creatingFirstBot,
     loadBots,
     refreshBots,
   } = useInbox(spaceActionRef);
@@ -823,12 +826,16 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         onRetry={() => void refreshBots()}
         onSignIn={() => void signInAgain()}
       />
-    ) : activityView ? undefined : (
-      <Text style={styles.empty}>{me && !onShareSelect ? t`Tap + to create a bot` : null}</Text>
+    ) : activityView || !me || onShareSelect || creatingFirstBot ? undefined : (
+      <InboxNewBot onPress={() => newBot()} />
     );
   const listFooter = activityView ? undefined : (
     <InboxListFooter
-      createHint={!onShareSelect && !showLoadFailure && inboxNeedsCreateHint(listData)}
+      onNewBot={
+        !onShareSelect && !showLoadFailure && !creatingFirstBot && inboxNeedsCreateHint(listData)
+          ? () => newBot()
+          : undefined
+      }
       archivedCount={onShareSelect ? 0 : archivedCount}
     />
   );
@@ -921,6 +928,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           </View>
         </CompactRowsContext.Provider>
       </SelectedChatContext.Provider>
+      {/* Without a loaded account the footer still leads to Account, to sign out or switch server. */}
+      {embedded && !onShareSelect ? (
+        <InboxFooter initial={initials} columnInsets={columnInsets} />
+      ) : null}
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}

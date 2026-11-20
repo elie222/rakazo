@@ -128,6 +128,55 @@ describe("device voice preference", () => {
     expect(store.get(DEVICE_VOICE_KEY)).toBe("1");
   });
 
+  it("reads a choice still being saved instead of writing a default over it", async () => {
+    const { DEVICE_VOICE_KEY, loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } = await import(
+      "./device-voice"
+    );
+    const landed = deferred();
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(async (key, value) => {
+      await landed.promise;
+      store.set(key, value);
+    });
+    status.ready = true;
+    const saving = saveDeviceVoiceEnabled(true);
+    const loading = loadDeviceVoiceEnabled();
+    landed.resolve();
+    await saving;
+    expect(await loading).toBe(true);
+    expect(store.get(DEVICE_VOICE_KEY)).toBe("1");
+  });
+
+  it("keeps an explicit hosted choice when the in-flight inherited status request fails", async () => {
+    const answer = deferred();
+    status.gate = answer.promise;
+    vi.mocked(rpc).mockClear();
+    const loading = loadDeviceVoiceEnabled("bot-voice");
+    await vi.waitFor(() =>
+      expect(rpc).toHaveBeenCalledWith("voice/status", { botId: "bot-voice" }, undefined),
+    );
+    await saveDeviceVoiceEnabled(false);
+    status.fail = true;
+    answer.resolve();
+
+    await expect(loading).resolves.toBe(false);
+    expect(store.get("rakazo.device-voice")).toBe("0");
+  });
+
+  it("tells listeners at once and keeps a save that a listener fails in", async () => {
+    const { saveDeviceVoiceEnabled, subscribeDeviceVoiceChoice } = await import("./device-voice");
+    const heard = vi.fn(() => {
+      throw new Error("listener broke");
+    });
+    const unsubscribe = subscribeDeviceVoiceChoice(heard);
+    try {
+      const saving = saveDeviceVoiceEnabled(true);
+      expect(heard).toHaveBeenCalledOnce();
+      await expect(saving).resolves.toBeUndefined();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it("rejects when SecureStore cannot write, so callers can roll back", async () => {
     vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("device locked"));
     const { saveDeviceVoiceEnabled, loadDeviceVoiceEnabled } = await import("./device-voice");

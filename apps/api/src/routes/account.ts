@@ -69,7 +69,6 @@ import {
   voiceCredentialServer,
   voiceProviderFor,
   voiceStatus,
-  withVoiceConnection,
 } from "../calls/voice.js";
 import { toVoiceCredential } from "../calls/voice-credential.js";
 import {
@@ -78,6 +77,7 @@ import {
   startModelConnect,
 } from "../models/model-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
+import { withVoiceConnection } from "../voice/connection-errors.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
@@ -129,6 +129,16 @@ export function accountRoutes(ctx: RouterContext) {
     },
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    cloudComputers: {
+      list: authed.cloudComputers.list.handler(
+        async ({ context }) => (await deps.billing?.cloudComputers(context.actor)) ?? null,
+      ),
+      setSize: authed.cloudComputers.setSize.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        await billing.setComputerSize(context.actor, input.computerId, input.size);
+        return { ok: true as const };
+      }),
+    },
     billing: {
       selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) => {
         const billing = requireBilling(deps);

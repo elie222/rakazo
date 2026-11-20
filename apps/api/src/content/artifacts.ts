@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore, MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import { createAdapterContext } from "@rakazo/adapter-kit";
+import { inboundAttachmentMimeType, inboundAttachmentRefusal } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   ARTIFACT_NAME_MAX_LENGTH,
@@ -19,7 +20,10 @@ import {
   inferAttachmentMimeType,
   messageBlockForArtifact,
   promptTextForAttachments,
+  requestDeadline,
+  retry,
   validateAttachmentMimeType,
+  withAbort,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -29,6 +33,8 @@ import {
   Prisma,
   withResolvedArtifactVersion,
 } from "@rakazo/db";
+import { InboundAttachmentUnavailableError } from "../messaging/inbound-attachments.js";
+import type { DownloadBudget } from "../messaging/intake/download-budget.js";
 
 export async function createOwnedArtifact(
   deps: {
@@ -60,6 +66,9 @@ export async function createOwnedArtifact(
   return storeOwnedArtifact(deps, actor, { ...input, mimeType, bytes });
 }
 
+/** Pauses after the first and second failed download tries; the last repeats. */
+const DOWNLOAD_RETRY_DELAYS_MS = [1_000, 5_000];
+
 /** A stored inbound attachment plus its downloaded content when it was fresh. */
 export type StoredInboundAttachment = ReturnType<typeof createdArtifact> & {
   bytes?: Uint8Array;
@@ -70,6 +79,8 @@ export async function storeInboundAttachment(
     prisma: PrismaClient;
     artifacts: ArtifactStore;
     maxUploadSizeBytes?: number;
+    /** This process's memory for downloads: each reserves its size before it starts. */
+    downloadBudget?: DownloadBudget;
   },
   owner: ArtifactOwner,
   input: {
@@ -77,6 +88,10 @@ export async function storeInboundAttachment(
     attachment: MessagingInboundAttachment;
     clientNonce: string;
     downloadDeadline?: number;
+    /** Time one download try may take, within `downloadDeadline`. */
+    downloadTimeoutMs?: number;
+    /** Download tries in total, with a pause between them. */
+    attempts?: number;
     /** Stored as a file of its own, never as the next version of one with the same name. */
     standalone?: boolean;
   },
@@ -85,31 +100,76 @@ export async function storeInboundAttachment(
   if (replayed) return createdArtifact(replayed);
   const { attachment } = input;
   const name = attachment.name.slice(0, ARTIFACT_NAME_MAX_LENGTH);
-  // Some providers (e.g. WhatsApp voice notes) report a MIME type with
-  // parameters, such as "audio/ogg; codecs=opus". Strip them before
-  // inferring/validating so the base type is matched against the allowlist.
-  const reportedType =
-    attachment.mimeType.split(";")[0]?.trim().toLowerCase() || attachment.mimeType;
-  const mimeType = inferAttachmentMimeType(name, reportedType) ?? reportedType;
-  validateAttachmentMimeType(mimeType);
+  const mimeType = inboundAttachmentMimeType(name, attachment.mimeType);
   const maxBytes = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
-  const tooLarge = new AttachmentValidationError(
+  const tooLarge = new InboundAttachmentUnavailableError(
+    "too large",
     `Attachment exceeds the ${attachmentSizeLabel(maxBytes)} limit`,
   );
-  if ((attachment.size ?? 0) > maxBytes) throw tooLarge;
-  const timeoutMs = Math.min(2_000, (input.downloadDeadline ?? Infinity) - Date.now());
-  if (timeoutMs <= 0) throw new AttachmentValidationError("Attachment download timed out");
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new AttachmentValidationError("Attachment download timed out")),
-      timeoutMs,
+  // The backup settle job judges a file it never got by the same rule.
+  const refused = inboundAttachmentRefusal(attachment, maxBytes);
+  if (refused === "unsupported type") {
+    throw new InboundAttachmentUnavailableError(
+      "unsupported type",
+      `Unsupported attachment type: ${mimeType}`,
     );
+  }
+  if (refused === "too large") throw tooLarge;
+  const { downloadDeadline = Infinity, downloadTimeoutMs = 2_000, attempts = 1 } = input;
+  // What the download may hold in memory: its reported size, else as much as is allowed.
+  const reserved = attachment.size ?? maxBytes;
+  // Whether any try reached the platform: a file no try reached was never received, not failed.
+  let fetched = false;
+  const outOfTime = () =>
+    fetched
+      ? new AttachmentValidationError("Attachment download timed out")
+      : new InboundAttachmentUnavailableError(
+          "not received",
+          "Attachment download timed out before it started",
+        );
+  // The last try's download, which keeps running, and holding its copy and its share of the
+  // download budget, past its own time.
+  let running: Promise<unknown> = Promise.resolve();
+  const fetch = (release: () => void) => {
+    fetched = true;
+    const bytes = Promise.resolve().then(() => attachment.fetch());
+    running = Promise.allSettled([bytes]).then(release);
+    return bytes;
+  };
+  const download = async () => {
+    // Each try gets its own budget, capped by what is left of the shared deadline. Waiting for
+    // room in the download budget, or for a try that ran out of time to settle, counts against it.
+    const timeoutMs = Math.min(downloadTimeoutMs, downloadDeadline - Date.now());
+    if (timeoutMs <= 0) throw outOfTime();
+    const deadline = requestDeadline(timeoutMs, "Attachment download timed out");
+    try {
+      // One copy of a file downloads at a time: the next try starts once the last has settled.
+      const started = withAbort(running, deadline.signal).then(async () => {
+        deadline.signal.throwIfAborted();
+        const release =
+          (await deps.downloadBudget?.acquire(reserved, deadline.signal)) ?? (() => {});
+        try {
+          // The room may come free just as the try runs out of time.
+          deadline.signal.throwIfAborted();
+        } catch (error) {
+          release();
+          throw error;
+        }
+        return fetch(release);
+      });
+      return await withAbort(started, deadline.signal);
+    } catch (error) {
+      if (deadline.signal.aborted) throw outOfTime();
+      throw error;
+    } finally {
+      deadline.dispose();
+    }
+  };
+  const bytes = await retry(download, {
+    attempts,
+    delayMs: DOWNLOAD_RETRY_DELAYS_MS,
+    retryable: () => Date.now() < downloadDeadline,
   });
-  const bytes = await Promise.race([
-    Promise.resolve().then(() => attachment.fetch()),
-    timeout,
-  ]).finally(() => clearTimeout(timer));
   if (bytes.byteLength === 0) throw new AttachmentValidationError("Attachment content is empty");
   if (bytes.byteLength > maxBytes) throw tooLarge;
   const stored = await storeOwnedArtifact(deps, owner, {

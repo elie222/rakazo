@@ -10,6 +10,12 @@ import type {
   UnreferencedMachine,
 } from "./types.js";
 
+/**
+ * Files one direct message's backup settle lists by name, those past the attachment cap
+ * included, so its message and the sender's notice account for each; more are left out.
+ */
+export const MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS = 20;
+
 const payloadSchemas = {
   "run.continue": z.object({ runId: z.string().min(1) }),
   "routine.wakeup": z.object({
@@ -60,6 +66,25 @@ const payloadSchemas = {
       .optional(),
   }),
   "messaging.send": z.object({ outboundId: z.string().min(1) }),
+  "messaging.inbound_settle": z.object({
+    provider: z.string().min(1),
+    handle: z.string().min(1),
+    identityId: z.string().min(1),
+    spaceId: z.string().min(1),
+    botId: z.string().min(1),
+    receivedAt: z.number().int().nonnegative(),
+    text: z.string(),
+    attachments: z
+      .array(
+        z.object({
+          name: z.string(),
+          mimeType: z.string(),
+          size: z.number().int().nonnegative().optional(),
+        }),
+      )
+      .max(MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS),
+    follower: z.boolean().optional(),
+  }),
   "messaging.reply": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
@@ -316,6 +341,39 @@ export function messagingSendJob(outboundId: string, availableAt: Date): Backgro
     availableAt,
     replaceKey: messagingSendJobKey(outboundId),
     maxAttempts: MESSAGING_SEND_MAX_ATTEMPTS,
+  };
+}
+
+export function messagingInboundSettleJobKey(provider: string, handle: string): string {
+  return `messaging.inbound_settle:${JSON.stringify([provider, handle])}`;
+}
+
+/**
+ * Tries of one direct message's backup settle. Its work is a few keyed writes, so a handful rides
+ * out a brief outage, and a job that cannot settle is given up within minutes, not days.
+ */
+export const MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS = 5;
+
+/** The queue one sender's direct-message settles share, so their jobs run one at a time. */
+export function messagingInboundSettleQueue(identityId: string): string {
+  return `messaging.inbound:${identityId}`;
+}
+
+/**
+ * Backup for settling one direct message whose files download after its webhook was answered.
+ * One sender's jobs share a queue, so after a restart they still settle in the order they came.
+ */
+export function messagingInboundSettleJob(
+  payload: BackgroundJobPayloads["messaging.inbound_settle"],
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "messaging.inbound_settle",
+    payload,
+    availableAt,
+    replaceKey: messagingInboundSettleJobKey(payload.provider, payload.handle),
+    queueName: messagingInboundSettleQueue(payload.identityId),
+    maxAttempts: MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
   };
 }
 

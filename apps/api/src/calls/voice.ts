@@ -40,6 +40,7 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
+import { withVoiceConnection } from "../voice/connection-errors.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
 import { hasDeploymentVoiceConsent } from "../voice/deployment-consent.js";
 import { voiceHttpError } from "../voice/http-errors.js";
@@ -307,37 +308,6 @@ export async function loadDefaultVoiceCredential(
   operation: "synthesize" | "transcribe" = "synthesize",
 ) {
   return loadVoiceCredential(deps, actor, undefined, scope, signal, operation);
-}
-
-/** Keep refresh failures and linked-connection refusals safe for display. */
-export async function withVoiceConnection<T>(
-  provider: string,
-  linked: boolean,
-  run: () => Promise<T>,
-): Promise<T> {
-  try {
-    return await run();
-  } catch (error) {
-    if (!linked) throw error;
-    const name = voiceCatalogEntry(provider)?.name ?? provider;
-    if (error instanceof VoiceAccountError) {
-      if (error.code === "VOICE_KEY_REJECTED") {
-        throw new VoiceAccountError(
-          error.code,
-          `${name} didn't accept the Models connection for voice. Disconnect and paste an API key.`,
-        );
-      }
-      throw error;
-    }
-    getLogger().warn("voice could not use the model connection", {
-      provider,
-      reason: error instanceof Error ? error.name : "unknown",
-    });
-    throw new VoiceAccountError(
-      undefined,
-      `Couldn't use the ${name} connection from Models. Try again.`,
-    );
-  }
 }
 
 /** The connection and the bearer its provider takes, read from a model connection if linked. */

@@ -253,6 +253,9 @@ Set it in `.env` and restart the API, worker, and Docker supervisor (when used).
 limit advertised by the server. If a reverse proxy limits request bodies, allow
 room for base64 encoding (about 4/3 of the file size) and the JSON envelope.
 
+Files sent in direct messages from chat apps download in the background, up to
+`MAX_UPLOAD_SIZE_MB`, with retries. The sender is told when a file can't be received.
+
 `MAX_ATTACHMENTS_PER_MESSAGE` sets the chat attachment count per message. It defaults
 to `4` and accepts integers from `1` to `100`. Set it in `.env` and restart the API.
 Web, desktop, and mobile use the advertised count; older clients and clients connected

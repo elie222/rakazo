@@ -299,6 +299,27 @@ describe("sortRows", () => {
     expect(sortRows(values, 0, "desc")).toEqual([["2"], [".5"], [".25"], ["0.1"], ["-.5"], [""]]);
   });
 
+  it.each(
+    [
+      ["(3)", "-2", "—"],
+      ["(3)", "—", "-2"],
+      ["-2", "(3)", "—"],
+      ["-2", "—", "(3)"],
+      ["—", "(3)", "-2"],
+      ["—", "-2", "(3)"],
+    ].map((values) => ({ values })),
+  )("sorts mixed numbers and text consistently from $values", ({ values }) => {
+    const rows = [[], ...values.map((value) => [value]), [""]];
+    expect(sortRows(rows, 0, "asc")).toEqual([["(3)"], ["-2"], ["—"], [], [""]]);
+    expect(sortRows(rows, 0, "desc")).toEqual([["—"], ["-2"], ["(3)"], [], [""]]);
+  });
+
+  it("keeps natural text order and stable numeric ties in a mixed column", () => {
+    const rows = [["phase 10"], ["$5"], ["Phase 2"], ["5"]];
+    expect(sortRows(rows, 0, "asc")).toEqual([["$5"], ["5"], ["Phase 2"], ["phase 10"]]);
+    expect(sortRows(rows, 0, "desc")).toEqual([["phase 10"], ["Phase 2"], ["$5"], ["5"]]);
+  });
+
   it("sorts text columns with locale compare", () => {
     expect(sortRows(rows, 0, "asc").map((r) => r[0])).toEqual(["Alpha", "Beta", "Delta", "Gamma"]);
   });

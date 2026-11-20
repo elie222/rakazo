@@ -30,7 +30,7 @@ import { errorText, voiceAccountErrorText } from "../api/user-error";
 import { promptAiConsent } from "../settings/ai-consent";
 import { voiceForBot } from "./bot-voices";
 import { loadExpoSpeech, speakOneUtterance } from "./device-speech";
-import { loadDeviceVoicePreference } from "./device-voice";
+import { loadDeviceVoicePreference, subscribeDeviceVoiceChoice } from "./device-voice";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
 export type PlaybackSpeaker = { name?: string; color?: string };
@@ -449,6 +449,15 @@ type QueuedSpeech = {
 };
 
 let queuedSpeech: QueuedSpeech | null = null;
+
+// A queue keeps the voice it opened with, so a new choice ends it and the next text reopens one.
+subscribeDeviceVoiceChoice(() => {
+  const queued = queuedSpeech;
+  queuedSpeech = null;
+  if (!queued) return;
+  queued.feed.stop();
+  if (isCurrentSpeech(queued.epoch)) stopVoicePlayback();
+});
 
 /**
  * Says `text` once what the same owner queued before has been said, rendering the next clip

@@ -12,31 +12,27 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
-import { claimRun } from "../runs/lifecycle/run-lifecycle.js";
-import {
-  holdRoutineRunForConversation,
-  ROUTINE_CONVERSATION_WAIT_MS,
-  startRoutineRunsWaitingOn,
-} from "./routine-conversation.js";
-import { ROUTINE_WATCH_NOTE_START } from "./routine-watch.prompt.js";
+import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
+import type { ExecutorDeps } from "../executor/executor-deps.js";
+import { CHAT_WAIT_MS, holdRunForChat, startRunsWaitingOnChat } from "./chat-wait.js";
+import { claimRun } from "./run-lifecycle.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
 
-describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () => {
+describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let system: PrismaClient;
   let identity: { userId: string; spaceId: string; botId: string; threadId: string };
   let jobs: BackgroundJob[];
   let deps: ExecutorDeps;
   let groupMessages = 0;
-  const address = `routine-conversation-${randomUUID()}@rakazo.test`;
+  const address = `chat-wait-${randomUUID()}@rakazo.test`;
 
   beforeAll(async () => {
     db = createDb(url!);
     system = asSystem(db.prisma);
-    const provisioned = await runAsSystem("routine conversation fixture", () =>
+    const provisioned = await runAsSystem("chat wait fixture", () =>
       provisionMessagingIdentity(db.prisma, { provider: "email", address }),
     );
     const { userId, spaceId, botId, threadId } = provisioned;
@@ -101,11 +97,14 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
     });
   }
 
-  it("starts at once in a quiet chat", async () => {
-    const scheduled = await createRun({ trigger: "routine", status: "queued" });
+  it.each(["routine", "bot_message"])(
+    "starts a %s run at once in a quiet chat",
+    async (trigger) => {
+      const waiting = await createRun({ trigger, status: "queued" });
 
-    expect(await claimRun(deps, scheduled, "worker-2")).toBeDefined();
-  });
+      expect(await claimRun(deps, waiting, "worker-2")).toBeDefined();
+    },
+  );
 
   it("starts a routine that runs alongside its chat while the chat is busy", async () => {
     await createRun({ trigger: "user", status: "running", startedAt: new Date() });
@@ -124,10 +123,10 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
       trigger: "routine",
       status: "queued",
       routineId: (await routine(undefined, false)).id,
-      createdAt: new Date(Date.now() - 2 * ROUTINE_CONVERSATION_WAIT_MS),
+      createdAt: new Date(Date.now() - 2 * CHAT_WAIT_MS),
     });
 
-    await holdRoutineRunForConversation(deps, scheduled);
+    await holdRunForChat(deps, scheduled);
     expect(jobs).toHaveLength(0);
     expect((await system.run.findUniqueOrThrow({ where: { id: scheduled.id } })).status).toBe(
       "queued",
@@ -168,31 +167,82 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
     }
   });
 
-  it("waits for the chat's working run, then starts when that run lets go", async () => {
-    const working = await createRun({ trigger: "user", status: "running", startedAt: new Date() });
-    const scheduled = await createRun({ trigger: "routine", status: "queued" });
+  it.each(["routine", "bot_message"])(
+    "waits for the chat's working run, then starts a %s run when that run lets go",
+    async (trigger) => {
+      const working = await createRun({
+        trigger: "user",
+        status: "running",
+        startedAt: new Date(),
+      });
+      const waiting = await createRun({ trigger, status: "queued" });
 
-    expect(await claimRun(deps, scheduled, "worker-2")).toBeUndefined();
-    await holdRoutineRunForConversation(deps, scheduled);
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0]?.availableAt?.getTime()).toBe(
-      scheduled.createdAt.getTime() + ROUTINE_CONVERSATION_WAIT_MS,
-    );
+      expect(await claimRun(deps, waiting, "worker-2")).toBeUndefined();
+      await holdRunForChat(deps, waiting);
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]?.availableAt?.getTime()).toBe(waiting.createdAt.getTime() + CHAT_WAIT_MS);
 
-    // The job publisher records the wake time on the run; this double does not.
-    await system.run.update({
-      where: { id: scheduled.id },
-      data: { wakeAt: jobs[0]!.availableAt },
+      // The job publisher records the wake time on the run; this double does not.
+      await system.run.update({
+        where: { id: waiting.id },
+        data: { wakeAt: jobs[0]!.availableAt },
+      });
+      jobs = [];
+      await system.run.update({ where: { id: working.id }, data: { status: "completed" } });
+      await startRunsWaitingOnChat(deps, working);
+      expect(jobs.map((job) => job.payload)).toEqual([
+        expect.objectContaining({ runId: waiting.id }),
+      ]);
+      expect(jobs[0]?.availableAt).toBeUndefined();
+      await system.run.update({ where: { id: waiting.id }, data: { wakeAt: null } });
+      expect(await claimRun(deps, waiting, "worker-2")).toBeDefined();
+    },
+  );
+
+  it("starts replies from other bots that arrived during a run one at a time, in arrival order", async () => {
+    const working = await createRun({
+      trigger: "user",
+      status: "running",
+      startedAt: new Date(),
     });
-    jobs = [];
+    const replies = [];
+    for (const ageMs of [3_000, 2_000, 1_000])
+      replies.push(
+        await createRun({
+          trigger: "bot_message",
+          status: "queued",
+          createdAt: new Date(Date.now() - ageMs),
+        }),
+      );
+    const [first, second, third] = replies;
+
+    for (const reply of replies) expect(await claimRun(deps, reply, "worker-2")).toBeUndefined();
+
     await system.run.update({ where: { id: working.id }, data: { status: "completed" } });
-    await startRoutineRunsWaitingOn(deps, working);
-    expect(jobs.map((job) => job.payload)).toEqual([
-      expect.objectContaining({ runId: scheduled.id }),
-    ]);
-    expect(jobs[0]?.availableAt).toBeUndefined();
-    await system.run.update({ where: { id: scheduled.id }, data: { wakeAt: null } });
-    expect(await claimRun(deps, scheduled, "worker-2")).toBeDefined();
+    expect(await claimRun(deps, second!, "worker-2")).toBeUndefined();
+    expect(await claimRun(deps, first!, "worker-2")).toBeDefined();
+    expect(await claimRun(deps, third!, "worker-2")).toBeUndefined();
+  });
+
+  it("keeps another bot's message waiting for a turn of its own instead of handing it over", async () => {
+    await createRun({ trigger: "user", status: "running", startedAt: new Date() });
+    const reply = await createRun({
+      trigger: "bot_message",
+      status: "queued",
+      prompt: "Here is the research you asked for",
+      createdAt: new Date(Date.now() - CHAT_WAIT_MS - 1_000),
+    });
+
+    const before = Date.now();
+    await holdRunForChat(deps, reply);
+
+    expect(await system.run.findUniqueOrThrow({ where: { id: reply.id } })).toMatchObject({
+      status: "queued",
+      sourceMessageId: null,
+    });
+    expect(await system.steeringMessage.count({ where: { botId: identity.botId } })).toBe(0);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.availableAt?.getTime()).toBeGreaterThanOrEqual(before + CHAT_WAIT_MS);
   });
 
   it("leaves a schedule backing off after a failed attempt to its own delay", async () => {
@@ -210,7 +260,7 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
       data: { wakeAt: new Date(Date.now() + 60_000) },
     });
 
-    await startRoutineRunsWaitingOn(deps, working);
+    await startRunsWaitingOnChat(deps, working);
 
     expect(jobs).toEqual([]);
   });
@@ -231,10 +281,10 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
       },
     } as unknown as PrismaClient;
 
-    await holdRoutineRunForConversation({ ...deps, prisma: raced }, scheduled);
+    await holdRunForChat({ ...deps, prisma: raced }, scheduled);
 
     expect(jobs.map((job) => job.availableAt)).toEqual([
-      new Date(scheduled.createdAt.getTime() + ROUTINE_CONVERSATION_WAIT_MS),
+      new Date(scheduled.createdAt.getTime() + CHAT_WAIT_MS),
       undefined,
     ]);
   });
@@ -268,16 +318,20 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
 
   it("hands its task to the person's working run once the wait is over", async () => {
     const { id: routineId } = await routine();
-    const working = await createRun({ trigger: "user", status: "running", startedAt: new Date() });
+    const working = await createRun({
+      trigger: "user",
+      status: "running",
+      startedAt: new Date(),
+    });
     const scheduled = await createRun({
       trigger: "routine",
       status: "queued",
       prompt: "Send the digest",
       routineId,
-      createdAt: new Date(Date.now() - ROUTINE_CONVERSATION_WAIT_MS - 1_000),
+      createdAt: new Date(Date.now() - CHAT_WAIT_MS - 1_000),
     });
 
-    await holdRoutineRunForConversation(deps, scheduled);
+    await holdRunForChat(deps, scheduled);
     expect(jobs).toEqual([]);
 
     const ended = await system.run.findUniqueOrThrow({
@@ -323,9 +377,9 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
         status: "queued",
         prompt: "Send the digest",
         routineId: (await routine()).id,
-        createdAt: new Date(Date.now() - ROUTINE_CONVERSATION_WAIT_MS - 1_000),
+        createdAt: new Date(Date.now() - CHAT_WAIT_MS - 1_000),
       });
-      await holdRoutineRunForConversation(deps, scheduled);
+      await holdRunForChat(deps, scheduled);
 
       const finalized = await finalizeRun(system, {
         ...identity,
@@ -368,10 +422,10 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
           : kind === "former-watch"
             ? (await routine()).id
             : undefined,
-      createdAt: new Date(Date.now() - ROUTINE_CONVERSATION_WAIT_MS - 1_000),
+      createdAt: new Date(Date.now() - CHAT_WAIT_MS - 1_000),
     });
 
-    await holdRoutineRunForConversation(deps, scheduled);
+    await holdRunForChat(deps, scheduled);
 
     expect(await system.run.findUniqueOrThrow({ where: { id: scheduled.id } })).toMatchObject({
       status: "queued",
@@ -422,18 +476,16 @@ describePostgres("scheduled runs share a chat one at a time (PostgreSQL)", () =>
       trigger: "routine",
       status: "queued",
       routineId: (await routine()).id,
-      createdAt: new Date(Date.now() - ROUTINE_CONVERSATION_WAIT_MS - 1_000),
+      createdAt: new Date(Date.now() - CHAT_WAIT_MS - 1_000),
     });
 
     const before = Date.now();
-    await holdRoutineRunForConversation(deps, scheduled);
+    await holdRunForChat(deps, scheduled);
 
     expect(await system.run.findUniqueOrThrow({ where: { id: scheduled.id } })).toMatchObject({
       status: "queued",
       sourceMessageId: null,
     });
-    expect(jobs[0]?.availableAt?.getTime()).toBeGreaterThanOrEqual(
-      before + ROUTINE_CONVERSATION_WAIT_MS,
-    );
+    expect(jobs[0]?.availableAt?.getTime()).toBeGreaterThanOrEqual(before + CHAT_WAIT_MS);
   });
 });

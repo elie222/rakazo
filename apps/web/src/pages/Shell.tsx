@@ -179,6 +179,7 @@ function SpaceShell() {
     botSections,
     spaces,
     setSpaces,
+    firstBotDue,
     archivedBots,
     archivedGroups,
     initialBotsLoaded,
@@ -683,7 +684,9 @@ function SpaceShell() {
     (groups.length > 0 ||
       archivedBots.length > 0 ||
       archivedGroups.length > 0 ||
-      spaces.some((space) => space.hasContent));
+      spaces.some((space) => space.hasContent) ||
+      // Someone who has chatted before, in a new organization: nothing is on its way to them.
+      !firstBotDue);
   const shellReady =
     initialBotsLoaded &&
     (inGroup
@@ -1525,7 +1528,7 @@ function SpaceShell() {
     </BotsSidebarLayout>
   );
 
-  // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
+  // Render nothing until the first bot list lands so the chat chrome does not flash a bot-less state.
   return (
     <SpaceRpcProvider spaceId={shellSpaceId}>
       {initialBotsLoaded || initialLoadFailed ? (

@@ -6,6 +6,9 @@ import contextlib
 import io
 import re
 import pathlib
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -437,6 +440,57 @@ class CliTest(unittest.TestCase):
             for result in ({"screenshots": []}, {"screenshots": [], "complete": "true"}):
                 self.assertEqual(shots.main(["x", "prepare", json.dumps(result), str(root), BASE, str(root / "out")]), 2)
                 self.assertFalse((root / "out").exists())
+
+
+class GalleryHelperTest(unittest.TestCase):
+    helper = SCRIPT.parents[2] / ".agents/skills/pr-watch/pr-screenshots"
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs Bash and jq")
+    def test_only_emits_current_pr_and_head(self):
+        for pr, sha, ok in ((42, "current", True), (42, "stale", False), (43, "current", False)):
+            with self.subTest(pr=pr, sha=sha), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                gh = root / "gh"
+                gh.write_bytes(b"""#!/usr/bin/env bash
+if [[ "$1" == pr ]]; then
+  echo current
+else
+  echo '[[{"user":{"login":"github-actions[bot]"},"body":"<!-- rakazo-playwright-screenshots --> https://example.com/gallery/prs/42/index.html"}]]'
+fi
+""")
+                curl = root / "curl"
+                curl.write_bytes(b"""#!/usr/bin/env bash
+case "$2" in
+  */history.json) printf '%s\\n' "$HISTORY" ;;
+  */manifest.json) printf '%s\\n' 'manifest requested' >&2
+    echo '{"screenshots":[{"captureType":"checkpoint","source":"sidebar.spec.ts","title":"Sidebar","fileName":"sidebar.png"}]}' ;;
+  *) exit 2 ;;
+esac
+""")
+                gh.chmod(0o755)
+                curl.chmod(0o755)
+                result = subprocess.run(
+                    [shutil.which("bash"), "-c", 'export PATH="$(cd "$1" && pwd):$PATH"; bash "$2" 42',
+                     "test", root.as_posix(), self.helper.as_posix()],
+                    env={
+                        **os.environ,
+                        "HISTORY": json.dumps([{
+                            "pullRequestNumber": pr,
+                            "sha": sha,
+                            "screenshotsUrl": "https://example.com/gallery/prs/42/index.html",
+                        }]),
+                    },
+                    check=False,
+                    capture_output=True,
+                    encoding="utf-8", errors="replace",
+                )
+                if ok:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("![Sidebar](https://example.com/gallery/prs/42/sidebar.png)", result.stdout)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertNotIn("manifest requested", result.stderr)
 
 
 if __name__ == "__main__":

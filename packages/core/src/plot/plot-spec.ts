@@ -324,21 +324,26 @@ const COLUMN_CHANNELS = ["x", "y", "x1", "x2", "y1", "y2", "fx", "fy"] as const;
 function assertChannelsMatchColumns(mark: PlotMarkSpec, data: unknown[]): void {
   const first = data[0];
   if (!first || typeof first !== "object" || Array.isArray(first)) return;
-  const keys = Object.keys(first);
-  const available = new Set(keys);
+  // A sparse first row can omit a column that later rows provide.
+  const available = new Set<string>();
+  for (const row of data) {
+    if (row && typeof row === "object" && !Array.isArray(row)) {
+      for (const key of Object.keys(row)) available.add(key);
+    }
+  }
   let namedChannels = 0;
   for (const channel of COLUMN_CHANNELS) {
     const value = mark.options?.[channel];
     if (value !== undefined) namedChannels += 1;
     if (typeof value === "string" && !available.has(value)) {
       throw new Error(
-        `Mark "${mark.type}": ${channel} refers to "${value}" but the data columns are: ${keys.join(", ")}. Channel names must match data keys exactly.`,
+        `Mark "${mark.type}": ${channel} refers to "${value}" but the data columns are: ${[...available].join(", ")}. Channel names must match data keys exactly.`,
       );
     }
   }
   if (namedChannels === 0 && !mark.transform) {
     throw new Error(
-      `Mark "${mark.type}" has object rows but no position channels; set options like {"x": "<column>", "y": "<column>"} using these columns: ${keys.join(", ")}.`,
+      `Mark "${mark.type}" has object rows but no position channels; set options like {"x": "<column>", "y": "<column>"} using these columns: ${[...available].join(", ")}.`,
     );
   }
 }

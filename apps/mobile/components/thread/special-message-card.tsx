@@ -5,7 +5,7 @@ import { cloudAgentHttpsUrl, helperCardState, displayName as safeDisplayName } f
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewInstance } from "react-native";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -17,6 +17,7 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import type { UserBubble } from "../../lib/messages/user-bubble";
 import { withUserBubble } from "../../lib/messages/user-bubble";
 import { useResolvedAppearance } from "../../lib/native/native";
+import { openExternalUrl } from "../../lib/platform/open-url";
 import { useSave } from "../../lib/query/query";
 import { BotMention } from "../messages/bot-mention";
 import { NativeActionButton } from "../native/native-action-button";
@@ -226,7 +227,7 @@ export function SpecialMessageCard(props: SpecialMessageCardProps) {
       <Pressable
         {...actionProps}
         onPress={() => {
-          if (href) Linking.openURL(href).catch(() => undefined);
+          if (href) void openExternalUrl(href);
         }}
         testID="cloud-agent-card"
         accessibilityRole={href ? "link" : "text"}

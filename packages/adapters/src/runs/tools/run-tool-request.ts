@@ -22,7 +22,7 @@ import { argumentGiven, dropUnchangedOwnBotArgs } from "../../bots/update-bot-pa
 import { validCloudAgentArgs } from "../../cloud-agents/cloud-agent-tools.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { paidRequestEffect, restorePaidRequest } from "../../payments/paid-request.js";
-import type { PurchaseApproval } from "../../payments/purchase-gate.js";
+import type { PurchaseApproval, UncheckedPress } from "../../payments/purchase-gate.js";
 import {
   detectPurchase,
   PURCHASE_CHECKED_TOOLS,
@@ -417,6 +417,21 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
+    // Routines and webhooks reach no one's computer, including through a run they were handed to.
+    if (
+      await deps.prisma.steeringMessage.findFirst({
+        where: {
+          runId: ctx.runId,
+          claimedAt: { not: null },
+          originTrigger: { in: ["routine", "webhook"] },
+        },
+        select: { id: true },
+      })
+    )
+      return refusal(
+        "user_computer_unavailable",
+        "The user's computer is not available in this run.",
+      );
   }
   // The card shows and the effect stores the events in their short form, so padding can't hide one.
   if ((name === "schedule_create" || name === "schedule_update") && "on" in args) {
@@ -542,14 +557,10 @@ export async function prepareToolRequest(
         error: "Type a saved card and sign in with a saved login in separate browser_act calls.",
       };
     // A desktop press has no check on the page right before it, as a browser_act click does: one the user
-    // approved goes ahead only while the page still shows what the card did. A card that named nothing
-    // (the check failed) has nothing to compare.
-    if (
-      name === "computer_act" &&
-      approved &&
-      (approved.site || approved.label || approved.amount)
-    ) {
+    // approved goes ahead only while the page still shows what the card did.
+    if (name === "computer_act" && approved) {
       const now = await detectPurchase(ctx, name, rest);
+      if (typeof now === "string") return uncheckedPress(now);
       if (
         !now ||
         now.site !== approved.site ||
@@ -564,7 +575,10 @@ export async function prepareToolRequest(
           "The page changed since the user approved this purchase, so nothing was pressed. Look at the screen and try again.",
         );
     }
-    const purchase = approved ?? (await detectPurchase(ctx, name, rest));
+    const detected = approved ?? (await detectPurchase(ctx, name, rest));
+    // A press that could not be checked is never pressed and never asked about, in any approval mode.
+    if (typeof detected === "string") return uncheckedPress(detected);
+    const purchase = detected;
     // One card asks one question: a sign-in is never approved under a payment's.
     if (loginUse && purchase)
       return {
@@ -612,6 +626,32 @@ export async function prepareToolRequest(
   )
     request.effectRequest = args;
   return undefined;
+}
+
+/** What the model is told when a press could not be checked for a payment, so nothing was pressed. */
+function uncheckedPress(why: UncheckedPress): { error: string } {
+  switch (why) {
+    case "opened":
+      return refusal(
+        "purchase_page_opened",
+        "This presses on a page the same call opens, which couldn't be checked first, so nothing was pressed. Open the page first, then press in a separate call.",
+      );
+    case "dialog":
+      return refusal(
+        "purchase_dialog_unchecked",
+        "A confirmation dialog is open and couldn't be checked for a payment, so nothing was pressed. Press Escape to cancel it, or stop and ask the user.",
+      );
+    case "dialog-batch":
+      return refusal(
+        "purchase_dialog_batch",
+        "A dialog is open on the page, so nothing was pressed. Answer it with a single press in its own call, then continue.",
+      );
+    case "unreadable":
+      return refusal(
+        "purchase_page_unreadable",
+        "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot and try once more; if it still can't be read, stop and tell the user.",
+      );
+  }
 }
 
 /** Settings that change what this bot runs on or how it speaks; only the owner's chat sets them. */
