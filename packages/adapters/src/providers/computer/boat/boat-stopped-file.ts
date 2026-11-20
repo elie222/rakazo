@@ -6,7 +6,7 @@ import {
   ResponseTooLargeError,
   readResponseWithin,
 } from "@rakazo/core";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import type { BoatSandboxSdk } from "./boat-client.js";
 import { BoatApiError } from "./boat-errors.js";
 
@@ -66,17 +66,25 @@ export async function readBoatStoppedFile(
 
   /**
    * A request started before the check that decides whether it is needed. Its failure surfaces
-   * only where its result is awaited, and `drop` cancels it without delaying the fallback.
+   * only where `result` is awaited, and `drop` cancels it without delaying the fallback.
    */
   const startAside = <T>(step: Step, call: (signal: AbortSignal) => Promise<T>) => {
     const controller = new AbortController();
-    const request = timed(step, call(anySignal([signal, controller.signal])));
-    void bestEffort(`unused Boat ${step} request`, request);
+    const settled = timed(step, call(anySignal([signal, controller.signal]))).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
     return {
-      request,
+      result: async (): Promise<T> => {
+        const outcome = await settled;
+        if ("error" in outcome) throw outcome.error;
+        return outcome.value;
+      },
       drop: (release?: (value: T) => void) => {
         controller.abort();
-        void bestEffort(`discard Boat ${step} request`, request.then(release));
+        void settled.then((outcome) => {
+          if ("value" in outcome) release?.(outcome.value);
+        });
       },
     };
   };
@@ -111,7 +119,7 @@ export async function readBoatStoppedFile(
       outcome = "fallback";
       return fallBackToLiveRead(report, "unverified_stop");
     }
-    const snapshot = (await latest.request).snapshot;
+    const snapshot = (await latest.result()).snapshot;
     if (
       snapshot?.sandboxId !== sandboxId ||
       snapshot.status !== "completed" ||
@@ -150,7 +158,7 @@ export async function readBoatStoppedFile(
       return fallBackToLiveRead(report, "unverified_snapshot");
     }
 
-    const { raw } = await file.request;
+    const { raw } = await file.result();
     if (raw.headers.get("x-snapshot-entry-kind") !== "file") {
       cancelResponseBody(raw);
       outcome = "fallback";

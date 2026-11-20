@@ -194,6 +194,7 @@ describe("stopped workspace files", () => {
       }),
     ]);
     expect(reads[0]).toHaveProperty("totalMs");
+    expect(sink.events.filter((event) => event.level === "warn")).toEqual([]);
   });
 
   it("falls back without waiting for a file request that never answers", async () => {
