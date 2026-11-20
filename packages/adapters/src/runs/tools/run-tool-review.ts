@@ -39,6 +39,9 @@ export type ToolReview = {
   memberChecker: boolean;
 };
 
+/** Runs whose task is the product's own prompt: a new bot's intro, and the wrap-up after a call. */
+const PRODUCT_PROMPT_TRIGGERS = new Set(["created", "call_end"]);
+
 /**
  * Run the configured reviewer (and its backups) on a call and store its verdict on the
  * effect. Returns nothing when there is no reviewer or the run was cancelled.
@@ -71,11 +74,12 @@ export async function reviewToolCall(
     // instructions), or an action on the bot's own computer after outside content, is judged on the
     // owner's own words only: the task prompt of a webhook or bot-started run carries text someone
     // else wrote, which must not authorize a write that later runs with the owner's trust. A new
-    // bot's intro run keeps its task, the product's own prompt, which can set its first instructions.
+    // bot's intro and a call's wrap-up keep their task, the product's own prompt, which no one else
+    // wrote and which the owner's words do not reach.
     const ownerWordsOnly =
       Boolean(newSiteUrl) ||
       review.ownComputerAction ||
-      (run.trigger !== "created" &&
+      (!PRODUCT_PROMPT_TRIGGERS.has(run.trigger) &&
         Boolean(
           lastingWriteKind({ toolName: name, args, savedContextWrite: review.savedContextWrite }),
         ));

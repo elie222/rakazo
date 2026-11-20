@@ -985,6 +985,9 @@ describe("lastingWriteKind", () => {
     expect(lastingWriteKind({ toolName: "schedule_update", args: { cron: "0 9 * * *" } })).toBe(
       undefined,
     );
+    expect(
+      lastingWriteKind({ toolName: "schedule_update", args: { prompt: "  ", active: false } }),
+    ).toBe(undefined);
     expect(lastingWriteKind({ toolName: "update_bot", args: { model: "m" } })).toBe(undefined);
     expect(
       lastingWriteKind({ toolName: "update_bot", args: { model: "m", instructions: "  " } }),

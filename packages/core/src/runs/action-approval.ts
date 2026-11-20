@@ -364,9 +364,10 @@ export async function savedContextWriteNeedsReview(
 
 export type LastingWrite = "memory" | "routine" | "instructions";
 
-/** An argument the update counts as given: present, and not blank text (as `argumentGiven`). */
-function given(value: unknown): boolean {
-  return value != null && (typeof value !== "string" || value.trim().length > 0);
+/** Providers send omitted optional fields as null or blank; only anything else counts as given. */
+export function argumentGiven(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  return typeof value !== "string" || value.trim().length > 0;
 }
 
 /**
@@ -389,15 +390,15 @@ export function lastingWriteKind(input: {
     return "routine";
   if (
     input.toolName === "schedule_update" &&
-    (Boolean(input.args.prompt) || Boolean(input.args.on))
+    (argumentGiven(input.args.prompt) || argumentGiven(input.args.on))
   )
     return "routine";
   // A blank value leaves the instructions as they are, and a paged read (an offset) only returns
   // the settings, as the update reads its arguments.
   if (
     input.toolName === "update_bot" &&
-    given(input.args.instructions) &&
-    !given(input.args.instructions_offset ?? input.args.instructionsOffset)
+    argumentGiven(input.args.instructions) &&
+    !argumentGiven(input.args.instructions_offset ?? input.args.instructionsOffset)
   )
     return "instructions";
   return undefined;

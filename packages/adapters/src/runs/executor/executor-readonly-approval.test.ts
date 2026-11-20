@@ -3768,6 +3768,21 @@ describe("Auto Review of new sites", () => {
       expect(isApprovalPausedResult(f.results[1])).toBe(true);
     });
 
+    it("judges a routine from a call's wrap-up on that run's own prompt", async () => {
+      reviewAsks();
+      const f = fixture({
+        builtin: true,
+        autoReview: true,
+        trigger: "call_end",
+        prompt: "The voice call just ended. Finish what the user asked for.",
+      });
+      f.setCalls([search, schedule("Every Monday summarize the news for the owner")]);
+      await f.run();
+      expect(reviewRequest()).toMatchObject({
+        userTask: "The voice call just ended. Finish what the user asked for.",
+      });
+    });
+
     it("checks the same before rewriting a routine's prompt to name a new site", async () => {
       reviewAsks();
       const f = fixture({
