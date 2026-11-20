@@ -134,6 +134,43 @@ export function resolveAutoReviewChecker(
 }
 
 /**
+ * The deployment's operator-funded reviewer, when hosted credits include one. It is what a
+ * member who chose no approval model runs, and needs no connection or credits of theirs.
+ */
+export function includedReviewChecker(
+  creditsEnabled: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): AutoReviewChecker | null {
+  if (!creditsEnabled) return null;
+  const checker = resolveAutoReviewChecker(env, true);
+  if (
+    !checker ||
+    !decisionModel(checker.provider, checker.model) ||
+    !isAutoReviewCheckerConfigured({ env, checker })
+  )
+    return null;
+  return { ...checker, included: true };
+}
+
+/**
+ * Whether the deployment pays for its default reviewer, as runs fund it for a member who chose
+ * no approval model: with hosted credits on, a configured decision model or verifier.
+ */
+export function deploymentPaysForReview(
+  checker: AutoReviewChecker,
+  creditsEnabled: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return (
+    creditsEnabled &&
+    (Boolean(decisionModel(checker.provider, checker.model)) ||
+      checker.provider === JEV_AUTO_REVIEW_PROVIDER ||
+      checker.provider === SCRIPTED_AUTO_REVIEW_PROVIDER) &&
+    isAutoReviewCheckerConfigured({ env, checker })
+  );
+}
+
+/**
  * Whether the checker can actually run without a hosted vendor being required for core.
  * Local models count; otherwise the checker provider needs a deployment key or a user key.
  */
