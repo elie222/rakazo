@@ -216,7 +216,6 @@ export async function aiConsentStatus(
       add(
         aiRecipient({
           provider: model.provider!,
-          modelId: model.id!,
           baseUrl: model.credential ? baseUrls.get(model.credential.secretId) : undefined,
           use: "model",
         }),

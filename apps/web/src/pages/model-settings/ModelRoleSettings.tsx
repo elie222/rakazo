@@ -229,6 +229,12 @@ export function ModelRoleSettings({
   // What runs when the member chose no first model; named in the empty row and offered to
   // return to from the picker.
   const deployment = settings?.deploymentPrimary ?? null;
+  // The deployment pays for its default, so it reads as included rather than as a provider bill.
+  const deploymentSource = deployment
+    ? settings?.deploymentIncluded
+      ? t`Included`
+      : providerName(deployment)
+    : undefined;
   const modelLabel = (choice: ModelBackupChoice) => entryFor(choice)?.label ?? choice.modelId;
   const busy = state.busy || state.stale || !settings;
   // Picks build their change from the settings loaded when they save, so a reload in flight
@@ -342,7 +348,7 @@ export function ModelRoleSettings({
               trigger={pickerTrigger(
                 // Blank until loaded, so an unloaded role never reads as unconfigured.
                 !settings ? "\u00a0" : deployment ? modelLabel(deployment) : defaultLabel,
-                deployment ? providerName(deployment) : undefined,
+                deploymentSource,
               )}
               label={hideHeading ? defaultLabel : t`Change ${title}`}
               options={options}
@@ -420,7 +426,9 @@ export function ModelRoleSettings({
                 label={t`Change ${name}`}
                 options={options}
                 defaultOption={
-                  isPrimary && role !== "main" && deployment ? modelLabel(deployment) : undefined
+                  isPrimary && role !== "main" && deployment
+                    ? { label: modelLabel(deployment), included: settings?.deploymentIncluded }
+                    : undefined
                 }
                 providers={providers}
                 disabled={pickerLocked}

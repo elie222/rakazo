@@ -189,6 +189,11 @@ describeJourneys("required product journeys", () => {
           where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
         })) === 0,
     );
+    // A bot without a computer simply has no earlier versions.
+    const { computerId } = await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } });
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId: null } });
+    expect(await rpc(app, cookie, "computer/homeVersions", { botId: bot.id })).toEqual([]);
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId } });
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     const original = await prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
@@ -663,6 +668,24 @@ describeJourneys("required product journeys", () => {
     expect(
       await rpc(app, cookie, "memory/update", { documentId: doc.id, content: "legacy" }),
     ).toMatchObject({ content: "legacy", revision: doc.revision + 3 });
+  });
+
+  it("keeps saved memory from triggering scripted run commands", async () => {
+    const cookie = await signup(app, `memory-scripted-${stamp}@rakazo.test`, "Memory fixture");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Memory",
+      description: "",
+      instructions: "",
+    });
+    const [doc] = await rpc<Array<{ id: string }>>(app, cookie, "memory/list", {
+      botId: bot.id,
+    });
+    await rpc(app, cookie, "memory/update", {
+      documentId: doc!.id,
+      content: "The phrase for the failure drill is “fail this run”.",
+    });
+    await sendAndWait(app, cookie, bot.id, "Are you ready?");
   });
 
   it("clears a conversation without removing the bot, computer, memory, or routines", async () => {

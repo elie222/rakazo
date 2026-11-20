@@ -99,7 +99,8 @@
     ],
     "locales": {
       "es": "./locales/es.json",
-      "pl": "./locales/pl.json"
+      "pl": "./locales/pl.json",
+      "th": "./locales/th.json"
     },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",

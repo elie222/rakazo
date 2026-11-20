@@ -1,4 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { isUnlistedCompatibleModel } from "@rakazo/core";
 import {
   Button,
   Disclosure,
@@ -13,10 +14,6 @@ import {
 } from "@rakazo/ui-web";
 import { Check, Copy } from "lucide-react";
 import { FoundModelPicker } from "../../components/models/FoundModelPicker";
-import {
-  ModelPreflightFeedback,
-  modelPreflightTestingLabel,
-} from "../../components/models/ModelConnectionPreflightNotice";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
 import type { OnboardingModel } from "./use-onboarding-model";
@@ -31,6 +28,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     apiKey,
     cancelOAuthAttempt,
     canSaveModel,
+    compatibleKeyRequired,
     chooseProvider,
     credits,
     endpointPreset,
@@ -39,7 +37,6 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     gatewayId,
     projectId,
     region,
-    invalidatePreflight,
     isOpenAiCompatible,
     modelId,
     modelItems,
@@ -48,10 +45,6 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     needsProject,
     needsRouting,
     notice,
-    preflightFailure,
-    preflightSuccess,
-    preflightTarget,
-    preflightTesting,
     provider,
     providerItems,
     providerOptions,
@@ -65,7 +58,6 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     setModelId,
     setThinkingLevel,
     subscriptionSignIn,
-    testApiKeyConnection,
     updateApiKey,
   } = model;
 
@@ -112,7 +104,9 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
       </div>
       {provider ? (
         <>
-          {isOpenAiCompatible ? <CompatibleServerFields model={model} fieldId={fieldId} /> : null}
+          {isOpenAiCompatible && !endpointPreset ? (
+            <CompatibleServerUrl model={model} fieldId={fieldId} />
+          ) : null}
           {subscriptionSignIn ? <SubscriptionSignIn model={model} /> : null}
           {needsRouting && acceptsKey ? (
             <div className="mt-4 grid gap-4">
@@ -156,14 +150,14 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
             isOpenAiCompatible ? (
               <CompatibleKeyField
                 className="mt-4 block text-body text-muted-foreground"
-                keyRequired={Boolean(endpointPreset)}
+                keyRequired={compatibleKeyRequired}
               >
                 <Input
                   aria-label={t`API key`}
                   value={apiKey}
                   onChange={(e) => updateApiKey(e.target.value)}
-                  required={Boolean(endpointPreset)}
-                  placeholder={endpointPreset ? undefined : t`Optional`}
+                  required={compatibleKeyRequired}
+                  placeholder={compatibleKeyRequired ? undefined : t`Optional`}
                   type="password"
                   autoComplete="new-password"
                   className="mt-2"
@@ -187,24 +181,8 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
               </label>
             )
           ) : null}
-          {acceptsKey && !isOpenAiCompatible && selected?.catalogProbe ? (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-3"
-                disabled={preflightTesting || apiKey.trim().length < 8}
-                onClick={() => void testApiKeyConnection()}
-              >
-                {modelPreflightTestingLabel(preflightTesting && preflightTarget === "api-key")}
-              </Button>
-              {preflightTarget === "api-key" ? (
-                <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
-              ) : null}
-            </>
-          ) : null}
-          {/* The model is chosen once the account is connected; sign-in uses the default. */}
-          {!isOpenAiCompatible && acceptsKey && apiKey.trim() ? (
+          {isOpenAiCompatible ? <CompatibleModelSelection model={model} /> : null}
+          {!isOpenAiCompatible && acceptsKey && modelItems.length ? (
             <div className="mt-6 block text-body text-foreground">
               <span className="font-medium">
                 <Trans>Model</Trans>
@@ -217,7 +195,6 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
                   cancelOAuthAttempt();
                   setModelId(value);
                   setThinkingLevel(null);
-                  invalidatePreflight();
                 }}
                 items={modelItems}
               >
@@ -255,53 +232,46 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
   );
 }
 
-/** Server URL, found or typed model id, and advanced options for an OpenAI-compatible server. */
-function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fieldId: string }) {
+function CompatibleServerUrl({ model, fieldId }: { model: OnboardingModel; fieldId: string }) {
+  const { t } = useLingui();
+  return (
+    <label
+      htmlFor={`${fieldId}-base-url`}
+      className="mt-4 block text-body font-medium text-foreground"
+    >
+      <Trans>Server URL</Trans>
+      <Input
+        id={`${fieldId}-base-url`}
+        value={model.baseUrl}
+        onChange={(e) => model.updateBaseUrl(e.target.value)}
+        aria-label={t`OpenAI-compatible server URL`}
+        placeholder="http://127.0.0.1:8000/v1"
+        autoComplete="off"
+        className="mt-2"
+      />
+    </label>
+  );
+}
+
+function CompatibleModelSelection({ model }: { model: OnboardingModel }) {
   const { t } = useLingui();
   const {
-    baseUrl,
+    endpointPreset,
     headerRows,
-    invalidatePreflight,
     manualModelId,
     modelId,
-    preflightFailure,
-    preflightTarget,
+    discoverModels,
+    probeError,
     probeModels,
-    probeServerModels,
     probing,
     resetOpenAiCompatibleProbe,
     setHeaderRows,
     setManualModelId,
     setModelId,
-    updateBaseUrl,
   } = model;
 
   return (
-    <div className="mt-6 block text-body text-foreground">
-      <label htmlFor={`${fieldId}-base-url`} className="block font-medium">
-        <Trans>Server URL</Trans>
-        <Input
-          id={`${fieldId}-base-url`}
-          value={baseUrl}
-          onChange={(e) => updateBaseUrl(e.target.value)}
-          aria-label={t`OpenAI-compatible server URL`}
-          placeholder="http://127.0.0.1:8000/v1"
-          autoComplete="off"
-          className="mt-2"
-        />
-      </label>
-      <div className="mt-3">
-        <Button
-          variant="outline"
-          disabled={probing || !baseUrl.trim()}
-          onClick={() => void probeServerModels()}
-        >
-          {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
-        </Button>
-        {preflightTarget === "compatible" ? (
-          <ModelPreflightFeedback success={null} failure={preflightFailure} />
-        ) : null}
-      </div>
+    <div className="mt-4 block text-body text-foreground">
       <div className="mt-4 block">
         <span className="font-medium">
           <Trans>Model</Trans>
@@ -311,7 +281,6 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             models={probeModels}
             value={modelId}
             onChange={(next) => {
-              invalidatePreflight();
               setManualModelId(next === CUSTOM_MODEL_OPTION);
               setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
             }}
@@ -323,7 +292,6 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             onChange={(e) => {
               setManualModelId(true);
               setModelId(e.target.value);
-              invalidatePreflight();
             }}
             aria-label={t`Model id`}
             placeholder="exact-model-id"
@@ -338,23 +306,43 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             onClick={() => {
               setManualModelId(false);
               setModelId(probeModels[0] ?? "");
-              invalidatePreflight();
             }}
           >
             <Trans>Use a found model</Trans>
           </Button>
         ) : null}
       </div>
-      <Disclosure className="mt-4 text-body text-muted-foreground" summary={t`Advanced`}>
-        <ModelHeadersEditor
-          rows={headerRows}
-          onChange={(rows) => {
-            setHeaderRows(rows);
-            resetOpenAiCompatibleProbe();
-            invalidatePreflight();
-          }}
-        />
-      </Disclosure>
+      {isUnlistedCompatibleModel(modelId, probeModels) ? (
+        <p className="mt-2 text-muted-foreground" role="status">
+          <Trans>The server didn’t list this model.</Trans>
+        </p>
+      ) : null}
+      {probing ? (
+        <p className="mt-2 text-muted-foreground" role="status">
+          <Trans>Finding…</Trans>
+        </p>
+      ) : null}
+      {probeError ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <p className="text-destructive" role="status">
+            {probeError}
+          </p>
+          <Button type="button" variant="outline" size="xs" onClick={discoverModels}>
+            <Trans>Try again</Trans>
+          </Button>
+        </div>
+      ) : null}
+      {endpointPreset ? null : (
+        <Disclosure className="mt-4 text-body text-muted-foreground" summary={t`Advanced`}>
+          <ModelHeadersEditor
+            rows={headerRows}
+            onChange={(rows) => {
+              setHeaderRows(rows);
+              resetOpenAiCompatibleProbe();
+            }}
+          />
+        </Disclosure>
+      )}
     </div>
   );
 }

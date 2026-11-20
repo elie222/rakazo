@@ -4,7 +4,7 @@ import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { EvalCase } from "./cases.js";
 import { caseKey } from "./fingerprint.js";
-import { regradable } from "./grading.js";
+import { gradedAsStored, regradable } from "./grading.js";
 import type { TrialResult } from "./report.js";
 
 /** The parts of an eval report the store reads; the rest is kept as written. */
@@ -186,8 +186,8 @@ export class RunStore {
 
   /**
    * How to get a case's trials: from a stored run with the same fingerprint (as they are under the
-   * same judge, regraded under another), or by running it. Prefers a run with enough trials, then
-   * one under the current judge, then the newest. Trials keep their numbers; a planned trial with no
+   * same judge and checks, regraded under another), or by running it. Prefers a run with enough
+   * trials, then one that needs no regrade, then the newest. Trials keep their numbers; a planned trial with no
    * usable stored trial of that number still runs.
    */
   plan(input: {
@@ -213,19 +213,22 @@ export class RunStore {
               regradable(input.scenario, t),
           )
           .sort((a, b) => a.trial - b.trial);
-        const sameJudge = !graded || judgeIdentity(this.read(entry).judge) === input.judge;
-        return { entry, trials, sameJudge };
+        // Stored verdicts stand only while the judge and the case's own checks give them again.
+        const current =
+          (!graded || judgeIdentity(this.read(entry).judge) === input.judge) &&
+          trials.every((t) => gradedAsStored(input.scenario, t));
+        return { entry, trials, current };
       })
       .filter((candidate) => candidate.trials.length > 0)
       .sort(
         (a, b) =>
           Math.min(b.trials.length, input.trials) - Math.min(a.trials.length, input.trials) ||
-          Number(b.sameJudge) - Number(a.sameJudge) ||
+          Number(b.current) - Number(a.current) ||
           b.entry.startedAt.localeCompare(a.entry.startedAt),
       );
     const best = candidates[0];
     if (!best) return { kind: "run" };
-    return { kind: best.sameJudge ? "reuse" : "regrade", from: best.entry, trials: best.trials };
+    return { kind: best.current ? "reuse" : "regrade", from: best.entry, trials: best.trials };
   }
 }
 

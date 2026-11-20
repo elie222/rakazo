@@ -162,7 +162,7 @@ export async function listDefaultVoices(
     plaintext,
     context.signal,
   );
-  return provider.listVoices(apiKey, context);
+  return provider.listVoices(apiKey, context, { model: credential.speechModel || undefined });
 }
 
 const VOICES_SHOWN = 10;

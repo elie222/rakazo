@@ -4,8 +4,10 @@ import type { Socket } from "node:net";
 import type { Duplex, Readable } from "node:stream";
 import type * as S3Sdk from "@aws-sdk/client-s3";
 import type { ObjectStorage } from "@rakazo/adapter-kit";
+import { warnExpectedFailure } from "@rakazo/logging";
 import type { ObjectStorageConnection } from "../../../storage/object-storage-common.js";
 import {
+  ObjectStorageUnavailableError,
   objectStorageConnectionFromEnv,
   PART_BYTES,
   parts,
@@ -79,6 +81,41 @@ export function objectStorageRequestHandler(idleMs = IDLE_SOCKET_TIMEOUT_MS) {
   return { httpAgent: new IdleHttpAgent(options), httpsAgent: new IdleHttpsAgent(options) };
 }
 
+const PASSING_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const PASSING_NAMES = new Set([
+  "SlowDown",
+  "ServiceUnavailable",
+  "InternalError",
+  "RequestTimeout",
+]);
+const PASSING_CODES = new Set([
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+]);
+
+/** A failure that outlasted the SDK's own retries but says the store, not the request, is at fault. */
+export function isPassingStorageFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const failure = error as Error & { code?: unknown; $metadata?: { httpStatusCode?: number } };
+  const status = failure.$metadata?.httpStatusCode;
+  return (
+    (status !== undefined && PASSING_STATUSES.has(status)) ||
+    PASSING_NAMES.has(failure.name) ||
+    (typeof failure.code === "string" && PASSING_CODES.has(failure.code))
+  );
+}
+
+function storageOutage(error: unknown): unknown {
+  if (!isPassingStorageFailure(error)) return error;
+  const unavailable = new ObjectStorageUnavailableError({ cause: error });
+  warnExpectedFailure("object storage unavailable", unavailable);
+  return unavailable;
+}
+
 export interface S3ObjectStorageConfig extends ObjectStorageConnection {
   region: string;
   /** Address the bucket in the path instead of the host name. */
@@ -132,6 +169,15 @@ export class S3ObjectStorage implements ObjectStorage {
     return this.s3;
   }
 
+  /** The SDK already retries each command; what still fails during an outage is expected. */
+  private async send<T>(command: Promise<T>): Promise<T> {
+    try {
+      return await command;
+    } catch (error) {
+      throw storageOutage(error);
+    }
+  }
+
   private key(key: string) {
     return `${this.config.prefix}${key}`;
   }
@@ -147,25 +193,31 @@ export class S3ObjectStorage implements ObjectStorage {
       const second = first.done ? first : await source.next();
       if (second.done) {
         const bytes = first.done ? Buffer.alloc(0) : first.value;
-        await client.send(
-          new sdk.PutObjectCommand({ Bucket, Key, Body: bytes, ContentLength: bytes.length }),
+        await this.send(
+          client.send(
+            new sdk.PutObjectCommand({ Bucket, Key, Body: bytes, ContentLength: bytes.length }),
+          ),
         );
         return;
       }
-      const { UploadId } = await client.send(new sdk.CreateMultipartUploadCommand({ Bucket, Key }));
+      const { UploadId } = await this.send(
+        client.send(new sdk.CreateMultipartUploadCommand({ Bucket, Key })),
+      );
       if (!UploadId) throw new Error("Object storage did not start a multipart upload");
       const uploaded: Array<{ ETag: string; PartNumber: number }> = [];
       const upload = async (bytes: Buffer) => {
         const PartNumber = uploaded.length + 1;
-        const { ETag } = await client.send(
-          new sdk.UploadPartCommand({
-            Bucket,
-            Key,
-            UploadId,
-            PartNumber,
-            Body: bytes,
-            ContentLength: bytes.length,
-          }),
+        const { ETag } = await this.send(
+          client.send(
+            new sdk.UploadPartCommand({
+              Bucket,
+              Key,
+              UploadId,
+              PartNumber,
+              Body: bytes,
+              ContentLength: bytes.length,
+            }),
+          ),
         );
         if (!ETag) throw new Error("Object storage did not acknowledge an upload part");
         uploaded.push({ ETag, PartNumber });
@@ -175,13 +227,15 @@ export class S3ObjectStorage implements ObjectStorage {
         await upload(second.value);
         for (let next = await source.next(); !next.done; next = await source.next())
           await upload(next.value);
-        await client.send(
-          new sdk.CompleteMultipartUploadCommand({
-            Bucket,
-            Key,
-            UploadId,
-            MultipartUpload: { Parts: uploaded },
-          }),
+        await this.send(
+          client.send(
+            new sdk.CompleteMultipartUploadCommand({
+              Bucket,
+              Key,
+              UploadId,
+              MultipartUpload: { Parts: uploaded },
+            }),
+          ),
         );
       } catch (error) {
         await client
@@ -196,23 +250,29 @@ export class S3ObjectStorage implements ObjectStorage {
 
   async *get(key: string): AsyncGenerator<Uint8Array> {
     const { sdk, client } = await this.connect();
-    const { Body } = await client.send(
-      new sdk.GetObjectCommand({ Bucket: this.config.bucket, Key: this.key(key) }),
+    const { Body } = await this.send(
+      client.send(new sdk.GetObjectCommand({ Bucket: this.config.bucket, Key: this.key(key) })),
     );
     if (!Body) throw new Error("Object storage returned no body");
-    yield* Body as Readable;
+    try {
+      yield* Body as Readable;
+    } catch (error) {
+      throw storageOutage(error);
+    }
   }
 
   async *list(prefix: string): AsyncGenerator<{ key: string; lastModified: Date }> {
     const { sdk, client } = await this.connect();
     let ContinuationToken: string | undefined;
     do {
-      const page = await client.send(
-        new sdk.ListObjectsV2Command({
-          Bucket: this.config.bucket,
-          Prefix: this.key(prefix),
-          ContinuationToken,
-        }),
+      const page = await this.send(
+        client.send(
+          new sdk.ListObjectsV2Command({
+            Bucket: this.config.bucket,
+            Prefix: this.key(prefix),
+            ContinuationToken,
+          }),
+        ),
       );
       for (const object of page.Contents ?? []) {
         if (!object.Key?.startsWith(this.config.prefix)) continue;
@@ -228,17 +288,26 @@ export class S3ObjectStorage implements ObjectStorage {
   async delete(keys: readonly string[]): Promise<void> {
     const { sdk, client } = await this.connect();
     for (let start = 0; start < keys.length; start += DELETE_BATCH) {
-      const { Errors } = await client.send(
-        new sdk.DeleteObjectsCommand({
-          Bucket: this.config.bucket,
-          Delete: {
-            Quiet: true,
-            Objects: keys.slice(start, start + DELETE_BATCH).map((key) => ({ Key: this.key(key) })),
-          },
-        }),
+      const { Errors } = await this.send(
+        client.send(
+          new sdk.DeleteObjectsCommand({
+            Bucket: this.config.bucket,
+            Delete: {
+              Quiet: true,
+              Objects: keys
+                .slice(start, start + DELETE_BATCH)
+                .map((key) => ({ Key: this.key(key) })),
+            },
+          }),
+        ),
       );
-      if (Errors?.length)
-        throw new Error(`Object storage could not delete ${Errors.length} objects`);
+      if (Errors?.length) {
+        const failure = new Error(`Object storage could not delete ${Errors.length} objects`);
+        // Throttling or a server error on every failed object is an outage too; one refusal
+        // among them keeps the failure an ordinary error.
+        const passing = Errors.every((entry) => entry.Code && PASSING_NAMES.has(entry.Code));
+        throw passing ? storageOutage(Object.assign(failure, { name: Errors[0]!.Code })) : failure;
+      }
     }
   }
 }

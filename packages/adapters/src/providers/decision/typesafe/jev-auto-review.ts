@@ -3,6 +3,7 @@ import { DEFAULT_JEV_MODEL } from "../../../approvals/auto-review.js";
 import { AutoReviewSetupError } from "../../../approvals/auto-review-failures.js";
 import { DecisionAutoReviewProvider } from "../../../approvals/decision-auto-review.js";
 import { HttpDecisionProvider } from "../../../approvals/http-decisions.js";
+import { typesafeDecisionModel } from "./decision-model.js";
 
 export interface JevAutoReviewOptions extends DecisionProviderOptions {
   timeoutMs?: number;
@@ -17,6 +18,7 @@ export class JevAutoReviewProvider extends DecisionAutoReviewProvider {
       ...options,
       provider: new HttpDecisionProvider("typesafe", options),
       providerId: "jev",
+      calibration: typesafeDecisionModel.calibration,
       model: options.model?.trim() || DEFAULT_JEV_MODEL,
     });
   }

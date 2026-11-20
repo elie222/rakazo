@@ -126,6 +126,21 @@ describe("OpenAI-compatible model probes", () => {
     });
   });
 
+  it("loads a public preset's models without opening a saved credential", async () => {
+    const { client, fetch, findCredentials, load } = fixture();
+    const presetUrl = "https://api.concentrate.ai/v1";
+
+    await expect(
+      client.models.probeOpenAiCompatible({ baseUrl: presetUrl, credentialId: "cred-1" }),
+    ).resolves.toEqual({ models: ["test-model"] });
+
+    expect(findCredentials).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+    const request = fetch.mock.calls[0];
+    expect(String(request?.[0])).toBe(`${presetUrl}/models`);
+    expect(new Headers(request?.[1]?.headers).has("Authorization")).toBe(false);
+  });
+
   it("tells the member the server could not be reached", async () => {
     const { deps, fetch } = fixture();
     fetch.mockRejectedValue(new TypeError("fetch failed"));

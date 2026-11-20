@@ -203,6 +203,7 @@ pnpmfileChecksum: sha256-0/o1fsg1StqT7+17Jt0fA3zT5bYbGfbPhE0+m8odZu8=
 
 patchedDependencies:
   dockerode@5.0.1: 403e430f65af44de0d8ed7b581ae29cdd3430136633fc357769a9d8a0ce50810
+  expo-speech@58.0.4: 946559d8cae1d53c35a01e9f348e8bbb5664ae68002aa251b43d34f55f997117
   fflate@0.8.3: 714376135bb621edb5604ee53e6831513d435a7f1e01bc481fac77a61ac4e14d
 
 importers:
@@ -462,7 +463,7 @@ importers:
         version: 58.0.23(expo@58.0.26)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)(supports-color@8.1.1)(typescript@6.0.3)
       expo-speech:
         specifier: 58.0.4
-        version: 58.0.4(expo@58.0.26)
+        version: 58.0.4(patch_hash=946559d8cae1d53c35a01e9f348e8bbb5664ae68002aa251b43d34f55f997117)(expo@58.0.26)
       expo-speech-recognition:
         specifier: 58.0.1
         version: 58.0.1(expo@58.0.26)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
@@ -902,6 +903,9 @@ importers:
       '@boxd-sh/sdk':
         specifier: 0.3.0
         version: 0.3.0
+      '@chat-adapter/shared':
+        specifier: 4.44.0
+        version: 4.44.0(supports-color@8.1.1)(zod@4.6.7)
       '@chat-adapter/slack':
         specifier: 4.44.0
         version: 4.44.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)(zod@4.6.7)
@@ -22577,7 +22581,7 @@ snapshots:
       react: 19.3.1
       react-native: 0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1)
 
-  expo-speech@58.0.4(expo@58.0.26):
+  expo-speech@58.0.4(patch_hash=946559d8cae1d53c35a01e9f348e8bbb5664ae68002aa251b43d34f55f997117)(expo@58.0.26):
     dependencies:
       expo: 58.0.26(6748c73c94dc805514c5947f57a62af4)
 

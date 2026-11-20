@@ -3,6 +3,8 @@ import type {
   ArtifactStore,
   BackgroundJobPayloads,
   ConnectorProvider,
+  JobPublisher,
+  JobQueueOrder,
   ManagedConnectorProvider,
   MessagingSurface,
   SecretStore,
@@ -236,6 +238,8 @@ export function createRunRuntime(
   env: RunRuntimeEnv,
   connectors: ConnectorRuntime,
   deps: Omit<ExecutorDeps, SetByRunRuntime> & {
+    /** Also keeps one sender's direct-message settles in order. */
+    jobs: JobPublisher & JobQueueOrder;
     artifacts: ArtifactStore;
     messaging?: MessagingSurface;
     /** Whether a connected workspace still has its bot installed. */

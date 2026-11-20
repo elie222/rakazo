@@ -53,6 +53,7 @@ describe("shellShortcut", () => {
         { altKey: true },
         { repeat: true },
         { isComposing: true },
+        { keyCode: 229 },
         { metaKey: true, ctrlKey: true },
       ]) {
         expect(shellShortcut(keyEvent({ ...chord, ...extra }), host)).toBeNull();
@@ -322,6 +323,45 @@ describe("useShellShortcuts", () => {
     expect(ignored.defaultPrevented).toBe(false);
     await unmountIgnored();
   });
+
+  it.each(["isComposing", "keyCode"] as const)(
+    "leaves %s composition keydowns to the input method",
+    async (marker) => {
+      const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+      const run = vi.fn(() => true);
+      const onTyping = vi.fn();
+      const unmount = await mount(run, onTyping);
+      const press = (key: string, composing: boolean, ctrlKey = false) => {
+        const event = new KeyboardEvent("keydown", {
+          key,
+          ctrlKey,
+          isComposing: composing && marker === "isComposing",
+          cancelable: true,
+        });
+        if (composing && marker === "keyCode") {
+          Object.defineProperty(event, "keyCode", { value: 229 });
+        }
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      try {
+        expect(press("b", true, true)).toBe(false);
+        expect(press("k", true, true)).toBe(false);
+        expect(press("h", true)).toBe(false);
+        expect(run).not.toHaveBeenCalled();
+        expect(onTyping).not.toHaveBeenCalled();
+
+        expect(press("b", false, true)).toBe(true);
+        expect(press("k", false, true)).toBe(true);
+        expect(press("h", false)).toBe(false);
+        expect(run.mock.calls).toEqual([[{ type: "toggle-sidebar" }], [{ type: "command-menu" }]]);
+        expect(onTyping).toHaveBeenCalledOnce();
+      } finally {
+        await unmount();
+        platform.mockRestore();
+      }
+    },
+  );
 
   it("hands printable keys to onTyping without stopping them", async () => {
     const run = vi.fn(() => true);
