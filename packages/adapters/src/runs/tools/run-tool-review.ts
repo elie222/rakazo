@@ -27,6 +27,8 @@ export type ToolReview = {
   newSiteUrl: string | undefined;
   savedContextWrite: boolean;
   ownComputerAction: boolean;
+  /** The page a page action types into, as the gate judged it; none when it may have changed. */
+  pageUrl: string | undefined;
   matchingRules: ReturnType<typeof resolveActionApprovalForTools>["matchingRules"];
   gated: boolean;
   applied: AppliedEffect | undefined;
@@ -75,10 +77,7 @@ export async function reviewToolCall(
         ? ownComputerReviewArgs(
             name,
             redactToolArgsForReview(args, ctx.secrets),
-            // A page a desktop action may have changed is not shown as the page acted on.
-            !ctx.state.pageUrlUncertain && ctx.state.pageUrl
-              ? redactSecrets(ctx.state.pageUrl, ctx.secrets)
-              : undefined,
+            review.pageUrl && redactSecrets(review.pageUrl, ctx.secrets),
           )
         : redactToolArgsForReview(args, ctx.secrets);
     const reviewRequest: AutoReviewRequest = {

@@ -519,6 +519,8 @@ export async function gateToolCall(
       newSiteUrl: siteGate === "new" ? fetchUrl : newPageUrl,
       savedContextWrite: savedContextWriteReviewed,
       ownComputerAction: ownComputerActionReviewed && !newPageUrl,
+      // Only a page the gate knows this call types into; one that may have changed shows none.
+      pageUrl: name === "browser_act" ? pageUrl : undefined,
       matchingRules: approvalResolved.matchingRules,
       gated,
       applied,
