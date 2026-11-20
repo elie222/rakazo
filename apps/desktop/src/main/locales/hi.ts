@@ -230,4 +230,8 @@ export const HI_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Rakazo रीस्टार्ट करें",
   "Not Now": "अभी नहीं",
   "Restart Rakazo to finish setup": "सेटअप पूरा करने के लिए Rakazo रीस्टार्ट करें",
+  "Let bots use {name}?": "बॉट को {name} इस्तेमाल करने दें?",
+  "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.":
+    "{name} को अलग तरीके से शुरू होना होगा ताकि बॉट उसे पढ़ सकें। अनुमति देने के बाद उसे बंद करके फिर से खोलें।",
+  "Could not set up {name}": "{name} सेट अप नहीं हो सका",
 };

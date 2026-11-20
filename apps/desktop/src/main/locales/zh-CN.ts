@@ -218,4 +218,8 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "重新启动 Rakazo",
   "Not Now": "暂不",
   "Restart Rakazo to finish setup": "重新启动 Rakazo 以完成设置",
+  "Let bots use {name}?": "允许 Bot 使用 {name}？",
+  "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.":
+    "{name} 需要以其他方式启动，Bot 才能读取它。允许后请退出并重新打开它。",
+  "Could not set up {name}": "无法设置 {name}",
 };

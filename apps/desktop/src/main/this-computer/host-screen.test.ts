@@ -211,6 +211,7 @@ describe("screen driver download", () => {
           `Name:\t${comm}\nUid:\t${process.getuid?.() ?? 0}\t0\t0\t0\n`,
         );
         await symlink(exe, path.join(proc, pid, "exe"));
+        await writeFile(path.join(proc, pid, "cmdline"), `${exe}\0`);
       };
       await fake("10", "brave", "/opt/browser/brave");
       await fake("11", "Web Content", "/usr/lib/viewer/viewer-bin");
@@ -251,6 +252,7 @@ describe("screen driver download", () => {
         );
         await writeFile(path.join(proc, pid, "sessionid"), session);
         await symlink(`/usr/bin/${comm}`, path.join(proc, pid, "exe"));
+        await writeFile(path.join(proc, pid, "cmdline"), `/usr/bin/${comm}\0`);
       };
       await fake("self", "rakazo", "3");
       await fake("10", "elsewhere", "4");

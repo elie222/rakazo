@@ -35,6 +35,16 @@ export interface AgentDesktopHostScreenOptions {
    * accessibility bus is reported instead of launched again.
    */
   running?: (app: string) => Promise<boolean>;
+  /**
+   * Linux only: the program names an app's windows carry when the bot names it another way, such
+   * as "Files" for the program its launcher runs.
+   */
+  aliases?: (app: string) => Promise<string[]>;
+  /**
+   * Linux only: what to tell the bot about an app that is open but off the accessibility bus,
+   * given the program running it and the message it would hear otherwise.
+   */
+  unreadable?: (app: string, message: string) => Promise<string>;
   /** This app's own process. Driving it could answer its own approval cards. */
   selfPid: number;
   /** Shrinks a PNG so its long edge is at most `maxDimension`. */
@@ -203,12 +213,18 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
   }
 
   /** Only the exact program the user approved, with or without .exe; a near name could be another app. */
-  function named(windows: AgentDesktopWindow[], query: string) {
-    const wanted = query.trim().toLowerCase();
+  function named(windows: AgentDesktopWindow[], names: string[]) {
+    const wanted = names.map((name) => name.trim().toLowerCase());
     return windows.filter((window) => {
       const name = window.app_name.toLowerCase();
-      return name === wanted || name === `${wanted}.exe`;
+      return wanted.some((one) => name === one || name === `${one}.exe`);
     });
+  }
+
+  /** The name the bot gave, then the programs its launcher entries run. */
+  async function namesFor(query: string) {
+    const aliases = options.aliases ? await options.aliases(query) : [];
+    return [...new Set([query.trim(), ...aliases])];
   }
 
   function notOpen(windows: AgentDesktopWindow[], query: string) {
@@ -227,10 +243,10 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     );
   }
 
-  function windowsWithin(query: string, ms: number, signal: AbortSignal) {
+  function windowsWithin(query: string, names: string[], ms: number, signal: AbortSignal) {
     return pollUntil(
       async () => {
-        const matching = named(await listWindows(query, signal), query);
+        const matching = named(await listWindows(query, signal), names);
         return matching.length > 0 && matching;
       },
       { intervalMs: 400, timeoutMs: ms, signal, onTimeout: (): AgentDesktopWindow[] => [] },
@@ -239,17 +255,20 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
 
   async function target(query: string, signal: AbortSignal): Promise<Target> {
     const windows = await listWindows(query, signal);
-    let matching = named(windows, query);
+    let matching = named(windows, [query]);
+    // Launcher names are read only when the bot's own name finds nothing.
+    const names = matching.length ? [query] : await namesFor(query);
+    if (!matching.length) matching = named(windows, names);
     if (!matching.length) {
       // An app running off the accessibility bus has no windows to list, and launching it
       // again would open a second window of a single-instance app.
-      await refuseUnreadable(query, signal);
+      await refuseUnreadable(query, names, signal);
       // Windows launches only programs it can find by bare name, like notepad.
       const launched = await call(query, ["launch", "--", query], signal).catch((error) => {
         if (!(error instanceof HostScreenError)) throw error;
       });
       if (!launched) throw notOpen(windows, query);
-      matching = await windowsWithin(query, LAUNCH_WAIT_MS, signal);
+      matching = await windowsWithin(query, names, LAUNCH_WAIT_MS, signal);
     }
     if (matching.some((window) => window.pid === options.selfPid))
       throw new HostScreenError("Rakazo can't use its own window.");
@@ -268,8 +287,12 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     return { name, windowId: window.id, ...(window.title ? { title: window.title } : {}) };
   }
 
-  async function refuseUnreadable(query: string, signal: AbortSignal) {
-    if (!options.running || !(await options.running(query))) return;
+  async function refuseUnreadable(query: string, names: string[], signal: AbortSignal) {
+    const { running } = options;
+    if (!running) return;
+    let app: string | undefined;
+    for (const name of names) if (!app && (await running(name))) app = name;
+    if (!app) return;
     try {
       // On the bus with no window yet: launching it opens one.
       await call(query, ["snapshot", "--app", query, "--max-depth", "1"], signal);
@@ -280,8 +303,9 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
       // Any other refusal says something else about the app, so the bot hears it as it is.
       if (!(error instanceof AgentDesktopError) || error.code !== "APP_NOT_FOUND") throw error;
     }
+    const message = `${query} is open but doesn't share its window with screen control. If it's a web browser or a desktop app built on one, ask the user to quit it and start it again with ACCESSIBILITY_ENABLED=1 set and the --force-renderer-accessibility option.`;
     throw new HostScreenError(
-      `${query} is open but doesn't share its window with screen control. If it's a web browser or a desktop app built on one, ask the user to quit it and start it again with ACCESSIBILITY_ENABLED=1 set and the --force-renderer-accessibility option.`,
+      options.unreadable ? await options.unreadable(app, message) : message,
     );
   }
 

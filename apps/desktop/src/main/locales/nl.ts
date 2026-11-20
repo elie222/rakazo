@@ -241,4 +241,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Rakazo opnieuw starten",
   "Not Now": "Niet nu",
   "Restart Rakazo to finish setup": "Start Rakazo opnieuw om de configuratie te voltooien",
+  "Let bots use {name}?": "Bots {name} laten gebruiken?",
+  "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.":
+    "{name} moet anders opstarten zodat bots het kunnen lezen. Sluit het af en open het opnieuw nadat je dit hebt toegestaan.",
+  "Could not set up {name}": "Kan {name} niet instellen",
 };

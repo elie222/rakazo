@@ -231,4 +231,8 @@ export const HE_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "הפעלה מחדש של Rakazo",
   "Not Now": "לא עכשיו",
   "Restart Rakazo to finish setup": "הפעילו מחדש את Rakazo כדי להשלים את ההגדרה",
+  "Let bots use {name}?": "לאפשר לבוטים להשתמש ב-{name}?",
+  "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.":
+    "{name} צריך להיפתח בדרך אחרת כדי שבוטים יוכלו לקרוא אותו. אחרי האישור, סגרו אותו ופתחו אותו מחדש.",
+  "Could not set up {name}": "לא ניתן להגדיר את {name}",
 };

@@ -238,4 +238,8 @@ export const FR_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Redémarrer Rakazo",
   "Not Now": "Pas maintenant",
   "Restart Rakazo to finish setup": "Redémarrez Rakazo pour terminer la configuration",
+  "Let bots use {name}?": "Autoriser les bots à utiliser {name} ?",
+  "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.":
+    "{name} doit démarrer autrement pour que les bots puissent le lire. Quittez-le puis rouvrez-le après l’avoir autorisé.",
+  "Could not set up {name}": "Impossible de configurer {name}",
 };

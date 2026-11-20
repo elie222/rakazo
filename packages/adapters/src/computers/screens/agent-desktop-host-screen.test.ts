@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AgentDesktopEnvelope } from "./agent-desktop-host-screen.js";
+import type {
+  AgentDesktopEnvelope,
+  AgentDesktopHostScreenOptions,
+} from "./agent-desktop-host-screen.js";
 import {
   agentDesktopCli,
   createAgentDesktopHostScreen,
@@ -42,6 +45,7 @@ function cli(
   handlers: Record<string, Handler> = {},
   system: "Windows" | "Linux" = "Windows",
   running?: (app: string) => Promise<boolean>,
+  linux: Pick<AgentDesktopHostScreenOptions, "aliases" | "unreadable"> = {},
 ) {
   const calls: string[][] = [];
   const all: Record<string, Handler> = {
@@ -54,7 +58,7 @@ function cli(
     calls.push([...args]);
     return all[args[0]!]?.(args) ?? ok({ disposition: { delivery: "delivered_unverified" } });
   });
-  const screen = createAgentDesktopHostScreen({ run, system, running, selfPid: 99 });
+  const screen = createAgentDesktopHostScreen({ run, system, running, selfPid: 99, ...linux });
   const acted = () =>
     calls.filter(([name]) => !["list-windows", "snapshot", "screenshot"].includes(name!));
   return { screen, calls, run, acted };
@@ -363,6 +367,35 @@ describe("agent-desktop host screen", () => {
       "brave is open but doesn't share its window with screen control.",
     );
     expect(calls).toContainEqual(["snapshot", "--app", "brave", "--max-depth", "1"]);
+    expect(calls.filter(([name]) => name === "launch")).toEqual([]);
+  });
+
+  it("finds a Linux app's windows by the program its launcher entry runs", async () => {
+    const aliases = vi.fn(async (app: string) => (app === "Text Editor" ? ["notepad"] : []));
+    const { screen, calls } = cli({}, "Linux", async () => true, { aliases });
+    await expect(screen.observe(scope, "notepad")).resolves.toMatchObject({ app: "notepad" });
+    expect(aliases).not.toHaveBeenCalled();
+    await expect(screen.observe(scope, "Text Editor")).resolves.toMatchObject({ app: "notepad" });
+    expect(calls.filter(([name]) => name === "launch")).toEqual([]);
+  });
+
+  it("lets the desktop explain an app off the bus, found by its launcher's program", async () => {
+    const unreadable = vi.fn(async () => "Ask the user to answer the dialog.");
+    const { screen, calls } = cli(
+      { "list-windows": () => ok([]), snapshot: () => refused("APP_NOT_FOUND") },
+      "Linux",
+      async (app) => app === "brave-origin",
+      { aliases: async () => ["brave-origin"], unreadable },
+    );
+    await expect(screen.observe(scope, "Brave Origin")).rejects.toThrow(
+      "Ask the user to answer the dialog.",
+    );
+    expect(unreadable).toHaveBeenCalledWith(
+      "brave-origin",
+      expect.stringMatching(/^Brave Origin is open but doesn't share its window/),
+    );
+    const result = await screen.act(scope, "Brave Origin", [{ kind: "click", element: 1 }]);
+    expect(result.error).toBe("Ask the user to answer the dialog.");
     expect(calls.filter(([name]) => name === "launch")).toEqual([]);
   });
 

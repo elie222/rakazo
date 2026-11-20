@@ -1,15 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  readlink,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -21,6 +12,8 @@ import {
 import { createCuaHostScreen, cuaDriverConnector } from "@rakazo/adapters/cua-host-screen";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { HostScreenError } from "@rakazo/adapters/host-screen";
+import type { AppAccessibility } from "./app-accessibility/app-accessibility.js";
+import { isNamed, userProcesses } from "./app-accessibility/processes.js";
 
 export const SCREEN_LOCKED_MESSAGE =
   "The user's screen is locked, so their apps can't be seen or used. Ask them to unlock it, then try again.";
@@ -161,68 +154,9 @@ export function screenDriverInstaller(options: {
   };
 }
 
-async function processUid(dir: string): Promise<number | undefined> {
-  const status = await readFile(path.join(dir, "status"), "utf8");
-  const real = /^Uid:\s+(\d+)/m.exec(status)?.[1];
-  return real === undefined ? undefined : Number(real);
-}
-
-/** The login session a process was started in, unless the kernel didn't record one. */
-async function loginSession(dir: string): Promise<string | undefined> {
-  let id: string;
-  try {
-    id = (await readFile(path.join(dir, "sessionid"), "utf8")).trim();
-  } catch (error) {
-    // A kernel built without login sessions has no such file.
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    return undefined;
-  }
-  return id && id !== UNSET_LOGIN_SESSION ? id : undefined;
-}
-const UNSET_LOGIN_SESSION = "4294967295";
-/** The kernel keeps only this many characters of a process's command name. */
-const COMMAND_NAME_LENGTH = 15;
-
-/**
- * Whether this user runs a process whose command or executable is `name` in this login session,
- * read from `/proc`. A process's own environment can't place it in a session: Chromium
- * overwrites it.
- */
+/** Whether this user runs a process named `name` in this login session. */
 export async function runningProcessNamed(name: string, proc = "/proc"): Promise<boolean> {
-  const wanted = name.trim().toLowerCase();
-  // A script's command name is its own, cut short; its executable is the interpreter.
-  const command = wanted.slice(0, COMMAND_NAME_LENGTH);
-  const uid = process.getuid?.();
-  const session = await loginSession(path.join(proc, "self"));
-  for (const entry of await readdir(proc)) {
-    if (!/^\d+$/.test(entry)) continue;
-    const dir = path.join(proc, entry);
-    try {
-      // A process that blocks debugging has a root-owned folder, so read its owner from status.
-      if (uid !== undefined && (await processUid(dir)) !== uid) continue;
-      // An app open in the user's other graphical session has no window in this one.
-      const theirs = session && (await loginSession(dir));
-      if (theirs && theirs !== session) continue;
-      const comm = (await readFile(path.join(dir, "comm"), "utf8")).trim().toLowerCase();
-      // A process that made itself non-dumpable hides its executable even from its own user.
-      const exe = await readlink(path.join(dir, "exe")).catch((error) => {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== "EACCES" && code !== "EPERM") throw error;
-        return "";
-      });
-      if (path.basename(exe).toLowerCase() === wanted) return true;
-      if (comm !== command) continue;
-      if (command === wanted) return true;
-      // A cut name matches every script sharing its first characters, so check the script's own.
-      const args = (await readFile(path.join(dir, "cmdline"), "utf8")).split("\0").slice(0, 2);
-      if (args.some((arg) => path.basename(arg).toLowerCase() === wanted)) return true;
-    } catch (error) {
-      // The process exited while it was being read: Linux answers ENOENT or ESRCH.
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ESRCH") throw error;
-    }
-  }
-  return false;
+  return (await userProcesses(proc)).some((running) => isNamed(running, name));
 }
 
 /**
@@ -252,7 +186,10 @@ export function createDesktopHostScreen(options: {
   /** A locked screen hides every window, so apps opened behind it show none. */
   locked: () => boolean;
   fitImage?: AgentDesktopHostScreenOptions["fitImage"];
+  /** Linux only: finds apps by launcher name and helps the user open up ones that stay hidden. */
+  accessibility?: Pick<AppAccessibility, "aliases" | "explain">;
 }): HostScreen | undefined {
+  const { accessibility } = options;
   let screen: HostScreen;
   if (options.platform === "darwin")
     screen = createCuaHostScreen({
@@ -266,7 +203,17 @@ export function createDesktopHostScreen(options: {
     screen = createAgentDesktopHostScreen({
       run: agentDesktopCli({ command: options.driver, home: options.home, system }),
       system,
-      ...(system === "Linux" ? { running: (app: string) => runningProcessNamed(app) } : {}),
+      ...(system === "Linux"
+        ? {
+            running: (app: string) => runningProcessNamed(app),
+            ...(accessibility
+              ? {
+                  aliases: (app: string) => accessibility.aliases(app),
+                  unreadable: (app: string, message: string) => accessibility.explain(app, message),
+                }
+              : {}),
+          }
+        : {}),
       selfPid: process.pid,
       fitImage: options.fitImage,
     });
