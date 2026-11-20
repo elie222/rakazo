@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const store = new Map<string, string>();
 const native = vi.hoisted(() => ({
   os: "ios",
+  appState: "active",
   appId: "com.rakazo.app" as string | null,
   module: {} as object | null,
   available: true,
@@ -21,6 +22,11 @@ vi.mock("expo-secure-store", () => ({
   }),
 }));
 vi.mock("react-native", () => ({
+  AppState: {
+    get currentState() {
+      return native.appState;
+    },
+  },
   Platform: {
     get OS() {
       return native.os;
@@ -67,7 +73,13 @@ describe("store review prompt", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.clearAllMocks();
     failRead.on = false;
-    Object.assign(native, { os: "ios", appId: "com.rakazo.app", module: {}, available: true });
+    Object.assign(native, {
+      os: "ios",
+      appState: "active",
+      appId: "com.rakazo.app",
+      module: {},
+      available: true,
+    });
   });
 
   it("asks once the person has used the app on two days and watched three runs finish", async () => {
@@ -138,10 +150,13 @@ describe("store review prompt", () => {
     expect(JSON.parse(store.get("rakazo.store-review") ?? "{}").askedAt).toBe(start + DAY);
   });
 
-  it("keeps the chance when the inbox left view before the prompt", async () => {
+  it("keeps the chance when the inbox or the app left view before the prompt", async () => {
     const review = await engaged();
     await review.askForReviewIfDue(() => false);
+    native.appState = "background";
+    await review.askForReviewIfDue(() => true);
     expect(native.requestReview).not.toHaveBeenCalled();
+    native.appState = "active";
     await review.askForReviewIfDue(() => true);
     expect(native.requestReview).toHaveBeenCalledOnce();
   });

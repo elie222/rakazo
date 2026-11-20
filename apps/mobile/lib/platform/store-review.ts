@@ -3,7 +3,7 @@ import { bestEffort } from "@rakazo/logging";
 import * as Application from "expo-application";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import * as SecureStore from "expo-secure-store";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { openExternalUrl } from "./open-url";
 import { OFFICIAL_BUNDLE_ID } from "./store-update";
 
@@ -111,7 +111,7 @@ export async function askForReviewIfDue(isActive: () => boolean): Promise<void> 
   try {
     const StoreReview = await import("expo-store-review");
     if (!(await StoreReview.isAvailableAsync())) return;
-    if (!isActive()) {
+    if (!isActive() || AppState.currentState !== "active") {
       winPending = true;
       return;
     }
