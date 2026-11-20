@@ -173,14 +173,10 @@ export class TeamChatBridge {
     });
     if (row?.status === "ignored" || row?.status === "cancelled") return true;
     if (row?.status !== "delivered") return false;
+    // A long answer goes out as several parts sharing the key's prefix, so every part counts.
     const unsent = await this.deps.prisma.messagingOutbound.count({
       where: {
-        idempotencyKey: {
-          in: [
-            `external-message:${externalMessageId}`,
-            `external-message:${externalMessageId}:failure`,
-          ],
-        },
+        idempotencyKey: { startsWith: `external-message:${externalMessageId}` },
         // Not out yet: waiting, or claimed (sent with no handle yet).
         OR: [{ status: { not: "sent" } }, { providerHandle: null }],
       },

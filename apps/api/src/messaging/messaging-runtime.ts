@@ -94,9 +94,13 @@ export async function startMessagingRuntime({
   const inbound = createMessagingInboundHandler(inboundDeps);
   const handleTeamChatInbound = createTeamChatInboundHandler(inboundDeps, inbound, teamChat);
   const bridges = new Map<string, TeamChatBridge>();
-  /** One bridge per bot and connected workspace; it holds no timers, so it is never stopped. */
-  const bridgeFor = (botId: string, installation?: { id: string; workspaceId: string }) => {
-    const key = installation?.id ?? `static:${botId}`;
+  /** One bridge per provider, bot and connected workspace; it holds no timers, so it is never stopped. */
+  const bridgeFor = (
+    providerId: string,
+    botId: string,
+    installation?: { id: string; workspaceId: string },
+  ) => {
+    const key = installation?.id ?? `static:${providerId}:${botId}`;
     let bridge = bridges.get(key);
     if (!bridge) {
       bridge = new TeamChatBridge({
@@ -105,7 +109,7 @@ export async function startMessagingRuntime({
         jobs,
         fetchThreadHistory: createMessagingTeamChatHistory(messaging),
         storeAttachment: stores.teamChat,
-        providerId: "slack",
+        providerId,
         botId,
         workspaceId: installation?.workspaceId,
         isAvailable: installation
@@ -117,6 +121,24 @@ export async function startMessagingRuntime({
     }
     return bridge;
   };
+  /**
+   * The bot that owns shared rooms for one provider. A deployment can run
+   * Discord's rooms on their own bot without claiming Slack's, and falls back to
+   * the provider-neutral setting when it configures only that.
+   */
+  const teamChatBotIdFor = (provider: string): string | undefined =>
+    provider === "discord" ? (env.discordTeamChatBotId ?? env.teamChatBotId) : env.teamChatBotId;
+  /** Said once per guild: an operator with no Discord team-chat bot otherwise sees nothing. */
+  const warnedGuilds = new Set<string>();
+  const warnDiscordGuildWithoutBot = (guildId: string | undefined) => {
+    const key = guildId ?? "@me";
+    if (warnedGuilds.has(key)) return;
+    warnedGuilds.add(key);
+    getLogger().warn("discord guild message ignored without a team chat bot", {
+      guildId: key,
+      hint: "set DISCORD_TEAM_CHAT_BOT_ID (or TEAM_CHAT_BOT_ID) to answer in Discord channels",
+    });
+  };
   const handleInbound = async (event: MessagingInboundEvent) => {
     if (event.type !== "message") {
       await applyMessagingOutboundStatus(prisma, event);
@@ -125,7 +147,7 @@ export async function startMessagingRuntime({
     if (event.installationBotId && !event.isDirect) {
       if (!event.installationId || !event.workspaceId) return;
       await handleTeamChatInbound(
-        bridgeFor(event.installationBotId, {
+        bridgeFor(event.provider, event.installationBotId, {
           id: event.installationId,
           workspaceId: event.workspaceId,
         }),
@@ -133,13 +155,19 @@ export async function startMessagingRuntime({
       );
       return;
     }
-    if (
-      !event.installationBotId &&
-      env.teamChatBotId &&
-      prefersTeamChatSurface(event, env.teamChatBotId)
-    ) {
-      await handleTeamChatInbound(bridgeFor(env.teamChatBotId), event);
-      return;
+    if (!event.installationBotId) {
+      const botId = teamChatBotIdFor(event.provider);
+      if (botId && prefersTeamChatSurface(event, botId)) {
+        await handleTeamChatInbound(bridgeFor(event.provider, botId), event);
+        return;
+      }
+      // A Discord guild channel is only ever a team room. Without the bot that owns
+      // it nothing can answer there, and the personal channel-linking flow has no
+      // inviter to ask: Discord would only get the one-time intro note.
+      if (event.provider === "discord" && !event.isDirect) {
+        warnDiscordGuildWithoutBot(event.workspaceId);
+        return;
+      }
     }
     await inbound(event);
   };

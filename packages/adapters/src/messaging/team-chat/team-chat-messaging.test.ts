@@ -1,9 +1,11 @@
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import {
+  conversationChannelThreadId,
   createMessagingTeamChatHistory,
   createMessagingTeamChatSender,
   resolveMessagingThreadId,
+  teamChatReplyThreadId,
   toTeamChatInbound,
 } from "./team-chat-messaging.js";
 
@@ -108,6 +110,91 @@ describe("resolveMessagingThreadId", () => {
 
   it("leaves conversationId alone when it already ends with replyThreadId", () => {
     expect(resolveMessagingThreadId("slack:C1:100.1", "100.1")).toBe("slack:C1:100.1");
+  });
+
+  it("places a Discord thread after the channel, not in its slot", () => {
+    expect(resolveMessagingThreadId("discord:G1:C1", "T1")).toBe("discord:G1:C1:T1");
+    // A channel-level conversation resumes a thread it already holds.
+    expect(resolveMessagingThreadId("discord:G1:C1:T1", "T1")).toBe("discord:G1:C1:T1");
+    // A later message in another thread replaces the stale one.
+    expect(resolveMessagingThreadId("discord:G1:C1:T1", "T2")).toBe("discord:G1:C1:T2");
+    expect(resolveMessagingThreadId("discord:G1:C1", null)).toBe("discord:G1:C1");
+  });
+});
+
+describe("conversationChannelThreadId", () => {
+  it("rebuilds a Slack channel from its bare conversation key", () => {
+    expect(
+      conversationChannelThreadId({
+        provider: "slack",
+        externalKey: "C1",
+        conversationId: "slack:C1",
+      }),
+    ).toBe("slack:C1");
+  });
+
+  it("keeps the installation scope Slack installs carry", () => {
+    expect(
+      conversationChannelThreadId({
+        provider: "slack",
+        externalKey: "install-1:C1",
+        conversationId: "slack~install-1:C1:1700.1",
+      }),
+    ).toBe("slack~install-1:C1");
+  });
+
+  it("takes a Discord key that already is a thread id as it stands", () => {
+    expect(
+      conversationChannelThreadId({
+        provider: "discord",
+        externalKey: "discord:G1:C1",
+        conversationId: "discord:G1:C1:T1",
+      }),
+    ).toBe("discord:G1:C1");
+  });
+
+  it("keeps conversationId when the key disagrees with it", () => {
+    expect(
+      conversationChannelThreadId({
+        provider: "emulator",
+        externalKey: "channel:C1",
+        conversationId: "emulator:C1",
+      }),
+    ).toBe("emulator:C1");
+  });
+
+  it("keeps conversationId when the record has no provider or key", () => {
+    expect(conversationChannelThreadId({ conversationId: "slack:C1" })).toBe("slack:C1");
+  });
+});
+
+describe("teamChatReplyThreadId", () => {
+  it("answers in the thread its own message came from, not the newest one", () => {
+    // A later message moved the conversation's conversationId to 1800.2.
+    expect(
+      teamChatReplyThreadId(
+        { provider: "slack", externalKey: "C1", conversationId: "slack:C1:1800.2" },
+        "1700.1",
+      ),
+    ).toBe("slack:C1:1700.1");
+  });
+
+  it("answers in the channel when its message was not in a thread", () => {
+    expect(
+      teamChatReplyThreadId(
+        { provider: "slack", externalKey: "C1", conversationId: "slack:C1:1800.2" },
+        null,
+      ),
+    ).toBe("slack:C1");
+  });
+
+  it("nests a Discord thread after the channel", () => {
+    expect(
+      teamChatReplyThreadId(
+        { provider: "discord", externalKey: "discord:G1:C1", conversationId: "discord:G1:C1" },
+        "T1",
+      ),
+    ).toBe("discord:G1:C1:T1");
   });
 });
 

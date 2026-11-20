@@ -169,7 +169,8 @@ Messaging adapters are optional. Configure credentials for the platforms you nee
 their own bots from **Settings → Messaging**. See [Chat apps](./messaging-apps.md) for the supported
 direct-message and group flows. Teams, WhatsApp, Feishu/Lark, and Photon are direct-message only.
 Slack channels use workspace installations; Telegram and iMessage through Sendblue use personal
-group linking.
+group linking. Discord guild channels are team rooms, like Slack's, and Discord DMs use personal
+linking.
 
 Each platform turns on when its full set of credentials is present on the API and worker.
 Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
@@ -183,6 +184,7 @@ Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
 | Feishu/Lark                 | `LARK_APP_ID`, `LARK_APP_SECRET`, `LARK_VERIFICATION_TOKEN`; `LARK_ENCRYPT_KEY` when event encryption is on; `LARK_DOMAIN` (`feishu`, the default, or `lark`)                                      |
 | Microsoft Teams             | `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, `TEAMS_APP_TENANT_ID` (single-tenant, direct messages only)                                                                                                  |
 | Slack                       | See below                                                                                                                                                                                          |
+| Discord                     | `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID`; optional `DISCORD_MENTION_ROLE_IDS`, `DISCORD_TEAM_CHAT_BOT_ID` (guild rooms; falls back to `TEAM_CHAT_BOT_ID`)               |
 
 ### WhatsApp Business Cloud
 
@@ -217,6 +219,40 @@ To use webhooks instead, set `PHOTON_WEBHOOK_SECRET`. Each additional project us
 `PHOTON_PROJECT_ID_<NAME>` and `PHOTON_PROJECT_SECRET_<NAME>` (plus
 `PHOTON_WEBHOOK_SECRET_<NAME>` for webhooks), and appears as `photon-<name>`. On shared lines,
 the person must text first. Group chats are not supported.
+
+### Discord
+
+Create an application in the Discord Developer Portal, add a bot to it, and copy the bot token,
+application ID and public key into `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID` and
+`DISCORD_PUBLIC_KEY` on both the API and worker. Enable **Message Content Intent** for the bot.
+Invite it to a guild with the `bot` scope and the **Send Messages**, **Send Messages in Threads**,
+**Create Public Threads**, **Read Message History** and **Add Reactions** permissions; add
+**Manage Threads** only if the bot should rename the threads it opens. `DISCORD_MENTION_ROLE_IDS`
+is optional: a comma-separated list of role ids whose mentions count as mentions of the bot. The
+adapter and discord.js load only when configured.
+
+The receiving API holds the Gateway WebSocket that receives ordinary messages; workers never
+poll. No public webhook URL is needed. Discord sends interactions either to an Interactions
+Endpoint URL or over the Gateway, not both: if you set that URL, point it at
+`/api/v1/messaging/webhook/discord`; leaving it empty keeps interactions on the Gateway, where
+nothing reads them yet, so leave the URL empty until you handle them yourself. Run one polling API
+instance per bot token: every Gateway connection
+logged in with the same token receives every message, so a second one duplicates the work (the
+database's per-event uniqueness stops a double answer) and opens threads the other cannot stop.
+
+Guild channels behave like Slack channels. Set `DISCORD_TEAM_CHAT_BOT_ID` (or the
+provider-neutral `TEAM_CHAT_BOT_ID`) to the bot that owns them, and each channel the bot is in
+becomes one external conversation with its own settings in Rakazo, where a person can switch
+between answering mentions and listening to the channel and add rules. @mention the bot to be
+answered straight away: Discord opens a thread under the mention and the reply stays there, so
+the channel does not fill up. Guild channels need that variable: without it nothing answers there
+and the messages are ignored, because Discord gives the bot no inviter to approve it by DM the way
+Telegram does. Direct messages work either way.
+
+People can DM the bot without inviting it anywhere, and a DM plus the link code connects a
+personal Rakazo bot. Messages authored by other bots are ignored, which prevents bot loops.
+Discord only reports messages in channels it can read, so leave the bot out of channels it should
+not follow.
 
 ### Feishu/Lark
 

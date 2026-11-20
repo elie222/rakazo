@@ -1,16 +1,23 @@
 import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
 
+/**
+ * Providers whose shared rooms are team-chat rooms rather than personal group
+ * chats: one conversation per channel, with the bot in it as a teammate.
+ */
+const TEAM_CHAT_PROVIDERS = new Set(["slack", "discord", "teamchat-emulator"]);
+
+/**
+ * Whether a message from a shared room belongs to the team-chat surface instead
+ * of the personal group-linking one. Slack rooms carry their workspace, and a
+ * Discord room is only a team room inside a guild — a DM has no guild at all.
+ */
 export function prefersTeamChatSurface(
   event: Pick<MessagingInboundMessage, "provider" | "workspaceId" | "isDirect">,
   teamChatBotId: string | undefined | null,
 ): boolean {
-  return (
-    !event.isDirect &&
-    Boolean(teamChatBotId) &&
-    (event.provider === "slack" ||
-      event.provider === "teamchat-emulator" ||
-      Boolean(event.workspaceId))
-  );
+  if (event.isDirect || !teamChatBotId) return false;
+  if (!TEAM_CHAT_PROVIDERS.has(event.provider)) return false;
+  return event.provider !== "discord" || Boolean(event.workspaceId);
 }
 
 export function settleWithTimeout(

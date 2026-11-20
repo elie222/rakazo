@@ -1,4 +1,9 @@
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
+import {
+  DISCORD_MARKDOWN_LIMIT,
+  discordMessaging,
+  discordPayloads,
+} from "../providers/messaging/discord/discord-messaging.js";
 import { larkMessaging } from "../providers/messaging/lark/lark-messaging.js";
 import { photonMessaging } from "../providers/messaging/photon/photon-messaging.js";
 import { sendblueMessaging } from "../providers/messaging/sendblue/sendblue-messaging.js";
@@ -34,6 +39,7 @@ export const messagingPlatforms = {
   telegram: telegramMessaging,
   lark: larkMessaging,
   photon: photonMessaging,
+  discord: discordMessaging,
 };
 
 type Platforms = typeof messagingPlatforms;
@@ -133,6 +139,9 @@ export function splitOutboundBody(provider: string, body: string): string[] {
   if (!body.trim()) return [];
   if (provider === "slack") {
     return splitMarkdown(body, { limit: SLACK_MARKDOWN_LIMIT, sent: slackPayloads });
+  }
+  if (provider === "discord") {
+    return splitMarkdown(body, { limit: DISCORD_MARKDOWN_LIMIT, sent: discordPayloads });
   }
   const sent =
     provider === "whatsapp"

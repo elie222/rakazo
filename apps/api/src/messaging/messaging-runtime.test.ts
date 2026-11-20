@@ -8,15 +8,12 @@ import { createInboundAttachmentStores, startMessagingRuntime } from "./messagin
 const directMessages = vi.hoisted(() => ({
   prepareHandOff: vi.fn(async () => undefined),
   handOffPending: vi.fn(async () => undefined),
+  inbound: vi.fn(async () => undefined),
 }));
 
 vi.mock("./messaging-inbound.js", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  createMessagingInboundHandler: () =>
-    Object.assign(
-      vi.fn(async () => undefined),
-      directMessages,
-    ),
+  createMessagingInboundHandler: () => Object.assign(directMessages.inbound, directMessages),
 }));
 
 describe("startMessagingRuntime", () => {
@@ -54,6 +51,64 @@ describe("startMessagingRuntime", () => {
     expect(directMessages.prepareHandOff.mock.invocationCallOrder[0]).toBeLessThan(
       directMessages.handOffPending.mock.invocationCallOrder[0]!,
     );
+  });
+});
+
+describe("inbound routing", () => {
+  /** Starts the runtime far enough to capture the handler the messaging surface calls. */
+  async function inboundHandler(env: Record<string, unknown>) {
+    const handlers: ((event: unknown) => Promise<void>)[] = [];
+    const messaging = {
+      onInbound: (handler: (event: unknown) => Promise<void>) => handlers.push(handler),
+      stopReceiving: vi.fn(async () => undefined),
+      shutdown: vi.fn(async () => undefined),
+      platforms: () => [],
+      acknowledge: vi.fn(),
+      handleWebhook: vi.fn(),
+      startReceiving: vi.fn(async () => undefined),
+    };
+    await startMessagingRuntime({
+      app: new Hono(),
+      prisma: {} as never,
+      events: {} as never,
+      jobs: {} as never,
+      sandbox: {} as never,
+      secrets: {} as never,
+      artifacts: {} as never,
+      env: { maxUploadSizeBytes: 10, messagingOpenSignup: false, ...env } as never,
+      messaging: messaging as never,
+      messagingInstallations: undefined,
+      delivery: {} as never,
+      teamChat: {} as never,
+    });
+    return handlers[0]!;
+  }
+
+  const guildMessage = {
+    type: "message",
+    provider: "discord",
+    handle: "m-1",
+    threadId: "discord:G1:C1",
+    isDirect: false,
+    workspaceId: "G1",
+    conversationKey: "discord:G1:C1",
+    content: "@agent hello",
+    mentionsBot: true,
+  };
+
+  it("drops a Discord guild message when no bot owns guild channels", async () => {
+    const handle = await inboundHandler({});
+    await handle(guildMessage);
+
+    // Nothing answers, and nothing posts the personal-linking intro into the channel.
+    expect(directMessages.inbound).not.toHaveBeenCalled();
+  });
+
+  it("still routes a Discord direct message to personal linking", async () => {
+    const handle = await inboundHandler({});
+    await handle({ ...guildMessage, threadId: "discord:@me:D1", isDirect: true });
+
+    expect(directMessages.inbound).toHaveBeenCalledOnce();
   });
 });
 

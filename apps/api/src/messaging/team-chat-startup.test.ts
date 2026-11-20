@@ -39,6 +39,33 @@ describe("team chat startup helpers", () => {
     expect(prefersTeamChatSurface(message({ isDirect: false }), undefined)).toBe(false);
   });
 
+  it("takes Discord guild rooms but never a Discord direct message", () => {
+    expect(
+      prefersTeamChatSurface(
+        message({ isDirect: false, provider: "discord", workspaceId: "G-1" }),
+        "bot-1",
+      ),
+    ).toBe(true);
+    // A guild channel with no guild known is not a room this surface can hold.
+    expect(
+      prefersTeamChatSurface(
+        message({ isDirect: false, provider: "discord", workspaceId: undefined }),
+        "bot-1",
+      ),
+    ).toBe(false);
+    expect(
+      prefersTeamChatSurface(message({ provider: "discord", workspaceId: "@me" }), "bot-1"),
+    ).toBe(false);
+  });
+
+  it("leaves other providers' rooms on their own surface", () => {
+    for (const provider of ["teams", "lark", "whatsapp", "photon"]) {
+      expect(
+        prefersTeamChatSurface(message({ isDirect: false, provider, workspaceId: "W-1" }), "bot-1"),
+      ).toBe(false);
+    }
+  });
+
   it("settles once the task ends, whether it succeeds or fails", async () => {
     await expect(settleWithTimeout(undefined, 1_000)).resolves.toBe("done");
     await expect(settleWithTimeout(Promise.resolve(), 1_000)).resolves.toBe("done");

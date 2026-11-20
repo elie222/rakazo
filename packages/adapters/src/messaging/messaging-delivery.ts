@@ -51,7 +51,7 @@ import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { loadBotMessageContext } from "./bot-messages.js";
 import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
-import { resolveMessagingThreadId } from "./team-chat/team-chat-messaging.js";
+import { teamChatReplyThreadId } from "./team-chat/team-chat-messaging.js";
 
 const SteeringDeliveryProof = z.object({ externalSafe: z.boolean().optional() });
 
@@ -1218,16 +1218,16 @@ export class MessagingDelivery {
       id: string;
       kind: string;
       replyThreadId: string | null;
-      externalConversation: { conversationId: string };
+      externalConversation: { provider: string; externalKey: string; conversationId: string };
     };
   }): Promise<OutboundLane | undefined> {
     const message = run.externalMessage;
+    const conversation = message.externalConversation;
     const lane = {
       identityId: null,
-      threadId: resolveMessagingThreadId(
-        message.externalConversation.conversationId,
-        message.replyThreadId,
-      ),
+      // The channel, not the newest thread: a run that ends after a newer message moved
+      // `conversationId` on must still answer where its own message came from.
+      threadId: teamChatReplyThreadId(conversation, message.replyThreadId),
     };
     const reply =
       run.status === "completed"
@@ -1244,24 +1244,30 @@ export class MessagingDelivery {
         : ambient
           ? ""
           : `${run.bot.name} could not complete that request. Open Rakazo for details.`;
+    // Discord caps a message at 2,000 characters, which a full answer can exceed; the
+    // provider's own splitter keeps the whole answer instead of the SDK's truncation.
+    const parts = body ? splitOutboundBody(conversation.provider, body) : [];
+    const key =
+      run.status === "completed"
+        ? `external-message:${message.id}`
+        : `external-message:${message.id}:failure`;
     const recorded = await this.deps.prisma.$transaction(async (tx) => {
       const claimed = await tx.externalMessage.updateMany({
         where: { id: message.id, status: "running" },
         data: { status: "delivered" },
       });
-      if (claimed.count !== 1 || !body) return false;
-      await this.recordIn(tx, lane, [
-        {
-          idempotencyKey:
-            run.status === "completed"
-              ? `external-message:${message.id}`
-              : `external-message:${message.id}:failure`,
-          kind: "team",
+      if (claimed.count !== 1 || parts.length === 0) return false;
+      await this.recordIn(
+        tx,
+        lane,
+        parts.map((part, index) => ({
+          idempotencyKey: index === 0 ? key : `${key}:${index + 1}`,
+          kind: "team" as const,
           threadId: lane.threadId,
-          body,
+          body: part,
           sourceMessageId: reply?.id ?? run.sourceMessageId,
-        },
-      ]);
+        })),
+      );
       return true;
     });
     return recorded ? lane : undefined;
@@ -1280,7 +1286,11 @@ export class MessagingDelivery {
     },
     externalOrigin?: {
       replyThreadId: string | null;
-      externalConversation: { conversationId: string };
+      externalConversation: {
+        provider?: string;
+        externalKey?: string;
+        conversationId: string;
+      };
     },
   ): Promise<OutboundLane | undefined> {
     const origin = externalOrigin ?? (await this.findExternalOrigin(run.sourceMessageId));
@@ -1298,24 +1308,27 @@ export class MessagingDelivery {
         ? `${run.bot.name} could not complete the delegated request. Open Rakazo for details.`
         : teamChatResponseText(reply ? storedMessageBlocks(reply) : [], run.bot.name, true);
     if (!body) return undefined;
+    const conversation = origin.externalConversation;
     const lane = {
       identityId: null,
-      threadId: resolveMessagingThreadId(
-        origin.externalConversation.conversationId,
-        origin.replyThreadId,
-      ),
+      threadId: teamChatReplyThreadId(conversation, origin.replyThreadId),
     };
+    // A teammate's answer can be as long as the agent's own, so it takes the same split: the
+    // platform would otherwise truncate it silently.
+    const parts = conversation.provider ? splitOutboundBody(conversation.provider, body) : [body];
     const recorded = await this.deps.prisma.$transaction(async (tx) => {
       if (!(await claimPreviousReleaseRelay(tx, run.id))) return false;
-      await this.recordIn(tx, lane, [
-        {
-          idempotencyKey: `team-chat-run:${run.id}`,
-          kind: "team",
+      await this.recordIn(
+        tx,
+        lane,
+        parts.map((part, index) => ({
+          idempotencyKey: `team-chat-run:${run.id}${index === 0 ? "" : `:${index + 1}`}`,
+          kind: "team" as const,
           threadId: lane.threadId,
-          body,
+          body: part,
           sourceMessageId: reply?.id ?? run.sourceMessageId,
-        },
-      ]);
+        })),
+      );
       return true;
     });
     return recorded ? lane : undefined;
@@ -1336,7 +1349,12 @@ export class MessagingDelivery {
       visited.add(parentRunId);
       const external = await prisma.externalMessage.findUnique({
         where: { runId: parentRunId },
-        select: { replyThreadId: true, externalConversation: { select: { conversationId: true } } },
+        select: {
+          replyThreadId: true,
+          externalConversation: {
+            select: { provider: true, externalKey: true, conversationId: true },
+          },
+        },
       });
       if (external) return external;
       const parent = await prisma.run.findUnique({

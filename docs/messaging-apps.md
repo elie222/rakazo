@@ -1,7 +1,7 @@
 # Chat apps
 
-Message your bots from Microsoft Teams, Slack, Telegram, WhatsApp, iMessage, SMS, or Feishu/Lark.
-Replies return to the same chat app.
+Message your bots from Microsoft Teams, Slack, Telegram, WhatsApp, iMessage, SMS, Feishu/Lark, or
+Discord. Replies return to the same chat app.
 
 **Settings → Messaging** shows the chat apps configured on your server. Self-hosted operators
 set them up using the [messaging setup guide](./self-host-integrations.md#messaging-apps).
@@ -14,6 +14,7 @@ set them up using the [messaging setup guide](./self-host-integrations.md#messag
 | iMessage and SMS | Yes                    | iMessage only, when supported by the connection |
 | WhatsApp         | Yes                    | Not supported                                   |
 | Feishu/Lark      | Yes                    | Not supported                                   |
+| Discord          | Yes                    | Guild channels as team rooms                    |
 
 ## Link a bot to a chat app
 
@@ -86,6 +87,20 @@ code. Group chats are not supported.
 Open a direct chat with the Feishu or Lark app supplied by your server operator, then send the
 link code. Group chats are not supported.
 
+## Discord
+
+Ask your server operator to invite the bot to a Discord server. DM it and send the link code to
+connect it to one of your bots, as above.
+
+In a server, the bot works like a teammate. @mention it in a channel and it answers in a thread it
+opens under your message, so the channel stays tidy. Where the operator enabled it, the bot can
+also follow a whole channel: under **Settings → Messaging → Conversations**, choose **Every
+message** and add rules for when it should join in, or keep **Mentions only** to answer only when
+tagged. Each channel is its own conversation — listed under the channel's name, the id standing
+in until the bot can read the channel — with the same history as in Rakazo.
+
+Messages from other bots do not start runs.
+
 ## Group chats
 
 Personal group linking is available on Telegram and supported iMessage connections. Add the Telegram
@@ -103,11 +118,11 @@ the group. Turn privacy mode off so the bot hears the whole group: in BotFather 
 choose **Disable**, or make the bot a group admin. With privacy mode on it only sees messages that
 mention it. Telegram broadcast channels are not group chats; posts there never reach your bot.
 
-Slack rooms added through a workspace are team conversations, the only ones with per-room
-settings. Open a conversation's **Settings** to decide how the bot behaves there:
+Slack rooms added through a workspace and Discord server channels the bot is invited to are team
+conversations, and have per-room settings. Open a conversation's **Settings** to decide how the bot behaves there:
 
-- **Listening**: **Listen** to everything, or **Mentions only**. Either way, the bot answers when
-  mentioned directly.
+- **Listening**: **Every message** to follow the room, or **Mentions only**. Either way, the bot
+  answers when mentioned directly.
 - **Room guidance**: plain-language rules for the room, such as "Engage when someone asks about
   invoices. Ignore small talk."
 - **Automated senders**: for each bot or integration that posts in the room, choose **Ignore**,

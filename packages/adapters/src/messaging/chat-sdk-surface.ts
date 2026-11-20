@@ -313,15 +313,16 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     // WhatsApp renders it as its own formatting and Lark posts it as an md
     // block; Slack posts it as markdown_text (parts stay under its 12,000
     // limit, see splitOutboundBody); Photon's iMessage adapter renders it as
-    // native styled text. Sendblue's iMessage has no markup, so it keeps a
-    // plain payload.
+    // native styled text, and Discord renders it with its format converter.
+    // Sendblue's iMessage has no markup, so it keeps a plain payload.
     const telegram = mounted.adapterName === "telegram";
     const markdown =
       telegram ||
       mounted.adapterName === "whatsapp" ||
       mounted.adapterName === "lark" ||
       mounted.adapterName === "slack" ||
-      mounted.adapterName === "imessage";
+      mounted.adapterName === "imessage" ||
+      mounted.adapterName === "discord";
     const { attachment } = request;
     if (telegram && attachment && attachment.data.byteLength > TELEGRAM_UPLOAD_MAX_BYTES) {
       throw new MessagingSendError(new Error("File is larger than Telegram accepts"), {
@@ -567,6 +568,9 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
         platform.normalizeThreadId?.(threadId, message.raw) ?? threadId,
       ),
       isDirect,
+      // The Chat SDK knows this for every provider; a provider whose raw payload also says so
+      // (Slack, forwarded Discord webhooks) repeats it in its enrichment.
+      ...(message.author.isBot === true ? { senderIsBot: true } : {}),
       from: message.author.userId,
       fromLabel: fromLabel === message.author.userId ? null : fromLabel,
       channelName: isDirect ? null : (platform.channelName?.(message.raw) ?? null),
