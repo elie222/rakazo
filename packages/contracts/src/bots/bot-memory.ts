@@ -23,6 +23,8 @@ export const MemoryDocumentSchema = z.object({
   botId: Id.nullable(),
   path: z.string(),
   content: z.string(),
+  /** One line describing what the note holds; null when the writer gave none. */
+  description: z.string().nullable().default(null),
   revision: z.number().int(),
   updatedAt: z.string(),
 });

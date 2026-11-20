@@ -15,7 +15,8 @@ import type {
   MemoryStore,
   PortableFile,
 } from "@rakazo/adapter-kit";
-import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
+import { MemoryDocumentLimitError, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
+import { MEMORY_NOTES_PER_LAYER } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma, withTransactionRetry } from "@rakazo/db";
 
@@ -93,10 +94,28 @@ export class MarkdownMemoryStore implements MemoryStore {
             const live = existing?.revision ?? 0;
             if (live !== request.expectedRevision) throw new MemoryRevisionConflictError();
           }
+          if (!existing) {
+            // A bank stays scannable: a new path past the limit is refused, while an
+            // existing path can always be overwritten.
+            const notes = await tx.memoryDocument.count({
+              where: {
+                spaceId: context.spaceId,
+                scope: request.scope,
+                botId: request.botId ?? null,
+              },
+            });
+            if (notes >= MEMORY_NOTES_PER_LAYER) throw new MemoryDocumentLimitError();
+          }
           const doc = existing
             ? await tx.memoryDocument.update({
                 where: { id: existing.id },
-                data: { content: request.content, revision: existing.revision + 1 },
+                data: {
+                  content: request.content,
+                  revision: existing.revision + 1,
+                  ...(request.description === undefined
+                    ? {}
+                    : { description: request.description }),
+                },
               })
             : await tx.memoryDocument.create({
                 data: {
@@ -106,6 +125,7 @@ export class MarkdownMemoryStore implements MemoryStore {
                   scope: request.scope,
                   path: request.path,
                   content: request.content,
+                  description: request.description ?? null,
                 },
               });
           const revision = await tx.memoryRevision.create({

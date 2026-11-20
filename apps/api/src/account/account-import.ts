@@ -743,6 +743,7 @@ class AccountImporter implements ArchiveSink {
         });
         const data = {
           content: record.content,
+          description: record.description,
           revision: record.revision,
           createdAt: new Date(record.createdAt),
           updatedAt: new Date(record.updatedAt),

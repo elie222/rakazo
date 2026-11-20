@@ -34,6 +34,10 @@ Each note keeps its history: open a note's **History** to see who wrote each rev
 bot, a dream, an import, or a restore — and **Restore** one as a new revision. The newest finished
 dream can be **Undo**ne, which puts every note it changed back the way it was.
 
+Search the notes by name or content, and give each one a one-line description so the list (and the
+bot's dream) says what it holds. A bank holds at most twenty notes; adding a twenty-first is
+refused until an existing one is merged or removed.
+
 ## Shared memory
 
 Some things every bot should know, such as your name, your company, or how you like reports

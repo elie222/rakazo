@@ -33,4 +33,22 @@ describe("memoryDreamPrompt", () => {
     expect(prompt).toContain("Keep only facts the user stated in these messages");
     expect(prompt).not.toContain("Today is");
   });
+
+  it("carries each shared note's description into the index", () => {
+    const prompt = memoryDreamPrompt({
+      ...base,
+      reason: "idle",
+      sharedMemory: [{ path: "profile.md", description: "Who you are", content: "Name: Ada" }],
+    });
+    expect(prompt).toContain('<document path="profile.md" description="Who you are">');
+  });
+
+  it("omits an empty description", () => {
+    const prompt = memoryDreamPrompt({
+      ...base,
+      reason: "idle",
+      sharedMemory: [{ path: "profile.md", description: "  ", content: "Name: Ada" }],
+    });
+    expect(prompt).toContain('<document path="profile.md">');
+  });
 });

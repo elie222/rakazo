@@ -1,5 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
+import { MemoryDocumentLimitError, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { MarkdownMemoryStore } from "./index.js";
 
@@ -168,5 +168,66 @@ describe("revision history", () => {
         where: { id: "r1", documentId: "m", document: { spaceId: "workspace-1" } },
       }),
     );
+  });
+});
+
+describe("bank size and descriptions", () => {
+  const store = (tx: unknown) =>
+    new MarkdownMemoryStore({
+      $transaction: vi.fn(async (fn: (client: never) => unknown) => fn(tx as never)),
+    } as never);
+
+  it("refuses a new path once the bank is full", async () => {
+    const tx = {
+      memoryDocument: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        count: vi.fn().mockResolvedValue(20),
+      },
+      memoryRevision: { create: vi.fn() },
+    };
+    await expect(
+      store(tx).commit({ scope: "user", path: "new.md", content: "x" }, context),
+    ).rejects.toBeInstanceOf(MemoryDocumentLimitError);
+    expect(tx.memoryRevision.create).not.toHaveBeenCalled();
+  });
+
+  it("overwrites an existing path even when the bank is full", async () => {
+    const tx = {
+      memoryDocument: {
+        findFirst: vi.fn().mockResolvedValue({ id: "m", revision: 1 }),
+        update: vi.fn().mockResolvedValue({ id: "m", path: "MEMORY.md", revision: 2 }),
+        count: vi.fn(),
+      },
+      memoryRevision: { create: vi.fn().mockResolvedValue({ createdAt: new Date(0) }) },
+    };
+    await expect(
+      store(tx).commit({ scope: "user", path: "MEMORY.md", content: "x" }, context),
+    ).resolves.toMatchObject({ revision: 2 });
+    expect(tx.memoryDocument.count).not.toHaveBeenCalled();
+  });
+
+  it("writes a description and keeps it when the caller leaves it out", async () => {
+    const update = vi.fn().mockResolvedValue({ id: "m", path: "MEMORY.md", revision: 2 });
+    const tx = {
+      memoryDocument: {
+        findFirst: vi.fn().mockResolvedValue({ id: "m", revision: 1 }),
+        update,
+        count: vi.fn(),
+      },
+      memoryRevision: { create: vi.fn().mockResolvedValue({ createdAt: new Date(0) }) },
+    };
+    await store(tx).commit(
+      { scope: "user", path: "MEMORY.md", content: "x", description: "Who we are" },
+      context,
+    );
+    expect(update).toHaveBeenLastCalledWith({
+      where: { id: "m" },
+      data: { content: "x", revision: 2, description: "Who we are" },
+    });
+    await store(tx).commit({ scope: "user", path: "MEMORY.md", content: "y" }, context);
+    expect(update).toHaveBeenLastCalledWith({
+      where: { id: "m" },
+      data: { content: "y", revision: 2 },
+    });
   });
 });

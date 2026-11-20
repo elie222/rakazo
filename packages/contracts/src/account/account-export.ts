@@ -183,6 +183,8 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     scope: z.string(),
     path: z.string(),
     content: z.string(),
+    /** Absent in exports from older servers. */
+    description: z.string().nullable().default(null),
     revision: z.number().int(),
     createdAt: IsoDate,
     updatedAt: IsoDate,

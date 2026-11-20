@@ -1,4 +1,9 @@
-import { MEMORY_REVISION_CONFLICT_ERROR, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
+import {
+  MEMORY_DOCUMENT_LIMIT_ERROR,
+  MEMORY_REVISION_CONFLICT_ERROR,
+  MemoryDocumentLimitError,
+  MemoryRevisionConflictError,
+} from "@rakazo/adapter-kit";
 import { HistoryReadInputSchema, HistorySearchInputSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { memoryTools, withoutBlankFields } from "./run-tools-memory.js";
@@ -90,6 +95,12 @@ describe("saving shared memory over a newer revision", () => {
     await expect(save(failure)).rejects.toBe(failure);
   });
 
+  it("says how full the bank is", async () => {
+    await expect(save(new MemoryDocumentLimitError())).resolves.toEqual({
+      error: MEMORY_DOCUMENT_LIMIT_ERROR,
+    });
+  });
+
   it("refuses to write shared notes when the bot turned them off", async () => {
     const memory = { read: vi.fn(), commit: vi.fn() };
     const result = await memoryTools.save_shared_memory!(
@@ -101,6 +112,55 @@ describe("saving shared memory over a newer revision", () => {
     );
     expect(result).toEqual({ error: "Shared memory is turned off for this bot in its settings." });
     expect(memory.commit).not.toHaveBeenCalled();
+  });
+
+  it("passes a trimmed description with the save", async () => {
+    const memory = {
+      read: vi.fn(async () => ({ documents: [{ revision: 1 }] })),
+      commit: vi.fn(async () => ({ path: "team.md", revision: 2 })),
+    };
+    const result = await memoryTools.save_shared_memory!(
+      {
+        runId: "run-1",
+        bot: { useSharedMemory: true },
+        thread: { id: "thread-1" },
+        context: {},
+        deps: { memory },
+      } as never,
+      {
+        args: { path: "team.md", content: "new", description: "  Who we are  " },
+        finish: async (value: unknown) => value,
+      } as never,
+    );
+    expect(memory.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ description: "Who we are" }),
+      expect.anything(),
+    );
+    expect(result).toEqual({ ok: true, path: "team.md", revision: 2 });
+  });
+
+  it("clears the description when it is blank", async () => {
+    const memory = {
+      read: vi.fn(async () => ({ documents: [{ revision: 1 }] })),
+      commit: vi.fn(async () => ({ path: "team.md", revision: 2 })),
+    };
+    await memoryTools.save_shared_memory!(
+      {
+        runId: "run-1",
+        bot: { useSharedMemory: true },
+        thread: { id: "thread-1" },
+        context: {},
+        deps: { memory },
+      } as never,
+      {
+        args: { path: "team.md", content: "new", description: "   " },
+        finish: async (value: unknown) => value,
+      } as never,
+    );
+    expect(memory.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ description: null }),
+      expect.anything(),
+    );
   });
 
   it("refuses to write its own notes when the bot turned them off", async () => {

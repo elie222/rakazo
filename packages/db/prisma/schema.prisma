@@ -1810,6 +1810,8 @@ model MemoryDocument {
   scope     String
   path      String
   content   String
+  /// One line describing what the note holds; shown in the list and the dream's index.
+  description String?
   revision  Int              @default(1)
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt

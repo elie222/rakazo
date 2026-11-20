@@ -285,6 +285,10 @@ export const conversationTools: ConnectorTool[] = [
       properties: {
         path: { type: "string", description: "Document name, for example MEMORY.md." },
         content: { type: "string", description: "The document's complete new content." },
+        description: {
+          type: "string",
+          description: "One line saying what the document holds.",
+        },
       },
       required: ["path", "content"],
     },

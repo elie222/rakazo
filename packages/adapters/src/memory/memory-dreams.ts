@@ -164,7 +164,7 @@ async function startMemoryDream(
           ...(input.useSharedMemory ? [{ scope: "user" as const }] : []),
         ],
       },
-      select: { scope: true, path: true, content: true },
+      select: { scope: true, path: true, description: true, content: true },
     }),
     recentUserMessages(deps.prisma, input.threadId, input.sinceSeq),
   ]);
@@ -174,7 +174,11 @@ async function startMemoryDream(
     .join("\n\n");
   const sharedMemory = documents
     .filter((document) => document.scope === "user")
-    .map((document) => ({ path: document.path, content: document.content }));
+    .map((document) => ({
+      path: document.path,
+      description: document.description,
+      content: document.content,
+    }));
   const prompt = memoryDreamPrompt({
     botName: input.botName,
     reason: input.reason,

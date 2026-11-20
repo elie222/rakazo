@@ -10,6 +10,8 @@ export interface DreamMessage {
 
 export interface DreamMemoryDocument {
   path: string;
+  /** One line about what the note holds, when its writer gave one. */
+  description: string | null;
   content: string;
 }
 
@@ -39,10 +41,13 @@ export function memoryDreamPrompt(input: {
   const tidy = input.reason === "tidy";
   const review = input.reason === "review";
   const shared = input.sharedMemory
-    .map(
-      (document) =>
-        `<document path="${escapePromptData(document.path)}">\n${escapePromptData(document.content)}\n</document>`,
-    )
+    .map((document) => {
+      const description = document.description?.trim();
+      const label = description
+        ? ` path="${escapePromptData(document.path)}" description="${escapePromptData(description)}"`
+        : ` path="${escapePromptData(document.path)}"`;
+      return `<document${label}>\n${escapePromptData(document.content)}\n</document>`;
+    })
     .join("\n");
   const messages = input.messages
     .map(

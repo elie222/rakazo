@@ -228,6 +228,7 @@ function sourceRecords(): AccountExportRecord[] {
       scope: "bot",
       path: "MEMORY.md",
       content: "remember the secret plan",
+      description: "What the bot knows",
       revision: 2,
       createdAt: at,
       updatedAt: at,
@@ -248,6 +249,7 @@ function sourceRecords(): AccountExportRecord[] {
       scope: "user",
       path: "MEMORY.md",
       content: "space memory",
+      description: null,
       revision: 1,
       createdAt: at,
       updatedAt: at,
@@ -504,6 +506,7 @@ describePostgres("account import (PostgreSQL)", () => {
       include: { revisions: true },
     });
     expect(memory.content).toBe("remember the secret plan");
+    expect(memory.description).toBe("What the bot knows");
     expect(memory.revisions.map((revision) => [revision.content, revision.sourceThreadId])).toEqual(
       [["older memory", thread.id]],
     );

@@ -57,6 +57,7 @@ vi.mock("@rakazo/ui-web", () => {
       ...props
     }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
+    Input: (props: ComponentProps<"input">) => <input {...props} />,
     Skeleton: Container,
     Tabs: Container,
     TabsList: Container,
@@ -387,6 +388,7 @@ it("keeps the last cleared memory document available to reopen in the session", 
     expect(memoryApi.update).toHaveBeenCalledWith({
       documentId: "memory",
       content: "",
+      description: null,
       expectedRevision: 1,
     });
     expect(host.textContent).toContain("MEMORY.md");
@@ -439,6 +441,58 @@ it("shows a document's history and restores a revision", async () => {
       revisionId: "revision-2",
       expectedRevision: 2,
     });
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("filters notes by path and content and says when nothing matches", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const at = new Date("2026-02-02T23:30:00.000Z").toISOString();
+  memoryApi.list.mockReset().mockResolvedValue([
+    {
+      id: "profile",
+      scope: "user",
+      botId: null,
+      path: "profile.md",
+      content: "Name: Ada",
+      description: "Who you are",
+      revision: 1,
+      updatedAt: at,
+    },
+    {
+      id: "work",
+      scope: "user",
+      botId: null,
+      path: "work.md",
+      content: "Ships on Fridays",
+      description: null,
+      revision: 1,
+      updatedAt: at,
+    },
+  ] as never);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const type = async (value: string) => {
+    await act(async () => {
+      const search = host.querySelector<HTMLInputElement>('input[type="search"]')!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        search,
+        value,
+      );
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+  };
+  try {
+    await show(root, <SpaceMemorySection />);
+    expect(host.textContent).toContain("Who you are");
+    await type("friday");
+    expect(host.textContent).toContain("work.md");
+    expect(host.textContent).not.toContain("profile.md");
+    await type("nothing here");
+    expect(host.textContent).toContain("No notes match.");
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

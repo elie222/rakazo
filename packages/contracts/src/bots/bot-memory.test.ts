@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { initialBotMemory, isEmptyBotMemory, MemoryRevisionSummarySchema } from "./bot-memory.js";
+import {
+  initialBotMemory,
+  isEmptyBotMemory,
+  MemoryDocumentSchema,
+  MemoryRevisionSummarySchema,
+} from "./bot-memory.js";
 
 describe("empty bot memory", () => {
   it.each(["", " \n\t", initialBotMemory("Fixture"), initialBotMemory("Original name")])(
@@ -37,5 +42,21 @@ describe("memory revisions", () => {
         createdAt: "2026-02-02T23:30:00.000Z",
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("memory document descriptions", () => {
+  it("reads a note written before descriptions existed as having none", () => {
+    expect(
+      MemoryDocumentSchema.parse({
+        id: "memory-1",
+        scope: "user",
+        botId: null,
+        path: "MEMORY.md",
+        content: "A fact",
+        revision: 1,
+        updatedAt: "2026-02-02T23:30:00.000Z",
+      }).description,
+    ).toBeNull();
   });
 });

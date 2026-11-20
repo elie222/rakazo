@@ -42,6 +42,7 @@ export function memoryRoutes(ctx: RouterContext) {
           botId: doc.botId,
           path: doc.path,
           content: doc.content,
+          description: doc.description,
           revision: doc.revision,
           updatedAt: doc.updatedAt.toISOString(),
         }));
@@ -146,6 +147,7 @@ export function memoryRoutes(ctx: RouterContext) {
           botId: doc.botId,
           path: updated.path,
           content: updated.content,
+          description: doc.description,
           revision: updated.revision,
           updatedAt: new Date().toISOString(),
         };
@@ -171,6 +173,7 @@ export function memoryRoutes(ctx: RouterContext) {
               botId: doc.botId ?? undefined,
               path: doc.path,
               content: input.content,
+              description: input.description,
               expectedRevision: input.expectedRevision,
               sourceKind: "user",
             },
@@ -194,6 +197,7 @@ export function memoryRoutes(ctx: RouterContext) {
           botId: doc.botId,
           path: updated.path,
           content: updated.content,
+          description: input.description === undefined ? doc.description : input.description,
           revision: updated.revision,
           updatedAt: new Date().toISOString(),
         };

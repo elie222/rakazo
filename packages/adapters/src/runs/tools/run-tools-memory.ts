@@ -1,4 +1,4 @@
-import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
+import { MemoryDocumentLimitError, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   HistoryReadInputSchema,
   HistorySearchInputSchema,
@@ -127,7 +127,7 @@ export const memoryTools: ToolHandlers = {
             path,
             content,
             expectedRevision: existing?.revision ?? 0,
-            sourceKind: ctx.run.trigger === MEMORY_DREAM_TRIGGER ? "dream" : "bot",
+            sourceKind: ctx.run?.trigger === MEMORY_DREAM_TRIGGER ? "dream" : "bot",
             sourceRunId: runId,
             sourceThreadId: thread.id,
           },
@@ -148,6 +148,7 @@ export const memoryTools: ToolHandlers = {
     const invalid = sharedMemorySaveError(args);
     if (invalid) return call.finish({ error: invalid });
     const path = String(args.path ?? "").trim();
+    const description = String(args.description ?? "").trim() || null;
     // The save replaces the whole document. Pass the revision just read so a
     // concurrent edit is rejected instead of overwritten.
     const snapshot = await deps.memory.read({ scope: "user", path }, context);
@@ -158,8 +159,9 @@ export const memoryTools: ToolHandlers = {
           scope: "user",
           path,
           content: String(args.content ?? ""),
+          description,
           expectedRevision,
-          sourceKind: ctx.run.trigger === MEMORY_DREAM_TRIGGER ? "dream" : "bot",
+          sourceKind: ctx.run?.trigger === MEMORY_DREAM_TRIGGER ? "dream" : "bot",
           sourceRunId: runId,
           sourceThreadId: thread.id,
         },
@@ -169,6 +171,7 @@ export const memoryTools: ToolHandlers = {
     } catch (error) {
       if (error instanceof MemoryRevisionConflictError)
         return call.finish({ error: error.message });
+      if (error instanceof MemoryDocumentLimitError) return call.finish({ error: error.message });
       throw error;
     }
   },

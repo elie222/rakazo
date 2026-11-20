@@ -14,7 +14,7 @@ import {
 } from "@rakazo/contracts";
 import { memoryTokenCount } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
-import { Badge, Button, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
+import { Badge, Button, Input, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, History, Plus } from "lucide-react";
@@ -134,6 +134,7 @@ export function MemoryDocumentList({
     : 0;
   const kb = Math.ceil(bytesLeftOut / 1024);
   const [showAll, setShowAll] = useState(false);
+  const [query, setQuery] = useState("");
   // Once shown, memory stays visible while the panel is open, even if emptied.
   const [memoryShown, setMemoryShown] = useState(false);
   // Only a bot's untouched index is hidden; shared memory is always the user's to open.
@@ -143,6 +144,7 @@ export function MemoryDocumentList({
       : docs.length > 0;
   if (memoryVisible && !memoryShown) setMemoryShown(true);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>();
@@ -191,6 +193,7 @@ export function MemoryDocumentList({
       const updated = await rpc.memory.update({
         documentId: doc.id,
         content: draft,
+        description: descriptionDraft.trim() || null,
         expectedRevision: loadedRevision,
       });
       await setDocs((current) =>
@@ -242,6 +245,7 @@ export function MemoryDocumentList({
     setHistoryId(null);
     setOpenId(doc.id);
     setDraft(doc.content);
+    setDescriptionDraft(doc.description ?? "");
     change.reset();
     setConfirmingDelete(false);
   }
@@ -258,6 +262,15 @@ export function MemoryDocumentList({
     else setConfirmingDelete(true);
   }
 
+  const needle = query.trim().toLowerCase();
+  const matching = needle
+    ? docs.filter(
+        (doc) =>
+          doc.path.toLowerCase().includes(needle) || doc.content.toLowerCase().includes(needle),
+      )
+    : docs;
+  const shown = compact && !showAll ? matching.slice(0, 5) : matching;
+
   if (compact && !memoryVisible && !error) return null;
   return (
     <section className={compact ? "mt-6" : undefined}>
@@ -272,6 +285,16 @@ export function MemoryDocumentList({
           <p className="pb-2 text-body-sm text-muted-foreground" data-testid="memory-token-note">
             {t`Using ${usedTokens} of ${tokenCap} tokens.`}
           </p>
+        ) : null}
+        {docs.length > 1 ? (
+          <Input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t`Search memory`}
+            aria-label={t`Search memory`}
+            className="mb-2"
+          />
         ) : null}
         {kb > 0 ? (
           <p className="pb-2 text-body-sm text-muted-foreground" data-testid="memory-budget-note">
@@ -291,7 +314,12 @@ export function MemoryDocumentList({
         ) : null}
         {memoryVisible ? (
           <div>
-            {(compact && !showAll ? docs.slice(0, 5) : docs).map((doc) => (
+            {needle && shown.length === 0 ? (
+              <p className="py-1 text-body-sm text-muted-foreground">
+                <Trans>No notes match.</Trans>
+              </p>
+            ) : null}
+            {shown.map((doc) => (
               <div key={doc.id} className="border-b border-border last:border-0">
                 <div className="flex items-center gap-2">
                   <Button
@@ -335,8 +363,23 @@ export function MemoryDocumentList({
                     </TooltipContent>
                   </Tooltip>
                 </div>
+                {doc.description ? (
+                  <p className="truncate px-2.5 pb-1 text-body-sm text-muted-foreground" dir="auto">
+                    {doc.description}
+                  </p>
+                ) : null}
                 {openId === doc.id ? (
                   <div className="pb-2">
+                    <Input
+                      type="text"
+                      aria-label={t`Description`}
+                      placeholder={t`What this note holds`}
+                      value={descriptionDraft}
+                      disabled={busy}
+                      onChange={(event) => setDescriptionDraft(event.target.value)}
+                      className="mb-2"
+                      dir="auto"
+                    />
                     <Textarea
                       aria-label={doc.path}
                       disabled={busy}
@@ -351,7 +394,12 @@ export function MemoryDocumentList({
                         variant="secondary"
                         size="sm"
                         type="button"
-                        disabled={busy || conflicted || draft === doc.content}
+                        disabled={
+                          busy ||
+                          conflicted ||
+                          (draft === doc.content &&
+                            descriptionDraft.trim() === (doc.description ?? ""))
+                        }
                         onClick={() => change.run({ kind: "save", doc })}
                       >
                         <Trans>Save</Trans>

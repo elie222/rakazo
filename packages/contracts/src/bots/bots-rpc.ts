@@ -165,6 +165,7 @@ export const botsRpc = {
         z.object({
           documentId: Id,
           content: z.string(),
+          description: z.string().nullable().optional(),
           expectedRevision: z.number().int().positive().optional(),
         }),
       )

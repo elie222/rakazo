@@ -379,6 +379,7 @@ async function* spaceRecords(
         scope: document.scope,
         path: document.path,
         content: document.content,
+        description: document.description,
         revision: document.revision,
         createdAt: iso(document.createdAt),
         updatedAt: iso(document.updatedAt),

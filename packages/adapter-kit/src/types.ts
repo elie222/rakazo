@@ -12,6 +12,7 @@ import type {
   ToolQuestionAnswer,
   VoiceAccountErrorCode,
 } from "@rakazo/contracts";
+import { MEMORY_NOTES_PER_LAYER } from "@rakazo/contracts";
 
 export interface AdapterContext {
   operationId: string;
@@ -438,6 +439,16 @@ export class MemoryRevisionConflictError extends Error {
   }
 }
 
+export const MEMORY_DOCUMENT_LIMIT_ERROR = `This bank holds its maximum of ${MEMORY_NOTES_PER_LAYER} notes. Merge or remove a note before adding another.`;
+
+/** A new note would exceed the bank's note count. Overwriting an existing path is still allowed. */
+export class MemoryDocumentLimitError extends Error {
+  constructor() {
+    super(MEMORY_DOCUMENT_LIMIT_ERROR);
+    this.name = "MemoryDocumentLimitError";
+  }
+}
+
 /** Who wrote a memory revision; a row written before kinds existed reads as "user". */
 export type MemorySourceKind = "user" | "bot" | "dream" | "import" | "undo";
 
@@ -446,6 +457,8 @@ export interface MemoryCommitRequest {
   botId?: string;
   path: string;
   content: string;
+  /** One line about what the note holds; omitted leaves an existing description alone. */
+  description?: string | null;
   /** When set, commit fails if the live document revision is no longer this value. */
   expectedRevision?: number;
   /** Who is writing; omitted means a person. */
