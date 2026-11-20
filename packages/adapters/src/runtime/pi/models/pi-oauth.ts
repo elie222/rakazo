@@ -772,7 +772,7 @@ export class PiOAuthLogins<T = unknown> {
       logModelSignIn(
         session,
         "start_failed",
-        input.signal?.aborted
+        abort.signal.aborted
           ? { reason: "cancelled" }
           : error === startTimeout
             ? { reason: "timed_out" }
