@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import type { MemoryDocument } from "@rakazo/contracts";
+import { memoryNotesPreview } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -43,9 +44,16 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await openUserSettings(page, "memory");
   await expect(page.getByLabel("Close memory settings")).toBeVisible();
   const spaceDocs = page.getByTestId("space-memory-documents");
-  const memoryRow = spaceDocs.getByRole("button", { name: /MEMORY\.md/ });
-  await expect(memoryRow).toBeVisible();
-  await memoryRow.click();
+  // The main notes show by their first note, never by file name.
+  const memoryRow = (preview: string) =>
+    spaceDocs.getByRole("button", { name: preview, exact: true });
+  const retiredRow = spaceDocs.getByRole("button", { name: "projects/retired", exact: true });
+  const seededShared = (await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" })).find(
+    (doc) => doc.path === "MEMORY.md",
+  )!;
+  await expect(retiredRow).toBeVisible();
+  await expect(spaceDocs.getByText("MEMORY.md")).toHaveCount(0);
+  await memoryRow(memoryNotesPreview(seededShared.content)).click();
   const docEditor = spaceDocs.locator("textarea");
   const marker = `Edited in e2e ${stamp}`;
   await docEditor.fill(`# Memory\n\n${marker}\n`);
@@ -65,13 +73,13 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await spaceDocs.getByRole("button", { name: "Save", exact: true }).click();
   try {
     await expect(docEditor).toBeDisabled();
-    await expect(memoryRow).toBeDisabled();
+    await expect(retiredRow).toBeDisabled();
     await expect(spaceDocs.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
   } finally {
     releaseSave();
   }
 
-  await memoryRow.click();
+  await memoryRow(marker).click();
   await expect(docEditor).toHaveValue(new RegExp(marker));
   await captureScreenshot(page, testInfo, "84-space-memory-saved");
   const sharedDocuments = await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" });
@@ -95,12 +103,8 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   );
   await captureScreenshot(page, testInfo, "84-space-memory-conflict");
   const downloadPromise = page.waitForEvent("download");
-  // Document order is not fixed, so download from the MEMORY.md row itself.
-  await spaceDocs
-    .locator("div.border-b")
-    .filter({ has: page.getByRole("button", { name: "MEMORY.md", exact: true }) })
-    .getByRole("button", { name: "Download", exact: true })
-    .click();
+  // Download sits with the open editor, so it exports the main notes.
+  await spaceDocs.getByRole("button", { name: "Download", exact: true }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("MEMORY.md");
   const exported = await readFile((await download.path())!, "utf8");
@@ -117,14 +121,13 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await expect(spaceDocs.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await spaceDocs.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(conflictNotice).toHaveCount(0);
-  await memoryRow.click();
+  await memoryRow(latestMarker).click();
   await expect(docEditor).toHaveValue(latestMarker);
 
   // Any shared document but MEMORY.md can be deleted after a confirmation.
   // MEMORY.md editor is open again after the reopen above; do not toggle it closed.
   await expect(spaceDocs.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
   await spaceDocs.getByRole("button", { name: "Cancel", exact: true }).click();
-  const retiredRow = spaceDocs.getByRole("button", { name: new RegExp(retiredPath) });
   await retiredRow.click();
   await expect(spaceDocs.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "85-space-memory-delete");
@@ -150,9 +153,8 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   const settings = page.getByTestId("bot-settings");
   await expect(settings.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
   const botMemory = settings.getByTestId("bot-knowledge-memory");
-  const botMemoryRow = botMemory.getByRole("button", { name: /MEMORY\.md/ });
-  await expect(botMemoryRow).toBeVisible();
-  await botMemoryRow.click();
+  await expect(botMemory.getByText("MEMORY.md")).toHaveCount(0);
+  await botMemory.getByRole("button", { name: "A remembered preference.", exact: true }).click();
   const botDocEditor = botMemory.locator("textarea");
   await expect(botDocEditor).toHaveValue(/# Chief/);
   const botMarker = `Bot memory e2e ${stamp}`;
@@ -170,7 +172,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
       scope: "bot",
     }),
   ).toContainEqual(expect.objectContaining({ content: `# Chief\n\n${botMarker}\n`, revision: 3 }));
-  await botMemoryRow.click();
+  await botMemory.getByRole("button", { name: botMarker, exact: true }).click();
   await expect(botDocEditor).toHaveValue(new RegExp(botMarker));
   await botMemory.getByRole("button", { name: "Cancel", exact: true }).click();
 

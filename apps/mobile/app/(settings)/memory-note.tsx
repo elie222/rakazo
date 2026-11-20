@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { MemoryDocument } from "@rakazo/contracts";
-import { isDeletableMemoryDocument } from "@rakazo/contracts";
+import { isDeletableMemoryDocument, memoryDocumentName } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
 import { useLocalSearchParams, usePreventRemove, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -157,6 +157,8 @@ export default function MemoryNoteScreen() {
     ]);
   }
 
+  const noteName = (note && memoryDocumentName(note.path)) ?? t`Memory`;
+
   function save(expectedRevision = note?.revision) {
     if (!note) return;
     removal.reset();
@@ -165,7 +167,7 @@ export default function MemoryNoteScreen() {
 
   function confirmDelete() {
     if (!note) return;
-    Alert.alert(t`Delete ${ph({ name: note.path })}?`, undefined, [
+    Alert.alert(t`Delete ${ph({ name: noteName })}?`, undefined, [
       { text: t`Cancel`, style: "cancel" },
       {
         text: t`Delete`,
@@ -179,7 +181,7 @@ export default function MemoryNoteScreen() {
   }
 
   useScreenHeader({
-    title: note?.path ?? "",
+    title: note ? noteName : "",
     action:
       !note || state === "gone"
         ? null
@@ -201,7 +203,7 @@ export default function MemoryNoteScreen() {
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            accessibilityLabel={note.path}
+            accessibilityLabel={noteName}
             editable={writable}
             multiline
             textAlignVertical="top"

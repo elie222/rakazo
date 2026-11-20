@@ -1,6 +1,7 @@
 /** Shared section membership and order; surfaces omit unavailable capabilities. */
 export const BOT_SETTINGS_SECTIONS = {
   openWork: ["scratchpad"],
+  instructions: ["instructions"],
   memory: ["knowledge"],
   advanced: [
     "model",
@@ -13,7 +14,6 @@ export const BOT_SETTINGS_SECTIONS = {
     "crossSpaceCommunication",
     "fleetManagement",
     "replyMode",
-    "instructions",
     "description",
     "disabledTools",
     "credentials",

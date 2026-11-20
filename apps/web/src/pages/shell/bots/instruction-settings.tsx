@@ -104,6 +104,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
         id={`${id}-instructions`}
         className="min-h-20 max-h-96 resize-none field-sizing-content"
         value={instructions}
+        placeholder={t`How ${bot.name} should always behave`}
         maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
         disabled={pending}
         onChange={(event) => setInstructions(event.target.value)}

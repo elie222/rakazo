@@ -181,7 +181,7 @@ it("edits a bot's note against the revision it opened, then goes back", async ()
     { botId: "bot-1", scope: "bot" },
     expect.anything(),
   );
-  expect(mocks.options.title).toBe("preferences.md");
+  expect(mocks.options.title).toBe("preferences");
   expect(editor()?.value).toBe(note.content);
   expect((await headerSave()).disabled).toBe(true);
   expect(mocks.preventRemove.active).toBe(false);
@@ -285,7 +285,7 @@ it("deletes a note only after a destructive confirm", async () => {
   await render();
   await act(async () => button("Delete")?.click());
   expect(mocks.rpc).not.toHaveBeenCalledWith("memory/remove", expect.anything(), expect.anything());
-  expect(lastAlert().title).toBe("Delete preferences.md?");
+  expect(lastAlert().title).toBe("Delete preferences?");
   await act(async () => lastAlert().press("Delete"));
   expect(mocks.rpc).toHaveBeenCalledWith(
     "memory/remove",
@@ -315,7 +315,8 @@ it("opens a shared note from the space's notes and never offers to delete MEMORY
   ]);
   await render();
   expect(mocks.rpc).toHaveBeenCalledWith("memory/list", { scope: "user" }, expect.anything());
-  expect(mocks.options.title).toBe("MEMORY.md");
+  // The main notes are the memory itself, so their file name never shows.
+  expect(mocks.options.title).toBe("Memory");
   expect(editor()).not.toBeNull();
   expect(button("Delete")).toBeUndefined();
 });
@@ -401,7 +402,7 @@ it("loads the new note when the screen is reused for another one", async () => {
   mocks.params = { id: other.id, botId: note.botId };
   await render();
   expect(editor()?.value).toBe(other.content);
-  expect(mocks.options.title).toBe("sources.md");
+  expect(mocks.options.title).toBe("sources");
 });
 
 it("saves once when Save is tapped twice before the first answer", async () => {

@@ -1,12 +1,16 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
-import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
+import {
+  isDeletableMemoryDocument,
+  isEmptyBotMemory,
+  memoryDocumentName,
+  memoryNotesPreview,
+} from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Badge, Button, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   AvailabilityControl,
@@ -21,7 +25,7 @@ import { useSpaceRpc } from "../../lib/query/space-rpc";
 const NO_DOCS: MemoryDocument[] = [];
 const NO_SKILLS: AgentSkillCatalogEntry[] = [];
 
-const fieldClass = "mt-2 w-full font-mono text-body-sm leading-relaxed";
+const skillFieldClass = "mt-2 w-full font-mono text-body-sm leading-relaxed";
 
 function rowClass(open: boolean): string {
   return `h-auto w-full justify-start whitespace-normal px-2.5 py-2.5 text-start ${open ? "bg-muted" : ""}`;
@@ -216,44 +220,27 @@ function MemoryDocumentList({
         <div>
           {(compact && !showAll ? docs.slice(0, 5) : docs).map((doc) => (
             <div key={doc.id} className="border-b border-border last:border-0">
-              <div className="flex items-center gap-2">
+              {/* Open main notes show in full below, so their first line is not repeated. */}
+              {openId === doc.id && !memoryDocumentName(doc.path) ? null : (
                 <Button
                   variant="ghost"
                   type="button"
                   disabled={busy}
                   onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
-                  className="-ms-2 h-auto min-w-0 flex-1 justify-start whitespace-normal px-2 py-2.5 text-start"
+                  className="-mx-2 h-auto w-[calc(100%+1rem)] justify-start whitespace-normal px-2 py-2.5 text-start"
                 >
-                  <span
-                    className="min-w-0 truncate text-body font-normal text-foreground"
-                    dir="auto"
-                  >
-                    {doc.path}
-                  </span>
+                  <MemoryDocumentLabel doc={doc} />
                 </Button>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<Button variant="ghost" size="icon-sm" />}
-                    aria-label={t`Download`}
-                    disabled={busy}
-                    onClick={() => change.run({ kind: "download", doc })}
-                  >
-                    <Download className="size-4" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <Trans>Download</Trans>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+              )}
               {openId === doc.id ? (
                 <div className="pb-2">
                   <Textarea
-                    aria-label={doc.path}
+                    aria-label={memoryDocumentName(doc.path) ?? t`Memory`}
                     disabled={busy}
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
-                    className={fieldClass}
+                    className="mt-2 w-full"
                     dir="auto"
                   />
                   <div className="mt-2 flex gap-2">
@@ -274,6 +261,15 @@ function MemoryDocumentList({
                       size="sm"
                     >
                       <Trans>Cancel</Trans>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      disabled={busy || draft !== doc.content}
+                      onClick={() => change.run({ kind: "download", doc })}
+                      size="sm"
+                    >
+                      <Trans>Download</Trans>
                     </Button>
                     {isDeletableMemoryDocument(doc.path) ? (
                       <Button
@@ -305,6 +301,27 @@ function MemoryDocumentList({
         ) : null}
       </div>
     </section>
+  );
+}
+
+/** A memory document by name, or the main notes by their first note. */
+function MemoryDocumentLabel({ doc }: { doc: MemoryDocument }) {
+  const name = memoryDocumentName(doc.path);
+  if (name) {
+    return (
+      <span className="min-w-0 truncate text-body font-normal text-foreground" dir="auto">
+        {name}
+      </span>
+    );
+  }
+  const preview = memoryNotesPreview(doc.content);
+  return (
+    <span
+      className={`line-clamp-2 min-w-0 text-body font-normal ${preview ? "text-foreground" : "text-muted-foreground"}`}
+      dir="auto"
+    >
+      {preview || <Trans>Nothing remembered yet</Trans>}
+    </span>
   );
 }
 
@@ -505,7 +522,7 @@ export function AgentSkills() {
             onChange={(event) => setDraft(event.target.value)}
             rows={Math.min(20, Math.max(8, draft.split("\n").length + 1))}
             readOnly={Boolean(open?.readOnly)}
-            className={fieldClass}
+            className={skillFieldClass}
             dir="auto"
           />
           <div className="mt-2 flex items-center gap-2">

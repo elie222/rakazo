@@ -125,7 +125,7 @@ async function render(botId = "bot-a", section: "work" | "memory" = "work") {
 describe("bot context cards", () => {
   it.each([
     ["work", "scratchpad/list", "Open work", "Review draft", "Memory"],
-    ["memory", "memory/list", "Memory", "notes.md", "Open work"],
+    ["memory", "memory/list", "Memory", "notes", "Open work"],
   ] as const)("loads only the %s list", async (section, method, heading, item, other) => {
     rpc.mockImplementation(async (called: string) =>
       called === "scratchpad/list" ? work : memory,
@@ -141,6 +141,16 @@ describe("bot context cards", () => {
     rpc.mockRejectedValue(new Error("Request failed"));
     await render("bot-a", section);
     expect(container.textContent).toBe("Request failed");
+  });
+
+  it("shows the main notes by their first note, never by file name", async () => {
+    rpc.mockImplementation(async () => [
+      { id: "memory-a", path: "MEMORY.md", content: "# Fixture\n\nPrefers short replies.\n" },
+    ]);
+    await render("bot-a", "memory");
+    expect(container.textContent).toContain("Prefers short replies.");
+    expect(container.textContent).not.toContain("MEMORY.md");
+    expect(container.textContent).not.toContain("# Fixture");
   });
 
   it("hides empty work and placeholder-only memory", async () => {
@@ -172,7 +182,7 @@ describe("bot context cards", () => {
     rpc.mockImplementation(async (method: string) => (method === "scratchpad/list" ? [] : memory));
     await render("bot-a", "memory");
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="notes.md"]')?.click(),
+      container.querySelector<HTMLButtonElement>('[aria-label="notes"]')?.click(),
     );
     expect(push).toHaveBeenCalledWith({
       pathname: "/memory-note",
