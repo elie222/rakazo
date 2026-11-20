@@ -25,6 +25,7 @@ vi.mock("react-native", async () => {
       onPress,
       onLongPress,
       numberOfLines,
+      disabled,
       accessibilityState,
       accessibilityRole,
       accessibilityLabel,
@@ -35,7 +36,8 @@ vi.mock("react-native", async () => {
       onPress?: () => void;
       onLongPress?: () => void;
       numberOfLines?: number;
-      accessibilityState?: { expanded?: boolean };
+      disabled?: boolean;
+      accessibilityState?: { expanded?: boolean; selected?: boolean };
       accessibilityRole?: string;
       accessibilityLabel?: string;
       ref?: Ref<unknown>;
@@ -49,6 +51,8 @@ vi.mock("react-native", async () => {
           "data-style": JSON.stringify(flatten(style)),
           "data-number-of-lines": numberOfLines,
           "aria-expanded": accessibilityState?.expanded,
+          "aria-pressed": accessibilityState?.selected || undefined,
+          disabled,
           role: accessibilityRole,
           "aria-label": accessibilityLabel,
           onClick: onPress,
@@ -135,7 +139,7 @@ vi.mock("../media/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../cards/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../cards/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
 vi.mock("../cards/ComputerCard", () => ({ ComputerCard: () => null }));
-vi.mock("../pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../../lib/pages/page-card", () => ({ PageCard: () => null }));
 vi.mock("./mcp-app-card", () => ({ McpAppCard: () => null }));
 vi.mock("../media/inline-image-attachment", () => ({
   InlineImageAttachment: ({ name, onOpen }: { name: string; onOpen: () => void }) => (

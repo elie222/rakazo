@@ -4,6 +4,11 @@ import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { findModelCredential, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  approvedModelCreditOffering,
+  modelCreditOfferings,
+} from "../../model-credits/offerings.js";
+import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
 import {
   persistRefreshedModelCredential,
@@ -12,9 +17,16 @@ import {
   retireToReconnectMarker,
 } from "../../models/model-credential-refresh.js";
 import { outermostJsonObject } from "../../models/model-json.js";
+import {
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../../models/model-provider-allowlist.js";
 import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
-import { secretValuesToRedact } from "../../models/model-secret.js";
-import { hasHostedModelCredits } from "../../models/model-selection.js";
+import { modelBilling, secretValuesToRedact } from "../../models/model-secret.js";
+import {
+  hasHostedModelCredits,
+  validateCreditOfferingChoice,
+} from "../../models/model-selection.js";
 import { connectionModelSettings } from "../../models/model-settings.js";
 import {
   cleanLine,
@@ -198,18 +210,33 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     );
     const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
     const requestedModel = this.deps.modelOverride ?? bot.modelId;
-    const overrideCredential = requestedProvider
-      ? await findModelCredential(this.deps.prisma, scope, requestedProvider)
-      : null;
+    const allowlist = modelProviderAllowlist();
+    const refused = (provider: string | null | undefined) =>
+      provider != null && !modelProviderAllowed(allowlist, provider);
+    // A member's own key for a refused provider is never read, even for the operator's judge.
+    const overrideCredential =
+      requestedProvider && !refused(requestedProvider)
+        ? await findModelCredential(this.deps.prisma, scope, requestedProvider)
+        : null;
     const explicitJudgeOverride = Boolean(this.deps.providerOverride && this.deps.modelOverride);
     const useOverride = Boolean(
-      requestedProvider && requestedModel && (explicitJudgeOverride || overrideCredential),
+      requestedProvider &&
+        requestedModel &&
+        (explicitJudgeOverride ||
+          overrideCredential ||
+          (settings?.modelCreditsEnabled &&
+            modelCreditOfferings() &&
+            approvedModelCreditOffering(requestedProvider, requestedModel))),
     );
     // The member's main model runs on its connection, or on funded deployment credits.
     const main =
       member &&
-      (member.credential ||
+      (member.creditOfferingId ||
+        member.credentialId ||
+        member.credential ||
         (settings?.modelCreditsEnabled &&
+          (!modelCreditOfferings() ||
+            approvedModelCreditOffering(member.provider, member.modelId)) &&
           (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
         ? member
         : null;
@@ -217,21 +244,58 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       settings,
       deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
     }).primary;
-    const credential = useOverride ? overrideCredential : (main?.credential ?? null);
-    const provider = useOverride ? requestedProvider : (main ?? fallback)?.provider;
-    const modelId = useOverride ? requestedModel : (main ?? fallback)?.modelId;
+    // The operator's own judge setting is deployment configuration, not a user choice, so
+    // the allowlist never refuses it. Any other pin the list refuses is skipped rather than
+    // failing the decision, so a member with an allowed main model still gets one.
+    const pinned = useOverride && (explicitJudgeOverride || !refused(requestedProvider));
+    const mainModel = main && !refused(main.provider) ? main : null;
+    const credential = pinned ? overrideCredential : (mainModel?.credential ?? null);
+    const provider = pinned ? requestedProvider : (mainModel ?? fallback)?.provider;
+    const modelId = pinned ? requestedModel : (mainModel ?? fallback)?.modelId;
     if (!provider || !modelId) return null;
 
     const hosted =
       settings?.modelCreditsEnabled &&
       (await hasHostedModelCredits(this.deps.prisma, scope, provider));
+    if (!pinned && mainModel?.credentialId && !credential) return null;
+    const offeringId = !pinned ? mainModel?.creditOfferingId : undefined;
+    if (
+      offeringId &&
+      (!settings?.modelCreditsEnabled ||
+        !(await validateCreditOfferingChoice(
+          this.deps.prisma,
+          this.deps.secrets,
+          scope,
+          provider,
+          modelId,
+          offeringId,
+        )))
+    )
+      return null;
     if (!credential || hosted) {
+      if (modelCreditOfferings() && !settings?.modelCreditsEnabled) return null;
+      const material = await approvedModelCreditMaterial(
+        this.deps.prisma,
+        this.deps.secrets,
+        provider,
+        modelId,
+      );
       const apiKey =
-        provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined;
+        material?.apiKey ??
+        (provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined);
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
         : undefined;
-      return { model: { provider, id: modelId, ...(apiKey ? { apiKey } : {}), callObserver } };
+      return {
+        model: {
+          provider,
+          id: modelId,
+          ...material,
+          ...(apiKey ? { apiKey } : {}),
+          callObserver,
+          billing: modelBilling({ credits: Boolean(callObserver || material) }),
+        },
+      };
     }
 
     const secret = await this.deps.prisma.secret.findFirst({
@@ -255,6 +319,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     );
     const parsed = auth.secret;
     const modelSettings = connectionModelSettings(parsed, provider, modelId, credential);
+    const billing = modelBilling({ secret: parsed });
     const limit = {
       ...(modelSettings.maxTokens !== undefined ? { maxTokens: modelSettings.maxTokens } : {}),
       ...(modelSettings.contextWindow !== undefined
@@ -268,6 +333,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
+          billing,
           ...limit,
           oauth: {
             credential: { ...parsed.credential },
@@ -294,6 +360,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
+          billing,
           apiKey: parsed.apiKey,
           baseUrl: parsed.baseUrl,
           headers: parsed.headers,
@@ -308,9 +375,11 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       model: {
         provider,
         id: modelId,
+        billing,
         apiKey: auth.apiKey,
         projectId: parsed.projectId,
         region: parsed.region,
+        zeroDataRetention: parsed.zeroDataRetention,
         ...limit,
         ...context,
       },

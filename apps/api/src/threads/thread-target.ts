@@ -40,6 +40,7 @@ import {
   loadMessageAuthor,
   lockSpaceGroup,
   retireWaitingQuestionInTransaction,
+  runHoldsChat,
   SpaceDeletionInProgressError,
   spaceTakesWork,
   THREAD_LOCK_TRANSACTION_OPTIONS,
@@ -507,6 +508,8 @@ export async function sendThreadMessage(
     replyQuote?: string;
     fromPage?: true;
     clientNonce?: string;
+    nativeCalendarSessionId?: string;
+    nativeCalendarDeviceDigest?: string;
     /** No model to start a turn: the send may only stop active work. */
     noModel?: boolean;
   },
@@ -656,6 +659,7 @@ export async function sendThreadMessage(
             modelId: true,
             modelPinned: true,
             thinkingLevel: true,
+            routine: { select: { inChat: true } },
           },
         });
         if (input.imageHandling === "confirm") {
@@ -677,6 +681,8 @@ export async function sendThreadMessage(
           replyToMessageId,
           replyQuote,
           clientNonce: input.clientNonce,
+          nativeCalendarSessionId: input.nativeCalendarSessionId,
+          nativeCalendarDeviceDigest: input.nativeCalendarDeviceDigest,
         });
         // A bare "stop" from the owner while work is active is the Stop button, not a reply.
         const stopping = activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
@@ -747,7 +753,8 @@ export async function sendThreadMessage(
           : activeRuns.filter(
               (run) =>
                 QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status) &&
-                !messageBypassesTakeoverWait(run),
+                !messageBypassesTakeoverWait(run) &&
+                runHoldsChat(run),
             );
         const active =
           holdingRuns.find((run) => steersMessageFrom(run, actor)) ??
@@ -878,6 +885,7 @@ export async function sendThreadMessage(
           modelProvider: true,
           modelId: true,
           modelPinned: true,
+          routine: { select: { inChat: true } },
           thinkingLevel: true,
           updatedAt: true,
         },
@@ -987,7 +995,12 @@ export async function sendThreadMessage(
           }
           continue;
         }
-        if (!STEERABLE_RUN_STATUSES.has(run.status) || messageBypassesTakeoverWait(run)) continue;
+        if (
+          !STEERABLE_RUN_STATUSES.has(run.status) ||
+          messageBypassesTakeoverWait(run) ||
+          !runHoldsChat(run)
+        )
+          continue;
         const current = activeByBotId.get(run.botId);
         if (!current || rank(run) > rank(current)) activeByBotId.set(run.botId, run);
       }

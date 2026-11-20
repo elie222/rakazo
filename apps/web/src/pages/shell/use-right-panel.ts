@@ -1,12 +1,12 @@
 import type { Routine } from "@rakazo/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SetURLSearchParams } from "react-router-dom";
-import type { Panel, RightPanelState } from "../../lib/right-panel-state";
+import type { Panel, RightPanelState } from "./right-panel-state";
 import {
   readRightPanelState,
   rightPanelStorageKey,
   writeRightPanelState,
-} from "../../lib/right-panel-state";
+} from "./right-panel-state";
 
 /** The panel beside the chat. Each chat remembers its own; see `useRightPanelRestore`. */
 export function useRightPanel({

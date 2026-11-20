@@ -58,8 +58,10 @@ describe("built-in tool bridge", () => {
     // the history tools point at files from earlier messages; a watch says it takes no other timing;
     // read_file takes a line range; ask_user carries the content being decided about;
     // search_history lists earlier tool work by kind without a keyword; message_bot is the
-    // most used deferred tool, and a lookup before each message cost a step.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(33_435);
+    // most used deferred tool, and a lookup before each message cost a step; schedule_create says
+    // whether a routine runs in its chat, and takes the events (webhook, Git, chat, email) a
+    // routine can start on, saying a Git event needs no connected app.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(35_556);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
@@ -139,7 +141,7 @@ describe("bridge tool definitions", () => {
       {
         name: "find_tool",
         description:
-          "Get the parameters of built-in tools not in your tool list, including ones your instructions name. Call this before use_tool. Pass names for exact tools or query to search.\nmedia:\n  render_plot\nsecrets:\n  list_secrets",
+          "Find deferred tool parameters by name or query before calling use_tool.\nmedia:\n  render_plot\nsecrets:\n  list_secrets",
         inputSchema: {
           type: "object",
           properties: {
@@ -151,7 +153,7 @@ describe("bridge tool definitions", () => {
       },
       {
         name: "use_tool",
-        description: "Run a built-in tool whose parameters find_tool returned in this turn.",
+        description: "Run a tool returned by find_tool this turn.",
         inputSchema: {
           type: "object",
           properties: {

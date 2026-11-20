@@ -1,8 +1,13 @@
 import type { AgentRunModel } from "@rakazo/adapter-kit";
 import { isModelCredentialRejected } from "@rakazo/adapter-kit";
+import { modelRoleConnectionId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { appliedModelRole } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  PINNED_PROVIDER_NOT_CONNECTED,
+  UNKNOWN_PROVIDER_MODEL,
+} from "../models/model-selection.js";
 import { isTerminalModelSetupError } from "../runs/turn/run-model.js";
 import { restoreTurnCheckpoint } from "../runs/turn/turn-checkpoint.js";
 import { computerTarget } from "../runtime/pi/tools/pi-runtime-computer-mode.js";
@@ -34,7 +39,8 @@ export async function resolveComputerRunModel(
   for (const choice of primary ? [primary, ...backups] : []) {
     try {
       const connectionId =
-        choice.credentialId ?? (await deps.connectionFor(choice.provider, choice.modelId));
+        modelRoleConnectionId(choice) ??
+        (await deps.connectionFor(choice.provider, choice.modelId));
       if (!connectionId) continue;
       if (
         choice.provider === main.provider &&
@@ -65,6 +71,8 @@ const LOST_PIN_MESSAGES = new Set([
   "Pinned computer mode model is unavailable",
   "Computer model checkpoint requires its pinned connection",
   "Backup model credential is no longer available",
+  // The model's provider connection was removed.
+  PINNED_PROVIDER_NOT_CONNECTED,
 ]);
 
 export const PINNED_COMPUTER_MODEL_LOST_RUN_ERROR =

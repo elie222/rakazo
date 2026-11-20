@@ -130,6 +130,8 @@ export const ModelCredentialSchema = z.object({
   gatewayId: z.string().optional(),
   projectId: z.string().optional(),
   region: z.string().optional(),
+  /** Requests only reach endpoints that keep no prompts or replies. Absent means off. */
+  zeroDataRetention: z.boolean().optional(),
   modelId: z.string().optional(),
   reasoning: z.boolean().optional(),
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -169,7 +171,14 @@ export function modelChoiceListSchema<T extends z.ZodType<ModelBackupChoice>>(ch
       for (const [index, choice] of choices.entries()) {
         // The same model may run on two connections, so a pinned connection is part of it.
         const credentialId = (choice as { credentialId?: string | null }).credentialId ?? null;
-        const key = JSON.stringify([choice.provider, choice.modelId, credentialId]);
+        const creditOfferingId =
+          (choice as { creditOfferingId?: string | null }).creditOfferingId ?? null;
+        const key = JSON.stringify([
+          choice.provider,
+          choice.modelId,
+          credentialId,
+          creditOfferingId,
+        ]);
         if (seen.has(key)) {
           ctx.addIssue({
             code: "custom",
@@ -284,6 +293,8 @@ export const ModelConnectInputSchema = z
     gatewayId: z.string().optional(),
     projectId: z.string().optional(),
     region: z.string().optional(),
+    /** Omitted keeps the saved choice; false turns it off. */
+    zeroDataRetention: z.boolean().optional(),
     headers: ModelHeadersSchema.optional(),
     baseUrl: z.string().optional(),
     apiProtocol: ModelApiProtocolSchema.optional(),
@@ -382,7 +393,14 @@ export const ModelOAuthBeginSchema = z.discriminatedUnion("mode", [
 export type ModelOAuthBegin = z.infer<typeof ModelOAuthBeginSchema>;
 
 /** A hosted OpenAI-compatible service offered by name. It always needs a key. */
-export const CompatibleEndpointPresetSchema = z.object({ name: z.string(), baseUrl: z.string() });
+export const CompatibleEndpointPresetSchema = z.object({
+  /** Stable id a deployment allowlist addresses this preset by. */
+  id: z.string().optional(),
+  name: z.string(),
+  baseUrl: z.string(),
+  /** The model list can be loaded before the connection has a key. */
+  publicModels: z.boolean().optional(),
+});
 export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
 
 export const ModelCatalogEntrySchema = z.object({
@@ -394,6 +412,7 @@ export const ModelCatalogEntrySchema = z.object({
   credentialIds: z.array(z.string()).optional(),
   /** Available through the deployment without a personal credential. */
   managed: z.boolean().optional(),
+  creditOfferingId: Id.optional(),
   provider: z.string(),
   providerName: z.string().optional(),
   id: z.string(),
@@ -425,6 +444,8 @@ export const ModelCatalogEntrySchema = z.object({
   catalogProbe: z.boolean().optional(),
   /** Ids the provider needs besides a key; a connection cannot save without them. */
   routingFields: z.array(ModelRoutingFieldSchema).optional(),
+  /** A connection can limit requests to endpoints that keep no prompts or replies. */
+  dataRetentionControl: z.literal(true).optional(),
   /** Hosted services this connection type offers by name. */
   endpointPresets: z.array(CompatibleEndpointPresetSchema).optional(),
   /** Listed by the provider's live models list but not in the bundled catalog. */

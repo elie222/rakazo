@@ -3,7 +3,7 @@ import { ResponseTooLargeError } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { credentialDigest } from "../shared/credential-digest.js";
+import { credentialDigest } from "../secrets/credential-digest.js";
 import type { ExpoPushTicket } from "./expo-push.js";
 import {
   ExpoPushProvider,

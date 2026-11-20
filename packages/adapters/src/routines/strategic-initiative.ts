@@ -18,7 +18,7 @@ const FAILED_CHECK_IN_BACKOFF_MS = 7 * STRATEGIC_INITIATIVE_INTERVAL_MS;
 const STALE_SCRATCHPAD_ITEM_MS = 12 * 60 * 60 * 1000;
 const MAX_ITEMS_IN_PROMPT = 5;
 const MAX_STALE_ITEMS_SCANNED = 50;
-const STRATEGIC_INITIATIVE_SAFE_TOOL_NAMES = new Set(["ask_user", "message_user"]);
+const STRATEGIC_INITIATIVE_SAFE_TOOL_NAMES = new Set(["ask_user"]);
 
 type StrategicBot = {
   id: string;

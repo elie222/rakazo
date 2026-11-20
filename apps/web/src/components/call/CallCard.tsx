@@ -3,14 +3,14 @@ import { useNow } from "@rakazo/chat-ui/hooks";
 import { BotAvatar, Button, cn, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Captions, ChevronDown, Mic, MicOff, PhoneOff, Settings } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { CallState } from "../../lib/call-session";
+import type { CallState } from "../../lib/calls/call-session";
 import {
   endCall,
   setCallMinimized,
   toggleMute,
   toggleTranscript,
   useCallSession,
-} from "../../lib/call-session";
+} from "../../lib/calls/call-session";
 import { useEventListener } from "../../lib/use-event-listener";
 import { CallWindow } from "./CallWindow";
 
@@ -120,18 +120,9 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           <span className="text-heading1 font-semibold text-foreground md:text-heading2" dir="auto">
             {call.botName}
           </span>
-          <span
-            className="flex gap-2 text-body tabular-nums text-muted-foreground"
-            aria-live="polite"
-          >
-            {ringing ? (
-              t`Calling…`
-            ) : (
-              <>
-                <span>{callClock(elapsed)}</span>
-                <span>{activity}</span>
-              </>
-            )}
+          <span className="flex gap-2 text-body tabular-nums text-muted-foreground">
+            {!ringing ? <span>{callClock(elapsed)}</span> : null}
+            <span aria-live="polite">{ringing ? t`Calling…` : activity}</span>
           </span>
         </div>
         {!ringing ? (

@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { accountDisplay, chatSnoozed } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { Href } from "expo-router";
 import {
   Redirect,
@@ -27,16 +28,18 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotOrganizeModal } from "../components/inbox/bot-organize-modal";
-import { HomeErrorState } from "../components/inbox/home-error-state";
-import { createHomeStyles } from "../components/inbox/home-styles";
 import { ActivitySection } from "../components/inbox/inbox-activity";
+import { InboxErrorState } from "../components/inbox/inbox-error-state";
+import { InboxFooter } from "../components/inbox/inbox-footer";
 import { InboxHeader } from "../components/inbox/inbox-header";
 import {
   InboxListFooter,
+  InboxNewBot,
   SWIPE_ROWS,
   useInboxRenderItem,
 } from "../components/inbox/inbox-render-item";
 import { CompactRowsContext, SelectedChatContext } from "../components/inbox/inbox-rows";
+import { createInboxStyles } from "../components/inbox/inbox-styles";
 import { NativeInboxList } from "../components/inbox/native-inbox-list";
 import { OrganizationTitleMenu } from "../components/inbox/organization-menu";
 import { PickChatPane } from "../components/inbox/pick-chat-pane";
@@ -57,14 +60,13 @@ import { signOut } from "../lib/auth/api-auth";
 import { explicitSignInRoute } from "../lib/auth/auth-routing";
 import { offerPasskeyOnce } from "../lib/auth/passkey";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/auth/returning-user";
+import { offerSelfHostedSupportOnce } from "../lib/billing/self-hosted-support";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/bots/avatar-life";
 import { mobileLogoAvatarActivity } from "../lib/bots/logo-avatar-activity";
-import { loadActivityMode, saveActivityMode } from "../lib/home/activity-mode";
-import type { CreateAction } from "../lib/home/create-chooser";
-import { useHomeHeader } from "../lib/home/use-home-header";
-import { useHomeInbox } from "../lib/home/use-home-inbox";
-import { useSpaceActivity } from "../lib/home/use-space-activity";
 import { useUiLocale } from "../lib/i18n/i18n";
+import { useArchivedCount } from "../lib/inbox/archived/use-archived-count";
+import { chatRpc } from "../lib/inbox/chat-rpc";
+import type { CreateAction } from "../lib/inbox/create-chooser";
 import { onInboxChanged, onOpenChatFromInbox } from "../lib/inbox/inbox-changes";
 import { retainInboxValue } from "../lib/inbox/inbox-retention";
 import type { InboxItem, InboxSpace, PinnedChat } from "../lib/inbox/inbox-spaces";
@@ -81,23 +83,28 @@ import {
   spaceInboxItems,
 } from "../lib/inbox/inbox-spaces";
 import { applyUnreadOverrides, withoutArchiving } from "../lib/inbox/inbox-swipe";
-import type { OrganizeTarget } from "../lib/inbox/organize-target";
-import { findOrganizeTarget } from "../lib/inbox/organize-target";
+import { inboxChats, preloadChats } from "../lib/inbox/preload-chats";
 import { loadSavedInbox } from "../lib/inbox/saved-chats";
-import { useArchivedCount } from "../lib/inbox/use-archived-count";
-import { useCollapsedSections } from "../lib/inbox/use-collapsed-sections";
-import { chatRpc, useInboxChatActions } from "../lib/inbox/use-inbox-chat-actions";
+import type { OrganizeTarget } from "../lib/inbox/sections/organize-target";
+import { findOrganizeTarget } from "../lib/inbox/sections/organize-target";
+import { useCollapsedSections } from "../lib/inbox/sections/use-collapsed-sections";
+import { useInbox } from "../lib/inbox/use-inbox";
+import { useInboxChatActions } from "../lib/inbox/use-inbox-chat-actions";
 import { useInboxDay } from "../lib/inbox/use-inbox-day";
+import { useInboxHeader } from "../lib/inbox/use-inbox-header";
 import { useSnoozeClock } from "../lib/inbox/use-snooze-clock";
+import { useSpaceActivity } from "../lib/inbox/use-space-activity";
 import { readableGutters } from "../lib/layout/adaptive-layout";
 import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
-import { useHeaderHeightIfAny } from "../lib/layout/floating-header";
+import { useTopBarInset } from "../lib/layout/floating-header";
 import { useSplitView } from "../lib/layout/split-view";
 import { hapticImpact, hapticSelection } from "../lib/native/haptics";
 import { native, useThemedStyles } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
 import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/notifications/app-badge";
 import { registerPushToken } from "../lib/notifications/push";
+import { askForReviewIfDue } from "../lib/platform/store-review";
+import { loadActivityMode, saveActivityMode } from "../lib/preferences/activity-mode";
 import { usePublishSearchInbox } from "../lib/search/use-publish-search-inbox";
 import {
   organizationSwitchActions,
@@ -159,7 +166,7 @@ export function HomeSession({
 function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { embedded: boolean }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   const locale = useUiLocale();
   const isFocused = useIsFocused();
@@ -187,9 +194,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     badgeLoad,
     inboxRequestId,
     inboxLoaded,
+    creatingFirstBot,
     loadBots,
     refreshBots,
-  } = useHomeInbox(spaceActionRef);
+  } = useInbox(spaceActionRef);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const [returningUser, setReturningUser] = useState(false);
@@ -216,7 +224,15 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     useCallback(() => {
       if (!userId) return;
       let active = true;
-      void offerPasskeyOnce(userId, () => active);
+      // One prompt per visit: the passkey offer, then the support offer, then the store rating.
+      void bestEffort(
+        "inbox prompts",
+        (async () => {
+          if (await offerPasskeyOnce(userId, () => active)) return;
+          if (await offerSelfHostedSupportOnce(() => active)) return;
+          await askForReviewIfDue(() => active);
+        })(),
+      );
       return () => {
         active = false;
       };
@@ -404,6 +420,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     onShareSelect,
     snoozeNow,
   ]);
+  // The first chats the inbox lists open from a saved copy on their first tap.
+  useEffect(() => {
+    if (inboxLoaded.current && !onShareSelect) void preloadChats(inboxChats(listData));
+  }, [listData, onShareSelect]);
   // Snoozed chats stay off the icon until they wake.
   const badgeCount = me
     ? unreadChatCount(
@@ -442,7 +462,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // Liquid Glass uses the native bar: glass bar items and a native menu.
   // The list beside a chat and the share picker have no navigation bar of their own.
   const nativeHeader = iosAtLeast(26) && !embedded && !onShareSelect;
-  const headerHeight = useHeaderHeightIfAny();
+  const topBarInset = useTopBarInset();
   const listRef = useRef<FlatList<InboxItem>>(null);
   const jumpSignals = useSyncExternalStore(
     mobileLogoAvatarActivity.subscribe,
@@ -469,7 +489,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     keys: jumpKeys,
     listRef,
     // The Liquid Glass header floats over the list; the older header sits above it.
-    topInset: nativeHeader ? headerHeight : 0,
+    topInset: nativeHeader ? topBarInset : 0,
     bottomInset: contentBottomInset,
   });
   const router = useRouter();
@@ -651,7 +671,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     [hasOrganizationMenu, organizations],
   );
 
-  useHomeHeader({
+  useInboxHeader({
     nativeHeader,
     ready,
     hasSession,
@@ -810,19 +830,23 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   );
   const listEmpty =
     showLoadFailure && loadFailure ? (
-      <HomeErrorState
+      <InboxErrorState
         kind={loadFailure.kind}
         message={loadFailure.message}
         loading={inboxLoading && !refreshing}
         onRetry={() => void refreshBots()}
         onSignIn={() => void signInAgain()}
       />
-    ) : activityView ? undefined : (
-      <Text style={styles.empty}>{me && !onShareSelect ? t`Tap + to create a bot` : null}</Text>
+    ) : activityView || !me || onShareSelect || creatingFirstBot ? undefined : (
+      <InboxNewBot onPress={() => newBot()} />
     );
   const listFooter = activityView ? undefined : (
     <InboxListFooter
-      createHint={!onShareSelect && !showLoadFailure && inboxNeedsCreateHint(listData)}
+      onNewBot={
+        !onShareSelect && !showLoadFailure && !creatingFirstBot && inboxNeedsCreateHint(listData)
+          ? () => newBot()
+          : undefined
+      }
       archivedCount={onShareSelect ? 0 : archivedCount}
     />
   );
@@ -866,6 +890,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                     right: Math.max(0, columnInsets.right - insets.right),
                   }}
                   column={columnInsets}
+                  width={embedded ? inboxWidth : windowWidth}
                   avatarViewport={avatarViewport}
                   onRefresh={refreshInbox}
                   signals={jumpSignals}
@@ -914,6 +939,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           </View>
         </CompactRowsContext.Provider>
       </SelectedChatContext.Provider>
+      {/* Without a loaded account the footer still leads to Account, to sign out or switch server. */}
+      {embedded && !onShareSelect ? (
+        <InboxFooter initial={initials} columnInsets={columnInsets} />
+      ) : null}
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}

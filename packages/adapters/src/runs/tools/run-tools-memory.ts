@@ -5,7 +5,7 @@ import {
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
 import { readHistory, searchHistory } from "@rakazo/db";
-import { redactConnectorPayload } from "../../connectors/connector-safety.js";
+import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import { editMemory } from "../../memory/memory-tools.js";
 import { MAX_RECALLED_MEMORIES } from "../../runtime/context/history-compaction.prompt.js";
 import { sharedMemorySaveError } from "../../tools/builtin.tool-definition.js";
@@ -59,6 +59,7 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     searchBeforeSeq: ctx.source.historySearchBeforeSeq,
     allowMyChats,
     searchAt: run.createdAt,
+    ...(run.trigger === "routine" ? { ownerOnly: run.userId } : {}),
   };
   const given = withoutBlankFields(args);
   let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;
@@ -179,7 +180,7 @@ export const memoryTools: ToolHandlers = {
     );
     // All recalled knowledge is derived data; an omitted provider marker cannot certify it.
     if (response.ok && response.value.length > 0) {
-      await markReadOutsideContent(ctx);
+      await markReadOutsideContent(ctx, response.value);
     }
     return response;
   },
@@ -196,7 +197,7 @@ export const memoryTools: ToolHandlers = {
     if (!response.ok) return response;
     const text = response.value.trim();
     // Reflection is provider-generated prose; it cannot attest that its answer is clean.
-    if (text) await markReadOutsideContent(ctx);
+    if (text) await markReadOutsideContent(ctx, text);
     return { ok: true, value: text || "No relevant memories." };
   },
   search_history: readHistoryTool,

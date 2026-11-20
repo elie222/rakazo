@@ -4,7 +4,12 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
 } from "@rakazo/contracts";
-import { inferAttachmentMimeType, isStaticPng, PNG_ANIMATION_HEADER_BYTES } from "@rakazo/core";
+import {
+  attachmentExtensionForMimeType,
+  inferAttachmentMimeType,
+  isStaticPng,
+  PNG_ANIMATION_HEADER_BYTES,
+} from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File, FileMode } from "expo-file-system";
 import type * as ImageManipulatorModule from "expo-image-manipulator";
@@ -38,6 +43,12 @@ function loadImageManipulator() {
   return imageManipulator;
 }
 
+function photoName(asset: ImagePicker.ImagePickerAsset, id: string | number): string {
+  const mimeType = asset.mimeType;
+  const extension = mimeType?.startsWith("image/") ? attachmentExtensionForMimeType(mimeType) : "";
+  return asset.fileName ?? `photo-${id}${extension || ".jpg"}`;
+}
+
 function compressedImageName(name: string, format: ImageManipulatorModule.SaveFormat): string {
   const extension = format === "png" ? ".png" : ".jpg";
   return `${name.replace(/\.[^./\\]+$/, "") || "photo"}${extension}`;
@@ -51,11 +62,15 @@ async function prepareImage(
   height: number | undefined,
 ) {
   const mimeType = inferAttachmentMimeType(name, sourceMimeType ?? undefined);
+  // HEIC and HEIF are accepted as files, but a photo still converts to JPEG; if it cannot,
+  // report it as unsupported instead of sending a format that most viewers cannot open.
+  const needsConversion = mimeType === "image/heic" || mimeType === "image/heif";
+  const unconverted = needsConversion ? null : mimeType;
   // Preserve animation and transparency in GIF and WebP images.
   if (mimeType === "image/gif" || mimeType === "image/webp") return { uri, name, mimeType };
   const needsResize = width && height && Math.max(width, height) > ATTACHMENT_IMAGE_MAX_EDGE;
-  // Unsupported photo formats (such as HEIC) need conversion even when already small.
-  if (!needsResize && mimeType) {
+  // Photo formats that viewers cannot open (such as HEIC) convert even when already small.
+  if (!needsResize && mimeType && !needsConversion) {
     return { uri, name, mimeType };
   }
   if (mimeType === "image/png") {
@@ -74,7 +89,7 @@ async function prepareImage(
     }
   }
   const manipulator = loadImageManipulator();
-  if (!manipulator) return { uri, name, mimeType };
+  if (!manipulator) return { uri, name, mimeType: unconverted };
   const format =
     mimeType === "image/png" ? manipulator.SaveFormat.PNG : manipulator.SaveFormat.JPEG;
   try {
@@ -95,7 +110,7 @@ async function prepareImage(
     };
   } catch {
     // An unreadable or unsupported image should not block the whole picker.
-    return { uri, name, mimeType };
+    return { uri, name, mimeType: unconverted };
   }
 }
 
@@ -130,7 +145,7 @@ export async function pickFromLibrary(
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   for (const asset of result.assets) {
-    const originalName = asset.fileName ?? `photo-${asset.assetId ?? Date.now()}.jpg`;
+    const originalName = photoName(asset, asset.assetId ?? Date.now());
     // Once full, let the filter report the skip without processing the file.
     let candidate: Parameters<typeof filterPickedAttachments>[1][number] = {
       name: originalName,
@@ -190,7 +205,7 @@ export async function takePhoto(
   if (result.canceled) return { attachments: [], skipped: [] };
   const asset = result.assets[0];
   if (!asset) return { attachments: [], skipped: [] };
-  const originalName = asset.fileName ?? `photo-${Date.now()}.jpg`;
+  const originalName = photoName(asset, Date.now());
   const prepared = await prepareImage(
     asset.uri,
     originalName,

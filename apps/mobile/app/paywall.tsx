@@ -7,6 +7,7 @@ import {
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
+  paymentOverdue,
 } from "@rakazo/contracts";
 import { canDeleteOrganization } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
@@ -18,7 +19,6 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -33,7 +33,11 @@ import { NativeActionButton } from "../components/native/native-action-button";
 import { NativeSegmentedControl } from "../components/native/native-segmented-control";
 import { NativeSymbol } from "../components/native/native-symbol";
 import { useAccountDeletion } from "../components/settings/account-deletion";
-import type { Plan } from "../lib/account/billing";
+import { errorText } from "../lib/api/user-error";
+import { translucentColor } from "../lib/appearance/color";
+import { signOut } from "../lib/auth/api-auth";
+import { replaceWithSignIn } from "../lib/auth/auth-routing";
+import type { Plan } from "../lib/billing/billing";
 import {
   currentPlan,
   openBillingPage,
@@ -42,16 +46,13 @@ import {
   purchaseCompleted,
   setPaywallShown,
   subscribedPlan,
-} from "../lib/account/billing";
-import { errorText } from "../lib/api/user-error";
-import { translucentColor } from "../lib/appearance/color";
-import { signOut } from "../lib/auth/api-auth";
-import { replaceWithSignIn } from "../lib/auth/auth-routing";
+} from "../lib/billing/billing";
 import { endCallBeforeSessionEnd } from "../lib/calls/call-session";
 import { dateLocaleForUi } from "../lib/i18n/i18n";
 import { FORM_COLUMN_WIDTH } from "../lib/layout/adaptive-layout";
 import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
 import { useMobileTokens } from "../lib/native/native";
+import { openExternalUrl } from "../lib/platform/open-url";
 import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 import {
@@ -169,6 +170,15 @@ export default function Paywall() {
     onFailed: (err) => Alert.alert(errorText(err, t`Could not open billing`)),
   });
   const pending = checkout.pending;
+  const portal = useSave({
+    save: async (_, send) => {
+      const { url } = await send("billing/portal", { client: "mobile" });
+      const next = await openBillingPage(url, send);
+      await writeSaved(queryClient, statusRead.queryKey, () => next);
+      return next;
+    },
+    onFailed: (err) => Alert.alert(errorText(err, t`Could not open billing`)),
+  });
 
   function choose() {
     if (status) checkout.run({ before: status, plan, amount, interval });
@@ -311,6 +321,34 @@ export default function Paywall() {
             }}
           />
         </View>
+      </View>
+    );
+  }
+
+  // A new plan would bill beside the overdue one, so only the billing portal is offered.
+  if (paymentOverdue(status) && !dismissible) {
+    return (
+      <View
+        style={[
+          styles.screen,
+          { backgroundColor: tokens.background, paddingBottom: contentBottomInset + 16 },
+        ]}
+      >
+        {topBar}
+        <View style={styles.done}>
+          <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
+            {t`Payment failed`}
+          </Text>
+        </View>
+        {status.canManage ? (
+          <View style={styles.footer}>
+            <NativeActionButton
+              label={t`Manage billing`}
+              busy={portal.pending}
+              onPress={() => portal.run()}
+            />
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -670,7 +708,7 @@ function TimelineStep({
 function LegalLink({ label, url }: { label: string; url: string }) {
   const tokens = useMobileTokens();
   return (
-    <Pressable accessibilityRole="link" hitSlop={8} onPress={() => void Linking.openURL(url)}>
+    <Pressable accessibilityRole="link" hitSlop={8} onPress={() => void openExternalUrl(url)}>
       <Text style={[styles.legalLabel, { color: tokens.mutedForeground }]}>{label}</Text>
     </Pressable>
   );

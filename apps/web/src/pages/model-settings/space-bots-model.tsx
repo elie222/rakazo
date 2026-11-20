@@ -1,11 +1,12 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { botsWithOwnModel } from "@rakazo/core";
 import { Button, Popover, PopoverContent, PopoverTrigger, toast } from "@rakazo/ui-web";
 import { Bot as BotIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSave } from "../../lib/query";
-import { useSpaceRpc } from "../../lib/space-rpc";
+import { useSave } from "../../lib/query/query";
+import { useSpaceRpc } from "../../lib/query/space-rpc";
 
 /**
  * Bots that ignore the main model. They stay out of sight behind a small icon by the
@@ -79,8 +80,9 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
       const stay = next ? botsWithOwnModel(next) : [];
       if (!changed || !stay.length) return;
       const names = stay.map((bot) => bot.name).join(", ");
+      const count = stay.length;
       toast(
-        stay.length === 1 ? t`${names} keeps its own model` : t`${names} keep their own model`,
+        t`${plural(count, { one: `${names} keeps its own model`, other: `${names} keep their own model` })}`,
         {
           id: "space-bots-model",
           action: { label: t`Use main model`, onClick: () => switchLatest.current(stay) },

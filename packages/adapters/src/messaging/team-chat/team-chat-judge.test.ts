@@ -1,8 +1,9 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
+import * as modelRoles from "../../models/model-roles.js";
+import { mainRole, withModelRoles } from "../../models/model-roles.test-support.js";
 import { resolveRuntimeModel } from "../../runtime/pi/pi-runtime-models.js";
-import { mainRole, withModelRoles } from "../../testing/model-roles.js";
 import {
   ModelTeamChatEngagementJudge as Judge,
   parseTeamChatEngagementDecision,
@@ -76,6 +77,113 @@ describe("team chat engagement judge", () => {
       }),
     ).resolves.toEqual({ act: true });
     expect(run).toHaveBeenCalledOnce();
+  });
+
+  function allowlistJudge(deps: {
+    memberProvider: string;
+    deploymentProvider: string;
+    deploymentModel: string;
+    providerOverride?: string;
+    modelOverride?: string;
+  }) {
+    const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      userModelPreference: {
+        findFirst: vi.fn(async () => ({
+          credential: {
+            id: "credential-fixture",
+            provider: deps.memberProvider,
+            secretId: "secret-fixture",
+          },
+          modelId: "fixture-model",
+        })),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: "secret-fixture", ciphertext: "encrypted" })) },
+    };
+    withModelRoles(prisma, [
+      mainRole(
+        { spaceId: "space-fixture", userId: "user-fixture" },
+        deps.memberProvider,
+        "fixture-model",
+      ),
+    ]);
+    const run = vi.fn(async function* (request: AgentRunRequest) {
+      yield { type: "done", text: JSON.stringify({ act: true }) };
+      expect(request.model.provider).toBeTruthy();
+    });
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: prisma as never,
+      runtime: { run } as never,
+      secrets: {
+        load: async () =>
+          JSON.stringify({
+            kind: "api_key",
+            key: "fixture-model-key",
+            projectId: "p",
+            region: "g",
+          }),
+      } as never,
+      deploymentProvider: deps.deploymentProvider,
+      deploymentModel: deps.deploymentModel,
+      ...(deps.providerOverride ? { providerOverride: deps.providerOverride } : {}),
+      ...(deps.modelOverride ? { modelOverride: deps.modelOverride } : {}),
+    });
+    const decide = (botProvider: string | null) =>
+      judge.decide({
+        bot: {
+          id: "bot-fixture",
+          spaceId: "space-fixture",
+          userId: "user-fixture",
+          name: "Fixture",
+          modelProvider: botProvider,
+          modelId: botProvider ? "fixture-model" : null,
+        },
+        channelId: "channel-fixture",
+        rules: "",
+        messages: [],
+      });
+    return { decide, run, prisma };
+  }
+
+  it("skips a bot pin the allowlist refuses and judges on the member main model", async () => {
+    const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "google-vertex";
+    try {
+      const { decide, run } = allowlistJudge({
+        memberProvider: "google-vertex",
+        deploymentProvider: "google-vertex",
+        deploymentModel: "gemini-4-hydrogen",
+      });
+      await expect(decide("anthropic")).resolves.toEqual({ act: true });
+      expect(run).toHaveBeenCalledOnce();
+    } finally {
+      if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+      else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
+    }
+  });
+
+  it("still uses the operator judge model when the allowlist leaves its provider out", async () => {
+    const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "google-vertex";
+    try {
+      const { decide, run, prisma } = allowlistJudge({
+        memberProvider: "google-vertex",
+        deploymentProvider: "google-vertex",
+        deploymentModel: "gemini-4-hydrogen",
+        providerOverride: "anthropic",
+        modelOverride: "claude-haiku-5-5",
+      });
+      await expect(decide(null)).resolves.toEqual({ act: true });
+      expect(run).toHaveBeenCalledOnce();
+      // The member's own key for the refused provider is never looked up.
+      expect(JSON.stringify(prisma.userModelPreference.findFirst.mock.calls)).not.toContain(
+        "anthropic",
+      );
+    } finally {
+      if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+      else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
+    }
   });
 
   it("renders untrusted messages without treating them as instructions", () => {
@@ -415,6 +523,7 @@ describe("team chat engagement judge", () => {
       skipDuplicates: true,
       data: [
         {
+          fundingSource: "customer",
           spaceId: "space-1",
           botId: "bot-1",
           userId: "user-1",
@@ -616,3 +725,117 @@ describe("team chat engagement judge", () => {
     },
   );
 });
+
+it.each(["personal-main", "legacy-main", "missing-personal-pin", "withdrawn-credit-pin"])(
+  "keeps team judging funded without replacing an explicit choice (%s)",
+  async (mode) => {
+    const personal = mode === "personal-main";
+    const credential = {
+      id: "personal",
+      userId: "user",
+      provider: "openrouter",
+      secretId: "personal-secret",
+      label: "Personal",
+      defaultModel: "personal-model",
+      thinkingLevel: null,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    };
+    const member = vi.spyOn(modelRoles, "resolveMemberMainModel").mockResolvedValue({
+      provider: personal ? "openrouter" : "anthropic",
+      modelId: personal ? "personal-model" : "unfunded-model",
+      credential: personal ? credential : null,
+      ...(mode === "missing-personal-pin"
+        ? { credentialId: "removed" }
+        : mode === "withdrawn-credit-pin"
+          ? { creditOfferingId: "withdrawn" }
+          : {}),
+    });
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({
+        defaultOfferingId: "approved",
+        offerings: [
+          {
+            id: "approved",
+            connectionId: "operator",
+            provider: "openrouter",
+            modelId: "approved-model",
+            price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+      }),
+    );
+    const run = vi.fn(async function* (_request: AgentRunRequest) {
+      yield { type: "done", text: '{"act":true}' };
+    });
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: {
+        user: { findUnique: async () => null },
+        deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: true }) },
+        userModelPreference: { findFirst: async () => null },
+        userModelCredential: {
+          findFirst: async ({ where }: { where: { provider: string } }) =>
+            personal && where.provider === "openrouter" ? credential : null,
+          findUnique: async () => ({
+            id: "operator",
+            provider: "openrouter",
+            userId: "operator-owner",
+            secretId: "operator-secret",
+          }),
+        },
+        secret: {
+          findFirst: async ({ where }: { where: { id: string } }) => ({
+            id: where.id,
+            ciphertext: where.id,
+          }),
+        },
+        space: {
+          findFirst: async () => ({ organization: { modelCredits: { mode: "credits" } } }),
+          findUnique: async () => ({ organizationId: "org" }),
+        },
+        member: { findUnique: async () => ({ role: "owner" }) },
+        billingAccount: { findUnique: async () => null },
+        modelCreditAccount: { upsert: async () => ({ mode: "credits" }) },
+      } as never,
+      runtime: { run } as never,
+      secrets: {
+        load: async (ciphertext: string) =>
+          ciphertext === "personal-secret" ? "fake-personal-key" : "fake-operator-key",
+      } as never,
+      deploymentProvider: "openrouter",
+      deploymentModel: "approved-model",
+      deploymentModelKey: "fake-operator-key",
+    });
+    try {
+      const result = await judge.decide({
+        bot: {
+          id: "bot",
+          spaceId: "space",
+          userId: "user",
+          name: "Fixture",
+          modelProvider: "anthropic",
+          modelId: "unfunded-model",
+        },
+        channelId: "channel",
+        rules: "",
+        messages: [],
+      });
+      if (mode.endsWith("pin")) {
+        expect(result).toEqual({ act: false });
+        expect(run).not.toHaveBeenCalled();
+      } else {
+        expect(result).toEqual({ act: true });
+        expect(run).toHaveBeenCalledOnce();
+        expect(run.mock.calls[0]?.[0].model).toMatchObject({
+          provider: "openrouter",
+          id: personal ? "personal-model" : "approved-model",
+          apiKey: personal ? "fake-personal-key" : "fake-operator-key",
+        });
+      }
+    } finally {
+      member.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  },
+);

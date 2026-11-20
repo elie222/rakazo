@@ -113,7 +113,7 @@ import {
 import type { ElectronAutoUpdater } from "./updates/auto-update.js";
 import { DesktopUpdateController } from "./updates/auto-update.js";
 import { verifyDownloadedLinuxUpdate } from "./updates/linux-update-signature.js";
-import { applicationMenuInstaller, installUpdate } from "./windows/app-menu.js";
+import { applicationMenuInstaller, followUpdateState, installUpdate } from "./windows/app-menu.js";
 import { createAppOpener } from "./windows/app-opener.js";
 import {
   createWindow,
@@ -596,6 +596,7 @@ app.whenReady().then(async () => {
       ? (update) => verifyDownloadedLinuxUpdate(update, (url, signal) => net.fetch(url, { signal }))
       : undefined,
   );
+  followUpdateState(() => installApplicationMenu());
   const screenDriver = screenDriverRelease(process.platform);
   const screenPermissions: ScreenPermissionApi = {
     isTrustedAccessibilityClient: (prompt) =>

@@ -7,6 +7,7 @@ import type {
   AgentHomeStore,
   ObjectStorage,
   PortableFile,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import { retry } from "@rakazo/core";
 import type { ContentKeyRing, ContentLocation, DataKey, PrismaClient } from "@rakazo/db";
@@ -20,8 +21,8 @@ import {
   runAsSystem,
   sealArtifact,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
+import { bestEffort, getLogger } from "@rakazo/logging";
+import { sandboxKindCapabilities } from "../computers/sandbox/sandbox-kind-capabilities.js";
 import { createObjectStorage } from "./create-object-storage.js";
 import { LocalAgentHomeStore, newRevision } from "./home.js";
 import type { HomeArchiveLimits } from "./home-archive.js";
@@ -31,6 +32,15 @@ import {
   packHome,
   unpackHome,
 } from "./home-archive.js";
+import type { HomeVersion, HomeVersions } from "./home-versions.js";
+import {
+  HomeVersionNotFoundError,
+  loadHomeVersions,
+  pruneHomeVersions,
+  recordHomeVersion,
+  restoreHomeVersion,
+} from "./home-versions.js";
+import { workspaceSaveLimits } from "./workspace-save-policy.js";
 
 const HOMES_PREFIX = "homes/";
 const SWEEP_INTERVAL_MS = 60 * 60_000;
@@ -60,10 +70,19 @@ export interface AgentHomeRecords {
   load(homeKey: string): Promise<StoredHome | undefined>;
   /** Creates the storage id and data key on first save. Undefined when there is no computer. */
   create(homeKey: string): Promise<StoredHome | undefined>;
-  /** Moves the current revision from `from` to `to`; false when another save got there first. */
+  /**
+   * Moves the current revision from `from` to `to` and keeps `to` as a version; false when another
+   * save got there first.
+   */
   advance(homeKey: string, storageId: string, from: string | null, to: string): Promise<boolean>;
-  /** The current revision of each storage id that still belongs to a home. */
-  revisions(storageIds: readonly string[]): Promise<Map<string, string | null>>;
+  /** Forgets the versions no longer kept and returns their revisions, never the current one. */
+  prune(homeKey: string, storageId: string, now: Date): Promise<string[]>;
+  /** The kept versions, current included. Undefined when the home is not stored. */
+  versions(homeKey: string): Promise<HomeVersions | undefined>;
+  /** Makes a kept version current, keeping the one it replaces. */
+  restore(homeKey: string, storageId: string, revision: string): Promise<void>;
+  /** The current and kept revisions of each storage id that still belongs to a home. */
+  revisions(storageIds: readonly string[]): Promise<Map<string, Set<string>>>;
   /** The computer kind of each home that still has a computer. */
   kinds(homeKeys: readonly string[]): Promise<Map<string, string>>;
 }
@@ -87,9 +106,10 @@ export class HomeSaveConflictError extends Error {
  *
  * Each save packs the home into one archive, seals it with the home's data key (64 KiB
  * AES-256-GCM segments bound to the storage id and revision), and uploads it as
- * `homes/<storage id>/<revision>`. The database then moves the home to that revision and the
- * previous object is deleted. Reads first bring the cache up to the stored revision, so a cache
- * that was removed, or that another host replaced, is downloaded again.
+ * `homes/<storage id>/<revision>`. The database then moves the home to that revision. A few earlier
+ * revisions, spread over recent days (`keptHomeRevisions`), stay restorable; the rest are deleted.
+ * Reads first bring the cache up to the stored revision, so a cache that was removed, or that
+ * another host replaced, is downloaded again.
  *
  * Docker computers keep mounting the cached directory (this extends `LocalAgentHomeStore`);
  * their checkpoints upload it. Remote computers' saves upload straight from their staged files,
@@ -106,8 +126,9 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
     private readonly storage: ObjectStorage,
     private readonly records: AgentHomeRecords,
     private readonly limits: HomeArchiveLimits = DEFAULT_HOME_ARCHIVE_LIMITS,
+    saveLimits?: WorkspaceExportLimits,
   ) {
-    super(root);
+    super(root, saveLimits);
   }
 
   override describe() {
@@ -412,7 +433,7 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       sealArtifact(
         stored.key,
         sealedId(stored.storageId, revision),
-        tap(packHome(home, this.limits), digest),
+        tap(packHome(home, this.limits, this.saveLimits), digest),
       ),
     );
     const discard = () => this.storage.delete([key]).catch(() => undefined);
@@ -447,11 +468,47 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       await discard();
       throw new HomeSaveConflictError();
     }
-    if (base)
-      await this.storage
-        .delete([objectKey(stored.storageId, base)])
-        .catch((error) => getLogger().error("previous home revision removal failed", error));
+    await bestEffort("home version pruning", this.pruneVersions(botId, stored.storageId));
     return { revision };
+  }
+
+  /** The sweep removes any object whose deletion fails here, since no version row keeps it. */
+  private async pruneVersions(botId: string, storageId: string) {
+    const dropped = await this.records.prune(botId, storageId, new Date());
+    if (dropped.length)
+      await this.storage.delete(dropped.map((revision) => objectKey(storageId, revision)));
+  }
+
+  /** Earlier versions of the home that can be restored, newest first. */
+  async earlierVersions(botId: string): Promise<HomeVersion[]> {
+    const listed = await this.records.versions(botId);
+    if (!listed) return [];
+    const present = await this.storedRevisions(listed.storageId);
+    return listed.versions
+      .filter((version) => version.revision !== listed.current && present.has(version.revision))
+      .sort((a, b) => b.savedAt.getTime() - a.savedAt.getTime());
+  }
+
+  /**
+   * Makes an earlier version current. Only a computer that is not running qualifies, and its next
+   * start restores it; a cached copy here is downloaded again when next read.
+   */
+  async restoreVersion(botId: string, revision: string): Promise<void> {
+    const listed = await this.records.versions(botId);
+    if (
+      !listed?.versions.some((version) => version.revision === revision) ||
+      !(await this.storedRevisions(listed.storageId)).has(revision)
+    )
+      throw new HomeVersionNotFoundError();
+    await this.records.restore(botId, listed.storageId, revision);
+  }
+
+  private async storedRevisions(storageId: string) {
+    const prefix = `${HOMES_PREFIX}${storageId}/`;
+    const present = new Set<string>();
+    for await (const object of this.storage.list(prefix))
+      present.add(object.key.slice(prefix.length));
+    return present;
   }
 
   /** Decrypted archive bytes of one revision; any tampering fails authentication. */
@@ -469,7 +526,8 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
 
   /**
    * Deletes objects whose home no longer exists (its computer, bot, space or account was
-   * deleted, which also deleted its key) and revisions a crashed save left behind. Assumes the
+   * deleted, which also deleted its key), and revisions neither current nor kept as a version
+   * (a crashed save's, or one whose pruning failed to delete it). Assumes the
    * bucket prefix belongs to this deployment alone; deletes nothing when the database knows
    * none of the stored homes.
    */
@@ -480,10 +538,10 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       if (!storageId || !revision || extra !== undefined) continue;
       found.set(storageId, [...(found.get(storageId) ?? []), { ...object, revision }]);
     }
-    const current = await this.records.revisions([...found.keys()]);
+    const kept = await this.records.revisions([...found.keys()]);
     // A database that knows none of the stored homes is more likely the wrong database (or
     // one this process cannot read) than one whose every home was deleted.
-    if (found.size > 0 && current.size === 0) {
+    if (found.size > 0 && kept.size === 0) {
       getLogger().warn("home.storage.sweep_skipped", { "home.objects.unknown": found.size });
       return 0;
     }
@@ -491,8 +549,8 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
       objects
         .filter(
           (object) =>
-            !current.has(storageId) ||
-            (object.revision !== current.get(storageId) &&
+            !kept.has(storageId) ||
+            (!kept.get(storageId)?.has(object.revision) &&
               now - object.lastModified.getTime() > STALE_REVISION_MS),
         )
         .map((object) => object.key),
@@ -545,7 +603,10 @@ export class ObjectAgentHomeStore extends LocalAgentHomeStore {
 /** Data keys live on the home's computer row, wrapped by the space's content key. */
 export class PrismaAgentHomeRecords implements AgentHomeRecords {
   constructor(
-    private readonly prisma: Pick<PrismaClient, "computer">,
+    private readonly prisma: Pick<
+      PrismaClient,
+      "computer" | "computerHomeVersion" | "$transaction"
+    >,
     private readonly ring: Pick<ContentKeyRing, "current" | "byId">,
   ) {}
 
@@ -560,6 +621,7 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
           homeStorageId: true,
           homeStorageKey: true,
           homeStorageRevision: true,
+          homeRevisionAt: true,
           updatedAt: true,
         },
       }),
@@ -570,28 +632,37 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
    * Lifecycle claims (booting, suspending) fence on the computer's updatedAt, so recording where
    * a home is stored must leave it unchanged. Writing it back would race a claim landing between
    * the read and the write, so the write also requires the value it read and retries if a claim
-   * moved it.
+   * moved it. `alsoWrite` commits with the update or not at all. Resolves to the row as it was
+   * before the write, or undefined when nothing matched.
    */
   private async updateKeepingClaim(
     reason: string,
     homeKey: string,
     where: Record<string, unknown>,
     data: Record<string, unknown>,
+    alsoWrite?: (
+      tx: Pick<PrismaClient, "computerHomeVersion">,
+      row: { id: string; homeRevisionAt: Date | null; updatedAt: Date },
+    ) => Promise<unknown>,
   ) {
     for (let attempt = 0; attempt < 5; attempt++) {
       const row = await this.row(homeKey);
-      if (!row) return false;
-      const { count } = await runAsSystem(reason, () =>
-        this.prisma.computer.updateMany({
-          where: { ...where, id: row.id, updatedAt: row.updatedAt },
-          data: { ...data, updatedAt: row.updatedAt },
+      if (!row) return undefined;
+      const updated = await runAsSystem(reason, () =>
+        this.prisma.$transaction(async (tx) => {
+          const { count } = await tx.computer.updateMany({
+            where: { ...where, id: row.id, updatedAt: row.updatedAt },
+            data: { ...data, updatedAt: row.updatedAt },
+          });
+          if (count === 1) await alsoWrite?.(tx, row);
+          return count === 1;
         }),
       );
-      if (count === 1) return true;
+      if (updated) return row;
       const current = await this.row(homeKey);
-      if (!current || current.updatedAt.getTime() === row.updatedAt.getTime()) return false;
+      if (!current || current.updatedAt.getTime() === row.updatedAt.getTime()) return undefined;
     }
-    return false;
+    return undefined;
   }
 
   async load(homeKey: string): Promise<StoredHome | undefined> {
@@ -630,12 +701,26 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
   }
 
   async advance(homeKey: string, storageId: string, from: string | null, to: string) {
-    return this.updateKeepingClaim(
+    const row = await this.updateKeepingClaim(
       "record an agent home's saved revision",
       homeKey,
       { homeStorageId: storageId, homeStorageRevision: from },
       { homeStorageRevision: to },
+      (tx, before) => recordHomeVersion(tx, before, storageId, from, to),
     );
+    return row !== undefined;
+  }
+
+  prune(homeKey: string, storageId: string, now: Date) {
+    return pruneHomeVersions(this.prisma, homeKey, storageId, now);
+  }
+
+  versions(homeKey: string) {
+    return loadHomeVersions(this.prisma, homeKey);
+  }
+
+  restore(homeKey: string, storageId: string, revision: string) {
+    return restoreHomeVersion(this.prisma, homeKey, storageId, revision);
   }
 
   async kinds(homeKeys: readonly string[]) {
@@ -653,18 +738,31 @@ export class PrismaAgentHomeRecords implements AgentHomeRecords {
   }
 
   async revisions(storageIds: readonly string[]) {
-    const current = new Map<string, string | null>();
+    const kept = new Map<string, Set<string>>();
     for (let start = 0; start < storageIds.length; start += 1000) {
+      const batch = storageIds.slice(start, start + 1000);
       const rows = await runAsSystem("find which stored agent homes still exist", () =>
         this.prisma.computer.findMany({
-          where: { homeStorageId: { in: storageIds.slice(start, start + 1000) } },
-          select: { homeStorageId: true, homeStorageRevision: true },
+          where: { homeStorageId: { in: batch } },
+          select: {
+            homeStorageId: true,
+            homeStorageRevision: true,
+            homeVersions: {
+              where: { storageId: { in: batch } },
+              select: { storageId: true, revision: true },
+            },
+          },
         }),
       );
-      for (const row of rows)
-        if (row.homeStorageId) current.set(row.homeStorageId, row.homeStorageRevision);
+      for (const row of rows) {
+        if (!row.homeStorageId) continue;
+        const revisions = new Set(row.homeStorageRevision ? [row.homeStorageRevision] : []);
+        for (const version of row.homeVersions)
+          if (version.storageId === row.homeStorageId) revisions.add(version.revision);
+        kept.set(row.homeStorageId, revisions);
+      }
     }
-    return current;
+    return kept;
   }
 
   /** A wrapped key copied to another computer row, or another space, fails to unwrap. */
@@ -696,12 +794,20 @@ export function createAgentHomeStore(
   dataDir: string,
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
+  /** Read once at startup; defaults to the environment's `WORKSPACE_SAVE_MAX_GB`. */
+  saveLimits: WorkspaceExportLimits = workspaceSaveLimits(env),
 ): LocalAgentHomeStore {
   const storage = createObjectStorage(env);
-  if (!storage) return new LocalAgentHomeStore(dataDir);
+  if (!storage) return new LocalAgentHomeStore(dataDir, saveLimits);
   const ring = contentEncryptionOf(prisma)?.ring;
   if (!ring) throw new Error("Storing homes in object storage needs content encryption keys");
-  return new ObjectAgentHomeStore(dataDir, storage, new PrismaAgentHomeRecords(prisma, ring));
+  return new ObjectAgentHomeStore(
+    dataDir,
+    storage,
+    new PrismaAgentHomeRecords(prisma, ring),
+    DEFAULT_HOME_ARCHIVE_LIMITS,
+    saveLimits,
+  );
 }
 
 /**

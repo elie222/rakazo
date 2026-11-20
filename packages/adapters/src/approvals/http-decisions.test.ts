@@ -45,6 +45,7 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
       callObserver: { beforeCall, afterCall },
     }).decide(request, context);
     expect(result.answers.decision).toEqual({ type: "choice", choice: "pass", confidence: 0.9 });
+    expect(beforeCall).toHaveBeenCalledWith(expect.objectContaining({ maxOutputTokens: null }));
     expect(fetchMock).toHaveBeenCalledWith(
       provider === "openrouter"
         ? "https://openrouter.ai/api/alpha/decisions"
@@ -72,6 +73,41 @@ describe.each(["openrouter", "typesafe"] as const)("%s decision conformance", (p
       expect(beforeCall).toHaveBeenCalledWith(
         expect.objectContaining({ maxCostUsd: expect.any(Number) }),
       );
+  });
+  it("keeps unknown provider usage unpriced for customer holds", async () => {
+    const onUsage = vi.fn();
+    const afterCall = vi.fn();
+    const body = await response().json();
+    delete body.usage;
+    const result = await new HttpDecisionProvider(provider, {
+      apiKey: "fake-key",
+      fetch: async () => Response.json(body),
+      onUsage,
+      callObserver: { beforeCall: () => "reservation", afterCall },
+    }).decide(request, context);
+    expect(result.usage?.costUsd).toBeNull();
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({ costUsd: null }),
+    );
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ costUsd: null }));
+  });
+  it("reports the observer tariff even when request-ID persistence fails", async () => {
+    const onUsage = vi.fn();
+    const result = await new HttpDecisionProvider(provider, {
+      apiKey: "fake-key",
+      fetch: async () => response(),
+      onUsage,
+      callObserver: {
+        beforeCall: () => "reservation",
+        onRequestId: async () => {
+          throw new Error("Request identity storage unavailable");
+        },
+        afterCall: (_id, usage) => ({ ...usage!, costUsd: 0.25, costSource: "deployment-tariff" }),
+      },
+    }).decide(request, context);
+    expect(result.usage).toMatchObject({ costUsd: 0.25, costSource: "deployment-tariff" });
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining(result.usage));
   });
   it("rejects unknown answers while retaining provider costs", async () => {
     const onUsage = vi.fn();
@@ -145,25 +181,37 @@ describe("decision provider failures", () => {
 
   it("keeps a prompt count for a response without usage", async () => {
     const afterCall = vi.fn();
-    await new HttpDecisionProvider("openrouter", {
+    const onUsage = vi.fn();
+    const result = await new HttpDecisionProvider("openrouter", {
       apiKey: "fake-key",
+      onUsage,
       fetch: async () =>
         Response.json({
           answers: { decision: { type: "choice", choice: "pass", confidence: 0.9 } },
         }),
       callObserver: { beforeCall: () => "reservation", afterCall },
     }).decide(request, context);
+    expect(result.usage).toEqual(afterCall.mock.calls[0]?.[1]);
+    expect(onUsage).toHaveBeenCalledWith(expect.objectContaining(result.usage));
+    expect(result.usage).toMatchObject({
+      pricingVersion: "decision-pricing-2026-11-17",
+      pricingSnapshot: { estimatedInputTokens: estimateTextTokens(JSON.stringify(request)) },
+    });
     expect(afterCall).toHaveBeenCalledWith(
       "reservation",
       expect.objectContaining({
         costUsd: null,
-        pricingSnapshot: { input: expect.any(Number) },
+        costSource: null,
+        pricingSnapshot: expect.objectContaining({
+          input: expect.any(Number),
+          source: expect.any(String),
+        }),
         countedTokens: { inputTokens: expect.any(Number), outputTokens: 0 },
       }),
     );
   });
 
-  it("does not count a request that never connected", async () => {
+  it("retains unknown billing when a dispatched request loses its response", async () => {
     const afterCall = vi.fn();
     await expect(
       new HttpDecisionProvider("typesafe", {
@@ -174,7 +222,29 @@ describe("decision provider failures", () => {
         callObserver: { beforeCall: () => "reservation", afterCall },
       }).decide(request, context),
     ).rejects.toMatchObject({ kind: "unavailable" });
-    expect(afterCall).toHaveBeenCalledWith("reservation", null);
+    expect(afterCall).toHaveBeenCalledWith(
+      "reservation",
+      expect.objectContaining({ costUsd: null, usageSource: "unavailable" }),
+    );
+  });
+
+  it("asks OpenRouter for hosts that retain nothing, and leaves routing alone otherwise", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => response());
+    for (const zeroDataRetention of [true, false])
+      await new HttpDecisionProvider("openrouter", {
+        apiKey: "fake-key",
+        fetch: fetchMock,
+        zeroDataRetention,
+      }).decide(request, context);
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(bodies[0]).toEqual({ ...request, provider: { zdr: true } });
+    expect(bodies[1]).toEqual(request);
+  });
+
+  it("refuses data retention limits on a host that cannot enforce them", () => {
+    expect(
+      () => new HttpDecisionProvider("typesafe", { apiKey: "fake-key", zeroDataRetention: true }),
+    ).toThrow(expect.objectContaining({ kind: "invalid" }));
   });
 
   it("refuses a blank API key before any request", () => {
@@ -205,4 +275,99 @@ describe("decision provider failures", () => {
       expect(afterCall).toHaveBeenCalledWith("reservation", expect.objectContaining(usage));
     },
   );
+});
+
+it("retains header request IDs and estimated pricing when a response is malformed", async () => {
+  const afterCall = vi.fn();
+  const onRequestId = vi.fn();
+  await expect(
+    new HttpDecisionProvider("openrouter", {
+      apiKey: "fake-key",
+      fetch: async () =>
+        new Response("invalid-json", { headers: { "x-request-id": "request-fixture" } }),
+      callObserver: { beforeCall: () => "call", onRequestId, afterCall },
+    }).decide(request, context),
+  ).rejects.toMatchObject({ kind: "unavailable" });
+  expect(onRequestId).toHaveBeenCalledWith("call", "request-fixture");
+  expect(afterCall).toHaveBeenCalledWith(
+    "call",
+    expect.objectContaining({
+      providerRequestId: "request-fixture",
+      costSource: null,
+      pricingVersion: "decision-pricing-2026-11-17",
+      costUsd: null,
+    }),
+  );
+});
+
+it.each(["fake-request", "", "   ", undefined])(
+  "keeps a usable billing ID when the body supplies %j",
+  async (bodyId) => {
+    const onRequestId = vi.fn();
+    const afterCall = vi.fn();
+    const result = await new HttpDecisionProvider("openrouter", {
+      apiKey: "fake-key",
+      fetch: async () =>
+        Response.json(
+          { ...(await response().json()), id: bodyId },
+          {
+            headers: { "x-request-id": "transport-fixture" },
+          },
+        ),
+      callObserver: { beforeCall: () => "call", onRequestId, afterCall },
+    }).decide(request, context);
+    const expected = bodyId?.trim() || "transport-fixture";
+    expect(onRequestId.mock.calls).toEqual([["call", expected]]);
+    expect(result.usage?.providerRequestId).toBe(expected);
+    expect(afterCall).toHaveBeenCalledWith("call", result.usage);
+  },
+);
+
+it.each([false, true])(
+  "records decision usage when request-ID persistence fails (synchronous=%s)",
+  async (synchronous) => {
+    const onUsage = vi.fn();
+    const afterCall = vi.fn();
+    const provider = new HttpDecisionProvider("openrouter", {
+      apiKey: "fake-key",
+      fetch: async () => response(),
+      onUsage,
+      callObserver: {
+        beforeCall: () => "hold",
+        afterCall,
+        onRequestId: () => {
+          const error = new Error("Request identity storage unavailable");
+          if (synchronous) throw error;
+          return Promise.reject(error);
+        },
+      },
+    });
+    const result = await provider.decide(request, context);
+    expect(result.answers.decision?.choice).toBe("pass");
+    expect(onUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ costUsd: 0.0000042, providerRequestId: "fake-request" }),
+    );
+    expect(afterCall).toHaveBeenCalledWith("hold", result.usage);
+  },
+);
+
+it("releases an observer intent when cancellation happens before dispatch", async () => {
+  const controller = new AbortController();
+  const afterCall = vi.fn();
+  const fetchMock = vi.fn();
+  await expect(
+    new HttpDecisionProvider("typesafe", {
+      apiKey: "fake-key",
+      fetch: fetchMock,
+      callObserver: {
+        beforeCall: () => {
+          controller.abort();
+          return "intent";
+        },
+        afterCall,
+      },
+    }).decide(request, { ...context, signal: controller.signal }),
+  ).rejects.toMatchObject({ kind: "unavailable" });
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(afterCall).toHaveBeenCalledWith("intent", null);
 });

@@ -10,8 +10,8 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
-import { useSave, useSpaceQueries } from "../../lib/query";
-import { errorText } from "../../lib/user-error";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { errorText } from "../../lib/query/user-error";
 
 /** The user's spaces; choosing where something is available only matters with two or more. */
 export function useOwnSpaces(): Array<{ id: string; name: string }> {
@@ -100,9 +100,9 @@ export function AvailabilityControl({
           render={
             <Button
               variant="ghost"
-              size="sm"
+              size="xs"
               disabled={saving}
-              className="h-6 gap-1 px-1.5 text-label font-normal text-foreground"
+              className="gap-1 px-1.5 text-label font-normal text-foreground"
             />
           }
         >

@@ -7,6 +7,7 @@ vi.mock("../threads/thread-target.js", () => ({
 }));
 
 import type { RouterDeps } from "../router.js";
+import { deploymentVoiceFromEnv } from "../voice/deployment-config.js";
 import { aiConsentStatus, allowAiConsent } from "./ai-consent.js";
 
 function setup() {
@@ -178,7 +179,7 @@ describe("consent grants", () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: "Anthropic",
-          detail: "claude-backup",
+          detail: "",
           use: "model",
           allowed: false,
         }),
@@ -364,4 +365,102 @@ it("grants the account's voice provider when the grant names the account copy", 
     settingsScope: "account",
   });
   expect(upsert).toHaveBeenCalled();
+});
+
+function includedSpeechSetup() {
+  const fixture = setup();
+  const { deps } = fixture;
+  const price = {
+    model: "speech",
+    unit: "characters",
+    microsPerUnit: 1,
+    maxRequestMicros: 100,
+    source: "https://pricing.example/speech",
+    version: "test",
+  };
+  deps.env.deploymentVoice = deploymentVoiceFromEnv(
+    JSON.stringify({
+      provider: "openai-compatible",
+      allowUnmeteredUsage: true,
+      voiceId: "fixture-voice",
+      connection: {
+        plaintext: "fake-operator-secret",
+        baseUrl: "https://speech.example/v1",
+        sttBaseUrl: "https://recognition.example/v1",
+      },
+      pricing: {
+        synthesize: price,
+        transcribe: { ...price, model: "recognition", unit: "seconds" },
+      },
+    }),
+  );
+  vi.mocked(deps.prisma.userVoicePreference.findFirst).mockResolvedValue(null);
+  vi.mocked(deps.prisma.userVoicePreference.findMany).mockResolvedValue([]);
+  Object.assign(deps.prisma, {
+    speechAllowance: { findFirst: vi.fn(async () => ({ limitMicros: 1000n, usedMicros: 0n })) },
+    spaceVoicePreference: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
+  });
+  return fixture;
+}
+
+it("requires consent for included speech and a separate recognition endpoint without exposing credentials", async () => {
+  const { deps, actor, upsert } = includedSpeechSetup();
+  const status = await aiConsentStatus(deps, actor, { uses: ["voice"] });
+  expect(status.recipients).toHaveLength(2);
+  expect(status.recipients.every((recipient) => !recipient.allowed)).toBe(true);
+  const disclosure = JSON.stringify(status);
+  expect(disclosure).toContain("https://speech.example");
+  expect(disclosure).toContain("https://recognition.example");
+  expect(disclosure).not.toContain("fake-operator-secret");
+  const granted = await allowAiConsent(deps, actor, {
+    scope: status.scope,
+    version: status.version,
+    keys: status.recipients.map((recipient) => recipient.key),
+  });
+  expect(upsert).toHaveBeenCalledTimes(2);
+  expect(granted.recipients.every((recipient) => recipient.allowed)).toBe(true);
+});
+
+it("omits unavailable included speech and respects an explicitly empty Space voice copy", async () => {
+  const { deps, actor } = includedSpeechSetup();
+  vi.mocked(deps.prisma.speechAllowance.findFirst).mockResolvedValueOnce(null);
+  expect((await aiConsentStatus(deps, actor, { uses: ["voice"] })).recipients).toEqual([]);
+  vi.mocked(deps.prisma.spaceSettingOverride.findUnique).mockResolvedValue({
+    setting: "voice",
+  } as never);
+  expect((await aiConsentStatus(deps, actor, { uses: ["voice"] })).recipients).toEqual([]);
+  expect(
+    (await aiConsentStatus(deps, actor, { uses: ["voice"], settingsScope: "account" })).recipients,
+  ).toHaveLength(2);
+});
+
+it("discloses only the saved personal voice when it overrides included speech", async () => {
+  const { deps, actor } = includedSpeechSetup();
+  vi.mocked(deps.prisma.userVoicePreference.findFirst).mockResolvedValue({
+    credential: { provider: "openai" },
+    voiceId: "alloy",
+  } as never);
+  const status = await aiConsentStatus(deps, actor, { uses: ["voice"] });
+  expect(status.recipients.map((recipient) => recipient.name)).toEqual(["OpenAI"]);
+  expect(deps.prisma.speechAllowance.findFirst).not.toHaveBeenCalled();
+});
+
+it("allows included speech consent with saved non-default voice preferences", async () => {
+  const { deps, actor, upsert } = includedSpeechSetup();
+  vi.mocked(deps.prisma.userVoicePreference.findMany).mockResolvedValue([
+    { credential: { provider: "openai" }, isDefault: false, voiceId: "alloy" },
+  ] as never);
+  const reviewed = await aiConsentStatus(deps, actor, { uses: ["voice"] });
+  const granted = await allowAiConsent(deps, actor, {
+    scope: reviewed.scope,
+    version: reviewed.version,
+    keys: reviewed.recipients.map((recipient) => recipient.key),
+  });
+  expect(upsert).toHaveBeenCalledTimes(2);
+  expect(
+    granted.recipients.filter((recipient) =>
+      reviewed.recipients.some((r) => r.key === recipient.key),
+    ),
+  ).toHaveLength(2);
+  expect(granted.recipients.filter((recipient) => recipient.allowed)).toHaveLength(2);
 });

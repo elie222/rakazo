@@ -582,6 +582,62 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect((await h.state(id)).status).toBe("finished");
   });
 
+  it.each([
+    ["is still running", false],
+    ["has finished", true],
+  ])(
+    "sends a follow-up the provider did not take while a run someone else started %s",
+    async (_label, done) => {
+      const h = await setup();
+      const id = await h.launch();
+      await h.poll(id);
+      await h.finish(id);
+      const remoteId = (await h.state(id)).remoteId!;
+      // Someone continues the finished agent in Cursor itself; the card no longer polls.
+      await h.wire.fetch(`https://api.cursor.com/v1/agents/${remoteId}/runs`, {
+        method: "POST",
+        headers: { authorization: "Bearer fake-key" },
+        body: JSON.stringify({ prompt: { text: "Rename it" } }),
+      });
+      if (done) h.wire.complete(remoteId);
+      await h.tool("reply", { id, prompt: "Add tests" });
+      // A busy agent refuses the follow-up; an idle one fails it with no response.
+      let failed = false;
+      h.connection.provider = new CursorCloudAgentProvider({
+        apiKey: "fake-key",
+        fetch: async (input, init) => {
+          if (done && !failed && init?.method === "POST") {
+            failed = true;
+            return new Response(null, { status: 503 });
+          }
+          return h.wire.fetch(input, init);
+        },
+      });
+      await h.poll(id);
+      await h.poll(id);
+      expect(await h.runs(id)).toHaveLength(2);
+      expect(await h.state(id)).toMatchObject({ followup: { prompt: "Add tests" } });
+      expect(await h.wakes()).toHaveLength(1);
+      if (!done) h.wire.complete(remoteId);
+      await h.settle(id);
+      await h.poll(id);
+      await h.poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "running", followup: null });
+      expect(await h.runs(id)).toHaveLength(3);
+      expect(
+        h.wire.requests.filter(
+          (request) => request.method === "POST" && request.path.endsWith("/runs"),
+        ),
+      ).toMatchObject([
+        { body: { prompt: { text: "Rename it" } } },
+        ...(done ? [] : [{ body: { prompt: { text: "Add tests" } } }]),
+        { body: { prompt: { text: "Add tests" } } },
+      ]);
+      await h.finish(id);
+      expect(await h.wakes()).toHaveLength(2);
+    },
+  );
+
   it("does not report cancellation success while transport fails or the provider is still running", async () => {
     const h = await setup();
     const id = await h.launch();
@@ -689,60 +745,6 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     await h.poll(id);
     expect(h.wire.agents.size).toBe(1);
     expect(await h.state(id)).toMatchObject({ status: "cancelled", cancelRequested: false });
-  });
-
-  /** The previous release's claim on the agent, which knows nothing of the lease. */
-  const previousReleaseClaim = async (prisma: PrismaClient, agentId: string) => {
-    const stored = await prisma.cloudAgent.findUniqueOrThrow({ where: { id: agentId } });
-    const claimed = await prisma.cloudAgent.updateMany({
-      where: {
-        id: agentId,
-        version: stored.version,
-        OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: new Date() } }],
-      },
-      data: { leaseToken: "previous", leaseExpiresAt: new Date(Date.now() + 90_000) },
-    });
-    return claimed.count;
-  };
-
-  it("leaves an agent the previous release is polling to it", async () => {
-    const h = await setup();
-    const id = await h.launch();
-    expect(await previousReleaseClaim(prisma, id)).toBe(1);
-    await h.poll(id);
-    expect(h.wire.agents.size).toBe(0);
-    expect(await h.state(id)).toMatchObject({ leaseToken: "previous", launchDispatched: false });
-
-    await prisma.cloudAgent.update({
-      where: { id },
-      data: { leaseToken: null, leaseExpiresAt: null },
-    });
-    await h.poll(id);
-    expect(h.wire.agents.size).toBe(1);
-  });
-
-  it("keeps the previous release out while it polls", async () => {
-    const h = await setup();
-    const id = await h.launch();
-    const entered = deferred();
-    const release = deferred();
-    const original = h.connection.provider.launch.bind(h.connection.provider);
-    vi.spyOn(h.connection.provider, "launch").mockImplementationOnce(async (...args) => {
-      entered.resolve();
-      await release.promise;
-      return original(...args);
-    });
-    const polling = h.poll(id);
-    await entered.promise;
-    expect(await previousReleaseClaim(prisma, id)).toBe(0);
-    release.resolve();
-    await polling;
-    expect(h.wire.agents.size).toBe(1);
-    expect(await h.state(id)).toMatchObject({
-      remoteId: expect.any(String),
-      leaseToken: null,
-      leaseExpiresAt: null,
-    });
   });
 
   it("rejects overlapping follow-ups and preserves remote failure as a terminal result", async () => {
@@ -1133,6 +1135,31 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       }
     });
 
+    it("sends a follow-up T3 Code did not take after a newer run started there", async () => {
+      const { h, actor, t3, tool, launch, poll } = await connected();
+      await connectServer(actor, { allBots: true });
+      const id = await launch();
+      await poll(id);
+      const remoteId = (await h.state(id)).remoteId!;
+      t3.complete(remoteId);
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "finished" });
+      // A newer run starts in T3 Code itself after the card stopped polling.
+      t3.continueRun(remoteId);
+      await tool("reply", { id, prompt: "Add tests" });
+      t3.failNext = { status: 500, tool: "t3_thread_send" };
+      await poll(id);
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ followup: { prompt: "Add tests" } });
+      await h.settle(id);
+      await poll(id);
+      await poll(id);
+      expect(await h.state(id)).toMatchObject({ status: "running", followup: null });
+      expect(t3.calls.filter((call) => call.tool === "t3_thread_send")).toHaveLength(2);
+      expect(t3.threads.get(remoteId)!.runs).toHaveLength(3);
+      expect(await h.wakes()).toHaveLength(1);
+    });
+
     it("settles a cancel of an agent whose launch T3 Code refused", async () => {
       const { h, actor, tool, launch, poll } = await connected();
       await connectServer(actor, { allBots: true });
@@ -1219,7 +1246,10 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       const calls = t3.calls.length;
       await poll(id);
       expect(await h.state(id)).toMatchObject({ status: "expired", nextPollAt: null });
-      expect(t3.calls).toHaveLength(calls);
+      // A follow-up first reads which run is newest, a status read revocation still allows.
+      expect(t3.calls.slice(calls).map(({ tool }) => tool)).toEqual(
+        operation === "reply" ? ["t3_thread_read"] : [],
+      );
       expect(await tool("reply", { id, prompt: "Restart" })).toEqual({
         error: "Unknown cloud agent.",
       });

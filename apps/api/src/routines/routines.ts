@@ -5,6 +5,7 @@ import type { Actor, CreateRoutineInput, Routine } from "@rakazo/contracts";
 import { canonicalPiProviderId, RoutineEmailSendersSchema } from "@rakazo/contracts";
 import {
   ClientError,
+  displayName,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
@@ -50,6 +51,8 @@ export function routineRowData(actor: Actor, input: CreateRoutineInput, nextRunA
     crons: input.crons,
     timezone: input.timezone,
     notify: input.notify,
+    // What a watch read is not the owner's words, so it never runs as a turn in the chat.
+    inChat: input.inChat && !input.watch,
     active: input.active,
     webhookEnabled: input.webhookEnabled,
     githubEnabled: input.githubEnabled,
@@ -89,6 +92,7 @@ export function mapRoutine(row: {
   timezone: string;
   active: boolean;
   notify: boolean;
+  inChat: boolean;
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
@@ -111,6 +115,7 @@ export function mapRoutine(row: {
     timezone: row.timezone,
     active: row.active,
     notify: row.notify,
+    inChat: row.inChat,
     webhookEnabled: row.webhookEnabled,
     githubEnabled: row.githubEnabled,
     messageProvider: row.messageProvider,
@@ -130,12 +135,62 @@ export function mapRoutine(row: {
   };
 }
 
-/** Any member may change a routine; editing it hands it to them (see routines.update). */
+type RoutineRow = Parameters<typeof mapRoutine>[0] & { userId: string };
+
+/**
+ * The routines as a member of the Space sees them, each with whose accounts it runs with: the
+ * owner's display name and whether that is the viewer, never their id or email.
+ */
+export async function routineViews(
+  prisma: PrismaClient,
+  actor: Actor,
+  rows: RoutineRow[],
+): Promise<Routine[]> {
+  if (rows.length === 0) return [];
+  const owners = await prisma.spaceMember.findMany({
+    where: { spaceId: actor.spaceId, userId: { in: [...new Set(rows.map((row) => row.userId))] } },
+    select: {
+      userId: true,
+      member: { select: { user: { select: { name: true, email: true } } } },
+    },
+  });
+  // A name that holds its account's email address would show that address to the whole Space.
+  const names = new Map(
+    owners.map(({ userId, member: { user } }) => [
+      userId,
+      user.name.toLowerCase().includes(user.email.toLowerCase()) ? "" : user.name,
+    ]),
+  );
+  return rows.map((row) => {
+    const name = names.get(row.userId);
+    return {
+      ...mapRoutine(row),
+      editable: row.userId === actor.userId,
+      runsAs:
+        name === undefined
+          ? null
+          : { name: displayName(name, "Member"), isViewer: row.userId === actor.userId },
+    };
+  });
+}
+
+/** One routine as `routineViews` shows it, for the one a member just created or changed. */
+export async function routineView(
+  prisma: PrismaClient,
+  actor: Actor,
+  row: RoutineRow,
+): Promise<Routine> {
+  const [view] = await routineViews(prisma, actor, [row]);
+  if (!view) throw new IsolationError();
+  return view;
+}
+
+/** Only a routine's owner changes it; other members may turn it on or off (see routines.update). */
 export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },
   });
-  return rows.map(mapRoutine);
+  return routineViews(deps.prisma, actor, rows);
 }
 
 export function createRoutineAnnouncer(deps: RouterDeps) {

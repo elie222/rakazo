@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DockerSandboxProvider } from "../providers/computer/docker/docker-sandbox.js";
 import { FakeSandboxProvider } from "../providers/computer/fake/fake-sandbox.js";
 import { InMemoryJobQueue } from "../runs/wakeups/wakeup.js";
-import { HostAwareSandbox } from "../sandboxes/host-aware-sandbox.js";
 import { LocalAgentHomeStore } from "../storage/home.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
+import { HostAwareSandbox } from "./sandbox/host-aware-sandbox.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.
 vi.mock("@rakazo/db", async (importOriginal) => ({

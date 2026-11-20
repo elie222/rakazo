@@ -25,6 +25,7 @@ import {
   routineRunModelPin,
   runModelChoice,
   selectDefaultCredentialId,
+  spaceCanRunCatalogModel,
   validateBotModelChange,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
@@ -277,14 +278,14 @@ describe("space catalog auth", () => {
     id: string;
     modelId: string | null;
     credentialId: string;
-    secretId: string;
     iso: string;
   }) {
     return {
       id: input.id,
       modelId: input.modelId,
+      thinkingLevel: null,
       updatedAt: stamp(input.iso),
-      credential: storedCredential(input.credentialId, input.secretId, input.iso),
+      credentialId: input.credentialId,
     };
   }
 
@@ -293,18 +294,21 @@ describe("space catalog auth", () => {
     preferences: ReturnType<typeof storedPreference>[];
     secrets: Array<{ id: string; ciphertext: string }>;
   }) {
-    const credentialFindMany = vi.fn().mockResolvedValue(options.credentials);
-    const preferenceFindMany = vi.fn().mockResolvedValue(options.preferences);
+    const credentialFindMany = vi.fn().mockResolvedValue(
+      options.credentials.map((credential) => ({
+        ...credential,
+        userPreferences: options.preferences.filter((row) => row.credentialId === credential.id),
+      })),
+    );
     const secretFindMany = vi.fn().mockResolvedValue(options.secrets);
     const prisma = {
       userModelCredential: {
         findMany: credentialFindMany,
         findFirst: vi.fn().mockResolvedValue(null),
       },
-      userModelPreference: { findMany: preferenceFindMany },
       secret: { findMany: secretFindMany },
     } as unknown as PrismaClient;
-    return { prisma, credentialFindMany, preferenceFindMany, secretFindMany };
+    return { prisma, credentialFindMany, secretFindMany };
   }
 
   function listsSpark(auth: Awaited<ReturnType<typeof modelCredentialAuthKindsForSpace>>) {
@@ -349,6 +353,57 @@ describe("space catalog auth", () => {
     }
   });
 
+  it("keeps personal models outside an approved provider's credit offering", async () => {
+    const models = listPiCatalog().filter((entry) => entry.provider === "openrouter");
+    const [approved, personal] = models;
+    expect(approved).toBeDefined();
+    expect(personal).toBeDefined();
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({
+        defaultOfferingId: "approved",
+        offerings: [
+          {
+            id: "approved",
+            connectionId: "operator",
+            provider: "openrouter",
+            modelId: approved!.id,
+            price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+      }),
+    );
+    try {
+      const { prisma } = authPrisma({
+        credentials: [
+          {
+            ...storedCredential("personal", "personal-secret", "2026-01-01T00:00:00.000Z"),
+            provider: "openrouter",
+          },
+        ],
+        preferences: [],
+        secrets: [{ id: "personal-secret", ciphertext: "fake-ciphertext" }],
+      });
+      Object.assign(prisma, {
+        space: {
+          findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "credits" } } })),
+        },
+      });
+      const auth = await modelCredentialAuthKindsForSpace(
+        prisma,
+        { load: vi.fn(async () => "fake-personal-key") },
+        scope,
+        "openrouter",
+      );
+      expect(auth.managedProviders).toContain("openrouter");
+      expect(auth.secretIdByProvider.openrouter).toBe("personal-secret");
+      expect(spaceCanRunCatalogModel(auth, personal!)).toBe(true);
+      expect(spaceCanRunCatalogModel({ ...auth, secretIdByProvider: {} }, personal!)).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("retains hosted catalog access alongside a saved personal connection", async () => {
     vi.stubEnv("PI_DEFAULT_PROVIDER", "openrouter");
     vi.stubEnv("OPENROUTER_API_KEY", "fixture-deployment-key");
@@ -380,7 +435,7 @@ describe("space catalog auth", () => {
   });
 
   it("uses the saved preference instead of a newer account credential", async () => {
-    const { prisma, preferenceFindMany } = authPrisma({
+    const { prisma, credentialFindMany } = authPrisma({
       credentials: [
         storedCredential("cred-api", "secret-api", "2026-03-01T00:00:00.000Z"),
         storedCredential("cred-oauth", "secret-oauth", "2026-01-01T00:00:00.000Z"),
@@ -390,7 +445,6 @@ describe("space catalog auth", () => {
           id: "pref-oauth",
           modelId: luna,
           credentialId: "cred-oauth",
-          secretId: "secret-oauth",
           iso: "2026-01-02T00:00:00.000Z",
         }),
       ],
@@ -403,13 +457,43 @@ describe("space catalog auth", () => {
     const auth = await modelCredentialAuthKindsForSpace(prisma, { load }, scope);
 
     expect(auth.byProvider["openai-codex"]).toBe("oauth");
-    expect(preferenceFindMany).toHaveBeenCalledWith(
+    expect(credentialFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { userId: scope.userId },
       }),
     );
     expect(listsSpark(auth)).toBe(false);
     expect(load).not.toHaveBeenCalledWith("cipher-api", "secret-api");
+  });
+
+  it("ignores a preference whose connection disappeared during the catalog read", async () => {
+    const { prisma, credentialFindMany } = authPrisma({
+      credentials: [storedCredential("remaining", "remaining-secret", "2026-02-01T00:00:00Z")],
+      preferences: [
+        {
+          id: "removed-preference",
+          modelId: spark,
+          thinkingLevel: null,
+          updatedAt: stamp("2026-03-01T00:00:00Z"),
+          credentialId: "removed",
+        },
+      ],
+      secrets: [{ id: "remaining-secret", ciphertext: "remaining-ciphertext" }],
+    });
+
+    const auth = await modelCredentialAuthKindsForSpace(
+      prisma,
+      { load: vi.fn().mockResolvedValue(oauth) },
+      scope,
+    );
+
+    expect(auth.secretIdByProvider["openai-codex"]).toBe("remaining-secret");
+    expect(auth.secretIdByModel["openai-codex"]?.[spark]).toBeUndefined();
+    expect(credentialFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ userPreferences: expect.anything() }),
+      }),
+    );
   });
 
   it("keeps a model's API-key preference when the default is ChatGPT sign-in", async () => {
@@ -423,14 +507,12 @@ describe("space catalog auth", () => {
           id: "pref-oauth",
           modelId: luna,
           credentialId: "cred-oauth",
-          secretId: "secret-oauth",
           iso: "2026-03-02T00:00:00.000Z",
         }),
         storedPreference({
           id: "pref-spark",
           modelId: spark,
           credentialId: "cred-api",
-          secretId: "secret-api",
           iso: "2026-02-02T00:00:00.000Z",
         }),
       ],
@@ -469,14 +551,12 @@ describe("space catalog auth", () => {
           id: "pref-api",
           modelId: luna,
           credentialId: "cred-api",
-          secretId: "secret-api",
           iso: "2026-03-02T00:00:00.000Z",
         }),
         storedPreference({
           id: "pref-spark",
           modelId: spark,
           credentialId: "cred-oauth",
-          secretId: "secret-oauth",
           iso: "2026-02-02T00:00:00.000Z",
         }),
       ],
@@ -542,14 +622,12 @@ describe("space catalog auth", () => {
           id: "pref-api",
           modelId: luna,
           credentialId: "cred-api",
-          secretId: "secret-api",
           iso: "2026-03-02T00:00:00.000Z",
         }),
         storedPreference({
           id: "pref-spark",
           modelId: spark,
           credentialId: "cred-oauth",
-          secretId: "secret-oauth",
           iso: "2026-02-02T00:00:00.000Z",
         }),
       ],
@@ -1360,6 +1438,27 @@ describe("bot model change validation", () => {
     await expect(
       validateBotModelChange(deps, { ...scope, provider: "xai", model: "saved-model" }),
     ).resolves.toEqual({ ok: true, provider: "xai", model: "saved-model", thinkingLevel: null });
+  });
+
+  it("rejects a provider the deployment allowlist leaves out", async () => {
+    const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
+    try {
+      const deps = changeDeps({ anthropic: credential("anthropic", "claude-haiku-5-5") });
+      await expect(
+        validateBotModelChange(deps, {
+          ...scope,
+          provider: "anthropic",
+          model: "claude-haiku-5-5",
+        }),
+      ).resolves.toEqual({
+        ok: false,
+        error: "This model provider is not allowed on this server.",
+      });
+    } finally {
+      if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+      else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
+    }
   });
 
   it("rejects Spark on Codex, which Pi no longer bundles", async () => {

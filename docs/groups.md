@@ -5,16 +5,26 @@ teammate.
 
 ## Start a group chat
 
-Choose **Create** (the **+** at the top of the sidebar), then **New group chat**. Name the group,
-pick 2 to 10 bots and choose **Create group**.
+On web and desktop, choose **Create** (the **+** at the top of the sidebar), then
+**New group chat**. Name the group, pick 2 to 10 bots and choose **Create group**.
+
+On mobile, tap **Create** (**+**) in the chat list, then **New group chat**. Pick 2 to 10 bots and
+tap **Next**. Enter a name and tap **Create**, or leave it blank and tap **Skip** to use the default
+name based on the selected bots.
 
 Each bot keeps its own memory, computer and instructions; the group only shares the conversation.
 
 ## Who answers
 
-- With no mention, the first bot in the group answers and can bring in the others.
-- **@Name** wakes that bot. Mention several to wake them all.
-- **@everyone** (or **@all**, **@所有人**) wakes every bot in the group.
+- By default, a message that doesn't mention a group member reaches every member. Each can choose
+  whether to reply.
+- Without a mention, a direct reply to a member's message goes only to that member. If you're not
+  replying to a member and one or more members are waiting for your answer, the message goes only
+  to the member who asked most recently.
+- **@Name** sends the message to that bot. Mention several bots to send it to those bots. Mentions
+  take precedence over a direct reply or a pending question.
+- **@everyone** sends the message to every member. **@all** and **@所有人** also work, unless a
+  member has that name. In that case, the alias addresses just that member.
 
 To rename the group or change who is in it, open **Group settings** from the group's header.
 **Delete group** removes the group chat.

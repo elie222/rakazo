@@ -38,6 +38,7 @@ export type MobileBot = Pick<
   | "fleetManagement"
   | "crossSpaceCommunication"
   | "dailyCheckIns"
+  | "meetingsEnabled"
 > &
   Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions" | "snoozedUntil">>;
 export type MobileBotSection = BotSection;
@@ -156,6 +157,7 @@ export function blockText(message: MobileMessage) {
       }
       if (block.kind === "chart") return `[chart: ${block.name ?? "chart"}]`;
       if (block.kind === "app") return `[app: ${block.server}]`;
+      if (block.kind === "tool_question") return `[question: ${block.question.source}]`;
       if (block.kind === "page") return `[page: ${block.title}]`;
       if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
       if (block.kind === "file") {

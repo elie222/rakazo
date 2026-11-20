@@ -1,224 +1,15 @@
-import { RPCHandler } from "@orpc/server/fetch";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
 import { listPiCatalog, serializeModelSecret } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RouterDeps } from "../router.js";
-import { createRouter } from "../router.js";
 
-const owner: Actor = {
-  userId: "user-one",
-  spaceId: "space-one",
-  email: "one@rakazo.test",
-  isDeploymentOwner: true,
-};
-
-function setup(
-  options: {
-    actor?: Actor;
-    credentialProvider?: string;
-    allowPrivateEndpoint?: boolean;
-    codexCatalog?: RouterDeps["codexCatalog"];
-    credits?: boolean;
-    existing?: Array<Record<string, unknown>>;
-    /** An openai-compatible connection with this stored list and own model. */
-    compatible?: { enabledModelIds: string[]; defaultModel: string; baseUrl?: string };
-    /** Spaces whose member keeps their own models instead of the account's. */
-    overrides?: Array<{ userId: string; spaceId: string }>;
-  } = {},
-) {
-  const credential = {
-    id: "credential-one",
-    userId: owner.userId,
-    provider:
-      options.credentialProvider ?? (options.compatible ? "openai-compatible" : "openrouter"),
-    label: "fixture",
-    secretId: "secret-one",
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
-  };
-  // `existing` describes the main model's fallbacks, positioned after its primary. A row
-  // with a spaceId is that Space's own copy; one without is the account's.
-  let roleRows: Array<Record<string, unknown>> = (options.existing ?? []).map((row) => ({
-    ...row,
-    role: "main",
-    position: Number(row.position) + 1,
-    thinkingLevel: null,
-  }));
-  const roleTable = (copy: "account" | "space") => {
-    const owns = (row: Record<string, unknown>, where: Record<string, string>) =>
-      (copy === "space") === (row.spaceId !== undefined) &&
-      Object.entries(where).every(([key, value]) => row[key] === value);
-    return {
-      findMany: vi.fn(async ({ where }: { where: Record<string, string> }) =>
-        roleRows
-          .filter((row) => owns(row, where))
-          .sort((left, right) => Number(left.position) - Number(right.position)),
-      ),
-      deleteMany: vi.fn(async ({ where }: { where: Record<string, string> }) => {
-        roleRows = roleRows.filter((row) => !owns(row, where));
-        return { count: 0 };
-      }),
-      createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-        roleRows.push(...data);
-        return { count: data.length };
-      }),
-    };
-  };
-  const userModelRoleChoice = roleTable("account");
-  const spaceModelRoleChoice = roleTable("space");
-  type OverrideKey = { spaceId: string; userId: string; setting: string };
-  let overrides: OverrideKey[] = (options.overrides ?? []).map((row) => ({
-    ...row,
-    setting: "models",
-  }));
-  const sameOverride = (left: OverrideKey, right: OverrideKey) =>
-    left.spaceId === right.spaceId &&
-    left.userId === right.userId &&
-    left.setting === right.setting;
-  const spaceSettingOverride = {
-    findUnique: vi.fn(
-      async ({ where }: { where: { spaceId_userId_setting: OverrideKey } }) =>
-        overrides.find((row) => sameOverride(row, where.spaceId_userId_setting)) ?? null,
-    ),
-    findMany: vi.fn(async ({ where }: { where: { spaceId: string; userId: string } }) =>
-      overrides.filter((row) => row.spaceId === where.spaceId && row.userId === where.userId),
-    ),
-    create: vi.fn(async ({ data }: { data: OverrideKey }) => {
-      overrides.push(data);
-      return data;
-    }),
-    delete: vi.fn(async ({ where }: { where: { spaceId_userId_setting: OverrideKey } }) => {
-      overrides = overrides.filter((row) => !sameOverride(row, where.spaceId_userId_setting));
-      return where.spaceId_userId_setting;
-    }),
-  };
-  const tx = {
-    userModelRoleChoice,
-    spaceModelRoleChoice,
-    spaceSettingOverride,
-    $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
-  };
-  const prisma = {
-    deploymentSettings: { findUnique: vi.fn(async () => null), findFirst: vi.fn(async () => null) },
-    // Saved choices that keep a model listed after new users stop being offered it.
-    bot: { findMany: vi.fn(async () => []) },
-    routine: { findMany: vi.fn(async () => []) },
-    space: {
-      findFirst: vi.fn(async () => ({ organization: { modelCredits: { mode: "credits" } } })),
-    },
-    userModelRoleChoice,
-    spaceModelRoleChoice,
-    spaceSettingOverride,
-    userModelCredential: {
-      findMany: vi.fn(
-        async ({ where }: { where: { userId: string; provider?: string | { in: string[] } } }) =>
-          !options.credits &&
-          where.userId === owner.userId &&
-          (!where.provider ||
-            (typeof where.provider === "string"
-              ? where.provider === credential.provider
-              : where.provider.in.includes(credential.provider)))
-            ? [credential]
-            : [],
-      ),
-      findFirst: vi.fn(async ({ where }: { where: { id?: string; userId: string } }) =>
-        !options.credits && where.userId === owner.userId && where.id === credential.id
-          ? { ...credential, userPreferences: [] }
-          : null,
-      ),
-    },
-    userModelPreference: {
-      findMany: vi.fn().mockResolvedValue(
-        options.compatible
-          ? [
-              {
-                modelId: options.compatible.defaultModel,
-                thinkingLevel: null,
-                updatedAt: new Date(0),
-                credential,
-              },
-            ]
-          : [],
-      ),
-      findFirst: vi.fn().mockResolvedValue(null),
-      upsert: vi.fn(),
-      updateMany: vi.fn(),
-    },
-    secret: {
-      findMany: vi.fn().mockResolvedValue([{ id: "secret-one", ciphertext: "fixture-ciphertext" }]),
-      findFirst: vi.fn().mockResolvedValue({ id: "secret-one", ciphertext: "fixture-ciphertext" }),
-    },
-    $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
-  } as unknown as PrismaClient;
-  Object.assign(tx, {
-    userModelPreference: prisma.userModelPreference,
-    userModelCredential: prisma.userModelCredential,
-  });
-  const deps = {
-    codexCatalog: options.codexCatalog,
-    billing: options.credits ? { modelCreditsEnabled: true } : undefined,
-    prisma,
-    secrets: {
-      // A fixture ciphertext that is already a stored secret decrypts to itself.
-      load: vi.fn((ciphertext: string) =>
-        ciphertext.startsWith("{")
-          ? ciphertext
-          : options.compatible
-            ? serializeModelSecret({
-                kind: "openai_compatible",
-                baseUrl: options.compatible.baseUrl ?? "http://127.0.0.1:11434/v1",
-                enabledModelIds: options.compatible.enabledModelIds,
-              })
-            : "fake-api-key-for-offline-tests",
-      ),
-    },
-    env: {
-      agentRuntime: "pi",
-      defaultProvider: "openrouter",
-      defaultModel: "unused-test-model",
-      webOrigin: "http://127.0.0.1:5173",
-      screenProxySecret: "fixture-secret",
-      sandboxProvider: "fake",
-      mcpAllowPrivateEndpoint: options.allowPrivateEndpoint ?? true,
-    },
-    dataDir: "C:/scratch/rakazo-model-backups",
-  } as unknown as RouterDeps;
-  const actor = options.actor ?? owner;
-  const handler = new RPCHandler(createRouter(deps));
-  const call = async (procedure: string, input: unknown) => {
-    const { response } = await handler.handle(
-      new Request(`http://127.0.0.1/rpc/${procedure}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: input }),
-      }),
-      { prefix: "/rpc", context: { actor } },
-    );
-    if (!response) throw new Error(`no response for ${procedure}`);
-    return { response };
-  };
-  const roles = () => roleRows;
-  // The main model's fallbacks in the shape `existing` takes.
-  const rows = () =>
-    roleRows
-      .filter((row) => row.role === "main" && Number(row.position) > 0)
-      .map(({ userId, spaceId, provider, modelId, position }) => ({
-        userId,
-        spaceId,
-        provider,
-        modelId,
-        position: Number(position) - 1,
-      }));
-  return { rows, roles, prisma, deps, userModelRoleChoice, spaceModelRoleChoice, call };
-}
-
-const availableModel = listPiCatalog().find(
-  (entry) => entry.provider === "openrouter" && !entry.placeholder,
-)!;
+import {
+  availableModel,
+  owner,
+  setupModelSettings as setup,
+} from "./model-settings.test-support.js";
 
 describe("model catalog offered to pickers", () => {
   it("leaves out models agents cannot run but keeps one the account saved", async () => {
@@ -243,6 +34,23 @@ describe("model catalog offered to pickers", () => {
 });
 
 describe("model backup settings API", () => {
+  it("reads and saves a personal model when default-model billing is unavailable", async () => {
+    const { call, deps, roles } = setup();
+    const primary = { provider: availableModel.provider, modelId: availableModel.id };
+    deps.env.deploymentModelConfigured = true;
+    deps.billing = {
+      status: vi.fn().mockRejectedValue(new Error("Fixture billing read failed")),
+    } as unknown as NonNullable<typeof deps.billing>;
+
+    const save = await call("models/setRole", { role: "main", primary });
+    expect(save.response.status).toBe(200);
+    expect((await save.response.json()).json).toMatchObject({ primary, deploymentPrimary: null });
+    expect(roles()).toEqual([expect.objectContaining({ ...primary, position: 0 })]);
+    const read = await call("models/role", { role: "main" });
+    expect(read.response.status).toBe(200);
+    expect((await read.response.json()).json).toMatchObject({ primary, deploymentPrimary: null });
+  });
+
   it("rejects a compatible catalog placeholder outside the enabled list", async () => {
     const { call, userModelRoleChoice } = setup({
       compatible: { enabledModelIds: ["enabled"], defaultModel: "enabled" },
@@ -552,6 +360,36 @@ describe("role-based model settings API", () => {
         });
       },
     );
+
+    it.each([true, false])(
+      "says whether the deployment pays for its approval default with credits on: %s",
+      async (credits) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("OPENROUTER_API_KEY", "fake-key");
+        const { call } = setup({ credits });
+        for (const procedure of ["models/role", "models/setRole"]) {
+          const { response } = await call(procedure, { role: "approval" });
+          expect(response.status).toBe(200);
+          const view = (await response.json()).json;
+          expect(view.deploymentPrimary).toMatchObject({ provider: "openrouter" });
+          expect(view.deploymentIncluded).toBe(credits ? true : undefined);
+        }
+        const main = await call("models/role", { role: "main" });
+        expect((await main.response.json()).json.deploymentIncluded).toBeUndefined();
+      },
+    );
+
+    it("marks a verifier the deployment pays for as included", async () => {
+      clearApprovalEnvironment();
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "jev");
+      vi.stubEnv("TYPESAFE_API_KEY", "fake-key");
+      const { call } = setup({ credits: true });
+      const { response } = await call("models/role", { role: "approval" });
+      expect((await response.json()).json).toMatchObject({
+        deploymentPrimary: { provider: "jev" },
+        deploymentIncluded: true,
+      });
+    });
 
     it("preserves a saved approval model when its connection is unavailable", async () => {
       clearApprovalEnvironment();
@@ -892,59 +730,96 @@ describe("role-based model settings API", () => {
     });
     expect(gone.response.status).toBe(400);
   });
-  it("offers and accepts a model only on the connections that can run it", async () => {
-    const { call, prisma } = setup();
-    const connection = (id: string) => ({
-      id,
-      userId: owner.userId,
-      provider: "openrouter",
-      label: id,
-      secretId: `${id}-secret`,
-      createdAt: new Date(0),
-      updatedAt: new Date(0),
-      userPreferences: [],
-    });
-    Object.assign(prisma.userModelCredential, {
-      findMany: vi.fn(async () => [
-        connection("credential-personal"),
-        connection("credential-work"),
-      ]),
-      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => connection(where.id)),
-    });
-    const serves = vi
-      .spyOn(adapters, "connectionServesModel")
-      .mockImplementation(
-        async (_deps, _userId, credential, _provider, modelId) =>
-          modelId !== availableModel.id || credential.secretId === "credential-personal-secret",
-      );
-    try {
-      for (const [procedure, input] of [
-        ["models/forRole", { role: "main" }],
-        ["models/list", null],
-      ] as const) {
-        const catalog = (await (await call(procedure, input)).response.json()).json as Array<{
-          id: string;
-          credentialIds?: string[];
-        }>;
-        expect(catalog.find((entry) => entry.id === availableModel.id)?.credentialIds).toEqual([
-          "credential-personal",
-        ]);
+  it.each([false, true])(
+    "offers and accepts only serving personal connections alongside credits (credits=%s)",
+    async (credits) => {
+      const { call, prisma, deps } = setup();
+      if (credits) {
+        deps.billing = { modelCreditsEnabled: true } as never;
+        vi.stubEnv(
+          "MODEL_CREDIT_OFFERINGS",
+          JSON.stringify({
+            defaultOfferingId: "approved",
+            offerings: [
+              {
+                id: "approved",
+                connectionId: "operator",
+                provider: availableModel.provider,
+                modelId: availableModel.id,
+                price: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+              },
+            ],
+          }),
+        );
+        Object.assign(prisma.userModelCredential, {
+          findUnique: vi.fn(async () => ({
+            id: "operator",
+            userId: "operator-owner",
+            provider: availableModel.provider,
+            secretId: "operator-secret",
+          })),
+        });
       }
-      const model = { provider: availableModel.provider, modelId: availableModel.id };
-      const wrong = await call("models/setRole", {
-        role: "main",
-        primary: { ...model, credentialId: "credential-work" },
+      const connection = (id: string) => ({
+        id,
+        userId: owner.userId,
+        provider: "openrouter",
+        label: id,
+        secretId: `${id}-secret`,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+        userPreferences: [],
       });
-      expect(wrong.response.status).toBe(400);
-      const right = await call("models/setRole", {
-        role: "main",
-        primary: { ...model, credentialId: "credential-personal" },
+      Object.assign(prisma.userModelCredential, {
+        findMany: vi.fn(async () => [
+          connection("credential-personal"),
+          connection("credential-work"),
+        ]),
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => connection(where.id)),
       });
-      expect(right.response.status).toBe(200);
-    } finally {
-      serves.mockRestore();
-    }
-  });
+      const serves = vi
+        .spyOn(adapters, "connectionServesModel")
+        .mockImplementation(
+          async (_deps, _userId, credential, _provider, modelId) =>
+            modelId !== availableModel.id || credential.secretId === "credential-personal-secret",
+        );
+      try {
+        for (const [procedure, input] of [
+          ["models/forRole", { role: "main" }],
+          ["models/list", null],
+        ] as const) {
+          const catalog = (await (await call(procedure, input)).response.json()).json as Array<{
+            id: string;
+            credentialIds?: string[];
+          }>;
+          expect(catalog.find((entry) => entry.id === availableModel.id)?.credentialIds).toEqual([
+            "credential-personal",
+          ]);
+        }
+        const model = { provider: availableModel.provider, modelId: availableModel.id };
+        const wrong = await call("models/setRole", {
+          role: "main",
+          primary: { ...model, credentialId: "credential-work" },
+        });
+        expect(wrong.response.status).toBe(400);
+        const right = await call("models/setRole", {
+          role: "main",
+          primary: { ...model, credentialId: "credential-personal" },
+        });
+        expect(right.response.status).toBe(200);
+        if (credits) {
+          const funded = await call("models/setRole", {
+            role: "main",
+            primary: { ...model, creditOfferingId: "approved" },
+          });
+          expect(funded.response.status).toBe(200);
+        }
+      } finally {
+        vi.unstubAllEnvs();
+        serves.mockRestore();
+      }
+    },
+  );
   it("reads each connection's key and the saved choices once for the whole catalog", async () => {
     const { call, prisma } = setup();
     const connection = (id: string) => ({
@@ -1035,6 +910,7 @@ describe("role-based model settings API", () => {
     const { call, prisma, roles } = setup({
       compatible: { enabledModelIds: ["model-a"], defaultModel: "model-a" },
     });
+    const preference = { modelId: "model-a", thinkingLevel: null, updatedAt: new Date(0) };
     const connection = (id: string) => ({
       id,
       userId: owner.userId,
@@ -1043,6 +919,7 @@ describe("role-based model settings API", () => {
       secretId: `secret-${id}`,
       createdAt: new Date(0),
       updatedAt: new Date(0),
+      userPreferences: id === "a" ? [preference] : [],
     });
     const [connectionA, connectionB] = [connection("a"), connection("b")];
     const client = prisma as unknown as {
@@ -1056,9 +933,7 @@ describe("role-based model settings API", () => {
     client.userModelCredential.findMany.mockResolvedValue([connectionA, connectionB]);
     client.userModelPreference.findMany.mockResolvedValue([
       {
-        modelId: "model-a",
-        thinkingLevel: null,
-        updatedAt: new Date(0),
+        ...preference,
         credential: connectionA,
       },
     ]);

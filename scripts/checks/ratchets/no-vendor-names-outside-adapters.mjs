@@ -27,7 +27,7 @@ export const exclude = [
   "apps/*/{vite,playwright,metro,app}.config.{ts,js}",
   "apps/desktop/scripts/**",
   // The monitoring and logging sinks, which lint also lets load their vendor's SDK.
-  "{apps/desktop/src/main/system,apps/web/src/lib,apps/mobile/lib/platform}/monitoring.ts",
+  "{apps/desktop/src/main/system,apps/web/src/lib/platform,apps/mobile/lib/platform}/monitoring.ts",
   "packages/logging/src/{sentry,axiom,axiom-sink}.ts",
 ];
 
@@ -97,14 +97,16 @@ const VENDORS = [
   "honcho",
   "hindsight",
   "serenity",
+  "mnemoverse",
   // Voice
   "elevenlabs",
   "cartesia",
   "fish[-_ ]?audio",
-  // Infrastructure: secrets, payments, monitoring, web search, and the SDKs computer providers
-  // are reached through
+  // Infrastructure: secrets, payments, partner programs, monitoring, web search, and the SDKs
+  // computer providers are reached through
   "infisical",
   "stripe",
+  "dub",
   "sentry",
   "axiom(?:hq)?",
   "alicloud",

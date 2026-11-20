@@ -1,4 +1,10 @@
-import type { AutoReviewProvider, AutoReviewRequest, AutoReviewResult } from "@rakazo/adapter-kit";
+import type {
+  AutoReviewProvider,
+  AutoReviewRequest,
+  AutoReviewResult,
+  DecisionProviderOptions,
+} from "@rakazo/adapter-kit";
+import { JevAutoReviewProvider } from "../providers/decision/typesafe/jev-auto-review.js";
 import type { LlmAutoReviewOptions } from "./auto-review.js";
 import {
   autoReviewMinConfidence,
@@ -8,7 +14,7 @@ import {
   resolveAutoReviewProviderKind,
   typesafeApiKey,
 } from "./auto-review.js";
-import { JevAutoReviewProvider } from "./jev-auto-review.js";
+import { AutoReviewSetupError } from "./auto-review-failures.js";
 import { ScriptedAutoReviewProvider } from "./scripted-auto-review.js";
 
 export type CreateAutoReviewProviderOptions = {
@@ -19,6 +25,8 @@ export type CreateAutoReviewProviderOptions = {
   timeoutMs?: number;
   minConfidence?: number;
   llm?: LlmAutoReviewOptions;
+  callObserver?: DecisionProviderOptions["callObserver"];
+  onUsage?: DecisionProviderOptions["onUsage"];
   scripted?: AutoReviewResult | ((request: AutoReviewRequest) => AutoReviewResult);
 };
 
@@ -34,9 +42,11 @@ export function createAutoReviewProvider(
   switch (kind ?? resolveAutoReviewProviderKind(env)) {
     case "jev": {
       const apiKey = options.apiKey ?? typesafeApiKey(env);
-      if (!apiKey) throw new Error("TYPESAFE_API_KEY is required");
+      if (!apiKey) throw new AutoReviewSetupError("TYPESAFE_API_KEY is required");
       return new JevAutoReviewProvider({
         apiKey,
+        callObserver: options.callObserver,
+        onUsage: options.onUsage,
         fetch: options.fetch,
         timeoutMs: options.timeoutMs ?? autoReviewTimeoutMs(env),
         model: options.model ?? env.RAKAZO_AUTO_REVIEW_MODEL?.trim() ?? DEFAULT_JEV_MODEL,
@@ -46,9 +56,12 @@ export function createAutoReviewProvider(
     case "scripted":
       return new ScriptedAutoReviewProvider(options.scripted);
     case "llm":
-      if (!options.llm) throw new Error("LLM auto-review requires a runtime checker");
+      if (!options.llm)
+        throw new AutoReviewSetupError("LLM auto-review requires a runtime checker");
       return new LlmAutoReviewProvider(options.llm);
     default:
-      throw new Error(`Unknown auto-review provider "${kind}". Use jev | llm | scripted.`);
+      throw new AutoReviewSetupError(
+        `Unknown auto-review provider "${kind}". Use jev | llm | scripted.`,
+      );
   }
 }

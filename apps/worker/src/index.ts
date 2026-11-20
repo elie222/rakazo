@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
-import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import type { JobPublisher, JobQueueOrder, JobWorkerHost } from "@rakazo/adapter-kit";
+import { liveModelCatalogEnabled, unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import { configuredMeetingMedia } from "@rakazo/adapters/meeting-media";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
 import { startWorkerHealth } from "./health.js";
@@ -15,6 +16,9 @@ import {
   ChatSdkMessagingSurface,
   CodexCatalogCache,
   configuredBotEmailProvider,
+  configuredEmailProvider,
+  configuredMeetingProviders,
+  configuredMeetingSpaces,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createApnsActivityProvider,
@@ -24,6 +28,7 @@ import {
   createCloudAgentConnection,
   createConnectorRuntime,
   createDeadJobPruner,
+  createLifecycleEmailSender,
   createMediaGenerationProvider,
   createPaymentWalletProvider,
   createPostgresReconciliationLeadership,
@@ -42,9 +47,13 @@ import {
   InMemoryJobQueue,
   installedMessaging,
   isMessagingSurfaceEnabled,
+  MeetingCalendarService,
+  MeetingService,
   machineCleanupRecords,
+  meetingCalendarScope,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
+  openAiCompatAllowPublicHosts,
   PiAgentRuntime,
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
@@ -67,8 +76,12 @@ import {
   withSecretPersistence,
   withSecretWriteAhead,
 } from "@rakazo/adapters";
-import { abortableDelay } from "@rakazo/core";
-import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
+import { abortableDelay, parseEnvFlag } from "@rakazo/core";
+import {
+  MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+  sandboxCommandTimeoutExceedsMax,
+} from "@rakazo/core/node/sandbox-command";
+import { resolveMeetingSigningKey, resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createBoardEvents,
   createDb,
@@ -97,6 +110,10 @@ async function main() {
   const stopStallWatch = watchEventLoopStalls("worker.event_loop_stalled");
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
+  if (sandboxCommandTimeoutExceedsMax(process.env))
+    logger.warn("SANDBOX_COMMAND_TIMEOUT_MS is above the maximum; using the maximum", {
+      maximumMs: MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+    });
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 8);
   // Three queue listeners and reconciliation leadership hold connections. Leave
   // room for job queries and transactions instead of starting a stalled worker.
@@ -148,7 +165,11 @@ async function main() {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
   });
+  // Fail at boot rather than on the first catalog read, which would fail a run.
+  liveModelCatalogEnabled(process.env);
   const env = runRuntimeEnvFromProcess(process.env);
+  // Read per request by model connections; refuse a bad value at boot like the API does.
+  openAiCompatAllowPublicHosts();
   const boardEvents = createBoardEvents(realtime);
   const runtime =
     process.env.AGENT_RUNTIME === "scripted"
@@ -168,7 +189,7 @@ async function main() {
     ? new ChatSdkMessagingSurface(messagingPlatforms)
     : undefined;
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
-  const home = createAgentHomeStore(env.dataDir, prisma);
+  const home = createAgentHomeStore(env.dataDir, prisma, process.env, env.workspaceSaveLimits);
   void home.removeStaleStaging().catch((error) => logger.error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
   const shutdown = new AbortController();
@@ -181,7 +202,7 @@ async function main() {
     process.env.RUN_DRAIN_ENABLED === "true" ? RUN_DRAIN_MS : 0,
   );
   const runs = new RunStarter(realtime, { signal: shutdown.signal });
-  const jobs: JobPublisher =
+  const jobs: JobPublisher & JobQueueOrder =
     inMemoryJobs ?? new RunJobPublisher(prisma, new GraphileJobPublisher(pool, prisma), runs);
   secretCleanupJobs = jobs;
   const connectors = createConnectorRuntime(env, { prisma, secrets, events, jobs });
@@ -232,8 +253,56 @@ async function main() {
     smtpUrl: process.env.BOT_EMAIL_SMTP_URL?.trim() || undefined,
     domain: process.env.INBOUND_EMAIL_DOMAIN?.trim() || undefined,
   });
+  // Account mail, for the lifecycle mails the queue holds. Without it, or with product mail
+  // switched off since they were queued, those jobs are dropped.
+  // Read only when product mail is on, so incomplete mail settings never stop a worker that
+  // sends none.
+  const accountEmail =
+    process.env.WELCOME_EMAIL_ENABLED === "true"
+      ? configuredEmailProvider({
+          provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
+          apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
+          from: process.env.EMAIL_FROM?.trim() || undefined,
+          replyTo: process.env.EMAIL_REPLY_TO?.trim() || undefined,
+          smtpUrl: process.env.SMTP_URL?.trim() || undefined,
+        })
+      : undefined;
+  const lifecycleEmail = accountEmail
+    ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
+    : undefined;
+  const { meeting: meetingProvider, calendar: calendarProvider } =
+    await configuredMeetingProviders();
+  const meetingMedia = meetingProvider && configuredMeetingMedia();
+  const meetings =
+    meetingProvider &&
+    new MeetingService({
+      prisma,
+      jobs,
+      events,
+      provider: meetingProvider,
+      spaceIds: configuredMeetingSpaces(meetingProvider),
+      buildJoin: meetingMedia?.buildJoin,
+    });
+  const meetingCalendar =
+    calendarProvider &&
+    meetings &&
+    new MeetingCalendarService({
+      prisma,
+      jobs,
+      provider: calendarProvider,
+      webOrigin: process.env.WEB_ORIGIN?.trim() || "http://127.0.0.1:5173",
+      oauthStateKey: resolveMeetingSigningKey(),
+      enabled: (spaceId) => meetings.enabled(spaceId),
+      buildJoin: meetingMedia?.buildJoin ?? ((input) => input),
+      publish: async ({ spaceId, userId }) => {
+        await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
+      },
+    });
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     mediaGeneration,
+    meetingWork: meetings?.work.bind(meetings),
+    meetingCalendarSync:
+      meetingCalendar && (({ connectionId }) => meetingCalendar.sync(connectionId)),
     prisma,
     runtime,
     // Live per-account Codex catalog; never refreshes or writes credentials.
@@ -250,6 +319,7 @@ async function main() {
     onTicketChange: ticketChanges,
     // Bots use a separate sending connection from account email.
     email,
+    lifecycleEmail,
     messaging,
     isMessagingInstallationActive: messagingInstallations
       ? (id: string) => messagingInstallations.isActive(id)
@@ -257,12 +327,12 @@ async function main() {
     cloudAgent,
     // Device sockets live in an API process; the worker forwards to whichever one holds it.
     userDevices: withHostComputerScreen(
-      process.env.USER_DEVICES_ENABLED === "false"
-        ? undefined
-        : new UserDevices({
+      parseEnvFlag("USER_DEVICES_ENABLED", process.env.USER_DEVICES_ENABLED, true)
+        ? new UserDevices({
             prisma,
             forwardSecret: userDeviceForwardSecret(env.encryptionKey),
-          }),
+          })
+        : undefined,
       {
         prisma,
         sandboxKind: sandboxProvider,
@@ -287,6 +357,7 @@ async function main() {
   const reconciler = createRunReconciler(
     {
       prisma,
+      secretStore: secrets,
       jobs,
       events,
       notifications,
@@ -322,6 +393,7 @@ async function main() {
         await jobHost.stop();
         // A bot's email still on its way finishes before the process exits.
         await email?.drain?.();
+        await accountEmail?.drain?.();
         await jobs.close();
         await secrets.close();
         await realtime.close();

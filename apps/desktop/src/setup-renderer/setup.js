@@ -88,6 +88,7 @@
   let requestGeneration = 0;
   /** Generation of the check in flight; an edit or mode switch retires it and releases its lock. */
   let activeCheck = 0;
+  let showingCheckStatus = false;
   let stackPolling = false;
   let lastStack = null;
   let lastProgress = 0;
@@ -105,7 +106,8 @@
     return checked === null ? "cloud" : checked.value;
   }
 
-  function setStatus(message, tone) {
+  function setStatus(message, tone, fromCheck = false) {
+    showingCheckStatus = fromCheck;
     status.textContent = message;
     if (tone === undefined) status.removeAttribute("data-tone");
     else status.setAttribute("data-tone", tone);
@@ -367,36 +369,40 @@
     await followStack();
   }
 
+  function setCheckStatus(message, tone) {
+    setStatus(message, tone, true);
+  }
+
   async function check() {
     const value = serverUrl.value;
     if (value.trim() === "") {
-      setStatus(t("Enter a server address first."), "error");
+      setCheckStatus(t("Enter a server address first."), "error");
       return null;
     }
     const headers = readHeaders();
     if (headers === null) {
-      setStatus(t("Invalid custom headers"), "error");
+      setCheckStatus(t("Invalid custom headers"), "error");
       return null;
     }
 
     const generation = ++requestGeneration;
     activeCheck = generation;
     setBusy(true);
-    setStatus(t("Checking…"));
+    setCheckStatus(t("Checking…"));
     try {
       const result = await bridge.test(value, headers);
       // The address or the mode changed under the test, so its result speaks for neither.
       if (generation !== requestGeneration) return result;
       if (result.ok) {
         serverUrl.value = result.url;
-        setStatus(t("Rakazo answered at {url}.", { url: result.url }), "ok");
+        setCheckStatus(t("Rakazo answered at {url}.", { url: result.url }), "ok");
       } else {
-        setStatus(result.error ?? t("Could not reach that address."), "error");
+        setCheckStatus(result.error ?? t("Could not reach that address."), "error");
       }
       return result;
     } catch {
       if (generation === requestGeneration) {
-        setStatus(t("Could not run the connection check. Try again."), "error");
+        setCheckStatus(t("Could not run the connection check. Try again."), "error");
       }
       return null;
     } finally {
@@ -425,12 +431,12 @@
   });
 
   function retireCheck() {
-    // An edited address invalidates the pending check; retire it and hand the controls back so
-    // its late result changes nothing.
+    // A check result (including a completed result) describes the previous inputs.
+    if (showingCheckStatus) setStatus("");
+    // Retire a pending check without unlocking controls held by a different operation.
     if (activeCheck === 0) return;
     requestGeneration++;
     activeCheck = 0;
-    setStatus("");
     setBusy(false);
   }
   serverUrl.addEventListener("input", retireCheck);

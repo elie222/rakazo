@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "../database/client.js";
@@ -6,7 +5,7 @@ import { Prisma } from "../database/client.js";
 import { isUniqueViolation } from "../database/prisma-errors.js";
 import { IsolationError } from "../database/scope.js";
 
-const ACCESS_STATUSES = new Set(["trialing", "active", "past_due"]);
+const ACCESS_STATUSES = new Set(["trialing", "active"]);
 
 export function hasBillingAccess(status: string | null): boolean {
   return status !== null && ACCESS_STATUSES.has(status);
@@ -283,82 +282,16 @@ export async function replaceBillingCustomer(
 }
 
 /**
- * Claims the organization's checkout claim, which the previous release takes in place of the
- * checkout lease. Returns the claim id, or null while another request holds it.
+ * Bounds every lock wait in the transaction, so a write stuck behind another lock fails and rolls
+ * back instead of holding the checkout lease's row while its renewals queue behind it.
  */
-export async function claimCheckoutLease(
-  prisma: PrismaClient,
-  organizationId: string,
-  ttlMs: number,
-): Promise<string | null> {
-  const leaseId = randomUUID();
-  const now = new Date();
-  const { count } = await prisma.billingAccount.updateMany({
-    where: {
-      organizationId,
-      OR: [{ checkoutLeaseExpiresAt: null }, { checkoutLeaseExpiresAt: { lte: now } }],
-    },
-    data: { checkoutLeaseId: leaseId, checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
-  });
-  return count > 0 ? leaseId : null;
-}
-
-export async function releaseCheckoutLease(
-  prisma: PrismaClient,
-  organizationId: string,
-  leaseId: string,
-): Promise<void> {
-  await prisma.billingAccount.updateMany({
-    where: { organizationId, checkoutLeaseId: leaseId },
-    data: { checkoutLeaseId: null, checkoutLeaseExpiresAt: null },
-  });
-}
-
-/**
- * Extends the lease while its holder is still the recorded owner and the lease has not lapsed;
- * a lapsed lease is left to the next claimant instead of being resurrected.
- */
-export async function renewCheckoutLease(
-  prisma: PrismaClient,
-  organizationId: string,
-  leaseId: string,
-  ttlMs: number,
-): Promise<boolean> {
-  const now = new Date();
-  const { count } = await prisma.billingAccount.updateMany({
-    where: {
-      organizationId,
-      checkoutLeaseId: leaseId,
-      checkoutLeaseExpiresAt: { gt: now },
-    },
-    data: { checkoutLeaseExpiresAt: new Date(now.getTime() + ttlMs) },
-  });
-  return count > 0;
-}
-
-/**
- * Locks the lease row while this holder still has the checkout lease, so no other claimant
- * can take it until the transaction ends. Returns false once the lease is lost. Every lock
- * wait in the transaction is bounded, so a write stuck behind another lock fails and rolls
- * back instead of holding the lease row while renewals queue behind it.
- */
-export async function lockCheckoutLease(
-  tx: Prisma.TransactionClient,
-  organizationId: string,
-  leaseId: string,
-): Promise<boolean> {
+export async function boundLockWaits(tx: Prisma.TransactionClient): Promise<void> {
   // Row locks on these tables last milliseconds; 2s stays below Prisma's 5s transaction
   // timeout, which ends the transaction without cancelling a statement still waiting.
   await tx.$executeRaw(Prisma.sql`SET LOCAL lock_timeout = '2s'`);
-  const rows = await tx.$queryRaw<unknown[]>(Prisma.sql`
-    SELECT 1 FROM billing_accounts
-    WHERE "organizationId" = ${organizationId} AND "checkoutLeaseId" = ${leaseId}
-      AND "checkoutLeaseExpiresAt" > ${new Date()}
-    FOR UPDATE`);
-  return rows.length > 0;
 }
 
-/** Whether `error` is a lock wait that ran past the bound `lockCheckoutLease` sets. */
+/** Whether `error` is a lock wait that ran past the bound `boundLockWaits` sets. */
 export function isLockTimeout(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
   const meta = error.meta as { driverAdapterError?: { cause?: { originalCode?: string } } };
@@ -367,7 +300,7 @@ export function isLockTimeout(error: unknown): boolean {
 
 /** The subscription exists but has no access until the owner settles it in the billing portal. */
 export function needsBillingPortal(status: string | null): boolean {
-  return status === "unpaid" || status === "paused";
+  return status === "past_due" || status === "unpaid" || status === "paused";
 }
 
 /**
@@ -414,10 +347,10 @@ export async function syncBillingSnapshot(
     });
     await markOwnersTrialUsed(prisma, { billing: { is: { customerId } } });
   }
-  if (snapshot?.status === "active") {
+  if (snapshot?.paidAt) {
     await prisma.billingAccount.updateMany({
       where: { customerId, paidAt: null },
-      data: { paidAt: startedAt },
+      data: { paidAt: snapshot.paidAt },
     });
   }
   if (written.count > 0) return true;

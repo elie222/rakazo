@@ -4,8 +4,9 @@ import {
   isTransientModelError,
   SecretStoreUnavailableError,
 } from "@rakazo/adapter-kit";
-import type { PiOAuthPersist } from "@rakazo/adapters";
+import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
+  assertModelProviderAllowed,
   compatibleEndpointPreset,
   listPiCatalog,
   ModelSignInError,
@@ -53,7 +54,13 @@ import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
-import { firstModelConnectAnalytics } from "../models/model-connect-analytics.js";
+import {
+  recordSignInStep,
+  signInDurationMs,
+  signInFlow,
+  signInRecorder,
+  startModelConnect,
+} from "../models/model-connect-analytics.js";
 import {
   modelConnectionErrorMessage,
   modelConnectionTarget,
@@ -93,7 +100,7 @@ export function modelsRoutes(ctx: RouterContext) {
     refreshExpiredCredential,
     chatCatalog,
     withServingConnections,
-    withDeploymentDefault,
+    deploymentDefault,
     withImageInput,
     modelRoleCatalog,
     validateRoleChoices,
@@ -103,8 +110,7 @@ export function modelsRoutes(ctx: RouterContext) {
     (actor: Actor): PiOAuthPersist<ModelCredential> =>
     async (login) => {
       try {
-        // Read before the save: it only counts a member's first connection.
-        const record = await firstModelConnectAnalytics(deps, actor, "oauth");
+        const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
         const saved = await persistModelCredential(
@@ -132,7 +138,11 @@ export function modelsRoutes(ctx: RouterContext) {
           },
           codexCatalog,
         );
-        record(login.provider, { name: "model_connected" });
+        record(login.provider, {
+          name: "model_connected",
+          ...(login.mode ? { flow: signInFlow(login.mode) } : {}),
+          ...(login.startedAt ? { durationMs: signInDurationMs(login.startedAt) } : {}),
+        });
         return saved;
       } catch (error) {
         // The member is told why a save was refused; anything else is reported generically.
@@ -226,61 +236,79 @@ export function modelsRoutes(ctx: RouterContext) {
       role: authed.models.role.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
-        return withImageInput(
-          context.actor,
-          input.role,
-          await withDeploymentDefault(
-            context.actor,
-            input.role,
-            await getModelRole(
-              deps.prisma,
-              await modelRoleTarget(deps.prisma, context.actor, input.scope),
-              input.role,
-            ),
+        const { actor } = context;
+        const { role, scope } = input;
+        const [settings, deployment] = await Promise.all([
+          modelRoleTarget(deps.prisma, actor, scope).then((target) =>
+            getModelRole(deps.prisma, target, role),
           ),
-        );
+          deploymentDefault(actor, role),
+        ]);
+        return withImageInput(actor, role, { ...settings, ...deployment });
       }),
       setRole: authed.models.setRole.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
         const { role, primary, backups, scope } = input;
-        await validateRoleChoices(context.actor, role, [
-          ...(primary ? [primary] : []),
-          ...(backups ?? []),
-        ]);
-        return withImageInput(
+        const reads: CatalogReads = new Map();
+        await validateRoleChoices(
           context.actor,
           role,
-          await withDeploymentDefault(
-            context.actor,
-            role,
-            await updateModelRole(
-              deps.prisma,
-              { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
-              role,
-              { primary, backups },
-            ),
-          ),
+          [...(primary ? [primary] : []), ...(backups ?? [])],
+          reads,
         );
+        const deployment = await deploymentDefault(context.actor, role);
+        const settings = await updateModelRole(
+          deps.prisma,
+          { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
+          role,
+          { primary, backups },
+        );
+        return withImageInput(context.actor, role, { ...settings, ...deployment }, reads);
       }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
-          ({ provider, modelId }) => ({ provider, modelId }),
+          ({ provider, modelId, credentialId, creditOfferingId }) => ({
+            provider,
+            modelId,
+            ...(credentialId ? { credentialId } : {}),
+            ...(creditOfferingId ? { creditOfferingId } : {}),
+          }),
         ),
       ),
       setBackups: authed.models.setBackups.handler(async ({ context, input }) => {
-        await validateRoleChoices(context.actor, "main", input);
+        const previous = (await appliedModelRole(deps.prisma, context.actor, "main")).backups;
+        const backups = input.map((choice) => {
+          if (choice.credentialId || choice.creditOfferingId) return choice;
+          const matches = previous.filter(
+            (saved) => backupChoiceKey(saved) === backupChoiceKey(choice),
+          );
+          if (matches.length > 1)
+            throw new ClientError("CONFLICT", "Choose one funding connection");
+          const saved = matches[0];
+          return {
+            ...choice,
+            ...(saved?.credentialId ? { credentialId: saved.credentialId } : {}),
+            ...(saved?.creditOfferingId ? { creditOfferingId: saved.creditOfferingId } : {}),
+          };
+        });
+        await validateRoleChoices(context.actor, "main", backups);
         await updateModelRole(
           deps.prisma,
           { userId: context.actor.userId, spaceId: context.actor.spaceId },
           "main",
-          { backups: input },
+          { backups },
         );
         return { ok: true as const };
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
-        const record = await firstModelConnectAnalytics(deps, context.actor, "api_key");
-        record(input.provider, { name: "model_connect_started" });
+        const { record } = await startModelConnect(
+          deps,
+          context.actor,
+          "api_key",
+          input.provider,
+          input.surface,
+        );
         try {
           const saved = await connectModelCredential(context.actor, input, context.signal);
           record(input.provider, { name: "model_connected" });
@@ -292,9 +320,11 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
+          assertModelProviderAllowed(OPENAI_COMPATIBLE_PROVIDER_ID);
+          const preset = compatibleEndpointPreset(input.baseUrl);
           let apiKey = input.apiKey;
           let headers = input.headers;
-          if (!apiKey?.trim() || headers === undefined) {
+          if (!preset?.publicModels && (!apiKey?.trim() || headers === undefined)) {
             try {
               const preferred = await findModelCredential(
                 deps.prisma,
@@ -346,7 +376,7 @@ export function modelsRoutes(ctx: RouterContext) {
           try {
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
-              compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
+              preset ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );
@@ -357,6 +387,7 @@ export function modelsRoutes(ctx: RouterContext) {
         },
       ),
       probeCatalog: authed.models.probeCatalog.handler(async ({ context, input }) => {
+        assertModelProviderAllowed(input.provider);
         try {
           const models = await probeCatalogProviderModels(
             { provider: input.provider, apiKey: input.apiKey },
@@ -369,6 +400,7 @@ export function modelsRoutes(ctx: RouterContext) {
         }
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
+        assertModelProviderAllowed(input.provider);
         // An older app's sign-in renews the provider's newest connection, bound now so a
         // disconnect of that connection retires it and it never lands on another one.
         const target = await modelConnectionTarget(
@@ -377,8 +409,14 @@ export function modelsRoutes(ctx: RouterContext) {
           input.provider,
           input.credentialId,
         );
-        const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
-        record(input.provider, { name: "model_connect_started" });
+        const { record, measure } = await startModelConnect(
+          deps,
+          context.actor,
+          "oauth",
+          input.provider,
+          input.surface,
+        );
+        const startedAt = new Date();
         return deps.oauthLogins
           .begin({
             userId: context.actor.userId,
@@ -391,8 +429,23 @@ export function modelsRoutes(ctx: RouterContext) {
             settingsScope: input.scope,
             label: input.label,
             codePage: input.codePage,
+            measure,
             signal: context.signal,
             persist: saveSignIn(context.actor),
+          })
+          .then((started) => {
+            recordSignInStep(
+              deps.analytics,
+              {
+                userId: context.actor.userId,
+                provider: input.provider,
+                mode: started.mode,
+                startedAt,
+                measure,
+              },
+              "code_issued",
+            );
+            return started;
           })
           .catch((error: unknown) => {
             record(input.provider, { name: "model_connect_failed", error });
@@ -421,7 +474,7 @@ export function modelsRoutes(ctx: RouterContext) {
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, context.actor);
         if (result.status === "error") {
-          const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
           record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
           return { status: "error" as const, error: result.error };
         }
@@ -434,7 +487,7 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
         if (result.status === "error") {
-          const record = await firstModelConnectAnalytics(deps, context.actor, "oauth");
+          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
           record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
           throw new ORPCError("NOT_FOUND", { message: result.error });
         }
@@ -446,6 +499,7 @@ export function modelsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
+        assertModelProviderAllowed(input.provider);
         const modelId = usableModelId(input.modelId);
         if (!modelId) throw new ORPCError("BAD_REQUEST", { message: "Choose a model" });
         // An omitted level keeps the one this model already has in the main list: on the
@@ -669,8 +723,8 @@ export function modelsRoutes(ctx: RouterContext) {
                 provider,
                 OR: [
                   { credentialId: { in: ids } },
-                  // Rows that name no connection ran on the provider's last one.
-                  ...(lastConnection ? [{ credentialId: null }] : []),
+                  // Legacy rows without a funding pin ran on the provider's last connection.
+                  ...(lastConnection ? [{ credentialId: null, creditOfferingId: null }] : []),
                 ],
               };
               // Its models leave every purpose in the account's models and every Space's,

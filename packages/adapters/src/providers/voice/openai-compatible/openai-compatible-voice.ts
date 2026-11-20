@@ -623,10 +623,19 @@ function isNetworkError(error: Error): boolean {
 }
 
 export const openAiCompatibleVoice: VoiceProviderDefinition = {
+  customEndpoints: true,
+  validateConnection: ({ plaintext, baseUrl, ...connection }, { allowPrivateEndpoint }) => {
+    serializeOpenAiCompatibleVoiceSecret(
+      { ...connection, baseUrl: baseUrl ?? "", apiKey: plaintext },
+      undefined,
+      { allowPrivate: allowPrivateEndpoint },
+    );
+  },
   catalog: {
     name: "Self-hosted",
     description: "Any OpenAI-compatible speech server, like Kokoro or Whisper.",
     transcribe: true,
+    freeformVoice: true,
   },
   listed: ({ allowPrivateEndpoint }) =>
     allowPrivateEndpoint === true || openAiCompatAllowPublicHosts(),

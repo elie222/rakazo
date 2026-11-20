@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ModelCatalogEntry, ModelCredential, ModelRoleView } from "@rakazo/contracts";
 
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
@@ -59,6 +60,9 @@ const { push, back, replace, params, rpcCalls, saved, pinnedTo, focus } = vi.hoi
       modelId: string | null;
     }[],
     failBotList: false,
+    roleCatalog: [] as ModelCatalogEntry[],
+    roleSettings: { primary: null, backups: [] } as ModelRoleView,
+    extraCredentials: [] as ModelCredential[],
     // A failed save either keeps the bot's own model or finds it already cleared elsewhere.
     failBotUpdates: {} as Record<string, "kept" | "changed elsewhere">,
     needsModel: false,
@@ -96,7 +100,17 @@ vi.mock("../api/api", () => ({
       throw new Error(saved.failProbe);
     if (procedure === "models/probeOpenAiCompatible")
       return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
-    if (procedure === "models/role") return { primary: null, backups: [] };
+    if (procedure === "models/role") return saved.roleSettings;
+    if (procedure === "models/setRole") {
+      const {
+        role: _role,
+        scope: _scope,
+        expectedUserId: _user,
+        ...patch
+      } = input as ModelRoleView & { role: string; scope: string; expectedUserId: string };
+      saved.roleSettings = { ...saved.roleSettings, ...patch };
+      return saved.roleSettings;
+    }
     if (procedure === "bots/list") {
       if (saved.failBotList) throw new Error("offline");
       return saved.bots;
@@ -133,7 +147,7 @@ vi.mock("../api/api", () => ({
         headerNames: ["x-session"],
       };
     }
-    if (procedure === "models/forRole") return [];
+    if (procedure === "models/forRole") return saved.roleCatalog;
     if (procedure === "models/list")
       return [
         {
@@ -154,6 +168,7 @@ vi.mock("../api/api", () => ({
       ];
     if (procedure === "models/credentials")
       return [
+        ...saved.extraCredentials,
         {
           id: "credential-fixture",
           provider: "openai-compatible",
@@ -174,6 +189,7 @@ vi.mock("../api/api", () => ({
 }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => focus.on,
   useRouter: () => settingsRouter,
   useNavigation: () => ({ setOptions: vi.fn() }),
   useLocalSearchParams: () => params,
@@ -334,6 +350,9 @@ beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
   rpcCalls.length = 0;
+  saved.roleCatalog = [];
+  saved.roleSettings = { primary: null, backups: [] };
+  saved.extraCredentials = [];
   delete params.spaceId;
   back.mockClear();
   container = document.createElement("div");
@@ -408,11 +427,11 @@ async function notConnectedChoices() {
   await remount(async () => {
     await act(async () => root.render(createElement(Models)));
   });
-  const add = [...container.querySelectorAll("button")].find((button) =>
-    button.textContent?.includes("Add fallback"),
+  const firstModel = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Choose a model",
   );
-  expect(add).toBeDefined();
-  await act(async () => add!.click());
+  expect(firstModel).toBeDefined();
+  await act(async () => firstModel!.click());
   const route = push.mock.calls.at(-1)?.[0] as { params: { requestId: string } };
   return modelPickerRequest(route.params.requestId)!.connectChoices ?? [];
 }
@@ -439,7 +458,7 @@ it("does not offer Ollama Cloud again once it is the saved connection", async ()
 
 it("opens the Ollama preset through the compatible form with a visible key field", async () => {
   await remount(() => renderConnection({ baseUrl: "https://ollama.com/v1", credentialId: null }));
-  expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com/v1");
+  expect(field("OpenAI-compatible server URL")).toBeNull();
   expect(field("API key")?.placeholder).toBe("");
   expect(field("API key")?.type).toBe("password");
   expect(
@@ -447,6 +466,20 @@ it("opens the Ollama preset through the compatible form with a visible key field
       ["Setup help", "API key"].includes(button.textContent ?? ""),
     ),
   ).toHaveLength(0);
+});
+
+it("keeps a pasted hosted URL editable and requires its key", async () => {
+  await remount(() => renderConnection({ credentialId: null }));
+  await change("OpenAI-compatible server URL", "https://ollama.com");
+  await change("Model id", "fixture-model");
+  const save = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Save",
+  );
+  expect(field("OpenAI-compatible server URL")?.value).toBe("https://ollama.com");
+  expect(field("API key")).not.toBeNull();
+  expect(save?.disabled).toBe(true);
+  await change("API key", "fake-fixture-key");
+  expect(save?.disabled).toBe(false);
 });
 
 it("hands a connected model back to the slot that asked for it", async () => {
@@ -655,6 +688,10 @@ it("offers the wire protocol on the compatible form and sends the saved choice",
   saved.apiProtocol = "anthropic-messages";
   try {
     await remount(() => renderConnection());
+    const advanced = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Advanced",
+    );
+    await act(async () => advanced!.click());
     expect(currentProtocol()).toBe("Anthropic Messages");
     await act(async () => protocolChoice("Responses").click());
     await saveConnection();
@@ -671,6 +708,10 @@ it("keeps the chosen protocol when the endpoint changes", async () => {
   saved.apiProtocol = "anthropic-messages";
   try {
     await remount(() => renderConnection());
+    const advanced = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Advanced",
+    );
+    await act(async () => advanced!.click());
     await change("OpenAI-compatible server URL", "https://other.example.test/v1");
     expect(currentProtocol()).toBe("Anthropic Messages");
   } finally {
@@ -924,43 +965,32 @@ describe("a model's own settings", () => {
   });
 });
 
-it("keeps setup help and API key collapsible for generic compatible servers", async () => {
+it("keeps the optional API key collapsible for generic compatible servers", async () => {
   const row = (name: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === name)!;
   expect(field("API key")).toBeNull();
-  expect(container.textContent).not.toContain("Rakazo adds /v1");
-  await act(async () => row("Setup help").click());
-  expect(container.textContent).toContain("Rakazo adds /v1");
-  await act(async () => row("Setup help").click());
-  expect(container.textContent).not.toContain("Rakazo adds /v1");
   await act(async () => row("API key").click());
   expect(field("API key")).not.toBeNull();
   await act(async () => row("API key").click());
   expect(field("API key")).toBeNull();
 });
 
-it.each(["https://ollama.com", "https://ollama.com/v1/"])(
-  "keeps Save enabled with a saved Ollama key at %s",
-  async (baseUrl) => {
-    saved.baseUrl = "https://ollama.com/v1";
-    saved.hasKey = true;
-    try {
-      await remount(() => renderConnection());
-      await change("OpenAI-compatible server URL", baseUrl);
-      const save = [...container.querySelectorAll("button")].find(
-        (button) => button.textContent === "Save",
-      );
-      expect(save).toBeDefined();
-      expect(save!.disabled).toBe(false);
-      await change("OpenAI-compatible server URL", "https://other.test/v1");
-      await change("OpenAI-compatible server URL", "https://ollama.com/v1/");
-      expect(save!.disabled).toBe(false);
-    } finally {
-      saved.baseUrl = savedEndpoint;
-      saved.hasKey = false;
-    }
-  },
-);
+it("keeps Save enabled with a saved Ollama key and keeps the endpoint fixed", async () => {
+  saved.baseUrl = "https://ollama.com/v1";
+  saved.hasKey = true;
+  try {
+    await remount(() => renderConnection());
+    expect(field("OpenAI-compatible server URL")).toBeNull();
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    );
+    expect(save).toBeDefined();
+    expect(save!.disabled).toBe(false);
+  } finally {
+    saved.baseUrl = savedEndpoint;
+    saved.hasKey = false;
+  }
+});
 
 it("paints a revisit from cache without a spinner and refreshes behind it", async () => {
   await remount(async () => {
@@ -1001,7 +1031,7 @@ it("offers a retry when the first load fails, then shows the model lists", async
       (button) => button.textContent === "Retry",
     );
     await act(async () => retry!.click());
-    expect(container.textContent).toContain("Add fallback");
+    expect(container.textContent).toContain("Choose a model");
     expect(container.textContent).not.toContain("Could not load model settings");
   } finally {
     saved.failMe = false;
@@ -1011,16 +1041,20 @@ it("offers a retry when the first load fails, then shows the model lists", async
 it("searches discovered models without losing the selected default", async () => {
   expect(field("Search")).toBeNull();
   await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Find models")!
-      .click(),
+    vi.waitFor(() =>
+      expect(rpcCalls.some(([name]) => name === "models/probeOpenAiCompatible")).toBe(true),
+    ),
   );
+  const modelPicker = () =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Model")!;
+  await act(async () => modelPicker().click());
   expect(field("Search")).not.toBeNull();
   await act(async () =>
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent === "found-0")!
       .click(),
   );
+  await act(async () => modelPicker().click());
   await act(async () => field("found-1")!.click());
   await change("Search", "found-10");
   expect(container.textContent).not.toContain("found-0");
@@ -1110,11 +1144,74 @@ describe("connection success with a failed refresh", () => {
     saved.failProbe = "The server refused the header value synthetic-test-key.";
     saved.showServerMessages = true;
     await act(async () =>
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Find models")!
-        .click(),
+      vi.waitFor(() =>
+        expect(rpcCalls.some(([name]) => name === "models/probeOpenAiCompatible")).toBe(true),
+      ),
     );
     expect(container.textContent).toContain("The server refused the header value •••.");
     expect(container.textContent).not.toContain("synthetic-test-key");
+  });
+});
+
+it("names a default the deployment pays for as included instead of by its provider", async () => {
+  saved.roleSettings = {
+    primary: null,
+    backups: [],
+    deploymentPrimary: { provider: "openrouter", modelId: "default-model" },
+    deploymentIncluded: true,
+  };
+  await remount(async () => {
+    await act(async () => root.render(createElement(Models)));
+  });
+  expect(container.textContent).toContain("Included");
+});
+
+it("keeps native picker credit and personal selections distinct for the same model", async () => {
+  saved.roleSettings.deploymentPrimary = { provider: "openrouter", modelId: "default-model" };
+  saved.roleCatalog = [
+    {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      id: "model-example",
+      label: "Example",
+      billing: "",
+      creditOfferingId: "offering-example",
+    },
+  ];
+  saved.extraCredentials = [
+    {
+      id: "personal-example",
+      provider: "anthropic",
+      label: "Personal",
+      hasKey: true,
+      isDefault: false,
+    },
+  ];
+  await remount(async () => {
+    await act(async () => root.render(createElement(Models)));
+  });
+  const add = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Add fallback"),
+  );
+  await act(async () => add!.click());
+  const request = modelPickerRequest(
+    (push.mock.calls.at(-1)![0] as { params: { requestId: string } }).params.requestId,
+  )!;
+  const credit = request.choices.find((choice) => choice.providerLabel === "Rakazo credits")!;
+  const personal = request.choices.find((choice) => choice.providerLabel?.includes("Personal"))!;
+  expect(credit.key).not.toBe(personal.key);
+  await act(async () => {
+    request.onSelect(credit);
+  });
+  expect(saved.roleSettings.backups).toEqual([
+    { provider: "anthropic", modelId: "model-example", creditOfferingId: "offering-example" },
+  ]);
+  await act(async () => {
+    request.onSelect(personal);
+  });
+  expect(saved.roleSettings.backups).toContainEqual({
+    provider: "anthropic",
+    modelId: "model-example",
+    credentialId: "personal-example",
   });
 });

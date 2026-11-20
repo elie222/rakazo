@@ -18,6 +18,8 @@ import type {
   IntegrationProviderSettings,
   McpConnector,
   McpOAuthBroker,
+  MeetingCalendarService,
+  MeetingService,
   MemoryProviderResolver,
   MessagingDelivery,
   MessagingInstallations,
@@ -38,6 +40,9 @@ import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing/billing.js";
 import type { VoiceDeps } from "./calls/voice.js";
+import { meetingCalendarRoutes } from "./meetings/calendar/calendar-routes.js";
+import type { createMeetingAnswers } from "./meetings/meeting-answers.js";
+import { meetingRoutes } from "./meetings/meeting-routes.js";
 import { accountRoutes } from "./routes/account.js";
 import { availabilityRoutes } from "./routes/availability.js";
 import { boardsRoutes } from "./routes/boards.js";
@@ -68,6 +73,9 @@ export { HEARTBEAT_MS, SESSION_RECHECK_MS } from "./routes/shared.js";
 export { callMarkerClientNonce } from "./routes/threads.js";
 
 export interface RouterDeps {
+  meetings?: MeetingService;
+  meetingCalendar?: MeetingCalendarService;
+  meetingAnswers?: ReturnType<typeof createMeetingAnswers>;
   pushTokens: PushTokenStore;
   /** Absent when the deployment cannot update a phone's live status card. */
   workActivities?: Pick<WorkActivities, "register" | "registerStarts">;
@@ -124,6 +132,7 @@ export interface RouterDeps {
     enabled: boolean;
     providers: string[];
     addresses: Record<string, string>;
+    resolveAddresses?: (signal?: AbortSignal) => Promise<Record<string, string>>;
     openSignup: boolean;
   };
   /** Present only when the deployment bills; self-hosted installs leave it unset. */
@@ -132,6 +141,7 @@ export interface RouterDeps {
   onEmailError?: (error: unknown) => void;
   speechSummary?: VoiceDeps["speechSummary"];
   env: {
+    deploymentVoice?: NonNullable<VoiceDeps["env"]>["deploymentVoice"];
     /** Domain of bots' email addresses; unset when this server receives no email. */
     inboundEmailDomain?: string;
     navLinks?: NavLink[];
@@ -173,6 +183,8 @@ export function createRouter(deps: RouterDeps) {
 
   return os.router({
     ...accountRoutes(ctx),
+    ...meetingRoutes(ctx),
+    ...meetingCalendarRoutes(ctx),
     ...spacesRoutes(ctx),
     ...organizationsRoutes(ctx),
     ...modelsRoutes(ctx),

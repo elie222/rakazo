@@ -103,7 +103,7 @@ describe("feedback", () => {
     expect(toolResultTaintsRun("feedback")).toBe(false);
   });
 
-  it("is offered only on runs the user started", () => {
+  it("is offered only on runs the user started, routines included", () => {
     const offered = (trigger: string) =>
       selectBuiltinToolsForRun({
         graphicalToolsAllowed: false,
@@ -113,7 +113,8 @@ describe("feedback", () => {
         messagingChannelRun: trigger === "messaging",
       }).some((tool) => tool.name === "feedback");
     expect(offered("user")).toBe(true);
-    for (const trigger of ["routine", "webhook", "bot_message", "created"])
+    expect(offered("routine")).toBe(true);
+    for (const trigger of ["webhook", "bot_message", "created"])
       expect(offered(trigger), trigger).toBe(false);
   });
 });

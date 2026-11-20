@@ -1,6 +1,6 @@
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { SSEClientTransport, SseError } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -9,9 +9,16 @@ import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { isLocalhostOrLoopbackIp, MCP_APP_READ_TIMEOUT_MS } from "@rakazo/contracts";
 import { cancelResponseBody } from "@rakazo/core";
-import { combineSignals } from "../connectors/connector-safety.js";
-import { MCP_APP_CLIENT_CAPABILITIES } from "./mcp-app.js";
+import { Agent } from "undici";
+import { combineSignals } from "../integrations/connector-safety.js";
+import { dispatcherFetch, isNodeFetch } from "../network/undici-fetch.js";
 import { closeMcpResource } from "./mcp-close.js";
+import type { McpCallAsker } from "./mcp-elicitation.js";
+import {
+  callMcpToolAsking,
+  McpElicitationRouter,
+  mcpClientCapabilities,
+} from "./mcp-elicitation.js";
 import { createMcpClient } from "./mcp-output-schema.js";
 import type { InstalledMcpBin } from "./mcp-package-installer.js";
 import {
@@ -21,7 +28,13 @@ import {
 } from "./mcp-package-installer.js";
 import { limitMcpResponseBody } from "./mcp-response-limit.js";
 import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
-import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
+import {
+  createSafeRemoteFetch,
+  listMcpTools,
+  MCP_HTTP_TIMEOUTS,
+  MCP_TOOL_MAX_TOTAL_MS,
+  MCP_TOOL_TIMEOUT_MS,
+} from "./remote-mcp.js";
 
 export type McpRemoteTransport = "streamable-http" | "sse";
 
@@ -95,14 +108,6 @@ export class McpStdioLaunchError extends Error {
   }
 }
 
-/** How long a tool call may go without an answer or a progress report. Real calls (a
- * search across mail folders, a document export) take minutes; connecting stays short.
- * Below the HTTP client's default five-minute header wait, so this timeout fires first. */
-export const MCP_TOOL_TIMEOUT_MS = 4 * 60_000;
-/** Progress restarts the wait, but never past this. The run's own cancellation still
- * ends a call at any time. */
-export const MCP_TOOL_MAX_TOTAL_MS = 15 * 60_000;
-
 const STDERR_TAIL_CHARS = 4_096;
 /** Terminal colour/cursor sequences (ESC [ ... letter) that npm and friends print. */
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
@@ -124,6 +129,9 @@ export interface McpClientOptions {
   name?: string;
   version?: string;
   capabilities?: ConstructorParameters<typeof Client>[1];
+  /** Tell the server it may ask the person questions mid-call (form elicitation); a call
+   * passes who to ask. */
+  elicitation?: boolean;
 }
 
 const DEFAULT_HEADERS = ["accept", "content-type", "authorization", "user-agent"];
@@ -165,6 +173,8 @@ export function secureFetch(
   urlPolicy: McpUrlPolicy,
   headerPolicy: McpHeaderPolicy = {},
   network: RemoteTransportDependencies = {},
+  /** The HTTP client's waits, for a tool call's connection; sign-in keeps the client defaults. */
+  responseTimeouts?: typeof MCP_HTTP_TIMEOUTS,
 ): SafeRemoteFetch {
   // A local hostname is not authorization: the unguarded loopback fetch below
   // needs the deployment-owner private-endpoint escape as well.
@@ -196,9 +206,23 @@ export function secureFetch(
     "cookie",
     "proxy-authorization",
   ]);
-  const safeRemoteFetch = createSafeRemoteFetch(network.fetch, network.resolveHostname, {
-    allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint,
-  });
+  const safeRemoteFetch = createSafeRemoteFetch(
+    network.fetch,
+    network.resolveHostname,
+    { allowPrivateEndpoint: urlPolicy.allowPrivateEndpoint },
+    undefined,
+    responseTimeouts,
+  );
+  // The permitted loopback server gets the same waits as remote ones. A fetch someone installed
+  // in place of Node's own is theirs to call as it is.
+  const localAgent =
+    responseTimeouts && !network.fetch ? new Agent({ ...responseTimeouts }) : undefined;
+  const localFetch: typeof globalThis.fetch = (url, init) => {
+    const base = network.fetch ?? globalThis.fetch;
+    return localAgent && isNodeFetch(base)
+      ? dispatcherFetch(url, { ...init, dispatcher: localAgent } as RequestInit)
+      : base(url, init);
+  };
   const request = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     if (input instanceof Request) requestSignalOwners.set(input.signal, input);
     const source = new Request(input, init);
@@ -246,7 +270,7 @@ export function secureFetch(
             : undefined,
     } satisfies RequestInit;
     const response = localHttp
-      ? await (network.fetch ?? globalThis.fetch)(url, requestInit)
+      ? await localFetch(url, requestInit)
       : await safeRemoteFetch(url, requestInit);
     if (response.status >= 300 && response.status < 400) {
       cancelResponseBody(response);
@@ -255,7 +279,9 @@ export function secureFetch(
     return limitMcpResponseBody(response, headers);
   };
   const result = request as SafeRemoteFetch;
-  result.close = () => safeRemoteFetch.close();
+  result.close = async () => {
+    await Promise.all([safeRemoteFetch.close(), localAgent?.close()]);
+  };
   return result;
 }
 
@@ -363,6 +389,8 @@ export class McpSession {
   private toolList?: { result: ListToolsResult; freshUntil: number };
   /** Bumped by `tools/list_changed`, so a listing already in flight is not cached. */
   private toolListVersion = 0;
+  /** Sends the server's questions to the run whose call is in flight. */
+  private readonly elicitation = new McpElicitationRouter();
 
   constructor(options: McpClientOptions = {}) {
     this.clientOptions = options;
@@ -372,8 +400,11 @@ export class McpSession {
   private newClient(): Client {
     const client = createMcpClient(
       { name: this.clientOptions.name ?? "rakazo", version: this.clientOptions.version ?? "0.1.0" },
-      this.clientOptions.capabilities ?? { capabilities: MCP_APP_CLIENT_CAPABILITIES },
+      this.clientOptions.capabilities ?? {
+        capabilities: mcpClientCapabilities(this.clientOptions.elicitation === true),
+      },
     );
+    if (this.clientOptions.elicitation) this.elicitation.install(client);
     client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
       this.toolList = undefined;
       this.toolListVersion += 1;
@@ -392,12 +423,12 @@ export class McpSession {
       options.urlPolicy ?? {},
       options.headerPolicy,
       options.network,
+      MCP_HTTP_TIMEOUTS,
     );
     this.remoteFetch = safeFetch;
     const originFetch = withEndpointOriginFallback(url.origin, safeFetch);
     const fetch = options.authProvider?.wrapFetch?.(originFetch) ?? originFetch;
     const signal = combineSignals(options.signal, AbortSignal.timeout(options.timeoutMs ?? 15_000));
-    let usedFallback = false;
     const connect = async (kind: McpRemoteTransport): Promise<void> => {
       const requestInit: RequestInit = { headers: options.headerPolicy?.headers };
       const transport =
@@ -417,18 +448,26 @@ export class McpSession {
       await this.client.connect(transport, { signal, timeout: options.timeoutMs ?? 15_000 });
       this.connected = true;
     };
+    const requested = options.transport ?? "streamable-http";
+    let used = requested;
     this.connecting = (async () => {
       try {
-        await connect(options.transport ?? "streamable-http");
+        await connect(requested);
       } catch (error) {
-        const canFallback =
-          (options.fallbackToSse ?? true) &&
-          options.allowLegacySse &&
-          (options.transport ?? "streamable-http") === "streamable-http";
+        const alternate =
+          requested === "streamable-http"
+            ? (options.fallbackToSse ?? true) && options.allowLegacySse
+              ? "sse"
+              : undefined
+            : // A Streamable HTTP server refuses the legacy SSE GET with 405, so an endpoint
+              // saved as SSE that has since moved to Streamable HTTP still connects.
+              error instanceof SseError && error.code === 405
+              ? "streamable-http"
+              : undefined;
         await closeMcpResource(() => this.client.close());
         this.connected = false;
         this.transport = undefined;
-        if (!canFallback) {
+        if (!alternate) {
           if (this.remoteFetch) {
             const remoteFetch = this.remoteFetch;
             await closeMcpResource(() => remoteFetch.close());
@@ -436,12 +475,12 @@ export class McpSession {
           this.remoteFetch = undefined;
           throw error;
         }
-        usedFallback = true;
+        used = alternate;
         // The SDK's documented fallback uses a fresh Client after a failed
-        // Streamable HTTP handshake; a Client cannot be reconnected safely.
+        // handshake; a Client cannot be reconnected safely.
         this.client = this.newClient();
         try {
-          await connect("sse");
+          await connect(alternate);
         } catch (fallbackError) {
           await this.close();
           throw fallbackError;
@@ -451,10 +490,7 @@ export class McpSession {
       }
     })();
     await this.connecting;
-    return {
-      transport: usedFallback ? "sse" : (options.transport ?? "streamable-http"),
-      usedFallback,
-    };
+    return { transport: used, usedFallback: used !== requested };
   }
 
   async connectStdio(options: McpStdioOptions): Promise<void> {
@@ -507,17 +543,15 @@ export class McpSession {
   async callTool(
     name: string,
     args: Record<string, unknown> = {},
-    options?: { signal?: AbortSignal; timeoutMs?: number },
+    options?: { signal?: AbortSignal; timeoutMs?: number; asker?: McpCallAsker },
   ): Promise<CallToolResult> {
     this.assertConnected();
     const timeout = options?.timeoutMs ?? MCP_TOOL_TIMEOUT_MS;
-    return (await this.client.callTool({ name, arguments: args }, undefined, {
+    return (await callMcpToolAsking(this.client, this.elicitation, name, args, {
       signal: options?.signal,
-      timeout,
-      // A progress handler is what asks the server for progress reports at all.
-      onprogress: () => undefined,
-      resetTimeoutOnProgress: true,
-      maxTotalTimeout: Math.max(timeout, MCP_TOOL_MAX_TOTAL_MS),
+      idleMs: timeout,
+      totalMs: Math.max(timeout, MCP_TOOL_MAX_TOTAL_MS),
+      asker: options?.asker,
     })) as CallToolResult;
   }
 

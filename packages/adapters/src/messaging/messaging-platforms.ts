@@ -1,7 +1,12 @@
+import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { larkMessaging } from "../providers/messaging/lark/lark-messaging.js";
 import { photonMessaging } from "../providers/messaging/photon/photon-messaging.js";
 import { sendblueMessaging } from "../providers/messaging/sendblue/sendblue-messaging.js";
-import { slackMessaging } from "../providers/messaging/slack/slack-messaging.js";
+import {
+  SLACK_MARKDOWN_LIMIT,
+  slackMessaging,
+  slackPayloads,
+} from "../providers/messaging/slack/slack-messaging.js";
 import { teamsMessaging } from "../providers/messaging/teams/teams-messaging.js";
 import {
   telegramMessaging,
@@ -11,7 +16,6 @@ import {
   whatsappMessaging,
   whatsappPayloads,
 } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
-import { isVitestRuntime } from "../shared/test-runtime.js";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import { splitMarkdown } from "./markdown-split.js";
 import type {
@@ -127,6 +131,9 @@ const MESSAGE_PART_LIMIT = 4096;
 /** Split before enqueueing so retries only resend the parts that failed. */
 export function splitOutboundBody(provider: string, body: string): string[] {
   if (!body.trim()) return [];
+  if (provider === "slack") {
+    return splitMarkdown(body, { limit: SLACK_MARKDOWN_LIMIT, sent: slackPayloads });
+  }
   const sent =
     provider === "whatsapp"
       ? whatsappPayloads

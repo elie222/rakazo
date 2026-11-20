@@ -24,7 +24,6 @@ import { clearThread, planComputerSize } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { FakeSandboxProvider } from "../providers/computer/fake/fake-sandbox.js";
-import { SandboxUnsafeStopError } from "../sandboxes/sandbox-errors.js";
 import { LocalAgentHomeStore } from "../storage/home.js";
 import {
   acquireComputerExecutionLease,
@@ -39,6 +38,7 @@ import {
   waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { SandboxUnsafeStopError, sandboxNotFoundError } from "./sandbox/sandbox-errors.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.
 vi.mock("@rakazo/db", async (importOriginal) => ({
@@ -121,7 +121,7 @@ describe("computer provisioning", () => {
           "computer-1",
           context,
         ),
-      ).resolves.toEqual(ref);
+      ).resolves.toEqual({ ...ref, startSize: "standard" });
       expect(provision).toHaveBeenCalledOnce();
       expect(prisma.computer.updateMany).toHaveBeenLastCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ state: "running" }) }),
@@ -1322,8 +1322,9 @@ describe("computer provisioning", () => {
       expect(updateMany.mock.invocationCallOrder[markIndex]).toBeLessThan(
         vi.mocked(sandbox.prepare).mock.invocationCallOrder[1]!,
       );
+      // The recovery failed for another reason, so the next start tries again instead of parking it.
       expect(updateMany).toHaveBeenLastCalledWith(
-        expect.objectContaining({ data: { state: "error", restorePending: true } }),
+        expect.objectContaining({ data: expect.objectContaining({ state: "error" }) }),
       );
     } finally {
       await rm(dataDir, { recursive: true, force: true });
@@ -1452,13 +1453,17 @@ describe("computer provisioning", () => {
           await vi.advanceTimersByTimeAsync(250);
           await new Promise((resolve) => setImmediate(resolve));
         }
-        await expect(started).resolves.toEqual(ref);
+        await expect(started).resolves.toEqual({ ...ref, startSize: "standard" });
         const activation = {
           state: "running",
           providerRef: next.providerRef,
           kind: next.kind,
           restorePending: false,
           runningSince: expect.any(Date),
+          ...(next.kind === "boat" && {
+            runningSize: "standard",
+            runningSizeSince: expect.any(Date),
+          }),
         };
         expect(prepare).toHaveBeenCalledWith(ref, context);
         expect(await sandbox.readFile(ref, "notes/keep.txt", context)).toEqual(saved);
@@ -1906,7 +1911,7 @@ describe("computer provisioning", () => {
         if (prepareFails) {
           await expect(result).rejects.toThrow("provider preparation failed");
         } else {
-          await expect(result).resolves.toEqual(ref);
+          await expect(result).resolves.toEqual({ ...ref, startSize: "standard" });
         }
         expect(prepare).toHaveBeenCalledWith(ref, context);
         expect(sandbox.importWorkspace).not.toHaveBeenCalled();
@@ -1970,7 +1975,7 @@ describe("computer provisioning", () => {
           "computer-1",
           context,
         ),
-      ).resolves.toEqual(ref);
+      ).resolves.toEqual({ ...ref, startSize: "standard" });
       expect(importWorkspace).toHaveBeenCalledTimes(1);
       expect(updateMany).toHaveBeenCalledTimes(2);
       expect(updateMany).toHaveBeenLastCalledWith(
@@ -2077,7 +2082,7 @@ describe("the record of a machine a start created", () => {
   it("is dropped in the transaction that stores the machine and leaves booting", async () => {
     const { row, writes, run } = start();
 
-    await expect(run()).resolves.toEqual(ref);
+    await expect(run()).resolves.toEqual({ ...ref, startSize: "standard" });
 
     expect(row).toMatchObject({ state: "running", providerRef: "machine-1" });
     expect(writes).toEqual(["in transaction: running", `in transaction: cancel ${key}`]);
@@ -2200,6 +2205,9 @@ describe("Team Computer wake", () => {
           modelCredits: { mode: "credits" },
           billing: { creditAmountCents: 5000 },
         }),
+      },
+      computerAllowanceGrant: {
+        aggregate: vi.fn().mockResolvedValue({ _sum: { amountCents: null } }),
       },
       // $10 of a $50 plan, at the default $0.10 an hour.
       $queryRaw: vi.fn().mockResolvedValue([{ kind: "e2b", hours: 100 }]),
@@ -2324,6 +2332,59 @@ describe("Team Computer wake", () => {
     });
   });
 
+  it("bills a new run at Standard when a sized provider cannot confirm its size", async () => {
+    const harness = wakeHarness("stopped", undefined, { kind: "boat" }, { kind: "boat" });
+
+    await boot(harness);
+
+    const startedAt = activation(harness)?.runningSince;
+    expect(activation(harness)).toMatchObject({
+      runningSize: "standard",
+      runningSizeSince: startedAt,
+    });
+    expect(harness.prisma.computerRun.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [expect.objectContaining({ startedAt, size: "standard" })] }),
+    );
+  });
+
+  it("keeps the starting rate and lifetime when reconnecting reports a different size", async () => {
+    const runningSince = new Date("2024-01-01T00:00:00.000Z");
+    const harness = wakeHarness(
+      "running",
+      undefined,
+      { kind: "boat", size: "large" },
+      { kind: "boat", runningSince, runningSize: "standard", runningSizeSince: runningSince },
+    );
+
+    await boot(harness);
+
+    expect(activation(harness)?.runningSince).toEqual(runningSince);
+    expect(harness.prisma.computerRun.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ startedAt: runningSince, size: "standard" })],
+      }),
+    );
+  });
+
+  it("hands back a reference that wakes the computer at its planned size", async () => {
+    const harness = wakeHarness("stopped");
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+
+    await expect(boot(harness)).resolves.toMatchObject({ startSize: "large" });
+  });
+
+  it("wakes a reused running computer at its planned size", async () => {
+    const harness = wakeHarness("running", undefined, { kind: "boat" }, { kind: "boat" });
+    Object.assign(harness.sandbox, { isRunning: vi.fn().mockResolvedValue(true) });
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+
+    await expect(boot(harness)).resolves.toMatchObject({
+      providerRef: "sandbox-1",
+      startSize: "large",
+    });
+    expect(harness.sandbox.provision).not.toHaveBeenCalled();
+  });
+
   it("ends a run the provider stopped on its own when reconnecting has to start it again", async () => {
     const harness = wakeHarness(
       "running",
@@ -2344,13 +2405,13 @@ describe("Team Computer wake", () => {
       new Error("database unavailable"),
     );
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
   });
 
   it("removes folders of bots deleted while the Team Computer was stopped", async () => {
     const harness = wakeHarness("stopped");
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
 
     expect(harness.findMany).toHaveBeenCalledWith({
       where: { spaceId: "workspace-1" },
@@ -2369,7 +2430,7 @@ describe("Team Computer wake", () => {
   it("does not look for deleted bots' folders when reconnecting to a running Team Computer", async () => {
     const harness = wakeHarness("running");
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
 
     expect(harness.findMany).not.toHaveBeenCalled();
   });
@@ -2386,7 +2447,7 @@ describe("Team Computer wake", () => {
         provisioned,
       );
 
-      await expect(boot(harness)).resolves.toEqual(harness.ref);
+      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
 
       expect(harness.execute).toHaveBeenCalledWith(
         harness.ref,
@@ -2416,7 +2477,7 @@ describe("Team Computer wake", () => {
       await cleanupStarted.promise;
       await vi.advanceTimersByTimeAsync(20_000);
 
-      await expect(booting).resolves.toEqual(harness.ref);
+      await expect(booting).resolves.toEqual({ ...harness.ref, startSize: "standard" });
     } finally {
       vi.useRealTimers();
     }
@@ -2430,7 +2491,7 @@ describe("Team Computer wake", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     try {
-      await expect(boot(harness)).resolves.toEqual(harness.ref);
+      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
     } finally {
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     }
@@ -4152,78 +4213,118 @@ describe("computer replacement", () => {
     expect(prisma.run.findFirst).not.toHaveBeenCalled();
   });
 
-  it("continues recover when checkpoint fails with an ordinary provider error", async () => {
-    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-"));
-    const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-home-"));
-    const home = new LocalAgentHomeStore(homeRoot);
-    const sandbox = new FakeSandboxProvider();
-    const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
-    const exportWorkspace = vi.spyOn(sandbox, "exportWorkspace").mockImplementation(() => {
-      throw new Error("ECONNRESET");
-    });
-
-    const computerRecord = {
-      id: "computer-1",
-      homeKey: "bot-1",
-      providerRef: first.providerRef,
-      kind: "fake",
-      scope: "dedicated",
-      state: "running",
-      controlLeaseId: null,
-      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-      homeRevision: null,
-    };
-    const findUniqueOrThrow = vi
-      .fn()
-      .mockResolvedValueOnce(computerRecord)
-      .mockResolvedValue({
-        ...computerRecord,
-        state: "stopped",
-        providerRef: null,
+  it.each([
+    {
+      action: "recover",
+      failure: new Error("ECONNRESET"),
+      reason: "checkpoint_failed",
+      phase: "export",
+    },
+    {
+      action: "update",
+      failure: sandboxNotFoundError("missing sandbox"),
+      reason: "sandbox_gone",
+      phase: "export",
+    },
+    {
+      action: "recover",
+      failure: new Error("ENOSPC"),
+      reason: "checkpoint_failed",
+      phase: "staging",
+    },
+  ] as const)(
+    "records the action when $action skips a checkpoint ($reason, $phase)",
+    async ({ action, failure, reason, phase }) => {
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-"));
+      const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-recover-checkpoint-home-"));
+      const home = new LocalAgentHomeStore(homeRoot);
+      const sandbox = new FakeSandboxProvider();
+      const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
+      if (phase === "staging") vi.spyOn(home, "createStaging").mockRejectedValueOnce(failure);
+      const exportWorkspace = vi.spyOn(sandbox, "exportWorkspace").mockImplementation(() => {
+        throw failure;
       });
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const update = vi.fn().mockResolvedValue({});
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-      $queryRaw: vi.fn(async () => []),
-      space: { findUnique: vi.fn(async () => null) },
-      computer: {
-        findUniqueOrThrow,
-        updateMany,
-        update,
-        findFirst: vi
-          .fn()
-          .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
-      },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient;
-    const destroy = vi.spyOn(sandbox, "destroy");
 
-    try {
-      const ref = await replaceComputer(
-        {
-          prisma,
-          sandbox,
-          home,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-          dataDir,
+      const computerRecord = {
+        id: "computer-1",
+        homeKey: "bot-1",
+        providerRef: first.providerRef,
+        kind: "fake",
+        scope: "dedicated",
+        state: "running",
+        controlLeaseId: null,
+        updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        homeRevision: null,
+        homeRevisionAt: new Date("2024-01-01T00:00:00.000Z"),
+      };
+      const findUniqueOrThrow = vi
+        .fn()
+        .mockResolvedValueOnce(computerRecord)
+        .mockResolvedValue({
+          ...computerRecord,
+          state: "stopped",
+          providerRef: null,
+        });
+      const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      const update = vi.fn().mockResolvedValue({});
+      const prisma = {
+        $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+        $queryRaw: vi.fn(async () => []),
+        space: { findUnique: vi.fn(async () => null) },
+        computer: {
+          findUniqueOrThrow,
+          updateMany,
+          update,
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ state: "running", restorePending: false, screenGeneration: 0 }),
         },
-        "computer-1",
-        "recover",
-        context,
-      );
-      expect(exportWorkspace).toHaveBeenCalledOnce();
-      expect(destroy).toHaveBeenCalledOnce();
-      expect(exportWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
-        destroy.mock.invocationCallOrder[0]!,
-      );
-      expect(ref.fresh).toBe(true);
-    } finally {
-      await rm(dataDir, { recursive: true, force: true });
-      await rm(homeRoot, { recursive: true, force: true });
-    }
-  });
+        run: { findFirst: vi.fn().mockResolvedValue(null) },
+      } as unknown as PrismaClient;
+      const destroy = vi.spyOn(sandbox, "destroy");
+
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      try {
+        const ref = await replaceComputer(
+          {
+            prisma,
+            sandbox,
+            home,
+            jobs: jobQueue(),
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          action,
+          context,
+        );
+        expect(destroy).toHaveBeenCalledOnce();
+        if (phase === "export") {
+          expect(exportWorkspace).toHaveBeenCalledOnce();
+          expect(exportWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
+            destroy.mock.invocationCallOrder[0]!,
+          );
+        } else expect(exportWorkspace).not.toHaveBeenCalled();
+        expect(ref.fresh).toBe(true);
+        expect(sink.events).toContainEqual(
+          expect.objectContaining({
+            message: "computer.checkpoint_skipped",
+            action,
+            "computer.id": "computer-1",
+            "bot.id": "bot-1",
+            "error.type": failure.name,
+            reason,
+            homeRevisionAt: computerRecord.homeRevisionAt,
+          }),
+        );
+      } finally {
+        installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+        await rm(dataDir, { recursive: true, force: true });
+        await rm(homeRoot, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("aborts update when checkpoint fails with an ordinary provider error", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-update-checkpoint-"));

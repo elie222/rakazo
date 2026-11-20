@@ -76,6 +76,16 @@ const subscriptionSchema = z.object({
       z.object({ card: z.object({ fingerprint: z.string().nullish() }).nullish() }),
     ])
     .nullish(),
+  latest_invoice: z
+    .union([
+      z.string(),
+      z.object({
+        status: z.string().nullish(),
+        total: z.number().nullish(),
+        status_transitions: z.object({ paid_at: z.number().nullish() }).nullish(),
+      }),
+    ])
+    .nullish(),
   items: z.object({
     data: z.array(
       z.object({
@@ -876,7 +886,7 @@ export class StripeBillingProvider implements BillingProvider {
         status: "all",
         limit: 100,
         starting_after: startingAfter,
-        expand: ["data.default_payment_method"],
+        expand: ["data.default_payment_method", "data.latest_invoice"],
       });
       const page = subscriptionListSchema.parse(
         await this.request("GET", `/v1/subscriptions?${query}`),
@@ -994,12 +1004,14 @@ function pickStripeSubscription(subscriptions: StripeSubscription[]) {
 }
 
 function grantsAccess(status: BillingSubscriptionStatus) {
-  return status === "trialing" || status === "active" || status === "past_due";
+  return status === "trialing" || status === "active";
 }
 
 /** Grants access now or resumes once paid, so another checkout would bill twice. */
 export function holdsBillingSubscription(status: BillingSubscriptionStatus) {
-  return grantsAccess(status) || status === "unpaid" || status === "paused";
+  return (
+    grantsAccess(status) || status === "past_due" || status === "unpaid" || status === "paused"
+  );
 }
 
 function toSnapshot(
@@ -1012,6 +1024,12 @@ function toSnapshot(
   const fingerprint = typeof method === "object" ? method?.card?.fingerprint : undefined;
   const reason = cancellationReason(subscription.cancellation_details?.feedback);
   const comment = subscription.cancellation_details?.comment?.trim();
+  const invoice = subscription.latest_invoice;
+  const paidAt =
+    // By its total, so an invoice settled from the customer's balance counts and a free one does not.
+    typeof invoice === "object" && invoice?.status === "paid" && (invoice.total ?? 0) > 0
+      ? fromSeconds(invoice.status_transitions?.paid_at)
+      : null;
   return {
     creditAmountCents: creditAmount(subscription.metadata?.rakazo_credit_cents),
     subscriptionId: subscription.id,
@@ -1026,6 +1044,7 @@ function toSnapshot(
     currentPeriodEndsAt: fromSeconds(item.current_period_end ?? subscription.current_period_end),
     cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end) || subscription.cancel_at != null,
     endedAt: fromSeconds(subscription.ended_at),
+    ...(paidAt ? { paidAt } : {}),
     ...(isByokPlan(subscription)
       ? {
           byokPlan: true,

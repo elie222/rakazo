@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { stripDirectionalControls } from "../messages/text-safety.js";
 
 /** Instruction-stack note for bots whose owner has a messaging identity. */
 export function messagingDmSurfaceNote(): string {
@@ -6,6 +7,21 @@ export function messagingDmSurfaceNote(): string {
     "Chat surface: the owner also reaches you over a messaging app (iMessage/SMS, Slack, WhatsApp, or similar).",
     "That conversation and this one are the same thread; anything you reply here is mirrored to their chat.",
     "Keep replies concise. They arrive as chat messages.",
+  ].join(" ");
+}
+
+/** Keeps "connect <chat app>" from always meaning that app's tools. */
+export function chatAppConnectNote(
+  chatApps: readonly string[],
+  connectAppOffered: boolean,
+): string {
+  const apps = `People can also message you from ${chatApps.join(", ")}.`;
+  if (!connectAppOffered)
+    return `${apps} They set that up themselves in Settings, under Messaging.`;
+  return [
+    apps,
+    "They set that up themselves in Settings, under Messaging. The connect card you can show does not do it; it only gives you tools to read and act in an app.",
+    "When someone asks to connect one of these, or to talk to you from it, tell them which of the two fits what they want, and ask if you cannot tell.",
   ].join(" ");
 }
 
@@ -41,10 +57,11 @@ export function isMessagingChannelRun(
 
 /**
  * Group names and owner names are attacker-controlled text interpolated
- * into prompts and DMs; strip framing characters before they get near one.
+ * into prompts and DMs; strip framing characters and directional controls
+ * before they get near one.
  */
 export function sanitizeMessagingLabel(value: string): string {
-  return value
+  return stripDirectionalControls(value)
     .replace(/[\r\n"[\]]/g, " ")
     .replace(/\s+/g, " ")
     .trim()

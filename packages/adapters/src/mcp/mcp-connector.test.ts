@@ -10,9 +10,9 @@ import {
 import { deferred, flush } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { ConnectorRegistry } from "../connectors/connector-registry.js";
-import { InstalledConnectorProvider } from "../connectors/installed-connectors.js";
-import { IntegrationProviderSettings } from "../connectors/integration-provider-settings.js";
+import { ConnectorRegistry } from "../integrations/connector-registry.js";
+import { InstalledConnectorProvider } from "../integrations/installed-connectors.js";
+import { IntegrationProviderSettings } from "../integrations/integration-provider-settings.js";
 import { InMemoryRealtimeFanout } from "../notifications/realtime.js";
 import { InfisicalSecretStore } from "../providers/secret-store/infisical/infisical-secret-store.js";
 import { checkRoutineWatch, validateRoutineWatch } from "../routines/routine-watch.js";
@@ -25,7 +25,8 @@ import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { allowlistDrift, DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
-import { MCP_TOOL_TIMEOUT_MS, McpSession } from "./mcp-transport.js";
+import { McpSession } from "./mcp-transport.js";
+import { MCP_TOOL_TIMEOUT_MS } from "./remote-mcp.js";
 
 // No server is shared with every agent, so only assignments reach a bot.
 const NO_SHARED_SERVERS = { findMany: async () => [], findFirst: async () => null };
@@ -301,8 +302,14 @@ describe("MCP connector session cache", () => {
         signal: new AbortController().signal,
       };
       const close = vi.spyOn(McpSession.prototype, "close");
+      const error = vi.spyOn(getLogger(), "error");
       try {
         const tools = await connector.discoverTools(context);
+        expect(error).not.toHaveBeenCalledWith(
+          "mcp.discovery.failed",
+          expect.anything(),
+          expect.anything(),
+        );
         expect(state.initializations).toBe(lostSessions > 0 ? 3 : 2);
         expect(state.calls).toEqual([]);
         if (repeated || lostSessions > 1) {
@@ -316,6 +323,7 @@ describe("MCP connector session cache", () => {
       } finally {
         await connector.close();
         close.mockRestore();
+        error.mockRestore();
       }
     },
   );
@@ -994,6 +1002,42 @@ describe("MCP connector session cache", () => {
         {} as never,
         { network },
       );
+
+    it("connects an endpoint saved as SSE that now answers Streamable HTTP", async () => {
+      const state = { failNext: false, initializations: 0 };
+      vi.stubGlobal("fetch", mcpFetch(state));
+      const connector = connectorWith({ ...SERVER, transport: "sse" });
+      const error = vi.spyOn(getLogger(), "error");
+      try {
+        const tools = await connector.discoverTools(context);
+        expect(tools).not.toEqual(unavailableOnly());
+        expect(state.initializations).toBe(1);
+        expect(error).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("warns when an SSE endpoint is not an MCP server", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("not found", { status: 404 })),
+      );
+      const connector = connectorWith({ ...SERVER, transport: "sse" });
+      const error = vi.spyOn(getLogger(), "error");
+      const warn = vi.spyOn(getLogger(), "warn");
+      try {
+        expect(await connector.discoverTools(context)).toEqual(unavailableOnly());
+        expect(error).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith("mcp discovery failed for server demo", {
+          reason: expect.stringContaining("404"),
+        });
+      } finally {
+        vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
 
     it("warns instead of reporting an error, and waits longer for a reconnect", async () => {
       const requests = vi.fn(async () => new Response("unauthorized", { status: 401 }));
@@ -2356,6 +2400,7 @@ describe("MCP connector session cache", () => {
         } as never,
         { network: TEST_NETWORK },
       );
+      const error = vi.spyOn(getLogger(), "error");
       try {
         const tools = await connector.discoverTools({
           spaceId: "w1",
@@ -2365,6 +2410,11 @@ describe("MCP connector session cache", () => {
         } as never);
         if (rotatesAgain) {
           expect(tools).toEqual(unavailableOnly());
+          expect(error).not.toHaveBeenCalledWith(
+            "mcp.discovery.failed",
+            expect.anything(),
+            expect.anything(),
+          );
           expect(state.initializations).toBe(2);
           return;
         }
@@ -2381,10 +2431,47 @@ describe("MCP connector session cache", () => {
         expect(again.map((tool) => tool.name)).toContain("mcp__demo__echo");
         expect(state.initializations).toBe(2);
       } finally {
+        error.mockRestore();
         await connector.close();
       }
     },
   );
+
+  it("still reports a server whose current secret record cannot be read", async () => {
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: "old" } };
+    const connector = new McpConnector(
+      {
+        botMcpServer: { findMany: vi.fn(async () => [assignment]) },
+        mcpServer: {
+          ...NO_SHARED_SERVERS,
+          findFirst: vi.fn(async () => ({ secretId: "new" })),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        secret: { findFirst: vi.fn(async () => null) },
+      } as never,
+      { load: vi.fn() } as never,
+      { network: TEST_NETWORK },
+    );
+    const error = vi.spyOn(getLogger(), "error");
+    try {
+      expect(
+        await connector.discoverTools({
+          spaceId: "w1",
+          userId: "u1",
+          botId: "bot-1",
+          signal: new AbortController().signal,
+        } as never),
+      ).toEqual(unavailableOnly());
+      expect(error).toHaveBeenCalledWith(
+        "mcp.discovery.failed",
+        expect.anything(),
+        expect.anything(),
+      );
+    } finally {
+      error.mockRestore();
+      await connector.close();
+    }
+  });
 
   it("reconnects with the rotated secret when a session expires during refresh", async () => {
     const state = {
@@ -3945,7 +4032,12 @@ it("preserves explicit MCP read-only annotations for unattended consumers", asyn
   }
 });
 
-it("marks a Composio MCP server's multi-execute tool as a batch under its prefixed name", async () => {
+it.each([
+  ["https://connect.composio.dev/mcp", true],
+  ["https://app.composio.dev/tool_router/v3/trs_example/mcp", true],
+  ["https://mcp.example.test/mcp", false],
+  ["https://connect.composio.dev.example.test/mcp", false],
+])("recognizes batch shape and checks draft eligibility for %s", async (endpoint, hasDrafts) => {
   const state = {
     failNext: false,
     initializations: 0,
@@ -3954,11 +4046,13 @@ it("marks a Composio MCP server's multi-execute tool as a batch under its prefix
       { name: "COMPOSIO_SEARCH_TOOLS", inputSchema: { type: "object" } },
     ],
   };
-  vi.stubGlobal("fetch", mcpFetch(state));
+  vi.stubGlobal("fetch", mcpFetch(state, endpoint));
   const connector = new McpConnector(
     {
       mcpServer: NO_SHARED_SERVERS,
-      botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+      botMcpServer: {
+        findMany: vi.fn(async () => [{ ...ASSIGNMENT, server: { ...SERVER, endpoint } }]),
+      },
     } as never,
     new EncryptedSecretStore("fake-key"),
     { network: TEST_NETWORK },
@@ -3981,6 +4075,7 @@ it("marks a Composio MCP server's multi-execute tool as a batch under its prefix
       [true, "tool_slug"],
       [false, undefined],
     ]);
+    expect(Boolean(tools[0]?.batch?.outgoingDrafts?.GMAIL_SEND_EMAIL)).toBe(hasDrafts);
   } finally {
     await connector.close();
   }

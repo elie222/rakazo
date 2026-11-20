@@ -5,7 +5,7 @@ import type { ApiRequestContext } from "../api/api";
 import { captureApiRequestContext, rpc } from "../api/api";
 import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
-import { notifyArchivedChatsChanged } from "../inbox/archived-chats";
+import { notifyArchivedChatsChanged } from "../inbox/archived/archived-chats";
 import type { SaveSend } from "../query/query";
 import { removeFromSearchInbox } from "../search/search-inbox";
 import { notifyConversationCleared } from "../thread/conversation-cleared";

@@ -52,6 +52,8 @@ function ownBotUpdateCall() {
     replayEffectToolName: "update_bot",
     fleetSummary: undefined,
     heldForApproval: false,
+    settingsChange: false,
+    ignoresAllowRules: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: undefined,
@@ -60,23 +62,11 @@ function ownBotUpdateCall() {
 }
 
 describe("prepareToolRequest: update_bot owner settings after outside content", () => {
-  it("refuses once, then ends the turn instead of repeating the refusal", async () => {
+  it("prepares the change and marks it for the approval model to check", async () => {
     const { ctx, request } = ownBotUpdateCall();
-    await expect(prepareToolRequest(ctx as never, request())).resolves.toEqual({
-      error: expect.stringContaining("outside content"),
-    });
-    const repeat = await prepareToolRequest(ctx as never, request());
-    expect(repeat).toMatchObject({
-      kind: "agent_tool_result",
-      terminate: true,
-      content: [
-        {
-          type: "text",
-          text: expect.stringContaining("Settings"),
-        },
-      ],
-    });
-    expect(JSON.stringify(repeat)).not.toContain("outside content");
+    const prepared = request();
+    await expect(prepareToolRequest(ctx as never, prepared)).resolves.toBeUndefined();
+    expect(prepared.settingsChange).toBe(true);
   });
 
   it("keeps preparing the change while the run is untainted", async () => {
@@ -211,6 +201,8 @@ describe("prepareToolRequest: a saved login that asks first", () => {
       replayEffectToolName: "browser_act",
       fleetSummary: undefined,
       heldForApproval: false,
+      settingsChange: false,
+      ignoresAllowRules: false,
       purchase: undefined,
       cardUse: undefined,
       loginUse: undefined,
@@ -362,7 +354,7 @@ describe("prepareToolRequest: a saved login that asks first", () => {
     ).toEqual({ error: expect.stringContaining("separate browser_act calls") });
   });
 
-  it("signs in and pays in separate calls, whether the purchase check finds one or fails", async () => {
+  it("signs in and pays in separate calls, and signs in nowhere when the check fails", async () => {
     const { ctx, request } = await setup();
     const found = {
       steps: [],
@@ -371,12 +363,15 @@ describe("prepareToolRequest: a saved login that asks first", () => {
       amount: "$5",
       amountSource: "page",
     };
-    for (const purchaseCheck of [
-      async () => ({ purchase: found }),
-      async () => {
-        throw new Error("page gone");
-      },
-    ]) {
+    for (const [purchaseCheck, error] of [
+      [async () => ({ purchase: found }), "separate browser_act calls"],
+      [
+        async () => {
+          throw new Error("page gone");
+        },
+        "couldn't be read",
+      ],
+    ] as const) {
       const paying = {
         ...ctx(),
         providers: { browser: { purchaseCheck } },
@@ -386,7 +381,7 @@ describe("prepareToolRequest: a saved login that asks first", () => {
         actions: [fill("work", "Password"), { kind: "click", ref: "e2" }],
       });
       expect(await prepareToolRequest(paying as never, prepared)).toEqual({
-        error: expect.stringContaining("separate browser_act calls"),
+        error: expect.stringContaining(error),
       });
       expect(prepared.loginUse).toBeUndefined();
       expect(prepared.purchase).toBeUndefined();
@@ -619,5 +614,43 @@ describe("prepareToolRequest: a saved login that asks first", () => {
         lines: [],
       });
     });
+  });
+});
+
+describe("the user's computer after a routine or webhook joined the run", () => {
+  function userComputerCall(claimed: boolean) {
+    const findFirst = vi.fn(async (_query: { where: Record<string, unknown> }) =>
+      claimed ? { id: "steering-1" } : null,
+    );
+    const ctx = {
+      deps: { prisma: { steeringMessage: { findFirst } }, userDevices: {} },
+      run: { trigger: "user" },
+      bot: {},
+      runId: "run-1",
+      source: { messagingChannelRun: false, userComputerOwner: "user-1" },
+    };
+    const request = {
+      name: "user_computer_shell",
+      args: {},
+      executionId: JSON.stringify(["pi-tool", "main", "call-1"]),
+    } as ToolRequest;
+    return { ctx, request, findFirst };
+  }
+
+  it("refuses once the run has read a handed-over routine or webhook task", async () => {
+    const { ctx, request, findFirst } = userComputerCall(true);
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({
+      error: "The user's computer is not available in this run.",
+    });
+    expect(findFirst.mock.calls.at(-1)?.[0].where).toEqual({
+      runId: "run-1",
+      claimedAt: { not: null },
+      originTrigger: { in: ["routine", "webhook"] },
+    });
+  });
+
+  it("stays available in the owner's own run", async () => {
+    const { ctx, request } = userComputerCall(false);
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
   });
 });

@@ -2,18 +2,18 @@ import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
 import { abortableDelay, chatSnoozed, isRetryableError, retryDelayMs } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
+import { computerUpdates } from "../../lib/computers/computer-updates";
 import {
   browserNotificationTag,
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
-} from "../../lib/browser-notifications";
-import { computerUpdates } from "../../lib/computer-updates";
-import { desktopBridge } from "../../lib/desktop";
-import { followStream } from "../../lib/follow-stream";
-import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
-import { organizationsChanged } from "../../lib/organizations";
-import type { RpcClient } from "../../lib/rpc";
-import { isReadChangeKind, spaceChanged } from "../../lib/space-changes";
+} from "../../lib/platform/browser-notifications";
+import { desktopBridge } from "../../lib/platform/desktop";
+import { notificationIcon, prepareNotificationIcons } from "../../lib/platform/notification-icon";
+import { followStream } from "../../lib/query/follow-stream";
+import type { RpcClient } from "../../lib/query/rpc";
+import { isReadChangeKind, spaceChanged } from "../../lib/query/space-changes";
+import { organizationsChanged } from "../../lib/spaces/organizations";
 
 type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;

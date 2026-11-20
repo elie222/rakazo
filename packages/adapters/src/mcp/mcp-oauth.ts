@@ -20,9 +20,11 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import type { McpOAuthClientKind } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
   MCP_OAUTH_CLIENT_REQUIRED,
+  MOBILE_MCP_OAUTH_STATE_PREFIX,
   mcpOAuthEnvReferences,
   parseMcpOAuthAuthorizationParams,
 } from "@rakazo/contracts";
@@ -30,14 +32,14 @@ import { ClientError, readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn, runAsSystem } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { sanitizeConnectorError } from "../connectors/connector-safety.js";
-import { isUnreachableHost } from "../connectors/connector-source.js";
+import { sanitizeConnectorError } from "../integrations/connector-safety.js";
+import { isUnreachableHost } from "../integrations/connector-source.js";
+import { advisoryLock } from "../locks/advisory-lock.js";
+import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "../locks/refresh-lock.js";
 import type { SecretCleanup, SecretCleanupDeps } from "../secrets/secret-cleanup.js";
 import { attemptSecretCleanup, cleanUpUnsavedSecret } from "../secrets/secret-cleanup.js";
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
-import { advisoryLock } from "../shared/advisory-lock.js";
-import { REFRESH_REQUEST_TIMEOUT_MS, withRefreshLock } from "../shared/refresh-lock.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
@@ -881,12 +883,21 @@ type Pending = {
   /** The stored authorization generation this flow began at. */
   generation: number;
   provider: StoredMcpOAuthProvider;
+  /** The bot that gets the server once this sign-in finishes. */
+  botId: string | null;
   createdAt: number;
   expiry?: ReturnType<typeof setTimeout>;
 };
 
 const PENDING_TTL_MS = 10 * 60_000;
 const MAX_PENDING_SESSIONS = 100;
+
+/**
+ * Where a sign-in is sent back when the authorization server registers only loopback
+ * redirects. Nothing listens there: the desktop app reads the code from the navigation
+ * itself, and RFC 8252 has servers accept any port on a loopback redirect.
+ */
+export const MCP_LOOPBACK_REDIRECT_URI = "http://127.0.0.1:53682/callback";
 
 /** OAuth traffic runs through the same URL policy as runtime MCP requests
  * (HTTPS enforced, redirects rejected), with the endpoint-origin fallback
@@ -901,6 +912,8 @@ function oauthFetch(
   close: () => Promise<void>;
   headers: Record<string, string>;
   publicError: (error: unknown, message: string) => Error;
+  /** The last answer received was a refusal of the redirect address (RFC 7591). */
+  refusedRedirect: () => boolean;
 } {
   const url = new URL(endpoint);
   const localHttp = url.protocol === "http:" && isLocalhostOrLoopbackIp(url.hostname);
@@ -933,16 +946,21 @@ function oauthFetch(
   const networkErrors = new WeakSet<Error>();
   let rejection: OAuthRejection | undefined;
   let lastAnswerFailed = false;
+  // The most recent answer's own rejection, so an earlier one cannot explain a later failure.
+  let lastRejection: OAuthRejection | undefined;
   const recordingFetch: typeof fetch = async (input, init) => {
     try {
       const response = await fallbackFetch(input, init);
       lastAnswerFailed = !response.ok;
+      lastRejection = undefined;
       if (!response.ok) {
         const next = await readOAuthRejection(response);
         if (next) rejection = next;
+        lastRejection = next;
       }
       return response;
     } catch (error) {
+      lastRejection = undefined;
       if (error instanceof Error) networkErrors.add(error);
       throw error;
     }
@@ -951,6 +969,7 @@ function oauthFetch(
     headers,
     fetch: recordingFetch,
     close: () => safeFetch.close(),
+    refusedRedirect: () => lastRejection?.code === "invalid_redirect_uri",
     publicError: (error, message) => {
       if (error instanceof McpOAuthStoreError) return error;
       const secrets = oauthMaterialSecrets(material);
@@ -1267,6 +1286,11 @@ export class McpOAuthBroker {
     spaceId: string;
     userId: string;
     redirectUri: string;
+    client?: McpOAuthClientKind;
+    botId?: string;
+    /** The client can take the code from a loopback redirect, so a server that registers
+     * only loopback redirects (RFC 8252) is tried again on one when it refuses ours. */
+    capturesLoopback?: boolean;
   }): Promise<
     | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
     | { status: "already_connected" | "authorization_not_requested" }
@@ -1300,7 +1324,7 @@ export class McpOAuthBroker {
     if (activeCount >= MAX_PENDING_SESSIONS) {
       throw new McpOAuthRefusedError(TOO_MANY_PENDING);
     }
-    const sessionId = randomUUID();
+    const sessionId = `${input.client === "mobile" ? MOBILE_MCP_OAUTH_STATE_PREFIX : ""}${randomUUID()}`;
     let authorizationUrl: URL | undefined;
     const provider = this.createProvider(server, context, loaded, {
       redirectUri: input.redirectUri,
@@ -1318,6 +1342,7 @@ export class McpOAuthBroker {
       server.endpoint ? loaded.material : withoutRequestCredentials(loaded.material),
       this.allowPrivateEndpoint,
     );
+    let retryOnLoopback = false;
     try {
       if (server.endpoint)
         await startRemoteAuthorization(
@@ -1338,10 +1363,20 @@ export class McpOAuthBroker {
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
       if (needsMcpOAuthClient(error)) throw new McpOAuthClientRequiredError(server.revision);
-      if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");
+      // A client entered by hand was registered with its own redirect; only a registration
+      // this attempt made can be made again with another one.
+      retryOnLoopback =
+        !authorizationUrl &&
+        input.capturesLoopback === true &&
+        input.redirectUri !== MCP_LOOPBACK_REDIRECT_URI &&
+        !loaded.material.oauthClient &&
+        networkFetch.refusedRedirect();
+      if (!authorizationUrl && !retryOnLoopback)
+        throw networkFetch.publicError(error, "Could not start MCP OAuth");
     } finally {
       await networkFetch.close().catch(() => undefined);
     }
+    if (retryOnLoopback) return this.begin({ ...input, redirectUri: MCP_LOOPBACK_REDIRECT_URI });
     if (!authorizationUrl) {
       if (await provider.tokens()) {
         return { status: "already_connected" };
@@ -1369,6 +1404,7 @@ export class McpOAuthBroker {
         endpoint: target,
         redirectUri: input.redirectUri,
         oauthCiphertext: sessionMaterial.ciphertext,
+        botId: input.botId ?? null,
       },
     });
     const expiry = setTimeout(() => {
@@ -1386,6 +1422,7 @@ export class McpOAuthBroker {
       stdio: !server.endpoint,
       generation: loaded.material.oauthGeneration ?? 0,
       provider,
+      botId: input.botId ?? null,
       createdAt: Date.now(),
       expiry,
     });
@@ -1402,7 +1439,7 @@ export class McpOAuthBroker {
     state: string;
     spaceId: string;
     userId: string;
-  }): Promise<{ serverId: string; revision: number }> {
+  }): Promise<{ serverId: string; revision: number; botId: string | null }> {
     await this.sweepExpiredPending();
     if (input.state !== input.sessionId) {
       throw new McpOAuthRefusedError(SESSION_INVALID);
@@ -1445,6 +1482,7 @@ export class McpOAuthBroker {
           redirectUri: session.redirectUri,
           state: session.id,
         }),
+        botId: session.botId,
         createdAt: session.createdAt.getTime(),
         expiry: undefined,
       };
@@ -1523,7 +1561,7 @@ export class McpOAuthBroker {
         });
       },
     );
-    return { serverId: pending.serverId, revision };
+    return { serverId: pending.serverId, revision, botId: pending.botId };
   }
 
   private async sweepExpiredPending(): Promise<void> {

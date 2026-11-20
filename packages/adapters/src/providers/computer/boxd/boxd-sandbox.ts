@@ -34,6 +34,20 @@ import {
 } from "../../../computers/computer-base-snapshot.js";
 import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
 import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../computers/sandbox/sandbox-cleanup.js";
+import { sandboxCommandArgv } from "../../../computers/sandbox/sandbox-command-environment.js";
+import {
+  abortedCommandEvents,
+  timedOutCommandEvents,
+} from "../../../computers/sandbox/sandbox-command-events.js";
+import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
+import {
+  shellExportScript,
+  sourceEnvironmentCommand,
+} from "../../../computers/sandbox/sandbox-shell-environment.js";
+import {
   normalizeWorkspacePath,
   shellQuote,
   workspaceCwd,
@@ -46,20 +60,6 @@ import {
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
 } from "../../../computers/screens/linux-desktop.js";
-import {
-  deleteUnreferencedMachine,
-  recordUnreferencedMachine,
-} from "../../../sandboxes/sandbox-cleanup.js";
-import { sandboxCommandArgv } from "../../../sandboxes/sandbox-command-environment.js";
-import {
-  abortedCommandEvents,
-  timedOutCommandEvents,
-} from "../../../sandboxes/sandbox-command-events.js";
-import { sandboxNotFoundError } from "../../../sandboxes/sandbox-errors.js";
-import {
-  shellExportScript,
-  sourceEnvironmentCommand,
-} from "../../../sandboxes/sandbox-shell-environment.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindCommand,
@@ -361,11 +361,11 @@ export class BoxdSandboxProvider implements SandboxProvider {
       yield* abortedCommandEvents();
       return;
     }
-    if (result.stdout) yield { type: "stdout", data: result.stdout };
     if (result.timedOut) {
-      yield* timedOutCommandEvents(timeoutMs);
+      yield* timedOutCommandEvents(timeoutMs, result);
       return;
     }
+    if (result.stdout) yield { type: "stdout", data: result.stdout };
     if (result.stderr) yield { type: "stderr", data: result.stderr };
     yield { type: "exit", code: result.exitCode };
   }

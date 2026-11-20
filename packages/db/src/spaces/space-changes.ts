@@ -7,9 +7,6 @@ import { ChangeLatch } from "../threads/event-stream.js";
 const IDLE_WAIT_MS = 60_000;
 
 const spaceChangesTopic = (spaceId: string) => `space-changes:${spaceId}`;
-// compat-shim(after v0.11.0): workers from the previous release still announce computer updates
-// here until they drain.
-const legacyComputerUpdatesTopic = (spaceId: string) => `computer-updates:${spaceId}`;
 
 const PUBLISH_RETRY_MS = 15_000;
 
@@ -55,12 +52,6 @@ export async function* followSpaceChanges(
     const kind = SpaceChangeKind.safeParse(payload);
     if (kind.success) changed(kind.data);
   });
-  const unsubscribeLegacy = await realtime
-    .subscribe(legacyComputerUpdatesTopic(spaceId), () => changed("computerUpdates"))
-    .catch(async (error: unknown) => {
-      await unsubscribe();
-      throw error;
-    });
   try {
     while (!signal?.aborted) {
       const seen = latch.generation;
@@ -70,7 +61,6 @@ export async function* followSpaceChanges(
       await latch.waitForChange(seen, IDLE_WAIT_MS, signal);
     }
   } finally {
-    await unsubscribeLegacy();
     await unsubscribe();
   }
 }

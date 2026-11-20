@@ -24,8 +24,8 @@ import {
   MODEL_REQUEST_LIMIT_ERROR,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { affordableOpenRouterOutput } from "../../models/credits/openrouter-output-budget.js";
 import { groqRequestContextWindow } from "../../models/endpoints/groq-request-budget.js";
+import { affordableOpenRouterOutput } from "../../models/endpoints/openrouter-output-budget.js";
 import type { PacerSlot } from "../../models/endpoints/token-pacer.js";
 import { pacerTokensPerMinute, sharedTokenPacer } from "../../models/endpoints/token-pacer.js";
 import { estimateModelContextTokens } from "../../models/model-context.js";

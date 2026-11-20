@@ -3,6 +3,7 @@ import { hasLab, resolveLabs } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
 import {
   effectiveMemoryScope,
+  expireRunToolQuestions,
   loadRunHistoryMessages,
   loadRunTurnCheckpoint,
   readMessageBlocks,
@@ -16,15 +17,20 @@ import {
   isLostPinnedModel,
   PINNED_COMPUTER_MODEL_LOST_RUN_ERROR,
 } from "../../computers/computer-model-settings.js";
+import { formatAgentEnvironmentInstruction } from "../../computers/sandbox/agent-environment.prompt.js";
 import {
   connectedContext,
-  loadLivePluginSlugs,
+  loadLivePlugins,
   persistLivePluginConnections,
   selectRunConnections,
-} from "../../connectors/connection-context.js";
+} from "../../integrations/connection-context.js";
 import { loadBotMessageContext } from "../../messaging/bot-messages.js";
 import { resolveMemberMainModel } from "../../models/model-roles.js";
-import { findConnectedModelCredential, runModelChoice } from "../../models/model-selection.js";
+import {
+  findConnectedModelCredential,
+  runModelChoice,
+  UNKNOWN_PROVIDER_MODEL,
+} from "../../models/model-selection.js";
 import { loadPurchaseRedactions } from "../../payments/purchase-service.js";
 import {
   mergeConnectedPlugins,
@@ -32,7 +38,6 @@ import {
 } from "../../providers/integration/composio/composio-connector.js";
 import { LEGACY_HISTORY_WINDOW_SIZE } from "../../runtime/context/history-compaction.js";
 import { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
-import { formatAgentEnvironmentInstruction } from "../../sandboxes/agent-environment.prompt.js";
 import {
   loadCommandVariables,
   loadLoginPasswordRedactions,
@@ -41,9 +46,11 @@ import {
 } from "../../secrets/bot-secrets.js";
 import { listAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
+import { PausedTurnModelUnlistedError } from "../lifecycle/run-lifecycle.js";
 import { isDelegatedRun, loadRunOrigin } from "../lifecycle/run-origin.js";
 import { runReplaysToolHistory } from "../turn/tool-step-calls.js";
 import { restoreTurnCheckpoint } from "../turn/turn-checkpoint.js";
+import type { HistoryReach } from "./run-instructions.prompt.js";
 
 export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold) {
   const { resolveConnectedModel } = services;
@@ -91,9 +98,15 @@ export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold
         savedComputerMode,
       );
     } catch (error) {
+      const unlisted = error instanceof Error && error.message === UNKNOWN_PROVIDER_MODEL;
       // A paused turn whose model or account is gone cannot resume; retrying will not help.
-      if (!isLostPinnedModel(error)) throw error;
-      pinnedComputerFailure = PINNED_COMPUTER_MODEL_LOST_RUN_ERROR;
+      if (isLostPinnedModel(error))
+        pinnedComputerFailure = unlisted
+          ? new PausedTurnModelUnlistedError().message
+          : PINNED_COMPUTER_MODEL_LOST_RUN_ERROR;
+      // A failed catalog read reports this too, so setup tries again before giving up.
+      else if (unlisted) throw new PausedTurnModelUnlistedError();
+      else throw error;
     }
   }
   return {
@@ -109,6 +122,26 @@ export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold
 }
 
 export type SavedTurn = Awaited<ReturnType<typeof loadSavedTurn>>;
+
+/** Messages a routine running alongside its chat reads: the chat's latest, as people saw them. */
+export const ROUTINE_RECENT_MESSAGES = 10;
+/** Replies of the routine's own earlier runs it also reads, so it can tell what is new. */
+export const ROUTINE_EARLIER_RESULTS = 2;
+
+/**
+ * How much of the chat a run reads. A routine that runs in its chat reads all of it; one that runs
+ * alongside reads its latest messages and its own earlier results. A creation intro and a check-in
+ * read none.
+ */
+export function runHistoryReach(run: {
+  trigger: string;
+  routine?: { inChat: boolean } | null;
+}): HistoryReach {
+  if (run.trigger === "created") return "none";
+  if (run.trigger !== "routine") return "all";
+  if (!run.routine) return "none";
+  return run.routine.inChat ? "all" : "recent";
+}
 
 export async function loadRunRecords(
   services: RunExecutorServices,
@@ -140,6 +173,7 @@ export async function loadRunRecords(
   // so the run reads only the message that woke it and gets no history tools.
   const unknownChannelSourceId =
     messagingChannelRun && !channelId ? messagingSource?.id : undefined;
+  const historyReach = runHistoryReach(run);
   const [
     { bot, ownerLabs },
     thread,
@@ -181,7 +215,7 @@ export async function loadRunRecords(
     loadRunHistoryMessages(
       deps.prisma,
       run,
-      LEGACY_HISTORY_WINDOW_SIZE,
+      historyReach === "recent" ? ROUTINE_RECENT_MESSAGES : LEGACY_HISTORY_WINDOW_SIZE,
       run.trigger === BACKGROUND_HELPER_TRIGGER
         ? undefined
         : channelId
@@ -189,6 +223,12 @@ export async function loadRunRecords(
           : unknownChannelSourceId
             ? { sourceMessageId: unknownChannelSourceId }
             : undefined,
+      run.trigger === "routine" && run.routineId
+        ? {
+            routineId: run.routineId,
+            earlierResults: historyReach === "recent" ? ROUTINE_EARLIER_RESULTS : 0,
+          }
+        : undefined,
     ),
     run.trigger === "bot_message"
       ? loadBotMessageContext(deps.prisma, run.sourceMessageId)
@@ -203,6 +243,7 @@ export async function loadRunRecords(
         providerRef: true,
         displayName: true,
         status: true,
+        updatedAt: true,
       },
     }),
     pinnedComputerModels ? Promise.resolve(null) : resolveMemberMainModel(deps, run),
@@ -281,6 +322,7 @@ export async function loadRunRecords(
         )
       : null;
   return {
+    historyReach,
     origin,
     conversationRun,
     conversationThread,
@@ -331,11 +373,12 @@ export async function connectRun(
   );
   let liveSlugs: string[] = [];
   if (needsLivePluginSync(composioRows)) {
-    const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+    const listing = await loadLivePlugins(deps.listConnectedPlugins, run.userId);
     if (listing.ok) {
       liveSlugs = listing.slugs;
-      await persistLivePluginConnections(deps.prisma, run, composioRows, listing.slugs).catch(
-        () => undefined,
+      await bestEffort(
+        "save live plugin connections",
+        persistLivePluginConnections(deps.prisma, run, composioRows, listing),
       );
     }
   }
@@ -369,10 +412,20 @@ export async function connectRun(
     runId,
     payload: {
       trigger: run.trigger,
+      // Whose cards a viewer may answer while the run runs, before the next snapshot.
+      userId: run.userId,
       routineId: run.routineId,
       ...(run.routine ? { routineName: run.routine.name } : {}),
     },
   });
+
+  // A question a tool asked in an earlier attempt lost its call with that attempt's process.
+  await bestEffort(
+    "tool questions",
+    expireRunToolQuestions(deps.prisma, { id: runId, spaceId: run.spaceId }, (threadId, seq) =>
+      deps.events.notify(threadId, seq),
+    ),
+  );
 
   const discoveredPromise = deps.connector
     ? deps.connector.discoverTools(context)

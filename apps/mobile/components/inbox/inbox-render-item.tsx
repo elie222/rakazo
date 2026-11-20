@@ -15,12 +15,13 @@ import type { InboxItem, InboxSpace } from "../../lib/inbox/inbox-spaces";
 import { canDeleteInboxSpace, inboxItemKey } from "../../lib/inbox/inbox-spaces";
 import type { useInboxChatActions } from "../../lib/inbox/use-inbox-chat-actions";
 import { native, useThemedStyles } from "../../lib/native/native";
+import { NativeActionButton } from "../native/native-action-button";
 import type { NativeRowMenu } from "../native/native-row";
 import { NativeRow } from "../native/native-row";
 import { NativeSymbol } from "../native/native-symbol";
 import { DragSafePressable } from "../ui/drag-safe-pressable";
-import { createHomeStyles } from "./home-styles";
 import { ArchivedChatsRow, BotRow, GroupRow, PinnedTiles, SectionToggle } from "./inbox-rows";
+import { createInboxStyles } from "./inbox-styles";
 
 // Swipe actions and the context menu are iOS list behaviour; other platforms keep the long-press
 // sheet.
@@ -30,20 +31,34 @@ type ChatActions = ReturnType<typeof useInboxChatActions>;
 // One empty list, so a row with no sections keeps its memoized render.
 const NO_SECTIONS: MobileBotSection[] = [];
 
-/** The end of the inbox list: the create hint while it is needed, then the archived chats. */
+/** Stands where the rows would be in a Space with no chats, and opens the same New bot screen. */
+export function InboxNewBot({ onPress }: { onPress: () => void }) {
+  const styles = useThemedStyles(createInboxStyles);
+  const { t } = useLingui();
+  return (
+    <View style={styles.newBot}>
+      <NativeActionButton
+        label={t`New bot`}
+        icon={{ ios: "plus", android: "add" }}
+        fill={false}
+        onPress={onPress}
+      />
+    </View>
+  );
+}
+
+/** The end of the inbox list: New bot while no Space has a chat, then the archived chats. */
 export function InboxListFooter({
-  createHint,
+  onNewBot,
   archivedCount,
 }: {
-  createHint: boolean;
+  onNewBot?: () => void;
   archivedCount: number;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
-  const { t } = useLingui();
   const router = useRouter();
   return (
     <>
-      {createHint ? <Text style={styles.empty}>{t`Tap + to create a bot`}</Text> : null}
+      {onNewBot ? <InboxNewBot onPress={onNewBot} /> : null}
       <ArchivedChatsRow count={archivedCount} onPress={() => router.push("/archived-bots")} />
     </>
   );
@@ -70,7 +85,7 @@ function HeadingWithMenu({
   appearance: ResolvedAppearance;
   children: (press: HeadingPress) => ReactNode;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const row = space ? styles.spaceHeading : styles.sectionHeadingRow;
   const plain = <View style={row}>{children({})}</View>;
   if (!menu) return Platform.OS === "ios" ? <NativeRow>{plain}</NativeRow> : plain;
@@ -153,7 +168,7 @@ function SpaceHeading({
   menu?: HeadingMenu;
   appearance: ResolvedAppearance;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   return (
     <HeadingWithMenu space menu={menu} appearance={appearance}>
@@ -291,7 +306,7 @@ export function useInboxRenderItem({
   spaceRecoveryId: string | null;
   toggleCollapsed: (key: string) => void;
 }) {
-  const styles = useThemedStyles(createHomeStyles);
+  const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
   const router = useRouter();
   return useCallback(

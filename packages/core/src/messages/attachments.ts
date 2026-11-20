@@ -7,6 +7,7 @@ import {
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
+import { sliceWellFormed } from "../primitives/utf8.js";
 import { isApprovalAskBlock, isSecretAskBlock } from "../runs/action-approval.js";
 
 export class AttachmentValidationError extends Error {
@@ -140,7 +141,7 @@ export function normalizeVoiceTranscript(value: string | null | undefined): stri
       return code >= 32 && !(code >= 0x7f && code <= 0x9f);
     })
     .join("");
-  return printable.trim().slice(0, VOICE_TRANSCRIPT_MAX_CHARS);
+  return sliceWellFormed(printable.trim(), VOICE_TRANSCRIPT_MAX_CHARS);
 }
 
 export function promptTextForAttachments(
@@ -185,7 +186,7 @@ export function toolStepsHistoryText(
   const lines = shown.map((step) => {
     const name =
       !full && step.label.length > TOOL_STEP_LABEL_MAX_CHARS
-        ? `${step.label.slice(0, TOOL_STEP_LABEL_MAX_CHARS)}…`
+        ? `${sliceWellFormed(step.label, TOOL_STEP_LABEL_MAX_CHARS)}…`
         : step.label;
     const counted = Number(step.count) > 1 ? `${name} ×${step.count}` : name;
     const outcome = toolStepOutcomeText(step);
@@ -193,7 +194,7 @@ export function toolStepsHistoryText(
     const whole = typeof step.note === "string" ? step.note.replace(/\s+/g, " ").trim() : "";
     const note =
       !full && whole.length > TOOL_STEP_NOTE_MAX_CHARS
-        ? `${whole.slice(0, TOOL_STEP_NOTE_MAX_CHARS)}…`
+        ? `${sliceWellFormed(whole, TOOL_STEP_NOTE_MAX_CHARS)}…`
         : whole;
     return note ? `- ${label}: ${note}` : `- ${label}`;
   });
@@ -303,6 +304,17 @@ function blockHistoryText(block: MessageBlock): string {
     }[block.status];
     return `[you called the user about: ${block.reason}; ${outcome}]${block.status === "answered" ? `\n${block.opening}` : ""}`;
   }
+  // Whether the person answered a tool's question, never what was asked or sent: the question
+  // is the server's own text and the answer went to the server.
+  if (block.kind === "tool_question") {
+    const outcome = {
+      pending: "waiting for the user",
+      accepted: "the user answered",
+      declined: "the user declined",
+      expired: "the user did not answer",
+    }[block.status];
+    return `[${block.question.source} asked the user a question during a tool call; ${outcome}]`;
+  }
   if ("text" in block && typeof block.text === "string") return block.text;
   return "";
 }
@@ -313,6 +325,10 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".ogg": "audio/ogg",
   ".m4a": "audio/mp4",
   ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".3gp": "video/3gpp",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".png": "image/png",
@@ -339,6 +355,10 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "audio/ogg": ".ogg",
   "audio/mp4": ".m4a",
   "video/mp4": ".mp4",
+  "video/quicktime": ".mov",
+  "video/3gpp": ".3gp",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
   "image/jpeg": ".jpg",
   "image/png": ".png",
   "image/webp": ".webp",

@@ -8,10 +8,11 @@ import type {
   DecisionResult,
 } from "@rakazo/adapter-kit";
 import { DecisionProviderError } from "@rakazo/adapter-kit";
+import { bestEffort } from "@rakazo/logging";
 import { z } from "zod";
 import { estimateTextTokens, lowTextTokens } from "../runtime/context/context-selection.js";
 import { readBodyCapped } from "../web/web-ssrf.js";
-import { decisionModel } from "./decision-models.js";
+import { decisionInputCost, decisionModel } from "./decision-models.js";
 
 const answerSchema = z.object({
   type: z.literal("choice"),
@@ -31,18 +32,30 @@ const responseSchema = z.object({
     .optional(),
 });
 
+/** The hosts that serve the decision protocol. */
+export const DECISION_HOSTS = ["openrouter", "typesafe"] as const;
+export type DecisionHost = (typeof DECISION_HOSTS)[number];
+export const isDecisionHost = (value: string): value is DecisionHost =>
+  (DECISION_HOSTS as readonly string[]).includes(value);
+
 /** Two implementations of the same decision protocol; endpoint and auth never come from model output. */
 export class HttpDecisionProvider implements DecisionProvider {
   constructor(
-    private readonly provider: "openrouter" | "typesafe",
+    private readonly provider: DecisionHost,
     private readonly options: DecisionProviderOptions,
   ) {
     if (!options.apiKey.trim()) throw new DecisionProviderError("authentication");
+    // Only OpenRouter can restrict routing; a host that cannot is never sent the request.
+    if (options.zeroDataRetention && provider !== "openrouter")
+      throw new DecisionProviderError("invalid");
   }
 
   async decide(request: DecisionRequest, context: AdapterContext): Promise<DecisionResult> {
     context.signal.throwIfAborted();
-    const body = JSON.stringify(request);
+    // OpenRouter refuses the call when no endpoint for the model retains nothing.
+    const body = JSON.stringify(
+      this.options.zeroDataRetention ? { ...request, provider: { zdr: true } } : request,
+    );
     const callId = randomUUID();
     const pricing = decisionModel(this.provider, request.model);
     // Byte count plus a generous protocol allowance bounds tokenizer expansion.
@@ -54,13 +67,15 @@ export class HttpDecisionProvider implements DecisionProvider {
       modelId: request.model,
       operationKind: "setup",
       inputTokensEstimate,
-      maxOutputTokens: 0,
-      maxCostUsd: pricing
-        ? (inputTokensEstimate * pricing.inputUsdPerMillion) / 1_000_000
-        : undefined,
+      maxOutputTokens: null,
+      maxCostUsd: pricing ? decisionInputCost(pricing, inputTokensEstimate) : undefined,
     });
+    let result: Pick<DecisionResult, "model" | "answers">;
     let usage: AgentUsage | null = null;
-    const pricingSnapshot = pricing ? { input: pricing.inputUsdPerMillion } : null;
+    const pricingSnapshot = pricing
+      ? { input: pricing.inputUsdPerMillion, output: 0, source: pricing.pricingUrl }
+      : null;
+    let providerRequestId: string | null = null;
     // Deliberately low, for a sent request whose usage never arrives.
     const countedTokens = {
       inputTokens: lowTextTokens(body),
@@ -68,6 +83,7 @@ export class HttpDecisionProvider implements DecisionProvider {
     };
     let sent = false;
     try {
+      context.signal.throwIfAborted();
       sent = true;
       const response = await (this.options.fetch ?? fetch)(
         this.provider === "openrouter"
@@ -84,11 +100,8 @@ export class HttpDecisionProvider implements DecisionProvider {
           },
           body,
         },
-      ).catch((error: unknown) => {
-        // A connection failure the caller did not cause never reached the provider.
-        if (!context.signal.aborted) sent = false;
-        throw error;
-      });
+      );
+      providerRequestId = response.headers.get("x-request-id")?.trim() || null;
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500)
           usage = { inputTokens: 0, outputTokens: 0, costUsd: 0, usageSource: "provider-rejected" };
@@ -108,8 +121,7 @@ export class HttpDecisionProvider implements DecisionProvider {
           new TextDecoder().decode(await readBodyCapped(response, 64_000, context.signal)),
         ),
       );
-      if (parsed.id && reservation)
-        await this.options.callObserver?.onRequestId?.(reservation, parsed.id);
+      providerRequestId = parsed.id?.trim() || providerRequestId;
       usage = {
         inputTokens: parsed.usage?.input_tokens ?? null,
         outputTokens: parsed.usage?.output_tokens ?? null,
@@ -117,7 +129,7 @@ export class HttpDecisionProvider implements DecisionProvider {
         costSource: parsed.usage?.cost === undefined ? null : "provider-reported",
         pricingSnapshot,
         ...(parsed.usage?.cost === undefined ? { countedTokens } : {}),
-        providerRequestId: parsed.id ?? null,
+        providerRequestId,
         usageSource: "response",
         operationKind: "setup",
       };
@@ -128,43 +140,71 @@ export class HttpDecisionProvider implements DecisionProvider {
           throw new DecisionProviderError("invalid_response");
         answers[id] = answer.data;
       }
-      return { model: parsed.model ?? request.model, answers, usage };
+      result = { model: parsed.model ?? request.model, answers };
     } catch (error) {
       if (error instanceof DecisionProviderError) throw error;
       // Transport and validation errors can contain credentials or supplied state.
       throw new DecisionProviderError("unavailable");
     } finally {
-      try {
-        if (usage)
-          await this.options.onUsage?.({
-            type: "usage",
-            ...usage,
-            provider: this.provider,
-            model: request.model,
-            callId,
-          });
-      } finally {
-        if (reservation)
-          await this.options.callObserver?.afterCall(
-            reservation,
-            usage ??
-              (sent
-                ? {
-                    inputTokens: null,
-                    outputTokens: null,
-                    costUsd: null,
-                    operationKind: "setup",
-                    pricingSnapshot,
-                    countedTokens: context.signal.aborted
-                      ? {
-                          ...countedTokens,
-                          ifStopped: { inputTokens: estimateTextTokens(body), outputTokens: 0 },
-                        }
-                      : countedTokens,
-                  }
-                : null),
-          );
+      usage ??= sent
+        ? {
+            inputTokens: null,
+            outputTokens: null,
+            costUsd: null,
+            usageSource: context.signal.aborted ? "aborted" : "unavailable",
+            countedTokens: context.signal.aborted
+              ? {
+                  ...countedTokens,
+                  ifStopped: { inputTokens: estimateTextTokens(body), outputTokens: 0 },
+                }
+              : countedTokens,
+          }
+        : null;
+      if (usage) {
+        const estimatedInput = usage.inputTokens ?? estimateTextTokens(body);
+        usage = {
+          ...usage,
+          operationKind: "setup",
+          costSource: usage.costSource ?? null,
+          providerRequestId,
+          pricingSnapshot: pricingSnapshot
+            ? {
+                ...pricingSnapshot,
+                ...(usage.inputTokens == null ? { estimatedInputTokens: estimatedInput } : {}),
+              }
+            : null,
+          pricingVersion: pricing?.pricingVersion ?? null,
+          ...(usage.usageSource === "provider-rejected"
+            ? { costSource: "provider-rejection" }
+            : {}),
+        };
       }
+      try {
+        // A body ID is the billing identity; retain the header only when no body ID arrived.
+        if (providerRequestId && reservation) {
+          const requestId = providerRequestId;
+          await bestEffort(
+            "record decision request identity",
+            Promise.resolve().then(() =>
+              this.options.callObserver?.onRequestId?.(reservation, requestId),
+            ),
+          );
+        }
+      } finally {
+        if (reservation) {
+          const priced = await this.options.callObserver?.afterCall(reservation, usage);
+          if (priced) usage = priced;
+        }
+      }
+      if (usage)
+        await this.options.onUsage?.({
+          type: "usage",
+          ...usage,
+          provider: this.provider,
+          model: request.model,
+          callId,
+        });
     }
+    return { ...result, usage: usage ?? undefined };
   }
 }

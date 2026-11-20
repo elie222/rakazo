@@ -11,13 +11,21 @@ name: Inbox
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 01-inbox
+# Start at the row's midpoint so the swipe reveals actions without committing one.
+- swipe:
+    from:
+      text: ".*Researcher.*"
+    direction: LEFT
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-swipe-actions
 - tapOn: "Activity"
 - extendedWaitUntil:
     visible: ".*Recent.*"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 02-activity
+- takeScreenshot: 03-activity
 - tapOn: "Activity"
 - openLink: "rakazo:///artifacts"
 - extendedWaitUntil:
@@ -25,4 +33,4 @@ name: Inbox
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 03-artifacts
+- takeScreenshot: 04-artifacts

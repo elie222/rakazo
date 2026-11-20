@@ -28,7 +28,7 @@ vi.mock("../api/api", () => ({
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
-vi.mock("../home/last-bot", () => ({ loadLastBotId: async () => state.botId }));
+vi.mock("../inbox/last-bot", () => ({ loadLastBotId: async () => state.botId }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../appearance/appearance", () => ({
   mobileTokens: () => ({ destructive: "red", success: "green" }),

@@ -33,12 +33,14 @@ import {
 } from "../../components/settings/space-availability";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
-import { loadLastBotId } from "../../lib/home/last-bot";
+import { loadLastBotId } from "../../lib/inbox/last-bot";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import { sourceHref } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { openExternalUrl } from "../../lib/platform/open-url";
 import type { SaveSend } from "../../lib/query/query";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
@@ -205,14 +207,7 @@ function PluginScreen() {
     run(
       server.id,
       async (send) => {
-        const { webUrl } = await send("integrationSetup/get", undefined);
-        const started = await send("mcp/oauth/begin", {
-          serverId: server.id,
-          redirectUri: new URL("/mcp/oauth/callback", webUrl).toString(),
-        });
-        if (started.status === "authorization_required")
-          await Linking.openURL(started.authorizationUrl);
-        else if (started.status === "authorization_not_requested")
+        if ((await signInToMcpServer(send, server.id)) === "authorization_not_requested")
           setNoAuth((current) => new Set([...current, server.id]));
       },
       t`Could not sign in`,
@@ -228,6 +223,7 @@ function PluginScreen() {
   const busy = Boolean(pending);
   const parsed = install ? PluginPreviewSchema.safeParse(install.config) : null;
   const detail = parsed?.success ? parsed.data : preview;
+  const source = sourceHref(params.installedSource, detail?.resolvedSha);
   // An ignored manifest field loses nothing, so it isn't reported. A skill left out for repeating
   // a built-in one says why, since the user still has that skill.
   const notAdded = [
@@ -312,22 +308,22 @@ function PluginScreen() {
             <Text numberOfLines={2} style={styles.name}>
               {params.name}
             </Text>
-            <Pressable
-              accessibilityRole="link"
-              hitSlop={8}
-              onPress={() =>
-                void Linking.openURL(sourceHref(params.installedSource, detail?.resolvedSha))
-              }
-              style={styles.sourceLink}
-            >
-              <Text style={styles.secondary}>{t`View source`}</Text>
-              <NativeSymbol
-                android="open-outline"
-                color={native.secondaryLabel}
-                ios="arrow.up.right"
-                size={12}
-              />
-            </Pressable>
+            {source ? (
+              <Pressable
+                accessibilityRole="link"
+                hitSlop={8}
+                onPress={() => void openExternalUrl(source)}
+                style={styles.sourceLink}
+              >
+                <Text style={styles.secondary}>{t`View source`}</Text>
+                <NativeSymbol
+                  android="open-outline"
+                  color={native.secondaryLabel}
+                  ios="arrow.up.right"
+                  size={12}
+                />
+              </Pressable>
+            ) : null}
           </View>
         </View>
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mcpOAuthCallbackFrom, oauthCallbackFrom } from "./oauth-callback.js";
+import {
+  mcpLoopbackRefusalFrom,
+  mcpOAuthCallbackFrom,
+  oauthCallbackFrom,
+} from "./oauth-callback.js";
 
 describe("loopback OAuth callbacks", () => {
   it("reads the code and state Anthropic redirects with", () => {
@@ -124,5 +128,30 @@ describe("MCP sign-in callbacks", () => {
     expect(
       mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?code=c&error=&state=s`, appOrigin),
     ).toEqual({ code: "c", state: "s" });
+  });
+});
+
+describe("an MCP sign-in refused on a loopback redirect", () => {
+  it("reports the refusal for its attempt", () => {
+    expect(
+      mcpLoopbackRefusalFrom("http://127.0.0.1:53682/callback?error=access_denied&state=s"),
+    ).toEqual({ code: null, state: "s" });
+    expect(
+      mcpLoopbackRefusalFrom("http://localhost:1/callback?error=server_error&state=s"),
+    ).toEqual({ code: null, state: "s" });
+  });
+
+  it("leaves a code, another host, and an attempt it cannot name to the other readers", () => {
+    for (const url of [
+      "http://127.0.0.1:53682/callback?code=c&state=s",
+      "http://127.0.0.1:53682/callback?code=c&error=access_denied&state=s",
+      "http://127.0.0.1:53682/callback?error=access_denied",
+      "http://127.0.0.1:53682/callback?error=access_denied&state=s&state=t",
+      "http://127.0.0.1:53682/callback?error=&state=s",
+      "https://127.0.0.1:53682/callback?error=access_denied&state=s",
+      "https://provider.example.com/callback?error=access_denied&state=s",
+      "not a url",
+    ])
+      expect(mcpLoopbackRefusalFrom(url)).toBeUndefined();
   });
 });

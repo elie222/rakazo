@@ -181,9 +181,12 @@ function replyBlockText(block: MessageBlock): string {
     case "app_connect":
     case "mcp_approval":
     case "chart":
+    case "routine_event":
       return block.name;
     case "app":
       return block.server;
+    case "tool_question":
+      return block.question.source;
     case "import_setup":
       if (block.undone) return "";
       return block.items.map((item) => ("name" in item ? item.name : item.title)).join(", ");

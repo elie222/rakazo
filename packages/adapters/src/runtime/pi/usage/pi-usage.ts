@@ -12,16 +12,19 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type {
   AgentRuntimeEvent,
   AgentUsage,
+  ModelBilling,
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
-import { openRouterInferenceFetch } from "../../../models/credits/openrouter-usage.js";
+import { getLogger } from "@rakazo/logging";
+import { withDataRetentionPayload } from "../../../models/endpoints/data-retention.js";
+import { withGoogleToolHistory } from "../../../models/endpoints/google-tool-history.js";
+import { openRouterInferenceFetch } from "../../../models/endpoints/openrouter-usage.js";
 import { estimateModelContextTokens } from "../../../models/model-context.js";
-import { fetchForRequest } from "../../../web/undici-fetch.js";
+import { fetchForRequest } from "../../../network/undici-fetch.js";
 import { withChatCompletionsCompatibility } from "../../chat-completions-compat.js";
 import type { ContextBudget } from "../../context/context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "../../context/context-selection.js";
-import { withGoogleToolHistory } from "../../google-tool-history.js";
 import type { RejectedProviderRequest } from "../../provider-request-shape.js";
 import { withRejectedRequestCapture } from "../../provider-request-shape.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
@@ -35,6 +38,8 @@ const sseObserved = new WeakSet<ReportedUsageFields>();
 const dispatchedRequests = new WeakSet<ReportedUsageFields>();
 const reportedCosts = new WeakMap<ReportedUsageFields, number>();
 const reportedValues = new WeakMap<ReportedUsageFields, Map<keyof AgentUsage, number>>();
+/** Calls whose reported prompt count includes any cache reads, itemized or not. */
+const cacheInclusivePrompts = new WeakSet<ReportedUsageFields>();
 export function normalizePiUsage(
   usage: Partial<Usage> | undefined,
   model: Pick<Model<Api>, "cost">,
@@ -75,7 +80,11 @@ export function normalizePiUsage(
     ) &&
     inputTokens !== null &&
     outputTokens !== null &&
-    (model.cost.cacheRead === 0 || cacheReadTokens !== null) &&
+    // A prompt count that includes cache reads prices any it does not itemize at the full
+    // input rate: exact when nothing was cached, and never below the real cost.
+    (model.cost.cacheRead === 0 ||
+      cacheReadTokens !== null ||
+      cacheInclusivePrompts.has(reported)) &&
     (model.cost.cacheWrite === 0 || cacheWriteTokens !== null);
   const providerCost = reportedCosts.get(reported);
   return {
@@ -170,6 +179,7 @@ async function observeUsageEvent(
       usage.prompt_tokens !== undefined ||
       event.response !== undefined ||
       usage.input_tokens_details !== undefined;
+    if (typeof rawInput === "number" && includesCache) cacheInclusivePrompts.add(reported);
     const rawRead =
       usage.prompt_tokens_details?.cached_tokens ??
       usage.input_tokens_details?.cached_tokens ??
@@ -337,6 +347,7 @@ export function observedPiStream(
     agentId?: string;
     userId?: string;
     runId?: string;
+    billing?: ModelBilling;
   } = {
     operationKind: "answer",
   },
@@ -352,6 +363,9 @@ export function observedPiStream(
 ) {
   const stream = createAssistantMessageEventStream();
   const reported: ReportedUsageFields = new Set();
+  // Pi's Google adapters count every prompt token the response does not report as cached as input.
+  if (model.api === "google-generative-ai" || model.api === "google-vertex")
+    cacheInclusivePrompts.add(reported);
   const callId = randomUUID();
   const emitUsage = async (usage: AgentUsage, operationKind = attribution.operationKind) => {
     const event = {
@@ -362,6 +376,7 @@ export function observedPiStream(
       callId,
       agentId: attribution.agentId,
       operationKind,
+      billing: attribution.billing,
     };
     try {
       await hooks?.recordUsage?.(event);
@@ -454,11 +469,14 @@ export function observedPiStream(
         // Each guarded reservation covers one HTTP attempt, not hidden SDK retries.
         const historyOptions = withGoogleToolHistory(
           model,
-          withChatCompletionsCompatibility(model, {
-            ...options,
-            ...(cacheRetention ? { cacheRetention } : {}),
-            ...(observer ? { maxRetries: 0 } : {}),
-          }),
+          withDataRetentionPayload(
+            model,
+            withChatCompletionsCompatibility(model, {
+              ...options,
+              ...(cacheRetention ? { cacheRetention } : {}),
+              ...(observer ? { maxRetries: 0 } : {}),
+            }),
+          ),
         );
         // Innermost on the fetch chain, so a rejection records the body exactly as it was sent.
         const streamOptions = hooks?.onRejectedRequest
@@ -547,13 +565,14 @@ export function observedPiStream(
               message,
             );
             if (observer && reservation !== undefined) {
-              await observer.afterCall(
+              const priced = await observer.afterCall(
                 reservation,
                 receipt(
                   { ...normalized, operationKind },
                   message.content.length ? message : (received ?? message),
                 ),
               );
+              if (priced) normalized = priced;
               settled = true;
             }
             await emitUsage(normalized, operationKind);
@@ -570,18 +589,13 @@ export function observedPiStream(
       } catch (error) {
         span?.setStatus({ status: "error" });
         let terminalError = error;
-        if (started && normalized === null) {
-          try {
-            await emitUsage(normalizePiUsage(undefined, model, reported));
-          } catch (accountingError) {
-            terminalError = accountingError;
-          }
-        }
+        let emitFailureUsage = started && normalized === null;
+        if (emitFailureUsage) normalized = normalizePiUsage(undefined, model, reported);
         if (observer && reservation !== undefined && !settled) {
           // Keep the reservation alive until settlement finishes, before exposing termination.
           settled = true;
           try {
-            await observer.afterCall(
+            const priced = await observer.afterCall(
               reservation,
               started
                 ? receipt(
@@ -590,8 +604,18 @@ export function observedPiStream(
                   )
                 : { ...normalizePiUsage(undefined, model), costUsd: 0, usageSource: "not-started" },
             );
-          } catch {
-            /* Already failing. */
+            if (priced) normalized = priced;
+          } catch (accountingError) {
+            // Never publish unpriced upstream spend after a tariff receipt failed.
+            emitFailureUsage = false;
+            terminalError = accountingError;
+          }
+        }
+        if (emitFailureUsage && normalized) {
+          try {
+            await emitUsage(normalized);
+          } catch (accountingError) {
+            terminalError = accountingError;
           }
         }
         // Preserve a proper Pi terminal message so Agent and cancellation both settle.
@@ -614,7 +638,18 @@ export function observedPiStream(
             terminalError instanceof Error ? terminalError.message : String(terminalError),
           timestamp: Date.now(),
         };
-        if (providerThrew && terminalError === providerError) hooks?.onProviderError?.(message);
+        if (providerThrew) {
+          if (terminalError !== providerError)
+            getLogger().warn("Model usage accounting failed while handling a provider failure", {
+              provider: model.provider,
+              model: model.id,
+            });
+          hooks?.onProviderError?.({
+            ...message,
+            errorMessage:
+              providerError instanceof Error ? providerError.message : String(providerError),
+          });
+        }
         stream.push({ type: "error", reason: "error", error: message });
         stream.end(message);
       }

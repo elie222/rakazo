@@ -5,7 +5,7 @@ import { Button, Input } from "@rakazo/ui-web";
 import { CornerDownLeft } from "lucide-react";
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import { rpc } from "../../lib/rpc";
+import { rpc } from "../../lib/query/rpc";
 import { enqueueTeachComputerInput } from "./teach-computer-input-chain";
 
 export function formatRemaining(expiresAt: string | null, now = Date.now()): string {
@@ -153,7 +153,7 @@ function ProtectedTeachInput({ botId, skillId }: { botId: string; skillId: strin
         onChange={(event) => setProtectedText(event.target.value)}
         placeholder={t`Protected input`}
         aria-label={t`Protected input`}
-        className="h-8 min-w-0 flex-1"
+        className="min-w-0 flex-1"
       />
       <Button
         type="submit"

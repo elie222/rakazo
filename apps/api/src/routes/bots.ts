@@ -1,7 +1,7 @@
-import { randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import {
   archiveBot,
+  carriedBotModelPin,
   checkpointAndStopComputer,
   defaultVaultItemTitle,
   endTeachingWithLease,
@@ -22,6 +22,7 @@ import {
   SpaceVaultNotInUseError,
   stopCancelledGroupRuns,
   storeBotSecret,
+  storeBotWebhookKey,
   toComputerRef,
   VaultFullError,
   VaultItemRefusedError,
@@ -80,6 +81,7 @@ import {
   claimBotEmailAddress,
 } from "../email/bot-email-address.js";
 import type { RouterDeps } from "../router.js";
+import { resumeRoutinesAfterRestore } from "../routines/routine-resume.js";
 import { changedBotSettings } from "../telemetry/bot-setting-analytics.js";
 import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
 import { loadMessagePage } from "../threads/thread-message-pages.js";
@@ -344,7 +346,7 @@ export function botsRoutes(ctx: RouterContext) {
       get: authed.bots.get.handler(async ({ context, input }) => {
         const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
         if (!found) throw new IsolationError();
-        return found;
+        return { ...found, meetingsEnabled: await deps.meetings?.visible(context.actor, found.id) };
       }),
       create: authed.bots.create.handler(async ({ context, input }) => {
         // Older apps always send Original, which would pin every new bot to it.
@@ -390,9 +392,7 @@ export function botsRoutes(ctx: RouterContext) {
           avatarSet: resolveBotAvatarSet(source.avatarSet),
           avatarSetPinned: source.avatarSetPinned,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
-          modelProvider: source.modelProvider,
-          modelId: source.modelId,
-          thinkingLevel: source.thinkingLevel,
+          ...carriedBotModelPin(source),
           disabledBuiltinTools: source.disabledBuiltinTools,
           replyMode: source.replyMode,
         });
@@ -623,7 +623,11 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       restore: authed.bots.restore.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
-        if (!bot.archivedAt) return { ok: true as const };
+        if (!bot.archivedAt) {
+          // Finishes a restore that brought the bot back but stopped before its routines.
+          await resumeRoutinesAfterRestore(deps, context.actor.userId, [bot.id]);
+          return { ok: true as const };
+        }
         if (bot.computer) {
           // The limit is the computer's owner's: a shared Team Computer is the space owner's.
           await restoreBotUnderComputerQuota(deps.prisma, {
@@ -634,6 +638,7 @@ export function botsRoutes(ctx: RouterContext) {
         } else {
           await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
         }
+        await resumeRoutinesAfterRestore(deps, context.actor.userId, [bot.id]);
         return { ok: true as const };
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
@@ -664,40 +669,19 @@ export function botsRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         // Webhook runs act as the bot's creator, so only the creator can issue its secret.
         if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
-        const plaintext = randomBytes(32).toString("base64url");
-        const stored = await deps.secrets.put(plaintext, {
-          operationId: "bots.rotateWebhookSecret",
-          traceId: "bots.rotateWebhookSecret",
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
-          signal: context.signal ?? new AbortController().signal,
-        });
-        await deps.prisma.$transaction(async (tx) => {
-          const previousSecretId = bot.webhookSecretId;
-          await tx.secret.create({
-            data: {
-              id: stored.id,
-              userId: context.actor.userId,
-              spaceId: context.actor.spaceId,
-              kind: "webhook",
-              ciphertext: stored.ciphertext,
-            },
-          });
-          await tx.bot.update({
-            where: { id: bot.id },
-            data: { webhookSecretId: stored.id },
-          });
-          if (previousSecretId) {
-            await tx.secret.deleteMany({
-              where: {
-                id: previousSecretId,
-                spaceId: context.actor.spaceId,
-                userId: context.actor.userId,
-                kind: "webhook",
-              },
-            });
-          }
-        });
+        const plaintext = await storeBotWebhookKey(
+          { prisma: deps.prisma, secretStore: deps.secrets },
+          bot,
+          {
+            operationId: "bots.rotateWebhookSecret",
+            traceId: "bots.rotateWebhookSecret",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            signal: context.signal ?? new AbortController().signal,
+          },
+          { replace: true },
+        );
+        if (!plaintext) throw new ClientError("NOT_FOUND", "Not Found");
         return {
           secret: plaintext,
           path: `/api/v1/bots/${bot.id}/webhook`,
@@ -791,6 +775,16 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
         await groupRepos.restoreGroup(context.actor, input.groupId);
+        // Its archived bots came back with it, and so do the routines archiving them turned off.
+        const members = await deps.prisma.chatGroupMember.findMany({
+          where: { groupId: input.groupId, group: { spaceId: context.actor.spaceId } },
+          select: { botId: true },
+        });
+        await resumeRoutinesAfterRestore(
+          deps,
+          context.actor.userId,
+          members.map((member) => member.botId),
+        );
         return { ok: true as const };
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {

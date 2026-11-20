@@ -179,7 +179,7 @@ pnpm dev
 ```
 
 `pnpm dev` 会使用 `DATABASE_URL` 指向且可连接的 Postgres；否则会通过 Docker 启动本地
-`rakazo-dev-postgres` 容器，所有检出目录共用该容器。启动服务前会应用数据库迁移并生成 Prisma 客户端。
+`rakazo-dev-postgres` 容器，所有检出目录共用该容器。没有 Docker 时，会改用本机安装的 Postgres（位于 `PATH` 或来自 Homebrew）运行一个本地 Postgres 集群，同样由所有检出目录共用。启动服务前会应用数据库迁移并生成 Prisma 客户端。
 如果当前分支新增了 `main` 尚未包含的迁移，会在同一服务器上使用独立数据库，条件允许时从共享数据库复制，
 避免未合入的数据库结构变更影响共享数据库。默认端口被占用时（例如另一个 Git worktree 正在运行），
 会选择下一个空闲端口组并打印访问地址。也可以设置 `WEB_PORT` 和 `API_PORT` 自行指定端口。
@@ -279,12 +279,12 @@ Docker 兼容 CLI，请在启动应用前把 `RAKAZO_DOCKER_BINARY` 设为该 CL
 ## 界面语言
 
 网页版及 Electron 内嵌界面可在 **Settings → Language**（设置 → 语言）中选择英语、德语、韩语、土耳其语、
-印地语、巴西葡萄牙语、简体中文、繁体中文、西班牙语、俄语、法语、希伯来语、荷兰语、日语和波兰语。
-Expo 应用提供与网页版相同的 15 种语言，在 **Account → Language**（账户 → 语言）中选择。
+印地语、巴西葡萄牙语、简体中文、繁体中文、西班牙语、俄语、法语、希伯来语、荷兰语、日语、波兰语和泰语。
+Expo 应用提供与网页版相同的 16 种语言，在 **Account → Language**（账户 → 语言）中选择。
 在用户保存选择之前，设备语言或 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` 仍决定初始语言目录。
 
 Electron 原生设置与菜单也支持网页版语言集，跟随已保存的应用选择；首次启动使用系统语言。
-营销首页（`apps/www`）通过页脚链接提供全部 15 种语言，含 `/zh/` 与 `/zh-tw/`；其他营销页主要仍为英文。
+营销首页（`apps/www`）通过页脚链接提供 15 种语言，含 `/zh/` 与 `/zh-tw/`；其他营销页主要仍为英文。
 
 ## 开发
 
@@ -317,15 +317,15 @@ pnpm test:e2e
 - [自托管配置](./docs/zh-CN/self-host-configuration.md)
 - [密钥管理](./docs/zh-CN/self-host-secrets.md)
 - [登录与账号](./docs/zh-CN/self-host-accounts.md)
-- [模型](./docs/self-host-models.md)
+- [模型](./docs/zh-CN/self-host-models.md)
 - [工具与集成](./docs/zh-CN/self-host-integrations.md)
 - [计算机提供商](./docs/self-host-sandbox-providers.md)
 - [Docker 计算机](./docs/self-host-docker-computers.md)
 - [Kubernetes / k3s 安装](./docs/self-host-kubernetes.md)（[한국어](./docs/ko-KR/self-host-kubernetes.md)）
 - [存储与加密](./docs/self-host-storage.md)
 - [生产部署](./docs/self-host-production.md)
-- [备份与恢复](./docs/self-host-backups.md)
-- [升级](./docs/self-host-upgrading.md)
+- [备份与恢复](./docs/zh-CN/self-host-backups.md)
+- [升级](./docs/zh-CN/self-host-upgrading.md)
 - [日志与监控](./docs/self-host-observability.md)
 - [审计日志](./docs/self-host-audit-log.md)
 - [应用与客户端](./docs/self-host-clients.md)

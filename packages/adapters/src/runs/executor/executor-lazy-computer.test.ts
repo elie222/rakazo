@@ -1,6 +1,12 @@
 import type { AgentRunRequest, ComputerRef } from "@rakazo/adapter-kit";
-import { SandboxRateLimitError, SandboxUnresponsiveError } from "@rakazo/adapter-kit";
+import {
+  SandboxDamagedError,
+  SandboxProviderAccountError,
+  SandboxRateLimitError,
+  SandboxUnresponsiveError,
+} from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { COMPUTER_DAMAGED_ERROR, COMPUTER_START_FAILED_ERROR } from "@rakazo/contracts";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
@@ -678,8 +684,9 @@ describe("run computer provisioning", () => {
       { priorSetupFailures: 7 },
     );
 
+    // The run says its computer failed, never that the model provider did.
     expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ outcome: "failed", error: "provider unavailable" }),
+      expect.objectContaining({ outcome: "failed", error: COMPUTER_START_FAILED_ERROR }),
     );
     expect(enqueue).not.toHaveBeenCalled();
     // Busy-computer and database waits between failures neither count nor reset the streak.
@@ -688,6 +695,36 @@ describe("run computer provisioning", () => {
         where: expect.objectContaining({ NOT: { status: "setup_failed", error: null } }),
       }),
     );
+  });
+
+  it("fails the run at once, saying to Recover, when its computer stays damaged", async () => {
+    provisionComputer.mockRejectedValue(new SandboxDamagedError());
+
+    const { finalizeRun, enqueue, prisma } = await runRoutine([
+      { name: "list_files", args: { path: "" } },
+    ]);
+
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "failed", error: COMPUTER_DAMAGED_ERROR }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(prisma.attempt.findMany).not.toHaveBeenCalled();
+  });
+
+  it("names the provider account refusal behind a start that also failed to roll back", async () => {
+    const refusal = new SandboxProviderAccountError();
+    provisionComputer.mockRejectedValue(
+      new AggregateError([refusal, new Error("rollback failed")], "Computer provisioning failed"),
+    );
+
+    const { finalizeRun, enqueue } = await runRoutine([{ name: "list_files", args: { path: "" } }]);
+
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "failed", error: refusal.message }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it.each([undefined, "abort", "recover"] as const)(

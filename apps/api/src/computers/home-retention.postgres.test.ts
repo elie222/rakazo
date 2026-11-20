@@ -131,15 +131,19 @@ describePostgres("saved home retention (PostgreSQL)", () => {
   });
 
   it("warns once, then deletes only the stored copy of an unused computer", async () => {
+    // An earlier version kept for restoring goes with it.
+    const files = await mkdtemp(path.join(tmpdir(), "rakazo-retention-files-"));
+    await writeFile(path.join(files, "notes.md"), "newer");
+    await home.commit(id, files, context);
     await sweep();
     await sweep();
     expect(sent()).toHaveLength(1);
     expect(sent()[0]!.text).toContain("unless you choose a plan");
-    expect(await objects()).toHaveLength(1);
+    expect(await objects()).toHaveLength(2);
 
     travel(6);
     await sweep();
-    expect(await objects()).toHaveLength(1);
+    expect(await objects()).toHaveLength(2);
 
     travel(3);
     await sweep();
@@ -153,6 +157,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
       homeRevisionAt: null,
     });
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
+    expect(await system.computerHomeVersion.count({ where: { computerId: id } })).toBe(0);
     expect(sent()).toHaveLength(1);
   });
 
@@ -460,60 +465,6 @@ describePostgres("saved home retention (PostgreSQL)", () => {
     expect(errors).toEqual([]);
     expect(sent()).toHaveLength(0);
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
-  });
-  /** The previous release's claim on a notice, which knows nothing of the lease. */
-  const previousReleaseClaim = async (claimId: string) => {
-    await system.homeDeletionNotice.createMany({
-      data: [{ computerId: id }],
-      skipDuplicates: true,
-    });
-    const claimed = await system.homeDeletionNotice.updateMany({
-      where: {
-        computerId: id,
-        warnedAt: null,
-        OR: [{ claimExpiresAt: null }, { claimExpiresAt: { lt: new Date() } }],
-      },
-      data: { claimId, claimExpiresAt: new Date(Date.now() + 15 * 60 * 1000) },
-    });
-    return claimed.count;
-  };
-
-  it("leaves a notice the previous release is emailing to it", async () => {
-    expect(await previousReleaseClaim("previous")).toBe(1);
-    await sweep();
-    expect(errors).toEqual([]);
-    expect(sent()).toHaveLength(0);
-    expect(
-      await system.homeDeletionNotice.findUniqueOrThrow({ where: { computerId: id } }),
-    ).toMatchObject({ claimId: "previous", warnedAt: null });
-
-    await system.homeDeletionNotice.updateMany({
-      where: { claimId: "previous" },
-      data: { claimId: null, claimExpiresAt: null },
-    });
-    await sweep();
-    expect(sent()).toHaveLength(1);
-  });
-
-  it("keeps the previous release out while it emails", async () => {
-    const sending = deferred();
-    const delivered = deferred();
-    const send = email.send.bind(email);
-    vi.spyOn(email, "send").mockImplementationOnce(async (message) => {
-      sending.resolve();
-      await delivered.promise;
-      return send(message);
-    });
-    const sweeping = sweep();
-    await sending.promise;
-    expect(await previousReleaseClaim("previous")).toBe(0);
-    delivered.resolve();
-    await sweeping;
-    expect(errors).toEqual([]);
-    expect(sent()).toHaveLength(1);
-    expect(
-      await system.homeDeletionNotice.findUniqueOrThrow({ where: { computerId: id } }),
-    ).toMatchObject({ claimId: null, claimExpiresAt: null, warnedAt: expect.any(Date) });
   });
 
   it("skips an organization another process is emailing", async () => {

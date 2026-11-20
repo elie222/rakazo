@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
+import { SseError } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   OAuthError,
@@ -35,9 +36,9 @@ import {
   combineSignals,
   redactConnectorPayload,
   sanitizeConnectorError,
-} from "../connectors/connector-safety.js";
+} from "../integrations/connector-safety.js";
 import { appendToolCompletionAudit } from "../runs/turn/tool-completion-audit.js";
-import { credentialDigest } from "../shared/credential-digest.js";
+import { credentialDigest } from "../secrets/credential-digest.js";
 import type { CatalogEntry } from "../tools/lazy-tool-catalog.js";
 import {
   CATALOG_EXECUTE,
@@ -96,7 +97,8 @@ type SessionEntry = {
   launchSecrets?: string[];
 };
 class McpSecretChangedError extends Error {
-  constructor() {
+  /** `missing`: the server's current secret record could not be read, which a retry rarely fixes. */
+  constructor(readonly missing = false) {
     super("Secret changed during MCP connection; retry");
   }
 }
@@ -158,10 +160,15 @@ const UNREACHABLE_CODES = new Set([
 function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined {
   if (depth > 5 || !(error instanceof Error)) return undefined;
   if (error instanceof McpConnectFailure) return error.expected;
-  if (error instanceof McpDiscoveryTimeoutError) return "unreachable";
+  // The credential changed again after the one reconnect; the next try reads the new one.
+  if (
+    error instanceof McpDiscoveryTimeoutError ||
+    (error instanceof McpSecretChangedError && !error.missing)
+  )
+    return "unreachable";
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
-  if (error instanceof StreamableHTTPError) {
+  if (error instanceof StreamableHTTPError || error instanceof SseError) {
     // A timeout, rate limit or server error is the server's own outage.
     if (error.code === 408 || error.code === 429 || (error.code ?? 0) >= 500) return "unreachable";
     // A 4xx or a non-MCP body (often an HTML page) means the endpoint is not an MCP server.
@@ -560,7 +567,7 @@ export class McpConnector implements ConnectorProvider {
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
-              ...mcpToolFields(tool),
+              ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
@@ -745,7 +752,14 @@ export class McpConnector implements ConnectorProvider {
         used = session;
         material = this.sessions.get(sessionKey)?.material;
         launchSecrets = this.sessions.get(sessionKey)?.launchSecrets ?? [];
-        return session.callTool(toolName, call.args, { signal: context.signal });
+        return session.callTool(toolName, call.args, {
+          signal: context.signal,
+          asker: {
+            owner: context.runId ?? context.operationId,
+            source: assignment.server.name,
+            ask: context.askPerson,
+          },
+        });
       });
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       yield { type: "result", data: redactConnectorPayload(result, secrets) };
@@ -1140,7 +1154,7 @@ export class McpConnector implements ConnectorProvider {
     credentialDir?: string;
     launchSecrets?: string[];
   }> {
-    let session = new McpSession({ name: `rakazo-${server.slug}` });
+    let session = new McpSession({ name: `rakazo-${server.slug}`, elicitation: true });
     let credentialDir: string | undefined;
     const launchSecrets: string[] = [];
     // Hoisted so a throw after the secret is decoded can still hand the material out.
@@ -1167,7 +1181,7 @@ export class McpConnector implements ConnectorProvider {
             where: { id: current.secretId, ...itemSecretIn(context) },
           });
         }
-        if (!secret) throw new McpSecretChangedError();
+        if (!secret) throw new McpSecretChangedError(true);
       }
       let ref = secret?.ciphertext;
       let recordId = secret?.id;
@@ -1357,7 +1371,7 @@ export class McpConnector implements ConnectorProvider {
           if (!authProvider || !isRejectedTokenError(error)) throw error;
           await authProvider.replaceRejectedToken();
           await closeMcpResource(() => session.close());
-          session = new McpSession({ name: `rakazo-${server.slug}` });
+          session = new McpSession({ name: `rakazo-${server.slug}`, elicitation: true });
           await connect();
         }
       }

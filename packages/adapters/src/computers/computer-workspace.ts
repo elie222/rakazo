@@ -17,13 +17,13 @@ import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import { parseScreenLeaseId } from "@rakazo/core/node/screen-lease";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { isSandboxDamagedError } from "../sandboxes/sandbox-errors.js";
-import { sandboxKindCapabilities } from "../sandboxes/sandbox-kind-capabilities.js";
 import { createStagingDirectory, LocalAgentHomeStore } from "../storage/home.js";
 import {
   shouldSkipPortableWorkspaceFile,
   WORKSPACE_SAVE_LIMITS,
 } from "../storage/workspace-save-policy.js";
+import { isSandboxDamagedError } from "./sandbox/sandbox-errors.js";
+import { sandboxKindCapabilities } from "./sandbox/sandbox-kind-capabilities.js";
 import { normalizeWorkspacePath, teamBotWorkspaceDirectory } from "./screens/computer-support.js";
 
 export {
@@ -367,7 +367,8 @@ export async function checkpointComputerWorkspace(
     /** Called once the export has finished, just before the files are stored. */
     onExported?: () => void;
   },
-  saveLimits: WorkspaceExportLimits = WORKSPACE_SAVE_LIMITS,
+  /** Defaults to the home store's configured limits. */
+  saveLimits: WorkspaceExportLimits = home.saveLimits ?? WORKSPACE_SAVE_LIMITS,
 ): Promise<string | undefined> {
   // A machine whose restore never finished holds only part of the home: save nothing from it,
   // nor while a start that may still replace or restore it is under way. Every later start moves

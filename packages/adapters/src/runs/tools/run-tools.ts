@@ -1,17 +1,28 @@
 import type { AgentToolExecutionObserver } from "@rakazo/adapter-kit";
 import { BACKGROUND_HELPER_TRIGGER, toolResultTaintsRun } from "@rakazo/core";
-import { isTerminatingReplyResult } from "../../approvals/approval-effect.js";
+import {
+  isInternalTermination,
+  isTerminatingReplyResult,
+} from "../../approvals/approval-effect.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
+import { listChatTranscripts, readChatMeeting } from "../../meetings/meeting-chat.js";
+import {
+  meetingTranscriptArgs,
+  READ_MEETING_TRANSCRIPT,
+} from "../../meetings/meeting-chat.tool-definition.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "../../models/model-vision.prompt.js";
+import { personalCalendarTools } from "../../personal-calendar/personal-calendar.tool-definition.js";
+import { calendarTool } from "../../personal-calendar/run-calendar-tool.js";
 import { strategicInitiativeToolAllowed } from "../../routines/strategic-initiative.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
 import { noteComputerTaskStep } from "../lifecycle/run-progress.js";
 import { logToolRefusal } from "../turn/tool-completion-audit.js";
 import { refusal } from "../turn/tool-refusal.js";
+import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolHandler } from "./run-tool-gate.js";
-import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
+import { gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
@@ -36,6 +47,7 @@ import {
   USER_COMPUTER_OBSERVE_TOOL,
   USER_COMPUTER_SHELL_TOOL,
   userComputerAct,
+  userComputerList,
   userComputerObserve,
   userComputerShell,
 } from "./run-tools-user-computer.js";
@@ -45,11 +57,26 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(fileTools),
   ...Object.entries(pageTools),
   ...Object.entries(memoryTools),
+  [
+    READ_MEETING_TRANSCRIPT,
+    async (ctx, call) => {
+      const input = meetingTranscriptArgs.safeParse(call.args);
+      if (!input.success || !ctx.source.meetingChat || (await ctx.trust.receivedOutsideMessage())) {
+        return call.finish({ error: "A meeting in this bot’s chat is required." });
+      }
+      const { meeting_id, offset, before } = input.data;
+      if (!meeting_id)
+        return call.finish(await listChatTranscripts(ctx.deps.prisma, ctx.run, before));
+      const transcript = await readChatMeeting(ctx.deps.prisma, ctx.run, meeting_id, offset);
+      return call.finish(transcript ?? { error: "The meeting transcript is unavailable." });
+    },
+  ],
   ...Object.entries(integrationTools),
   ...Object.entries(taskTools),
   ...Object.entries(messagingTools),
   ...Object.entries(secretTools),
   ...Object.entries(fleetTools),
+  ["user_computer_list", userComputerList],
   [USER_COMPUTER_SHELL_TOOL, userComputerShell],
   [USER_COMPUTER_OBSERVE_TOOL, userComputerObserve],
   [USER_COMPUTER_ACT_TOOL, userComputerAct],
@@ -57,6 +84,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(preferenceTools),
   ...Object.entries(feedbackTools),
   ...Object.entries(emailTools),
+  ...personalCalendarTools.map(({ name }) => [name, calendarTool] as const),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 
@@ -85,7 +113,81 @@ export async function applyTool(
     const { bot_id: _self, ...own } = args;
     args = own;
   }
+  if (name === "update_bot" && ownFieldsBesideInstructions(args).length)
+    return applyOwnUpdateWithInstructions(ctx, args, executionId, observer);
   return dispatchTool(ctx, name, args, executionId, observer);
+}
+
+/** The other fields an own update_bot call changes along with its instructions, if it does. */
+function ownFieldsBesideInstructions(args: Record<string, unknown>): string[] {
+  const { instructions, instructions_offset, instructionsOffset, bot_id, ...rest } = args;
+  if (
+    argumentGiven(bot_id) ||
+    !argumentGiven(instructions) ||
+    // Zero is the default offset, which the update drops, so only a later page makes this a read.
+    ((instructions_offset ?? instructionsOffset) !== 0 &&
+      argumentGiven(instructions_offset ?? instructionsOffset))
+  )
+    return [];
+  // Only the gate sets these; a model sending them is ignored.
+  const { previousInstructions, previousInstructionsFromBaseline, reason, ...fields } = rest;
+  return Object.keys(fields).filter((key) => argumentGiven(fields[key]));
+}
+
+/**
+ * An own update_bot call that changes instructions along with other fields runs as two calls:
+ * the other fields first, as they would alone, then the instructions, which may be held for
+ * approval. An approval therefore only ever covers the instructions it shows.
+ */
+async function applyOwnUpdateWithInstructions(
+  ctx: RunContext,
+  args: Record<string, unknown>,
+  executionId: string,
+  observer: AgentToolExecutionObserver | undefined,
+) {
+  const others = ownFieldsBesideInstructions(args);
+  const { approvedReplays } = ctx.tools;
+  // Resuming after the instructions were approved: the other fields were saved before they
+  // were held, so only the instructions replay.
+  const resumingInstructions =
+    approvedReplays.nextToolName() === "update_bot" &&
+    typeof (approvedReplays.nextRequest() as { previousInstructions?: unknown } | undefined)
+      ?.previousInstructions === "string";
+  const profile = resumingInstructions
+    ? undefined
+    : await dispatchTool(
+        ctx,
+        "update_bot",
+        Object.fromEntries(others.map((key) => [key, args[key]])),
+        executionId,
+        observer,
+      );
+  if (profile && isInternalTermination(profile)) return profile;
+  if (profile && isToolError(profile))
+    return { error: `${errorText(profile)} Your instructions were not saved either.` };
+  const set = await dispatchTool(
+    ctx,
+    "update_bot",
+    { instructions: args.instructions },
+    executionId,
+    observer,
+  );
+  if (isInternalTermination(set)) return set;
+  // A profile part that only repeated current values was answered as a read; it saved nothing.
+  // When resuming, it was saved before the instructions were held.
+  const changed =
+    profile && "ok" in (profile as object) ? (profile as Record<string, unknown>) : {};
+  const saved = !profile || "ok" in changed ? others : [];
+  if (isToolError(set))
+    return {
+      error: `${saved.length ? `Your ${saved.join(", ")} changes were saved, but your instructions were not: ` : ""}${errorText(set)}`,
+    };
+  return { ...changed, ...(set as Record<string, unknown>), saved: [...saved, "instructions"] };
+}
+
+function errorText(result: unknown): string {
+  const error = (result as { error?: unknown }).error;
+  return typeof error === "string" ? error : "it was refused.";
 }
 
 async function dispatchTool(
@@ -122,7 +224,7 @@ async function dispatchTool(
     return refuse(
       refusal(
         "daily_check_in_tool_not_allowed",
-        "Daily check-ins can only ask or message the user.",
+        "Daily check-ins can only ask the user. Put any reminder in your final reply.",
       ),
     );
   }
@@ -181,20 +283,22 @@ async function dispatchTool(
   if ("result" in gate) {
     const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
     if (gate.replayed && toolResultTaintsRun(request.name) && !ownProfile) {
-      await markReadOutsideContent(ctx);
+      await markReadOutsideContent(ctx, gate.result);
     }
     return refuse(gate.result, request.name);
   }
   // Only a call that ran can have taken in outside content; one refused above, or whose approval
   // was denied, never did. A call that failed partway still counts.
   const runHandler = async () => {
+    let result: unknown;
     try {
-      return await toolHandler(gate.call.name)(ctx, gate.call);
+      result = await toolHandler(gate.call.name)(ctx, gate.call);
+      return result;
     } finally {
       // Editing its own profile returns only what this run wrote; a child's profile is another
       // bot's.
       const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
-      if (toolResultTaintsRun(name) && !ownProfile) await markReadOutsideContent(ctx);
+      if (toolResultTaintsRun(name) && !ownProfile) await markReadOutsideContent(ctx, result);
     }
   };
   if (!gate.call.applied) return runHandler();
