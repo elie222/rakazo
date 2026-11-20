@@ -289,4 +289,16 @@ export const conversationTools: ConnectorTool[] = [
       required: ["path", "content"],
     },
   },
+  {
+    name: "delete_shared_memory",
+    description:
+      "Delete a Space shared memory document when the user asks. MEMORY.md cannot be deleted; save it with new content instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Document name, for example team.md." },
+      },
+      required: ["path"],
+    },
+  },
 ];

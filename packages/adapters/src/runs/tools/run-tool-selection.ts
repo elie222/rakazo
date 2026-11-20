@@ -233,6 +233,7 @@ export function selectBuiltinToolsForRun(options: {
           ![
             "remember",
             "save_shared_memory",
+            "delete_shared_memory",
             "save_memory",
             "recall_memory",
             "forget_memory",
