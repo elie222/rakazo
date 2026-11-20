@@ -383,7 +383,15 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
           throw new HostScreenError(
             `On ${system}, double and right clicks would move the user's pointer. Click the element, or use set or menu instead.`,
           );
-        await run("click", "--", ref(found, action.element));
+        try {
+          await run("click", "--", ref(found, action.element));
+        } catch (error) {
+          // A GTK4 list row has no press action, so only the pointer could choose it.
+          if (!(error instanceof AgentDesktopError) || error.code !== "POLICY_DENIED") throw error;
+          throw new HostScreenError(
+            `${found.name} only takes a click on element ${action.element} from the user's pointer. Look for another control that does the same thing, such as a button, a menu item, or a field to set.`,
+          );
+        }
         return;
       case "type":
         throw new HostScreenError(

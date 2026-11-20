@@ -287,6 +287,16 @@ describe("agent-desktop host screen", () => {
     expect(tree).not.toMatch(/cut off/);
   });
 
+  it("points the bot to another control when an element takes clicks only from the pointer", async () => {
+    const { screen } = cli({ click: () => refused("POLICY_DENIED") }, "Linux");
+    await screen.observe(scope, "notepad");
+    const result = await screen.act(scope, "notepad", [{ kind: "click", element: 2 }]);
+    expect(result.completed).toBe(0);
+    expect(result.error).toBe(
+      "notepad only takes a click on element 2 from the user's pointer. Look for another control that does the same thing, such as a button, a menu item, or a field to set.",
+    );
+  });
+
   it("caps the rows and says the rest were cut off", async () => {
     const children = Array.from({ length: HOST_SCREEN_MAX_ELEMENTS + 5 }, (_, index) => ({
       ref_id: `@s0000000a:e${index}`,
