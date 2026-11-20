@@ -91,10 +91,7 @@ export function LoadingState({
 export function SuccessPop({ label }: { label: string }) {
   return (
     <span role="status" className="flex items-center gap-2">
-      <span
-        className="flex h-6 w-6 items-center justify-center rounded-full bg-success text-background"
-        style={{ animation: "bui-pop-in 300ms cubic-bezier(0.23,1,0.32,1) both" }}
-      >
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success text-background motion-safe:animate-[bui-pop-in_300ms_cubic-bezier(0.23,1,0.32,1)_both]">
         <svg
           width="12"
           height="12"
@@ -109,10 +106,7 @@ export function SuccessPop({ label }: { label: string }) {
           <path d="M20 6L9 17l-5-5" />
         </svg>
       </span>
-      <span
-        className="text-body-sm font-medium text-foreground"
-        style={{ animation: "bui-fade-up 350ms cubic-bezier(0.23,1,0.32,1) 100ms both" }}
-      >
+      <span className="text-body-sm font-medium text-foreground motion-safe:animate-[bui-fade-up_350ms_cubic-bezier(0.23,1,0.32,1)_100ms_both]">
         {label}
       </span>
     </span>
