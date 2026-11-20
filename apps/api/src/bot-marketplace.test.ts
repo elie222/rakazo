@@ -60,6 +60,7 @@ function fakeDb() {
     importKey: string;
     botId: string;
     source: string;
+    sourceVersion?: number | null;
     bot: { archivedAt: Date | null };
   }[] = [];
   const users = [
@@ -238,6 +239,7 @@ describe("botMarketplace catalog and get", () => {
       importKey: "marketplace:morning-briefing",
       botId: "bot-1",
       source: "marketplace",
+      sourceVersion: 2,
       bot: { archivedAt: null },
     });
     const catalog = (await call(routes.catalog, member, { query: "MORNING" })) as {
@@ -256,8 +258,10 @@ describe("botMarketplace catalog and get", () => {
     ).toEqual([]);
     const got = (await call(routes.get, member, { slug: "morning-briefing" })) as {
       botId: string | null;
+      installedVersion: number | null;
     };
     expect(got.botId).toBe("bot-1");
+    expect(got.installedVersion).toBe(2);
   });
 
   it("refuses an install from an older view", async () => {
@@ -414,7 +418,11 @@ describe("marketplace install semantics", () => {
     );
     expect(result.created).toBe(true);
     expect(recorded).toEqual([
-      expect.objectContaining({ source: "marketplace", importKey: "marketplace:morning-briefing" }),
+      expect.objectContaining({
+        source: "marketplace",
+        importKey: "marketplace:morning-briefing",
+        sourceVersion: listing.version,
+      }),
     ]);
     expect(routines).toEqual([expect.objectContaining({ active: false })]);
   });

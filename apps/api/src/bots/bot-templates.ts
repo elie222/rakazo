@@ -182,6 +182,7 @@ export async function createBotFromTemplateDefinition<PreparedKey>(
   let reusedRows: { id: string; name: string; content: string }[] = [];
   const request: Parameters<typeof writeImportedBot>[2] = {
     importKey: options.importKey,
+    sourceVersion: input.version,
     // The same for every version, so an existing bot is returned whatever changed since.
     digest: requestDigest(options.digest),
     name: input.name ?? template.name,

@@ -285,7 +285,7 @@ export function BotMarketplaceDialog({
           <Spinner className="size-5 text-muted-foreground" aria-label={t`Loading…`} />
         </div>
       );
-    const { listing, botId } = detail.data;
+    const { listing, botId, installedVersion } = detail.data;
     return (
       <div className="space-y-4">
         <Button
@@ -305,6 +305,7 @@ export function BotMarketplaceDialog({
         <BotMarketplaceDetail
           listing={listing}
           botId={botId}
+          installedVersion={installedVersion}
           busy={pending}
           appNames={appNames}
           onAdd={() => void add(listing.id, listing.version)}
