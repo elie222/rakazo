@@ -1,237 +1,365 @@
-# Agent 详细设置功能设计
+# Agent 详细设置：设计与执行计划
 
-状态：2.2 本机指派、2.3 专属工作区已实现（P2、P1）；其余为草案。逐项对照"agent 设置"期望
-的六项能力：头像、名称、电脑选择（云上 / 本地）、专属工作区 / 文件夹、权限设置、线程（多
-线程）数。每一项给出现状（含代码依据）、差距、功能设计与验收口径。
+状态：名称 / 头像、专属工作区、本机电脑指派、每 bot 审批模式、并行后台工作、Memory 页两
+个记忆库（关于你 / 这个 Bot）已交付；**梦境（夜间 / 空闲批量整理）待实现**。本文档同时是
+实现记录、剩余工作的执行计划，以及每一项的验收清单。
 
-## 1. 现状盘点
+范围：`Bot` 设置面板的六项能力（头像、名称、电脑、工作区、权限、并行工作）与 Memory 页的
+三个子页（关于你、这个 Bot、梦境）。
 
-| 能力                | 现状                                                                        | 依据                                                                                                                                                                                                                                                                              |
-| ------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 名称 / 头像         | 已实现（无需新工作）                                                        | `Bot.name`、`Bot.color`、`Bot.avatarSet`（`packages/db/prisma/schema.prisma`）；创建与更新走 `CreateBotInput` / `UpdateBotInput`（`packages/contracts/src/bots/bot.ts`）；设置页已有"Name and avatar: pick a shape and color, or upload an image"（`docs/bots-and-chats.md`）     |
-| 电脑模式            | 只有云上两档：team / dedicated                                              | `ComputerModeSchema = z.enum(["team", "dedicated"])`（`packages/contracts/src/computers/computer.ts:6`），RPC `bots.setComputer`（`packages/contracts/src/bots/bots-rpc.ts:77`）                                                                                                  |
-| 本地电脑            | 账号级配对授权，无 per-bot 指派                                             | `UserDeviceGateway`（`packages/adapters/src/computers/host/user-device-protocol.ts`）按 `userId` 取设备，省略 `deviceId` 时用"最早已配对且在线"的一台；本地 server 的 "Use this Mac" 是 deployment 级开关（`computerHost`，见 `host-computer-device.ts`）                         |
-| 专属工作区 / 文件夹 | 默认目录存在，不可配置                                                      | team 模式固定 `bots/<botId>`，dedicated 为整机 home；解析在 `resolveBotWorkspaceCwd` / `resolveBotUploadPath`（`packages/adapters/src/computers/screens/computer-support.ts:114`）                                                                                                |
-| 权限                | 审批模式是 Space 级；per-bot 仅有零散开关                                   | `ApprovalModeSchema` 注释"How much a space asks before acting"（`packages/contracts/src/integrations/approvals.ts:14`）；Allow/Block 规则按用户存（`UserActionApprovalRule`）；per-bot 现有 `crossSpaceCommunication`、`fleetManagement`、`disabledBuiltinTools`、`dailyCheckIns` |
-| 线程 / 多线程       | 一个 bot 一条主会话 + 运行中消息 steering + 后台 helper；无任何并发上限字段 | `Thread.botId @unique`（schema.prisma）；`Bot.helperThreads`；"A bot uses its computer for one run at a time. A message sent while a run is going steers that run instead of waiting."（`docs/run-execution.md`）                                                                 |
+---
 
-两条硬约束贯穿全部设计：
+## 1. 已交付清单
 
-- 不做假开关：后端与契约没有的能力，不出现在 UI。
-- AGENTS.md 原则：never make agent runs or LLM calls wait for a queue, a worker slot,
-  a global concurrency cap, or a polling loop。任何"槽位"式设计都要与它对齐或
-  显式豁免。
+| 能力 | 交付内容 | 提交 |
+| --- | --- | --- |
+| 专属工作区 | `Bot.workspacePath`、路径解析 base、上传白名单、运行期 cwd、web / 移动端输入、账号导出导入 | `0066f0faa` |
+| 本机电脑指派 | `Bot.hostDeviceId`（外键 → `user_devices`，`ON DELETE SET NULL`）、`computers.devices` RPC、运行期显式设备路由、web 选择行、移动端只读 | `854f6f3ea` |
+| 审批模式覆盖 | `Bot.approvalMode`（`ask` / `auto` / `never`，null = 跟随 Space）、唯一判定点读取、Auto 无模型退化 ask、web / 移动端选择器 | `6507ac184` |
+| 并行后台工作 | `Bot.maxConcurrentHelpers`（默认 3，1–8）、bot 行锁内计数、超出拒绝而非排队、web / 移动端数字输入 | `f1be74164` |
+| Memory 两库 | `Bot.useOwnMemory` / `Bot.useSharedMemory`（默认开）、prompt 裁剪、工具拒绝、预算按实际内容、web 子页、移动端开关 | `7f3ee6c67` |
+| 文案修正 | 描述字段标签改为 **Description**，跨 bot 用途移到说明行 | `6128228f8` |
 
-## 2. 功能设计
+### 1.1 迁移（全部为 additive，滚动发布安全）
 
-### 2.1 名称与头像（已有，收口即可）
+| 迁移 | 内容 |
+| --- | --- |
+| `20261230130600_bot_workspace_path` | `bots.workspacePath TEXT` |
+| `20261230130700_bot_host_device` | `bots.hostDeviceId TEXT` + 索引 + 外键 |
+| `20261230130800_bot_approval_mode` | `bots.approvalMode TEXT` |
+| `20261230130900_bot_max_concurrent_helpers` | `bots.maxConcurrentHelpers INTEGER` |
+| `20261230131000_bot_memory_toggles` | `bots.useOwnMemory`、`bots.useSharedMemory`（`BOOLEAN NOT NULL DEFAULT true`） |
 
-现状即目标：设置页可改名、选形状与颜色或上传图片，bot 在会话里也能自改并带
-Undo。本项无契约与后端工作。若要在"创建 agent"流程里暴露头像，复用现有
-`avatar-studio-popover` 与 `CreateBotInput.color / avatarFamily`，属纯前端小改。
+无 drop、无重命名，不需要 `-- deferred` 迁移。
 
-### 2.2 每台 Agent 的电脑选择（云上电脑 / 本地电脑）（已实现）
+### 1.2 契约与 RPC 汇总
 
-**目标**：在 bot 设置里把"用哪台电脑"从 Space/deployment 级下沉到 bot 级：云上
-Team（默认）、云上 Private（dedicated）、或"我的某台已配对电脑"。
+`packages/contracts/src/bots/bot.ts`：
 
-> 实现注记：落地时修正了草案的两处过度设计。其一，绑定不改变 bot 自己的云端电脑
-> （scope 仍是 team/dedicated），它钉住的是 bot 的"用户电脑"工具（shell / 应用 /
-> 屏幕）走哪台已配对机器——这正是"让 bot 用我的电脑"的语义，云端电脑继续承担 bot
-> 自己的文件、浏览器与屏幕。其二，设备属主不必单独存列：保存时只接受 bot 属主账号
-> 名下的未撤销设备，属主恒等于 `bot.userId`，运行期由它路由，少一列就少一处过期
-> 数据。设备被撤销 / 删除时绑定自动失效为"离线"，绝不回退到别的机器。
+- `BotSchema.workspacePath: string | null`（默认 null）
+- `BotSchema.hostDevice: { id, name, platform, ownerUserId } | null`（默认 null）
+- `BotSchema.approvalMode: "ask" | "auto" | "never" | null`（默认 null）
+- `BotSchema.maxConcurrentHelpers: number | null`（默认 null，1–8）
+- `BotSchema.useOwnMemory`、`useSharedMemory: boolean`（默认 true）
+- `UpdateBotInput` 逐字段可选；`workspacePath` 走 `BotWorkspacePathSchema`（相对路径、拒绝
+  `..` 与绝对路径），`approvalMode` / `maxConcurrentHelpers` 走枚举与范围校验
 
-**概念分层**（这是设计的关键决策点）：
+RPC：
 
-- `scope`（team / dedicated）表达存储与隔离范围，保持不动；
-- 新增 placement 维度：云端（现状）或绑定到一台已配对设备。不扩展
-  `ComputerModeSchema`，避免把两个维度揉进一个枚举；本地执行时
-  `ComputerStatus.runsOnUserMachine` 已能向客户端表达"没有远程屏幕"。
+- `bots.update`（全部字段）、`bots.setComputer`（team / dedicated）
+- `computers.devices`（本人已配对电脑；受保护 RPC 穷举清单已覆盖）
+- `memory.list` / `memory.budget` / `memory.update` / `memory.remove`（记忆库读写与预算）
 
-**数据模型**（additive migration，安全）：
+---
 
-- `Bot.hostDeviceId String?`：已配对设备 id（来自 `UserDeviceGateway.list`）。
-- `Bot.hostDeviceOwnerId String?`：设备属主账号。设备配对挂在账号上
-  （`user-device-protocol.ts` 的 `connected(userId, deviceId)`），绑定必须记住
-  属主，否则换人触发 run 时无法路由。
+## 2. 总原则（所有实现共同遵守）
 
-**契约**：
+1. **不做假开关**：没有契约与后端行为的能力不上 UI；UI 文案描述控件本身，用途放说明行。
+2. **不给 run 排槽**：任何上限都是行为护栏（拒绝并说明），不是并发槽位；不引入全局并发
+   上限、轮询等待或手工重试列。
+3. **加列迁移**：只做 additive；旧版本代码在迁移后继续工作。
+4. **单一判定点**：审批模式只在 `run-tool-gate` 读取；路径解析只在 `computer-support.ts`
+   收口；记忆包含只在 `readAgentMemory` 收口。
+5. **跨端一致**：web 与 Electron 共用 web UI；移动端能做就做，只读要写明原因。
+6. **公开仓库**：设备名、会话内容、成对标识属用户数据，不进日志与公开 PR 文案。
 
-- `BotSchema` 增加 `hostDevice: { deviceId: string; name: string; online: boolean } | null`
-  （名称与在线状态由服务端从 gateway 解析后下发，客户端不存 raw id 直接显示）。
-- `UpdateBotInput` 增加 `hostDeviceId: Id | null`；置 null 即回到云端。
-- 设备列表复用现有配对查询，不新增 RPC；若设置页需要，新增
-  `computers.listPairedDevices`（只读、按当前用户授权）。
+---
 
-**执行路径**：run 装配处现在按 `userComputerOwnerId` 调
-`userDevices.connected(userId)`（`run-assembly-capabilities.ts:577`）。改为：bot
-绑了设备时，用 `connected(hostDeviceOwnerId, hostDeviceId)` 显式指定；显式设备不可
-用绝不回退到别的设备（gateway 的契约注释已保证这一语义），run 以明确错误结束并在
-会话里给出可读原因，而不是悄悄改跑云电脑——本机与云沙箱的文件/登录态边界不同，
-静默换边是安全问题。
+## 3. 逐项设计（as-built）
 
-**多人 Space 语义**（必须写死在文档里的决策）：
+### 3.1 名称与头像
 
-- 绑定本地设备的 bot，其本机执行只对设备属主发起的 run 生效；
-- 其他成员触发时：命令工具走该 bot 在 Space 里的云端电脑（team/dedicated 不变），
-  本机屏幕/应用工具对该 run 不可用。与现状"bots use your apps only in chats you
-  start with your own bots"（`docs/computer.md`）一致；
-- 设置页对非属主成员显示设备名但禁用切换，并说明属主。
+现状即目标：`Bot.name`、`Bot.color`、`Bot.avatarSet`（`packages/db/prisma/schema.prisma`），
+创建与更新走 `CreateBotInput` / `UpdateBotInput`；设置页可改名、选形状与颜色或上传图片，
+bot 在会话里自改并带 Undo。无新增后端工作。
 
-**UI**：bot 设置 Advanced → Computer 由两档变为：Team（默认）/ Private / 一台本地
-电脑（下拉列出该用户的已配对设备，离线设备置灰标注）。移动端同一契约只读展示，
-编辑放后一期。
+### 3.2 电脑：scope × placement
 
-**工作量**：中（契约 + 迁移 + executor 路由 + web 设置页 + 状态显示），约 0.5–1 天。
+- `ComputerMode`（team / dedicated）表达存储与隔离范围，保持不动。
+- 本机指派是独立维度：`Bot.hostDeviceId` 指向账号级 `UserDevice`，只影响 bot 的"用户电脑"
+  工具（shell / 应用 / 屏幕），不替换 bot 自己的云端电脑。
+- 保存时只接受 **bot 属主账号名下、未撤销** 的设备；属主由 `bot.userId` 推导，不存冗余列。
+- 运行期：`RunSource.userComputerDeviceId` 显式传给 `UserDeviceGateway.connected(owner, id)`；
+  显式设备不可用**绝不回退**到别的机器，工具返回明确错误；`user_computer_list` 只列绑定的
+  那台。
+- 多人 Space：`userComputerOwner` 只对 bot 属主发起的 run 返回属主，其他成员的 run 本就没有
+  本机工具，绑定不会越权。
+- 设备被撤销 / 删除：外键置空或 gateway 返回 null，表现为"离线"，由用户清除绑定。
 
-### 2.3 专属工作区 / 工作目录（已实现）
+### 3.3 专属工作区
 
-**目标**：每个 bot 可配一个"工作目录"，它的命令默认在此 cwd 下执行；用户控制时
-的允许写目录也随之限定。
+- `Bot.workspacePath`（null = 默认：team 为 `bots/<botId>`，dedicated 为 home 根）。
+- 解析收口在 `resolveBotWorkspacePath / Cwd / UploadPath / displayBotWorkspacePath`
+  （`packages/adapters/src/computers/screens/computer-support.ts`），全部调用方（run 工具、
+  routine watch、附件 materialize、API 文件路由、导出导入）传入 bot 设置。
+- team 模式：相对路径锚到自定义目录，`shared/` 与显式根路径语义不变；上传白名单 = 自定义
+  目录子树 + `shared/`。
+- 写时校验（契约）拒绝绝对路径、`~`、`..`；解析时 `normalizeWorkspacePath` 再兜底。
+- 建目录：provision 时 ensure（调用方传入设置）；保存后对运行中的电脑 best-effort 立即
+  ensure，避免命令 cwd 不存在。
+- 生效时机：命令 / 文件从下一个 run 起使用新目录；不迁移旧文件。
 
-> 实现注记：按本节落地，另有两点超出草案描述——账号导出 / 导入会随 bot 记录往返
-> 该设置；设置保存后在运行中的电脑上立即建目录（不等下次启动），提示语在 bot 下次
-> run 起生效。
+### 3.4 权限：审批模式覆盖
 
-**数据模型 / 契约**：
+- `Bot.approvalMode ?? Space 模式`，唯一读取点
+  `packages/adapters/src/runs/tools/run-tool-gate.ts`。
+- Block 规则、强制审批、花费上限始终优先；`never` 也不能越过 Block。
+- Auto 无审批模型时由 `planActionGate` 的 `checkerConfigured` 自然退化为 ask；设置页显示
+  原因，不静默等同 never。
+- 权限区块常驻（web 与移动端），零散开关（跨 Space 通信、管理其他 bot 等）仍只在改动后
+  显示。
 
-- `Bot.workspacePath String?`（additive migration；null = 现状默认）。
-- `BotSchema.workspacePath: string | null`；`UpdateBotInput.workspacePath` 可置空
-  清除。
+### 3.5 并行后台工作（"线程数"）
 
-**解析改动**（单点收口，不集中就会漏白名单）：
+- 语义：该 bot 同时运行的后台 helper（subagent）上限；不是消息并行槽，不是多会话主线。
+- 默认 `DEFAULT_MAX_CONCURRENT_HELPERS = 3`，范围 1–8
+  （`packages/contracts/src/bots/bot.ts`）。
+- 计数在 `startBackgroundHelper` 的 bot 行锁事务内完成（多进程正确）；达到上限时返回
+  "已经有 N 个在跑，先结束本轮"，**不排队**。
+- 消息在 run 进行中仍然 steering 进当前 run（`docs/run-execution.md`），与上限无关。
 
-- `resolveBotWorkspaceCwd` / `resolveBotWorkspacePath` /
-  `resolveBotUploadPath`（`computer-support.ts`）增加 base 参数：
-  `base = bot.workspacePath ?? 现状默认`（team：`bots/<botId>`；dedicated：home 根）。
-  相对 cwd 继续相对 base 解析；`..` 越界继续抛 `WorkspacePathError`。
-- 上传写白名单从"bot 目录 + `shared/`"变为"workspacePath（或其默认目录）+
-  `shared/`"，语义不变、只换锚点。
+### 3.6 Memory 页：关于你 / 这个 Bot
 
-**校验规则**（按三种 placement 分别定）：
+- 两个记忆库都来自 `MemoryDocument`：`scope: "bot"`（这个 Bot）与 `scope: "user"`
+  （关于你，Space 共享）。
+- 每个库一个读取开关（`Bot.useOwnMemory` / `Bot.useSharedMemory`）：
+  - 关闭后该库不进 prompt（`readAgentMemory` 的 `MemoryInclusion`）；
+  - 对应记忆工具拒绝写入并说明原因（`remember` / `save_shared_memory`）；
+  - `memory.budget` 按实际生效内容计算。
+- 预算：bot 库沿用 `MEMORY_INDEX_PATH` 与 4 KB 写入上限；页面显示实际使用量。
+- 语义记忆 provider（recall / reflect）不受两个开关影响，由 `memoryScope` 决定。
 
-- 云上 team / dedicated：只允许相对路径，规范化后不得以 `..` 开头；拒绝绝对
-  路径，避免 bot 之间互相指到对方的目录。
-- 本机（2.2 绑了设备）：允许绝对路径与 `~`（`expandHomePrefix` 已有展开），因为
-  本机的意义就是"用你自己的文件夹"；此时该字段在 UI 上标为"这台电脑上的文件夹"。
+### 3.7 梦境（未实现）
 
-**建目录**：保存设置与 bot 首次使用电脑时 ensure 一次。复用
-`manageComputerWorkspaceDirectories` 的 `ensure` 动作（
-`computer-workspace.ts:574`），不要新开一条建目录路径。
+**产品定义**：只在**夜间 / 空闲**时批量整理。整理只依据**用户自己的原话**，把记忆改写成更
+准确、更短的版本；每次整理产出一条可回看的记录。它不是聊天消息，不打扰任何人。
 
-**UI**：bot 设置 Advanced → 工作区：一行文本框 + 说明"留空使用默认"；改动在电
-脑下次启动生效，不迁移旧文件（旧目录保留，bot 可自行搬运）。
+#### 3.7.1 触发与调度
 
-**工作量**：中，约 0.5 天。建议排在 2.2 之前交付，它不依赖设备绑定。
+- 一个独立的定时任务（Graphile 命名 job，周期 15 分钟；它是定时器，不是主路径，也不为任何
+  run 排队）。
+- 候选条件（全部满足才启动）：
+  1. bot 的 `useOwnMemory` 或 `useSharedMemory` 至少一个为开；
+  2. 按 **bot 属主的本地时区**（`User.timezone`，缺失回退部署时区）处于 22:00–06:00；
+  3. 该 bot 没有 `ACTIVE_RUN_STATUSES` 的 run（空闲）；
+  4. bot 主 thread 有 `role = "user"` 且 `seq > 上次 completed 梦境的 sourceSeq` 的消息；
+  5. 距上次 completed 梦境 ≥ 12 小时（每天至多一次）。
+- 幂等：job key 为 `memory-dream:<botId>:<YYYY-MM-DD>`；已有当天记录则跳过。
+- 直接启动 + 备份：同一事务写 `MemoryDream(status = "queued")` 与备份 job（run-at = 整理 run
+  的超时 + 余量）；提交后直接启动整理 run；成功删除备份 job，失败把 run-at 提前。进程崩溃
+  时由备份 job 接手。
+- 跳过原因可观测：`off` / `not-night` / `busy` / `no-new-messages` / `too-soon` /
+  `already-dreamed`，写 `memory.dream.skipped` 日志（不含消息内容）。
 
-### 2.4 Agent 级权限设置（已实现）
+#### 3.7.2 整理 run
 
-**目标**：制一个"权限"区块收拢现有 per-bot 开关（`crossSpaceCommunication`、
-`fleetManagement`、`disabledBuiltinTools`），并新增**审批模式覆盖**：默认"跟随
-Space"，可单独把某个 bot 调成 ask / auto / never。
+- 触发值新增 `"memory_dream"`（`RUN_TRIGGERS`），加入非会话 / 后台触发集合：不参与
+  steering，不出现在普通活动筛选里。
+- 隐藏 thread（`Thread.helperBotId = bot.id`，每 dream 一条，随 bot 删除级联）；run 静默，
+  **不向任何聊天发消息**。
+- 输入：自上次 dream 以来的 `role = "user"` 消息（仅原话；不含 bot 回复、工具结果、外部
+  内容），加上当前两个记忆库的文档。
+- 工具：只暴露记忆写入（`remember`、`save_shared_memory`，按开关），不暴露其他工具；prompt
+  明确"只写用户明确说过的事实，不推断、不编造；合并去重"。
+- 审批：后台 run 无人可问。记忆写入在 dream run 中视为内部效果直接允许；Block 规则仍生效，
+  被 Block 的动作记录为拒绝并结束本次 dream。
+- 花费：使用 bot 当前模型与 thinking 设置，计入 Space 花费上限；超限时 dream 记为
+  `failed`（`spending`），不重试到次日之外。
+- 结束：写 `MemoryDream`（`summary`、`changedPaths`、`sourceSeq`、`startedAt`、
+  `finishedAt`、`status`、`errorKind`），以 `runId` 唯一约束保证重放幂等。
 
-> 实现注记：审批模式在唯一判定点（`run-tool-gate`）读取 `bot.approvalMode ?? Space
-> 模式`，Block 规则始终优先；Auto 无审批模型时由 `planActionGate` 的
-> `checkerConfigured` 自然退化为 ask，设置页在此时显示原因，不需要额外调度改动。
-> 权限区块（含模式选择器）在 web 与移动端改为常驻，零散开关仍只在改动后显示。
+#### 3.7.3 数据模型（新增）
 
-**数据模型 / 契约**：
+`MemoryDream`：
 
-- `Bot.approvalMode String?`（null = 跟随 Space；additive migration）。
-- `BotSchema.approvalMode: ApprovalModeSchema | null`；`UpdateBotInput.approvalMode`。
-- 简化入项：`bot-settings-layout.ts` 的 advanced 列表把三个开关与新模式收进
-  `permissions` 分组，web / 移动端按同一 layout 渲染。
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | cuid | |
+| `spaceId` | FK Space | 级联删除 |
+| `botId` | FK Bot | 级联删除 |
+| `threadId` | FK Thread? | 隐藏 thread，随 bot 级联 |
+| `runId` | FK Run? @unique | 整理 run；唯一约束做幂等 |
+| `status` | `queued` / `completed` / `failed` | |
+| `summary` | String? | 一句话摘要（展示用） |
+| `changedPaths` | String[] | 改动的记忆文档路径 |
+| `sourceSeq` | Int? | 已整理到的用户消息序号（watermark） |
+| `errorKind` | String? | 失败类别（如 `spending`） |
+| `startedAt` / `finishedAt` / `createdAt` | DateTime | |
 
-**判定顺序**：工具的审批判定处读 `bot.approvalMode ?? spaceMode`。两个边界要
-写死：
+索引：`[botId, status, createdAt]`。迁移为新增表，additive。
 
-- Auto 仍依赖 Space 配置的 approval model；没有该模型时 per-bot 选 Auto 要回退
-  ask 并在设置里说明，不能让 run 悄悄等同 never。
-- 方向不受限（可调松也可调紧），因为 per-user 的 Block 规则始终优先（
-  "A blocked action is refused without a card, in every mode"）。
-  风险较高的是调松，PR 的 Risk 里要说明。
+#### 3.7.4 RPC 与 UI
 
-**工作量**：小–中，约 0.5 天（大头在审批判定路径的回归测试）。
+- `memory.dreams`：`{ botId, limit?, cursor? }` → 记录列表（时间、摘要、改动路径、状态）。
+- Memory 页第三个子页 **Dreams**（web + 移动端）：列表 + 空状态；只读；两个记忆库都关时
+  说明"记忆已关闭，梦境暂停"（不伪造开关）。列表项有可访问名称（时间 + 摘要），不显示原始
+  id。
+- 保留：每个 bot 最多保留最近 100 条记录；更早的记录与隐藏 thread 由定时清理删除（不影响
+  记忆本身）。
 
-### 2.5 线程 / 多线程（默认 3）（已实现）
+---
 
-**先决：这一项必须先有产品定义，再动代码。** "一个 bot 一条持续会话，运行中的
-消息 steering 进去"是 Rakazo 的既有模型（`docs/run-execution.md`）；Codync 类产
-品的"每 agent 3 个并行槽"是本地多 agent 模型，两者不同源。直接把"线程数 = 并行
-run 上限"搬过来与 AGENTS.md 的核心原则（不让 run 等空槽、不设全局并发上限）
-正面冲突，不做。
+## 4. 执行计划
 
-> 实现注记：落地时发现该护栏已存在——后台 helper 一直有 bot 级并发上限，只是硬编
-> 码为 4（`MAX_PARALLEL_SUBAGENTS`），在 bot 行锁的事务里计数，超出时回一句"已经有
-> N 个在跑，先结束本轮"。本次把常量改为契约里的默认 3（`DEFAULT_MAX_CONCURRENT_HELPERS`），
-> 新增 `Bot.maxConcurrentHelpers`（1–8，null = 默认）覆盖，判定与提示文案复用原路径，
-> 仍然不排队、不阻塞主对话。
+### 4.1 已完成
 
-**推荐定义（方案 B）**：把"线程"定义为**该 bot 可同时展开的后台 helper（
-subagent / helper thread）的数量上限，默认 3**。它与现有模型同源：helper 本就有
-独立 thread（`Thread.helperBotId` / `Bot.helperThreads`），用户感知为"这个 agent
-同时帮我并行推进几件事"，而不是"消息排队"。
+| 阶段 | 内容 | 状态 |
+| --- | --- | --- |
+| P1 | 专属工作区（契约、迁移、解析、双端 UI、导出导入） | 完成 `0066f0faa` |
+| P2 | 本机电脑指派（外键、RPC、运行期钉住、双端 UI） | 完成 `854f6f3ea` |
+| P3 | 审批模式覆盖（判定点、双端选择器、导出导入） | 完成 `6507ac184` |
+| P4 | 并行后台工作（默认 3、范围 1–8、双端输入） | 完成 `f1be74164` |
+| M1 | Memory 两库 + 开关（prompt 裁剪、工具拒绝、预算） | 完成 `7f3ee6c67` |
+| M2 | 描述字段文案修正 | 完成 `6128228f8` |
 
-设计要点：
+### 4.2 剩余：梦境
 
-- 数据模型：`Bot.maxConcurrentHelpers Int?`（null = 用部署默认 3；additive）。
-- 调度：helper 启动处计数该 bot 的活跃 helper 数；超出上限时**不排队、不阻塞
-  主对话**——新任务作为提示回给模型（"最多同时 N 件并行工作，先收口一件"），由
-  模型自己决定合并或等待。这样上限是约束 agent 行为的护栏，不是要 run 等的
-  槽位，与并发原则不冲突。
-- UI：bot 设置 Advanced → 并行工作：数字输入，默认 3，范围 1–8；附一句"同时
-  并行推进的后台任务数"。
-- 明确不做：消息排队槽、主对话并发 run、全局并发上限。若产品要的是"一个
-  bot 多条独立会话主线"，那是另一个大特性（动 `Thread.botId @unique` 与全部会
-  话路由），单独立项，不在本文档范围。
+拆三个 PR，按依赖串行；每个 PR 自带测试与文档，可独立回滚。
 
-**工作量**：产品定义 0.5 天 + 实现约 1 天（调度与计数要为多进程正确做在原
-子计数/事务里）。
+| PR | 内容 | 依赖 | 预估 | 完成定义（DoD） |
+| --- | --- | --- | --- | --- |
+| D1 存储与调度 | `RUN_TRIGGERS` 新触发值、`MemoryDream` 表与迁移、夜间 / 空闲候选查询、job key 幂等、直接启动 + 备份 job、跳过原因的日志与埋点 | 无 | 1 天 | 迁移可应用；调度单测（假时钟）覆盖全部跳过原因；无 run 排队；日志无消息内容 |
+| D2 整理 run | 隐藏 thread 与受限工具集、prompt（仅用户原话 + 当前记忆）、审批与花费语义、结束写记录（runId 幂等）、失败分类 | D1 | 1.5 天 | 单测覆盖：只读用户消息、Block 拒绝、超限失败、重放幂等；不向聊天发消息；成本归属正确 |
+| D3 RPC 与 UI | `memory.dreams` 契约与路由、Dreams 子页（web + 移动端）、空状态与暂停说明、保留清理 | D1、D2 | 1 天 | 列表与空状态测试；可访问名称；无原始 id；两端截图 |
 
-## 3. 分期交付
+并行化：D1 完成后，D2 与 D3 的契约 / 组件壳可并行（D3 的联调依赖 D2 完成）。
 
-- **P0（纯前端，0.5 天）**：设置页收拢——名称/头像保持现状；权限区块按 2.4 的分
-  组先把三个既有开关归位，不加新能力。
-- **P1（约 0.5 天，已完成）**：2.3 专属工作区——契约 + 迁移 + 路径解析 + web / 移动设
-  置页 + 账号导出导入往返。
-- **P2（约 0.5–1 天，已完成）**：2.2 本机电脑指派——契约 + 迁移 + 运行期钉住 + web
-  选择行 + 移动端只读展示。
-- **P3（约 0.5 天，已完成）**：2.4 的审批模式覆盖——契约 + 迁移 + 判定点 + web /
-  移动端选择器 + 账号导出导入往返。
-- **P4（已完成）**：2.5 并行 helper 上限——契约 + 迁移 + 运行期上限 + web / 移动端
-  输入 + 账号导出导入往返。
+---
 
-## 5. Memory 页（关于你 / 这个 Bot / 梦境）
+## 5. 验收文档
 
-参照产品的记忆页分三个子页，Rakazo 现有能力映射如下：
+### 5.1 通用验收（每一项都适用）
 
-| 子页     | 数据来源                                                | 状态           |
-| -------- | ------------------------------------------------------- | -------------- |
-| 这个 Bot | `MemoryDocument`（`scope: "bot"`）、4 KB 预算、记忆工具 | 已有，已进子页 |
-| 关于你   | Space 共享笔记（`scope: "user"`）                       | 已有，已进子页 |
-| 梦境     | 无                                                      | 待实现（见下） |
+- [ ] 迁移为 additive，旧版本代码在迁移后仍能读写；无 drop / 重命名。
+- [ ] 新契约字段对旧服务端缺省兼容（zod default），非法值返回 400 而不是 500。
+- [ ] 设置保存后：web 与 Electron（同一 UI）立即反映；移动端在支持的项上一致，只读项已在
+  文档说明原因。
+- [ ] 无新增全局并发上限、轮询等待或手工重试列；新增等待只落在具体资源上。
+- [ ] `pnpm format`、`pnpm checks`、`turbo run check` 全绿；新增字符串只在代码里。
+- [ ] 用户数据（设备名、消息、标识）不出现在日志与公开 PR 文案。
 
-两个子页各带一个读取开关（`Bot.useOwnMemory`、`Bot.useSharedMemory`，默认开）：关闭后该
-记忆库不进 prompt，对应记忆工具拒绝写入，预算接口按实际内容计算。实现落在
-`readAgentMemory` 的 `MemoryInclusion`、`run-tools-memory` 的拒绝信息与 `memory.budget`
-路由。
+### 5.2 逐项验收
 
-**梦境（下一阶段）**：只在夜间 / 空闲时批量整理。设计为：Space 本地时区的夜间窗口内、该
-bot 无活动 run 且距上次整理超过阈值时，由一个受限 run 仅依据用户自己的消息重写记忆；每次
-整理落一条记录（时间、会话、改动的笔记与版本），Memory 页展示、可回看。不排队、不阻塞
-主对话，遵循 direct-dispatch + 备份 job 的模式；需要新表、触发器与 RPC。
+**专属工作区**
 
-## 4. 风险与开放问题
+- [ ] team 模式相对路径解析到自定义目录；`shared/` 与显式根路径语义不变。
+- [ ] 上传白名单 = 自定义目录 + `shared/`；越界路径被拒绝。
+- [ ] 保存后运行中的电脑立即存在该目录；命令 cwd 不再因目录缺失失败。
+- [ ] 账号导出 / 导入往返保留设置；旧导出（无该字段）导入为默认。
 
-- 本机执行与云沙箱的文件/登录边界：2.2 的设备不可用策略必须是"明确失败"，绝不
-  静默回退；这是安全边界。
-- 多人 Space 里看到"别人的电脑"：状态展示与禁用逻辑要跟上，否则等于泄露他人设
-  备名。设备名属用户数据，不在日志与公开 PR 文案出现。
-- 审批模式调松的暴露面：per-bot never 会让该 bot 的所有动作免审（Block 规则除
-  外），PR 需带 Risk 段。
-- 迁移：本设计全部为加列（`hostDeviceId`、`hostDeviceOwnerId`、`workspacePath`、
-  `approvalMode`、`maxConcurrentHelpers`），与滚动发布兼容；无 drop，无需
-  `-- deferred` 迁移。
-- 开放问题：per-bot 审批模式是否允许超过 Space 模式？"线程数"是否采用 2.5 的
-  helper 语义？这两个答案落在实现 PR 描述里。
+**本机电脑指派**
+
+- [ ] 保存只接受 bot 属主名下、未撤销的设备；其他账号的设备被拒绝。
+- [ ] 绑定设备离线时工具返回明确错误，**不**回退到其他机器。
+- [ ] 绑定时 `user_computer_list` 只列该设备。
+- [ ] 其他成员的 run 没有本机工具（不因绑定获得权限）。
+- [ ] 设备删除后绑定自动失效为"离线"。
+
+**审批模式**
+
+- [ ] `bot.approvalMode` 优先于 Space 模式；null 时完全跟随。
+- [ ] Block 规则在 `never` 下仍然拒绝。
+- [ ] Auto 无审批模型时退化为 ask，设置页显示原因。
+- [ ] 账号导出 / 导入往返保留设置。
+
+**并行后台工作**
+
+- [ ] 默认 3；设置为 1 与 5 时分别在第 1 / 第 5 个 helper 处拒绝。
+- [ ] 超限只返回说明，不排队、不阻塞主对话。
+- [ ] 计数在事务内完成，多进程并发下不超发。
+- [ ] 移动端与 web 输入语义一致（空 = 默认，1–8，越界原地报错）。
+
+**Memory 两库**
+
+- [ ] 关闭"这个 Bot"后 prompt 不含 bot 库；`remember` 拒绝写入并说明。
+- [ ] 关闭"关于你"后 prompt 不含共享库；`save_shared_memory` 拒绝写入并说明。
+- [ ] `memory.budget` 反映实际生效内容。
+- [ ] 两个库都不影响语义记忆 provider 的 recall / reflect。
+
+### 5.3 梦境验收（D1–D3）
+
+**功能**
+
+- [ ] 只在属主本地 22:00–06:00 启动；白天触发被跳过且原因为 `not-night`。
+- [ ] bot 有活动 run 时跳过（`busy`），不排队等待。
+- [ ] 没有新的用户消息时跳过（`no-new-messages`）。
+- [ ] 每天至多一次（`too-soon` / `already-dreamed`）。
+- [ ] 两个记忆库都关时跳过（`off`）。
+- [ ] 整理只读取 `role = "user"` 的消息；bot 回复、工具结果、外部内容不进入输入。
+- [ ] 完成后 `MemoryDream` 记录包含摘要、改动路径与 `sourceSeq`；重放同一 run 不产生第二
+  条记录。
+- [ ] 整理 run 静默：任何聊天都不出现新消息。
+
+**边界与安全**
+
+- [ ] Block 规则拒绝的记忆写入被记录，dream 正常结束（`failed` 或 `completed` 带拒绝说明）。
+- [ ] 超过 Space 花费上限时 dream 记为 `failed`（`spending`），不无限重试。
+- [ ] 进程在整理中崩溃：备份 job 在超时后接手；成功后备份 job 被删除。
+- [ ] 日志字段只含 bot / space / run 标识与跳过原因，不含消息内容。
+- [ ] 记录保留上限生效（每 bot 100 条），更早的 thread 与记录被清理。
+
+**UI**
+
+- [ ] Memory 页第三个子页显示记录（时间、摘要、改动路径、状态）与空状态。
+- [ ] 两个记忆库关闭时显示"记忆已关闭，梦境暂停"。
+- [ ] 列表项可访问名称完整，不显示原始 id；web 与移动端一致。
+
+### 5.4 测试矩阵
+
+| 层 | 覆盖 | 要求 |
+| --- | --- | --- |
+| 契约 | 字段默认值、范围 / 路径校验、旧服务端缺省 | `packages/contracts/src/bots/*.test.ts` |
+| 适配器 | 路径解析、设备钉住、审批判定、prompt 裁剪、工具拒绝、dream 调度与受限工具 | 单测 + `vi.useFakeTimers`；异步用 `deferred` / `flush` / `vi.waitFor`，不用零定时器 promise 或 sleep 循环 |
+| API | 保存校验、序列化、预算、dreams RPC | 路由单测；postgres 测试在 CI |
+| Web | Memory 子页、设备行、审批行、并行输入、Dreams 列表 | 组件测试（受控组件需模拟父级确认） |
+| 移动 | 设置开关、输入行、只读项、共享顺序 | `apps/mobile/lib/**` 测试 |
+| E2E | bot 设置全流程 + Memory 子页截图 | 交给 CI（不做本机桌面 e2e） |
+
+### 5.5 发布与回滚
+
+- [ ] 五个已交付迁移 + 梦境迁移按时间顺序应用；无 `-- deferred`。
+- [ ] 滚动发布期间旧 API / worker 可正常运行（additive 列、默认值）。
+- [ ] 回滚代码不需要回滚数据；新列保持可空或有默认。
+- [ ] `compat-shim` 无新增；如未来需要，标注 `compat-shim(after vX.Y.Z)`。
+
+---
+
+## 6. 风险与开放问题
+
+- **本机执行边界**：设备不可用必须明确失败，绝不静默回退（安全边界）。
+- **多人 Space**：设备名属用户数据；非属主看到绑定设备时只读展示并说明属主。
+- **审批调松**：per-bot `never` 让该 bot 动作免审（Block 除外），实现 PR 带 Risk 段。
+- **梦境成本与隐私**：整理消耗模型调用并读取用户消息；必须计入花费上限，日志不记录内容，
+  只在属主本地夜间运行。
+- **开放问题**：
+  - 梦境是否需要在 UI 提供"立即整理"手动触发？（当前设计只有夜间自动；手动触发需要单独的
+    授权与花费提示。）
+  - 每个 bot 100 条记录的保留上限是否需要按 Space 配置？
+
+---
+
+## 7. 附录
+
+### 7.1 关键文件
+
+- 契约：`packages/contracts/src/bots/bot.ts`、`bot-workspace.ts`、
+  `bot-settings-layout.ts`、`packages/contracts/src/computers/computers-rpc.ts`
+- 数据：`packages/db/prisma/schema.prisma`、`packages/db/src/bots/bot-repository.ts`
+- 路径：`packages/adapters/src/computers/screens/computer-support.ts`
+- 审批：`packages/adapters/src/runs/tools/run-tool-gate.ts`
+- 并行：`packages/adapters/src/tasks/background-helpers.ts`
+- 记忆：`packages/adapters/src/memory/memory-context.ts`、
+  `packages/adapters/src/runs/tools/run-tools-memory.ts`
+- Web：`apps/web/src/pages/shell/bots/bot-panel.tsx`、`bot-settings-sections.tsx`、
+  `bot-memory-tabs.tsx`
+- 移动：`apps/mobile/app/bot-settings.tsx`、`apps/mobile/components/bots/*`
+
+### 7.2 验证命令
+
+```bash
+pnpm format
+pnpm checks
+pnpm exec turbo run check
+pnpm exec vitest run packages/contracts/src/bots packages/adapters/src/memory \
+  packages/adapters/src/runs/tools apps/web/src/pages/shell/bots apps/mobile/lib
+```
