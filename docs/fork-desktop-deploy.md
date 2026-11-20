@@ -26,6 +26,10 @@ Repository secrets (Settings > Secrets and variables > Actions):
 - `SYNC_TOKEN`: a fine-grained GitHub token for this repository only, with Contents and Workflows
   read and write. Pushes made with the built-in token start no workflows and cannot change workflow
   files.
+
+Secrets of the `desktop-deploy` environment, which only `main` may deploy from. A shell on the mini
+is worth more than anything else here, so keep these out of the repository secrets:
+
 - `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`: a Tailscale OAuth client with the Auth Keys write
   scope and the `tag:ci` tag.
 - `DEPLOY_SSH_TARGET`: `<user>@<machine>` on the tailnet.

@@ -102,6 +102,9 @@ jobs:
   deploy:
     name: Swap it into the desktop install
     needs: [gate, build]
+    # The tailnet credentials live only in this main-only environment, so a workflow on another
+    # branch cannot read them.
+    environment: desktop-deploy
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
