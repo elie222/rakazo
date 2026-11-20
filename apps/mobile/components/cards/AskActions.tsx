@@ -87,7 +87,9 @@ export function AskActions({
   const submitting = pendingAction !== null;
   const settled = Boolean(disabled) || selectedAnswer !== undefined || acceptedAnswer !== undefined;
   const displayedAnswer = selectedAnswer ?? acceptedAnswer;
-  const inlineAnswerOpen = !approval && instructions === undefined && !settled && editing;
+  const canTypeAnswer =
+    !approval && instructions === undefined && !settled && onTypeAnswer !== undefined;
+  const inlineAnswerOpen = canTypeAnswer && editing;
   useEffect(() => {
     if (!inlineAnswerOpen || !typedFocused) return;
     notifyInlineInputFocus?.(true);
@@ -104,12 +106,13 @@ export function AskActions({
 
   async function submit(answer: string, target: { id?: string; typed?: true }) {
     if (settled || submittingRef.current || submitting) return;
+    if (target.typed && !onTypeAnswer) return;
     submittingRef.current = true;
     setPendingAction(target);
     try {
-      if (target.typed && onTypeAnswer) {
+      if (target.typed) {
         draftNonceRef.current = draftNonce(draftNonceRef.current, answer);
-        await onTypeAnswer(answer, draftNonceRef.current.nonce);
+        await onTypeAnswer!(answer, draftNonceRef.current.nonce);
       } else {
         await onAnswer(answer);
       }
@@ -244,7 +247,7 @@ export function AskActions({
           );
         })}
       </View>
-      {!approval && instructions === undefined && !settled ? (
+      {canTypeAnswer ? (
         editing ? (
           <>
             <TextInput

@@ -271,6 +271,7 @@ it("deduplicates keyboard send plus button tap and reuses the clientNonce on ret
 
 it("sends nothing when Return is pressed on an empty typed answer and clears on Cancel", async () => {
   const onAnswer = vi.fn(async () => undefined);
+  const onTypeAnswer = vi.fn(async () => undefined);
   await act(async () =>
     root.render(
       <AskActions
@@ -280,6 +281,7 @@ it("sends nothing when Return is pressed on an empty typed answer and clears on 
         ]}
         approval={false}
         onAnswer={onAnswer}
+        onTypeAnswer={onTypeAnswer}
       />,
     ),
   );
@@ -295,6 +297,7 @@ it("sends nothing when Return is pressed on an empty typed answer and clears on 
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   });
   expect(onAnswer).not.toHaveBeenCalled();
+  expect(onTypeAnswer).not.toHaveBeenCalled();
 
   await act(async () => button("Cancel")!.click());
   expect(container.querySelector("input")).toBeNull();
@@ -311,6 +314,7 @@ it("keeps the message's accessibility actions on the typed-answer buttons", asyn
         ]}
         approval={false}
         onAnswer={async () => undefined}
+        onTypeAnswer={async () => undefined}
         accessibilityActions={[{ name: "reply", label: "Reply" }]}
       />,
     ),
@@ -339,6 +343,7 @@ it("keeps typing off approval, instruction, and answered option cards", async ()
         ]}
         approval
         onAnswer={async () => undefined}
+        onTypeAnswer={async () => undefined}
       />,
     ),
   );
@@ -357,6 +362,7 @@ it("keeps typing off approval, instruction, and answered option cards", async ()
         approval
         instructions="Be concise."
         onAnswer={async () => undefined}
+        onTypeAnswer={async () => undefined}
       />,
     ),
   );
@@ -375,12 +381,32 @@ it("keeps typing off approval, instruction, and answered option cards", async ()
         disabled
         selectedAnswer="A quiet weekend"
         onAnswer={async () => undefined}
+        onTypeAnswer={async () => undefined}
       />,
     ),
   );
   expect([...container.querySelectorAll("button")].map((item) => item.textContent)).not.toContain(
     "Type your answer",
   );
+});
+
+it("hides Type your answer when onTypeAnswer is omitted", async () => {
+  await act(async () =>
+    root.render(
+      <AskActions
+        actions={[
+          { id: "allow-custom", label: "Confirm action" },
+          { id: "deny-custom", label: "Cancel action" },
+        ]}
+        approval={false}
+        onAnswer={async () => undefined}
+      />,
+    ),
+  );
+  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).not.toContain(
+    "Type your answer",
+  );
+  expect(container.querySelector("input")).toBeNull();
 });
 
 it("reports inline input focus while the typed-answer field is focused and clears it on blur or cancel", async () => {
@@ -395,6 +421,7 @@ it("reports inline input focus while the typed-answer field is focused and clear
           ]}
           approval={false}
           onAnswer={async () => undefined}
+          onTypeAnswer={async () => undefined}
         />
       </InlineInputFocusContext.Provider>,
     ),
