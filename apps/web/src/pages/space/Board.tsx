@@ -29,6 +29,7 @@ import {
   Input,
   OptionSelect,
   Textarea,
+  toast,
 } from "@rakazo/ui-web";
 import { isCancelledError, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, MessageCircle } from "lucide-react";
@@ -62,7 +63,9 @@ export function BoardPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = tickets.find((ticket) => ticket.id === selectedId);
   const creating = selectedId === "new";
-  const move = useTicketChange();
+  const move = useTicketChange((failure) => {
+    toast.error(errorText(failure));
+  });
   const pendingMove = move.pending ? move.input : undefined;
   const pendingStatus = pendingMove?.status;
   const shownTickets =
@@ -73,8 +76,7 @@ export function BoardPage() {
       : tickets;
   const [streamError, setError] = useState("");
   const loadFailed = ticketsQuery.error ?? botsQuery.error;
-  const failure = move.error ?? loadFailed;
-  const error = (failure ? errorText(failure) : "") || streamError;
+  const error = streamError || (loadFailed ? errorText(loadFailed) : "");
 
   useEffect(() => {
     let currentController: AbortController | undefined;
@@ -217,7 +219,7 @@ export function BoardPage() {
   );
 }
 
-function useTicketChange() {
+function useTicketChange(onFailed?: (error: Error) => void) {
   const queries = useSpaceQueries();
   const client = useQueryClient();
   const list = queries.tickets.list.queryOptions({ input: {} });
@@ -239,6 +241,7 @@ function useTicketChange() {
       );
     },
     stale: [list.queryKey],
+    onFailed,
   });
 }
 

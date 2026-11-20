@@ -3,6 +3,7 @@
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
+import { toast } from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -51,6 +52,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogTitle: Container,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
+    toast: { error: vi.fn() },
   };
 });
 
@@ -215,9 +217,8 @@ it("returns a dragged ticket to its column when the status change fails", async 
 
     await act(async () => moving.reject(new TypeError("Failed to fetch")));
     expect(card().parentElement?.getAttribute("aria-labelledby")).toBe("board-column-todo");
-    expect(page.container.querySelector('[role="alert"]')?.textContent).toBe(
-      "Could not reach the server",
-    );
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("Could not reach the server");
+    expect(page.container.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();
