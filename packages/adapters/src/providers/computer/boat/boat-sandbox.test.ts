@@ -196,6 +196,45 @@ describe("stopped workspace files", () => {
     expect(reads[0]).toHaveProperty("totalMs");
   });
 
+  it("falls back without waiting for a file request that never answers", async () => {
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const { api, computer, provider } = await boat();
+    await provider.stop(computer, context);
+    vi.setSystemTime(Date.now() + 1);
+    await api.stop({ sandboxId: computer.id, stopRequest: { force: true } });
+    download.mockImplementationOnce(() => new Promise(() => {}));
+
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(download).toHaveBeenCalledOnce();
+  });
+
+  it("does not call a caller's cancellation a deadline", async () => {
+    const cancelled = new AbortController();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const getStop = vi.spyOn(FakeBoatApi.prototype, "getStop");
+    const { computer, provider } = await boat();
+    await provider.stop(computer, context);
+    getStop.mockImplementationOnce(async () => {
+      cancelled.abort(new Error("cancelled"));
+      throw cancelled.signal.reason;
+    });
+
+    await expect(
+      provider.readStoppedFile(
+        computer,
+        "notes.txt",
+        { ...context, signal: cancelled.signal },
+        { maxBytes: 100 },
+      ),
+    ).rejects.toThrow("cancelled");
+    const read = sink.events.find((event) => event.message === "computer.stopped_file_read");
+    expect(read).toMatchObject({ outcome: "aborted" });
+    expect(read).not.toHaveProperty("inFlightAtDeadline");
+  });
+
   it("names the step that was still running when the deadline passed", async () => {
     const deadline = new AbortController();
     vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);

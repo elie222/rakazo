@@ -1,5 +1,6 @@
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import {
+  anySignal,
   cancelResponseBody,
   deadlineSignal,
   ResponseTooLargeError,
@@ -55,21 +56,42 @@ export async function readBoatStoppedFile(
       },
       (error: unknown) => {
         finish();
-        if (signal.aborted) inFlightAtDeadline.push(step);
+        if (signal.aborted && !callerSignal.aborted) inFlightAtDeadline.push(step);
         throw error;
       },
     );
   };
 
+  /**
+   * A request started before the check that decides whether it is needed. Its failure surfaces
+   * only where its result is awaited, and `drop` cancels it without delaying the fallback.
+   */
+  const startAside = <T>(step: Step, call: (signal: AbortSignal) => Promise<T>) => {
+    const controller = new AbortController();
+    const request = timed(step, call(anySignal([signal, controller.signal])));
+    request.then(undefined, () => undefined);
+    return {
+      request,
+      drop: (release?: (value: T) => void) => {
+        controller.abort();
+        request.then(release, () => undefined);
+      },
+    };
+  };
+
   let outcome: "read" | "fallback" | "too_large" | "aborted" | "error" = "error";
   try {
     // Boat serves the latest snapshot by sandbox id, so it is asked for alongside the sandbox.
-    const [sandboxResult, latestResult] = await Promise.allSettled([
-      timed("get", client.get({ sandboxId }, { signal })),
-      timed("latest", client.getLatestSandboxSnapshot({ sandboxId }, { signal })),
-    ]);
-    if (sandboxResult.status === "rejected") throw sandboxResult.reason;
-    const { sandbox } = sandboxResult.value;
+    const latest = startAside("latest", (aside) =>
+      client.getLatestSandboxSnapshot({ sandboxId }, { signal: aside }),
+    );
+    let sandbox: Awaited<ReturnType<SnapshotClient["get"]>>["sandbox"];
+    try {
+      ({ sandbox } = await timed("get", client.get({ sandboxId }, { signal })));
+    } catch (error) {
+      latest.drop();
+      throw error;
+    }
     const { stoppedAt, snapshotCompletedAt, snapshotVerifiedAt, stop } = sandbox;
     if (
       sandbox.state !== "archived" ||
@@ -83,11 +105,11 @@ export async function readBoatStoppedFile(
       stop.endedAt < stoppedAt ||
       (savedAt && savedAt > snapshotCompletedAt)
     ) {
+      latest.drop();
       outcome = "fallback";
       return fallBackToLiveRead(report, "unverified_stop");
     }
-    if (latestResult.status === "rejected") throw latestResult.reason;
-    const snapshot = latestResult.value.snapshot;
+    const snapshot = (await latest.request).snapshot;
     if (
       snapshot?.sandboxId !== sandboxId ||
       snapshot.status !== "completed" ||
@@ -101,15 +123,19 @@ export async function readBoatStoppedFile(
     // A forced stop can retain an older snapshot. Verify the save was checked during this
     // stop, allowing Boat to reuse an unchanged snapshot when its disk check found no writes.
     // The file is requested alongside that check but only returned once the check passes.
-    const [operationResult, fileResult] = await Promise.allSettled([
-      timed("stop", client.getStop({ sandboxId, stopId: stop.id }, { signal })),
-      timed("file", client.getSnapshotFileRaw({ snapshotId: snapshot.id, path }, { signal })),
-    ]);
-    if (operationResult.status === "rejected") {
-      if (fileResult.status === "fulfilled") cancelResponseBody(fileResult.value.raw);
-      throw operationResult.reason;
+    const file = startAside("file", (aside) =>
+      client.getSnapshotFileRaw({ snapshotId: snapshot.id, path }, { signal: aside }),
+    );
+    let operation: Awaited<ReturnType<SnapshotClient["getStop"]>>["stop"];
+    try {
+      ({ stop: operation } = await timed(
+        "stop",
+        client.getStop({ sandboxId, stopId: stop.id }, { signal }),
+      ));
+    } catch (error) {
+      file.drop(({ raw }) => cancelResponseBody(raw));
+      throw error;
     }
-    const { stop: operation } = operationResult.value;
     const verifiedAt = snapshotVerifiedAt ?? snapshotCompletedAt;
     if (
       operation.status !== "completed" ||
@@ -117,13 +143,12 @@ export async function readBoatStoppedFile(
       !operation.requestedAt ||
       verifiedAt < operation.requestedAt
     ) {
-      if (fileResult.status === "fulfilled") cancelResponseBody(fileResult.value.raw);
+      file.drop(({ raw }) => cancelResponseBody(raw));
       outcome = "fallback";
       return fallBackToLiveRead(report, "unverified_snapshot");
     }
 
-    if (fileResult.status === "rejected") throw fileResult.reason;
-    const { raw } = fileResult.value;
+    const { raw } = await file.request;
     if (raw.headers.get("x-snapshot-entry-kind") !== "file") {
       cancelResponseBody(raw);
       outcome = "fallback";
