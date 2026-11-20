@@ -33,7 +33,7 @@ export function sandboxAllowanceHours(
   return (allowanceCents * 10_000) / hourMicros;
 }
 
-export const ByokTierSchema = z.enum(["standard", "pro", "max"]);
+export const ByokTierSchema = z.enum(["standard", "pro", "max", "ultra"]);
 export type ByokTier = z.infer<typeof ByokTierSchema>;
 
 export interface ByokTierTerms {
@@ -49,7 +49,7 @@ export interface ByokTierTerms {
 
 /**
  * The own-model plan's tiers, in order. Standard is the plan new organizations start on; the
- * others add bigger computers and more computer hours.
+ * others add computer hours and may offer bigger computers.
  */
 export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
   standard: {
@@ -71,6 +71,13 @@ export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
     monthlyPriceCents: 9900,
     annualPriceCents: 94800,
     computerAllowanceCents: 4000,
+    computerSize: "xlarge",
+  },
+  ultra: {
+    name: "Ultra",
+    monthlyPriceCents: 19900,
+    annualPriceCents: 190800,
+    computerAllowanceCents: 12000,
     computerSize: "xlarge",
   },
 };
