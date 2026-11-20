@@ -128,12 +128,13 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
   const botId = new URL(member.url()).pathname.split("/").pop()!;
   await expect(member.getByTestId("import-setup-card")).toBeVisible();
   // The listing's fixed intro and first question open the chat, with no model run.
+  const botMessages = member.getByTestId("message-bot-bubble");
   await expect(
-    member.getByText(
+    botMessages.getByText(
       "I brief you every weekday morning. Nothing is sent without your confirmation.",
     ),
   ).toBeVisible();
-  await expect(member.getByText("Which city should I watch the weather for?")).toBeVisible();
+  await expect(botMessages.getByText("Which city should I watch the weather for?")).toBeVisible();
   const routines = await rpc<Routine[]>(member, "routines/list", { botId });
   expect(routines.map((routine) => [routine.name, routine.active])).toEqual([
     ["Morning briefing", false],
