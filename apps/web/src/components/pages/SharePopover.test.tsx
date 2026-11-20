@@ -61,11 +61,16 @@ it("says under a choice only what its title does not", async () => {
   const choices = () =>
     [...document.querySelectorAll('[role="radiogroup"] label')].map((label) => label.textContent);
   await show("private");
-  expect(choices()).toEqual(["Only you", "Anyone with the linkCan view without signing in"]);
+  expect(choices()).toEqual([
+    "Only you",
+    "Specific people",
+    "Anyone with the linkCan view without signing in",
+  ]);
   // Turning the link off warns what that does to everyone holding it.
   await show("link");
   expect(choices()).toEqual([
     "Only youThe shared link stops working",
+    "Specific peopleThe shared link stops working",
     "Anyone with the linkCan view without signing in",
   ]);
   await act(async () => root.unmount());
