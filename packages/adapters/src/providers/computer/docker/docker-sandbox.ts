@@ -706,48 +706,66 @@ export class DockerSandboxProvider implements SandboxProvider {
     throw new Error(`sandbox destroy failed: ${res.status} ${body}`.trim());
   }
 
-  /** Every file the export keeps, in walk order, refused once it passes `limits`. */
-  private async listWorkspace(
+  /** Every file the export keeps, in walk order. */
+  private async *listWorkspace(
     computer: ComputerRef,
     directory: string,
     context: AdapterContext,
-    limits: WorkspaceExportLimits | undefined,
-    found: { files: ComputerFileEntry[]; bytes: number },
-  ): Promise<void> {
+  ): AsyncIterable<ComputerFileEntry> {
     const entries = (await this.listFiles(computer, directory, context)).filter(
       (entry) => !shouldSkipPortableWorkspaceFile(entry.path, entry.kind === "dir"),
     );
     for (const entry of entries) {
-      if (entry.kind === "dir") {
-        await this.listWorkspace(computer, entry.path, context, limits, found);
-        continue;
-      }
-      found.files.push(entry);
-      found.bytes += entry.size;
-      if (limits && found.files.length > limits.maxFiles) throw new WorkspaceTooLargeError("files");
-      if (limits && found.bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
+      if (entry.kind === "dir") yield* this.listWorkspace(computer, entry.path, context);
+      else yield entry;
     }
   }
 
-  // Each listing and read is a command in the container, so a home over the limits is refused
-  // from the listing alone instead of after copying gigabytes the save then throws away.
+  // Each listing and read is a command in the container, so with `limits` a home over them is
+  // refused from the listing alone instead of after copying gigabytes the save then throws away.
+  // The held listing is bounded by `maxFiles`; an export without limits streams as it lists.
   private async *walkWorkspace(
     computer: ComputerRef,
     context: AdapterContext,
     limits: WorkspaceExportLimits | undefined,
   ): AsyncIterable<PortableFile> {
-    const found = { files: [] as ComputerFileEntry[], bytes: 0 };
-    await this.listWorkspace(computer, "", context, limits, found);
-    for (let index = 0; index < found.files.length; index += 8) {
-      const batch = await Promise.all(
-        found.files.slice(index, index + 8).map(async (file) => ({
+    const listing = this.listWorkspace(computer, "", context);
+    if (!limits) {
+      yield* this.readWorkspaceFiles(computer, listing, context);
+      return;
+    }
+    const files: ComputerFileEntry[] = [];
+    let bytes = 0;
+    for await (const file of listing) {
+      files.push(file);
+      bytes += file.size;
+      if (files.length > limits.maxFiles) throw new WorkspaceTooLargeError("files");
+      if (bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
+    }
+    yield* this.readWorkspaceFiles(computer, files, context);
+  }
+
+  private async *readWorkspaceFiles(
+    computer: ComputerRef,
+    files: AsyncIterable<ComputerFileEntry> | Iterable<ComputerFileEntry>,
+    context: AdapterContext,
+  ): AsyncIterable<PortableFile> {
+    const read = (batch: ComputerFileEntry[]) =>
+      Promise.all(
+        batch.map(async (file) => ({
           path: file.path,
           content: await this.readFile(computer, file.path, context),
           executable: file.executable,
         })),
       );
-      for (const file of batch) yield file;
+    let batch: ComputerFileEntry[] = [];
+    for await (const file of files) {
+      batch.push(file);
+      if (batch.length < 8) continue;
+      yield* await read(batch);
+      batch = [];
     }
+    yield* await read(batch);
   }
 }
 

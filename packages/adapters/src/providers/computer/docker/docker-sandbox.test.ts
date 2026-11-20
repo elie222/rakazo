@@ -1335,6 +1335,30 @@ describe("Docker sandbox stopped containers", () => {
       ]);
     });
 
+    it("streams an export without limits instead of listing the whole home first", async () => {
+      const root = Array.from({ length: 8 }, (_, index) => ({
+        path: `f${index}.txt`,
+        kind: "file",
+        size: 1,
+      }));
+      const fetch = vi.fn(async (url: string) => {
+        const query = new URL(url).searchParams;
+        if (query.get("mode") === "read") return Response.json({ content: "" });
+        return Response.json(
+          query.get("path") ? [] : [...root, { path: "later", kind: "dir", size: 0 }],
+        );
+      });
+      vi.stubGlobal("fetch", fetch);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      const exported = provider.exportWorkspace(computer, context)[Symbol.asyncIterator]();
+      await expect(exported.next()).resolves.toMatchObject({ value: { path: "f0.txt" } });
+      const listed = fetch.mock.calls
+        .map(([url]) => new URL(url).searchParams)
+        .filter((query) => query.get("mode") === "list")
+        .map((query) => query.get("path"));
+      expect(listed).toEqual([""]);
+    });
+
     it.each([
       [{ maxBytes: 11, maxFiles: 3 }, "bytes"],
       [{ maxBytes: 12, maxFiles: 2 }, "files"],
