@@ -1,16 +1,27 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
 import { useTrustedLinkSites } from "../../lib/integrations/trusted-link-sites";
-import { useSave } from "../../lib/query/query";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { SpaceRpcProvider } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 
 /** Sites the user chose to always open from chat links; shown only once there is one. */
 export function TrustedLinkSitesSettings() {
+  return (
+    <SpaceRpcProvider spaceId={null}>
+      <TrustedLinkSitesList />
+    </SpaceRpcProvider>
+  );
+}
+
+function TrustedLinkSitesList() {
   const { t } = useLingui();
-  const { sites, remove } = useTrustedLinkSites();
+  const { sites } = useTrustedLinkSites();
+  const queries = useSpaceQueries();
   const removal = useSave({
-    save: (site: string, client) => remove(site, client),
+    save: (site: string, client) => client.trustedLinkSites.remove({ site }),
+    stale: [queries.trustedLinkSites.list.queryKey()],
   });
   const error = removal.error ? errorText(removal.error, t`Could not continue`) : null;
 

@@ -9,12 +9,19 @@ import { afterEach, expect, it, vi } from "vitest";
 
 const rpcMock = vi.hoisted(() => ({
   trustedLinkSites: { list: vi.fn(), trust: vi.fn(), remove: vi.fn() },
+  scope: vi.fn(),
 }));
 vi.mock("../../lib/query/rpc", () => ({
   rpc: rpcMock,
-  rpcForSpace: () => rpcMock,
-  createSpaceRpc: () => rpcMock,
-  selectedSpaceId: () => null,
+  rpcForSpace: (spaceId: string) => {
+    rpcMock.scope(spaceId);
+    throw new Error("Space unavailable");
+  },
+  createSpaceRpc: (spaceId: string | null) => {
+    rpcMock.scope(spaceId);
+    return rpcMock;
+  },
+  selectedSpaceId: () => "unavailable-space",
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -62,7 +69,9 @@ async function render() {
 }
 
 it("lists trusted sites and removes one", async () => {
-  rpcMock.trustedLinkSites.list.mockResolvedValue(["alice.github.io", "example.com"]);
+  rpcMock.trustedLinkSites.list
+    .mockResolvedValueOnce(["alice.github.io", "example.com"])
+    .mockResolvedValue(["alice.github.io"]);
   rpcMock.trustedLinkSites.remove.mockResolvedValue({ ok: true });
   const view = await render();
   const rows = () =>
@@ -81,6 +90,8 @@ it("lists trusted sites and removes one", async () => {
   const remove = removes[1];
   await act(async () => remove?.click());
   expect(rpcMock.trustedLinkSites.remove).toHaveBeenCalledWith({ site: "example.com" });
+  expect(rpcMock.scope).toHaveBeenCalledWith(null);
+  expect(rpcMock.scope.mock.calls.every(([spaceId]) => spaceId === null)).toBe(true);
   await vi.waitFor(() => expect(rows()).toEqual(["alice.github.io"]));
   await view.cleanup();
 });
@@ -92,7 +103,9 @@ function removeButtons(container: HTMLElement) {
 }
 
 it("holds every Remove button while a removal is in flight and sends one request", async () => {
-  rpcMock.trustedLinkSites.list.mockResolvedValue(["alice.github.io", "example.com"]);
+  rpcMock.trustedLinkSites.list
+    .mockResolvedValueOnce(["alice.github.io", "example.com"])
+    .mockResolvedValue(["alice.github.io"]);
   const answer = deferred<{ ok: boolean }>();
   rpcMock.trustedLinkSites.remove.mockReturnValue(answer.promise);
   const view = await render();
@@ -122,6 +135,23 @@ it("shows the failure and brings the Remove buttons back", async () => {
   );
   expect(removeButtons(view.container)[0]?.disabled).toBe(false);
   expect(view.container.textContent).toContain("example.com");
+  await view.cleanup();
+});
+
+it("holds Remove until the account-wide list refresh finishes", async () => {
+  const refreshed = deferred<string[]>();
+  rpcMock.trustedLinkSites.list
+    .mockResolvedValueOnce(["example.com"])
+    .mockReturnValue(refreshed.promise);
+  rpcMock.trustedLinkSites.remove.mockResolvedValue({ ok: true });
+  const view = await render();
+  await vi.waitFor(() => expect(removeButtons(view.container)).toHaveLength(1));
+
+  await act(async () => removeButtons(view.container)[0]?.click());
+  await vi.waitFor(() => expect(rpcMock.trustedLinkSites.list).toHaveBeenCalledTimes(2));
+  expect(removeButtons(view.container)[0]?.disabled).toBe(true);
+  await act(async () => refreshed.resolve([]));
+  await vi.waitFor(() => expect(removeButtons(view.container)).toHaveLength(0));
   await view.cleanup();
 });
 

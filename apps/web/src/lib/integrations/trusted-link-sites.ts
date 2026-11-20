@@ -2,7 +2,6 @@ import { writeSaved } from "@rakazo/core/query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { spaceQueries, useQueryUserId } from "../query/query";
-import type { RpcClient } from "../query/rpc";
 import { rpc } from "../query/rpc";
 
 const none: readonly string[] = [];
@@ -39,12 +38,5 @@ export function useTrustedLinkSites() {
     },
     [queryClient, save, userId],
   );
-  const remove = useCallback(
-    async (site: string, client: RpcClient) => {
-      await client.trustedLinkSites.remove({ site });
-      await save((current) => current.filter((item) => item !== site));
-    },
-    [save],
-  );
-  return { sites: sites ?? none, trust: userId === null ? undefined : trust, remove };
+  return { sites: sites ?? none, trust: userId === null ? undefined : trust };
 }
