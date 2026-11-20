@@ -350,6 +350,38 @@ const image = (url: string, placement: MarkdownImageOccurrence["placement"] = "i
 });
 
 describe("native markdown view", () => {
+  it.each([
+    ["dark", darkTokens],
+    ["light", lightTokens],
+  ] as const)("styles the native Markdown table in %s mode", (colorScheme, palette) => {
+    const markdown = "| Item | Detail |\n| --- | --- |\n| One | [Example](https://example.test/) |";
+    renderToStaticMarkup(
+      <ChatMarkdown palette={palette} colorScheme={colorScheme}>
+        {markdown}
+      </ChatMarkdown>,
+    );
+    expect(nativeProps()).toMatchObject({ markdown, flavor: "github" });
+    const style = nativeProps().markdownStyle;
+    expect(style?.link).toEqual({ color: palette.link, underline: true });
+    expect(style?.table).toMatchObject({
+      color: palette.mutedForeground,
+      headerTextColor: palette.foreground,
+      borderColor: palette.input,
+      borderWidth: 0.5,
+    });
+    if (colorScheme === "dark") {
+      expect(style?.table).toMatchObject({
+        headerBackgroundColor: palette.muted,
+        rowEvenBackgroundColor: palette.background,
+        rowOddBackgroundColor: palette.card,
+      });
+    } else {
+      expect(style?.table).not.toHaveProperty("headerBackgroundColor");
+      expect(style?.table).not.toHaveProperty("rowEvenBackgroundColor");
+      expect(style?.table).not.toHaveProperty("rowOddBackgroundColor");
+    }
+  });
+
   it("hands the message to the native view, animating it while it streams", () => {
     renderToStaticMarkup(<ChatMarkdown streaming>{"Partial **reply"}</ChatMarkdown>);
     expect(nativeProps()).toMatchObject({
