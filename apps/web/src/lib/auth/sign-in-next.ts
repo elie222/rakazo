@@ -2,7 +2,7 @@ export const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
 export const SLACK_INSTALL_CALLBACK_PATH = "/messaging/slack/callback";
 
 // The shared Pages list or a single Page review.
-const PAGE_REVIEW_PATH = /^\/review(?:\/[A-Za-z0-9_-]{1,200})?$/;
+const PAGE_REVIEW_PATH = /^\/review(?:\/[A-Za-z0-9_-]{1,200})?\/?$/;
 
 // A Space invite link, or an organization invitation's Join page.
 const INVITE_PATH = /^\/(invite|join)\/[A-Za-z0-9_-]{1,200}$/;

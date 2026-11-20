@@ -377,6 +377,60 @@ describePages("pages", () => {
     expect(await rpc(app, reviewer, "pageReviews/list")).toEqual({ items: [], nextCursor: null });
   });
 
+  it("requires a fresh grant for a replacement account and starts it at the current revision", async () => {
+    const email = `replacement-reviewer-${stamp}@example.test`;
+    const owner = await signup(app, `replacement-owner-${stamp}@example.test`, "Author");
+    const original = await signup(app, email, "Original reviewer");
+    const { id: userId } = await me(app, owner);
+    const { id: originalId } = await me(app, original);
+    const { spaceId } = await db().spaceMember.findFirstOrThrow({ where: { userId } });
+    const source = page("Review");
+    const version = { title: "Review", source, code: pageViewerCode(source) };
+    const { id: pageId } = await db().page.create({
+      data: {
+        userId,
+        spaceId,
+        title: version.title,
+        visibility: "people",
+        versions: { create: { ...version, version: 1 } },
+      },
+    });
+    await db().user.update({ where: { id: originalId }, data: { emailVerified: true } });
+    const grant = () => rpc(app, owner, "pageReviews/grant", { pageId, email });
+    await grant();
+    expect((await raw(app, original, "pageReviews/get", { pageId })).status).toBe(200);
+
+    const deleted = await app.request("/api/auth/delete-user", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: original,
+        origin: "http://127.0.0.1:5173",
+      },
+      body: JSON.stringify({ password: "test-password-123" }),
+    });
+    expect(deleted.status).toBe(200);
+    expect(await db().pageGrant.findFirstOrThrow({ where: { pageId } })).toMatchObject({
+      userId: null,
+      bound: true,
+      firstVersion: 1,
+    });
+    await db().page.update({
+      where: { id: pageId },
+      data: { currentVersion: 2, versions: { create: { ...version, version: 2 } } },
+    });
+    const replacement = await signup(app, email, "Replacement reviewer");
+    const { id: replacementId } = await me(app, replacement);
+    expect(replacementId).not.toBe(originalId);
+    await db().user.update({ where: { id: replacementId }, data: { emailVerified: true } });
+    expect((await raw(app, replacement, "pageReviews/get", { pageId })).status).toBe(404);
+    await grant();
+    expect((await raw(app, replacement, "pageReviews/get", { pageId })).status).toBe(200);
+    expect((await raw(app, replacement, "pageReviews/get", { pageId, version: 1 })).status).toBe(
+      404,
+    );
+  });
+
   it("requires the requesting account's Page consent, including at background dispatch", async () => {
     const email = `consent-reviewer-${stamp}@example.test`;
     const owner = await signup(app, `consent-author-${stamp}@example.test`, "Author");

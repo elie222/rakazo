@@ -37,7 +37,8 @@ Choose **Specific people** and enter each person's verified Rakazo account email
 review link, or have them open **Pages shared with you** from their account menu. They can
 read the page from the revision you shared onward and join its review. Remove a person from
 **Share** to revoke their access. Switching away from **Specific people** removes those grants. If someone verifies their
-account after you add their address, add it again to give them access.
+account after you add their address, add it again to give them access. If their account was deleted,
+adding their new verified account starts access at the current revision.
 
 ### Review a page
 

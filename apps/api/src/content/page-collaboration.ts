@@ -177,16 +177,19 @@ export async function grantPage(
       });
 
       const recipient = users[0];
-      const userId = existing?.bound
-        ? existing.userId
+      const bound = existing?.bound && existing.userId ? existing : undefined;
+      const userId = bound
+        ? bound.userId
         : users.length === 1 && recipient && recipient.id !== actor.userId
           ? recipient.id
           : null;
       const binding = {
         userId,
         bound: Boolean(existing?.bound || userId),
-        firstVersion: existing?.bound ? existing.firstVersion : page.currentVersion,
+        firstVersion: bound?.firstVersion ?? page.currentVersion,
       };
+      // An explicit add can bind a replacement account, but the old account's drafts stay revoked.
+      if (existing?.bound && !bound && userId) await cancelPageGrantRequests(tx, [existing.id]);
       const row = await tx.pageGrant.upsert({
         where,
         create: { pageId, recipientEmail, ...binding },
