@@ -1,10 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { MarketplaceBotAdminRow, MarketplaceBotStatus } from "@rakazo/contracts";
+import type { MarketplaceBotStatus } from "@rakazo/contracts";
 import { Badge, Button, Spinner, Tabs, TabsList, TabsTrigger, toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { Star } from "lucide-react";
 import { useState } from "react";
-import { AdminBotEditor } from "../components/bot-marketplace/admin-bot-editor";
+import { useNavigate } from "react-router-dom";
 import { useSave, useSpaceQueries } from "../lib/query/query";
 import { errorText } from "../lib/query/user-error";
 
@@ -15,7 +15,7 @@ export function AdminBotsPanel() {
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const [tab, setTab] = useState<StatusTab>("all");
-  const [editing, setEditing] = useState<MarketplaceBotAdminRow | "new" | null>(null);
+  const navigate = useNavigate();
   const rows = useQuery(
     queries.botMarketplace.admin.list.queryOptions({
       input: tab === "all" ? {} : { status: tab },
@@ -57,7 +57,7 @@ export function AdminBotsPanel() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <Button onClick={() => setEditing("new")}>
+        <Button onClick={() => navigate("/admin/bots/new")}>
           <Trans>New bot</Trans>
         </Button>
       </div>
@@ -110,7 +110,7 @@ export function AdminBotsPanel() {
                   <Trans>Unpublished</Trans>
                 )}
               </Badge>
-              <Button variant="ghost" size="sm" onClick={() => setEditing(row)}>
+              <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/bots/${row.slug}`)}>
                 <Trans>Edit</Trans>
               </Button>
               <Button
@@ -130,10 +130,6 @@ export function AdminBotsPanel() {
           ))}
         </ul>
       )}
-
-      {editing ? (
-        <AdminBotEditor row={editing === "new" ? null : editing} onClose={() => setEditing(null)} />
-      ) : null}
     </div>
   );
 }

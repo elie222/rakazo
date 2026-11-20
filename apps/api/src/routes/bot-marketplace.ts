@@ -11,6 +11,7 @@ import type { Prisma } from "@rakazo/db";
 import { managedAppCatalog } from "../account/onboarding.js";
 import { requireAdmin } from "../auth/admins.js";
 import { createBotFromTemplateDefinition } from "../bots/bot-templates.js";
+import { marketplaceDraftFromBot, marketplaceSources } from "../bots/marketplace-source.js";
 import type { RouterContext } from "./context.js";
 
 type MarketplaceBotRow = {
@@ -243,6 +244,14 @@ export function botMarketplaceRoutes(ctx: RouterContext) {
             },
           });
           return adminRow(updated);
+        }),
+        sources: authed.botMarketplace.admin.sources.handler(async ({ context }) => {
+          await requireAdmin(deps, context.actor.userId);
+          return marketplaceSources(deps.prisma, context.actor);
+        }),
+        fromBot: authed.botMarketplace.admin.fromBot.handler(async ({ context, input }) => {
+          await requireAdmin(deps, context.actor.userId);
+          return marketplaceDraftFromBot(deps.prisma, context.actor, input.botId);
         }),
       },
     },

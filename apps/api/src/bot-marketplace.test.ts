@@ -51,6 +51,18 @@ type Row = {
   updatedAt: Date;
 };
 
+type SourceBot = {
+  id: string;
+  userId: string;
+  spaceId: string;
+  archivedAt: null;
+  name: string;
+  description: string;
+  instructions: string;
+  space: { name: string };
+  routines: { name: string; prompt: string; crons: string[] }[];
+};
+
 /** An in-memory catalog plus the joins the handlers read; everything else finds nothing. */
 function fakeDb() {
   const rows = new Map<string, Row>();
@@ -63,6 +75,8 @@ function fakeDb() {
     sourceVersion?: number | null;
     bot: { archivedAt: Date | null };
   }[] = [];
+  const sourceBots: SourceBot[] = [];
+  const sourceSkills: { name: string; content: string }[] = [];
   const users = [
     { id: "admin-1", email: "admin@example.test", emailVerified: true, timezone: "UTC" },
     { id: "user-1", email: "user@example.test", emailVerified: true, timezone: "UTC" },
@@ -96,6 +110,13 @@ function fakeDb() {
         return row;
       },
     },
+    bot: {
+      findMany: async ({ where }: { where: { userId: string; spaceId: string } }) =>
+        sourceBots.filter((bot) => bot.userId === where.userId && bot.spaceId === where.spaceId),
+      findFirst: async ({ where }: { where: { id: string; userId: string } }) =>
+        sourceBots.find((bot) => bot.id === where.id && bot.userId === where.userId) ?? null,
+    },
+    agentSkill: { findMany: async () => sourceSkills },
     agentImport: {
       findFirst: async () => null,
       findMany: async ({
@@ -113,7 +134,7 @@ function fakeDb() {
         ),
     },
   };
-  return { prisma, rows, imports };
+  return { prisma, rows, imports, sourceBots, sourceSkills };
 }
 
 /** The route file only uses authed.<path>.handler(fn); keep fn and drop the middleware. */
@@ -221,6 +242,74 @@ describe("botMarketplace admin", () => {
     await expect(call(routes.get, member, { slug: "morning-briefing" })).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
+  });
+});
+
+describe("botMarketplace admin sources", () => {
+  const bot: SourceBot = {
+    id: "bot-1",
+    userId: "admin-1",
+    spaceId: "space-1",
+    archivedAt: null,
+    name: "Morning briefing",
+    description: "",
+    instructions: "Summarise the day.",
+    space: { name: "Ops" },
+    routines: [
+      { name: "Daily", prompt: "Use @Calendar notes to list meetings", crons: ["0 8 * * 1-5"] },
+      { name: "On demand", prompt: "Only by webhook", crons: [] },
+    ],
+  };
+  const skill = {
+    name: "Calendar notes",
+    content: "---\nname: Calendar notes\ndescription: Reads the day.\n---\nList the meetings.",
+  };
+
+  it("refuses non-admins", async () => {
+    const routes = routesWith(fakeDb().prisma);
+    await expect(call(routes.admin.sources, member, {})).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(call(routes.admin.fromBot, member, { botId: "bot-1" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("lists the admin's bots with the skills and scheduled routines a listing would copy", async () => {
+    const db = fakeDb();
+    db.sourceBots.push(bot, { ...bot, id: "bot-2", userId: "user-1" });
+    db.sourceSkills.push(skill);
+    expect(await call(routesWith(db.prisma).admin.sources, admin, {})).toEqual([
+      { botId: "bot-1", name: "Morning briefing", spaceName: "Ops", skills: 1, routines: 1 },
+    ]);
+  });
+
+  it("copies instructions, scheduled routines and the skills they mention", async () => {
+    const db = fakeDb();
+    db.sourceBots.push(bot);
+    db.sourceSkills.push(skill, {
+      name: "Unused",
+      content: "---\nname: Unused\ndescription: Never mentioned.\n---\nBody.",
+    });
+    expect(await call(routesWith(db.prisma).admin.fromBot, admin, { botId: "bot-1" })).toEqual({
+      name: "Morning briefing",
+      description: "",
+      instructions: "Summarise the day.",
+      skills: [
+        { name: "Calendar notes", description: "Reads the day.", body: "List the meetings." },
+      ],
+      routines: [
+        { name: "Daily", prompt: "Use @Calendar notes to list meetings", crons: ["0 8 * * 1-5"] },
+      ],
+    });
+  });
+
+  it("does not hand over another user's bot", async () => {
+    const db = fakeDb();
+    db.sourceBots.push({ ...bot, userId: "user-1" });
+    await expect(
+      call(routesWith(db.prisma).admin.fromBot, admin, { botId: "bot-1" }),
+    ).rejects.toMatchObject({ kind: "NOT_FOUND" });
   });
 });
 

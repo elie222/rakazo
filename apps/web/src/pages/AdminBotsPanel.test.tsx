@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   update: vi.fn(),
   setStatus: vi.fn(),
   toastError: vi.fn(),
+  navigate: vi.fn(),
 }));
 
 const rpcClient = () => ({
@@ -49,13 +50,7 @@ vi.mock("../lib/query/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("../components/bot-marketplace/admin-bot-editor", () => ({
-  AdminBotEditor: ({ row }: { row: { slug: string } | null }) => (
-    <div role="dialog" data-testid="bot-editor">
-      {row ? row.slug : "new"}
-    </div>
-  ),
-}));
+vi.mock("react-router-dom", () => ({ useNavigate: () => api.navigate }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -124,6 +119,7 @@ beforeEach(async () => {
   api.update.mockReset().mockResolvedValue(row);
   api.setStatus.mockReset().mockResolvedValue({ ...row, status: "published" });
   api.toastError.mockReset();
+  api.navigate.mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -178,11 +174,9 @@ it("toggles featured without touching the listing", async () => {
   expect(api.update).toHaveBeenCalledWith({ slug: "morning-briefing", featured: true });
 });
 
-it("opens the editor for a new bot and for a row", async () => {
+it("opens the listing page for a new bot and for a row", async () => {
   await click(button("New bot"));
-  expect(container.querySelector('[data-testid="bot-editor"]')?.textContent).toBe("new");
+  expect(api.navigate).toHaveBeenLastCalledWith("/admin/bots/new");
   await click(button("Edit"));
-  expect(container.querySelector('[data-testid="bot-editor"]')?.textContent).toBe(
-    "morning-briefing",
-  );
+  expect(api.navigate).toHaveBeenLastCalledWith("/admin/bots/morning-briefing");
 });
