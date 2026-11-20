@@ -371,7 +371,7 @@ function TicketDialog({
             {comments.map((row) => (
               <div key={row.id} className="text-body">
                 <div className="mb-1 flex items-center justify-between gap-3 text-label text-muted-foreground">
-                  {row.authorBotId ? (
+                  {row.authorBotId && bots.some((bot) => bot.id === row.authorBotId) ? (
                     <Link to={`/app/${row.authorBotId}`} className="hover:text-foreground">
                       {row.authorName}
                     </Link>
