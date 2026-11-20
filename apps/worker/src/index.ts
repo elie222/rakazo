@@ -51,6 +51,7 @@ import {
   meetingCalendarScope,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
+  openAiCompatAllowPublicHosts,
   PiAgentRuntime,
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
@@ -73,7 +74,7 @@ import {
   withSecretPersistence,
   withSecretWriteAhead,
 } from "@rakazo/adapters";
-import { abortableDelay } from "@rakazo/core";
+import { abortableDelay, parseEnvFlag } from "@rakazo/core";
 import {
   MAX_SANDBOX_COMMAND_TIMEOUT_MS,
   sandboxCommandTimeoutExceedsMax,
@@ -163,6 +164,8 @@ async function main() {
     runSecretWriter: createRunSecretWriter(secrets),
   });
   const env = runRuntimeEnvFromProcess(process.env);
+  // Read per request by model connections; refuse a bad value at boot like the API does.
+  openAiCompatAllowPublicHosts();
   const boardEvents = createBoardEvents(realtime);
   const runtime =
     process.env.AGENT_RUNTIME === "scripted"
@@ -319,12 +322,12 @@ async function main() {
     cloudAgent,
     // Device sockets live in an API process; the worker forwards to whichever one holds it.
     userDevices: withHostComputerScreen(
-      process.env.USER_DEVICES_ENABLED === "false"
-        ? undefined
-        : new UserDevices({
+      parseEnvFlag("USER_DEVICES_ENABLED", process.env.USER_DEVICES_ENABLED, true)
+        ? new UserDevices({
             prisma,
             forwardSecret: userDeviceForwardSecret(env.encryptionKey),
-          }),
+          })
+        : undefined,
       {
         prisma,
         sandboxKind: sandboxProvider,

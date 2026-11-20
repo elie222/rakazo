@@ -61,6 +61,7 @@ import { isEditableTarget } from "../shell-shortcuts";
 import { TimeSeparator, UnreadDivider } from "./chat-context";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
+import { useReplyAnnouncement } from "./use-reply-announcement";
 
 /** Bubbles stop at a readable line length instead of stretching with wide windows. */
 export function bubbleFrameWidth(role: ThreadMessage["role"]) {
@@ -202,6 +203,12 @@ export const Transcript = memo(function Transcript({
   const messages = useMemo(
     () => expandPeerReplies(transcript, expandedPeerMarkers),
     [transcript, expandedPeerMarkers],
+  );
+  const announcement = useReplyAnnouncement(
+    messages,
+    (message) =>
+      (message.botId ? (peerBot(message.botId)?.name ?? memberName?.(message.botId)) : undefined) ??
+      t`Bot`,
   );
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
@@ -790,6 +797,9 @@ export const Transcript = memo(function Transcript({
           <ActiveBotGlyph bots={workingBots} label={workingLabel} />
         ) : null}
       </div>
+      <span role="status" data-testid="reply-announcement" className="sr-only">
+        {announcement}
+      </span>
       {quoteDraft ? <QuoteSelectionButton range={quoteDraft.range} onQuote={applyQuote} /> : null}
       <Button
         ref={jumpButtonRef}

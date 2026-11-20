@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ReactElement } from "react";
-import { act, useLayoutEffect } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -17,6 +17,7 @@ import {
   Toggle,
 } from "./controls.js";
 import { Segmented } from "./data.js";
+import { Section } from "./layout.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -385,4 +386,56 @@ describe("controls", () => {
     expect(buttons).toHaveLength(200);
     expect(q('[aria-pressed="true"]')!.textContent).toBe("o240");
   });
+
+  it("shows a section's content again once the value that broke it is replaced", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    function Period() {
+      const [period, setPeriod] = useState("bad");
+      return (
+        <Section
+          heading="Revenue"
+          actions={<Segmented options={["bad", "good"]} value={period} onChange={setPeriod} />}
+        >
+          {period === "bad" ? <Broken /> : <p>Good numbers</p>}
+        </Section>
+      );
+    }
+    render(<Period />);
+    expect(q(".rk-error")).not.toBeNull();
+    click(host.querySelectorAll("button")[1]!);
+    expect(q(".rk-error")).toBeNull();
+    expect(host.textContent).toContain("Good numbers");
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  it("tries content that keeps throwing once per re-render, not in a loop", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let attempts = 0;
+    function CountingBroken(): never {
+      attempts += 1;
+      throw new Error("bad period");
+    }
+    const page = () => (
+      <Section heading="Revenue">
+        <CountingBroken />
+      </Section>
+    );
+    const view = render(page());
+    expect(q(".rk-error")).not.toBeNull();
+    const afterFirst = attempts;
+    for (let i = 0; i < 3; i++) {
+      const before = attempts;
+      view.rerender(page());
+      // React retries a throwing render once itself, so each pass is a small fixed number.
+      expect(attempts - before).toBeLessThanOrEqual(afterFirst);
+      expect(attempts - before).toBeGreaterThan(0);
+    }
+    const settled = attempts;
+    expect(q(".rk-error")!.textContent).toContain("bad period");
+    expect(attempts).toBe(settled);
+  });
 });
+
+function Broken(): never {
+  throw new Error("bad period");
+}
