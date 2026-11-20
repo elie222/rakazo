@@ -146,6 +146,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
       .optional(),
   }),
   z.object({
+    /** The first-chat card. {@link FOCUS_IMPORT_OPTION_ID} is the option that opens the import. */
     kind: z.literal("choice"),
     question: z.string(),
     subtitle: z.string().optional(),
@@ -426,3 +427,9 @@ export type HistoryToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][
   tool?: string;
   calls?: ToolStepCall[];
 };
+
+/**
+ * The first-chat option for someone moving from another assistant. Picking it opens the agent
+ * import; a client with no import leaves the option out.
+ */
+export const FOCUS_IMPORT_OPTION_ID = "import";

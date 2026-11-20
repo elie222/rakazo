@@ -97,3 +97,23 @@ test("choice refresh failures leave options available for retry", { tag: "@night
   await Promise.all([page.waitForRequest("**/rpc/spaces/list"), choice.click()]);
   await expect(choice).toBeEnabled();
 });
+
+test("moving from another assistant opens the import from the first chat", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `onboarding-import-${stamp}@rakazo.test`, "password12", "Robin");
+  await completeOnboarding(page);
+
+  await page.getByRole("button", { name: /Move from another assistant/ }).click();
+  const dialog = page.getByTestId("agent-import-dialog");
+  await expect(dialog.getByTestId("agent-import-choose")).toBeVisible();
+  await captureScreenshot(page, testInfo, "onboarding-import");
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page
+      .getByTestId("transcript")
+      .getByText("You can bring it over any time from Settings → General → Import an agent."),
+  ).toBeVisible();
+});

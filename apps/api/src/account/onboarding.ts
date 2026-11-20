@@ -1,5 +1,6 @@
 import type { ConnectorRegistry } from "@rakazo/adapters";
 import type { Actor, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
+import { FOCUS_IMPORT_OPTION_ID } from "@rakazo/contracts";
 import { appConnectCard, connectedAppBlock, matchAppCatalog } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -10,6 +11,7 @@ import {
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { requireBotThread } from "../bots/bot-thread.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
 
@@ -61,6 +63,14 @@ const FOCUS_OPTIONS: FocusOption[] = [
     label: "A bit of everything",
     summary: "Slack, calendar, and email",
     apps: ["slack", "gmail", "googlecalendar"],
+  },
+  // Not a focus: the client opens the agent import, which makes its own bot.
+  {
+    id: FOCUS_IMPORT_OPTION_ID,
+    letter: "E",
+    label: "Move from another assistant",
+    summary: "",
+    apps: [],
   },
 ];
 
@@ -262,6 +272,26 @@ export async function chooseFocus(
     block.kind === "choice" ? { ...block, answerId: option.id } : block,
   );
   if (!claimed) return;
+
+  if (option.id === FOCUS_IMPORT_OPTION_ID) {
+    // Where to find it again, for someone who closes the import or is on a client without it.
+    // The choice is already saved, so a note that cannot be posted must not fail it.
+    await bestEffort(
+      "import note in the first chat",
+      post(
+        deps,
+        target,
+        [
+          {
+            kind: "text",
+            text: "You can bring it over any time from Settings → General → Import an agent.",
+          },
+        ],
+        false,
+      ),
+    );
+    return;
+  }
 
   // Keep the name and title the user chose when creating the bot; the focus
   // step only suggests apps, it must not rename the bot.

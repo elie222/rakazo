@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { FOCUS_IMPORT_OPTION_ID } from "@rakazo/contracts";
 import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
 import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
 
@@ -113,7 +114,8 @@ export function applyLocalChoiceDismissals(
 export function choiceCardOptions(block: ChoiceBlock): ChoiceBlock["options"] {
   return block.answerId
     ? block.options.filter((option) => option.id === block.answerId)
-    : block.options;
+    : // The agent import is in the web and desktop apps only, so its option is not offered here.
+      block.options.filter((option) => option.id !== FOCUS_IMPORT_OPTION_ID);
 }
 
 /** Pads the content, not the scroll view, so the scroll indicator stays on the screen edge. */

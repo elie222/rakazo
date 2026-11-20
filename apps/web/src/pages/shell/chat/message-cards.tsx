@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useLinkPrompt } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
+import { FOCUS_IMPORT_OPTION_ID } from "@rakazo/contracts";
 import { appConnectedInput, waitForSignIn } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { X } from "lucide-react";
@@ -23,10 +24,12 @@ export function ChoiceCard({
   botId,
   block,
   onBotChanged,
+  onOpenAgentImport,
 }: {
   botId: string;
   block: Extract<MessageBlock, { kind: "choice" }>;
   onBotChanged: () => Promise<void>;
+  onOpenAgentImport?: () => void;
 }) {
   const { t } = useLingui();
   const [locallyDismissed, setLocallyDismissed] = useState(false);
@@ -84,7 +87,11 @@ export function ChoiceCard({
               letter={option.letter}
               selected={block.answerId ? block.answerId === option.id : undefined}
               disabled={Boolean(block.answerId) || pending}
-              onClick={() => answer.run({ optionId: option.id })}
+              onClick={() => {
+                // Opened by the click itself, so a save that fails still leaves the import open.
+                if (option.id === FOCUS_IMPORT_OPTION_ID) onOpenAgentImport?.();
+                answer.run({ optionId: option.id });
+              }}
             >
               <OnboardingFocusOptionLabel
                 id={option.id}
@@ -129,6 +136,8 @@ function OnboardingFocusOptionLabel({
       return <Trans>Research & writing</Trans>;
     case "everything":
       return <Trans>A bit of everything</Trans>;
+    case FOCUS_IMPORT_OPTION_ID:
+      return <Trans>Move from another assistant</Trans>;
     default:
       return label;
   }

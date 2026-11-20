@@ -5,7 +5,8 @@ can turn it into a new bot, with its instructions, memory and skills, next to th
 have.
 
 Open **Settings → General** and choose **Import an agent**, then pick where the agent comes from.
-Import is available in the web app and the desktop app.
+In your first chat, **Move from another assistant** opens it too. Import is available in the web
+app and the desktop app.
 
 ## From OpenClaw or Hermes
 

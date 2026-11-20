@@ -87,6 +87,7 @@ export const MessageView = memo(function MessageView({
   onOpenComputer,
   onReleaseComputer,
   onOpenImportSetup,
+  onOpenAgentImport,
   rpc,
   showToolActivity,
   onReply,
@@ -142,6 +143,8 @@ export const MessageView = memo(function MessageView({
   ) => Promise<void>;
   /** Opens where an imported item's setup is finished. */
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  /** Opens the agent import, for the first-chat option that asks for it. */
+  onOpenAgentImport?: () => void;
   rpc: ReturnType<typeof createSpaceRpc>;
   showToolActivity: boolean;
   onReply: (message: ThreadMessage) => void;
@@ -483,7 +486,15 @@ export const MessageView = memo(function MessageView({
           if (block.kind === "choice") {
             const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
             if (!botId) return null;
-            return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
+            return (
+              <ChoiceCard
+                key={i}
+                botId={botId}
+                block={block}
+                onBotChanged={onBotChanged}
+                onOpenAgentImport={onOpenAgentImport}
+              />
+            );
           }
           if (block.kind === "app_connect") {
             const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
