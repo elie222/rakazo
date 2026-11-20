@@ -187,6 +187,33 @@ describe.skipIf(!url)("phone calendar execution", () => {
     }
   });
 
+  it("deletes a removed account's request even when its run is retained", async () => {
+    const record = await run();
+    const departing = await system.user.create({
+      data: {
+        id: randomUUID(),
+        email: `departing-${randomUUID()}@example.test`,
+        name: "Departing",
+      },
+    });
+    const request = await system.nativeCalendarRequest.create({
+      data: {
+        id: randomUUID(),
+        runId: record.id,
+        spaceId: identity.spaceId,
+        userId: departing.id,
+        sessionId,
+        deviceDigest,
+        status: "pending",
+        operation,
+        expiresAt: new Date(0),
+      },
+    });
+    await system.user.delete({ where: { id: departing.id } });
+    expect(await system.nativeCalendarRequest.findUnique({ where: { id: request.id } })).toBeNull();
+    expect(await system.run.findUnique({ where: { id: record.id } })).not.toBeNull();
+  });
+
   it("refuses an expired, shared, or stopped run's request", async () => {
     const record = await run();
     const origin = { userId: identity.userId, spaceId: identity.spaceId, sessionId, deviceDigest };

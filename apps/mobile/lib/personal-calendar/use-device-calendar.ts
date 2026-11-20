@@ -93,7 +93,10 @@ async function serve(botId: string, signal: AbortSignal) {
     else {
       try {
         response = validateDeviceCalendarResult(claimed.operation, await prepared.perform());
-      } catch {
+      } catch (error) {
+        reportMobileError(new Error("Device calendar execution failed"), "rpc.transport", {
+          errorType: error instanceof Error ? error.name : "unknown",
+        });
         const write = !claimed.operation.action.startsWith("list_");
         response = { status: write ? "uncertain" : "unavailable" };
       }

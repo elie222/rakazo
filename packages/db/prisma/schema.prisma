@@ -23,6 +23,7 @@ model AiDataConsent {
 
 model User {
   meetingSessions MeetingSession[]
+  nativeCalendarRequests NativeCalendarRequest[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
   id                          String                       @id
@@ -1545,6 +1546,7 @@ model NativeCalendarRequest {
   run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
   spaceId   String
   userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   sessionId String
   deviceDigest String
   status    String
@@ -1553,6 +1555,7 @@ model NativeCalendarRequest {
   expiresAt DateTime
   @@index([sessionId, status, expiresAt])
   @@index([runId])
+  @@index([userId])
   @@map("native_calendar_requests")
 }
 

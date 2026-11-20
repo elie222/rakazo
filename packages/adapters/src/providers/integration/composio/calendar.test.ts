@@ -1,6 +1,7 @@
 import type { ConnectedCalendarOperation, ConnectedConnector } from "@rakazo/adapter-kit";
+import { createAdapterContext } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { executeConnectedCalendar } from "./calendar.js";
+import { connectedCalendarProvider, executeConnectedCalendar } from "./calendar.js";
 
 const connection: ConnectedConnector = {
   id: "account-b",
@@ -32,6 +33,28 @@ const draft: ConnectedCalendarOperation = {
 };
 
 describe("connected calendar contract", () => {
+  it("propagates unexpected provider errors and marks a write timeout as uncertain", async () => {
+    const proxyExecute = vi.fn();
+    const provider = connectedCalendarProvider(async () => ({ proxyExecute }));
+    const context = createAdapterContext({ spaceId: "space", userId: "user" }, "bot", "operation");
+    const read = { action: "list_calendars", input: { source: "connected" } } as const;
+    const programmingError = new TypeError("Unexpected proxy failure");
+    proxyExecute.mockRejectedValueOnce(programmingError);
+    await expect(provider.calendar(connection, read, "read", context)).rejects.toBe(
+      programmingError,
+    );
+
+    proxyExecute
+      .mockResolvedValueOnce({
+        status: 200,
+        data: { id: calendar.calendarId, accessRole: "owner" },
+      })
+      .mockRejectedValueOnce(Object.assign(new Error("Timeout"), { status: 408, headers: {} }));
+    await expect(provider.calendar(connection, draft, "write", context)).resolves.toEqual({
+      status: "uncertain",
+    });
+  });
+
   it("expands occurrences and keeps their calendar, source dates, and original occurrence", async () => {
     const proxy = vi.fn(async () => ({
       status: 200,

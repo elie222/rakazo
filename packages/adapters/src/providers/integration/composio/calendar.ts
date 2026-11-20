@@ -14,6 +14,7 @@ import type {
 import { CalendarResults } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
+import { isComposioOutage } from "./composio-errors.js";
 
 type ProxyRequest = Omit<ToolProxyParams, "connectedAccountId">;
 type Proxy = (request: ProxyRequest) => Promise<{ status: number; data?: unknown }>;
@@ -92,7 +93,10 @@ function okay({ status }: { status: number }) {
 
 function failure(status: number, write = false): CalendarResponse {
   if (status === 401 || status === 403) return { status: "denied" };
-  return { status: write && (status < 400 || status >= 500) ? "uncertain" : "unavailable" };
+  return {
+    status:
+      write && (status < 400 || status === 408 || status >= 500) ? "uncertain" : "unavailable",
+  };
 }
 
 function okayResult<A extends keyof typeof CalendarResults>(
@@ -128,6 +132,7 @@ export function connectedCalendarProvider(
         return await executeConnectedCalendar(proxy, connection, operation, writeKey);
       } catch (error) {
         context.signal.throwIfAborted();
+        if (!isComposioOutage(error)) throw error;
         getLogger().warn("Connected calendar operation failed", {
           operation: operation.action,
           errorType: error instanceof Error ? error.name : "unknown",

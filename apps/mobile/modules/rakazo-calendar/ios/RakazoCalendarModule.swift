@@ -113,9 +113,10 @@ public final class RakazoCalendarModule: Module {
         let date = try self.instant(due.at)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
-        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second, .nanosecond], from: date)
         components.timeZone = zone
-        guard calendar.date(from: components) == date else { throw CalendarError.date }
+        guard let reconstructed = calendar.date(from: components),
+          abs(reconstructed.timeIntervalSince(date)) < 0.000_001 else { throw CalendarError.date }
         reminder.dueDateComponents = components
       }
       try self.store.save(reminder, commit: true)
@@ -173,7 +174,7 @@ public final class RakazoCalendarModule: Module {
       "id": event.calendarItemIdentifier,
       "title": event.title ?? "",
       "start": date(event.startDate),
-      "end": date(event.endDate),
+      "end": date(event.isAllDay ? exclusiveDayEnd(event, zone: zone) : event.endDate),
       "allDay": event.isAllDay,
     ]
     if let timeZone = event.timeZone { item["timeZone"] = timeZone.identifier }
@@ -186,6 +187,17 @@ public final class RakazoCalendarModule: Module {
       item["recurrence"] = recurrence
     }
     return item
+  }
+
+  private func exclusiveDayEnd(_ event: EKEvent, zone: TimeZone) -> Date {
+    // EventKit round-trips exclusive midnight, but existing events can end within their last day.
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = zone
+    let endDay = calendar.startOfDay(for: event.endDate)
+    if event.endDate == endDay && endDay > calendar.startOfDay(for: event.startDate) {
+      return endDay
+    }
+    return calendar.dateInterval(of: .day, for: event.endDate)?.end ?? event.endDate
   }
 
   private func reminderInfo(_ reminder: EKReminder) -> [String: Any] {

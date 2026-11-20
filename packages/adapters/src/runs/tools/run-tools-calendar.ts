@@ -93,7 +93,8 @@ function outcome(result: CalendarResponse) {
     cancelled: "The owner cancelled this calendar operation.",
     unavailable: "That calendar or reminder list is unavailable in this run.",
     unsupported: "The selected calendar cannot preserve the requested operation.",
-    expired: "The phone did not respond before the calendar request expired.",
+    expired:
+      "The phone did not respond before the calendar request expired. Ask the owner to open this chat on their phone and send a new message to try again.",
     uncertain:
       "The write may have been saved. Check the same calendar or list before requesting another write.",
   };
