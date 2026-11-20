@@ -3,6 +3,7 @@ import type { Actor } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
+import { spaceChangesFor } from "./space-change-procedures.js";
 
 const actor: Actor = {
   spaceId: "space-1",
@@ -117,5 +118,9 @@ describe("space change procedures", () => {
     );
     await client.routines.remove({ routineId: "routine-1" });
     expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith(actor.spaceId, "routines");
+  });
+
+  it("maps a created artifact to the artifacts signal", () => {
+    expect(spaceChangesFor(["artifacts", "create"])).toEqual(["artifacts"]);
   });
 });
