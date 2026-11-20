@@ -101,11 +101,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function render() {
+async function render(profile = bot) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <BotVoiceSettings bot={bot} />
+        <BotVoiceSettings bot={profile} />
       </QueryClientProvider>,
     ),
   );
@@ -115,6 +115,44 @@ async function render() {
   });
   await act(flush);
 }
+
+it("refreshes same-bot roster changes without restoring an older detail or roster snapshot", async () => {
+  const oldBot = bot;
+  const oldRead = deferred<Bot>();
+  vi.mocked(rpc.bots.get).mockReturnValue(oldRead.promise);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <BotVoiceSettings bot={oldBot} />
+      </QueryClientProvider>,
+    ),
+  );
+  await act(async () => {
+    await vi.waitFor(() => expect(rpc.bots.get).toHaveBeenCalled());
+    await vi.waitFor(() =>
+      expect(container.querySelector<HTMLButtonElement>('[id$="-provider"]')?.disabled).toBe(true),
+    );
+  });
+  bot = { ...bot, voiceProvider: "speech-b", voiceId: "warm" };
+  vi.mocked(rpc.bots.get).mockImplementation(async () => bot);
+  await render();
+  expect(container.querySelector('[id$="-provider"]')?.textContent).toBe("Speech B");
+  expect(container.querySelector('[id$="-voice"]')?.textContent).toBe("Warm");
+
+  await act(async () => oldRead.resolve(oldBot));
+  await act(flush);
+  expect(container.querySelector('[id$="-voice"]')?.textContent).toBe("Warm");
+  await choose("voice", "Bright");
+  await render(oldBot);
+  expect(container.querySelector('[id$="-provider"]')?.textContent).toBe("Speech B");
+  expect(container.querySelector('[id$="-voice"]')?.textContent).toBe("Bright");
+  await choose("voice", "Warm");
+  expect(rpc.bots.update).toHaveBeenLastCalledWith({
+    botId: "bot-1",
+    voiceProvider: "speech-b",
+    voiceId: "warm",
+  });
+});
 
 async function choose(suffix: string, label: string) {
   const selector = `[role="combobox"][id$="-${suffix}"]`;

@@ -3,7 +3,7 @@ import type { Bot } from "@rakazo/contracts";
 import type { BotVoiceSelection } from "@rakazo/core";
 import { botVoiceChoices, botVoiceProviderChoices, botVoiceSelection } from "@rakazo/core";
 import { Button, Field, FieldGroup, FieldLabel, OptionSelect } from "@rakazo/ui-web";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, Square } from "lucide-react";
 import { useCallback, useEffect, useId, useSyncExternalStore } from "react";
 import { useCallSession } from "../../../lib/calls/call-session";
@@ -16,6 +16,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
   const { t } = useLingui();
   const ids = useId();
   const queries = useSpaceQueries();
+  const client = useQueryClient();
   const botQuery = useQuery({
     ...queries.bots.get.queryOptions({ input: { botId: bot.id } }),
     initialData: bot,
@@ -23,6 +24,15 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
   const credentials = useQuery(queries.voice.credentials.queryOptions());
   const catalog = useQuery(queries.voice.catalog.queryOptions());
   const status = useQuery(queries.voice.status.queryOptions({ input: { botId: bot.id } }));
+  // Roster signals can update this prop without refreshing the separate detail/readiness reads.
+  useEffect(() => {
+    void client.invalidateQueries({
+      queryKey: queries.bots.get.queryKey({ input: { botId: bot.id } }),
+    });
+    void client.invalidateQueries({
+      queryKey: queries.voice.status.queryKey({ input: { botId: bot.id } }),
+    });
+  }, [client, queries, bot.id, bot.voiceProvider, bot.voiceId]);
   const current = botQuery.data ?? bot;
   const selectedProvider = current.voiceProvider ?? "";
   const providers = botVoiceProviderChoices({
@@ -91,6 +101,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
     voices.error ??
     botQuery.error;
   const canPreview = Boolean(status.data?.ready && (connection || inheritedSpeech));
+  const editingBlocked = save.pending || botQuery.isFetching;
 
   function stopPreview() {
     if (speaker.state.messageId === previewId) speaker.stop();
@@ -110,7 +121,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
             id={`${ids}-provider`}
             className="w-fit max-w-2/3"
             value={selectedProvider}
-            disabled={save.pending}
+            disabled={editingBlocked}
             options={[{ value: "", label: defaultProviderLabel }, ...providers.options]}
             onValueChange={(provider) => {
               stopPreview();
@@ -146,7 +157,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
               id={`${ids}-voice`}
               className="min-w-0 flex-1"
               value={current.voiceId ?? ""}
-              disabled={save.pending || !connection || voices.isPending}
+              disabled={editingBlocked || !connection || voices.isPending}
               options={[{ value: "", label: defaultVoiceLabel }, ...voiceChoices.options]}
               onValueChange={(voiceId) => {
                 stopPreview();
