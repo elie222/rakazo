@@ -28,7 +28,7 @@ import {
   toComputerRef,
   touchRunningComputer,
   WorkspacePathError,
-  withWakeableComputer,
+  wakeableComputerRef,
 } from "@rakazo/adapters";
 import {
   attachmentMaxBytes,
@@ -93,12 +93,14 @@ export function computerRoutes(ctx: RouterContext) {
       boot: authed.computer.boot.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
-        const ctx = computerContext(context.actor, bot.id, "boot");
         if (bot.computer.state === "running" && bot.computer.providerRef) {
-          const mode = parseComputerMode(bot.computer.scope);
           try {
-            await withWakeableComputer(deps, bot.computer, (ref) =>
-              ensureComputerWorkspaceLayout(deps.sandbox, ref, mode, bot.id, ctx),
+            await ensureComputerWorkspaceLayout(
+              deps.sandbox,
+              await wakeableComputerRef(deps.prisma, bot.computer),
+              parseComputerMode(bot.computer.scope),
+              bot.id,
+              computerContext(context.actor, bot.id, "boot"),
             );
             scheduleComputerSleep(deps.jobs, bot.computer.id);
             return computerStatus(deps, context.actor, input.botId);
@@ -106,6 +108,7 @@ export function computerRoutes(ctx: RouterContext) {
             await clearGoneSandbox(deps, bot.computer, error);
           }
         }
+        const ctx = computerContext(context.actor, bot.id, "boot");
         const manualRunId = `boot:${randomUUID()}`;
         const lease = await acquireBootLease(deps.prisma, {
           computerId: bot.computer.id,
@@ -481,10 +484,9 @@ export function computerRoutes(ctx: RouterContext) {
             data: { updatedAt: new Date() },
           });
           scheduleComputerSleep(deps.jobs, computer.id);
-          entries = await withWakeableComputer(deps, computer, async (ref) => {
-            await ensureComputerWorkspaceLayout(deps.sandbox, ref, computerMode, bot.id, ctx);
-            return deps.sandbox.listFiles(ref, storedPath, ctx);
-          });
+          const ref = await wakeableComputerRef(deps.prisma, computer);
+          await ensureComputerWorkspaceLayout(deps.sandbox, ref, computerMode, bot.id, ctx);
+          entries = await deps.sandbox.listFiles(ref, storedPath, ctx);
         } else {
           entries = await deps.home.list(computer.homeKey, storedPath, ctx);
         }
@@ -506,14 +508,16 @@ export function computerRoutes(ctx: RouterContext) {
             data: { updatedAt: new Date() },
           });
           scheduleComputerSleep(deps.jobs, bot.computer.id);
-          const bytes = await withWakeableComputer(deps, bot.computer, (ref) =>
-            deps.sandbox.readFile(ref, storedPath, ctx, { maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES }),
-          ).catch((error: unknown) => {
-            if (error instanceof SandboxFileTooLargeError) {
-              throw new ClientError("BAD_REQUEST", "file is too large to preview");
-            }
-            throw error;
-          });
+          const bytes = await deps.sandbox
+            .readFile(await wakeableComputerRef(deps.prisma, bot.computer), storedPath, ctx, {
+              maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
+            })
+            .catch((error: unknown) => {
+              if (error instanceof SandboxFileTooLargeError) {
+                throw new ClientError("BAD_REQUEST", "file is too large to preview");
+              }
+              throw error;
+            });
           try {
             content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
           } catch (error) {
@@ -552,18 +556,22 @@ export function computerRoutes(ctx: RouterContext) {
           bot.id,
           input.path,
         );
-        const ctx = computerContext(context.actor, bot.id, "download");
-        const bytes = await withWakeableComputer(deps, computer, (ref) =>
-          deps.sandbox.readFile(ref, storedPath, ctx, { maxBytes: attachmentMaxBytes(deps.env) }),
-        ).catch((error: unknown) => {
-          if (error instanceof SandboxFileTooLargeError) {
-            throw new ClientError(
-              "BAD_REQUEST",
-              `File exceeds the ${attachmentSizeLabel(attachmentMaxBytes(deps.env))} download limit.`,
-            );
-          }
-          throw error;
-        });
+        const bytes = await deps.sandbox
+          .readFile(
+            await wakeableComputerRef(deps.prisma, computer),
+            storedPath,
+            computerContext(context.actor, bot.id, "download"),
+            { maxBytes: attachmentMaxBytes(deps.env) },
+          )
+          .catch((error: unknown) => {
+            if (error instanceof SandboxFileTooLargeError) {
+              throw new ClientError(
+                "BAD_REQUEST",
+                `File exceeds the ${attachmentSizeLabel(attachmentMaxBytes(deps.env))} download limit.`,
+              );
+            }
+            throw error;
+          });
         return { path: input.path, contentBase64: Buffer.from(bytes).toString("base64") };
       }),
       uploadFile: authed.computer.uploadFile.handler(async ({ context, input }) => {
@@ -601,9 +609,10 @@ export function computerRoutes(ctx: RouterContext) {
             throw new ClientError("BAD_REQUEST", error.message);
           throw error;
         }
-        const ctx = computerContext(context.actor, bot.id, "upload");
-        await withWakeableComputer(deps, computer, (ref) =>
-          deps.sandbox.writeFile(ref, { path: storedPath, content }, ctx),
+        await deps.sandbox.writeFile(
+          await wakeableComputerRef(deps.prisma, computer),
+          { path: storedPath, content },
+          computerContext(context.actor, bot.id, "upload"),
         );
         return { ok: true as const };
       }),
@@ -642,20 +651,22 @@ export function computerRoutes(ctx: RouterContext) {
         if (!holdsComputerControl(computer, bot.id, context.actor) || !computer.controlLeaseId) {
           throw new ORPCError("FORBIDDEN", { message: "Take control first." });
         }
-        const terminal = {
-          controlToken: computer.controlLeaseId,
-          cwd: resolveBotWorkspaceCwd(parseComputerMode(computer.scope), bot.id, undefined),
-        };
-        const ctx = await computerScreenContext(
-          deps.prisma,
-          context.actor,
-          computer.id,
-          bot.id,
-          "terminal",
-        );
-        const session = await withWakeableComputer(deps, computer, async (ref) =>
-          deps.sandbox.connectTerminal?.(ref, terminal, ctx),
-        ).catch((error: unknown) => clearGoneSandbox(deps, computer, error));
+        const session = await deps.sandbox
+          .connectTerminal(
+            await wakeableComputerRef(deps.prisma, computer),
+            {
+              controlToken: computer.controlLeaseId,
+              cwd: resolveBotWorkspaceCwd(parseComputerMode(computer.scope), bot.id, undefined),
+            },
+            await computerScreenContext(
+              deps.prisma,
+              context.actor,
+              computer.id,
+              bot.id,
+              "terminal",
+            ),
+          )
+          .catch((error: unknown) => clearGoneSandbox(deps, computer, error));
         if (!session) return { url: null };
         await keepComputerAwake(deps, computer.id);
         return {
@@ -689,26 +700,22 @@ export function computerRoutes(ctx: RouterContext) {
         const computer = bot.computer;
         // Everyone in the Space can watch; only the person holding control can drive it.
         const holder = holdsComputerControl(computer, bot.id, context.actor);
-        const screen = {
-          view: "stream" as const,
-          interactive: holder,
-          controlToken: holder ? (computer.controlLeaseId ?? undefined) : undefined,
-        };
-        const ctx = await computerScreenContext(
-          deps.prisma,
-          context.actor,
-          computer.id,
-          bot.id,
-          "screen",
-        );
-        const session = await withWakeableComputer(deps, computer, (ref) =>
-          deps.sandbox.connectScreen(ref, screen, ctx),
-        ).catch(async (error: unknown) => {
-          if (error instanceof ComputerScreenUnavailableError) {
-            throw new ClientError("CONFLICT", error.message);
-          }
-          return clearGoneSandbox(deps, computer, error);
-        });
+        const session = await deps.sandbox
+          .connectScreen(
+            await wakeableComputerRef(deps.prisma, computer),
+            {
+              view: "stream",
+              interactive: holder,
+              controlToken: holder ? (computer.controlLeaseId ?? undefined) : undefined,
+            },
+            await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
+          )
+          .catch(async (error: unknown) => {
+            if (error instanceof ComputerScreenUnavailableError) {
+              throw new ClientError("CONFLICT", error.message);
+            }
+            return clearGoneSandbox(deps, computer, error);
+          });
         if (!session?.url) return { url: null };
         if (!input.preview) scheduleComputerSleep(deps.jobs, bot.computer.id);
         const viewUrl = withViewOnly(session.url, !holder);
@@ -746,20 +753,16 @@ export function computerRoutes(ctx: RouterContext) {
           !input.runId ||
           Boolean(await waitingTakeoverRun(deps, context.actor.spaceId, bot.id, input.runId));
         if (!(await stillWaiting())) return { image: null };
-        const ctx = await computerScreenContext(
-          deps.prisma,
-          context.actor,
-          computer.id,
-          bot.id,
-          "screen",
-        );
-        const observation = await withWakeableComputer(deps, computer, (ref) =>
-          deps.sandbox.observe(ref, ctx),
-        ).catch(async (error: unknown) => {
-          if (isSandboxGoneError(error)) return clearGoneSandbox(deps, computer, error);
-          getLogger().warn("computer.preview_failed", { error });
-          return null;
-        });
+        const observation = await deps.sandbox
+          .observe(
+            await wakeableComputerRef(deps.prisma, computer),
+            await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
+          )
+          .catch(async (error: unknown) => {
+            if (isSandboxGoneError(error)) return clearGoneSandbox(deps, computer, error);
+            getLogger().warn("computer.preview_failed", { error });
+            return null;
+          });
         if (!observation || !(await stillWaiting())) return { image: null };
         const data = Buffer.from(observation.image).toString("base64");
         return { image: `data:${observation.mimeType};base64,${data}` };

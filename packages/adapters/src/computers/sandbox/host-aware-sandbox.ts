@@ -211,10 +211,6 @@ export class HostAwareSandbox implements SandboxProvider {
     return this.route(computer).isStopped?.(computer, context) ?? false;
   }
 
-  async runningSize(computer: ComputerRef, context: AdapterContext) {
-    return this.route(computer).runningSize?.(computer, context);
-  }
-
   async environment(computer: ComputerRef, context: AdapterContext) {
     const provider = this.route(computer);
     return provider.environment?.(computer, context);

@@ -170,8 +170,6 @@ export interface SandboxProvider {
    * throws when it cannot tell.
    */
   isRunning?(computer: ComputerRef, context: AdapterContext): Promise<boolean>;
-  /** Read-only probe: the size the provider reports this running machine at, when it knows. */
-  runningSize?(computer: ComputerRef, context: AdapterContext): Promise<ComputerSize | undefined>;
   /**
    * Read-only probe: true only when the provider already holds this reference stopped with its
    * disk kept, so it resumes as it was without anything running now.

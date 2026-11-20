@@ -136,8 +136,6 @@ export interface ComputerRef {
    * keeps the size it has, and without one a woken machine keeps it too.
    */
   startSize?: ComputerSize;
-  /** Told the size it started at when a call through this reference woke the machine. */
-  onStart?(size: ComputerSize | undefined): void;
 }
 
 export type WorkspaceDirectoryRequest =

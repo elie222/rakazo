@@ -586,15 +586,10 @@ describe("recordTeachingInputEvent", () => {
 describe("applyTeachingDesktopInput", () => {
   const computer = {
     id: "computer-1",
-    spaceId: "space-1",
-    userId: "user-1",
     homeKey: "bot-1",
     kind: "e2b",
     providerRef: "boat-1",
     controlLeaseId: "lease-1",
-    runningSince: null,
-    runningSize: null,
-    runningSizeSince: null,
   };
   const prisma = { computer: { findUnique: vi.fn().mockResolvedValue(null) } };
 

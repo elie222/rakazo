@@ -137,7 +137,7 @@ const BOAT_RECOVER_WAIT_CODES = new Set([
 ]);
 
 /** A sandbox a call works on, with what that call wakes it at if it finds it stopped. */
-type BoatTarget = Pick<ComputerRef, "startSize" | "onStart"> & { id: string };
+type BoatTarget = Pick<ComputerRef, "startSize"> & { id: string };
 
 interface BoatCommandResult {
   stdout: string;
@@ -766,14 +766,6 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
-  async runningSize(computer: ComputerRef, context: AdapterContext) {
-    const { sandbox } = await this.client.get(
-      { sandboxId: this.id(computer) },
-      { signal: context.signal },
-    );
-    return RUNNABLE_STATES.has(sandbox.state) ? boatComputerSize(sandbox.type) : undefined;
-  }
-
   async isStopped(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
     try {
       const { sandbox } = await this.client.get(
@@ -965,11 +957,10 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
-  /** Brings the sandbox up for a call at the call's size, and tells the call if it started it. */
+  /** Brings the sandbox up for a call, at the call's size if it has to start it. */
   private async wake(sandbox: BoatTarget, signal: AbortSignal | undefined): Promise<void> {
     const type = sandbox.startSize && BOAT_MACHINE_TYPES[sandbox.startSize];
-    const { started, size } = await this.ensureRunnable(sandbox.id, signal, undefined, type);
-    if (started) sandbox.onStart?.(size);
+    await this.ensureRunnable(sandbox.id, signal, undefined, type);
   }
 
   /** A reconnect handles a refused type itself, so it can report that it started at another. */
@@ -1529,7 +1520,7 @@ export class BoatSandboxProvider implements SandboxProvider {
   }
 
   private target(computer: ComputerRef): BoatTarget {
-    return { id: this.id(computer), startSize: computer.startSize, onStart: computer.onStart };
+    return { id: this.id(computer), startSize: computer.startSize };
   }
 
   private forget(id: string): void {

@@ -50,6 +50,7 @@ export type {
 } from "./computers/computer-provider-descriptor.js";
 export * from "./computers/computer-provider-registry.js";
 export * from "./computers/computer-update.js";
+export * from "./computers/computer-wake.js";
 export * from "./computers/computer-workspace.js";
 export * from "./computers/host/host-computer-device.js";
 export * from "./computers/host/user-device-emulator.js";
