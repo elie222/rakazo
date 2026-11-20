@@ -24,6 +24,7 @@ import {
   SHUTDOWN_DOWNLOAD_GRACE_MS,
   SHUTDOWN_HANDOFF_MARGIN_MS,
 } from "./intake/limits.js";
+import { MESSAGING_LINK_HINT } from "./link-hint.js";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import {
   createMessagingInboundHandler,
@@ -2893,6 +2894,16 @@ describe("createMessagingInboundHandler channel routing", () => {
     );
   });
 
+  it("points the group intro at linking in the app when open signup is off", async () => {
+    const deps = createDeps();
+    deps.openSignup = false;
+    const handle = createMessagingInboundHandler(deps);
+    await handle(groupEvent);
+    const intro = deps.outboundRows.find((row) => row.idempotencyKey === "intro:ch-1");
+    expect(intro?.body).toContain("Settings → Messaging");
+    expect(intro?.body).not.toContain("send any message to this line first");
+  });
+
   it("does not post a second intro once one was posted", async () => {
     const deps = createDeps();
     Object.assign(deps.prisma.messagingChannel, {
@@ -4223,13 +4234,53 @@ describe("createMessagingInboundHandler linking", () => {
     expiresAt: new Date(Date.now() + 60_000),
   };
 
-  it("stays silent for unknown senders when open signup is off", async () => {
+  it("tells unknown senders how to link, once a day, when open signup is off", async () => {
     const deps = createDeps({ identity: null });
-    (deps as unknown as { openSignup: boolean }).openSignup = false;
+    deps.openSignup = false;
     const handle = createMessagingInboundHandler(deps);
     await handle(dmEvent);
     expect(deps.provision).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.outboundRows).toEqual([
+      expect.objectContaining({
+        kind: "intro",
+        threadId: "sendblue:dm-1",
+        body: MESSAGING_LINK_HINT,
+      }),
+    ]);
+    expect(deps.send).toHaveBeenCalledWith([{ identityId: null, threadId: "sendblue:dm-1" }]);
+    await handle({ ...dmEvent, handle: "h-2", content: "hello again" });
+    expect(deps.outboundRows).toHaveLength(1);
+    // The key names the address only by its hash.
+    expect(deps.outboundRows[0]!.idempotencyKey).not.toContain("5551111111");
+  });
+
+  it("sends the link hint again on a later day and to each address", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-03-01T23:00:00Z") });
+    try {
+      const deps = createDeps({ identity: null });
+      deps.openSignup = false;
+      const handle = createMessagingInboundHandler(deps);
+      await handle(dmEvent);
+      await handle({ ...dmEvent, handle: "h-2", from: "+15552222222", threadId: "sendblue:dm-2" });
+      vi.setSystemTime(new Date("2026-03-02T01:00:00Z"));
+      await handle({ ...dmEvent, handle: "h-3" });
+      expect(deps.outboundRows.map((row) => row.threadId)).toEqual([
+        "sendblue:dm-1",
+        "sendblue:dm-2",
+        "sendblue:dm-1",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends no link hint to bots or for empty events", async () => {
+    const deps = createDeps({ identity: null });
+    deps.openSignup = false;
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, senderIsBot: true });
+    await handle({ ...dmEvent, handle: "h-3", content: "" });
     expect(deps.outboundRows).toHaveLength(0);
   });
 
@@ -4286,7 +4337,11 @@ describe("createMessagingInboundHandler linking", () => {
       }),
     ]);
     expect(deps.linkCodes).toHaveLength(0);
-    expect(deps.outboundRows).toHaveLength(1);
+    // The reused code links nothing; that sender gets the plain link hint instead.
+    expect(deps.outboundRows).toHaveLength(2);
+    expect(deps.outboundRows[1]).toEqual(
+      expect.objectContaining({ threadId: "telegram:456", body: MESSAGING_LINK_HINT }),
+    );
     expect(deps.provision).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
@@ -4353,7 +4408,7 @@ describe("createMessagingInboundHandler linking", () => {
     ]);
   });
 
-  it("ignores expired codes without an oracle reply", async () => {
+  it("answers expired codes with the plain link hint, not an oracle reply", async () => {
     const deps = createDeps({
       identity: null,
       linkCode: { ...liveCode, expiresAt: new Date(Date.now() - 1_000) },
@@ -4362,7 +4417,8 @@ describe("createMessagingInboundHandler linking", () => {
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "ABCD-2345" });
     expect(deps.createdIdentities).toHaveLength(0);
-    expect(deps.outboundRows).toHaveLength(0);
+    // The same words as for any other text from an unlinked sender: nothing about the code.
+    expect(deps.outboundRows.map((row) => row.body)).toEqual([MESSAGING_LINK_HINT]);
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
   });
 
