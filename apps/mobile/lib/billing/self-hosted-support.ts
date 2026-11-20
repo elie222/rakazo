@@ -32,24 +32,34 @@ export function showSelfHostedSupport(): void {
   );
 }
 
-/** Asks a self-hosted server's user once per device; Settings keeps the way back. Resolves true when it asked. */
+/**
+ * Asks a self-hosted server's user once per device; Settings keeps the way back. Resolves true
+ * when it asked. A failed read or write leaves the offer for a later inbox visit.
+ */
 export async function offerSelfHostedSupportOnce(isActive: () => boolean): Promise<boolean> {
   if (asked || !selfHosted()) return false;
   asked = true;
-  let stored: string | null;
-  try {
-    stored = await SecureStore.getItemAsync(ASKED_KEY);
-  } catch (error) {
-    // A failed read decides nothing, so the next visit to the inbox checks again.
-    asked = false;
-    throw error;
-  }
+  const stored = await bestEffort(
+    "self-hosted support read",
+    SecureStore.getItemAsync(ASKED_KEY).then((value) => value ?? ""),
+  );
   if (stored === "1") return false;
-  if (!isActive()) {
+  const saved =
+    stored !== undefined &&
+    isActive() &&
+    (await bestEffort(
+      "self-hosted support save",
+      SecureStore.setItemAsync(ASKED_KEY, "1").then(() => true),
+    ));
+  if (!saved) {
     asked = false;
     return false;
   }
-  await bestEffort("self-hosted support asked", SecureStore.setItemAsync(ASKED_KEY, "1"));
+  if (!isActive()) {
+    asked = false;
+    await bestEffort("self-hosted support undo", SecureStore.deleteItemAsync(ASKED_KEY));
+    return false;
+  }
   showSelfHostedSupport();
   return true;
 }

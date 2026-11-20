@@ -1,7 +1,13 @@
+import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  offerSelfHostedSupportOnce,
+  resetSelfHostedSupportForTests,
+  selfHosted,
+} from "./self-hosted-support";
 
 const store = new Map<string, string>();
-const failRead = vi.hoisted(() => ({ on: false }));
+const fail = vi.hoisted(() => ({ read: false, write: false }));
 const native = vi.hoisted(() => ({
   apiBase: "https://chat.example.test",
   alert: vi.fn(),
@@ -10,11 +16,15 @@ const native = vi.hoisted(() => ({
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(async (key: string) => {
-    if (failRead.on) throw new Error("keychain locked");
+    if (fail.read) throw new Error("keychain locked");
     return store.get(key) ?? null;
   }),
   setItemAsync: vi.fn(async (key: string, value: string) => {
+    if (fail.write) throw new Error("keychain locked");
     store.set(key, value);
+  }),
+  deleteItemAsync: vi.fn(async (key: string) => {
+    store.delete(key);
   }),
 }));
 vi.mock("react-native", () => ({ Alert: { alert: native.alert } }));
@@ -23,12 +33,6 @@ vi.mock("../api/endpoint", () => ({
   usesCustomApiBase: (url: string) => url !== "https://app.example.test",
 }));
 vi.mock("../platform/open-url", () => ({ openExternalUrl: native.openUrl }));
-
-async function load() {
-  const support = await import("./self-hosted-support");
-  support.resetSelfHostedSupportForTests();
-  return support;
-}
 
 type Button = { text: string; onPress?: () => void };
 function buttons(): Button[] {
@@ -41,46 +45,61 @@ describe("self-hosted support offer", () => {
     native.alert.mockClear();
     native.openUrl.mockClear();
     native.apiBase = "https://chat.example.test";
-    failRead.on = false;
+    fail.read = false;
+    fail.write = false;
+    resetSelfHostedSupportForTests();
   });
 
   it("asks once per device and opens the chosen payment page", async () => {
-    const support = await load();
-    await support.offerSelfHostedSupportOnce(() => true);
+    await offerSelfHostedSupportOnce(() => true);
     expect(native.alert).toHaveBeenCalledTimes(1);
 
     buttons()[1]?.onPress?.();
     expect(native.openUrl).toHaveBeenCalledWith("https://rakazo.com/priority-support");
 
-    support.resetSelfHostedSupportForTests();
-    await support.offerSelfHostedSupportOnce(() => true);
+    resetSelfHostedSupportForTests();
+    await offerSelfHostedSupportOnce(() => true);
     expect(native.alert).toHaveBeenCalledTimes(1);
   });
 
   it("never asks on the hosted server", async () => {
     native.apiBase = "https://app.example.test";
-    const support = await load();
-    await support.offerSelfHostedSupportOnce(() => true);
+    await offerSelfHostedSupportOnce(() => true);
     expect(native.alert).not.toHaveBeenCalled();
-    expect(support.selfHosted()).toBe(false);
+    expect(selfHosted()).toBe(false);
   });
 
   it("waits for the next inbox visit when the inbox has gone", async () => {
-    const support = await load();
-    await support.offerSelfHostedSupportOnce(() => false);
+    await offerSelfHostedSupportOnce(() => false);
     expect(native.alert).not.toHaveBeenCalled();
 
-    await support.offerSelfHostedSupportOnce(() => true);
+    await offerSelfHostedSupportOnce(() => true);
     expect(native.alert).toHaveBeenCalledTimes(1);
   });
 
-  it("checks again on the next visit after a failed read", async () => {
-    const support = await load();
-    failRead.on = true;
-    await expect(support.offerSelfHostedSupportOnce(() => true)).rejects.toThrow();
-    failRead.on = false;
+  it("leaves the offer for a later visit when storage fails", async () => {
+    fail.read = true;
+    await expect(offerSelfHostedSupportOnce(() => true)).resolves.toBe(false);
+    fail.read = false;
+    fail.write = true;
+    await expect(offerSelfHostedSupportOnce(() => true)).resolves.toBe(false);
+    expect(native.alert).not.toHaveBeenCalled();
 
-    await expect(support.offerSelfHostedSupportOnce(() => true)).resolves.toBe(true);
+    fail.write = false;
+    await expect(offerSelfHostedSupportOnce(() => true)).resolves.toBe(true);
     expect(native.alert).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ask once the inbox has gone during the save", async () => {
+    let active = true;
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
+      async (key: string, value: string) => {
+        store.set(key, value);
+        active = false;
+      },
+    );
+    await expect(offerSelfHostedSupportOnce(() => active)).resolves.toBe(false);
+    expect(native.alert).not.toHaveBeenCalled();
+    expect(store.size).toBe(0);
   });
 });
