@@ -163,9 +163,18 @@ export function commitStreamingReveal(
 }
 
 type RevealSlot =
-  | { kind: "text"; parent: HastNode; index: number; start: number; value: string; units: string[] }
+  | {
+      kind: "text";
+      parent: HastNode;
+      index: number;
+      start: number;
+      end: number;
+      value: string;
+      units: string[];
+    }
   | { kind: "element"; node: HastNode; start: number }
   | { kind: "marker"; node: HastNode; start: number };
+type RevealTextSlot = Extract<RevealSlot, { kind: "text" }>;
 
 type RevealSchedule = { now: number; interval: number };
 
@@ -217,9 +226,33 @@ function isMathCodeElement(node: HastNode): boolean {
   );
 }
 
-/** Source offset of a node, or the block start when the parser supplied no position. */
+/** Source offset of a node, or zero when the parser supplied no position. */
 function sourceOffset(node: HastNode, fallback: number): number {
   return node.position?.start?.offset ?? fallback;
+}
+
+let textDecoder: HTMLTextAreaElement | undefined;
+
+/** Rendered form of a text node's source: entities decode and backslash escapes drop their slash. */
+function decodeMarkdownText(source: string): string {
+  if (typeof document === "undefined") return source.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+  textDecoder ??= document.createElement("textarea");
+  textDecoder.innerHTML = source.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+  return textDecoder.value;
+}
+
+/**
+ * Rendered characters of a text node that were on screen before `revealed`. Source offsets count
+ * entity spelling (`&amp;`) and escapes, so the slice is decoded before it is compared with the
+ * node's rendered value.
+ */
+function visiblePrefix(slot: RevealTextSlot, blockSource: string, revealed: number): number {
+  if (revealed === Number.POSITIVE_INFINITY || revealed >= slot.end) return slot.value.length;
+  if (revealed <= slot.start) return 0;
+  return Math.min(
+    slot.value.length,
+    decodeMarkdownText(blockSource.slice(slot.start, revealed)).length,
+  );
 }
 
 /**
@@ -283,7 +316,8 @@ export function createStreamingRevealPlugin(
                 kind: "text",
                 parent: node,
                 index,
-                start: sourceOffset(child, blockStart),
+                start: sourceOffset(child, 0),
+                end: child.position?.end?.offset ?? 0,
                 value,
                 units: [],
               });
@@ -295,14 +329,14 @@ export function createStreamingRevealPlugin(
           // A list marker is a pseudo-element, not a text node. Schedule it before the item's
           // first unit so the bullet fades in with the text; the stylesheet transitions its color.
           if (!childSkip && tagName === "li") {
-            slots.push({ kind: "marker", node: child, start: sourceOffset(child, blockStart) });
+            slots.push({ kind: "marker", node: child, start: sourceOffset(child, 0) });
           }
           // Code inside a pre is skipped with it; reaching here means inline code, which fades in
           // as one unit alongside the words around it.
           if (!childSkip && tagName === "code") {
             if (collectHastText(child).length === 0) continue;
             if (!isMathCodeElement(child)) {
-              slots.push({ kind: "element", node: child, start: sourceOffset(child, blockStart) });
+              slots.push({ kind: "element", node: child, start: sourceOffset(child, 0) });
             }
             continue;
           }
@@ -327,9 +361,7 @@ export function createStreamingRevealPlugin(
           if (slot.start >= revealed) fresh += 1;
           continue;
         }
-        // Rendered offset within the text node that was already visible. Text nodes normally map
-        // one to one onto their source; an escape can shift the boundary by a few characters.
-        const visible = Math.max(0, Math.min(slot.value.length, revealed - slot.start));
+        const visible = visiblePrefix(slot, blockSource, revealed);
         let cursor = 0;
         for (const unit of slot.units) {
           if (cursor >= visible && unit.trim().length > 0) fresh += 1;
@@ -379,7 +411,7 @@ export function createStreamingRevealPlugin(
           );
           continue;
         }
-        const visible = Math.max(0, Math.min(slot.value.length, revealed - slot.start));
+        const visible = visiblePrefix(slot, blockSource, revealed);
         let cursor = 0;
         const out: HastNode[] = [];
         for (const unit of slot.units) {

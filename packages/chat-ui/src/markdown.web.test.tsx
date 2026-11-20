@@ -979,6 +979,30 @@ describe("web markdown streaming", () => {
     container.remove();
   });
 
+  it("fades in words appended after a character reference", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hi &amp;"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Hi &amp; world"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["world"]);
+    expect(container.textContent).toBe("Hi & world");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("shows a replaced snapshot at once instead of replaying it", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");
