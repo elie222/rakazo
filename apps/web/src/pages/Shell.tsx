@@ -82,6 +82,7 @@ import { ChatContextMenu } from "./shell/chat/chat-context-menu";
 import { ChatFindBar } from "./shell/chat/chat-find-bar";
 import { ChatHeader } from "./shell/chat/chat-header";
 import { FALLBACK_BOT_COLOR } from "./shell/chat/chat-shared";
+import { ChatTopFade } from "./shell/chat/chat-top-fade";
 import { Transcript } from "./shell/chat/transcript";
 import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./shell/chat/transcript-member-name";
 import { useChatRead } from "./shell/chat/use-chat-read";
@@ -1140,10 +1141,11 @@ function SpaceShell() {
         <div
           ref={chatColumnRef}
           data-finding={findOpen || undefined}
-          className="relative flex min-h-0 flex-1 flex-col"
+          className="relative flex min-h-0 flex-1 flex-col [--chat-top-clearance:5rem] md:[--chat-top-clearance:5.25rem]"
         >
           {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
+          <ChatTopFade />
           {findOpen ? (
             <div className="absolute end-3 top-14 z-20">
               <ChatFindBar
