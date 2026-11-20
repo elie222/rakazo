@@ -13,11 +13,11 @@ import { describe, expect, it, vi } from "vitest";
 import { reactToThreadMessage } from "./thread-reactions.js";
 import { threadSnapshot } from "./thread-snapshot.js";
 import { stopThreadRuns } from "./thread-stop.js";
+import { QuestionAlreadyAnsweredError } from "./thread-strict-answer.js";
 import type { ThreadTarget } from "./thread-target.js";
 import {
   cancelSupersededQueuedRuns,
   latestWaitingRun,
-  QuestionAlreadyAnsweredError,
   replyParentBotId,
   sendTargetBotIds,
   sendThreadMessage,

@@ -61,9 +61,9 @@ import {
 } from "../threads/thread-read-state.js";
 import { threadSnapshot } from "../threads/thread-snapshot.js";
 import { isStopMessage, stopThreadRuns } from "../threads/thread-stop.js";
+import { replayExistingSend } from "../threads/thread-strict-answer.js";
 import type { ThreadTarget } from "../threads/thread-target.js";
 import {
-  replayExistingSend,
   replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,

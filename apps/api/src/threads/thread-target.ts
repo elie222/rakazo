@@ -5,18 +5,12 @@ import type {
   ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { notifyMemberMessage, wakeRun } from "@rakazo/adapters";
+import { notifyMemberMessage } from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
-import {
-  GROUP_MEMBER_MIN,
-  MessageBlock as MessageBlockSchema,
-  QUESTION_ALREADY_ANSWERED_ERROR,
-  resolveBotAvatarSet,
-} from "@rakazo/contracts";
+import { GROUP_MEMBER_MIN, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
-  ClientError,
   callIdFromClientNonce,
   isConversationalRun,
   isQuestionAskBlock,
@@ -45,7 +39,6 @@ import {
   runHoldsChat,
   SpaceDeletionInProgressError,
   spaceTakesWork,
-  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   withTransactionRetry,
@@ -60,25 +53,18 @@ import {
 import type { ImageAdmissionRun } from "./thread-image-admission.js";
 import { assertThreadImageInput } from "./thread-image-admission.js";
 import { cancelThreadRuns, finishThreadStop, isStopMessage } from "./thread-stop.js";
+import {
+  enqueueRunsNeedingContinue,
+  loadStrictQuestionRun,
+  parseMessageBlocks,
+  QuestionAlreadyAnsweredError,
+  RUNS_NEEDING_CONTINUE,
+  replayExistingSend,
+  sendResult,
+  validateStrictAnswerInput,
+} from "./thread-strict-answer.js";
 
-/** Strict card-answer send targeted a question that is already closed or belongs to someone else. */
-export class QuestionAlreadyAnsweredError extends ClientError {
-  constructor() {
-    super("CONFLICT", "This question was already answered", QUESTION_ALREADY_ANSWERED_ERROR);
-    this.name = "QuestionAlreadyAnsweredError";
-  }
-}
-
-/**
- * Parses stored blocks entry by entry so an unrecognized sibling block from another release
- * cannot hide a valid pending question or reply preview on the same row.
- */
-function parseMessageBlocks(message: { id: string; blocks: unknown }): MessageBlock[] {
-  return storedMessageBlocks(message).flatMap((entry) => {
-    const parsed = MessageBlockSchema.safeParse(entry);
-    return parsed.success ? [parsed.data] : [];
-  });
-}
+export { enqueueRunsNeedingContinue, RUNS_NEEDING_CONTINUE };
 
 export type ThreadTarget =
   | {
@@ -96,8 +82,6 @@ export type ThreadTarget =
       members: Omit<GroupMember, "status">[];
       memberBotIds: string[];
     };
-
-export const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
 const STEERABLE_RUN_STATUSES = new Set<string>(QUEUE_HOLDING_RUN_STATUSES);
 /**
@@ -180,102 +164,6 @@ export function sendRunClientNonce(
 ): string | undefined {
   if (!clientNonce) return undefined;
   return botId ? `send:${messageId}:${botId}` : `send:${messageId}`;
-}
-
-export async function enqueueRunsNeedingContinue(
-  jobs: JobPublisher,
-  runs: Array<{ id: string; status: string }>,
-) {
-  await Promise.all(
-    runs.filter((run) => RUNS_NEEDING_CONTINUE.has(run.status)).map((run) => wakeRun(jobs, run.id)),
-  );
-}
-
-async function findSendReceipt(prisma: PrismaClient, threadId: string, clientNonce: string) {
-  return prisma.message.findUnique({
-    where: { threadId_clientNonce: { threadId, clientNonce } },
-    include: { sourceRuns: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
-  });
-}
-
-export async function replayExistingSend(
-  deps: { prisma: PrismaClient; events: ThreadEvents; jobs: JobPublisher },
-  threadId: string,
-  authorUserId: string,
-  clientNonce: string | undefined,
-  releaseTakeover?: (runId: string) => Promise<void>,
-) {
-  if (!clientNonce) return null;
-  const message = await findSendReceipt(deps.prisma, threadId, clientNonce);
-  if (!message) return null;
-  // Legacy messages saved before shared spaces have authorUserId null and keep replaying.
-  if (message.authorUserId && message.authorUserId !== authorUserId) {
-    throw new ClientError("CONFLICT", "This message nonce is already in use.");
-  }
-  const receiptEvent = await deps.prisma.event.findFirst({
-    where: {
-      threadId,
-      type: "thread.message.created",
-      payload: { path: ["messageId"], equals: message.id },
-    },
-    orderBy: { seq: "desc" },
-    select: { payload: true },
-  });
-  const receiptRunIds = sendEventRunIds(receiptEvent?.payload);
-  const receiptRuns = receiptRunIds.length
-    ? await deps.prisma.run.findMany({ where: { id: { in: receiptRunIds } } })
-    : [];
-  const receiptRunById = new Map(receiptRuns.map((run) => [run.id, run]));
-  const orderedReceiptRuns = receiptRunIds.flatMap((id) => {
-    const run = receiptRunById.get(id);
-    return run ? [run] : [];
-  });
-  const linkedRun =
-    message.sourceRuns[0] ??
-    (message.runId ? await deps.prisma.run.findUnique({ where: { id: message.runId } }) : null);
-  if (!linkedRun && orderedReceiptRuns.length === 0) return null;
-  const runs = orderedReceiptRuns.length
-    ? orderedReceiptRuns
-    : message.sourceRuns.length
-      ? message.sourceRuns
-      : [linkedRun!];
-  const pendingSteering = releaseTakeover
-    ? await deps.prisma.steeringMessage.findFirst({
-        where: { messageId: message.id, claimedAt: null },
-        select: { runId: true },
-      })
-    : null;
-  if (releaseTakeover && pendingSteering?.runId) await releaseTakeover(pendingSteering.runId);
-  await enqueueRunsNeedingContinue(deps.jobs, runs);
-  const latestEvent = await deps.prisma.event.findFirst({
-    where: { threadId },
-    orderBy: { seq: "desc" },
-    select: { seq: true },
-  });
-  if (latestEvent) {
-    await deps.events.notify(threadId, latestEvent.seq).catch((error) => {
-      // Subscribers catch up from the durable event cursor after a missed realtime wake.
-      getLogger().error("thread send realtime notification", error);
-    });
-  }
-  return sendResult(message, runs);
-}
-
-function sendEventRunIds(payload: Prisma.JsonValue | undefined): string[] {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
-  const runIds = (payload as { runIds?: unknown }).runIds;
-  return Array.isArray(runIds) ? runIds.filter((id): id is string => typeof id === "string") : [];
-}
-
-function sendResult(message: { seq: number }, runs: Array<{ id: string; taskId: string }>) {
-  const first = runs[0];
-  if (!first) throw new IsolationError("Send did not create a run");
-  return {
-    taskId: first.taskId,
-    runId: first.id,
-    seq: message.seq,
-    runIds: runs.map((run) => run.id),
-  };
 }
 
 export async function cancelSupersededQueuedRuns(
@@ -565,18 +453,7 @@ export async function sendThreadMessage(
   if (requestedReplyQuote && !input.replyToMessageId) {
     throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
   }
-  if (input.answersQuestion) {
-    if (!input.replyToMessageId) {
-      throw new ClientError("BAD_REQUEST", "answersQuestion requires replyToMessageId.");
-    }
-    if (!input.text?.trim()) {
-      throw new ClientError("BAD_REQUEST", "answersQuestion requires nonblank text.");
-    }
-    // Receipt replay already ran above; only a fresh answer needs a runnable model.
-    if (input.noModel) {
-      throw new ClientError("BAD_REQUEST", MODEL_REQUIRED_SEND_ERROR);
-    }
-  }
+  validateStrictAnswerInput(input);
 
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
@@ -672,64 +549,14 @@ export async function sendThreadMessage(
             run.status === "waiting_input" &&
             run.userId === actor.userId,
         )?.id;
-      const loadStrictQuestionRun = async (allowedBotIds: readonly string[]) => {
-        if (!replyToMessageId || allowedBotIds.length === 0) {
-          throw new QuestionAlreadyAnsweredError();
-        }
-        // Re-read under the thread lock so a concurrent answer or another member's card
-        // is refused rather than falling back to a newer question.
-        const card = await tx.message.findFirst({
-          where: { id: replyToMessageId, threadId: target.threadId, role: "bot" },
-          select: { id: true, botId: true, runId: true, blocks: true },
-        });
-        const pendingQuestion =
-          card &&
-          parseMessageBlocks(card).some(
-            (block) =>
-              block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
-          );
-        if (!card?.runId || !pendingQuestion) throw new QuestionAlreadyAnsweredError();
-        // Match threads.answer: a background helper posts its card in the originating chat
-        // while its run row belongs to the helper's own thread.
-        const run = await tx.run.findFirst({
-          where: {
-            id: card.runId,
-            spaceId: actor.spaceId,
-            botId: { in: [...allowedBotIds] },
-            OR: [
-              { threadId: target.threadId },
-              {
-                trigger: BACKGROUND_HELPER_TRIGGER,
-                sourceMessage: {
-                  threadId: target.threadId,
-                  thread: { spaceId: actor.spaceId },
-                },
-              },
-            ],
-            status: "waiting_input",
-          },
-          select: {
-            id: true,
-            taskId: true,
-            botId: true,
-            status: true,
-            trigger: true,
-            userId: true,
-          },
-        });
-        if (!run || run.userId !== actor.userId) throw new QuestionAlreadyAnsweredError();
-        // Verify exact-card eligibility before creating the user message row.
-        const eligible = await eligibleWaitingTextAnswer(tx, {
-          spaceId: actor.spaceId,
+      const loadStrictQuestion = (allowedBotIds: readonly string[]) =>
+        loadStrictQuestionRun(tx, {
+          actor,
           threadId: target.threadId,
-          runId: run.id,
-          answeredByUserId: actor.userId,
-          answer: input.text ?? "",
-          messageId: replyToMessageId,
+          replyToMessageId,
+          text: input.text,
+          allowedBotIds,
         });
-        if (!eligible) throw new QuestionAlreadyAnsweredError();
-        return run;
-      };
 
       if (target.kind === "bot") {
         const mentionTargets = splitMentionTargets(input.mentions);
@@ -774,7 +601,7 @@ export async function sendThreadMessage(
           });
         }
         const strictRun = input.answersQuestion
-          ? await loadStrictQuestionRun([target.botId])
+          ? await loadStrictQuestion([target.botId])
           : undefined;
         const blocks = buildUserMessageBlocks(
           input.text,
@@ -1033,9 +860,7 @@ export async function sendThreadMessage(
           });
         }
       }
-      const strictRun = input.answersQuestion
-        ? await loadStrictQuestionRun(targetBotIds)
-        : undefined;
+      const strictRun = input.answersQuestion ? await loadStrictQuestion(targetBotIds) : undefined;
       const blocks = buildUserMessageBlocks(
         input.text,
         sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
