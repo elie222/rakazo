@@ -7,6 +7,9 @@
 范围：`Bot` 设置面板的六项能力（头像、名称、电脑、工作区、权限、并行工作）与 Memory 页的
 三个子页（关于你、这个 Bot、梦境）。
 
+后续补齐项（token 口径、整理、时间回顾、撤销、来源与历史、搜索、长笔记、E2E、移动端对齐、
+保留数配置）见 [`memory-and-dreams-gap-design.md`](./memory-and-dreams-gap-design.md)。
+
 ---
 
 ## 1. 已交付清单
