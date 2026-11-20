@@ -16,6 +16,8 @@ export const BOT_SETTINGS_SECTIONS = {
     "crossSpaceCommunication",
     "fleetManagement",
     "maxConcurrentHelpers",
+    "conversationCompaction",
+    "maxToolCallsPerTurn",
     "replyMode",
     "instructions",
     "description",

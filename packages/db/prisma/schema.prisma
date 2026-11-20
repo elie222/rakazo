@@ -1061,6 +1061,12 @@ model Bot {
   approvalMode           String?
   /// Background helpers this bot may run at once; null uses the deployment default.
   maxConcurrentHelpers   Int?
+  /// "automatic", "earlier", "near_limit" or "custom"; how this bot compacts older messages.
+  conversationCompactionMode   String @default("automatic")
+  /// Observed input-token threshold when conversationCompactionMode is "custom".
+  conversationCompactionTokens Int?
+  /// Tool calls one turn may make; null uses the deployment default.
+  maxToolCallsPerTurn          Int?
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]

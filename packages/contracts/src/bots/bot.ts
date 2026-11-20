@@ -40,6 +40,67 @@ export const BotMaxConcurrentHelpersSchema = z
   .min(1)
   .max(MAX_CONCURRENT_HELPERS_LIMIT);
 
+/** When a bot summarizes older messages. */
+export const CONVERSATION_COMPACTION_MODES = [
+  "automatic",
+  "earlier",
+  "near_limit",
+  "custom",
+] as const;
+export const ConversationCompactionModeSchema = z.enum(CONVERSATION_COMPACTION_MODES);
+export type ConversationCompactionMode = z.infer<typeof ConversationCompactionModeSchema>;
+export function normalizeConversationCompactionMode(
+  value: string | null | undefined,
+): ConversationCompactionMode {
+  return value === "earlier" || value === "near_limit" || value === "custom" ? value : "automatic";
+}
+export const MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS = 20_000;
+export const MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS = 1_000_000;
+export const DEFAULT_CUSTOM_CONVERSATION_COMPACTION_TOKENS = 100_000;
+/** A custom threshold never exceeds this share of the model's context window. */
+export const MAX_CONVERSATION_COMPACTION_WINDOW_RATIO = 0.9;
+export const BotConversationCompactionTokensSchema = z
+  .number()
+  .int()
+  .min(MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS)
+  .max(MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS);
+
+/**
+ * The observed input-token threshold for a mode. `null` means the mode keeps the existing
+ * message-count behavior, or no positive model window was known.
+ */
+export function conversationCompactionTokenThreshold(
+  mode: ConversationCompactionMode | null | undefined,
+  customTokens: number | null | undefined,
+  contextWindow: number | null | undefined,
+): number | null {
+  if (!contextWindow || !Number.isFinite(contextWindow) || contextWindow < 1) return null;
+  switch (mode) {
+    case "earlier":
+      return Math.max(1, Math.floor(contextWindow * 0.5));
+    case "near_limit":
+      return Math.max(1, Math.floor(contextWindow * 0.8));
+    case "custom":
+      return Math.max(
+        1,
+        Math.min(
+          customTokens ?? DEFAULT_CUSTOM_CONVERSATION_COMPACTION_TOKENS,
+          Math.floor(contextWindow * MAX_CONVERSATION_COMPACTION_WINDOW_RATIO),
+        ),
+      );
+    default:
+      return null;
+  }
+}
+
+/** The most tool calls one turn may make when a bot sets its own limit. */
+export const MAX_TOOL_CALLS_PER_TURN_LIMIT = 1_000;
+export const BotMaxToolCallsPerTurnSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_TOOL_CALLS_PER_TURN_LIMIT);
+
 export const BotSchema = z.object({
   meetingsEnabled: z.boolean().optional(),
   id: Id,
@@ -78,6 +139,12 @@ export const BotSchema = z.object({
     .default(null),
   /** Background helpers this bot may run at once; null uses the default. */
   maxConcurrentHelpers: BotMaxConcurrentHelpersSchema.nullable().default(null),
+  /** How this bot compacts older messages; absent means automatic. */
+  conversationCompactionMode: ConversationCompactionModeSchema.optional(),
+  /** Observed input-token threshold when the mode is custom. */
+  conversationCompactionTokens: BotConversationCompactionTokensSchema.nullable().optional(),
+  /** Tool calls one turn may make; null or absent follows the deployment default. */
+  maxToolCallsPerTurn: BotMaxToolCallsPerTurnSchema.nullable().optional(),
   updatedAt: z.string(),
   createdAt: z.string(),
   voiceId: z.string().nullable(),
@@ -200,6 +267,12 @@ export const UpdateBotInput = z
     hostDeviceId: Id.nullable().optional(),
     /** Background helpers this bot may run at once; null restores the default. */
     maxConcurrentHelpers: BotMaxConcurrentHelpersSchema.nullable().optional(),
+    /** How this bot compacts older messages. */
+    conversationCompactionMode: ConversationCompactionModeSchema.optional(),
+    /** Observed input-token threshold when the mode is custom. */
+    conversationCompactionTokens: BotConversationCompactionTokensSchema.nullable().optional(),
+    /** Tool calls one turn may make; null restores the deployment default. */
+    maxToolCallsPerTurn: BotMaxToolCallsPerTurnSchema.nullable().optional(),
     teamChatAmbientEnabled: z.boolean().optional(),
     teamChatRules: z.string().max(TEAM_CHAT_RULES_MAX_LENGTH).optional(),
     crossSpaceCommunication: z.boolean().optional(),

@@ -11,8 +11,6 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
-  DEFAULT_MAX_CONCURRENT_HELPERS,
-  MAX_CONCURRENT_HELPERS_LIMIT,
   normalizeBotWorkspacePath,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
@@ -32,6 +30,7 @@ import type { Voice } from "expo-speech";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ScrollViewInstance } from "react-native";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { BotAgentSettings } from "../components/bots/bot-agent-settings";
 import { BotAvatar } from "../components/bots/bot-avatar";
 import { BotContextCards } from "../components/bots/bot-context-cards";
 import { BotDreamsSection } from "../components/bots/bot-dreams-section";
@@ -95,7 +94,6 @@ export default function BotSettingsScreen() {
   const [approvalMode, setApprovalMode] = useState<ApprovalMode | "space">("space");
   const [useOwnMemory, setUseOwnMemory] = useState(true);
   const [useSharedMemory, setUseSharedMemory] = useState(true);
-  const [tasksAtOnce, setTasksAtOnce] = useState("");
   // Auto judges with a model; without one the bot asks, as the picker says.
   const autoAvailable =
     useScreenQuery(rpcQuery("autoReview/get", {})).data?.checkerAvailable ?? true;
@@ -226,7 +224,6 @@ export default function BotSettingsScreen() {
         setApprovalMode(next.approvalMode ?? "space");
         setUseOwnMemory(next.useOwnMemory);
         setUseSharedMemory(next.useSharedMemory);
-        setTasksAtOnce(String(next.maxConcurrentHelpers ?? DEFAULT_MAX_CONCURRENT_HELPERS));
         setModelKey(
           next.modelProvider && next.modelId
             ? modelOptionKey(next.modelProvider, next.modelId)
@@ -436,7 +433,6 @@ export default function BotSettingsScreen() {
         autoSpeak?: boolean;
         workspacePath?: string | null;
         approvalMode?: ApprovalMode | null;
-        maxConcurrentHelpers?: number | null;
         useOwnMemory?: boolean;
         useSharedMemory?: boolean;
       } = { botId };
@@ -454,24 +450,6 @@ export default function BotSettingsScreen() {
         input.workspacePath = nextWorkspacePath;
       const nextApprovalMode = approvalMode === "space" ? null : approvalMode;
       if (nextApprovalMode !== (bot.approvalMode ?? null)) input.approvalMode = nextApprovalMode;
-      // An emptied field asks for the default, as the web row does.
-      const parsedTasksAtOnce = tasksAtOnce.trim()
-        ? Number(tasksAtOnce.trim())
-        : DEFAULT_MAX_CONCURRENT_HELPERS;
-      if (
-        !Number.isInteger(parsedTasksAtOnce) ||
-        parsedTasksAtOnce < 1 ||
-        parsedTasksAtOnce > MAX_CONCURRENT_HELPERS_LIMIT
-      ) {
-        setError(t`Use a whole number from 1 to ${MAX_CONCURRENT_HELPERS_LIMIT}.`);
-        pendingRef.current = false;
-        setPending(false);
-        return;
-      }
-      const nextTasksAtOnce =
-        parsedTasksAtOnce === DEFAULT_MAX_CONCURRENT_HELPERS ? null : parsedTasksAtOnce;
-      if (nextTasksAtOnce !== (bot.maxConcurrentHelpers ?? null))
-        input.maxConcurrentHelpers = nextTasksAtOnce;
       if (useOwnMemory !== bot.useOwnMemory) input.useOwnMemory = useOwnMemory;
       if (useSharedMemory !== bot.useSharedMemory) input.useSharedMemory = useSharedMemory;
       if (profile.description !== (bot.description ?? "")) {
@@ -539,8 +517,6 @@ export default function BotSettingsScreen() {
       (workspacePath.trim() ? normalizeBotWorkspacePath(workspacePath.trim()) : null) !==
         (bot.workspacePath ?? null) ||
       (approvalMode === "space" ? null : approvalMode) !== (bot.approvalMode ?? null) ||
-      (tasksAtOnce.trim() ? Number(tasksAtOnce.trim()) : DEFAULT_MAX_CONCURRENT_HELPERS) !==
-        (bot.maxConcurrentHelpers ?? DEFAULT_MAX_CONCURRENT_HELPERS) ||
       useOwnMemory !== bot.useOwnMemory ||
       useSharedMemory !== bot.useSharedMemory ||
       autoSpeak !== bot.autoSpeak ||
@@ -779,15 +755,7 @@ export default function BotSettingsScreen() {
               fleetSave={fleetSave}
               onError={setError}
             />
-            <SettingsGroup label={t`Background work`}>
-              <SettingsInputRow
-                accessibilityLabel={t`Tasks at once`}
-                placeholder={t`Tasks at once`}
-                keyboardType="number-pad"
-                value={tasksAtOnce}
-                onChangeText={setTasksAtOnce}
-              />
-            </SettingsGroup>
+            {bot ? <BotAgentSettings bot={bot} onError={setError} /> : null}
             <View style={{ gap: 7 }}>
               <View
                 style={{

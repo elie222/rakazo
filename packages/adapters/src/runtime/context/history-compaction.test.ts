@@ -24,6 +24,7 @@ import {
   SUMMARIZE_TIMEOUT_MAX_MS,
   SUMMARIZE_TIMEOUT_MIN_MS,
   selectCompactedHistory,
+  shouldCompactConversation,
   shouldEnqueueCompaction,
   summarizeTimeoutMs,
 } from "./history-compaction.js";
@@ -79,6 +80,117 @@ describe("historyWindowSize", () => {
     expect(
       historyWindowSize({ semanticMemoryEnabled: false, compacted: true, recallSucceeded: true }),
     ).toBe(200);
+  });
+});
+
+describe("shouldCompactConversation", () => {
+  const automatic = {
+    mode: "automatic" as const,
+    customTokens: null,
+    contextWindow: 200_000,
+    observedInputTokens: 190_000,
+  };
+
+  it("keeps the existing message-count behavior for automatic", () => {
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        nextMessageSeq: 99,
+        compactedUpToSeq: null,
+      }),
+    ).toBe(false);
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        nextMessageSeq: 100,
+        compactedUpToSeq: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("triggers token modes at half, 80%, and the custom threshold", () => {
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        mode: "earlier",
+        observedInputTokens: 100_000,
+        nextMessageSeq: 10,
+        compactedUpToSeq: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        mode: "near_limit",
+        observedInputTokens: 160_000,
+        nextMessageSeq: 10,
+        compactedUpToSeq: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        mode: "custom",
+        customTokens: 120_000,
+        observedInputTokens: 120_000,
+        nextMessageSeq: 10,
+        compactedUpToSeq: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("waits below the threshold", () => {
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        mode: "earlier",
+        observedInputTokens: 99_999,
+        nextMessageSeq: 10,
+        compactedUpToSeq: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("falls back to the message count without an observation or window", () => {
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        mode: "near_limit",
+        observedInputTokens: null,
+        nextMessageSeq: 100,
+        compactedUpToSeq: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        mode: "near_limit",
+        contextWindow: null,
+        nextMessageSeq: 100,
+        compactedUpToSeq: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("requires a few new messages before compacting again", () => {
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        mode: "earlier",
+        observedInputTokens: 200_000,
+        nextMessageSeq: 5,
+        compactedUpToSeq: 0,
+      }),
+    ).toBe(false);
+    expect(
+      shouldCompactConversation({
+        ...automatic,
+        mode: "earlier",
+        observedInputTokens: 200_000,
+        nextMessageSeq: 6,
+        compactedUpToSeq: 0,
+      }),
+    ).toBe(true);
   });
 });
 

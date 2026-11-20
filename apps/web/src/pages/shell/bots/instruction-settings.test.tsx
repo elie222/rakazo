@@ -64,6 +64,10 @@ beforeEach(async () => {
       </QueryClientProvider>,
     ),
   );
+  // Instructions open as a preview; the edit toggle reveals the field.
+  await act(async () => {
+    [...host.querySelectorAll("button")].find((button) => button.textContent === "Edit")!.click();
+  });
 });
 afterEach(async () => {
   await act(async () => root.unmount());

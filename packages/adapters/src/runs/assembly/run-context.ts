@@ -312,6 +312,10 @@ export interface RunContext {
   bot: Bot & { computer: Computer | null };
   thread: Thread;
   task: Task;
+  /** The context window of the model that started this attempt, when known. */
+  contextWindow: number | null;
+  /** Largest input-token estimate observed by the runtime during this attempt. */
+  observedContextTokens: number | null;
   /** Provider context for this run's calls; aborting the run aborts its signal. */
   context: AdapterContext;
   abortController: AbortController;

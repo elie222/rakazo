@@ -4,7 +4,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  openBotPanel,
+  openBotComputer,
   rpc,
   signup,
 } from "../helpers/helpers";
@@ -44,7 +44,7 @@ test("a retrying computer can be closed and keeps booting without a stale error 
     held.push(route);
   });
 
-  await openBotPanel(page);
+  await openBotComputer(page);
   const preview = page.getByTestId("computer-preview");
   await expect(preview).toContainText("Computer failed to boot");
   await expect(page.getByText("error", { exact: true })).toHaveCount(0);
@@ -99,7 +99,7 @@ test("the preview shows progress while a running computer's screen connects", as
     heldScreens.push(route);
   });
   await rpc(page, "computer/boot", { botId: activeBotId(page) });
-  await openBotPanel(page);
+  await openBotComputer(page);
   const preview = page.getByTestId("computer-preview");
   await expect.poll(() => heldScreens.length).toBeGreaterThan(0);
   await expect(preview.getByText("Connecting to the screen…")).toBeVisible();
@@ -125,7 +125,7 @@ test("opening a computer refreshes a stale booting snapshot", async ({ page }, t
   await page.route("**/rpc/computer/boot", (route) => {
     boots.push(route);
   });
-  await openBotPanel(page);
+  await openBotComputer(page);
   const preview = page.getByTestId("computer-preview");
   await expect(preview).toContainText("Booting live desktop…");
   stale = false;
@@ -157,7 +157,7 @@ test("opening a computer the server reports as booting does not start a second b
     boots.push(route);
   });
 
-  await openBotPanel(page);
+  await openBotComputer(page);
   const preview = page.getByTestId("computer-preview");
   await expect(preview).toContainText("Booting live desktop…");
   const bootsBefore = boots.length;
@@ -194,7 +194,7 @@ test("Retry screen clears a failed takeover on a running computer", async ({ pag
     }),
   );
 
-  await openBotPanel(page);
+  await openBotComputer(page);
   const preview = page.getByTestId("computer-preview");
   await expect(preview.locator("iframe")).toHaveAttribute("src", screenUrl);
   await preview.hover();

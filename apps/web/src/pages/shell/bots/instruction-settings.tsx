@@ -1,13 +1,16 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
+import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Bot } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
-import { Button, Disclosure, Textarea } from "@rakazo/ui-web";
+import { Button, Disclosure, Textarea, ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web/components/ui/popover";
 import { History } from "lucide-react";
 import { useId, useState } from "react";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
+
+type Mode = "edit" | "preview";
 
 type Change = { kind: "edit" } | { kind: "restore"; versionId: string } | { kind: "reload" };
 
@@ -20,6 +23,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
   const [baseline, setBaseline] = useState(bot.instructions);
   const [instructions, setInstructions] = useState(bot.instructions);
   const [conflict, setConflict] = useState(false);
+  const [mode, setMode] = useState<Mode>("preview");
   if (bot !== previousBot) {
     setPreviousBot(bot);
     if (instructions === baseline) {
@@ -60,57 +64,89 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
         >
           <Trans>Instructions</Trans>
         </label>
-        {current.instructionHistory?.length ? (
-          <Popover>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={t`Instruction history`}
-                  title={t`Instruction history`}
-                />
-              }
+        <div className="flex items-center gap-1">
+          {current.instructions && (
+            <ToggleGroup
+              aria-label={t`Instructions view`}
+              value={[mode]}
+              spacing={0}
+              size="sm"
+              onValueChange={([next]) => {
+                if (next === "preview" || next === "edit") setMode(next);
+              }}
             >
-              <History className="size-4 text-muted-foreground" />
-            </PopoverTrigger>
-            <PopoverContent align="end" className="max-h-96 overflow-y-auto">
-              {current.instructionHistory.map((version) => (
-                <div key={version.id} className="mt-2 text-body">
-                  <Disclosure
-                    summary={
-                      <span className="inline-flex flex-wrap gap-x-2">
-                        <span>{new Date(version.createdAt).toLocaleString()}</span>
-                        <span className="text-muted-foreground">{version.reason}</span>
-                      </span>
-                    }
-                  >
-                    <pre className="whitespace-pre-wrap">{version.instructions}</pre>
-                  </Disclosure>
+              <ToggleGroupItem value="edit">
+                <Trans>Edit</Trans>
+              </ToggleGroupItem>
+              <ToggleGroupItem value="preview">
+                <Trans>Preview</Trans>
+              </ToggleGroupItem>
+            </ToggleGroup>
+          )}
+          {current.instructionHistory?.length ? (
+            <Popover>
+              <PopoverTrigger
+                render={
                   <Button
-                    variant="outline"
-                    disabled={pending}
-                    onClick={() => change.run({ kind: "restore", versionId: version.id })}
-                  >
-                    <Trans>Restore</Trans>
-                  </Button>
-                </div>
-              ))}
-            </PopoverContent>
-          </Popover>
-        ) : null}
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={t`Instruction history`}
+                    title={t`Instruction history`}
+                  />
+                }
+              >
+                <History className="size-4 text-muted-foreground" />
+              </PopoverTrigger>
+              <PopoverContent align="end" className="max-h-96 overflow-y-auto">
+                {current.instructionHistory.map((version) => (
+                  <div key={version.id} className="mt-2 text-body">
+                    <Disclosure
+                      summary={
+                        <span className="inline-flex flex-wrap gap-x-2">
+                          <span>{new Date(version.createdAt).toLocaleString()}</span>
+                          <span className="text-muted-foreground">{version.reason}</span>
+                        </span>
+                      }
+                    >
+                      <pre className="whitespace-pre-wrap">{version.instructions}</pre>
+                    </Disclosure>
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => change.run({ kind: "restore", versionId: version.id })}
+                    >
+                      <Trans>Restore</Trans>
+                    </Button>
+                  </div>
+                ))}
+              </PopoverContent>
+            </Popover>
+          ) : null}
+        </div>
       </div>
-      <Textarea
-        id={`${id}-instructions`}
-        className="min-h-20 max-h-96 resize-none field-sizing-content"
-        value={instructions}
-        maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
-        disabled={pending}
-        onChange={(event) => setInstructions(event.target.value)}
-        onBlur={() => {
-          if (!conflict && instructions !== current.instructions) change.run({ kind: "edit" });
-        }}
-      />
+      {mode === "edit" || !instructions ? (
+        <Textarea
+          id={`${id}-instructions`}
+          className="min-h-20 max-h-96 resize-none field-sizing-content"
+          value={instructions}
+          maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+          disabled={pending}
+          onChange={(event) => setInstructions(event.target.value)}
+          onBlur={() => {
+            if (!conflict && instructions !== current.instructions) change.run({ kind: "edit" });
+          }}
+        />
+      ) : (
+        <div className="max-h-96 min-h-20 overflow-y-auto rounded-lg border border-input bg-transparent px-3 py-2 text-body leading-6">
+          {instructions ? (
+            <ChatMarkdown>{instructions}</ChatMarkdown>
+          ) : (
+            <span className="text-muted-foreground">
+              <Trans>No instructions</Trans>
+            </span>
+          )}
+        </div>
+      )}
       {change.error ? (
         <p className="text-body text-destructive">{errorText(change.error)}</p>
       ) : null}

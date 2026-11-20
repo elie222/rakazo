@@ -44,6 +44,7 @@ import type {
 import {
   BotSecretAuth,
   noneSkipped,
+  normalizeConversationCompactionMode,
   resolveBotAvatarSet,
   VaultPolicy,
   vaultImportLogin,
@@ -400,6 +401,11 @@ export function botsRoutes(ctx: RouterContext) {
           replyMode: source.replyMode,
           approvalMode: source.approvalMode,
           maxConcurrentHelpers: source.maxConcurrentHelpers,
+          conversationCompactionMode: normalizeConversationCompactionMode(
+            source.conversationCompactionMode,
+          ),
+          conversationCompactionTokens: source.conversationCompactionTokens,
+          maxToolCallsPerTurn: source.maxToolCallsPerTurn,
           useOwnMemory: source.useOwnMemory,
           useSharedMemory: source.useSharedMemory,
           workspacePath: source.workspacePath,
@@ -531,6 +537,15 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.approvalMode !== undefined ? { approvalMode: input.approvalMode } : {}),
             ...(input.maxConcurrentHelpers !== undefined
               ? { maxConcurrentHelpers: input.maxConcurrentHelpers }
+              : {}),
+            ...(input.conversationCompactionMode !== undefined
+              ? { conversationCompactionMode: input.conversationCompactionMode }
+              : {}),
+            ...(input.conversationCompactionTokens !== undefined
+              ? { conversationCompactionTokens: input.conversationCompactionTokens }
+              : {}),
+            ...(input.maxToolCallsPerTurn !== undefined
+              ? { maxToolCallsPerTurn: input.maxToolCallsPerTurn }
               : {}),
             ...(input.useOwnMemory !== undefined ? { useOwnMemory: input.useOwnMemory } : {}),
             ...(input.useSharedMemory !== undefined

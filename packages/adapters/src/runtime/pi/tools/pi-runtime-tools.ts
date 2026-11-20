@@ -897,18 +897,23 @@ export function redactAskUserDetailInMessage(
   }
 }
 
-export function toolCallBudgetFor(runId: string, savedCount = 0): ToolCallBudget {
+export function toolCallBudgetFor(
+  runId: string,
+  savedCount = 0,
+  maxToolCalls?: number,
+): ToolCallBudget {
+  const limit = maxToolCalls ?? maxToolCallsPerTurn();
   const existing = toolCallBudgetsByRun.get(runId);
   if (existing) {
     existing.inFlight = 0;
-    existing.limit = maxToolCallsPerTurn();
+    existing.limit = limit;
     existing.count = Math.max(existing.count, savedCount);
     return existing;
   }
   const budget: ToolCallBudget = {
     count: savedCount,
     exceeded: false,
-    limit: maxToolCallsPerTurn(),
+    limit,
     inFlight: 0,
   };
   if (budget.limit > 0) toolCallBudgetsByRun.set(runId, budget);

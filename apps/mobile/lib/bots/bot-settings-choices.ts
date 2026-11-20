@@ -29,3 +29,17 @@ export function useApprovalModeChoices(): MenuPickerChoice[] {
     [t],
   );
 }
+
+/** How soon this bot compacts older messages. */
+export function useConversationCompactionChoices(): MenuPickerChoice[] {
+  const { t } = useLingui();
+  return useMemo(
+    () => [
+      { key: "automatic", label: t`Automatic (default)` },
+      { key: "earlier", label: t`Earlier` },
+      { key: "near_limit", label: t`Near the limit` },
+      { key: "custom", label: t`Custom amount` },
+    ],
+    [t],
+  );
+}

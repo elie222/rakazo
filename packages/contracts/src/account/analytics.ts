@@ -53,6 +53,8 @@ export const AnalyticsBotSetting = z.enum([
   "reply_mode",
   "approvals",
   "parallel_work",
+  "conversation_compaction",
+  "tool_calls",
   "tools",
 ]);
 export const AnalyticsTrigger = RunTriggerSchema;

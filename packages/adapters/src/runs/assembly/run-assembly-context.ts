@@ -181,6 +181,8 @@ export async function createRunContext(
     bot,
     thread,
     task,
+    contextWindow: parts.model.resolved.contextWindow ?? null,
+    observedContextTokens: null,
     context,
     abortController: runAbortController,
     runtimeAbortController: new AbortController(),

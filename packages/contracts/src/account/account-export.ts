@@ -94,6 +94,12 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     /** Absent in exports from older servers. */
     maxConcurrentHelpers: z.number().int().min(1).max(8).nullable().default(null),
     /** Absent in exports from older servers. */
+    conversationCompactionMode: z.enum(["automatic", "earlier", "near_limit", "custom"]).optional(),
+    /** Absent in exports from older servers. */
+    conversationCompactionTokens: z.number().int().min(20_000).max(1_000_000).nullable().optional(),
+    /** Absent in exports from older servers. */
+    maxToolCallsPerTurn: z.number().int().min(1).max(1_000).nullable().optional(),
+    /** Absent in exports from older servers. */
     useOwnMemory: z.boolean().default(true),
     /** Absent in exports from older servers. */
     useSharedMemory: z.boolean().default(true),

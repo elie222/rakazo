@@ -183,6 +183,22 @@ async function* spaceRecords(
         bot.maxConcurrentHelpers && bot.maxConcurrentHelpers >= 1 && bot.maxConcurrentHelpers <= 8
           ? bot.maxConcurrentHelpers
           : null,
+      conversationCompactionMode:
+        bot.conversationCompactionMode === "earlier" ||
+        bot.conversationCompactionMode === "near_limit" ||
+        bot.conversationCompactionMode === "custom"
+          ? bot.conversationCompactionMode
+          : "automatic",
+      conversationCompactionTokens:
+        bot.conversationCompactionTokens &&
+        bot.conversationCompactionTokens >= 20_000 &&
+        bot.conversationCompactionTokens <= 1_000_000
+          ? bot.conversationCompactionTokens
+          : null,
+      maxToolCallsPerTurn:
+        bot.maxToolCallsPerTurn && bot.maxToolCallsPerTurn >= 1 && bot.maxToolCallsPerTurn <= 1_000
+          ? bot.maxToolCallsPerTurn
+          : null,
       useOwnMemory: bot.useOwnMemory,
       useSharedMemory: bot.useSharedMemory,
       workspacePath: bot.workspacePath,

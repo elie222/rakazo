@@ -19,6 +19,15 @@ vi.mock("../../../lib/query/rpc", () => {
       list: vi.fn(async () => []),
     },
     me: vi.fn(async () => ({})),
+    devices: vi.fn(async () => ({ devices: [] })),
+    autoReview: {
+      get: vi.fn(async () => ({
+        mode: "ask",
+        enabled: false,
+        skipApprovals: false,
+        checkerAvailable: true,
+      })),
+    },
     // This server receives no email, so the panel offers no address.
     bots: { emailAddress: vi.fn(async () => null) },
   };
@@ -36,6 +45,15 @@ vi.mock("@lingui/react/macro", () => {
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
+  Tabs: (await importOriginal<typeof UiWeb>()).Tabs,
+  TabsList: (await importOriginal<typeof UiWeb>()).TabsList,
+  TabsTrigger: (await importOriginal<typeof UiWeb>()).TabsTrigger,
+  TabsContent: (await importOriginal<typeof UiWeb>()).TabsContent,
+  ToggleGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ToggleGroupItem: ({ children }: { children: ReactNode }) => (
+    <button type="button">{children}</button>
+  ),
+  BotAvatar: () => <span />,
   SectionHeading: ({ variant, ...props }: ComponentProps<"h3"> & { variant?: string }) => (
     <h3 data-variant={variant} {...props} />
   ),
@@ -77,7 +95,12 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   ListSearchInput: () => null,
 }));
 vi.mock("../../space/ScratchpadSection", () => ({ ScratchpadSection: () => null }));
-vi.mock("../../space/KnowledgeSection", () => ({ KnowledgeSection: () => null }));
+vi.mock("../../space/KnowledgeSection", () => ({
+  KnowledgeSection: () => null,
+  MemoryDocumentList: () => null,
+}));
+vi.mock("./bot-library", () => ({ BotLibrary: () => null }));
+vi.mock("./bot-memory-tabs", () => ({ BotMemoryTabs: () => null }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
 vi.mock("../../../components/pages/PagesList", () => ({ PagesList: () => null }));
 

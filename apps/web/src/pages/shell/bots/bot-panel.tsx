@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type {
+  ApprovalMode,
   Bot,
   BotAvatarSet,
   ComputerMode,
@@ -9,16 +10,19 @@ import type {
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
 import { botModelState, modelOptionKey } from "@rakazo/core";
 import {
+  BotAvatar,
   Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  Input,
-  SectionHeading,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
 } from "@rakazo/ui-web";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { BotEmailAddressField } from "../../../components/BotEmailAddressField";
@@ -30,23 +34,29 @@ import { useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
 import { ROUTINE_PREVIEW_COUNT, RoutineList } from "../../routines/RoutineList";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
+import type { ConversationSettingsPatch } from "./bot-conversation-settings";
+import { ConversationSettingsCard } from "./bot-conversation-settings";
+import { BotLibrary } from "./bot-library";
+import { BotMemoryTabs } from "./bot-memory-tabs";
 import {
+  ApprovalModeRow,
   DescriptionGroup,
+  DeviceRow,
   ModelRow,
   PanelSection,
+  ParallelWorkRow,
   SettingsCard,
   SwitchRow,
   ToolsGroup,
   VoiceRow,
+  WorkspacePathRow,
 } from "./bot-settings-sections";
+import { InlineProfileField } from "./inline-profile-field";
 import { InstructionSettings } from "./instruction-settings";
+import { useChangedSettings } from "./use-changed-settings";
 
 const ScratchpadSection = lazyComponent(() =>
   import("../../space/ScratchpadSection").then((module) => module.ScratchpadSection),
-);
-
-const KnowledgeSection = lazyComponent(() =>
-  import("../../space/KnowledgeSection").then((module) => module.KnowledgeSection),
 );
 
 /** The fields saved together as soon as one changes, in the order their saved snapshot keeps them. */
@@ -63,9 +73,12 @@ function advancedValues(bot: Bot) {
 /** The panel itself, or one of its whole lists. */
 export type BotPanelView = "settings" | "routines" | "pages";
 
+/** The panel's one page at a time: the bot at a glance, then one tab per part of it. */
+export type BotPanelTab = "details" | "computer" | "library" | "memory" | "settings";
+
 /**
- * A bot's panel: its profile, then its computer, routines and pages, then its settings, with the
- * rarely changed ones folded away.
+ * A bot's panel: its profile above five tabs (details, computer, library, memory, settings),
+ * with whole lists for routines and pages pushing over it.
  */
 export function BotSettings({
   bot,
@@ -73,6 +86,8 @@ export function BotSettings({
   onViewChange,
   onClose,
   computer,
+  computerAttention = false,
+  onOpenMemorySettings,
   routines,
   onSave,
   onExport,
@@ -84,39 +99,62 @@ export function BotSettings({
   onViewChange?: (view: BotPanelView) => void;
   onClose?: () => void;
   computer?: ReactNode;
+  /** The computer needs the user's action: mark its tab from any other tab. */
+  computerAttention?: boolean;
+  /** Opens the space's shared-memory settings, from the memory tab's link row. */
+  onOpenMemorySettings?: () => void;
   routines?: Omit<ComponentProps<typeof RoutineList>, "preview">;
   focusModel?: number;
-  onSave: (patch: {
-    name?: string;
-    description?: string;
-    instructions?: string;
-    color?: string;
-    avatarSet?: BotAvatarSet;
-    notifyOnFinish?: boolean;
-    computerMode?: ComputerMode;
-    autoSpeak?: boolean;
-    fleetManagement?: boolean;
-    crossSpaceCommunication?: boolean;
-    dailyCheckIns?: boolean;
-    voiceId?: string | null;
-    modelProvider?: string | null;
-    modelId?: string | null;
-    thinkingLevel?: ThinkingLevel | null;
-    disabledBuiltinTools?: string[];
-  }) => Promise<void>;
+  onSave: (
+    patch: {
+      name?: string;
+      description?: string;
+      instructions?: string;
+      color?: string;
+      avatarSet?: BotAvatarSet;
+      notifyOnFinish?: boolean;
+      computerMode?: ComputerMode;
+      autoSpeak?: boolean;
+      fleetManagement?: boolean;
+      crossSpaceCommunication?: boolean;
+      dailyCheckIns?: boolean;
+      voiceId?: string | null;
+      modelProvider?: string | null;
+      modelId?: string | null;
+      thinkingLevel?: ThinkingLevel | null;
+      disabledBuiltinTools?: string[];
+      workspacePath?: string | null;
+      hostDeviceId?: string | null;
+      approvalMode?: ApprovalMode | null;
+      maxConcurrentHelpers?: number | null;
+      useOwnMemory?: boolean;
+      useSharedMemory?: boolean;
+    } & ConversationSettingsPatch,
+  ) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
 }) {
   const { t } = useLingui();
   const ids = useId();
   const modelRef = useRef<HTMLDivElement>(null);
+  /** The page under the profile; whole lists (routines, pages) push over it. */
+  const [tab, setTab] = useState<BotPanelTab>("details");
+  const queryClient = useQueryClient();
+  function selectTab(value: BotPanelTab) {
+    setTab(value);
+    // Files change from outside the panel; arriving on the tab reads them fresh instead of
+    // showing whatever the first visit loaded.
+    if (value === "library") {
+      void queryClient.invalidateQueries({ queryKey: queries.artifacts.listSpace.key() });
+    }
+  }
   // A model deep link opens Settings, then focuses the model once Settings is shown: a control
   // inside a hidden section cannot take focus.
   const modelFocusPending = useRef(false);
   useEffect(() => {
     if (focusModel && view === "settings") {
       modelFocusPending.current = true;
-      setSettingsOpen(true);
+      setTab("settings");
     }
   }, [view, focusModel]);
   const [name, setName] = useState(bot.name);
@@ -149,36 +187,30 @@ export function BotSettings({
   useEffect(() => setDailyCheckIns(bot.dailyCheckIns ?? true), [bot.dailyCheckIns]);
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
-  // A setting this panel no longer offers still shows while the bot has it changed from the
-  // default, so it can be put back. Decided once, so the row stays to undo a change.
-  const changedNow = {
-    readAloud: bot.autoSpeak || Boolean(bot.voiceId),
-    dailyCheckIns: bot.dailyCheckIns === false,
-    crossSpaceCommunication: bot.crossSpaceCommunication === false,
-    fleetManagement: !bot.fleetManagement,
-    tools: (bot.disabledBuiltinTools ?? []).length > 0,
-  };
-  // Once shown, a row stays, so newer bot data can reveal one but never hide one mid-edit.
-  const [changedBefore, setChangedBefore] = useState(changedNow);
-  const changed = {
-    readAloud: changedBefore.readAloud || changedNow.readAloud,
-    dailyCheckIns: changedBefore.dailyCheckIns || changedNow.dailyCheckIns,
-    crossSpaceCommunication:
-      changedBefore.crossSpaceCommunication || changedNow.crossSpaceCommunication,
-    fleetManagement: changedBefore.fleetManagement || changedNow.fleetManagement,
-    tools: changedBefore.tools || changedNow.tools,
-  };
-  if (
-    Object.entries(changed).some(([key, on]) => on !== changedBefore[key as keyof typeof changed])
-  )
-    setChangedBefore(changed);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState(bot.workspacePath ?? "");
+  useEffect(() => setWorkspacePath(bot.workspacePath ?? ""), [bot.workspacePath]);
+  const [hostDeviceId, setHostDeviceId] = useState<string | null>(bot.hostDevice?.id ?? null);
+  useEffect(() => setHostDeviceId(bot.hostDevice?.id ?? null), [bot.hostDevice?.id]);
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode | null>(bot.approvalMode ?? null);
+  useEffect(() => setApprovalMode(bot.approvalMode ?? null), [bot.approvalMode]);
+  const [maxConcurrentHelpers, setMaxConcurrentHelpers] = useState<number | null>(
+    bot.maxConcurrentHelpers ?? null,
+  );
+  useEffect(
+    () => setMaxConcurrentHelpers(bot.maxConcurrentHelpers ?? null),
+    [bot.maxConcurrentHelpers],
+  );
+  const [useOwnMemory, setUseOwnMemory] = useState(bot.useOwnMemory ?? true);
+  useEffect(() => setUseOwnMemory(bot.useOwnMemory ?? true), [bot.useOwnMemory]);
+  const [useSharedMemory, setUseSharedMemory] = useState(bot.useSharedMemory ?? true);
+  useEffect(() => setUseSharedMemory(bot.useSharedMemory ?? true), [bot.useSharedMemory]);
+  const changed = useChangedSettings(bot);
   useEffect(() => {
-    if (!settingsOpen || !modelFocusPending.current) return;
+    if (!modelFocusPending.current || tab !== "settings") return;
     modelFocusPending.current = false;
     modelRef.current?.scrollIntoView?.({ block: "nearest" });
     modelRef.current?.querySelector<HTMLElement>('[id$="-model"]')?.focus();
-  }, [settingsOpen, view, focusModel]);
+  }, [tab, view, focusModel]);
   const [claimingEmail, setClaimingEmail] = useState(false);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [modelKey, setModelKey] = useState(
@@ -210,6 +242,13 @@ export function BotSettings({
   const credentials = credentialsQuery.data ?? NO_CREDENTIALS;
   const catalog = catalogQuery.data ?? NO_CATALOG;
   const me = meQuery.data ?? null;
+  const devicesQuery = useQuery({ ...queries.devices.queryOptions(), ...refresh });
+  const devices = devicesQuery.data?.devices ?? NO_DEVICES;
+  const autoReviewQuery = useQuery({
+    ...queries.autoReview.get.queryOptions({ input: {} }),
+    ...refresh,
+  });
+  const autoAvailable = autoReviewQuery.data?.checkerAvailable ?? true;
   // A failed catalog load must not clear an existing thinkingLevel override on save.
   const modelMetaReady =
     credentialsQuery.data !== undefined &&
@@ -238,6 +277,12 @@ export function BotSettings({
         crossSpaceCommunication?: boolean;
         dailyCheckIns?: boolean;
         disabledBuiltinTools?: string[];
+        workspacePath?: string | null;
+        hostDeviceId?: string | null;
+        approvalMode?: ApprovalMode | null;
+        maxConcurrentHelpers?: number | null;
+        useOwnMemory?: boolean;
+        useSharedMemory?: boolean;
         baseDisabledBuiltinTools?: string[];
       },
       revisions?: { color: number; avatarSet: number; notifyOnFinish: number },
@@ -294,8 +339,14 @@ export function BotSettings({
       crossSpaceCommunication?: boolean;
       dailyCheckIns?: boolean;
       disabledBuiltinTools?: string[];
+      workspacePath?: string | null;
+      hostDeviceId?: string | null;
+      approvalMode?: ApprovalMode | null;
+      maxConcurrentHelpers?: number | null;
+      useOwnMemory?: boolean;
+      useSharedMemory?: boolean;
       baseDisabledBuiltinTools?: string[];
-    },
+    } & ConversationSettingsPatch,
     revisions?: { color: number; avatarSet: number; notifyOnFinish: number },
   ) {
     try {
@@ -311,6 +362,30 @@ export function BotSettings({
       }
       if (patchOverrides?.fleetManagement !== undefined) {
         await onSave({ fleetManagement: patchOverrides.fleetManagement });
+        return;
+      }
+      if (patchOverrides?.workspacePath !== undefined) {
+        await onSave({ workspacePath: patchOverrides.workspacePath });
+        return;
+      }
+      if (patchOverrides?.hostDeviceId !== undefined) {
+        await onSave({ hostDeviceId: patchOverrides.hostDeviceId });
+        return;
+      }
+      if (patchOverrides?.approvalMode !== undefined) {
+        await onSave({ approvalMode: patchOverrides.approvalMode });
+        return;
+      }
+      if (patchOverrides?.maxConcurrentHelpers !== undefined) {
+        await onSave({ maxConcurrentHelpers: patchOverrides.maxConcurrentHelpers });
+        return;
+      }
+      if (patchOverrides?.useOwnMemory !== undefined) {
+        await onSave({ useOwnMemory: patchOverrides.useOwnMemory });
+        return;
+      }
+      if (patchOverrides?.useSharedMemory !== undefined) {
+        await onSave({ useSharedMemory: patchOverrides.useSharedMemory });
         return;
       }
       const selected = selectedModel;
@@ -457,6 +532,12 @@ export function BotSettings({
     crossSpaceCommunication?: boolean;
     dailyCheckIns?: boolean;
     disabledBuiltinTools?: string[];
+    workspacePath?: string | null;
+    hostDeviceId?: string | null;
+    approvalMode?: ApprovalMode | null;
+    maxConcurrentHelpers?: number | null;
+    useOwnMemory?: boolean;
+    useSharedMemory?: boolean;
   }) {
     // Serialize full-object auto-saves so an older in-flight request cannot
     // finish after a newer one and clobber fields. Always call through a ref so
@@ -497,6 +578,21 @@ export function BotSettings({
       <X size={16} strokeWidth={1.8} />
     </Button>
   );
+
+  function commitName(value: string) {
+    if (!value.trim()) return;
+    setName(value.trim());
+    void enqueueSave({ name: value });
+  }
+
+  function changeAvatar(newColor: string, nextAvatarSet?: BotAvatarSet) {
+    setColor(newColor);
+    if (nextAvatarSet !== undefined) setAvatarSet(nextAvatarSet);
+    void enqueueSave({
+      color: newColor,
+      ...(nextAvatarSet !== undefined ? { avatarSet: nextAvatarSet } : {}),
+    });
+  }
 
   return (
     <div data-testid="bot-settings">
@@ -561,34 +657,15 @@ export function BotSettings({
           className="flex flex-col items-center pb-5 text-center"
         >
           <div className="flex justify-center pb-4">
-            <AvatarStudioPopover
-              value={color}
+            <BotAvatar
+              color={color}
               identity={bot.id}
               status={bot.status}
               size={76}
               avatarSet={avatarSet}
-              onChange={(newColor, nextAvatarSet) => {
-                setColor(newColor);
-                if (nextAvatarSet !== undefined) setAvatarSet(nextAvatarSet);
-                void enqueueSave({
-                  color: newColor,
-                  ...(nextAvatarSet !== undefined ? { avatarSet: nextAvatarSet } : {}),
-                });
-              }}
             />
           </div>
-          <InlineProfileField
-            label={t`Name`}
-            editLabel={t`Edit name`}
-            value={name}
-            maxLength={BOT_NAME_MAX_LENGTH}
-            className="text-heading2 font-semibold"
-            onCommit={(value) => {
-              if (!value.trim()) return;
-              setName(value.trim());
-              void enqueueSave({ name: value });
-            }}
-          />
+          <div className="break-words px-2 text-heading2 font-semibold">{name}</div>
           {email && (email.address || claimingEmail) ? (
             <div data-testid="bot-email" className="mt-2 w-full max-w-sm text-left">
               <BotEmailAddressField
@@ -599,68 +676,190 @@ export function BotSettings({
             </div>
           ) : null}
         </div>
-        <div className="space-y-6">
-          {computer ? (
-            <PanelSection label={<Trans>Computer</Trans>}>{computer}</PanelSection>
-          ) : null}
-          {routines ? (
-            <PanelSection
-              label={
-                routineCount > ROUTINE_PREVIEW_COUNT ? (
-                  <button
-                    type="button"
-                    onClick={() => onViewChange?.("routines")}
-                    className="flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Trans>Routines</Trans>
-                    <ChevronRight aria-hidden="true" className="size-3.5 rtl:rotate-180" />
-                  </button>
-                ) : (
-                  <Trans>Routines</Trans>
-                )
-              }
-              action={
-                routineCount > 0 ? (
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    data-testid="routine-create-button"
-                    aria-label={t`Create routine`}
-                    onClick={routines.onCreate}
-                  >
-                    <Plus className="size-4" />
-                  </Button>
-                ) : null
-              }
+        <Tabs value={tab} onValueChange={(value) => selectTab(value as BotPanelTab)}>
+          <TabsList className="mx-auto max-w-full overflow-x-auto">
+            <TabsTrigger value="details" data-testid="bot-tab-details">
+              <Trans>Details</Trans>
+            </TabsTrigger>
+            <TabsTrigger
+              value="computer"
+              data-testid="bot-tab-computer"
+              aria-label={computerAttention ? t`Computer, needs attention` : undefined}
             >
-              <RoutineList {...routines} preview />
-            </PanelSection>
-          ) : null}
-          <PagesList botId={bot.id} preview={{ onOpenAll: () => onViewChange?.("pages") }} />
-        </div>
-        <ErrorBoundary fallback={<SectionLoadFailed />}>
-          <Suspense fallback={null}>
-            <ScratchpadSection botId={bot.id} />
-          </Suspense>
-        </ErrorBoundary>
-        <div className="mt-6" data-testid="bot-settings-advanced">
-          <SectionHeading variant="label" className="flex min-h-6 items-center">
-            <button
-              type="button"
-              aria-expanded={settingsOpen}
-              aria-controls={`${ids}-settings`}
-              onClick={() => setSettingsOpen((open) => !open)}
-              className="-my-2 flex min-h-10 w-full items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            >
+              <Trans>Computer</Trans>
+              {computerAttention ? (
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 shrink-0 rounded-full bg-destructive"
+                  data-testid="computer-attention"
+                />
+              ) : null}
+            </TabsTrigger>
+            <TabsTrigger value="library" data-testid="bot-tab-library">
+              <Trans>Library</Trans>
+            </TabsTrigger>
+            <TabsTrigger value="memory" data-testid="bot-tab-memory">
+              <Trans>Memory</Trans>
+            </TabsTrigger>
+            <TabsTrigger value="settings" data-testid="bot-tab-settings">
               <Trans>Settings</Trans>
-              <ChevronDown
-                aria-hidden="true"
-                className={`size-3.5 transition-transform ${settingsOpen ? "rotate-180" : ""}`}
+            </TabsTrigger>
+          </TabsList>
+          {/* Stays mounted once visited, so a draft or an open list survives switching tabs. */}
+          <TabsContent keepMounted value="details" className="space-y-6 pt-4">
+            <InstructionSettings key={bot.id} bot={bot} />
+            {routines ? (
+              <PanelSection
+                label={
+                  routineCount > ROUTINE_PREVIEW_COUNT ? (
+                    <button
+                      type="button"
+                      onClick={() => onViewChange?.("routines")}
+                      className="flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Trans>Routines</Trans>
+                      <ChevronRight aria-hidden="true" className="size-3.5 rtl:rotate-180" />
+                    </button>
+                  ) : (
+                    <Trans>Routines</Trans>
+                  )
+                }
+                action={
+                  routineCount > 0 ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      data-testid="routine-create-button"
+                      aria-label={t`Create routine`}
+                      onClick={routines.onCreate}
+                    >
+                      <Plus className="size-4" />
+                    </Button>
+                  ) : null
+                }
+              >
+                <RoutineList {...routines} preview />
+              </PanelSection>
+            ) : null}
+            <ErrorBoundary fallback={<SectionLoadFailed />}>
+              <Suspense fallback={null}>
+                <ScratchpadSection botId={bot.id} />
+              </Suspense>
+            </ErrorBoundary>
+          </TabsContent>
+          <TabsContent keepMounted value="computer" className="space-y-6 pt-4">
+            {computer}
+            <SettingsCard>
+              <SwitchRow
+                id={`${ids}-own-computer`}
+                label={<Trans>Own computer</Trans>}
+                checked={computerMode === "dedicated"}
+                disabled={saving}
+                onChange={(checked) => setComputerMode(checked ? "dedicated" : "team")}
               />
-            </button>
-          </SectionHeading>
-          {/* Stays mounted so an instructions or description draft survives folding it away. */}
-          <div id={`${ids}-settings`} hidden={!settingsOpen} className="space-y-6 pt-2">
+              <WorkspacePathRow
+                id={`${ids}-workspace-path`}
+                value={workspacePath}
+                disabled={saving}
+                onCommit={(next) => {
+                  setWorkspacePath(next ?? "");
+                  void enqueueSave({ workspacePath: next });
+                }}
+              />
+              {devices.length > 0 || hostDeviceId ? (
+                <DeviceRow
+                  id={`${ids}-host-device`}
+                  value={hostDeviceId}
+                  devices={devices}
+                  boundName={bot.hostDevice?.name}
+                  disabled={saving}
+                  onChange={(next) => {
+                    setHostDeviceId(next);
+                    void enqueueSave({ hostDeviceId: next });
+                  }}
+                />
+              ) : null}
+            </SettingsCard>
+          </TabsContent>
+          <TabsContent keepMounted value="library" className="space-y-6 pt-4">
+            <BotLibrary
+              botId={bot.id}
+              botName={bot.name}
+              onOpenAllPages={() => onViewChange?.("pages")}
+            />
+          </TabsContent>
+          <TabsContent keepMounted value="memory" className="space-y-6 pt-4">
+            <ErrorBoundary fallback={<SectionLoadFailed />}>
+              <Suspense fallback={null}>
+                <BotMemoryTabs
+                  botId={bot.id}
+                  useOwnMemory={useOwnMemory}
+                  useSharedMemory={useSharedMemory}
+                  disabled={saving}
+                  onSave={(patch) => {
+                    if (patch.useOwnMemory !== undefined) setUseOwnMemory(patch.useOwnMemory);
+                    if (patch.useSharedMemory !== undefined)
+                      setUseSharedMemory(patch.useSharedMemory);
+                    void enqueueSave(patch);
+                  }}
+                />
+              </Suspense>
+            </ErrorBoundary>
+            {onOpenMemorySettings ? (
+              <div className="rounded-xl bg-muted/50 px-4 py-3">
+                <button
+                  type="button"
+                  data-testid="bot-shared-memory-link"
+                  onClick={onOpenMemorySettings}
+                  className="flex w-full items-center justify-between gap-3 rounded-sm text-start outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-body">
+                      <Trans>Shared memory</Trans>
+                    </span>
+                    <span className="block text-body-sm text-muted-foreground">
+                      <Trans>
+                        Every bot in this space reads these notes and keeps them up to date.
+                      </Trans>
+                    </span>
+                  </span>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground rtl:rotate-180"
+                  />
+                </button>
+              </div>
+            ) : null}
+          </TabsContent>
+          <TabsContent
+            keepMounted
+            value="settings"
+            data-testid="bot-settings-advanced"
+            className="space-y-6 pt-4"
+          >
+            <PanelSection label={<Trans>Profile</Trans>}>
+              <div
+                data-testid="bot-profile-settings"
+                className="flex items-center gap-4 rounded-xl bg-muted/50 px-4 py-3"
+              >
+                <AvatarStudioPopover
+                  value={color}
+                  identity={bot.id}
+                  status={bot.status}
+                  size={44}
+                  avatarSet={avatarSet}
+                  onChange={changeAvatar}
+                />
+                <InlineProfileField
+                  label={t`Name`}
+                  editLabel={t`Edit name`}
+                  value={name}
+                  maxLength={BOT_NAME_MAX_LENGTH}
+                  className="text-body-lg font-medium"
+                  onCommit={commitName}
+                />
+              </div>
+            </PanelSection>
             <SettingsCard>
               <ModelRow
                 ids={ids}
@@ -684,13 +883,6 @@ export function BotSettings({
                   setNotifyOnFinish(checked);
                   void enqueueSave({ notifyOnFinish: checked });
                 }}
-              />
-              <SwitchRow
-                id={`${ids}-own-computer`}
-                label={<Trans>Own computer</Trans>}
-                checked={computerMode === "dedicated"}
-                disabled={saving}
-                onChange={(checked) => setComputerMode(checked ? "dedicated" : "team")}
               />
               {changed.readAloud ? (
                 <SwitchRow
@@ -720,37 +912,59 @@ export function BotSettings({
                   }}
                 />
               ) : null}
-              {changed.crossSpaceCommunication ? (
-                <SwitchRow
-                  id={`${ids}-cross-space`}
-                  label={<Trans>Allow cross-space bot communication</Trans>}
-                  checked={crossSpaceCommunication}
-                  disabled={saving}
-                  onChange={(checked) => {
-                    setCrossSpaceCommunication(checked);
-                    void enqueueSave({ crossSpaceCommunication: checked });
-                  }}
-                />
-              ) : null}
-              {changed.fleetManagement ? (
-                <SwitchRow
-                  id={`${ids}-fleet-management`}
-                  label={<Trans>Manage other bots</Trans>}
-                  checked={fleetManagement}
-                  disabled={saving}
-                  onChange={(checked) => {
-                    setFleetManagement(checked);
-                    void enqueueSave({ fleetManagement: checked });
-                  }}
-                />
-              ) : null}
             </SettingsCard>
-            <InstructionSettings key={bot.id} bot={bot} />
-            <ErrorBoundary fallback={<SectionLoadFailed />}>
-              <Suspense fallback={null}>
-                <KnowledgeSection botId={bot.id} />
-              </Suspense>
-            </ErrorBoundary>
+            <PanelSection label={<Trans>Permissions</Trans>}>
+              <SettingsCard>
+                <ApprovalModeRow
+                  id={`${ids}-approval-mode`}
+                  value={approvalMode}
+                  autoAvailable={autoAvailable}
+                  disabled={saving}
+                  onChange={(next) => {
+                    setApprovalMode(next);
+                    void enqueueSave({ approvalMode: next });
+                  }}
+                />
+                {changed.crossSpaceCommunication ? (
+                  <SwitchRow
+                    id={`${ids}-cross-space`}
+                    label={<Trans>Allow cross-space bot communication</Trans>}
+                    checked={crossSpaceCommunication}
+                    disabled={saving}
+                    onChange={(checked) => {
+                      setCrossSpaceCommunication(checked);
+                      void enqueueSave({ crossSpaceCommunication: checked });
+                    }}
+                  />
+                ) : null}
+                {changed.fleetManagement ? (
+                  <SwitchRow
+                    id={`${ids}-fleet-management`}
+                    label={<Trans>Manage other bots</Trans>}
+                    checked={fleetManagement}
+                    disabled={saving}
+                    onChange={(checked) => {
+                      setFleetManagement(checked);
+                      void enqueueSave({ fleetManagement: checked });
+                    }}
+                  />
+                ) : null}
+              </SettingsCard>
+            </PanelSection>
+            <PanelSection label={<Trans>Background work</Trans>}>
+              <SettingsCard>
+                <ParallelWorkRow
+                  id={`${ids}-parallel-work`}
+                  value={maxConcurrentHelpers}
+                  disabled={saving}
+                  onCommit={(next) => {
+                    setMaxConcurrentHelpers(next);
+                    void enqueueSave({ maxConcurrentHelpers: next });
+                  }}
+                />
+              </SettingsCard>
+            </PanelSection>
+            <ConversationSettingsCard bot={bot} disabled={saving} onSave={onSave} />
             <DescriptionGroup
               ids={ids}
               description={description}
@@ -769,8 +983,8 @@ export function BotSettings({
                 }}
               />
             ) : null}
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
         {error ? <p className="mt-2 text-body-sm text-destructive">{error}</p> : null}
       </div>
     </div>
@@ -779,70 +993,8 @@ export function BotSettings({
 
 const NO_CREDENTIALS: never[] = [];
 const NO_CATALOG: ModelCatalogEntry[] = [];
+const NO_DEVICES: never[] = [];
 
 function sameStringList(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
-}
-
-function InlineProfileField({
-  label,
-  editLabel,
-  value,
-  maxLength,
-  className,
-  onCommit,
-}: {
-  label: string;
-  editLabel: string;
-  value: string;
-  maxLength: number;
-  className: string;
-  onCommit: (value: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const cancelled = useRef(false);
-  function commit() {
-    if (cancelled.current) return;
-    setEditing(false);
-    if (draft.trim() !== value.trim()) onCommit(draft);
-  }
-  return editing ? (
-    <Input
-      autoFocus
-      aria-label={label}
-      value={draft}
-      maxLength={maxLength}
-      className={`h-auto border-transparent bg-transparent p-0 text-center shadow-none ${className}`}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing || event.keyCode === 229) {
-          if (event.key === "Escape") event.stopPropagation();
-          return;
-        }
-        if (event.key === "Enter") {
-          event.preventDefault();
-          commit();
-        }
-        if (event.key === "Escape") {
-          cancelled.current = true;
-          setEditing(false);
-        }
-      }}
-    />
-  ) : (
-    <button
-      type="button"
-      aria-label={editLabel}
-      className={`min-w-0 max-w-full cursor-text break-words rounded px-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${className}`}
-      onClick={() => {
-        cancelled.current = false;
-        setDraft(value);
-        setEditing(true);
-      }}
-    >
-      {value}
-    </button>
-  );
 }

@@ -29,6 +29,15 @@ vi.mock("../../../lib/query/rpc", () => {
       list: vi.fn().mockResolvedValue([]),
     },
     me: vi.fn().mockResolvedValue(null),
+    devices: vi.fn().mockResolvedValue({ devices: [] }),
+    autoReview: {
+      get: vi.fn().mockResolvedValue({
+        mode: "ask",
+        enabled: false,
+        skipApprovals: false,
+        checkerAvailable: true,
+      }),
+    },
   };
   return {
     rpc,
@@ -43,10 +52,36 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { OptionSelect } = await importOriginal<typeof UiWeb>();
+  const { OptionSelect, Tabs, TabsContent, TabsList, TabsTrigger } =
+    await importOriginal<typeof UiWeb>();
   const { createContext, useContext } = await import("react");
   const PopoverOpen = createContext<(open: boolean) => void>(() => undefined);
+  const ToggleValue = createContext<(value: string) => void>(() => undefined);
   return {
+    Tabs,
+    TabsContent,
+    TabsList,
+    TabsTrigger,
+    ToggleGroup: ({
+      children,
+      onValueChange,
+    }: {
+      children: ReactNode;
+      onValueChange?: (value: string[]) => void;
+    }) => (
+      <ToggleValue.Provider value={(value) => onValueChange?.([value])}>
+        <div>{children}</div>
+      </ToggleValue.Provider>
+    ),
+    ToggleGroupItem: ({ children, value }: { children: ReactNode; value: string }) => {
+      const select = useContext(ToggleValue);
+      return (
+        <button type="button" onClick={() => select(value)}>
+          {children}
+        </button>
+      );
+    },
+    BotAvatar: () => <span />,
     useCopyText: () => [false, () => {}],
     SectionHeading: ({
       variant: _variant,
@@ -144,7 +179,10 @@ vi.mock("./avatar-studio-popover", () => ({
 vi.mock("../../space/ScratchpadSection", () => ({ ScratchpadSection: () => <h3>Open work</h3> }));
 vi.mock("../../space/KnowledgeSection", () => ({
   KnowledgeSection: () => <h3>Memory and skills</h3>,
+  MemoryDocumentList: () => null,
 }));
+vi.mock("./bot-library", () => ({ BotLibrary: () => null }));
+vi.mock("./bot-memory-tabs", () => ({ BotMemoryTabs: () => null }));
 
 import { spaceQueries } from "../../../lib/query/query";
 import { rpc } from "../../../lib/query/rpc";
@@ -186,6 +224,12 @@ function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
     fleetManagement: true,
     replyMode: "chat",
     disabledBuiltinTools: [],
+    workspacePath: null,
+    hostDevice: null,
+    maxConcurrentHelpers: null,
+    useOwnMemory: true,
+    useSharedMemory: true,
+    approvalMode: null,
     webhookConfigured: false,
     spawnKey: null,
     ...overrides,
@@ -225,6 +269,38 @@ function descriptionField(): HTMLTextAreaElement {
   return textarea;
 }
 
+function instructionsField(): HTMLTextAreaElement {
+  const textarea = container.querySelector<HTMLTextAreaElement>('textarea[id$="-instructions"]');
+  if (!textarea) throw new Error("Missing instructions field");
+  return textarea;
+}
+
+/** Instructions open as a preview; the edit toggle reveals the field. */
+async function showEdit() {
+  const toggle = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Edit",
+  );
+  if (!toggle) throw new Error("Missing Edit toggle");
+  await act(async () => toggle.click());
+}
+
+async function setInstructions(value: string) {
+  const textarea = instructionsField();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+      textarea,
+      value,
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function leaveInstructions() {
+  await act(async () => {
+    instructionsField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  });
+}
+
 async function setDescription(value: string) {
   const textarea = descriptionField();
   await act(async () => {
@@ -243,14 +319,29 @@ async function saveProfile() {
   });
 }
 
-async function openSettings() {
-  await act(async () => settingsButton().click());
+const TAB_NAMES = ["Details", "Computer", "Library", "Memory", "Settings"] as const;
+type TabName = (typeof TAB_NAMES)[number];
+
+function panelTabs(): HTMLButtonElement[] {
+  return [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
 }
 
-function settingsButton() {
-  return container.querySelector<HTMLButtonElement>(
-    '[data-testid="bot-settings-advanced"] button',
-  )!;
+function panelTab(name: TabName): HTMLButtonElement {
+  const tab = panelTabs().find((entry) => entry.textContent === name);
+  if (!tab) throw new Error(`Missing tab ${name}`);
+  return tab;
+}
+
+async function openTab(name: TabName) {
+  await act(async () => panelTab(name).click());
+}
+
+/** The page a tab shows; keepMounted pages stay in the DOM, just hidden. */
+function tabPanel(name: TabName): HTMLElement {
+  const id = panelTab(name).getAttribute("aria-controls");
+  const panel = (id ? document.getElementById(id) : null) as HTMLElement | null;
+  if (!panel) throw new Error(`Missing page for tab ${name}`);
+  return panel;
 }
 
 async function openModelPicker() {
@@ -293,30 +384,123 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows the profile and folds the settings away", async () => {
+it("shows the profile and splits the panel into five tabs", async () => {
   await render("Billing");
   expect(container.querySelector('[data-testid="bot-profile-header"]')?.textContent).toContain(
     "Ada",
   );
   expect(container.querySelector('input[aria-label="Name"]')).toBeNull();
-  expect(container.querySelector('[role="tab"]')).toBeNull();
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
   ).toBe(false);
-  const settings = document.getElementById(settingsButton().getAttribute("aria-controls")!)!;
-  expect(settingsButton().getAttribute("aria-expanded")).toBe("false");
-  expect(settings.hidden).toBe(true);
-  await openSettings();
-  expect(settingsButton().getAttribute("aria-expanded")).toBe("true");
-  expect(settings.hidden).toBe(false);
-  expect(settings.querySelector('textarea[id$="-instructions"]')).not.toBeNull();
-  expect(settings.querySelector('[data-testid="bot-settings-tools"]')).toBeNull();
-  const card = settings.firstElementChild!;
+  expect(panelTabs().map((tab) => tab.textContent)).toEqual([...TAB_NAMES]);
+  expect(panelTab("Details").getAttribute("aria-selected")).toBe("true");
+  expect(tabPanel("Details").hidden).toBe(false);
+  expect(tabPanel("Settings").hidden).toBe(true);
+  expect(tabPanel("Details").textContent).toContain("Instructions");
+  expect(tabPanel("Details").querySelector('[data-testid="bot-settings-tools"]')).toBeNull();
+  await openTab("Settings");
+  expect(panelTab("Settings").getAttribute("aria-selected")).toBe("true");
+  expect(tabPanel("Settings").hidden).toBe(false);
+  expect(tabPanel("Details").hidden).toBe(true);
+  const card = tabPanel("Settings").querySelector('button[id$="-model"]')!.closest(".rounded-xl")!;
   expect(
     [...card.querySelectorAll('label, button[id$="-model"]')].map(
       (node) => node.firstChild?.textContent,
     ),
-  ).toEqual(["Model", "Notifications", "Own computer"]);
+  ).toEqual(["Model", "Notifications"]);
+});
+
+it("keeps a description draft when switching tabs", async () => {
+  await render();
+  await openTab("Settings");
+  await setDescription("Draft note");
+  await openTab("Details");
+  expect(tabPanel("Settings").hidden).toBe(true);
+  await openTab("Settings");
+  expect(descriptionField().value).toBe("Draft note");
+});
+
+it("marks the computer tab when the computer needs attention", async () => {
+  await render();
+  expect(container.querySelector('[data-testid="computer-attention"]')).toBeNull();
+  expect(tabPanel("Computer").querySelector('button[id$="-own-computer"]')).not.toBeNull();
+  expect(tabPanel("Settings").querySelector('button[id$="-own-computer"]')).toBeNull();
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <BotSettings
+          computerAttention
+          bot={bot()}
+          onSave={onSave}
+          onExport={onExport}
+          onClear={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
+  });
+  await act(flush);
+  expect(container.querySelector('[data-testid="computer-attention"]')).not.toBeNull();
+  expect(panelTab("Computer").getAttribute("aria-label")).toBe("Computer, needs attention");
+});
+
+it("opens shared-memory settings from the memory tab when the host offers it", async () => {
+  await render();
+  expect(container.querySelector('[data-testid="bot-shared-memory-link"]')).toBeNull();
+  const onOpenMemorySettings = vi.fn();
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <BotSettings
+          onOpenMemorySettings={onOpenMemorySettings}
+          bot={bot()}
+          onSave={onSave}
+          onExport={onExport}
+          onClear={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
+  });
+  await act(flush);
+  await openTab("Memory");
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>('[data-testid="bot-shared-memory-link"]')!.click();
+  });
+  expect(onOpenMemorySettings).toHaveBeenCalledOnce();
+});
+
+it("edits the bot name from the settings tab's profile", async () => {
+  await render();
+  await openTab("Settings");
+  const profile = tabPanel("Settings").querySelector<HTMLElement>(
+    '[data-testid="bot-profile-settings"]',
+  )!;
+  expect(profile.querySelector('[aria-label="Avatar color"]')).not.toBeNull();
+  expect(profile.textContent).toContain("Name");
+  await act(async () => {
+    profile.querySelector<HTMLButtonElement>('[aria-label="Edit name"]')!.click();
+  });
+  const input = profile.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Ada V2",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onSave.mock.lastCall?.[0]).toHaveProperty("name", "Ada V2");
+});
+
+it("groups management switches under Permissions once the bot has one changed", async () => {
+  await render("Billing", { fleetManagement: false });
+  await openTab("Settings");
+  const headings = [...tabPanel("Settings").querySelectorAll("h3")].map(
+    (heading) => heading.textContent,
+  );
+  expect(headings).toContain("Permissions");
 });
 
 describe("BotSettings model choices", () => {
@@ -596,25 +780,25 @@ describe("instruction settings refresh", () => {
       <InstructionSettings bot={shown} />
     </QueryClientProvider>
   );
+  const showInstructions = async (shown: Bot) => {
+    await act(async () => {
+      root.render(instructions(shown));
+    });
+    await showEdit();
+  };
   it("refreshes a saved field against its latest baseline before the parent catches up", async () => {
     const initial = bot();
     vi.mocked(rpc.bots.update).mockResolvedValueOnce({ ...initial, instructions: "Saved edit" });
-    await act(async () => {
-      root.render(instructions(initial));
-    });
-    await setDescription("Saved edit");
-    await act(async () => {
-      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    });
+    await showInstructions(initial);
+    await setInstructions("Saved edit");
+    await leaveInstructions();
     await act(async () => {
       root.render(instructions({ ...initial, instructions: "External update" }));
     });
-    expect(descriptionField().value).toBe("External update");
-    await setDescription("Fresh edit");
+    expect(instructionsField().value).toBe("External update");
+    await setInstructions("Fresh edit");
     vi.mocked(rpc.bots.update).mockResolvedValueOnce({ ...initial, instructions: "Fresh edit" });
-    await act(async () => {
-      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    });
+    await leaveInstructions();
     expect(rpc.bots.update).toHaveBeenLastCalledWith({
       botId: initial.id,
       instructions: "Fresh edit",
@@ -623,14 +807,12 @@ describe("instruction settings refresh", () => {
   });
   it("keeps a dirty draft when run completion refreshes the bot", async () => {
     const initial = bot();
-    await act(async () => {
-      root.render(instructions(initial));
-    });
-    await setDescription("Unsaved instructions");
+    await showInstructions(initial);
+    await setInstructions("Unsaved instructions");
     await act(async () => {
       root.render(instructions({ ...initial, updatedAt: "2026-09-02T00:00:00.000Z" }));
     });
-    expect(descriptionField().value).toBe("Unsaved instructions");
+    expect(instructionsField().value).toBe("Unsaved instructions");
   });
   it("saves the original draft baseline after a newer instruction refresh", async () => {
     const initial = bot();
@@ -638,16 +820,12 @@ describe("instruction settings refresh", () => {
       ...initial,
       instructions: "Unsaved instructions",
     });
-    await act(async () => {
-      root.render(instructions(initial));
-    });
-    await setDescription("Unsaved instructions");
+    await showInstructions(initial);
+    await setInstructions("Unsaved instructions");
     await act(async () => {
       root.render(instructions({ ...initial, instructions: "Newer saved instructions" }));
     });
-    await act(async () => {
-      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    });
+    await leaveInstructions();
     expect(rpc.bots.update).toHaveBeenCalledWith({
       botId: initial.id,
       instructions: "Unsaved instructions",
@@ -665,36 +843,28 @@ describe("instruction settings refresh", () => {
         ...initial,
         instructions: "Newer saved instructions",
       });
-    await act(async () => {
-      root.render(instructions(initial));
-    });
-    await setDescription("Unsaved instructions");
-    await act(async () => {
-      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    });
+    await showInstructions(initial);
+    await setInstructions("Unsaved instructions");
+    await leaveInstructions();
     const reload = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Reload",
     );
     if (!reload) throw new Error("Missing reload action");
-    expect(descriptionField().value).toBe("Unsaved instructions");
-    await act(async () => {
-      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    });
+    expect(instructionsField().value).toBe("Unsaved instructions");
+    await leaveInstructions();
     expect(rpc.bots.update).toHaveBeenCalledTimes(1);
     await act(async () => {
       reload.click();
     });
-    expect(descriptionField().value).toBe("Unsaved instructions");
+    expect(instructionsField().value).toBe("Unsaved instructions");
     expect(container.textContent).toContain("Reload");
     await act(async () => {
       reload.click();
     });
-    expect(descriptionField().value).toBe("Newer saved instructions");
+    expect(instructionsField().value).toBe("Newer saved instructions");
     vi.mocked(rpc.bots.update).mockResolvedValueOnce({ ...initial, instructions: "Fresh draft" });
-    await setDescription("Fresh draft");
-    await act(async () => {
-      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    });
+    await setInstructions("Fresh draft");
+    await leaveInstructions();
     expect(rpc.bots.update).toHaveBeenLastCalledWith({
       botId: initial.id,
       instructions: "Fresh draft",
@@ -703,13 +873,11 @@ describe("instruction settings refresh", () => {
   });
   it("refreshes pristine instructions after an external update", async () => {
     const initial = bot();
-    await act(async () => {
-      root.render(instructions(initial));
-    });
+    await showInstructions(initial);
     await act(async () => {
       root.render(instructions({ ...initial, instructions: "Approved replacement" }));
     });
-    expect(descriptionField().value).toBe("Approved replacement");
+    expect(instructionsField().value).toBe("Approved replacement");
   });
 });
 
@@ -729,7 +897,7 @@ it("cancels an inline name edit", async () => {
 
 it("focuses the model control for a model deep link", async () => {
   await render("", {}, 1);
-  expect(settingsButton().getAttribute("aria-expanded")).toBe("true");
+  expect(panelTab("Settings").getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement?.id.endsWith("-model")).toBe(true);
 });
 

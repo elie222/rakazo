@@ -1,5 +1,7 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
+import type { ConversationCompactionMode } from "@rakazo/contracts";
+import { conversationCompactionTokenThreshold } from "@rakazo/contracts";
 import { blocksToAgentHistoryText, botMessageContext } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { recordUsage, runAsTenant, storedMessageBlocks } from "@rakazo/db";
@@ -112,6 +114,40 @@ export function historyWindowSize(options: {
   return options.semanticMemoryEnabled && options.compacted && options.recallSucceeded
     ? HISTORY_WINDOW_SIZE
     : LEGACY_HISTORY_WINDOW_SIZE;
+}
+
+/** Token-triggered modes need at least a few new messages before compacting again. */
+export const MIN_TOKEN_COMPACTION_NEW_MESSAGES = 5;
+
+/**
+ * Whether a completed turn should ask for history compaction. `automatic` keeps the existing
+ * message-count behavior; token modes use the largest input-token estimate the runtime observed.
+ */
+export function shouldCompactConversation(input: {
+  mode: ConversationCompactionMode | null | undefined;
+  customTokens: number | null | undefined;
+  contextWindow: number | null | undefined;
+  observedInputTokens: number | null | undefined;
+  nextMessageSeq: number;
+  compactedUpToSeq: number | null;
+}): boolean {
+  const threshold = conversationCompactionTokenThreshold(
+    input.mode,
+    input.customTokens,
+    input.contextWindow,
+  );
+  if (threshold == null || input.observedInputTokens == null) {
+    return shouldEnqueueCompaction(
+      input.nextMessageSeq,
+      input.compactedUpToSeq,
+      HISTORY_WINDOW_SIZE,
+      COMPACTION_BATCH_SIZE,
+    );
+  }
+  const compactedUpTo = input.compactedUpToSeq ?? NOTHING_COMPACTED;
+  const uncompacted = input.nextMessageSeq - compactedUpTo - 1;
+  if (uncompacted < MIN_TOKEN_COMPACTION_NEW_MESSAGES) return false;
+  return input.observedInputTokens >= threshold;
 }
 
 /**

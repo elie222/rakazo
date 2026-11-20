@@ -3,6 +3,7 @@ import type {
   Bot,
   BotAvatarSet,
   BotSection,
+  ConversationCompactionMode,
   MessageBlock,
   SpaceBot,
 } from "@rakazo/contracts";
@@ -12,6 +13,7 @@ import {
   disabledBuiltinToolSet,
   InstructionVersionSchema,
   initialBotMemory,
+  normalizeConversationCompactionMode,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import { displayName, phoneCallSettings, ringingCall } from "@rakazo/core";
@@ -108,6 +110,9 @@ function mapBot(
     replyMode?: string;
     approvalMode?: string | null;
     maxConcurrentHelpers?: number | null;
+    conversationCompactionMode?: string | null;
+    conversationCompactionTokens?: number | null;
+    maxToolCallsPerTurn?: number | null;
     disabledBuiltinTools?: string[];
     workspacePath?: string | null;
     webhookSecretId?: string | null;
@@ -173,6 +178,9 @@ function mapBot(
         ? bot.approvalMode
         : null,
     maxConcurrentHelpers: bot.maxConcurrentHelpers ?? null,
+    conversationCompactionMode: normalizeConversationCompactionMode(bot.conversationCompactionMode),
+    conversationCompactionTokens: bot.conversationCompactionTokens ?? null,
+    maxToolCallsPerTurn: bot.maxToolCallsPerTurn ?? null,
     // Stored lists may name a tool that no longer exists; settings resend what they read.
     disabledBuiltinTools: [...disabledBuiltinToolSet(bot.disabledBuiltinTools)],
     workspacePath: bot.workspacePath ?? null,
@@ -461,6 +469,9 @@ export function createRepos(
         replyMode?: string;
         approvalMode?: string | null;
         maxConcurrentHelpers?: number | null;
+        conversationCompactionMode?: ConversationCompactionMode | null;
+        conversationCompactionTokens?: number | null;
+        maxToolCallsPerTurn?: number | null;
         useOwnMemory?: boolean;
         useSharedMemory?: boolean;
         color?: string;
@@ -582,6 +593,15 @@ export function createRepos(
               ...(input.useSharedMemory === false ? { useSharedMemory: false } : {}),
               ...(input.maxConcurrentHelpers
                 ? { maxConcurrentHelpers: input.maxConcurrentHelpers }
+                : {}),
+              ...(input.conversationCompactionMode
+                ? { conversationCompactionMode: input.conversationCompactionMode }
+                : {}),
+              ...(input.conversationCompactionTokens
+                ? { conversationCompactionTokens: input.conversationCompactionTokens }
+                : {}),
+              ...(input.maxToolCallsPerTurn
+                ? { maxToolCallsPerTurn: input.maxToolCallsPerTurn }
                 : {}),
               color: avatar.color,
               avatarSet,

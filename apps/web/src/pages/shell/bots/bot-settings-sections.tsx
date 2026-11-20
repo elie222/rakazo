@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type {
   ApprovalMode,
   ComputerMode,
+  ConversationCompactionMode,
   ThinkingLevel,
   UserDeviceSummary,
 } from "@rakazo/contracts";
@@ -9,8 +10,12 @@ import {
   BOT_COMPUTER_MODES,
   BOT_DESCRIPTION_MAX_LENGTH,
   BUILTIN_TOOL_NAMES,
+  DEFAULT_CUSTOM_CONVERSATION_COMPACTION_TOKENS,
   DEFAULT_MAX_CONCURRENT_HELPERS,
   MAX_CONCURRENT_HELPERS_LIMIT,
+  MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS,
+  MAX_TOOL_CALLS_PER_TURN_LIMIT,
+  MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS,
   normalizeBotWorkspacePath,
 } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
@@ -546,6 +551,237 @@ export function ParallelWorkRow({
       </div>
       <p className="text-body-sm text-muted-foreground">
         <Trans>Background tasks this bot can run at the same time. 3 by default.</Trans>
+      </p>
+      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * How soon this bot summarizes older messages. `earlier` and `near_limit` use a share of the
+ * model's context window; `custom` keeps an exact observed input-token threshold.
+ */
+export function ConversationCompactionRow({
+  id,
+  mode,
+  customTokens,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  mode: ConversationCompactionMode;
+  customTokens: number | null;
+  disabled?: boolean;
+  onChange: (mode: ConversationCompactionMode, customTokens: number | null) => void;
+}) {
+  const { t } = useLingui();
+  const [draft, setDraft] = useState(() => (customTokens == null ? "" : String(customTokens)));
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  useEffect(() => {
+    if (!editing && !error) setDraft(customTokens == null ? "" : String(customTokens));
+  }, [customTokens, editing, error]);
+
+  function commit() {
+    setEditing(false);
+    const raw = draftRef.current.trim();
+    if (!raw) {
+      setError(null);
+      setDraft(String(DEFAULT_CUSTOM_CONVERSATION_COMPACTION_TOKENS));
+      onChange("custom", DEFAULT_CUSTOM_CONVERSATION_COMPACTION_TOKENS);
+      return;
+    }
+    const parsed = Number(raw);
+    if (
+      !Number.isInteger(parsed) ||
+      parsed < MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS ||
+      parsed > MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS
+    ) {
+      setError(
+        t`Use a whole number from ${MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS} to ${MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS}.`,
+      );
+      return;
+    }
+    setError(null);
+    setDraft(String(parsed));
+    if (parsed !== customTokens) onChange("custom", parsed);
+  }
+
+  function choosePreset(value: number) {
+    setError(null);
+    setDraft(String(value));
+    onChange("custom", value);
+  }
+
+  const help =
+    mode === "earlier"
+      ? t`Summarizes when the prompt reaches half the model's context window.`
+      : mode === "near_limit"
+        ? t`Summarizes when the prompt reaches 80% of the model's context window.`
+        : mode === "custom"
+          ? t`Summarizes when the prompt reaches this many tokens.`
+          : t`Keeps the latest 50 messages and summarizes older ones.`;
+
+  return (
+    <div className="flex flex-col gap-1.5 py-3">
+      <div className="flex min-h-12 items-center justify-between gap-3 text-body">
+        <label htmlFor={id} className="text-foreground">
+          <Trans>Compact conversation</Trans>
+        </label>
+        <OptionSelect
+          id={id}
+          data-testid="bot-conversation-compaction"
+          aria-label={t`Compact conversation`}
+          value={mode}
+          disabled={disabled}
+          onValueChange={(next) => {
+            setError(null);
+            const choice = next as ConversationCompactionMode;
+            if (choice === "custom") {
+              const value = customTokens ?? DEFAULT_CUSTOM_CONVERSATION_COMPACTION_TOKENS;
+              setDraft(String(value));
+              onChange(choice, value);
+              return;
+            }
+            onChange(choice, null);
+          }}
+          options={[
+            { value: "automatic", label: t`Automatic (default)` },
+            { value: "earlier", label: t`Earlier` },
+            { value: "near_limit", label: t`Near the limit` },
+            { value: "custom", label: t`Custom amount` },
+          ]}
+        />
+      </div>
+      {mode === "custom" ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-body-sm text-muted-foreground">
+          <label htmlFor={`${id}-tokens`}>
+            <Trans>Tokens</Trans>
+          </label>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={disabled}
+              onClick={() => choosePreset(100_000)}
+            >
+              <Trans>100K</Trans>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={disabled}
+              onClick={() => choosePreset(200_000)}
+            >
+              <Trans>200K</Trans>
+            </Button>
+            <Input
+              id={`${id}-tokens`}
+              data-testid="bot-conversation-compaction-tokens"
+              type="number"
+              min={MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS}
+              max={MAX_CUSTOM_CONVERSATION_COMPACTION_TOKENS}
+              inputMode="numeric"
+              aria-label={t`Tokens`}
+              value={draft}
+              disabled={disabled}
+              className="w-28 text-center"
+              onChange={(event) => setDraft(event.target.value)}
+              onFocus={() => setEditing(true)}
+              onBlur={commit}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+      <p className="text-body-sm text-muted-foreground">{help}</p>
+      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+/** How many tool calls one turn may make before the agent stops and waits for a new message. */
+export function ToolCallLimitRow({
+  id,
+  value,
+  disabled,
+  onCommit,
+}: {
+  id: string;
+  value: number | null;
+  disabled?: boolean;
+  onCommit: (value: number | null) => void;
+}) {
+  const { t } = useLingui();
+  const [draft, setDraft] = useState(() => (value ? String(value) : ""));
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  useEffect(() => {
+    if (!editing && !error) setDraft(value ? String(value) : "");
+  }, [value, editing, error]);
+
+  function commit() {
+    setEditing(false);
+    const raw = draftRef.current.trim();
+    if (!raw) {
+      setError(null);
+      if (value !== null) onCommit(null);
+      return;
+    }
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_TOOL_CALLS_PER_TURN_LIMIT) {
+      setError(t`Use a whole number from 1 to ${MAX_TOOL_CALLS_PER_TURN_LIMIT}.`);
+      return;
+    }
+    setError(null);
+    setDraft(String(parsed));
+    if (parsed !== value) onCommit(parsed);
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 py-3">
+      <div className="flex min-h-12 items-center justify-between gap-3 text-body">
+        <label htmlFor={id} className="text-foreground">
+          <Trans>Tool calls per turn</Trans>
+        </label>
+        <Input
+          id={id}
+          data-testid="bot-tool-call-limit"
+          type="number"
+          min={1}
+          max={MAX_TOOL_CALLS_PER_TURN_LIMIT}
+          inputMode="numeric"
+          aria-label={t`Tool calls per turn`}
+          placeholder={t`No limit`}
+          value={draft}
+          disabled={disabled}
+          className="w-24 text-center"
+          onChange={(event) => setDraft(event.target.value)}
+          onFocus={() => setEditing(true)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      </div>
+      <p className="text-body-sm text-muted-foreground">
+        <Trans>The agent stops after this many tool calls in one turn. Empty means no limit.</Trans>
       </p>
       {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
     </div>
