@@ -361,11 +361,11 @@ export class BoxdSandboxProvider implements SandboxProvider {
       yield* abortedCommandEvents();
       return;
     }
-    if (result.stdout) yield { type: "stdout", data: result.stdout };
     if (result.timedOut) {
-      yield* timedOutCommandEvents(timeoutMs);
+      yield* timedOutCommandEvents(timeoutMs, result);
       return;
     }
+    if (result.stdout) yield { type: "stdout", data: result.stdout };
     if (result.stderr) yield { type: "stderr", data: result.stderr };
     yield { type: "exit", code: result.exitCode };
   }
