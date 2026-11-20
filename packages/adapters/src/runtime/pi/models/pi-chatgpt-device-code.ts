@@ -8,6 +8,7 @@ import {
   retry,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+import { oauthCredentialAccountId } from "./pi-oauth-account.js";
 
 const AUTH_BASE_URL = "https://auth.openai.com";
 const USER_CODE_URL = `${AUTH_BASE_URL}/api/accounts/deviceauth/usercode`;
@@ -15,7 +16,6 @@ const DEVICE_TOKEN_URL = `${AUTH_BASE_URL}/api/accounts/deviceauth/token`;
 const TOKEN_URL = `${AUTH_BASE_URL}/oauth/token`;
 const VERIFICATION_URI = `${AUTH_BASE_URL}/codex/device`;
 const DEVICE_REDIRECT_URI = `${AUTH_BASE_URL}/deviceauth/callback`;
-const ACCOUNT_CLAIM = "https://api.openai.com/auth";
 // Public OAuth client identifier used by the Codex CLI. This is not a client secret.
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 
@@ -168,6 +168,7 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
       }
       const error = await failure("poll", response);
       if (error.code === "deviceauth_authorization_pending") return { status: "pending" };
+      if (error.code === "slow_down") return { status: "slow_down" };
       // The person has not approved the code yet, unless the answer names a refusal.
       if (
         (response.status === 403 || response.status === 404) &&
@@ -175,7 +176,6 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
       ) {
         return { status: "pending" };
       }
-      if (error.code === "slow_down") return { status: "slow_down" };
       throw error;
     };
 
@@ -267,20 +267,13 @@ function credentialOf(json: Record<string, unknown>): OAuthCredential {
   ) {
     throw new Error("Device sign-in returned an invalid credential.");
   }
-  const accountId = accountIdOf(access);
+  const credential: OAuthCredential = {
+    type: "oauth",
+    access,
+    refresh,
+    expires: Date.now() + expiresIn * 1000,
+  };
+  const accountId = oauthCredentialAccountId(credential);
   if (!accountId) throw new Error("Device sign-in returned a credential with no account.");
-  return { type: "oauth", access, refresh, expires: Date.now() + expiresIn * 1000, accountId };
-}
-
-function accountIdOf(accessToken: string): string | undefined {
-  try {
-    const payload = JSON.parse(
-      Buffer.from(accessToken.split(".")[1] ?? "", "base64url").toString("utf8"),
-    ) as Record<string, unknown> & { chatgpt_account_id?: unknown };
-    const claims = payload[ACCOUNT_CLAIM] as { chatgpt_account_id?: unknown } | undefined;
-    const accountId = claims?.chatgpt_account_id ?? payload.chatgpt_account_id;
-    return typeof accountId === "string" && accountId ? accountId : undefined;
-  } catch {
-    return undefined;
-  }
+  return { ...credential, accountId };
 }

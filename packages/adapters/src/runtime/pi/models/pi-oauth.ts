@@ -28,6 +28,15 @@ import {
 } from "../../../models/model-secret.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 import { createChatGptDeviceCodeLogin } from "./pi-chatgpt-device-code.js";
+import {
+  decodeJwtPayload,
+  nonBlankString,
+  OPENAI_AUTH_CLAIMS_NAMESPACE,
+  oauthCredentialAccountId,
+} from "./pi-oauth-account.js";
+
+export { oauthCredentialAccountId };
+
 import type { PiOAuthEnd, PiOAuthEnded, PiOAuthMeasure, PiOAuthPending } from "./pi-oauth-ended.js";
 import {
   PENDING_SIGN_IN_COLUMNS,
@@ -159,49 +168,12 @@ export function terminalOAuthRefreshErrorMarker(error: unknown): string | undefi
   return marker !== undefined && terminalStatus && !serverErrorStatus ? marker : undefined;
 }
 
-const OPENAI_AUTH_CLAIMS_NAMESPACE = "https://api.openai.com/auth";
-
-function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
-  const parts = token.split(".");
-  if (parts.length !== 3) return undefined;
-  try {
-    const payload: unknown = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8"));
-    return payload && typeof payload === "object"
-      ? (payload as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export const OAUTH_ACCOUNT_CHANGED_ERROR =
   "The ChatGPT account changed during sign-in refresh. Connect the provider again.";
 
 /** Worded so `isModelCredentialRejected` moves a run to its backup model. */
 export const OAUTH_RECONNECT_REQUIRED_ERROR =
   "The sign-in token expired or was revoked. Connect that model provider again.";
-
-function nonBlankString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-/**
- * `accountId`, else `chatgpt_account_id` from the access JWT. Never throws: an
- * undecodable token yields `undefined`, which disables the account-change
- * comparison instead of breaking refresh.
- */
-export function oauthCredentialAccountId(credential: OAuthCredential): string | undefined {
-  const direct = nonBlankString(credential.accountId);
-  if (direct) return direct;
-  const payload = decodeJwtPayload(credential.access);
-  if (!payload) return undefined;
-  const namespaced = payload[OPENAI_AUTH_CLAIMS_NAMESPACE];
-  const claims =
-    namespaced && typeof namespaced === "object"
-      ? (namespaced as Record<string, unknown>)
-      : undefined;
-  return nonBlankString(claims?.chatgpt_account_id) ?? nonBlankString(payload.chatgpt_account_id);
-}
 
 /**
  * The retirement detail when a refresh returned a token for a different account than the

@@ -213,7 +213,7 @@ describe("ChatGPT device-code sign-in", () => {
 
   it("slows down when the provider asks", async () => {
     const provider = fakeProvider({
-      poll: [status(400, JSON.stringify({ error: "slow_down" })), approved()],
+      poll: [status(403, JSON.stringify({ error: "slow_down" })), approved()],
     });
     const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
 
