@@ -694,7 +694,7 @@ describe("a key on the screen", () => {
       ["Tarjeta de crédito", "Pagar"],
       ["Carte bancaire", "Payer"],
       ["Kreditkarte", "Bezahlen"],
-    ]) {
+    ] as const) {
       const local = page(
         `<form><label>${label}<input name="n"></label><button>${pay}</button></form>`,
       );
