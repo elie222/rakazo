@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInterimBargeIn,
   INTERIM_BARGE_IN_MS,
@@ -6,6 +6,7 @@ import {
   isInterimCallBargeIn,
 } from "./barge-in.js";
 import { spokenMemory } from "./echo.js";
+import { speechWordCount, speechWords } from "./speech-words.js";
 
 const SPOKEN = "I'm here and hearing you";
 
@@ -59,18 +60,52 @@ describe("call barge-in", () => {
     for (const text of ["okay", "uh", "mm", "yeah"]) expect(isCallBargeIn(text)).toBe(false);
   });
 
-  it("still tells sentences from backchannels without Intl.Segmenter", () => {
-    vi.stubGlobal("Intl", { ...Intl, Segmenter: undefined });
-    try {
+  describe("without Intl.Segmenter", () => {
+    beforeEach(() => {
+      vi.stubGlobal("Intl", { ...Intl, Segmenter: undefined });
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("still tells sentences from backchannels", () => {
       expect(isCallBargeIn("等一下我想问另一个问题")).toBe(true);
       expect(isCallBargeIn("ขอถามอีกเรื่องหนึ่งได้ไหม")).toBe(true);
       expect(isCallBargeIn("好的")).toBe(false);
       expect(isCallBargeIn("谢谢")).toBe(false);
       expect(isCallBargeIn("wait, what about the deploy")).toBe(true);
       expect(isCallBargeIn("yeah")).toBe(false);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    });
+
+    it.each(["我在查看GitHub的状态", "我正在核对GitHub2的状态"])(
+      "keeps playing when the mixed-script reply %j leaks back",
+      (text) => {
+        spokenMemory.remember(text);
+        expect(isCallBargeIn(text)).toBe(false);
+        expect(isInterimCallBargeIn(text)).toBe(false);
+      },
+    );
+
+    it("lets distinct mixed-script and longer overlapping user turns interrupt", () => {
+      spokenMemory.remember("我在查看GitHub的状态");
+      for (const text of [
+        "等等我想问一下Stripe的费用",
+        "我在查看GitHub的状态我还想问你另一个问题",
+      ]) {
+        expect(isCallBargeIn(text)).toBe(true);
+        expect(isInterimCallBargeIn(text)).toBe(true);
+      }
+      expect(isCallBargeIn("停")).toBe(true);
+    });
+
+    it("keeps letters, digits, and their accents together without changing pure Chinese or English", () => {
+      const mixed = "我在看2FA和Cafe\u0301";
+      expect(speechWords(mixed)).toEqual(["我", "在", "看", "2FA", "和", "Cafe\u0301"]);
+      expect(speechWordCount(mixed)).toBe(4);
+      expect(speechWords("我在这里")).toEqual(["我", "在", "这", "里"]);
+      expect(speechWordCount("我在这里")).toBe(2);
+      expect(speechWords("using GitHub2")).toEqual(["using", "GitHub2"]);
+    });
   });
 
   it("ignores the reply leaking back at the playback threshold", () => {
