@@ -59,12 +59,26 @@ describe("resolveScheduleTiming", () => {
     [25, "hours", /1 days? or every 2 days/],
     [48, "hours", /exactly 2 days: use every 2, unit "days"/],
     [40, "days", /use cron/],
+    [756, "hours", /nearest is every 31 days \(/],
+    [1000, "hours", /use cron/],
+    [57600, "minutes", /use cron/],
   ])("rejects every %i %s with the intervals that work", (every, unit, hint) => {
     const result = resolveScheduleTiming({ every, unit });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain(`every ${every} ${unit} is out of range`);
     expect(result.error).toMatch(hint);
+  });
+
+  it.each([
+    [1000, "hours"],
+    [57600, "minutes"],
+    [100000, "minutes"],
+  ])("never suggests more than 31 days for every %i %s", (every, unit) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toMatch(/unit "days"/);
   });
 
   it.each([
