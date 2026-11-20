@@ -54,7 +54,13 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("reports an opened tab without treating noopener's null result as a block", async () => {
+it("opens a link sign-in's page and reports it, despite noopener's null result", async () => {
+  models.beginOAuth.mockResolvedValue({
+    mode: "auth-url",
+    loginId: "login",
+    verificationUri,
+    expiresInSeconds: 300,
+  });
   const document = window.document.implementation.createHTMLDocument();
   const popup = { opener: window, document };
   const navigate = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
@@ -73,7 +79,6 @@ it("reports an opened tab without treating noopener's null result as a block", a
   await act(async () => {
     void latest.startSubscriptionSignIn({ provider: "subscription" });
   });
-  expect(latest.popupBlocked).toBe(false);
   expect(navigate).toHaveBeenCalledOnce();
   expect(onError).not.toHaveBeenCalled();
   expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ surface: "web" });
@@ -82,13 +87,13 @@ it("reports an opened tab without treating noopener's null result as a block", a
   ]);
 });
 
-it("reports a blocked tab and keeps the manual sign-in details", async () => {
-  vi.spyOn(window, "open").mockReturnValue(null);
+it("shows a device code before its page opens, leaving the opening to the person", async () => {
+  const open = vi.spyOn(window, "open");
   await act(async () => {
     void latest.startSubscriptionSignIn({ provider: "subscription" });
   });
-  expect(latest.popupBlocked).toBe(true);
-  expect(latest.oauth?.verificationUri).toBe(verificationUri);
+  expect(open).not.toHaveBeenCalled();
+  expect(latest.oauth).toMatchObject({ userCode: "ABCD-1234", verificationUri });
   expect(onError).not.toHaveBeenCalled();
   expect(analytics.modelSignInStep).not.toHaveBeenCalled();
 
