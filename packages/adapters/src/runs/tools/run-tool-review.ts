@@ -12,10 +12,11 @@ import type { AutoReviewChecker } from "../../approvals/auto-review.js";
 import { ownComputerReviewArgs, redactToolArgsForReview } from "../../approvals/auto-review.js";
 import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
 import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
+import { changedTextReviewArgs } from "../../approvals/changed-text-review-args.js";
 import type { RunContext, RunTrust } from "../assembly/run-context.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { autoReviewCheckerProvider, includedAutoReviewChecker } from "../turn/run-auto-review.js";
-import { reviewOwnerContext } from "./run-review-context.js";
+import { currentRoutinePrompt, reviewOwnerContext } from "./run-review-context.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { AppliedEffect } from "./run-tool-gate.js";
 
@@ -91,7 +92,11 @@ export async function reviewToolCall(
             redactToolArgsForReview(args, ctx.secrets),
             review.pageUrl && redactSecrets(review.pageUrl, ctx.secrets),
           )
-        : redactToolArgsForReview(args, ctx.secrets);
+        : changedTextReviewArgs(
+            name,
+            redactToolArgsForReview(args, ctx.secrets),
+            await currentRoutinePrompt(ctx, name, args),
+          );
     const reviewRequest: AutoReviewRequest = {
       toolName: name,
       connectorKind,

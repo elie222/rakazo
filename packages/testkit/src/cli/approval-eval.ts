@@ -448,7 +448,7 @@ export async function runApprovalSuite(
               // A case's page stands for what the browser reported.
               typeof c.args.page === "string" ? c.args.page : undefined,
             )
-          : redacted;
+          : autoReview.changedTextReviewArgs(c.toolName, redacted, c.currentRoutinePrompt);
     // What the product keeps of a run's reads: every result except the bot's own state.
     const outsideText = (c.runSteps ?? [])
       .filter((step) => step.outside || toolResultTaintsRun(step.tool))
