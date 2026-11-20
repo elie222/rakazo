@@ -52,3 +52,6 @@ export const IntegrationCatalogResultSchema = z.object({
 export type IntegrationCatalogResult = z.infer<typeof IntegrationCatalogResultSchema>;
 
 export const CONNECTION_LABEL_MAX_LENGTH = 80;
+
+/** A connection's name as a person types it: trimmed, never blank, short enough to show. */
+export const ConnectionLabelSchema = z.string().trim().min(1).max(CONNECTION_LABEL_MAX_LENGTH);
