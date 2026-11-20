@@ -193,12 +193,13 @@ it("keeps the bot name when opening a computer without a sender label", () => {
 it.each(["text", "image"] as const)(
   "shows another person's %s message as received with their name",
   (kind) => {
-    const render = (authorName?: string) =>
+    const render = (authorName?: string, hideSenderLabel = false) =>
       renderToStaticMarkup(
         <Bubble
           botId="bot-a"
           bots={[]}
           showBotSenderName={false}
+          hideSenderLabel={hideSenderLabel}
           authorName={authorName}
           message={{
             id: "message",
@@ -216,6 +217,11 @@ it.each(["text", "image"] as const)(
     expect(theirs).toContain(">Ana</span>");
     expect(theirs).toContain(`background-color:${darkTokens.muted}`);
     expect(theirs).not.toContain(`background-color:${darkTokens.chatUser}`);
+
+    const followUp = render("Ana", true);
+    expect(followUp).not.toContain(">Ana</span>");
+    if (kind === "text") expect(followUp).toContain(`background-color:${darkTokens.muted}`);
+    expect(followUp).not.toContain(`background-color:${darkTokens.chatUser}`);
 
     const mine = render();
     expect(mine).not.toContain("Ana");

@@ -152,6 +152,10 @@ function isOwnCardBlock(block: MessageBlock): boolean {
   );
 }
 
+export function hasSenderLabelContent(message: { blocks: readonly MessageBlock[] }): boolean {
+  return message.blocks.some((block) => !isOwnCardBlock(block));
+}
+
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   const { message } = props;
   if (!message.blocks.some(isOwnCardBlock)) return <MessageBubbleContent {...props} />;
@@ -165,6 +169,7 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
       previous.push(block);
     }
   }
+  const firstContent = pieces.findIndex(([first]) => first && !isOwnCardBlock(first));
   const content = pieces.map((blocks, index) => {
     const first = blocks[0]!;
     if (first.kind === "page")
@@ -208,6 +213,7 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
       <MessageBubbleContent
         {...props}
         key={`content-${index}`}
+        hideSenderLabel={props.hideSenderLabel || index !== firstContent}
         message={{ ...message, blocks }}
         onAnswer={(_, ...answer) => props.onAnswer(message, ...answer)}
       />
@@ -224,6 +230,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   botId,
   authorName,
   botName,
+  hideSenderLabel,
   showBotSenderName,
   bots,
   groupId,
@@ -248,6 +255,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   /** Someone else in a shared space wrote this message: named and set apart. */
   authorName?: string;
   botName?: string;
+  hideSenderLabel?: boolean;
   showBotSenderName: boolean;
   bots: MobileBot[];
   groupId?: string;
@@ -280,6 +288,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const { t } = useLingui();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const outgoing = message.role === "user" && !authorName;
+  const showSpeaker = !hideSenderLabel && (showBotSenderName || Boolean(authorName));
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -627,9 +636,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     } as const;
     return (
       <View style={hasInlineImages ? { maxWidth: "100%", gap: 8 } : bubbleStyle}>
-        {((showBotSenderName || authorName) && speaker) || caption ? (
+        {(showSpeaker && speaker) || caption ? (
           <View style={hasInlineImages ? bubbleStyle : undefined}>
-            {(showBotSenderName || authorName) && speaker ? (
+            {showSpeaker && speaker ? (
               <Text
                 style={{ color: speakerColor ?? tokens.mutedForeground, ...typeScale.footnote }}
               >
@@ -775,7 +784,6 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     message.role === "bot" ? (botDisplayName(members, bots, message.botId) ?? botName) : authorName;
   const speakerColor =
     message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
-  const showSpeaker = showBotSenderName || Boolean(authorName);
   const firstContent = segments.findIndex((segment) => segment.kind === "content");
   const choiceBlocks = message.blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "choice" }> => block.kind === "choice",

@@ -10,6 +10,7 @@ import type {
 } from "@rakazo/contracts";
 import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
 import {
+  continuedSenderMessageIds,
   expandPeerReplies,
   groupVoiceChats,
   isPeerReceiptBlocks,
@@ -286,6 +287,7 @@ export const Transcript = memo(function Transcript({
       item.kind === "voiceChat" || messageHasVisibleBlocks(item.message.blocks, showToolActivity),
   );
   const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
+  const continuedSenderIds = continuedSenderMessageIds(shownItems, separatorIds, unreadDividerId);
   const workingLabel =
     liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
@@ -733,6 +735,7 @@ export const Transcript = memo(function Transcript({
                       onOpenBot={onOpenBot}
                       onOpenPeerMessages={onOpenPeerMessages}
                       peerExchange={exchanges.lines.get(message.id)}
+                      hideSenderLabel={continuedSenderIds.has(message.id)}
                       onAnswer={onAnswer}
                       speakerName={
                         peerReceipt
