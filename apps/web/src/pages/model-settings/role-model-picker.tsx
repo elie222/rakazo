@@ -40,6 +40,7 @@ export function RoleModelPicker({
   options,
   providers,
   defaultOption,
+  current,
   disabled,
   onPick,
   onConnect,
@@ -52,6 +53,8 @@ export function RoleModelPicker({
   providers: ConnectableProvider[];
   /** The deployment's model, offered to clear the slot back to it; `included` when it pays. */
   defaultOption?: { label: string; included?: boolean };
+  /** The model in use; its row is checked and active when the picker opens. */
+  current?: { provider: string; modelId: string; credentialId?: string; creditOfferingId?: string };
   disabled?: boolean;
   onPick: (option: RoleModelOption | null) => void;
   onConnect: (provider: ConnectableProvider) => void;
@@ -90,12 +93,26 @@ export function RoleModelPicker({
     ...groups.flatMap(([, entries]) => entries.map(optionValue)),
     ...matchingProviders.map((provider) => `connect:${provider.id}:${provider.baseUrl ?? ""}`),
   ];
-  // The first row is active whenever the list changes, so Enter always picks something.
+  // A pinned model is the one on its connection; otherwise the first row of that model.
+  const currentValue = current
+    ? values.find((value) =>
+        options.some(
+          (option) =>
+            optionValue(option) === value &&
+            option.provider === current.provider &&
+            option.id === current.modelId &&
+            (!current.credentialId || option.credentialId === current.credentialId) &&
+            option.creditOfferingId === current.creditOfferingId,
+        ),
+      )
+    : undefined;
+  // The model in use is active when opened, else the first row, so Enter always picks something;
+  // searching moves it to the first match.
   const [activeValue, setActiveValue] = useState("");
-  const firstValue = values[0] ?? "";
+  const startValue = (!needle && currentValue) || values[0] || "";
   useEffect(() => {
-    setActiveValue(firstValue);
-  }, [firstValue]);
+    if (open) setActiveValue(startValue);
+  }, [startValue, open]);
   const fromReopen = useRef(false);
   const close = () => {
     setOpen(false);
@@ -185,6 +202,7 @@ export function RoleModelPicker({
                   <CommandItem
                     key={optionValue(option)}
                     value={optionValue(option)}
+                    data-checked={optionValue(option) === currentValue}
                     onSelect={() => {
                       onPick(option);
                       close();

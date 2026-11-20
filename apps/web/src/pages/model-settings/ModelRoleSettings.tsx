@@ -352,6 +352,7 @@ export function ModelRoleSettings({
               )}
               label={hideHeading ? defaultLabel : t`Change ${title}`}
               options={options}
+              current={deployment ?? undefined}
               providers={providers}
               disabled={pickerLocked}
               onPick={(option) => (option ? void setPrimary(choiceOf(option)) : null)}
@@ -425,6 +426,7 @@ export function ModelRoleSettings({
                 trigger={pickerTrigger(name, providerName(choice))}
                 label={t`Change ${name}`}
                 options={options}
+                current={choice}
                 defaultOption={
                   isPrimary && role !== "main" && deployment
                     ? { label: modelLabel(deployment), included: settings?.deploymentIncluded }
