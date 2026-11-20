@@ -321,7 +321,6 @@ x-app-environment: &app-environment # Runtime
   DISCORD_PUBLIC_KEY:
   DISCORD_APPLICATION_ID:
   DISCORD_MENTION_ROLE_IDS:
-  DISCORD_TEAM_CHAT_BOT_ID:
   # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
   HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
   HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
@@ -515,6 +514,7 @@ services:
       CRISP_WEBSITE_ID:
       INTEGRATIONS_CATALOG_URL:
       TEAM_CHAT_BOT_ID:
+      DISCORD_TEAM_CHAT_BOT_ID:
       SLACK_RAKAZO_BOT_ID:
       SPACE_TEARDOWN_TIMEOUT_MS:
       RAKAZO_MIN_CLIENT_BUILD:
