@@ -24,14 +24,11 @@
   position: absolute;
   inset: 0;
   backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  -webkit-mask-image: linear-gradient(to bottom, #000, transparent 50%);
   mask-image: linear-gradient(to bottom, #000, transparent 50%);
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .chat-top-fade::before {
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }

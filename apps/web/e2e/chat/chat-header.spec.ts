@@ -39,6 +39,9 @@ test("the chat header floats over the transcript", async ({ page }, testInfo) =>
       fadeLeft: fadeRect.left,
       fadeWidth: fadeRect.width,
       transcriptPadding: Number.parseFloat(getComputedStyle(transcriptElement).paddingTop),
+      transcriptScrollPadding: Number.parseFloat(
+        getComputedStyle(transcriptElement).scrollPaddingTop,
+      ),
       transcriptTop: transcriptRect.top,
       transcriptLeft: transcriptRect.left,
       transcriptWidth: transcriptRect.width,
@@ -48,6 +51,7 @@ test("the chat header floats over the transcript", async ({ page }, testInfo) =>
   });
   // The fade is the transcript's top clearance, so it is invisible while the chat is at the top.
   expect(layout.transcriptPadding).toBe(84);
+  expect(layout.transcriptScrollPadding).toBe(layout.transcriptPadding);
   expect(Math.abs(layout.fadeHeight - layout.transcriptPadding)).toBeLessThanOrEqual(1);
   expect(layout.fadeTop).toBe(layout.transcriptTop);
   expect(layout.fadeLeft).toBe(layout.transcriptLeft);
@@ -111,9 +115,11 @@ test("the chat header floats over the transcript", async ({ page }, testInfo) =>
     if (!transcriptElement || !fadeElement) throw new Error("missing chat layout");
     return {
       padding: Number.parseFloat(getComputedStyle(transcriptElement).paddingTop),
+      scrollPadding: Number.parseFloat(getComputedStyle(transcriptElement).scrollPaddingTop),
       fadeHeight: fadeElement.getBoundingClientRect().height,
     };
   });
   expect(narrow.padding).toBe(80);
+  expect(narrow.scrollPadding).toBe(narrow.padding);
   expect(narrow.fadeHeight).toBe(80);
 });
