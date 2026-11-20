@@ -88,13 +88,13 @@ export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost)
   );
 }
 
+/** Desktop tools that can change the page the page browser last reported. */
+const DESKTOP_TOOL_NAMES = new Set(["computer_act", "open_path", "launch_app"]);
+
 /**
  * Unwraps to the real tool before anything else, so its gate, approvals, checkpoint, audit
  * and activity all name that tool exactly as a direct call would.
  */
-/** Desktop tools that can change the page the page browser last reported. */
-const DESKTOP_TOOL_NAMES = new Set(["computer_act", "open_path", "launch_app"]);
-
 function useToolAgentTool(
   wrapper: AgentTool,
   runnable: ReadonlyMap<string, AgentTool>,

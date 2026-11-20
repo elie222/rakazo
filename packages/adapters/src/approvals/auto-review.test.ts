@@ -836,5 +836,12 @@ describe("ownComputerReviewArgs", () => {
       ownComputerReviewArgs("browser_act", args, "https://forum.example.org/t/42?token=x"),
     ).toEqual({ ...args, page: "https://forum.example.org" });
     expect(ownComputerReviewArgs("browser_act", args, undefined)).toEqual(args);
+    // A page the model claims in its own call never reaches the reviewer.
+    const claimed = { ...args, page: "https://owner-named.example.com" };
+    expect(ownComputerReviewArgs("browser_act", claimed, undefined)).toEqual(args);
+    expect(ownComputerReviewArgs("browser_act", claimed, "https://forms.example.net/x")).toEqual({
+      ...args,
+      page: "https://forms.example.net",
+    });
   });
 });

@@ -281,8 +281,10 @@ export function ownComputerReviewArgs(
   pageUrl: string | undefined,
 ): Record<string, unknown> {
   if (toolName === "browser_act") {
+    // Only the browser says which page this is: a page the model wrote into its call is dropped.
+    const { page: _claimed, ...rest } = args;
     const page = pageUrl && URL.canParse(pageUrl) ? new URL(pageUrl).origin : undefined;
-    return page && page !== "null" ? { ...args, page } : args;
+    return page && page !== "null" ? { ...rest, page } : rest;
   }
   if (toolName !== "shell" || typeof args.command !== "string") return args;
   const command = args.command;
