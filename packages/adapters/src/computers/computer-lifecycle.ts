@@ -205,35 +205,33 @@ type RunningComputer = {
 /**
  * Runs a call on a running computer through a reference that, if the call has to wake it,
  * starts it at its planned size. A machine woken at another size than its stretch is rated at
- * begins a new stretch at that size. Kept out of the screen helpers, which the desktop app
- * bundles without the database.
+ * begins a new stretch at that size, whether or not the call then succeeds. Kept out of the
+ * screen helpers, which the desktop app bundles without the database.
  */
 export async function withWakeableComputer<Result>(
-  deps: { prisma: PrismaClient; sandbox: SandboxProvider },
+  deps: { prisma: PrismaClient },
   computer: RunningComputer,
-  context: AdapterContext,
   call: (ref: ComputerRef) => Promise<Result>,
 ): Promise<Result> {
+  let woke: ComputerSize | undefined;
   const ref: ComputerRef = {
     ...toComputerRef(computer),
     startSize: await planComputerSize(deps.prisma, computer.id),
+    onStart: (size) => {
+      woke = size;
+    },
   };
-  const result = await call(ref);
-  const { runningSince } = computer;
-  if (runningSince && changedRunningSize(computer, runningSince, ref.startSize)) {
-    await bestEffort(
-      "computer woken size",
-      (async () => {
-        const resized = changedRunningSize(
-          computer,
-          runningSince,
-          await deps.sandbox.runningSize?.(ref, context),
-        );
-        if (resized) await startResizedStretch(deps.prisma, computer, runningSince, resized);
-      })(),
-    );
+  try {
+    return await call(ref);
+  } finally {
+    const { runningSince } = computer;
+    const resized = runningSince && changedRunningSize(computer, runningSince, woke);
+    if (runningSince && resized)
+      await bestEffort(
+        "computer woken size",
+        startResizedStretch(deps.prisma, computer, runningSince, resized),
+      );
   }
-  return result;
 }
 
 /**

@@ -22,6 +22,7 @@ import {
   storedMessageBlocks,
 } from "@rakazo/db";
 import { scheduleComputerSleep } from "../computers/computer-idle.js";
+import { withWakeableComputer } from "../computers/computer-lifecycle.js";
 import { releaseComputerControlLease } from "../computers/screens/computer-control.js";
 import { toComputerRef } from "../computers/screens/computer-support.js";
 
@@ -458,13 +459,8 @@ export async function expireTaughtSkillTeaching(
 }
 
 export async function applyTeachingDesktopInput(
-  sandbox: SandboxProvider,
-  computer: {
-    homeKey: string;
-    kind: string;
-    providerRef: string | null;
-    controlLeaseId: string | null;
-  },
+  deps: { prisma: PrismaClient; sandbox: SandboxProvider },
+  computer: Parameters<typeof withWakeableComputer>[1] & { controlLeaseId: string | null },
   mapped: TeachComputerInput,
   context: AdapterContext,
 ): Promise<void> {
@@ -475,22 +471,24 @@ export async function applyTeachingDesktopInput(
     fence: 0,
   };
   if (mapped.kind === "scroll") {
-    await sandbox.act(
-      toComputerRef(computer),
-      {
-        actions: [
-          {
-            kind: "scroll",
-            direction: mapped.direction,
-            amount: mapped.amount,
-            ...(mapped.x !== undefined && mapped.y !== undefined
-              ? { x: mapped.x, y: mapped.y }
-              : {}),
-          },
-        ],
-        observe: false,
-      },
-      context,
+    await withWakeableComputer(deps, computer, (ref) =>
+      deps.sandbox.act(
+        ref,
+        {
+          actions: [
+            {
+              kind: "scroll",
+              direction: mapped.direction,
+              amount: mapped.amount,
+              ...(mapped.x !== undefined && mapped.y !== undefined
+                ? { x: mapped.x, y: mapped.y }
+                : {}),
+            },
+          ],
+          observe: false,
+        },
+        context,
+      ),
     );
     return;
   }
@@ -499,7 +497,9 @@ export async function applyTeachingDesktopInput(
     desktop.kind === "key" && desktop.key && !desktop.modifiers?.length
       ? computerInputForDomKey(desktop.key)
       : desktop;
-  await sandbox.sendInput(toComputerRef(computer), input, lease, context);
+  await withWakeableComputer(deps, computer, (ref) =>
+    deps.sandbox.sendInput(ref, input, lease, context),
+  );
 }
 
 function protectedInputMissesRecording(
@@ -577,7 +577,7 @@ export async function recordTeachingInputEvent(
       if (protectedInputMissesRecording(mapped, active?.id)) return "stale";
     }
     await applyTeachingDesktopInput(
-      deps.sandbox,
+      deps,
       prepared.computer,
       mapped,
       computerContext(actor, botId, "input"),

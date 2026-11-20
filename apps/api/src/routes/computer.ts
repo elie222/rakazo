@@ -97,7 +97,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (bot.computer.state === "running" && bot.computer.providerRef) {
           const mode = parseComputerMode(bot.computer.scope);
           try {
-            await withWakeableComputer(deps, bot.computer, ctx, (ref) =>
+            await withWakeableComputer(deps, bot.computer, (ref) =>
               ensureComputerWorkspaceLayout(deps.sandbox, ref, mode, bot.id, ctx),
             );
             scheduleComputerSleep(deps.jobs, bot.computer.id);
@@ -454,7 +454,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (outcome === "stale") return { ok: true as const };
         if (outcome !== "recorded") {
           await applyTeachingDesktopInput(
-            deps.sandbox,
+            deps,
             computer,
             mapped,
             computerContext(context.actor, bot.id, "input"),
@@ -481,7 +481,7 @@ export function computerRoutes(ctx: RouterContext) {
             data: { updatedAt: new Date() },
           });
           scheduleComputerSleep(deps.jobs, computer.id);
-          entries = await withWakeableComputer(deps, computer, ctx, async (ref) => {
+          entries = await withWakeableComputer(deps, computer, async (ref) => {
             await ensureComputerWorkspaceLayout(deps.sandbox, ref, computerMode, bot.id, ctx);
             return deps.sandbox.listFiles(ref, storedPath, ctx);
           });
@@ -506,7 +506,7 @@ export function computerRoutes(ctx: RouterContext) {
             data: { updatedAt: new Date() },
           });
           scheduleComputerSleep(deps.jobs, bot.computer.id);
-          const bytes = await withWakeableComputer(deps, bot.computer, ctx, (ref) =>
+          const bytes = await withWakeableComputer(deps, bot.computer, (ref) =>
             deps.sandbox.readFile(ref, storedPath, ctx, { maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES }),
           ).catch((error: unknown) => {
             if (error instanceof SandboxFileTooLargeError) {
@@ -553,7 +553,7 @@ export function computerRoutes(ctx: RouterContext) {
           input.path,
         );
         const ctx = computerContext(context.actor, bot.id, "download");
-        const bytes = await withWakeableComputer(deps, computer, ctx, (ref) =>
+        const bytes = await withWakeableComputer(deps, computer, (ref) =>
           deps.sandbox.readFile(ref, storedPath, ctx, { maxBytes: attachmentMaxBytes(deps.env) }),
         ).catch((error: unknown) => {
           if (error instanceof SandboxFileTooLargeError) {
@@ -602,7 +602,7 @@ export function computerRoutes(ctx: RouterContext) {
           throw error;
         }
         const ctx = computerContext(context.actor, bot.id, "upload");
-        await withWakeableComputer(deps, computer, ctx, (ref) =>
+        await withWakeableComputer(deps, computer, (ref) =>
           deps.sandbox.writeFile(ref, { path: storedPath, content }, ctx),
         );
         return { ok: true as const };
@@ -653,7 +653,7 @@ export function computerRoutes(ctx: RouterContext) {
           bot.id,
           "terminal",
         );
-        const session = await withWakeableComputer(deps, computer, ctx, async (ref) =>
+        const session = await withWakeableComputer(deps, computer, async (ref) =>
           deps.sandbox.connectTerminal?.(ref, terminal, ctx),
         ).catch((error: unknown) => clearGoneSandbox(deps, computer, error));
         if (!session) return { url: null };
@@ -701,7 +701,7 @@ export function computerRoutes(ctx: RouterContext) {
           bot.id,
           "screen",
         );
-        const session = await withWakeableComputer(deps, computer, ctx, (ref) =>
+        const session = await withWakeableComputer(deps, computer, (ref) =>
           deps.sandbox.connectScreen(ref, screen, ctx),
         ).catch(async (error: unknown) => {
           if (error instanceof ComputerScreenUnavailableError) {
@@ -753,7 +753,7 @@ export function computerRoutes(ctx: RouterContext) {
           bot.id,
           "screen",
         );
-        const observation = await withWakeableComputer(deps, computer, ctx, (ref) =>
+        const observation = await withWakeableComputer(deps, computer, (ref) =>
           deps.sandbox.observe(ref, ctx),
         ).catch(async (error: unknown) => {
           if (isSandboxGoneError(error)) return clearGoneSandbox(deps, computer, error);

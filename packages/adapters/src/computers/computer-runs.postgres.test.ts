@@ -141,10 +141,9 @@ describePostgres("computer runs (PostgreSQL)", () => {
       where: { id: o.id },
       data: { runningSize: "large", runningSizeSince: (await o.runs())[0]!.startedAt },
     });
-    Object.assign(o.sandbox, { runningSize: async () => "standard" });
 
     await runAsTenant(o.tenant, () =>
-      withWakeableComputer(o.deps, before, o.context, async (ref) => ref.startSize),
+      withWakeableComputer(o.deps, before, async (ref) => ref.onStart?.("standard")),
     );
 
     const after = await system.computer.findUniqueOrThrow({ where: { id: o.id } });

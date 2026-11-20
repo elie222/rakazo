@@ -19,6 +19,7 @@ import {
   screenDisplayArgv,
   shellQuote,
 } from "@rakazo/core/node/desktop-runtime";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -300,13 +301,15 @@ describe("BoatSandboxProvider", () => {
       ).rejects.toBeInstanceOf(SandboxSizeUnavailableError);
     });
 
-    it("wakes a stopped computer at the reference's size on any call", async () => {
+    it("wakes a stopped computer at the reference's size on any call, and says so", async () => {
       const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
       const { api, provider, computer } = await boat();
       api.availableTypes.add("xlarge");
-      const sized = { ...computer, startSize: "xlarge" as const };
+      const onStart = vi.fn();
+      const sized = { ...computer, startSize: "xlarge" as const, onStart };
       await provider.prepare(sized, context);
       await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      expect(onStart).not.toHaveBeenCalled();
       api.setState(computer.id, "archived");
 
       expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
@@ -317,7 +320,56 @@ describe("BoatSandboxProvider", () => {
         },
         { signal: expect.any(AbortSignal) },
       );
-      await expect(provider.runningSize(computer, context)).resolves.toBe("xlarge");
+      expect(onStart.mock.calls).toEqual([["xlarge"]]);
+    });
+
+    it("reads no status for a call on a running computer", async () => {
+      const get = vi.spyOn(FakeBoatApi.prototype, "get");
+      const { provider, computer } = await boat();
+      const sized = { ...computer, startSize: "xlarge" as const, onStart: vi.fn() };
+      await provider.prepare(sized, context);
+      get.mockClear();
+
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      await provider.readFile(sized, "kept.txt", context);
+
+      expect(get).not.toHaveBeenCalled();
+      expect(sized.onStart).not.toHaveBeenCalled();
+    });
+
+    it("keeps a call's wake size while unsized calls run on the same computer", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const get = FakeBoatApi.prototype.get;
+      const reading = deferred();
+      const read = deferred();
+      let hold = false;
+      vi.spyOn(FakeBoatApi.prototype, "get").mockImplementation(async function (
+        this: FakeBoatApi,
+        request,
+      ) {
+        if (hold) {
+          hold = false;
+          reading.resolve();
+          await read.promise;
+        }
+        return get.call(this, request);
+      });
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      hold = true;
+      const woken = provider.readFile(sized, "kept.txt", context);
+      await reading.promise;
+      const unsized = [provider.keepAlive(computer), provider.isStopped(computer, context)];
+      read.resolve();
+
+      expect(await woken).toEqual(Uint8Array.of(1));
+      await Promise.all(unsized);
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual(["xlarge"]);
     });
 
     it("wakes a computer at the size it has when Boat refuses the reference's size", async () => {
@@ -362,6 +414,7 @@ describe("BoatSandboxProvider", () => {
       expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual([
         undefined,
       ]);
+      await expect(provider.runningSize(computer, context)).resolves.toBe("standard");
     });
 
     it("resumes a computer whose machine Boat lost at the reference's size", async () => {

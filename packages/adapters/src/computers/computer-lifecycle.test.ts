@@ -4542,7 +4542,7 @@ describe("withWakeableComputer", () => {
     runningSizeSince: runningSince,
   };
 
-  function harness(reported: "standard" | "large") {
+  function harness() {
     const prisma = {
       computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       computerRun: {
@@ -4551,44 +4551,64 @@ describe("withWakeableComputer", () => {
       },
       $executeRaw: vi.fn().mockResolvedValue(0),
     } as unknown as PrismaClient;
-    const sandbox = {
-      runningSize: vi.fn().mockResolvedValue(reported),
-    } as unknown as SandboxProvider;
-    return { prisma, sandbox };
+    return { prisma };
   }
 
-  it("wakes at the planned size and starts a new run when the machine came back at it", async () => {
-    const deps = harness("large");
-    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
-    const call = vi.fn(async (ref: ComputerRef) => ref.startSize);
-
-    await expect(withWakeableComputer(deps, computer, context, call)).resolves.toBe("large");
-
-    const [update] = vi.mocked(deps.prisma.computer.updateMany).mock.calls[0] ?? [];
+  function expectNewStretch(prisma: PrismaClient) {
+    const [update] = vi.mocked(prisma.computer.updateMany).mock.calls[0] ?? [];
     expect(update?.where).toMatchObject({ id: "computer-1", state: "running", runningSince });
     expect(update?.data).toMatchObject({ runningSize: "large" });
     expect(update?.data.runningSince).not.toEqual(runningSince);
-    expect(deps.prisma.computerRun.createMany).toHaveBeenCalledWith(
+    expect(prisma.computerRun.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: [expect.objectContaining({ startedAt: update?.data.runningSince, size: "large" })],
       }),
     );
+  }
+
+  it("wakes at the planned size and starts a new stretch at the size it woke at", async () => {
+    const deps = harness();
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+    const call = vi.fn(async (ref: ComputerRef) => {
+      ref.onStart?.("large");
+      return ref.startSize;
+    });
+
+    await expect(withWakeableComputer(deps, computer, call)).resolves.toBe("large");
+
+    expectNewStretch(deps.prisma);
   });
 
-  it("keeps the stretch when the machine still runs at its rate", async () => {
-    const deps = harness("standard");
+  it("starts the new stretch when the call fails after waking the machine", async () => {
+    const deps = harness();
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+    const failure = new Error("file read failed");
+
+    await expect(
+      withWakeableComputer(deps, computer, async (ref) => {
+        ref.onStart?.("large");
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+
+    expectNewStretch(deps.prisma);
+  });
+
+  it("keeps the stretch when the machine woke at its rate", async () => {
+    const deps = harness();
     vi.mocked(planComputerSize).mockResolvedValueOnce("large");
 
-    await withWakeableComputer(deps, computer, context, async () => undefined);
+    await withWakeableComputer(deps, computer, async (ref) => ref.onStart?.("standard"));
 
     expect(deps.prisma.computer.updateMany).not.toHaveBeenCalled();
   });
 
-  it("does not ask the size when the plan matches the rate", async () => {
-    const deps = harness("large");
+  it("keeps the stretch when the call woke nothing", async () => {
+    const deps = harness();
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
 
-    await withWakeableComputer(deps, computer, context, async () => undefined);
+    await withWakeableComputer(deps, computer, async () => undefined);
 
-    expect(deps.sandbox.runningSize).not.toHaveBeenCalled();
+    expect(deps.prisma.computer.updateMany).not.toHaveBeenCalled();
   });
 });
