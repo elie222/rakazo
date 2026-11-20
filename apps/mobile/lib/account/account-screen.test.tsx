@@ -858,9 +858,16 @@ it.each([false, true])(
       expect(artifacts.getAttribute("role")).toBe("button");
       expect(artifacts.dataset.chevron).toBe("right");
 
-      // Artifacts lives on the root stack, so it closes the settings sheet first.
+      // Artifacts lives on the root stack, so it closes the settings sheet first and is told to
+      // reopen settings when it goes back.
+      account.push.mockImplementation((href: string | { pathname: string }) =>
+        events.push(typeof href === "string" ? href : JSON.stringify(href)),
+      );
       await view.press("Artifacts");
-      expect(events).toEqual(["close", "/artifacts"]);
+      expect(events).toEqual([
+        "close",
+        JSON.stringify({ pathname: "/artifacts", params: { from: "settings" } }),
+      ]);
       for (const [title, href] of [
         ["tester@example.test", "/profile"],
         ["General", "/general"],

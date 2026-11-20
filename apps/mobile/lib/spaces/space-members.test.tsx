@@ -41,6 +41,8 @@ vi.mock("../../components/native/native-action-button", () => ({
     createElement("button", { type: "button", onClick: onPress }, label),
 }));
 vi.mock("../../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
+// Going back to Settings is covered by its own test.
+vi.mock("../settings/back-to-settings", () => ({ useBackToSettings: () => undefined }));
 vi.mock("expo-router", () => ({
   useRouter: () => router,
   // Opened from Settings: no name in the link, so the sheet takes it from the list.
