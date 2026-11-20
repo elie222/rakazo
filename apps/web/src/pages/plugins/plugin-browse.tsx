@@ -273,7 +273,7 @@ export function PluginBrowse({
       !showFeatured &&
       !pluginMatches.length &&
       !brandMatches.length ? (
-        <p className="text-muted-foreground/80">
+        <p className="text-muted-foreground/80" role="status">
           <Trans>No apps match your search.</Trans>
         </p>
       ) : null}

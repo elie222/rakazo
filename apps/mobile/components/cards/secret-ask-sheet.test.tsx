@@ -39,8 +39,18 @@ vi.mock("react-native", async () => {
       children?: ReactNode;
       automaticallyAdjustKeyboardInsets?: boolean;
     }) => <div data-keyboard-insets={automaticallyAdjustKeyboardInsets}>{children}</div>,
-    Text: ({ children, numberOfLines }: { children?: ReactNode; numberOfLines?: number }) => (
-      <span data-lines={numberOfLines}>{children}</span>
+    Text: ({
+      children,
+      numberOfLines,
+      accessibilityRole,
+    }: {
+      children?: ReactNode;
+      numberOfLines?: number;
+      accessibilityRole?: string;
+    }) => (
+      <span data-lines={numberOfLines} role={accessibilityRole}>
+        {children}
+      </span>
     ),
     TextInput: function TextInput({
       ref,
@@ -406,6 +416,7 @@ it("clears both fields and shows a generic error when saving fails", async () =>
   expect(field("Password").value).toBe("");
   expect(button("Save").disabled).toBe(true);
   expect(container.textContent).toContain("Could not send answer");
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not send answer");
   expect(container.textContent).not.toContain("example-password");
 });
 
