@@ -2,6 +2,14 @@ import { defineMessagingPlatform } from "../../../messaging/messaging-platform-d
 import { LazyLarkAdapter } from "./lazy-adapter.js";
 import { Domain } from "./thread-id.js";
 
+/** Unset or blank is Feishu. Any other value must be feishu or lark, or startup fails. */
+function larkDomain(setting: string | undefined): Domain {
+  const value = setting?.trim().toLowerCase();
+  if (!value || value === "feishu") return Domain.Feishu;
+  if (value === "lark") return Domain.Lark;
+  throw new Error("LARK_DOMAIN must be feishu or lark");
+}
+
 /**
  * App ID, secret, and verification token are all required: without the token the adapter
  * accepts unsigned webhook posts. Encrypt key and domain are optional (event encryption /
@@ -25,7 +33,7 @@ export const larkMessaging = defineMessagingPlatform({
       verificationToken: env.larkVerificationToken,
       // Explicit defaults prevent the adapter from rereading untrimmed process.env values.
       encryptKey: env.larkEncryptKey ?? "",
-      domain: env.larkDomain?.toLowerCase() === "lark" ? Domain.Lark : Domain.Feishu,
+      domain: larkDomain(env.larkDomain),
     });
     return {
       provider: "lark",
