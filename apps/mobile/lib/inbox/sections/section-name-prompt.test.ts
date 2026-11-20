@@ -59,6 +59,13 @@ describe("section name prompt", () => {
     expect(prompt.onSubmit).not.toHaveBeenCalled();
   });
 
+  it("ignores a rename that is unchanged after trimming the truncated name", () => {
+    const name = "a".repeat(BOT_SECTION_NAME_MAX_LENGTH - 1);
+    const prompt = open(name);
+    prompt.submit(name + " x");
+    expect(prompt.onSubmit).not.toHaveBeenCalled();
+  });
+
   it("prefills a rename and ignores an unchanged name", () => {
     const prompt = open("Work");
     expect(prompt.value).toBe("Work");

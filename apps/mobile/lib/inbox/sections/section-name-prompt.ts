@@ -21,7 +21,8 @@ export function promptSectionName(input: {
       {
         text: input.submitLabel,
         onPress: (value?: string) => {
-          const name = truncatePlainText(value?.trim() ?? "", BOT_SECTION_NAME_MAX_LENGTH);
+          const text = value?.trim() ?? "";
+          const name = truncatePlainText(text, BOT_SECTION_NAME_MAX_LENGTH).trimEnd();
           if (name && name !== input.defaultValue) input.onSubmit(name);
         },
       },
