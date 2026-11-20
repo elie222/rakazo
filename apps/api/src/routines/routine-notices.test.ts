@@ -59,7 +59,11 @@ function client(saved: Record<string, unknown> = routine) {
           delete: vi.fn(async () => saved),
           count: vi.fn(async () => 0),
         },
-        run: { updateManyAndReturn: vi.fn(async () => []) },
+        spaceMember: {
+          findMany: vi.fn(async () => [
+            { userId: "user-1", member: { user: { name: "Riley", email: "riley@example.test" } } },
+          ]),
+        },
         userModelPreference: { findMany: vi.fn(async () => []) },
       },
       env: { sandboxProvider: "fake" },

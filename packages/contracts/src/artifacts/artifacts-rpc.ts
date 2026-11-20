@@ -23,6 +23,16 @@ import {
   UpdateTicketInput,
 } from "./board.js";
 import {
+  PageAccessInput,
+  PageCommentBody,
+  PageCommentSchema,
+  PageGrantSchema,
+  PageReviewSchema,
+  PageSection,
+  PageSectionOccurrence,
+  PageVersionNumber,
+} from "./page-collaboration.js";
+import {
   PAGE_LIST_MAX_LIMIT,
   PageDetailSchema,
   PageSummarySchema,
@@ -82,6 +92,49 @@ export const artifactsRpc = {
     get: oc.input(threadTarget.and(z.object({ artifactId: Id }))).output(ArtifactWithContentSchema),
     getById: oc.input(z.object({ artifactId: Id })).output(ArtifactWithContentSchema),
     remove: oc.input(z.object({ artifactId: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  /** Review pages the caller owns or has been granted access to. */
+  pageReviews: {
+    list: oc.input(z.strictObject({ cursor: Id.optional() })).output(
+      z.strictObject({
+        items: z.array(z.strictObject({ id: Id, title: z.string() })),
+        nextCursor: Id.nullable(),
+      }),
+    ),
+    get: oc
+      .input(PageAccessInput.extend({ version: PageVersionNumber.optional() }))
+      .output(PageReviewSchema),
+    grants: oc.input(PageAccessInput).output(z.array(PageGrantSchema)),
+    grant: oc.input(PageAccessInput.extend({ email: z.email().max(254) })).output(PageGrantSchema),
+    revoke: oc
+      .input(PageAccessInput.extend({ grantId: Id }))
+      .output(z.object({ ok: z.literal(true) })),
+    comments: oc
+      .input(PageAccessInput.extend({ cursor: Id.optional() }))
+      .output(z.strictObject({ items: z.array(PageCommentSchema), nextCursor: Id.nullable() })),
+    comment: oc
+      .input(
+        PageAccessInput.extend({
+          submissionId: z.uuid(),
+          version: PageVersionNumber,
+          section: PageSection,
+          sectionOccurrence: PageSectionOccurrence.optional(),
+          body: PageCommentBody,
+        }),
+      )
+      .output(z.object({ id: Id })),
+    resolve: oc
+      .input(PageAccessInput.extend({ commentId: Id, resolved: z.boolean() }))
+      .output(z.object({ ok: z.literal(true) })),
+    askRevision: oc
+      .input(PageAccessInput.extend({ commentId: Id, retryOf: Id.optional() }))
+      .output(z.object({ ok: z.literal(true) })),
+    draft: oc
+      .input(PageAccessInput.extend({ requestId: Id }))
+      .output(z.object({ code: z.string() })),
+    publish: oc
+      .input(PageAccessInput.extend({ requestId: Id }))
+      .output(z.object({ version: PageVersionNumber })),
   },
   /** Pages bots built for the caller in this Space. */
   pages: {

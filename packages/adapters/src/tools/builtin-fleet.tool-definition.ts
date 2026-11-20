@@ -123,11 +123,11 @@ export const fleetTools: ConnectorTool[] = [
         },
         model_provider: {
           type: "string",
-          description: "Optional connected model provider. Set together with model_id.",
+          description: "Provider id (e.g. opencode-go). Set together with model_id.",
         },
         model_id: {
           type: "string",
-          description: "Optional connected model ID. Set together with model_provider.",
+          description: "Model id or provider/id. Set together with model_provider.",
         },
       },
       required: ["name", "task"],

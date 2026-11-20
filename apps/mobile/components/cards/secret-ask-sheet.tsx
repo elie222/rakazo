@@ -143,7 +143,11 @@ export function SecretAskSheet({
               onValueChange={setRemember}
             />
           </View>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          ) : null}
         </ScrollView>
       </View>
     </Modal>

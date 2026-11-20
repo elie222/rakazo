@@ -134,3 +134,17 @@ it("drops a shown preview when a refresh of the page fails", async () => {
   expect(container.textContent).toContain("This page couldn't load");
   act(() => root.unmount());
 });
+
+it("shows the Specific people audience on a Page card", async () => {
+  host.runtimeFails = false;
+  host.detail = {
+    id: "page-1",
+    title: "Plan",
+    code: "code",
+    currentVersion: 1,
+    visibility: "people",
+  };
+  const shown = await card();
+  expect(shown.container.textContent).toContain("Specific people");
+  await shown.unmount();
+});
