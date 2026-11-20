@@ -297,7 +297,9 @@ function visiblePrefix(slot: RevealTextSlot, blockSource: string, revealed: numb
     // output covers every named entity without keeping a reference table of our own.
     if (char === "&") {
       const semicolon = source.indexOf(";", index + 1);
-      if (semicolon !== -1 && semicolon < limit && semicolon - index <= 34) {
+      // A reference completed by this append starts before the boundary and ends after it; the
+      // previous frame still drew its spelling, so the decoded character belongs to this frame.
+      if (semicolon !== -1 && semicolon - index <= 34) {
         const spelling = source.slice(index, semicolon + 1);
         if (!slot.value.startsWith(spelling, rendered)) {
           const next = source[semicolon + 1];
