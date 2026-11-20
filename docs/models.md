@@ -52,7 +52,9 @@ for a simple daily check.
 
 ## Usage
 
-**Settings → Usage** shows runs, tokens and cost by model.
+On web and desktop, **Settings → Usage** shows runs, tokens and cost by model. On mobile,
+**Settings** shows a **Usage** summary. For a breakdown by model, type `/` at the start of a draft
+in a bot chat and choose **Settings: Usage**.
 
 ## Compatible server wire protocol
 
