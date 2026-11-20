@@ -96,6 +96,19 @@ describe("bot media tools", () => {
     );
     expect(publish).toHaveBeenCalledTimes(1);
   });
+  it("names an attached image after the format the provider returned", async () => {
+    const { options, provider, attach } = setup();
+    vi.spyOn(provider, "generateImage").mockResolvedValue({
+      bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]),
+      mimeType: "image/jpeg",
+    });
+    expect(await generateMediaFromTool(options)).toMatchObject({ status: "completed" });
+    expect(attach).toHaveBeenCalledWith(
+      expect.objectContaining({ mimeType: "image/jpeg" }),
+      "generated-local-job.jpg",
+      expect.anything(),
+    );
+  });
   it("rejects invalid inputs before reserving or billing", async () => {
     const { options, externalEffect } = setup();
     for (const args of [{ prompt: " " }, { prompt: "draw", jobId: "job" }, { jobId: 42 }]) {
