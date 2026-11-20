@@ -215,7 +215,9 @@ export default function ModelConnection() {
 
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  const signInSetup = selected?.signInSetup;
+  // Signing in again, the setting is already on.
+  const signInSetup = credential?.authKind === "oauth" ? undefined : selected?.signInSetup;
+  const [setupShownFor, setSetupShownFor] = useState<string | null>(null);
   const {
     oauth,
     pasteCode,
@@ -591,18 +593,8 @@ export default function ModelConnection() {
                 </>
               ) : (
                 <>
-                  {signInSetup ? (
-                    <Pressable
-                      accessibilityRole="link"
-                      onPress={() => void Linking.openURL(signInSetup.url)}
-                    >
-                      <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
-                    </Pressable>
-                  ) : null}
                   <Text style={styles.secondary}>
-                    {signInSetup
-                      ? t`2. Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`
-                      : t`Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`}
+                    {t`Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`}
                   </Text>
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
@@ -627,6 +619,32 @@ export default function ModelConnection() {
                 style={{ marginTop: 12 }}
               />
             </View>
+          ) : signInSetup && setupShownFor === selected.provider ? (
+            <View style={styles.oauthCard}>
+              <Pressable
+                accessibilityRole="link"
+                onPress={() => void Linking.openURL(signInSetup.url)}
+              >
+                <Text style={styles.link}>{signInSetup.label}</Text>
+              </Pressable>
+              {signInSetup.note ? <Text style={styles.secondary}>{signInSetup.note}</Text> : null}
+              <NativeActionButton
+                fill
+                label={t`I’ve turned it on`}
+                onPress={() => {
+                  setSetupShownFor(null);
+                  void startSubscriptionSignIn();
+                }}
+                style={{ marginTop: 12 }}
+              />
+              <NativeActionButton
+                fill
+                label={t`Cancel`}
+                onPress={() => setSetupShownFor(null)}
+                prominence="secondary"
+                style={{ marginTop: 12 }}
+              />
+            </View>
           ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
             <NativeActionButton
               disabled={busy}
@@ -638,7 +656,9 @@ export default function ModelConnection() {
                     ? t`Sign in again`
                     : (selected.oauthLabel ?? t`Sign in`)
               }
-              onPress={() => void startSubscriptionSignIn()}
+              onPress={() =>
+                signInSetup ? setSetupShownFor(selected.provider) : void startSubscriptionSignIn()
+              }
               prominence="secondary"
               style={{ marginTop: 12 }}
             />

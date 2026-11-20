@@ -27,12 +27,11 @@ let host: HTMLDivElement;
 const onCopyCode = vi.fn();
 const onPageOpened = vi.fn();
 
-function render(setup?: { label: string; url: string }) {
+function render() {
   act(() =>
     root.render(
       <DeviceCodeSignIn
         oauth={oauth}
-        setup={setup}
         codeCopied={false}
         onCopyCode={onCopyCode}
         onPageOpened={onPageOpened}
@@ -63,13 +62,4 @@ it("copies the code as the same click opens the page to enter it on", () => {
   act(() => open?.click());
   expect(onCopyCode).toHaveBeenCalledWith("ABCD-1234");
   expect(onPageOpened).toHaveBeenCalledOnce();
-  expect(host.querySelector("ol")).toBeNull();
-});
-
-it("puts the provider's setup step before the code", () => {
-  render({ label: "Turn on device sign-in", url: "https://example.test/settings" });
-  const steps = [...host.querySelectorAll("li")];
-  expect(steps).toHaveLength(2);
-  expect(steps[0]?.querySelector("a")?.getAttribute("href")).toBe("https://example.test/settings");
-  expect(steps[1]?.textContent).toContain("ABCD-1234");
 });

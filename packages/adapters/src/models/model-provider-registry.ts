@@ -41,7 +41,7 @@ export interface ModelProviderDefinition {
     hint: string;
     billing: string;
     /** A setting the account must turn on first, or the provider refuses the sign-in. */
-    setup?: { label: string; url: string };
+    setup?: { label: string; url: string; note?: string };
   };
   /** Ids each connection supplies to route its requests. */
   routingFields?: ModelRoutingField[];
@@ -66,6 +66,7 @@ export const modelProviders = {
       setup: {
         label: "Turn on device code sign-in in ChatGPT security settings",
         url: "https://chatgpt.com/#settings/Security",
+        note: "Workspace accounts need an admin to turn this on.",
       },
     },
   },

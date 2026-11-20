@@ -15,6 +15,8 @@ import {
 import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
 import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
+import { SignInSetupStep } from "../../components/models/SignInSetupStep";
+import { useSignInSetup } from "../../lib/models/use-sign-in-setup";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
 import type { OnboardingModel } from "./use-onboarding-model";
 
@@ -364,6 +366,11 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
     signInLabel,
     submitOAuthCode,
   } = model;
+  const signInSetup = useSignInSetup(
+    selected?.signInSetup,
+    selected?.provider,
+    beginSelectedSubscriptionSignIn,
+  );
 
   return (
     <div className="mt-4">
@@ -409,7 +416,6 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
           ) : (
             <DeviceCodeSignIn
               oauth={oauth}
-              setup={selected?.signInSetup}
               codeCopied={codeCopied}
               onCopyCode={copyOAuthCode}
               onPageOpened={() => reportSignInStep("page_opened")}
@@ -424,8 +430,16 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
             <Trans>Cancel</Trans>
           </Button>
         </div>
+      ) : signInSetup.setup ? (
+        <div className="rounded-lg border border-border px-3.5 py-3">
+          <SignInSetupStep
+            setup={signInSetup.setup}
+            onContinue={signInSetup.proceed}
+            onCancel={signInSetup.dismiss}
+          />
+        </div>
       ) : (
-        <Button disabled={oauthPending} onClick={() => beginSelectedSubscriptionSignIn()}>
+        <Button disabled={oauthPending} onClick={signInSetup.begin}>
           {oauthPending ? <Trans>Starting…</Trans> : signInLabel}
         </Button>
       )}

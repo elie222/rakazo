@@ -53,7 +53,7 @@ export type PiCatalogEntry = {
   authHint?: string;
   subscription: boolean;
   signIn?: ModelOAuthSignInMode;
-  signInSetup?: { label: string; url: string };
+  signInSetup?: { label: string; url: string; note?: string };
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
   defaultCapabilities?: { images?: boolean; reasoning?: boolean; thinkingLevels?: ThinkingLevel[] };
