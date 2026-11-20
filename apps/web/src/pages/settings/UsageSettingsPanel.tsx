@@ -49,15 +49,14 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   });
 
   const catalog = useQuery(queries.models.list.queryOptions()).data ?? NO_CATALOG;
-  // The names the Models tab shows; a model the catalog no longer lists keeps its id.
   const labelsFor = ({ provider, model }: { provider: string; model: string }) => {
     const entry = catalog.find(
       (e) =>
         e.id === model && canonicalPiProviderId(e.provider) === canonicalPiProviderId(provider),
     );
     return {
-      modelLabel: entry?.label ?? model,
-      providerLabel: entry?.providerName ?? provider,
+      modelLabel: entry?.label ?? t`Unlisted model`,
+      providerLabel: entry?.providerName,
     };
   };
 
@@ -89,8 +88,10 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           (other) => other.providerLabel === m.providerLabel,
         );
         let label = m.modelLabel;
-        if (sameLabel.length > 1) label = `${label} (${m.providerLabel})`;
-        if (sameProviderLabel.length > 1) label = `${label} — ${m.model}`;
+        if (sameLabel.length > 1 && m.providerLabel) label = `${label} (${m.providerLabel})`;
+        if (sameProviderLabel.length > 1) {
+          label = `${label} (${sameProviderLabel.indexOf(m) + 1})`;
+        }
         return { key: JSON.stringify([m.provider, m.model]), label };
       })
     : selectedModel
@@ -270,7 +271,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                   <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
                     <TableCell>
                       <div className="text-foreground">{modelLabel}</div>
-                      <div className="text-label text-muted-foreground">{providerLabel}</div>
+                      {providerLabel && (
+                        <div className="text-label text-muted-foreground">{providerLabel}</div>
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {number(row.modelCalls)}

@@ -163,21 +163,25 @@ it("shows every bot's usage first, then narrows it by bot, model and date range"
       [...panel.container.querySelectorAll("tbody tr")].map((row) =>
         [...row.querySelectorAll("td")].map((cell) => cell.textContent),
       ),
-    ).toEqual([["m1p:1", "3", "399", "1", "$0.04"]]);
+    ).toEqual([["Unlisted model", "3", "399", "1", "$0.04"]]);
 
     await panel.choose("Bot", "Alpha");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({ range: "30d", botId: "bot-a" });
     expect(panel.totals()).toEqual(["2", "400", "$0.04"]);
 
     // The model list keeps every model, and a provider id with a colon survives the round trip.
-    await panel.choose("Model", "m1");
+    await panel.choose("Model", "Unlisted model (1)");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({
       range: "30d",
       botId: "bot-a",
       provider: "p:1",
       model: "m1",
     });
-    expect(await panel.options("Model")).toEqual(["All models", "m1", "m2"]);
+    expect(await panel.options("Model")).toEqual([
+      "All models",
+      "Unlisted model (1)",
+      "Unlisted model (2)",
+    ]);
 
     await panel.pick("7 days");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({
@@ -231,11 +235,11 @@ it("says the request failed instead of showing zero spend", async () => {
   const panel = await renderPanel();
   try {
     await panel.choose("Bot", "Alpha");
-    await panel.choose("Model", "m1");
+    await panel.choose("Model", "Unlisted model (1)");
     breakdown.fetch.mockRejectedValue(new Error("offline"));
     await panel.pick("Today");
     expect(panel.chosen("Bot")).toBe("Alpha");
-    expect(panel.chosen("Model")).toBe("m1");
+    expect(panel.chosen("Model")).toBe("Unlisted model (1)");
     expect(panel.totals()).toEqual(["—", "—", "—"]);
     expect(panel.container.textContent).toContain("Could not load usage.");
     expect(panel.container.textContent).not.toContain("No usage for this selection.");
@@ -258,16 +262,16 @@ it("tells apart a model name that two providers share", async () => {
     await panel.pick("7 days");
     expect(await panel.options("Model")).toEqual([
       "All models",
-      "shared (alpha)",
-      "shared (beta)",
-      "solo",
+      "Unlisted model (1)",
+      "Unlisted model (2)",
+      "Unlisted model (3)",
     ]);
   } finally {
     await panel.unmount();
   }
 });
 
-it("names models and providers by their labels, and keeps the id when none is known", async () => {
+it("names models and providers by their labels, and hides identifiers when none is known", async () => {
   const panel = await renderPanel([
     { provider: "openai-codex", id: "gpt-6-luna", label: "GPT-6 Luna", providerName: "ChatGPT" },
     { provider: "alpha", id: "shared", label: "Shared Model", providerName: "Alpha AI" },
@@ -294,14 +298,14 @@ it("names models and providers by their labels, and keeps the id when none is kn
       [...panel.container.querySelectorAll("tbody tr")].map(
         (row) => row.querySelector("td")?.textContent,
       ),
-    ).toEqual(["GPT-6 LunaChatGPT", "my-modelcustom"]);
+    ).toEqual(["GPT-6 LunaChatGPT", "Unlisted model"]);
     expect(await panel.options("Model")).toEqual([
       "All models",
       "GPT-6 Luna",
-      "Shared Model (Alpha AI) — shared",
-      "Shared Model (Alpha AI) — shared-v2",
+      "Shared Model (Alpha AI) (1)",
+      "Shared Model (Alpha AI) (2)",
       "Shared Model (Beta AI)",
-      "my-model",
+      "Unlisted model",
     ]);
   } finally {
     await panel.unmount();
