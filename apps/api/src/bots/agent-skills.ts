@@ -20,6 +20,7 @@ import {
   availableInSpace,
   IsolationError,
   isUniqueViolation,
+  runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
 import { assertNameFreeWhereAvailable, userAddedAvailability } from "../spaces/name-claims.js";
@@ -261,20 +262,36 @@ export function createAgentSkillsService(
               existing.id,
             );
           const result = await tx.agentSkill.updateMany({
-            where: { id: existing.id, ...availableInSpace(actor), source: "user" },
+            where: {
+              id: existing.id,
+              ...availableInSpace(actor),
+              source: "user",
+              // A rename that lost a race must not leave routines pointing at a stale name.
+              ...(renamed ? { name: previousName } : {}),
+            },
             data: {
               name: resolved.name,
               description: resolved.description,
               content: resolved.content,
             },
           });
+          if (result.count === 0 && renamed) {
+            throw new ClientError("CONFLICT", "This skill changed. Reload and try again.");
+          }
           if (result.count === 1 && renamed) {
             const { allSpaces, spaceIds } = spaceAvailability(existing);
-            renamedRoutineSpaces = await renameSkillInRoutines(
+            // The owner's routines in the other spaces the skill is available in sit outside
+            // this request's Space, so read them by owner as the name checks do.
+            renamedRoutineSpaces = await runAsSystemInTransaction(
               tx,
-              { userId: existing.userId, spaceIds: allSpaces ? null : spaceIds },
-              previousName,
-              resolved.name,
+              "owner's routines in the spaces a renamed skill is available in",
+              () =>
+                renameSkillInRoutines(
+                  tx,
+                  { userId: existing.userId, spaceIds: allSpaces ? null : spaceIds },
+                  previousName,
+                  resolved.name,
+                ),
             );
           }
           return result;

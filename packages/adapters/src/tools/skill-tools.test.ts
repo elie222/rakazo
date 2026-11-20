@@ -65,7 +65,8 @@ function makePrisma(
               row.id === where.id &&
               row.spaceId === where.spaceId &&
               row.userId === where.userId &&
-              row.source === where.source,
+              row.source === where.source &&
+              (where.name === undefined || row.name === where.name),
           );
           if (index < 0) return { count: 0 };
           store[index] = { ...store[index], ...data, updatedAt: new Date() };
@@ -280,6 +281,29 @@ describe("skill tools", () => {
       "Run @Original here.",
       "Run @Original here.",
     ]);
+  });
+
+  it("leaves routines alone when another rename got there first", async () => {
+    prisma = makePrisma([], [{ id: "r1", userId: "user-1", spaceId: "ws-1", prompt: "@Old" }]);
+    const created = await skillCreateFromTool(prisma as never, owner, {
+      name: "Old",
+      description: "d",
+      body: "body",
+    });
+    const publishSpaceChange = vi.fn(async () => undefined);
+    // The skill was renamed between this tool's read and its write.
+    const [stored] = (await prisma.agentSkill.findMany()) as Array<{ id: string }>;
+    await prisma.agentSkill.update({ where: { id: String(stored?.id) }, data: { name: "Other" } });
+    prisma.agentSkill.findMany.mockResolvedValueOnce([{ ...stored, name: "Old" }]);
+    const result = await skillUpdateFromTool(
+      prisma as never,
+      owner,
+      { skillId: String(created.id), newName: "New" },
+      { publishSpaceChange },
+    );
+    expect(result).toHaveProperty("error");
+    expect(prisma._routines[0]?.prompt).toBe("@Old");
+    expect(publishSpaceChange).not.toHaveBeenCalled();
   });
 
   it("leaves routines alone when the skill keeps its name", async () => {

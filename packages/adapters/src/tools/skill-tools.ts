@@ -9,7 +9,6 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { availableInSpace } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.prompt.js";
 
 export const SKILL_TOOL_NAMES = new Set([
@@ -151,8 +150,7 @@ export async function signalRenamedRoutines(
   events: Pick<ThreadEvents, "publishSpaceChange"> | undefined,
   spaceIds: readonly string[],
 ): Promise<void> {
-  for (const spaceId of spaceIds)
-    await bestEffort("signal routines changed", events?.publishSpaceChange?.(spaceId, "routines"));
+  for (const spaceId of spaceIds) await events?.publishSpaceChange?.(spaceId, "routines");
 }
 
 export async function listAgentSkillRecords(
@@ -335,6 +333,7 @@ export async function skillUpdateFromTool(
   const oversized = rejectOversizedContent(nextContent);
   if (oversized) return { error: oversized };
 
+  const renamed = nextName !== existing.name;
   if (nextName.toLowerCase() !== existing.name.toLowerCase()) {
     const clash = await findOwnedSkill(prisma, owner, { name: nextName });
     if (clash && clash.id !== existing.id) {
@@ -346,7 +345,13 @@ export async function skillUpdateFromTool(
     // Re-scope mutate to owner + user source so a stale id cannot cross tenants.
     const changed = await prisma.$transaction(async (tx) => {
       const updated = await tx.agentSkill.updateMany({
-        where: { id: existing.id, ...onlyInSpace(owner), source: "user" },
+        where: {
+          id: existing.id,
+          ...onlyInSpace(owner),
+          source: "user",
+          // A rename that lost a race must not leave routines pointing at a stale name.
+          ...(renamed ? { name: existing.name } : {}),
+        },
         data: {
           name: nextName,
           description: nextDescription,
@@ -354,6 +359,7 @@ export async function skillUpdateFromTool(
         },
       });
       if (updated.count !== 1) return null;
+      if (!renamed) return [];
       return renameSkillInRoutines(
         tx,
         { userId: owner.userId, spaceIds: [owner.spaceId] },

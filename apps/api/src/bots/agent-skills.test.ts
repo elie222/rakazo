@@ -77,6 +77,7 @@ function setup(rows: ReturnType<typeof savedSkill>[] = []) {
   return {
     agentSkill,
     routines,
+    queryRaw: tx.$queryRaw,
     publishSpaceChange,
     service: createAgentSkillsService({ agentSkill, $transaction } as unknown as PrismaClient, {
       publishSpaceChange,
@@ -186,6 +187,38 @@ describe("renaming a skill", () => {
       "Run @Saved review.",
     ]);
     expect(publishSpaceChange.mock.calls).toEqual([[actor.spaceId, "routines"]]);
+  });
+
+  it("reaches routines in every space a skill available everywhere is renamed from", async () => {
+    const { service, routines, publishSpaceChange, queryRaw } = setup([
+      { ...savedSkill("Saved review"), allSpaces: true },
+    ]);
+    await service.update(actor, { skillId: "saved-1", name: "Weekly review" });
+    expect(routines.map((row) => row.prompt)).toEqual([
+      "Run @Weekly review.",
+      "Run @Weekly review.",
+    ]);
+    expect(publishSpaceChange.mock.calls).toEqual([
+      [actor.spaceId, "routines"],
+      ["space-9", "routines"],
+    ]);
+    // The other space's routines are read by owner, outside this request's Space.
+    expect(queryRaw).toHaveBeenCalled();
+  });
+
+  it("refuses a rename that lost a race and leaves routines alone", async () => {
+    const { service, agentSkill, routines, publishSpaceChange } = setup([
+      savedSkill("Saved review"),
+    ]);
+    agentSkill.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(
+      service.update(actor, { skillId: "saved-1", name: "Weekly review" }),
+    ).rejects.toMatchObject({ kind: "CONFLICT" });
+    expect(agentSkill.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ name: "Saved review" }) }),
+    );
+    expect(routines.map((row) => row.prompt)).toEqual(["Run @Saved review.", "Run @Saved review."]);
+    expect(publishSpaceChange).not.toHaveBeenCalled();
   });
 
   it("leaves routines alone when the name is unchanged", async () => {
