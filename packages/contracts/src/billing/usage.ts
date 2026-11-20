@@ -26,13 +26,25 @@ export const UsageRecordSchema = z.object({
   createdAt: z.string(),
 });
 
-/** Token and cost totals are null when any counted call lacks that figure. */
+export const UsageTotalFieldSchema = z.enum([
+  "inputTokens",
+  "outputTokens",
+  "totalTokens",
+  "costUsd",
+]);
+export type UsageTotalField = z.infer<typeof UsageTotalFieldSchema>;
+
+/**
+ * Each token and cost total sums the calls that report that figure, and is null when none do.
+ * `incomplete` names the totals that leave out calls without one, so they read as a floor.
+ */
 const UsageTotalsSchema = z.object({
   inputTokens: z.number().nullable(),
   outputTokens: z.number().nullable(),
   totalTokens: z.number().nullable().optional(),
   costUsd: z.number().nullable().optional(),
   modelCalls: z.number().optional(),
+  incomplete: z.array(UsageTotalFieldSchema).optional(),
 });
 export const UsageSummarySchema = UsageTotalsSchema.extend({
   runs: z.number(),
@@ -77,6 +89,7 @@ export const UsageBreakdownBotSchema = z.object({
   totalTokens: z.number().nullable(),
   costUsd: z.number().nullable(),
   modelCalls: z.number(),
+  incomplete: z.array(UsageTotalFieldSchema),
 });
 export type UsageBreakdownBot = z.infer<typeof UsageBreakdownBotSchema>;
 

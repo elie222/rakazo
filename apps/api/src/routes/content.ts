@@ -1,7 +1,7 @@
 import type { UsageOperationKind } from "@rakazo/adapter-kit";
 import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
-import type { ExportManifest } from "@rakazo/contracts";
-import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
+import type { ExportManifest, UsageTotalField } from "@rakazo/contracts";
+import { attachmentMaxBytes, resolveBotAvatarSet, UsageTotalFieldSchema } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   ClientError,
@@ -164,7 +164,7 @@ export function contentRoutes(ctx: RouterContext) {
           outputTokens: true,
           totalTokens: true,
           costUsd: true,
-        } as const;
+        } as const satisfies Record<UsageTotalField, true>;
         const counts = { _all: true, ...sums } as const;
         const [result, modelGroups, runGroups] = await Promise.all([
           deps.prisma.usageRecord.aggregate({ where, _sum: sums, _count: counts }),
@@ -178,29 +178,25 @@ export function contentRoutes(ctx: RouterContext) {
         ]);
         const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
           .size;
-        // A total that skips rows without a count would understate spend, so it reads as unknown.
-        const completeSums = (group: {
-          _sum: Record<keyof typeof sums, number | null>;
+        // A total that skips rows without a count understates, so it says which ones do.
+        const knownSums = (group: {
+          _sum: Record<UsageTotalField, number | null>;
           _count: Record<keyof typeof counts, number>;
-        }) => {
-          const complete = (field: keyof typeof sums) =>
-            group._count[field] === group._count._all ? (group._sum[field] ?? 0) : null;
-          return {
-            inputTokens: complete("inputTokens"),
-            outputTokens: complete("outputTokens"),
-            totalTokens: complete("totalTokens"),
-            costUsd: complete("costUsd"),
-            modelCalls: group._count._all,
-          };
-        };
+        }) => ({
+          ...group._sum,
+          modelCalls: group._count._all,
+          incomplete: UsageTotalFieldSchema.options.filter(
+            (field) => group._count[field] < group._count._all,
+          ),
+        });
         return {
-          ...completeSums(result),
+          ...knownSums(result),
           runs,
           models: modelGroups
             .map((group) => ({
               provider: group.provider,
               model: group.model,
-              ...completeSums(group),
+              ...knownSums(group),
             }))
             .sort(
               (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
@@ -258,18 +254,25 @@ export function contentRoutes(ctx: RouterContext) {
 
         const toNum = (v: bigint | number | null | undefined) =>
           v == null ? 0 : typeof v === "bigint" ? Number(v) : v;
-        const toNullableInt = (v: number | bigint | null, complete: boolean) =>
-          complete ? Math.round(toNum(v)) : null;
-        const toNullableFloat = (v: number | null, complete: boolean) =>
-          complete ? (v ?? 0) : null;
-        const totalsOf = (row: TotalsRow) => ({
-          runs: "runs" in row ? toNum((row as { runs?: bigint | number }).runs) : 0,
-          modelCalls: toNum(row.modelCalls),
-          inputTokens: toNullableInt(row.inputTokens, Boolean(row.inputComplete)),
-          outputTokens: toNullableInt(row.outputTokens, Boolean(row.outputComplete)),
-          totalTokens: toNullableInt(row.totalTokens, Boolean(row.totalComplete)),
-          costUsd: toNullableFloat(row.costUsd, Boolean(row.costComplete)),
-        });
+        const toNullableInt = (v: number | bigint | null) =>
+          v == null ? null : Math.round(toNum(v));
+        const totalsOf = (row: TotalsRow) => {
+          const complete: Record<UsageTotalField, boolean> = {
+            inputTokens: row.inputComplete,
+            outputTokens: row.outputComplete,
+            totalTokens: row.totalComplete,
+            costUsd: row.costComplete,
+          };
+          return {
+            runs: "runs" in row ? toNum((row as { runs?: bigint | number }).runs) : 0,
+            modelCalls: toNum(row.modelCalls),
+            inputTokens: toNullableInt(row.inputTokens),
+            outputTokens: toNullableInt(row.outputTokens),
+            totalTokens: toNullableInt(row.totalTokens),
+            costUsd: row.costUsd,
+            incomplete: UsageTotalFieldSchema.options.filter((field) => !complete[field]),
+          };
+        };
 
         const totalsSelect = Prisma.sql`
           COUNT(*)::bigint AS "modelCalls",
@@ -369,15 +372,10 @@ export function contentRoutes(ctx: RouterContext) {
               outputTokens: 0,
               totalTokens: 0,
               costUsd: 0,
+              incomplete: [],
             };
           }
-          return totalsOf({
-            ...rawTotals,
-            inputComplete: Boolean(rawTotals.inputComplete),
-            outputComplete: Boolean(rawTotals.outputComplete),
-            totalComplete: Boolean(rawTotals.totalComplete),
-            costComplete: Boolean(rawTotals.costComplete),
-          });
+          return totalsOf(rawTotals);
         })();
 
         const nextDay = (day: string) =>
@@ -393,6 +391,7 @@ export function contentRoutes(ctx: RouterContext) {
                 outputTokens: t.outputTokens,
                 totalTokens: t.totalTokens,
                 costUsd: t.costUsd,
+                incomplete: t.incomplete,
               },
             ] as const;
           }),
@@ -411,6 +410,7 @@ export function contentRoutes(ctx: RouterContext) {
           outputTokens: number | null;
           totalTokens: number | null;
           costUsd: number | null;
+          incomplete: UsageTotalField[];
         };
         const empty: Point = {
           modelCalls: 0,
@@ -418,8 +418,9 @@ export function contentRoutes(ctx: RouterContext) {
           outputTokens: 0,
           totalTokens: 0,
           costUsd: 0,
+          incomplete: [],
         };
-        const add = (a: number | null, b: number | null) => (a == null || b == null ? null : a + b);
+        const add = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : a + b);
         const overTime: ({ date: string } & Point)[] = [];
         // Every day or month in the range gets a point, so quiet stretches show as gaps.
         for (
@@ -428,10 +429,16 @@ export function contentRoutes(ctx: RouterContext) {
           day = nextDay(day)
         ) {
           const date = overTimeUnit === "month" ? `${day.slice(0, 7)}-01` : day;
-          const point = points.get(day) ?? empty;
+          const point = points.get(day);
           const last = overTime.at(-1);
           if (last?.date !== date) {
-            overTime.push({ date, ...point });
+            overTime.push({ date, ...(point ?? empty) });
+            continue;
+          }
+          // A quiet day adds nothing, so a month whose calls lack a figure still reads unknown.
+          if (!point) continue;
+          if (last.modelCalls === 0) {
+            Object.assign(last, point);
             continue;
           }
           last.modelCalls += point.modelCalls;
@@ -439,6 +446,7 @@ export function contentRoutes(ctx: RouterContext) {
           last.outputTokens = add(last.outputTokens, point.outputTokens);
           last.totalTokens = add(last.totalTokens, point.totalTokens);
           last.costUsd = add(last.costUsd, point.costUsd);
+          last.incomplete = [...new Set([...last.incomplete, ...point.incomplete])];
         }
 
         return {
@@ -455,6 +463,7 @@ export function contentRoutes(ctx: RouterContext) {
               outputTokens: t.outputTokens,
               totalTokens: t.totalTokens,
               costUsd: t.costUsd,
+              incomplete: t.incomplete,
             };
           }),
           overTimeUnit,

@@ -211,9 +211,10 @@ describeBreakdown("usage.breakdown", () => {
       outputTokens: 0,
       totalTokens: 0,
       costUsd: 0,
+      incomplete: [],
     });
 
-    // A call without a price makes the cost unknown rather than zero.
+    // A call without a price leaves the cost a floor, and its own model's cost unknown.
     await prisma.usageRecord.create({
       data: {
         ...owner,
@@ -228,9 +229,34 @@ describeBreakdown("usage.breakdown", () => {
       },
     });
     const mixed = await get({ range: "30d", botId: alpha.id });
-    expect(mixed.totals).toMatchObject({ runs: 2, modelCalls: 5, totalTokens: 207, costUsd: null });
+    expect(mixed.totals).toMatchObject({
+      runs: 2,
+      modelCalls: 5,
+      totalTokens: 207,
+      incomplete: ["costUsd"],
+    });
+    expect(mixed.totals.costUsd).toBeCloseTo(0.0165);
     expect(mixed.models.find((m) => m.model === "unpriced")?.costUsd).toBeNull();
     expect(mixed.models.find((m) => m.model === "m1")?.costUsd).toBeCloseTo(0.0115);
+
+    // A month whose only call reports no tokens or cost reads unknown, not zero.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        provider: "p",
+        model: "unpriced",
+        createdAt: new Date(dayStart - 200 * DAY),
+      },
+    });
+    const history = await get({ range: "all", botId: alpha.id });
+    expect(history.overTimeUnit).toBe("month");
+    const quietMonth = `${utcDay(dayStart - 200 * DAY).slice(0, 7)}-01`;
+    expect(history.overTime.find((point) => point.date === quietMonth)).toMatchObject({
+      modelCalls: 1,
+      totalTokens: null,
+      costUsd: null,
+    });
 
     const elsewhere = await rpc<UsageBreakdown>(app, other, "usage/breakdown", { range: "all" });
     expect(summary(elsewhere)).toEqual({ runs: 1, calls: 1, tokens: 1_000_000 });

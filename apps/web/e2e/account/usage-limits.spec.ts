@@ -41,6 +41,7 @@ const summary = {
   totalTokens: 996_000,
   costUsd: 4.2,
   modelCalls: 180,
+  incomplete: [],
   models: [
     {
       provider: "subscription",
@@ -50,6 +51,7 @@ const summary = {
       totalTokens: 996_000,
       costUsd: 4.2,
       modelCalls: 180,
+      incomplete: [],
     },
   ],
 };
@@ -67,6 +69,7 @@ const breakdown = {
       totalTokens: 996_000,
       costUsd: 4.2,
       modelCalls: 180,
+      incomplete: [],
     },
   ],
   modelOptions: [{ provider: "subscription", model: "example-large" }],
@@ -77,6 +80,7 @@ const breakdown = {
     totalTokens: 996_000,
     costUsd: 4.2,
     modelCalls: 180,
+    incomplete: [],
   },
   models: summary.models,
   overTimeUnit: "day",
@@ -88,6 +92,7 @@ const breakdown = {
       totalTokens: 336_000,
       costUsd: 1.4,
       modelCalls: 60,
+      incomplete: [],
     },
     {
       date: "2026-11-11",
@@ -96,6 +101,7 @@ const breakdown = {
       totalTokens: 330_000,
       costUsd: 1.4,
       modelCalls: 60,
+      incomplete: [],
     },
     {
       date: "2026-11-12",
@@ -104,6 +110,7 @@ const breakdown = {
       totalTokens: 330_000,
       costUsd: 1.4,
       modelCalls: 60,
+      incomplete: [],
     },
   ],
 };

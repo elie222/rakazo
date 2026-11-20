@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { UsageTotalField } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -56,6 +57,7 @@ const point = (modelCalls: number, totalTokens: number, costUsd: number | null) 
   outputTokens: 1,
   totalTokens,
   costUsd,
+  incomplete: [] as UsageTotalField[],
 });
 
 const usageFor = (input: Input) => ({
@@ -210,6 +212,34 @@ it("does not show the previous selection's numbers while the next one loads", as
     await act(async () => pending.resolve(usageFor({ range: "today" })));
     await settle();
     expect(panel.totals()).toEqual(["3", "467", "$0.04"]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("marks totals that leave out calls without a count as a floor", async () => {
+  const panel = await renderPanel();
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => {
+      const usage = usageFor(input);
+      return {
+        ...usage,
+        totals: { ...usage.totals, costUsd: 0.29, incomplete: ["totalTokens", "costUsd"] },
+      };
+    });
+    await panel.pick("Today");
+    // A floor rounds down, but not below an exact cent.
+    expect(panel.totals()).toEqual(["3", "467+", "$0.29+"]);
+
+    breakdown.fetch.mockImplementation(async (input: Input) => {
+      const usage = usageFor(input);
+      return {
+        ...usage,
+        totals: { ...usage.totals, costUsd: 0.289999999999, incomplete: ["costUsd"] },
+      };
+    });
+    await panel.pick("7 days");
+    expect(panel.totals()).toEqual(["3", "467", "$0.28+"]);
   } finally {
     await panel.unmount();
   }

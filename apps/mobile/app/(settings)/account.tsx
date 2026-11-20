@@ -1,8 +1,8 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { PlanLimits, UsageSummary } from "@rakazo/contracts";
+import type { PlanLimits, UsageSummary, UsageTotalField } from "@rakazo/contracts";
 import { hasLab, modelCreditsUsd } from "@rakazo/contracts";
-import { accountDisplay, formatTimeUntil } from "@rakazo/core";
+import { accountDisplay, floorCents, formatTimeUntil } from "@rakazo/core";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { ComponentProps } from "react";
@@ -141,14 +141,22 @@ export default function Account() {
     style: "currency",
     currency: "USD",
   });
-  const tokenCount = (value: number | null | undefined) =>
-    value == null ? "—" : count.format(value);
-  const cost = (value: number | null | undefined) =>
-    value == null
+  // A total that leaves out calls without the figure reads as a floor.
+  const floor = (totals: Pick<UsageSummary, "incomplete">, field: UsageTotalField, text: string) =>
+    totals.incomplete?.includes(field) ? `${text}+` : text;
+  const tokenCount = (totals: Pick<UsageSummary, "totalTokens" | "incomplete">) =>
+    totals.totalTokens == null
+      ? "—"
+      : floor(totals, "totalTokens", count.format(totals.totalTokens));
+  const cost = ({ costUsd, incomplete }: Pick<UsageSummary, "costUsd" | "incomplete">) =>
+    costUsd == null
       ? undefined
-      : value > 0 && value < 0.01
-        ? `<${usd.format(0.01)}`
-        : usd.format(value);
+      : // A floor rounds down, so it never claims more than the calls that report a cost.
+        incomplete?.includes("costUsd")
+        ? `${usd.format(floorCents(costUsd))}+`
+        : costUsd > 0 && costUsd < 0.01
+          ? `<${usd.format(0.01)}`
+          : usd.format(costUsd);
   const usageBlock = (
     <SettingsRow
       key="usage"
@@ -156,10 +164,10 @@ export default function Account() {
       title={t`Usage`}
       detail={
         usage
-          ? t`${ph({ runs: count.format(usage.runs) })} runs, ${ph({ tokens: tokenCount(usage.totalTokens) })} tokens`
+          ? t`${ph({ runs: count.format(usage.runs) })} runs, ${ph({ tokens: tokenCount(usage) })} tokens`
           : undefined
       }
-      value={cost(usage?.costUsd)}
+      value={usage ? cost(usage) : undefined}
     />
   );
   const creditsRow =
@@ -198,8 +206,8 @@ export default function Account() {
           key={`${row.provider}:${row.model}`}
           accessible
           title={row.model}
-          detail={`${row.provider}, ${t`${ph({ calls: count.format(row.modelCalls) })} calls, ${ph({ tokens: tokenCount(row.totalTokens) })} tokens`}`}
-          value={cost(row.costUsd)}
+          detail={`${row.provider}, ${t`${ph({ calls: count.format(row.modelCalls) })} calls, ${ph({ tokens: tokenCount(row) })} tokens`}`}
+          value={cost(row)}
         />
       ))}
     </SettingsGroup>

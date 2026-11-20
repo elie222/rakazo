@@ -1,5 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { UsageBreakdownBot, UsageDateRange } from "@rakazo/contracts";
+import type {
+  UsageBreakdownBot,
+  UsageBreakdownModel,
+  UsageDateRange,
+  UsageTotalField,
+} from "@rakazo/contracts";
+import { floorCents } from "@rakazo/core";
 import {
   Field,
   FieldLabel,
@@ -23,6 +29,8 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useEffect, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
+
+type Totals = Pick<UsageBreakdownModel, UsageTotalField | "incomplete">;
 
 export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivElement | null> }) {
   const { t, i18n } = useLingui();
@@ -50,8 +58,19 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const count = new Intl.NumberFormat(i18n.locale);
   const usd = new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" });
   const number = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
-  const cost = (value: number | null | undefined) =>
-    value == null ? "—" : value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
+  // A total that leaves out calls without the figure reads as a floor. An API rolled back
+  // behind this page sends no `incomplete`, so it reads as complete.
+  const total = (totals: Totals | undefined, field: UsageTotalField) => {
+    const value = totals?.[field];
+    if (value == null) return "—";
+    if (field !== "costUsd") {
+      const text = count.format(value);
+      return totals?.incomplete?.includes(field) ? `${text}+` : text;
+    }
+    // A floor rounds down, so it never claims more than the calls that report a cost.
+    if (totals?.incomplete?.includes(field)) return `${usd.format(floorCents(value))}+`;
+    return value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
+  };
 
   const ranges: { id: UsageDateRange; label: string }[] = [
     { id: "today", label: t`Today` },
@@ -166,8 +185,8 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
       <dl className="grid grid-cols-3 gap-3">
         {[
           { label: t`Runs`, value: number(totals?.runs) },
-          { label: t`Tokens`, value: number(totals?.totalTokens) },
-          { label: t`Cost`, value: cost(totals?.costUsd) },
+          { label: t`Tokens`, value: total(totals, "totalTokens") },
+          { label: t`Cost`, value: total(totals, "costUsd") },
         ].map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
             <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
@@ -199,7 +218,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                   : { month: "short", day: "numeric", timeZone: "UTC" },
               );
               const labelled = overTime.length <= 8 || index === 0 || index === overTime.length - 1;
-              const label = t`${day}: ${number(point.totalTokens)} tokens, ${cost(point.costUsd)}`;
+              const label = t`${day}: ${total(point, "totalTokens")} tokens, ${total(point, "costUsd")}`;
               return (
                 <Tooltip key={point.date}>
                   <TooltipTrigger
@@ -257,12 +276,12 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                     {number(row.modelCalls)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {number(row.inputTokens)}
+                    {total(row, "inputTokens")}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {number(row.outputTokens)}
+                    {total(row, "outputTokens")}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{total(row, "costUsd")}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
