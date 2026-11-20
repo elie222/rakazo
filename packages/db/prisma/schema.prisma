@@ -692,6 +692,8 @@ model Space {
   capabilities                CapabilityInstall[]
   memoryDocuments             MemoryDocument[]
   memoryDreams                MemoryDream[]
+  /// Dreams kept per bot in this Space; null keeps the default of 100.
+  dreamRetention              Int?
   agentHomes                  AgentHome[]
   browserProfiles             BrowserProfile[]
   artifacts                   Artifact[]

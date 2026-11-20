@@ -163,9 +163,10 @@ usage 行改为 "X of 1200 tokens"。
 
 ### Q4 梦境保留数按 Space 配置
 
-- `SpaceMemoryConfigSchema` 增加 `dreamRetention Int?`（默认 100，范围 20–500）；
-- 调度清理（`pruneMemoryDreams`）读取该值；设置入口与 UI 放到记忆设置页；
-- 迁移：配置行加列（additive），旧行默认 100。
+- `Space.dreamRetention Int?`（默认 100，范围 20–500）。放在 Space 上而不是
+  `SpaceMemoryConfig`：记忆提供者是可选的第三方连接，梦境保留数不该因为没连提供者就改不了。
+- 调度清理（`pruneMemoryDreams`）按 Space 读取该值；设置入口与 UI 放到记忆设置页；
+- 迁移：Space 加列（additive），旧行（null）按 100。
 
 ---
 
@@ -178,10 +179,11 @@ usage 行改为 "X of 1200 tokens"。
 | `Bot.memoryTidiedHash`             | 新列（可空）                      |
 | `MemoryRevision.sourceKind`        | 新列（可空，null = user）         |
 | `MemoryDocument.description`       | 新列（可空）                      |
-| `SpaceMemoryConfig.dreamRetention` | 新列（可空，默认 100）            |
+| `Space.dreamRetention`             | 新列（可空，默认 100）            |
 
-RPC：`memory.undoDream`、`memory.revisions`、`memory.revision`；`MemoryPromptBudget` 增加
-token 字段（additive）。
+RPC：`memory.undoDream`、`memory.revisions`、`memory.revision`、`memory.restore`、
+`memory.dreamRetention`、`memory.setDreamRetention`；`MemoryPromptBudget` 增加 token 字段
+（additive）。
 
 迁移全部为加列，与滚动发布兼容，无 `-- deferred`。
 

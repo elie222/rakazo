@@ -17,6 +17,8 @@ const memory = vi.hoisted(() => ({
   connectProvider: vi.fn(),
   updateProvider: vi.fn(),
   setDefaultScope: vi.fn(),
+  dreamRetention: vi.fn(),
+  setDreamRetention: vi.fn(),
   disconnectProvider: vi.fn(),
 }));
 vi.mock("../../lib/query/rpc", () => {
@@ -68,6 +70,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   for (const call of Object.values(memory)) call.mockReset();
   memory.providers.mockResolvedValue(providers);
+  memory.dreamRetention.mockResolvedValue({ dreamRetention: null });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -259,4 +262,22 @@ it("still shows a connection whose provider the server does not describe", async
   expect(host.textContent).toContain("retired");
   expect(() => button("Edit")).toThrow();
   expect(button("Disconnect")).toBeDefined();
+});
+
+it("saves how many dreams each bot keeps", async () => {
+  memory.setDreamRetention.mockResolvedValue({ dreamRetention: 50 });
+  await render(null);
+  expect(input("Dreams per bot").value).toBe("100");
+  await type("Dreams per bot", "50");
+  await click(button("Save limit"));
+  expect(memory.setDreamRetention).toHaveBeenCalledWith({ dreamRetention: 50 });
+});
+
+it("stores the default limit as no setting of its own", async () => {
+  memory.dreamRetention.mockResolvedValue({ dreamRetention: 250 });
+  memory.setDreamRetention.mockResolvedValue({ dreamRetention: null });
+  await render(null);
+  await type("Dreams per bot", "100");
+  await click(button("Save limit"));
+  expect(memory.setDreamRetention).toHaveBeenCalledWith({ dreamRetention: null });
 });

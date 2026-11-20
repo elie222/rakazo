@@ -8,6 +8,7 @@ import {
   DialogTitle,
   Field,
   FieldLabel,
+  Input,
   OptionSelect,
   SectionHeading,
   Spinner,
@@ -313,6 +314,8 @@ export function MemorySettingsOverlay({
               <Trans>The selected memory provider is not available in this build.</Trans>
             </p>
           )}
+
+          <DreamRetentionSection />
         </div>
       </div>
     </>
@@ -345,5 +348,79 @@ export function MemorySettingsOverlay({
         {body}
       </DialogContent>
     </Dialog>
+  );
+}
+
+const DEFAULT_DREAM_RETENTION = 100;
+const MIN_DREAM_RETENTION = 20;
+const MAX_DREAM_RETENTION = 500;
+
+/**
+ * How many dreams each bot keeps. Older records, and the hidden chats they ran in, are
+ * deleted; a Space on the default stores no setting of its own.
+ */
+function DreamRetentionSection() {
+  const { t } = useLingui();
+  const queries = useSpaceQueries();
+  const inputId = useId();
+  const retention = useQuery(queries.memory.dreamRetention.queryOptions());
+  const [draft, setDraft] = useState("");
+  const current = retention.data?.dreamRetention ?? null;
+  useEffect(() => {
+    setDraft(String(current ?? DEFAULT_DREAM_RETENTION));
+  }, [current]);
+  const save = useSave({
+    save: ({ value }: { value: number }, rpc) =>
+      rpc.memory.setDreamRetention({
+        dreamRetention: value === DEFAULT_DREAM_RETENTION ? null : value,
+      }),
+    stale: [queries.memory.dreamRetention.queryKey()],
+  });
+  const value = Number(draft);
+  const valid =
+    Number.isInteger(value) && value >= MIN_DREAM_RETENTION && value <= MAX_DREAM_RETENTION;
+  return (
+    <section className="rounded-xl border border-border px-4 py-4">
+      <SectionHeading variant="heading">
+        <Trans>Dreams kept</Trans>
+      </SectionHeading>
+      <p className="mt-1 text-body-sm text-muted-foreground">
+        <Trans>
+          How many dreams each bot keeps, from {MIN_DREAM_RETENTION} to {MAX_DREAM_RETENTION}. Older
+          ones are deleted with their hidden chats.
+        </Trans>
+      </p>
+      <div className="mt-3 flex items-end gap-2">
+        <Field className="w-32">
+          <FieldLabel htmlFor={inputId}>
+            <Trans>Dreams per bot</Trans>
+          </FieldLabel>
+          <Input
+            id={inputId}
+            type="number"
+            min={MIN_DREAM_RETENTION}
+            max={MAX_DREAM_RETENTION}
+            step={10}
+            value={draft}
+            disabled={save.pending || retention.isPending}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </Field>
+        <Button
+          variant="secondary"
+          size="sm"
+          type="button"
+          disabled={!valid || value === (current ?? DEFAULT_DREAM_RETENTION) || save.pending}
+          onClick={() => save.run({ value })}
+        >
+          <Trans>Save limit</Trans>
+        </Button>
+      </div>
+      {save.error ? (
+        <p className="mt-2 text-body-sm text-destructive">
+          {errorText(save.error, t`Could not save the dream limit`)}
+        </p>
+      ) : null}
+    </section>
   );
 }

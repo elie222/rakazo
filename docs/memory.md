@@ -38,6 +38,9 @@ Search the notes by name or content, and give each one a one-line description so
 bot's dream) says what it holds. A bank holds at most twenty notes; adding a twenty-first is
 refused until an existing one is merged or removed.
 
+In **Settings → Memory**, the Space owner can choose how many dreams each bot keeps (20 to 500,
+100 by default). Older dreams are deleted along with the hidden chats they ran in.
+
 ## Shared memory
 
 Some things every bot should know, such as your name, your company, or how you like reports

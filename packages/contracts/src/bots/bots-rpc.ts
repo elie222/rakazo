@@ -136,6 +136,11 @@ export const botsRpc = {
         }),
       )
       .output(z.array(MemoryDreamSchema)),
+    /** Dreams kept per bot in this Space; null keeps the default of 100. */
+    dreamRetention: oc.output(z.object({ dreamRetention: z.number().int().nullable() })),
+    setDreamRetention: oc
+      .input(z.object({ dreamRetention: z.number().int().min(20).max(500).nullable() }))
+      .output(z.object({ dreamRetention: z.number().int().nullable() })),
     /** Consolidates the bot's notes now, for a person who does not want to wait for the night. */
     dreamNow: oc.input(z.object({ botId: Id })).output(MemoryDreamSchema),
     /** Undoes the bot's latest finished dream and returns its record. */

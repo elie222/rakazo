@@ -14,7 +14,7 @@ import {
 } from "@rakazo/adapters";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
-import { findSpaceMemoryConfig, IsolationError } from "@rakazo/db";
+import { findSpaceMemoryConfig, IsolationError, requireSpaceOwner } from "@rakazo/db";
 import {
   disconnectMemoryProvider,
   persistMemoryProviderConfig,
@@ -73,6 +73,21 @@ export function memoryRoutes(ctx: RouterContext) {
           limit: input.limit,
           cursor: input.cursor,
         });
+      }),
+      dreamRetention: authed.memory.dreamRetention.handler(async ({ context }) => {
+        const space = await deps.prisma.space.findUnique({
+          where: { id: context.actor.spaceId },
+          select: { dreamRetention: true },
+        });
+        return { dreamRetention: space?.dreamRetention ?? null };
+      }),
+      setDreamRetention: authed.memory.setDreamRetention.handler(async ({ context, input }) => {
+        await requireSpaceOwner(deps.prisma, context.actor);
+        await deps.prisma.space.update({
+          where: { id: context.actor.spaceId },
+          data: { dreamRetention: input.dreamRetention },
+        });
+        return { dreamRetention: input.dreamRetention };
       }),
       dreamNow: authed.memory.dreamNow.handler(async ({ context, input }) =>
         startManualMemoryDream(

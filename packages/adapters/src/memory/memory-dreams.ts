@@ -540,16 +540,21 @@ export async function settleMemoryDream(deps: DreamDeps, dreamId: string): Promi
   throw new RetryJobLaterError(MEMORY_DREAM_TIMEOUT_MS);
 }
 
-/** Keeps the newest records per bot and deletes the hidden threads older ones ran in. */
+/**
+ * Keeps the newest records per bot and deletes the hidden threads older ones ran in. A Space
+ * may keep more or fewer; a Space without its own setting keeps the default.
+ */
 export async function pruneMemoryDreams(prisma: PrismaClient): Promise<void> {
   const stale = await prisma.$queryRaw<Array<{ id: string; threadId: string | null }>>`
     with ranked as (
-      select id, "threadId", row_number() over (
-        partition by "botId" order by "createdAt" desc, id desc
-      ) as position
-      from memory_dreams
+      select d.id, d."threadId", row_number() over (
+        partition by d."botId" order by d."createdAt" desc, d.id desc
+      ) as position,
+      coalesce(s."dreamRetention", ${MEMORY_DREAM_RETENTION}) as retention
+      from memory_dreams d
+      join spaces s on s.id = d."spaceId"
     )
-    select id, "threadId" from ranked where position > ${MEMORY_DREAM_RETENTION}
+    select id, "threadId" from ranked where position > retention
   `;
   if (!stale.length) return;
   await prisma.memoryDream.deleteMany({ where: { id: { in: stale.map((row) => row.id) } } });
