@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopEntry } from "./desktop-entries.js";
 import {
@@ -105,6 +105,11 @@ async function removeLauncher(entry: DesktopEntry, dirs: LauncherDirs) {
 export async function removeLaunchers(dirs: LauncherDirs) {
   for (const entry of await rakazoLaunchers(dirs)) await removeLauncher(entry, dirs);
   await rm(dirs.scripts, { recursive: true, force: true });
+  // The folder the scripts went in, unless something else lives there too.
+  await rmdir(path.dirname(dirs.scripts)).catch((error) => {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTEMPTY") throw error;
+  });
 }
 
 /**

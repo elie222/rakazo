@@ -91,7 +91,7 @@ describe("launcher overrides", () => {
     await writeLauncher(await systemEntry(dirs), dirs);
     await removeLaunchers(dirs);
     expect(await readdir(dirs.user)).toEqual(["other.desktop"]);
-    await expect(stat(dirs.scripts)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(path.dirname(dirs.scripts))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await launcherOwner("web-browser.desktop", dirs)).toBeUndefined();
   });
 
