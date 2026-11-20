@@ -17,10 +17,10 @@ export function TrustedLinkSitesSettings() {
 
 function TrustedLinkSitesList() {
   const { t } = useLingui();
-  const { sites } = useTrustedLinkSites();
+  const { sites, remove } = useTrustedLinkSites();
   const queries = useSpaceQueries();
   const removal = useSave({
-    save: (site: string, client) => client.trustedLinkSites.remove({ site }),
+    save: (site: string, client) => remove(site, client),
     stale: [queries.trustedLinkSites.list.queryKey()],
   });
   const error = removal.error ? errorText(removal.error, t`Could not continue`) : null;

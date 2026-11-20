@@ -141,17 +141,33 @@ it("shows the failure and brings the Remove buttons back", async () => {
 it("holds Remove until the account-wide list refresh finishes", async () => {
   const refreshed = deferred<string[]>();
   rpcMock.trustedLinkSites.list
-    .mockResolvedValueOnce(["example.com"])
+    .mockResolvedValueOnce(["example.com", "other.test"])
     .mockReturnValue(refreshed.promise);
+  rpcMock.trustedLinkSites.remove.mockResolvedValue({ ok: true });
+  const view = await render();
+  await vi.waitFor(() => expect(removeButtons(view.container)).toHaveLength(2));
+
+  await act(async () => removeButtons(view.container)[0]?.click());
+  await vi.waitFor(() => expect(rpcMock.trustedLinkSites.list).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(removeButtons(view.container)).toHaveLength(1));
+  expect(removeButtons(view.container)[0]?.disabled).toBe(true);
+  expect(view.container.textContent).not.toContain("example.com");
+  await act(async () => refreshed.resolve(["other.test"]));
+  await vi.waitFor(() => expect(removeButtons(view.container)[0]?.disabled).toBe(false));
+  await view.cleanup();
+});
+
+it("forgets a removed site's trust even when the list refresh fails", async () => {
+  rpcMock.trustedLinkSites.list
+    .mockResolvedValueOnce(["example.com"])
+    .mockRejectedValue(new Error("Offline"));
   rpcMock.trustedLinkSites.remove.mockResolvedValue({ ok: true });
   const view = await render();
   await vi.waitFor(() => expect(removeButtons(view.container)).toHaveLength(1));
 
   await act(async () => removeButtons(view.container)[0]?.click());
   await vi.waitFor(() => expect(rpcMock.trustedLinkSites.list).toHaveBeenCalledTimes(2));
-  expect(removeButtons(view.container)[0]?.disabled).toBe(true);
-  await act(async () => refreshed.resolve([]));
-  await vi.waitFor(() => expect(removeButtons(view.container)).toHaveLength(0));
+  await vi.waitFor(() => expect(view.container.textContent).not.toContain("example.com"));
   await view.cleanup();
 });
 
