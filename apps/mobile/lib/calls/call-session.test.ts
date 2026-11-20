@@ -697,6 +697,24 @@ describe("mobile call session", () => {
     expect(reportMobileError).toHaveBeenCalledWith(unexpected, "voice.turn");
   });
 
+  it("keeps the provider error visible when an automatic call resumes listening", async () => {
+    const fake = fakes();
+    const message = "The configured connection cannot transcribe. Add a separate key.";
+    const transcribe = vi
+      .fn<CallDeps["transcribe"]>()
+      .mockRejectedValueOnce(new ExpectedTurnFailure(message));
+    startCall(
+      { botId: "bot-1", botName: "Ada", autoLanguage: true, transcribe: true },
+      { ...fake.deps, transcribe },
+    );
+    await flush();
+    fake.say("hello");
+    await flush();
+    expect(getSnapshot()).toMatchObject({ phase: "listening", caption: message });
+    expect(fake.recordings).toHaveLength(2);
+    expect(fake.send).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("sends server headers and no language hint (auto: %s)", async (auto) => {
     const server = "https://api.example.test";
     await saveServerHeaders(server, { "x-proxy-token": "gate" });

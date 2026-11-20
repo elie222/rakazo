@@ -450,7 +450,7 @@ export function toggleTranscript(): void {
   set({ transcriptOpen: !state.transcriptOpen });
 }
 
-async function listen(): Promise<void> {
+async function listen(caption = ""): Promise<void> {
   if (!state) return;
   if (guardTimer || replyStillWritten()) return;
   // The caller said goodbye: every path back to listening hangs up instead.
@@ -467,7 +467,7 @@ async function listen(): Promise<void> {
   set({
     phase: "listening",
     heard: "",
-    caption: typeof final === "string" ? "" : errorText(final.error, t`Could not hear that.`),
+    caption: typeof final === "string" ? caption : errorText(final.error, t`Could not hear that.`),
   });
   if (state.muted) return;
   if (typeof final === "string" && final) {
@@ -704,8 +704,7 @@ function failTurn(error: unknown): void {
     endCall();
     return;
   }
-  set({ phase: "listening", caption: errorText(error, t`Could not hear that.`) });
-  void listen();
+  void listen(errorText(error, t`Could not hear that.`));
 }
 
 /** A denied disclosure is not a transient call failure: wait for an explicit retry. */
