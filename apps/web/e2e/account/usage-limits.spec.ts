@@ -78,7 +78,7 @@ const breakdown = {
     costUsd: 4.2,
     modelCalls: 180,
   },
-  models: summary.models,
+  models: summary.models.map((model) => ({ ...model, cachedTokens: 0 })),
   overTimeUnit: "day",
   overTime: [
     {

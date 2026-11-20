@@ -262,7 +262,12 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: number | null;
           costComplete: boolean;
         };
-        type ModelRow = TotalsRow & { provider: string; model: string };
+        type ModelRow = TotalsRow & {
+          provider: string;
+          model: string;
+          cachedTokens: number | bigint | null;
+          cachedComplete: boolean;
+        };
         type TimeRow = Omit<TotalsRow, "runs"> & { bucket: string };
         type BotRow = TotalsRow & { botId: string; name: string | null; deleted: boolean };
 
@@ -304,8 +309,12 @@ export function contentRoutes(ctx: RouterContext) {
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
           `),
+                // Rows from before cache reads were measured hold a zero and no total, so a cached
+                // figure counts as known only where the total is.
                 tx.$queryRaw<ModelRow[]>(Prisma.sql`
-            SELECT u.provider, u.model, ${totalsSelect}
+            SELECT u.provider, u.model, ${totalsSelect},
+              SUM(u."cacheReadTokens")::double precision AS "cachedTokens",
+              BOOL_AND(u."cacheReadTokens" IS NOT NULL AND u."totalTokens" IS NOT NULL) AS "cachedComplete"
             FROM usage_records u
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
@@ -462,6 +471,7 @@ export function contentRoutes(ctx: RouterContext) {
               model: row.model,
               modelCalls: t.modelCalls,
               inputTokens: t.inputTokens,
+              cachedTokens: toNullableInt(row.cachedTokens, Boolean(row.cachedComplete)),
               outputTokens: t.outputTokens,
               totalTokens: t.totalTokens,
               costUsd: t.costUsd,
