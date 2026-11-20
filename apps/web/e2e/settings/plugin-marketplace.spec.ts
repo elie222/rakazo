@@ -130,6 +130,15 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   await expect(dialog.getByRole("button", { name: "Add skills", exact: true })).toBeVisible();
   expect(await rpc(page, "capabilities/list", undefined)).toEqual([]);
   expect(await skillNames()).not.toContain("planning-notes");
+  await dialog.getByRole("button", { name: "Close integrations", exact: true }).click();
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Skills", exact: true }).click();
+  const skillsDialog = page.getByRole("dialog", { name: "Skills", exact: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const packs = skillsDialog.getByTestId("skill-packs");
+  await packs.scrollIntoViewIfNeeded();
+  await expect(packs.getByText("Review Kit", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "skills-packs-phone");
 });
 
 test("shows directly registered MCP servers in Integrations without catalog connections", async ({
