@@ -26,8 +26,8 @@ export interface DeviceTokenCipher {
 
 const MAX_DEVICE_FILE_BYTES = 8 * 1024;
 const MAX_TOKEN_LENGTH = 1024;
-/** Answers meaning this server will not pair this computer (an older server, a limit, a bad request). */
-const PAIRING_REFUSALS = new Set([400, 403, 404, 409, 422]);
+/** Answers meaning this server will not pair this computer (an older server, a limit, a request it rejects). */
+const PAIRING_REFUSALS = new Set([400, 403, 404, 409, 413, 415, 422]);
 
 export interface PairedDevice {
   token: string;

@@ -503,7 +503,7 @@ describe("remote computer access", () => {
     expect(clients).toHaveLength(1);
 
     const refused = setup({ fetch });
-    for (const refusal of [400, 403, 404, 409, 422]) {
+    for (const refusal of [400, 403, 404, 409, 413, 415, 422]) {
       status = refusal;
       const target = `https://refused-${refusal}.example.com`;
       await refused.access.select(target);
