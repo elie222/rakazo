@@ -62,5 +62,12 @@ describe("desktop entries", () => {
     expect(entryPrograms("org.example.Files", entries)).toEqual(["file-manager"]);
     expect(entryPrograms("My Browser", entries)).toEqual(["my-browser"]);
     expect(entryPrograms("New", entries)).toEqual([]);
+    // An app archive on a shared runtime is named by its folder, not by the runtime.
+    await writeFile(
+      path.join(system, "notes.desktop"),
+      "[Desktop Entry]\nName=Notes\nExec=electron /usr/lib/notes-app/app.asar %U\n",
+    );
+    const more = await readDesktopEntries([system]);
+    expect(entryPrograms("Notes", more)).toEqual(["notes-app"]);
   });
 });

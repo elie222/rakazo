@@ -266,7 +266,8 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     if (!matching.length) matching = named(windows, names);
     const byProcess = !matching.length && options.processIds !== undefined;
     if (byProcess && options.processIds) {
-      const ids = new Set(await options.processIds(query));
+      const { processIds } = options;
+      const ids = new Set((await Promise.all(names.map((name) => processIds(name)))).flat());
       matching = windows.filter((window) => ids.has(window.pid));
     }
     if (!matching.length) {
@@ -305,7 +306,7 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     if (!app) return;
     try {
       // On the bus with no window yet: launching it opens one.
-      await call(query, ["snapshot", "--app", query, "--max-depth", "1"], signal);
+      await call(query, ["snapshot", "--app", app, "--max-depth", "1"], signal);
       return;
     } catch (error) {
       // On the bus with no window: launching it opens one.

@@ -43,8 +43,36 @@ function shellQuote(value: string) {
  * Chromium joins the accessibility bus only with the variable set, and shares page content only
  * with the option.
  */
-function scriptFor(entry: DesktopEntry, program: string, dirs: LauncherDirs) {
-  const file = path.join(dirs.scripts, entry.id.replace(/\.desktop$/, ""), path.basename(program));
+/** The folder of an entry's script, or undefined for a file name that could leave the scripts' folder. */
+function scriptDir(id: string, dirs: LauncherDirs) {
+  const name = id.replace(/\.desktop$/, "");
+  return SAFE_NAME.test(name) ? path.join(dirs.scripts, name) : undefined;
+}
+const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
+/** Launchers that keep only an Exec line's first word split it at spaces, so the path keeps to these. */
+const SAFE_PATH = /^[A-Za-z0-9._/+@-]+$/;
+
+/** Where the entry's script goes, unless its names or the folder's path couldn't be run. */
+function scriptFile(entry: DesktopEntry, dirs: LauncherDirs) {
+  const program = execProgram(entry.keys.get("Exec") ?? "");
+  const dir = scriptDir(entry.id, dirs);
+  if (!program || !dir || !SAFE_NAME.test(path.basename(program))) return undefined;
+  const file = path.join(dir, path.basename(program));
+  return SAFE_PATH.test(file) ? { file, program } : undefined;
+}
+
+/**
+ * Whether Rakazo can start this entry's app through a script: it starts a program of its own,
+ * by a path a launcher keeps whole, and not over D-Bus, which skips the Exec line.
+ */
+export function canWriteLauncher(entry: DesktopEntry, dirs: LauncherDirs) {
+  return entry.keys.get("DBusActivatable") !== "true" && scriptFile(entry, dirs) !== undefined;
+}
+
+function scriptFor(entry: DesktopEntry, dirs: LauncherDirs) {
+  const found = scriptFile(entry, dirs);
+  if (!found) throw new Error(`${entry.id} can't be started through a script`);
+  const { file, program } = found;
   const text = [
     "#!/bin/sh",
     "# Written by Rakazo so bots can read this app. Turning off computer access in Rakazo removes it.",
@@ -52,7 +80,7 @@ function scriptFor(entry: DesktopEntry, program: string, dirs: LauncherDirs) {
     `exec ${shellQuote(program)} --force-renderer-accessibility "$@"`,
     "",
   ].join("\n");
-  return { file, text };
+  return { file, text, program };
 }
 
 /** The entry with every Exec of `program` pointed at the script, marked as Rakazo's. */
@@ -78,13 +106,11 @@ async function writeAtomically(file: string, text: string, mode: number) {
 
 /** Writes the start script and the user entry that hides `entry`, a system entry. */
 export async function writeLauncher(entry: DesktopEntry, dirs: LauncherDirs) {
-  const program = execProgram(entry.keys.get("Exec") ?? "");
-  if (!program) throw new Error(`${entry.id} starts no program of its own`);
-  const script = scriptFor(entry, program, dirs);
+  const script = scriptFor(entry, dirs);
   await writeAtomically(script.file, script.text, 0o755);
   await writeAtomically(
     path.join(dirs.user, entry.id),
-    overrideText(entry, program, script.file),
+    overrideText(entry, script.program, script.file),
     0o644,
   );
 }
@@ -95,10 +121,13 @@ async function rakazoLaunchers(dirs: LauncherDirs) {
 
 async function removeLauncher(entry: DesktopEntry, dirs: LauncherDirs) {
   await rm(entry.file, { force: true });
-  await rm(path.join(dirs.scripts, entry.id.replace(/\.desktop$/, "")), {
-    recursive: true,
-    force: true,
-  });
+  const dir = scriptDir(entry.id, dirs);
+  if (dir) await rm(dir, { recursive: true, force: true });
+}
+
+/** The program Rakazo's entry starts: its script keeps the program's own name. */
+function approvedProgram(entry: DesktopEntry) {
+  return path.basename(execProgram(entry.keys.get("Exec") ?? "") ?? "");
 }
 
 /** Removes every entry and script Rakazo wrote, leaving the user's own entries alone. */
@@ -123,7 +152,10 @@ export async function refreshLaunchers(dirs: LauncherDirs) {
   for (const entry of ours) {
     const source = system.get(entry.id);
     const written = new RegExp(`^${MARK}=(\\w+)`, "m").exec(entry.text)?.[1];
-    if (!source || !execProgram(source.keys.get("Exec") ?? "")) await removeLauncher(entry, dirs);
+    const program = execProgram(source?.keys.get("Exec") ?? "");
+    // The user allowed one program; an entry that now starts another needs their say again.
+    if (!source || !program || path.basename(program) !== approvedProgram(entry))
+      await removeLauncher(entry, dirs);
     else if (written !== sha256(source.text)) await writeLauncher(source, dirs);
   }
 }

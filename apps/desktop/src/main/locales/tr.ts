@@ -234,7 +234,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "Not Now": "Şimdi değil",
   "Restart Rakazo to finish setup": "Kurulumu tamamlamak için Rakazo’yu yeniden başlatın",
   "Let bots use {name}?": "Botların {name} uygulamasını kullanmasına izin verilsin mi?",
-  "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.":
-    "Botların {name} uygulamasını okuyabilmesi için farklı başlaması gerekiyor. İzin verdikten sonra kapatıp yeniden açın.",
+  "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.":
+    "Botların okuyabilmesi için Rakazo bu uygulamanın başlatıcınızdan nasıl açıldığını değiştirecek. Bilgisayar erişimini kapatmak bunu geri alır. İzin verdikten sonra uygulamayı kapatıp yeniden açın.",
   "Could not set up {name}": "{name} ayarlanamadı",
 };

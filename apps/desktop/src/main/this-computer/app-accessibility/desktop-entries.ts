@@ -108,8 +108,12 @@ export function entryPrograms(app: string, entries: DesktopEntry[]): string[] {
       entry.keys.get("StartupWMClass"),
     ];
     if (!names.some((name) => name?.toLowerCase() === wanted)) return [];
-    const program = execProgram(entry.keys.get("Exec") ?? "");
-    return program ? [path.basename(program)] : [];
+    const exec = entry.keys.get("Exec") ?? "";
+    const program = execProgram(exec);
+    if (!program) return [];
+    // An app archive on a shared runtime is named by its folder, as its process is.
+    const archive = exec.split(/\s+/).find((word) => word.endsWith(".asar"));
+    return [archive ? path.basename(path.dirname(archive)) : path.basename(program)];
   });
   return [...new Set(programs)];
 }

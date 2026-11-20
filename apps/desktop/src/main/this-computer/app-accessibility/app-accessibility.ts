@@ -3,6 +3,7 @@ import type { DesktopEntry } from "./desktop-entries.js";
 import { entryPrograms, execProgram, readDesktopEntries } from "./desktop-entries.js";
 import type { LauncherDirs } from "./launcher-override.js";
 import {
+  canWriteLauncher,
   launcherOwner,
   refreshLaunchers,
   removeLaunchers,
@@ -37,8 +38,9 @@ export function inspectApp(app: string, processes: UserProcess[], selfPid: numbe
   if (!main) return undefined;
   const byPid = new Map(processes.map((running) => [running.pid, running]));
   // Scripts that ran the app name it too: the kernel names a script's process after the script.
-  // The name the app runs under counts too: an app on a shared runtime is named by no file.
-  const launchers = [app, path.basename(main.exe), path.basename(main.argv[0] ?? "")];
+  // The name the app runs under, and the scripts that started it. Its executable alone could be
+  // a shared runtime that other apps' entries start too.
+  const launchers = [app];
   for (let parent = byPid.get(main.ppid); parent; parent = byPid.get(parent.ppid)) {
     const script = parent.argv[1];
     if (!script || path.basename(script).slice(0, COMMAND_NAME_LENGTH) !== parent.comm) break;
@@ -90,10 +92,23 @@ export function createAppAccessibility(deps: {
   const declined = new Set<string>();
   const asking = new Set<string>();
 
+  // Writing, removing and refreshing entries take turns, so a removal is never undone.
+  let turn: Promise<unknown> = Promise.resolve();
+  const inTurn = <T>(work: () => Promise<T>): Promise<T> => {
+    const next = turn.then(work, work);
+    // The next turn waits for this one however it ends; its caller still sees a failure.
+    turn = Promise.allSettled([next]);
+    return next;
+  };
+
   async function allow(entry: DesktopEntry, name: string) {
     try {
-      if (await deps.ask(name)) await writeLauncher(entry, deps.dirs);
-      else declined.add(entry.id);
+      if (!(await deps.ask(name))) declined.add(entry.id);
+      // The user may have made their own entry while the question was open.
+      else
+        await inTurn(async () => {
+          if (!(await launcherOwner(entry.id, deps.dirs))) await writeLauncher(entry, deps.dirs);
+        });
     } catch (error) {
       deps.failed(name, error);
     } finally {
@@ -113,7 +128,7 @@ export function createAppAccessibility(deps: {
       if (found?.self) return "Rakazo can't use its own window.";
       if (!found?.engine) return fallback;
       const entry = launcherEntry(found.launchers, await readDesktopEntries(deps.dirs.system));
-      if (!entry) return fallback;
+      if (!entry || !canWriteLauncher(entry, deps.dirs)) return fallback;
       const name = entry.keys.get("Name") || app;
       const owner = await launcherOwner(entry.id, deps.dirs);
       if (owner === "user")
@@ -133,9 +148,9 @@ export function createAppAccessibility(deps: {
     },
 
     /** Removes every launcher entry Rakazo wrote. */
-    remove: () => removeLaunchers(deps.dirs),
+    remove: () => inTurn(() => removeLaunchers(deps.dirs)),
     /** Keeps Rakazo's entries in step with app updates and removals. */
-    refresh: () => refreshLaunchers(deps.dirs),
+    refresh: () => inTurn(() => refreshLaunchers(deps.dirs)),
   };
 }
 

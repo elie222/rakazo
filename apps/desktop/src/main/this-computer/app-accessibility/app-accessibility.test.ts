@@ -72,7 +72,8 @@ async function setup(processes: UserProcess[], selfPid = 99) {
   return { access, dirs, answer, ask, failed };
 }
 
-describe("app accessibility", () => {
+// The launchers are a Linux desktop's; their scripts need a POSIX shell.
+describe.skipIf(process.platform === "win32")("app accessibility", () => {
   it("reads how an app was started and whether it runs on the engine", () => {
     expect(inspectApp("browser", browser(), 99)).toEqual({
       self: false,
@@ -103,7 +104,7 @@ describe("app accessibility", () => {
       self: false,
       engine: true,
       sharing: false,
-      launchers: ["notes", "electron"],
+      launchers: ["notes"],
     });
   });
 
@@ -140,6 +141,28 @@ describe("app accessibility", () => {
     expect(await access.explain("browser", FALLBACK)).toBe(
       "Web Browser was started for screen control but still doesn't share its window. Ask the user to quit Web Browser completely and open it again from their app launcher.",
     );
+  });
+
+  it("keeps an entry the user made while the question was open", async () => {
+    const { access, dirs, answer } = await setup(browser());
+    await access.explain("browser", FALLBACK);
+    const mine = "[Desktop Entry]\nName=Web Browser\nExec=web-browser --mine %U\n";
+    await writeFile(path.join(dirs.user, "web-browser.desktop"), mine);
+    answer.resolve(true);
+    await vi.waitFor(async () =>
+      expect(await access.explain("browser", FALLBACK)).toMatch(/launcher entry the user made/),
+    );
+    expect(await readFile(path.join(dirs.user, "web-browser.desktop"), "utf8")).toBe(mine);
+  });
+
+  it("asks nothing for an app its launcher starts over D-Bus, which skips the script", async () => {
+    const { access, dirs, ask } = await setup(browser());
+    await writeFile(
+      path.join(dirs.system[0]!, "web-browser.desktop"),
+      "[Desktop Entry]\nName=Web Browser\nExec=web-browser %U\nDBusActivatable=true\n",
+    );
+    expect(await access.explain("browser", FALLBACK)).toBe(FALLBACK);
+    expect(ask).not.toHaveBeenCalled();
   });
 
   it("doesn't ask again after Not Now until Rakazo restarts", async () => {

@@ -197,10 +197,7 @@ const appAccessibility =
             type: "question",
             message: t("Let bots use {name}?", { name }),
             detail: t(
-              "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.",
-              {
-                name,
-              },
+              "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.",
             ),
             buttons: [t("Not Now"), t("Allow")],
             defaultId: 0,
@@ -219,14 +216,20 @@ const appAccessibility =
           ),
       })
     : undefined;
-/** Turning off this computer's access also undoes every app it set up for bots. */
-const removeAppLaunchers = () =>
-  appAccessibility && bestEffort("remove app launchers", appAccessibility.remove());
+/** Once no bots may use this computer, every app it set up for them is undone. */
+const removeAppLaunchers = async () => {
+  if (!appAccessibility) return;
+  if (desktop.hostComputer?.isEnabled() || desktop.userDevices?.allowedAnywhere()) return;
+  await bestEffort("remove app launchers", appAccessibility.remove());
+};
 const localComputerChoice = createLocalComputerChoice({
   save: saveHostChoice,
   revoke: async () => {
-    await desktop.hostComputer?.revoke();
-    await removeAppLaunchers();
+    try {
+      await desktop.hostComputer?.revoke();
+    } finally {
+      await removeAppLaunchers();
+    }
   },
   settled: () => installApplicationMenu(),
 });
@@ -720,6 +723,7 @@ app.whenReady().then(async () => {
         process.platform === "win32" || process.platform === "linux" ? process.platform : "darwin",
     }),
     confirm: (host) => confirmRemoteComputerAccess(host),
+    revoked: () => void removeAppLaunchers(),
     prepareAccess: prepareComputerAccess,
     // The app window's session carries the sign-in for that server; the token never reaches it.
     fetch: (url, init) =>
@@ -990,8 +994,11 @@ app.whenReady().then(async () => {
   handleIpc("desktop.device.setAllowed", async (event, allowed) => {
     const origin = remoteDeviceOrigin(event);
     if (origin === null || typeof allowed !== "boolean") return null;
-    await desktop.userDevices?.setAllowed(origin, allowed);
-    if (!allowed) await removeAppLaunchers();
+    try {
+      await desktop.userDevices?.setAllowed(origin, allowed);
+    } finally {
+      if (!allowed) await removeAppLaunchers();
+    }
     return deviceState(remoteDeviceOrigin(event));
   });
   handleIpc(

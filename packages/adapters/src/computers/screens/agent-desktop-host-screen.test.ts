@@ -379,16 +379,40 @@ describe("agent-desktop host screen", () => {
     expect(calls.filter(([name]) => name === "launch")).toEqual([]);
   });
 
+  it("launches an app found running by its launcher's program when it is on the bus with no window", async () => {
+    let launched = false;
+    const unreadable = vi.fn(async () => "unexpected");
+    const { screen } = cli(
+      {
+        "list-windows": () => ok(launched ? notepad : []),
+        // The bus knows the program, not the launcher's displayed name.
+        snapshot: (args) =>
+          args.includes("--app")
+            ? refused(args.includes("notepad") ? "WINDOW_NOT_FOUND" : "APP_NOT_FOUND")
+            : ok(snapshot),
+        launch: () => {
+          launched = true;
+          return ok({ app: "notepad", pid: 41 });
+        },
+      },
+      "Linux",
+      async (app) => app === "notepad",
+      { aliases: async () => ["notepad"], unreadable },
+    );
+    await expect(screen.observe(scope, "Text Editor")).resolves.toMatchObject({ app: "notepad" });
+    expect(launched).toBe(true);
+    expect(unreadable).not.toHaveBeenCalled();
+  });
+
   it("finds a Linux app on a shared runtime by its process, under the bot's name for it", async () => {
     const runtime = notepad.map((window) => ({ ...window, app_name: "electron" }));
-    const processIds = vi.fn(async (app: string) => (app === "notes" ? [41] : []));
+    const processIds = vi.fn(async (app: string) => (app === "notes-app" ? [41] : []));
     const { screen, calls } = cli(
       { "list-windows": () => ok(runtime) },
       "Linux",
       async () => true,
-      {
-        processIds,
-      },
+      // The launcher's name differs from the name the process runs under.
+      { processIds, aliases: async (app) => (app === "notes" ? ["notes-app"] : []) },
     );
     await expect(screen.observe(scope, "notes")).resolves.toMatchObject({
       app: "notes",
@@ -413,6 +437,7 @@ describe("agent-desktop host screen", () => {
       "brave-origin",
       expect.stringMatching(/^Brave Origin is open but doesn't share its window/),
     );
+    expect(calls).toContainEqual(["snapshot", "--app", "brave-origin", "--max-depth", "1"]);
     const result = await screen.act(scope, "Brave Origin", [{ kind: "click", element: 1 }]);
     expect(result.error).toBe("Ask the user to answer the dialog.");
     expect(calls.filter(([name]) => name === "launch")).toEqual([]);

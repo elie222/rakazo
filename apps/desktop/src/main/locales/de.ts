@@ -243,7 +243,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Not Now": "Nicht jetzt",
   "Restart Rakazo to finish setup": "Rakazo neu starten, um die Einrichtung abzuschließen",
   "Let bots use {name}?": "Bots {name} nutzen lassen?",
-  "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.":
-    "{name} muss anders gestartet werden, damit Bots es lesen können. Beende es nach dem Erlauben und öffne es erneut.",
+  "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.":
+    "Rakazo ändert, wie diese App aus deinem Launcher startet, damit Bots sie lesen können. Wenn du den Computerzugriff ausschaltest, wird das rückgängig gemacht. Beende die App nach dem Erlauben und öffne sie erneut.",
   "Could not set up {name}": "{name} konnte nicht eingerichtet werden",
 };

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readDesktopEntries } from "./desktop-entries.js";
 import type { LauncherDirs } from "./launcher-override.js";
 import {
+  canWriteLauncher,
   launcherDirs,
   launcherOwner,
   refreshLaunchers,
@@ -49,7 +50,8 @@ async function systemEntry(dirs: LauncherDirs) {
   return entry;
 }
 
-describe("launcher overrides", () => {
+// The launchers are a Linux desktop's; their scripts need a POSIX shell.
+describe.skipIf(process.platform === "win32")("launcher overrides", () => {
   it("hides the system entry behind one that starts the app through a marked script", async () => {
     const dirs = await setup();
     await writeLauncher(await systemEntry(dirs), dirs);
@@ -93,6 +95,38 @@ describe("launcher overrides", () => {
     expect(await readdir(dirs.user)).toEqual(["other.desktop"]);
     await expect(stat(path.dirname(dirs.scripts))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await launcherOwner("web-browser.desktop", dirs)).toBeUndefined();
+  });
+
+  it("removes an entry whose app update starts a different program, rather than carry the consent over", async () => {
+    const dirs = await setup();
+    const entry = await systemEntry(dirs);
+    await writeLauncher(entry, dirs);
+    await writeFile(entry.file, BROWSER.replaceAll("Exec=web-browser", "Exec=other-browser"));
+    await refreshLaunchers(dirs);
+    expect(await readdir(dirs.user)).toEqual([]);
+  });
+
+  it("never removes a folder outside the scripts' own for a strangely named entry", async () => {
+    const dirs = await setup();
+    await mkdir(dirs.user, { recursive: true });
+    const kept = path.join(path.dirname(dirs.scripts), "kept");
+    await mkdir(kept, { recursive: true });
+    await writeFile(path.join(dirs.user, "...desktop"), "[Desktop Entry]\nX-Rakazo-Launcher=0\n");
+    await removeLaunchers(dirs);
+    expect(await readdir(path.dirname(dirs.scripts))).toEqual(["kept"]);
+  });
+
+  it("writes only entries a script can start: its own program, a plain path, and no D-Bus start", async () => {
+    const dirs = await setup();
+    const entry = await systemEntry(dirs);
+    expect(canWriteLauncher(entry, dirs)).toBe(true);
+    const dbus = { ...entry, keys: new Map([...entry.keys, ["DBusActivatable", "true"]]) };
+    expect(canWriteLauncher(dbus, dirs)).toBe(false);
+    expect(canWriteLauncher(entry, { ...dirs, scripts: "/home/a b/launchers" })).toBe(false);
+    expect(canWriteLauncher({ ...entry, id: "my app.desktop" }, dirs)).toBe(false);
+    await expect(
+      writeLauncher(entry, { ...dirs, scripts: "/home/a b/launchers" }),
+    ).rejects.toThrow();
   });
 
   it("follows an app update that changes its entry, and an uninstall that removes it", async () => {

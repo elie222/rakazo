@@ -232,7 +232,7 @@ export const HE_MESSAGES: Record<string, string> = {
   "Not Now": "לא עכשיו",
   "Restart Rakazo to finish setup": "הפעילו מחדש את Rakazo כדי להשלים את ההגדרה",
   "Let bots use {name}?": "לאפשר לבוטים להשתמש ב-{name}?",
-  "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.":
-    "{name} צריך להיפתח בדרך אחרת כדי שבוטים יוכלו לקרוא אותו. אחרי האישור, סגרו אותו ופתחו אותו מחדש.",
+  "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.":
+    "Rakazo ישנה את האופן שבו האפליקציה נפתחת מהמשגר שלכם כדי שבוטים יוכלו לקרוא אותה. כיבוי הגישה למחשב מבטל את השינוי. אחרי האישור, סגרו את האפליקציה ופתחו אותה מחדש.",
   "Could not set up {name}": "לא ניתן להגדיר את {name}",
 };

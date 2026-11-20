@@ -242,7 +242,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Not Now": "Niet nu",
   "Restart Rakazo to finish setup": "Start Rakazo opnieuw om de configuratie te voltooien",
   "Let bots use {name}?": "Bots {name} laten gebruiken?",
-  "{name} needs to start differently so bots can read it. Quit and reopen it after allowing.":
-    "{name} moet anders opstarten zodat bots het kunnen lezen. Sluit het af en open het opnieuw nadat je dit hebt toegestaan.",
+  "Rakazo will change how this app starts from your launcher so bots can read it. Turning off computer access undoes this. Quit and reopen the app after allowing.":
+    "Rakazo verandert hoe deze app vanuit je launcher opstart, zodat bots hem kunnen lezen. Als je computertoegang uitzet, wordt dit ongedaan gemaakt. Sluit de app af en open hem opnieuw nadat je dit hebt toegestaan.",
   "Could not set up {name}": "Kan {name} niet instellen",
 };
