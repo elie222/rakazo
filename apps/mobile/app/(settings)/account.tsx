@@ -28,6 +28,7 @@ import type { MobileMe } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { signOut } from "../../lib/auth/api-auth";
 import { replaceWithSignIn } from "../../lib/auth/auth-routing";
+import { selfHosted, showSelfHostedSupport } from "../../lib/billing/self-hosted-support";
 import { endCallBeforeSessionEnd } from "../../lib/calls/call-session";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
 import { useSideInsets } from "../../lib/layout/side-insets";
@@ -414,14 +415,24 @@ export default function Account() {
             : null}
         </SettingsGroup>
 
-        {writeReviewUrl() ? (
+        {writeReviewUrl() || selfHosted() ? (
           <SettingsGroup>
-            <SettingsRow
-              accessibilityRole="button"
-              leading={icon({ ios: "star", android: "star-outline" })}
-              title={t`Rate Rakazo`}
-              onPress={openWriteReview}
-            />
+            {selfHosted() ? (
+              <SettingsRow
+                accessibilityRole="button"
+                leading={icon({ ios: "heart", android: "heart-outline" })}
+                title={t`Support Rakazo`}
+                onPress={showSelfHostedSupport}
+              />
+            ) : null}
+            {writeReviewUrl() ? (
+              <SettingsRow
+                accessibilityRole="button"
+                leading={icon({ ios: "star", android: "star-outline" })}
+                title={t`Rate Rakazo`}
+                onPress={openWriteReview}
+              />
+            ) : null}
           </SettingsGroup>
         ) : null}
 
