@@ -12,6 +12,7 @@ import {
   liveModelCatalogEnabled,
   mcpStdioOptionsFromEnv,
   messagingEnvFromProcess,
+  openAiCompatAllowPublicHosts,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
@@ -26,6 +27,7 @@ import { isPrivateNetworkHost, parseMinimumClientBuilds, parseNavLinks } from "@
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
 import {
   attachmentCountFromEnv,
+  parseEnvFlag,
   phoneCallSettings,
   SIGNUPS_ENABLED_VALUES,
   uploadSizeFromEnv,
@@ -222,6 +224,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const signupsEnabled = source.SIGNUPS_ENABLED?.trim().toLowerCase();
   if (signupsEnabled && !(SIGNUPS_ENABLED_VALUES as readonly string[]).includes(signupsEnabled))
     throw new Error("SIGNUPS_ENABLED must be true or false");
+  // Same for the model endpoint switch: read at request time, so refuse a bad value at boot.
+  openAiCompatAllowPublicHosts(source);
   // Fail at boot rather than on the first review, which would quietly ask every time.
   autoReviewMinConfidence(source);
   liveModelCatalogEnabled(source);
@@ -290,7 +294,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     dataDir: source.DATA_DIR ?? "./data",
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     deploymentLabs: deploymentLabsFromEnv(source),
-    userDevicesEnabled: source.USER_DEVICES_ENABLED !== "false",
+    userDevicesEnabled: parseEnvFlag("USER_DEVICES_ENABLED", source.USER_DEVICES_ENABLED, true),
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",
     navLinks: parseNavLinks(source.RAKAZO_NAV_LINKS),
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
