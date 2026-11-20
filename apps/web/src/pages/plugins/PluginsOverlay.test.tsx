@@ -53,7 +53,6 @@ vi.mock("@rakazo/ui-web", async () => {
       "Disclosure",
       "DropdownMenu",
       "DropdownMenuContent",
-      "DropdownMenuItem",
       "DropdownMenuSeparator",
       "DropdownMenuTrigger",
       "Field",
@@ -63,6 +62,11 @@ vi.mock("@rakazo/ui-web", async () => {
       "SectionHeading",
       "Spinner",
     ].map((name) => [name, container]),
+    [
+      "DropdownMenuItem",
+      ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) =>
+        createElement("div", { role: "menuitem", onClick }, children),
+    ],
     [
       "DialogClose",
       ({ children, render }: { children?: ReactNode; render: ReactElement }) =>
@@ -374,4 +378,22 @@ it("keeps Close outside the wrapping action group so narrow screens still reach 
     button.textContent?.includes("Templates"),
   )!;
   expect(templates.parentElement!.contains(close!)).toBe(false);
+});
+
+it("leaves no empty action row above a form that has no header actions", async () => {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  const github = [...host.querySelectorAll('[role="menuitem"]')].find(
+    (item) => item.textContent === "From GitHub",
+  )!;
+  await act(async () => (github as HTMLElement).click());
+  const close = host.querySelector('button[aria-label="Close integrations"]')!;
+  expect(close.parentElement!.querySelector(":scope > div:empty")).toBeNull();
+  expect(host.querySelector('button[aria-label="Add custom"]')).toBeNull();
 });
