@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, ScrollView, Text, TextInput } from "react-native";
+import { AccessibilityInfo, Alert, ScrollView, Text, TextInput } from "react-native";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { cancelHeaderOptions } from "../components/native/sheet-header";
 import { selectSpace } from "../lib/api/api-server";
@@ -21,6 +21,7 @@ export default function NewSpace() {
   const router = useRouter();
   const navigation = useNavigation();
   const [name, setName] = useState("");
+  const creationError = (failure: Error) => errorText(failure, t`Could not create space`);
   const creation = useSave({
     // A new Space belongs to the account, so opening it does not end the save that made it.
     target: ACCOUNT_SETTINGS,
@@ -34,10 +35,12 @@ export default function NewSpace() {
       router.dismissAll();
       router.replace("/");
     },
+    // VoiceOver and TalkBack keep focus on the button, so the failure is spoken here as well.
+    onFailed: (failure) => AccessibilityInfo.announceForAccessibility(creationError(failure)),
     closesScreen: true,
   });
   const pending = creation.pending;
-  const error = creation.error ? errorText(creation.error, t`Could not create space`) : null;
+  const error = creation.error ? creationError(creation.error) : null;
 
   function create() {
     const trimmed = name.trim();
@@ -73,7 +76,11 @@ export default function NewSpace() {
             fontSize: 16,
           }}
         />
-        {error ? <Text style={{ color: tokens.destructive, marginTop: 14 }}>{error}</Text> : null}
+        {error ? (
+          <Text accessibilityRole="alert" style={{ color: tokens.destructive, marginTop: 14 }}>
+            {error}
+          </Text>
+        ) : null}
         <NativeActionButton
           disabled={!name.trim() || pending}
           label={pending ? t`Creating…` : t`Create space`}
