@@ -82,7 +82,7 @@ export function ChoiceCard({
             <OptionRow
               key={option.id}
               letter={option.letter}
-              selected={block.answerId === option.id}
+              selected={block.answerId ? block.answerId === option.id : undefined}
               disabled={Boolean(block.answerId) || pending}
               onClick={() => answer.run({ optionId: option.id })}
             >
