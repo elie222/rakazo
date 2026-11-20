@@ -19,6 +19,7 @@ import {
   screenDisplayArgv,
   shellQuote,
 } from "@rakazo/core/node/desktop-runtime";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -298,6 +299,130 @@ describe("BoatSandboxProvider", () => {
       await expect(
         provider.provision({ botId: "bot-b", homePath: "/unused", size: "xlarge" }, context),
       ).rejects.toBeInstanceOf(SandboxSizeUnavailableError);
+    });
+
+    it("wakes a stopped computer at the reference's size on any call", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      expect(resume).toHaveBeenCalledWith(
+        {
+          sandboxId: computer.id,
+          resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "xlarge" },
+        },
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+
+    it("reads no status for a call on a running computer", async () => {
+      const get = vi.spyOn(FakeBoatApi.prototype, "get");
+      const { provider, computer } = await boat();
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      get.mockClear();
+
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      await provider.readFile(sized, "kept.txt", context);
+
+      expect(get).not.toHaveBeenCalled();
+    });
+
+    it("keeps a call's wake size while unsized calls run on the same computer", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const get = FakeBoatApi.prototype.get;
+      const reading = deferred();
+      const read = deferred();
+      let hold = false;
+      vi.spyOn(FakeBoatApi.prototype, "get").mockImplementation(async function (
+        this: FakeBoatApi,
+        request,
+      ) {
+        if (hold) {
+          hold = false;
+          reading.resolve();
+          await read.promise;
+        }
+        return get.call(this, request);
+      });
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      hold = true;
+      const woken = provider.readFile(sized, "kept.txt", context);
+      await reading.promise;
+      const unsized = [provider.keepAlive(computer), provider.isStopped(computer, context)];
+      read.resolve();
+
+      expect(await woken).toEqual(Uint8Array.of(1));
+      await Promise.all(unsized);
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual(["xlarge"]);
+    });
+
+    it("wakes a computer at the size it has when Boat refuses the reference's size", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.tooSmallTypes.add("default");
+      const sized = { ...computer, startSize: "standard" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      try {
+        expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      } finally {
+        installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+      }
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual([
+        "default",
+        undefined,
+      ]);
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({
+          message: "sandbox.size_unavailable",
+          size: "standard",
+          reason: "too_small",
+        }),
+      );
+    });
+
+    it("wakes a computer at the size it has on a call whose reference names none", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual([
+        undefined,
+      ]);
+    });
+
+    it("resumes a computer whose machine Boat lost at the reference's size", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.fail(computer.id, "no_machine");
+
+      expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual(["xlarge"]);
     });
   });
 

@@ -131,6 +131,11 @@ export interface ComputerRef {
   started?: boolean;
   /** Size the provider confirmed for this running machine. */
   size?: ComputerSize;
+  /**
+   * Size to start the machine at when a call finds it stopped and wakes it. A running machine
+   * keeps the size it has, and without one a woken machine keeps it too.
+   */
+  startSize?: ComputerSize;
 }
 
 export type WorkspaceDirectoryRequest =
