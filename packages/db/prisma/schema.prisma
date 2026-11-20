@@ -2173,6 +2173,8 @@ model UsageRecord {
   callId             String?  @unique
   operationId        String?
   operationKind      String   @default("answer")
+  /// Who paid: subscription, api_key, custom_endpoint, credits or deployment; null before it was recorded.
+  billing            String?
   /// Durable attribution, deliberately without lifecycle foreign keys.
   parentRunId        String?
   agentId            String?

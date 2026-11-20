@@ -15,7 +15,7 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
-import { tierComputerDescription } from "@rakazo/i18n/computer-usage";
+import { tierComputerDescription, tierComputerSummary } from "@rakazo/i18n/computer-usage";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -177,7 +177,7 @@ function ByokTierSelect({
                   {offer.name} · {price}
                 </span>
                 <span className="text-label text-muted-foreground">
-                  {tierComputerDescription(offer)}
+                  {tierComputerSummary(offer)}
                 </span>
               </span>
             </SelectItem>
@@ -413,7 +413,11 @@ export function CreditChoice({
     t`Web, desktop and mobile`,
   ];
   const trialDays = status.trialDays;
-  const tiers = status.planLayout === "tiers" ? (status.byokTiers ?? []) : [];
+  // Keep the plan-layout experiment's offers fixed. Ultra is offered in Billing.
+  const tiers =
+    status.planLayout === "tiers"
+      ? (status.byokTiers ?? []).filter((offer) => offer.tier !== "ultra")
+      : [];
   const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   const [interval, setByokInterval] = useState<ByokInterval>("month");
   const credit = formatBillingAmount(amount, "usd", i18n.locale);

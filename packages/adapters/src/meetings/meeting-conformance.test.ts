@@ -117,6 +117,63 @@ describe("Recall transcripts and delivery over the wire emulator", () => {
     },
   );
 
+  it.each([
+    ["bot_kicked_from_waiting_room"],
+    ["timeout_exceeded_waiting_room"],
+    ["call_ended_by_platform_waiting_room_timeout"],
+  ])("reports a waiting-room call end (%s) as an admission failure", (subCode) => {
+    const provider = real();
+    const delivery = signedMeetingEvent({
+      event: "bot.call_ended",
+      data: {
+        data: { updated_at: "2026-11-19T19:30:00.000Z", sub_code: subCode },
+        bot: { id: BOT_ID, metadata: { meetingSessionId: input.sessionId } },
+      },
+    });
+    expect(provider.verifyWebhook(delivery.raw, delivery.headers)).toEqual({
+      sessionId: input.sessionId,
+      externalId: BOT_ID,
+      occurredAt: new Date("2026-11-19T19:30:00.000Z"),
+      status: "failed",
+      error: "admission",
+    });
+  });
+
+  it.each([[undefined], ["call_ended_by_host"]])(
+    "keeps an ordinary call end (%s) as processing",
+    (subCode) => {
+      const provider = real();
+      const delivery = signedMeetingEvent({
+        event: "bot.call_ended",
+        data: {
+          data: { updated_at: "2026-11-19T19:30:00.000Z", sub_code: subCode },
+          bot: { id: BOT_ID, metadata: { meetingSessionId: input.sessionId } },
+        },
+      });
+      const observation = provider.verifyWebhook(delivery.raw, delivery.headers);
+      expect(observation).toMatchObject({ externalId: BOT_ID, status: "processing" });
+      expect(observation).not.toHaveProperty("error");
+    },
+  );
+
+  it("reports a fatal waiting-room exit as an admission failure", () => {
+    const provider = real();
+    const delivery = signedMeetingEvent({
+      event: "bot.fatal",
+      data: {
+        data: {
+          updated_at: "2026-11-19T19:30:00.000Z",
+          sub_code: "waiting_room_timeout",
+        },
+        bot: { id: BOT_ID, metadata: { meetingSessionId: input.sessionId } },
+      },
+    });
+    expect(provider.verifyWebhook(delivery.raw, delivery.headers)).toMatchObject({
+      status: "failed",
+      error: "admission",
+    });
+  });
+
   it("exposes an unambiguous capacity rejection and retry delay", async () => {
     const emulator = new RecallMeetingEmulator();
     emulator.joinStatus = 507;
