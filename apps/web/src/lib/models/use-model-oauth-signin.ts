@@ -165,8 +165,9 @@ export function useModelOAuthSignIn(options: {
           makeDefault: begin.makeDefault,
           ...(begin.scope ? { scope: begin.scope } : {}),
           label: begin.label,
-          // Desktop receives the loopback redirect; a browser tab cannot, so it gets a code page.
-          codePage: !desktopBridge(),
+          // A desktop that opens the browser itself receives the loopback redirect; anywhere
+          // else the person opens the page from a link, so it shows a code to paste.
+          codePage: !desktopBridge()?.oauth.open,
           surface: analyticsSurface(),
         },
         { signal: controller.signal },

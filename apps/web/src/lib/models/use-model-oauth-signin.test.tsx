@@ -7,10 +7,11 @@ import { useModelOAuthSignIn } from "./use-model-oauth-signin";
 
 const models = vi.hoisted(() => ({ beginOAuth: vi.fn(), cancelOAuth: vi.fn() }));
 const analytics = vi.hoisted(() => ({ modelSignInStep: vi.fn() }));
+const desktop = vi.hoisted(() => ({ bridge: undefined as unknown }));
 vi.mock("../query/space-rpc", () => ({ useSpaceRpc: () => ({ models, analytics }) }));
 vi.mock("../platform/desktop", () => ({
   analyticsSurface: () => "web",
-  desktopBridge: () => undefined,
+  desktopBridge: () => desktop.bridge,
   oauthStateOf: () => undefined,
   onDesktopOAuthCallback: vi.fn(),
 }));
@@ -47,6 +48,7 @@ beforeEach(() => {
   act(() => root.render(<Harness />));
 });
 afterEach(() => {
+  desktop.bridge = undefined;
   act(() => root.unmount());
   container.remove();
   vi.restoreAllMocks();
@@ -70,6 +72,14 @@ it("leaves a link sign-in's page to the person's click, since a tab opened later
   expect(onError).not.toHaveBeenCalled();
   expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ surface: "web", codePage: true });
   expect(analytics.modelSignInStep).not.toHaveBeenCalled();
+});
+
+it("asks for a code page on a desktop that cannot open the browser itself", async () => {
+  desktop.bridge = { oauth: { onCallback: () => () => undefined } };
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+  expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ codePage: true });
 });
 
 it("shows a device code before its page opens, leaving the opening to the person", async () => {
