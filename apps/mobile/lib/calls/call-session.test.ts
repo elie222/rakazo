@@ -42,6 +42,7 @@ import {
   endCallBeforeSessionEnd,
   getSnapshot,
   hangUp,
+  recordAudio,
   recordClip,
   SIGN_OUT_HANG_UP_MS,
   setCallProviderTranscribe,
@@ -95,6 +96,7 @@ const audio = vi.hoisted(() => ({
   permission: Promise.resolve({ granted: true }),
   prepared: Promise.resolve(),
   record: vi.fn(),
+  recording: true,
   options: vi.fn(),
   release: vi.fn(),
   setAudioMode: vi.fn(),
@@ -111,6 +113,9 @@ const expoAudioMock = vi.hoisted(() => () => ({
       uri = audio.uri;
       prepareToRecordAsync = () => audio.prepared;
       record = audio.record;
+      get isRecording() {
+        return audio.recording;
+      }
       stop = async () => undefined;
       release = audio.release;
       getStatus = () => audio.status;
@@ -2374,6 +2379,7 @@ describe("mobile call recording without metering", () => {
     device.os = "ios";
     endCall();
     vi.useRealTimers();
+    audio.recording = true;
     audio.status = {};
     audio.uri = null;
     files.base64 = async () => "";
@@ -2415,6 +2421,34 @@ describe("mobile call recording without metering", () => {
       base64: "c2lsZW5jZQ==",
       mimeType: os === "web" ? "audio/webm" : "audio/m4a",
     });
+    expect(audio.release).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the recorder's full quality for a clip transcribed on the phone", async () => {
+    const stopped = new AbortController();
+    const onRecording = vi.fn();
+    const clip = recordAudio(new AbortController().signal, stopped.signal, {
+      onDevice: true,
+      onRecording,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onRecording).toHaveBeenCalledOnce();
+    stopped.abort();
+    await vi.advanceTimersByTimeAsync(200);
+    await clip;
+    expect(audio.options).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ sampleRate: 44_100, numberOfChannels: 2, bitRate: 128_000 }),
+    );
+  });
+
+  it("fails a dictation whose recorder never starts capturing", async () => {
+    audio.recording = false;
+    const onRecording = vi.fn();
+    const clip = recordAudio(new AbortController().signal, new AbortController().signal, {
+      onRecording,
+    });
+    await expect(clip).rejects.toThrow("Could not start the microphone.");
+    expect(onRecording).not.toHaveBeenCalled();
     expect(audio.release).toHaveBeenCalledOnce();
   });
 
