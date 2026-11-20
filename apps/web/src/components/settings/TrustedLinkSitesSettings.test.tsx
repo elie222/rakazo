@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -81,6 +82,46 @@ it("lists trusted sites and removes one", async () => {
   await act(async () => remove?.click());
   expect(rpcMock.trustedLinkSites.remove).toHaveBeenCalledWith({ site: "example.com" });
   await vi.waitFor(() => expect(rows()).toEqual(["alice.github.io"]));
+  await view.cleanup();
+});
+
+function removeButtons(container: HTMLElement) {
+  return [
+    ...container.querySelectorAll<HTMLButtonElement>("[data-testid='trusted-link-sites'] button"),
+  ];
+}
+
+it("holds every Remove button while a removal is in flight and sends one request", async () => {
+  rpcMock.trustedLinkSites.list.mockResolvedValue(["alice.github.io", "example.com"]);
+  const answer = deferred<{ ok: boolean }>();
+  rpcMock.trustedLinkSites.remove.mockReturnValue(answer.promise);
+  const view = await render();
+  await vi.waitFor(() => expect(removeButtons(view.container)).toHaveLength(2));
+
+  await act(async () => removeButtons(view.container)[1]?.click());
+  expect(removeButtons(view.container).map((button) => button.disabled)).toEqual([true, true]);
+  await act(async () => removeButtons(view.container)[1]?.click());
+  await act(async () => removeButtons(view.container)[0]?.click());
+  expect(rpcMock.trustedLinkSites.remove).toHaveBeenCalledTimes(1);
+
+  await act(async () => answer.resolve({ ok: true }));
+  await vi.waitFor(() => expect(removeButtons(view.container)).toHaveLength(1));
+  expect(removeButtons(view.container)[0]?.disabled).toBe(false);
+  await view.cleanup();
+});
+
+it("shows the failure and brings the Remove buttons back", async () => {
+  rpcMock.trustedLinkSites.list.mockResolvedValue(["example.com"]);
+  rpcMock.trustedLinkSites.remove.mockRejectedValue(new Error(""));
+  const view = await render();
+  await vi.waitFor(() => expect(removeButtons(view.container)).toHaveLength(1));
+
+  await act(async () => removeButtons(view.container)[0]?.click());
+  await vi.waitFor(() =>
+    expect(view.container.querySelector("[role='alert']")?.textContent).toBe("Could not continue"),
+  );
+  expect(removeButtons(view.container)[0]?.disabled).toBe(false);
+  expect(view.container.textContent).toContain("example.com");
   await view.cleanup();
 });
 
