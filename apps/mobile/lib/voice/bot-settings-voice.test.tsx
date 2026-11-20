@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BotSettingsScreen from "../../app/bot-settings";
 import { MenuPicker } from "../../components/ui/menu-picker";
+import { askComputerMoveFiles } from "../computers/computer-move";
 import { afterChatNotifyChange } from "../notifications/live-notifications";
 import { queryClient } from "../query/query";
 
@@ -59,6 +60,8 @@ vi.mock("./bot-voices", () => ({
   setVoiceForBot: mocks.setVoiceForBot,
 }));
 vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
+// The question about the bot's files is answered at once; its own test covers the alert.
+vi.mock("../computers/computer-move", () => ({ askComputerMoveFiles: vi.fn(async () => "bring") }));
 vi.mock("./voice", () => ({ stopVoicePlayback: mocks.stopVoicePlayback }));
 vi.mock("expo-speech", () => ({ stop: mocks.stop, speak: mocks.speak }));
 vi.mock("../api/api", () => ({
@@ -1063,9 +1066,15 @@ describe("bot settings device voice menu", () => {
         .find((button) => button.textContent === "Save")!
         .click(),
     );
+    expect(askComputerMoveFiles).toHaveBeenCalledExactlyOnceWith({
+      botId: "bot-fixture",
+      botName: expect.any(String),
+      mode: "dedicated",
+    });
     expect(mocks.rpc).toHaveBeenCalledWith("bots/setComputer", {
       botId: "bot-fixture",
       mode: "dedicated",
+      files: "bring",
     });
     expect(mocks.rpc).toHaveBeenCalledWith(
       "bots/update",

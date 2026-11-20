@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import {
+  announceComputerChange,
   archiveBot,
   carriedBotModelPin,
   checkpointAndStopComputer,
@@ -62,7 +63,7 @@ import {
   settingsTarget,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { managedAppCatalog } from "../account/onboarding.js";
 import { requireIdentityConfirmation } from "../auth/identity-confirmation.js";
 import type { AgentImportServices } from "../bots/agent-import.js";
@@ -75,6 +76,13 @@ import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../bots/age
 import { loadBotForRemoval } from "../bots/bot-removal.js";
 import { createBotFromTemplate, listBotTemplates } from "../bots/bot-templates.js";
 import { botIntroPrompt } from "../bots/hidden-turns.prompt.js";
+import {
+  assertSettledForMove,
+  botFilesHome,
+  bringFilesToComputer,
+  moveReplacesFiles,
+  saveTeamHomeForMove,
+} from "../computers/computer-switch.js";
 import {
   botEmailAddress,
   botEmailAddresses,
@@ -543,11 +551,18 @@ export function botsRoutes(ctx: RouterContext) {
         const claimed = await deps.prisma.$transaction(async (tx) => {
           await tx.$queryRaw`SELECT id FROM computers WHERE id = ${bot.computerId} FOR UPDATE`;
           return tx.bot.updateMany({
-            where: { id: bot.id, computerSwitching: false, computer: { maintenanceId: null } },
+            // Still on the computer read above: a switch that finished meanwhile changed it.
+            where: {
+              id: bot.id,
+              computerId: bot.computerId,
+              computerSwitching: false,
+              computer: { maintenanceId: null },
+            },
             data: { computerSwitching: true },
           });
         });
         if (claimed.count !== 1) throw new ORPCError("CONFLICT");
+        const bring = input.files === "bring";
         try {
           const active = await deps.prisma.run.findFirst({
             where: {
@@ -562,6 +577,10 @@ export function botsRoutes(ctx: RouterContext) {
           }
           if (bot.computer.controlBotId === bot.id && hasActiveComputerControl(bot.computer)) {
             throw new ORPCError("BAD_REQUEST", { message: "Release the computer first" });
+          }
+          if (bring) assertSettledForMove(bot.computer);
+          if (bring && bot.computer.scope === "team") {
+            await saveTeamHomeForMove(deps, context.actor, bot.id, bot.computer);
           }
           if (bot.computer.scope === "dedicated" && bot.computer.providerRef) {
             const ctx = computerContext(context.actor, bot.id, "computer.switch");
@@ -588,6 +607,39 @@ export function botsRoutes(ctx: RouterContext) {
             await endTeachingWithLease(deps, context.actor.spaceId, bot.computer.controlLeaseId);
           }
           const updated = await repos.setBotComputer(context.actor, bot.id, input.mode);
+          let files: "copied" | "stayed" | undefined = "stayed";
+          if (bring) {
+            const moved = await repos.getBot(context.actor, bot.id);
+            if (!moved.computer) throw new IsolationError();
+            try {
+              const copied = await bringFilesToComputer(
+                deps,
+                context.actor,
+                bot.id,
+                botFilesHome(bot.computer),
+                moved.computer,
+              );
+              files = copied ? "copied" : undefined;
+            } catch (error) {
+              // The files did not arrive, so the bot stays on the computer that has them. The
+              // copy's failure is the one reported, also when moving the bot back fails too.
+              await bestEffort(
+                "move the bot back after a failed copy",
+                repos.setBotComputer(context.actor, bot.id, currentMode),
+              );
+              throw error;
+            }
+          }
+          if (bot.thread) {
+            await bestEffort(
+              "computer change note",
+              announceComputerChange(
+                deps,
+                { id: bot.id, spaceId: context.actor.spaceId, threadId: bot.thread.id },
+                { from: currentMode, to: input.mode, files },
+              ),
+            );
+          }
           deps.analytics?.capture(context.actor.userId, {
             name: "bot_setting_changed",
             setting: "computer",
@@ -603,6 +655,11 @@ export function botsRoutes(ctx: RouterContext) {
             data: { computerSwitching: false },
           });
         }
+      }),
+      computerMove: authed.bots.computerMove.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (!bot.computer) throw new IsolationError();
+        return { replacesFiles: await moveReplacesFiles(deps, context.actor, bot, input.mode) };
       }),
       archive: authed.bots.archive.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });

@@ -1,5 +1,6 @@
 import { FLEET_WRITE_TOOL_NAMES } from "@rakazo/contracts";
 import { runReadsThreadHistory, toolRequiresExplicitApproval } from "@rakazo/core";
+import { teamWorkspaceInstruction } from "../../computers/screens/computer-support.prompt.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "../../models/model-vision.prompt.js";
 import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
@@ -24,6 +25,24 @@ export const COMPUTER_USE_INSTRUCTION =
 
 export const PRIVATE_WORKSPACE_INSTRUCTION =
   "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+
+/** The private home of a bot whose computer is its own, where the Team Computer has its own line. */
+export const OWN_COMPUTER_WORKSPACE_INSTRUCTION = `You are on your own computer, not the Team Computer. ${PRIVATE_WORKSPACE_INSTRUCTION}`;
+
+/**
+ * The standing line that tells a bot which computer it is on and where its home is. A person's
+ * own machine is not the bot's computer, so it keeps the plain private line.
+ */
+export function workspaceInstruction(input: {
+  mode: "team" | "dedicated";
+  botId: string;
+  runsOnUserMachine: boolean;
+}): string {
+  if (input.mode === "team") return teamWorkspaceInstruction(input.botId);
+  return input.runsOnUserMachine
+    ? PRIVATE_WORKSPACE_INSTRUCTION
+    : OWN_COMPUTER_WORKSPACE_INSTRUCTION;
+}
 
 /** Where commands run when the computer is a host with its own shell rather than a sandbox. */
 export function hostComputerInstruction(

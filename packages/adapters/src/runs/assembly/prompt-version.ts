@@ -19,6 +19,7 @@ import {
   desktopGuardShellInstruction,
   dockerComputerToolInstruction,
   hostComputerInstruction,
+  OWN_COMPUTER_WORKSPACE_INSTRUCTION,
   PRIVATE_WORKSPACE_INSTRUCTION,
   persistentComputerInstruction,
   runIdentityInstruction,
@@ -67,7 +68,11 @@ export function promptVersionParts() {
     hosts: ["wuying", "local"].map((kind) => hostComputerInstruction(kind, host)),
     desktopGuardShell: desktopGuardShellInstruction(allTools),
     dockerComputer: toolSets.map((disabled) => dockerComputerToolInstruction("docker", disabled)),
-    workspaces: [PRIVATE_WORKSPACE_INSTRUCTION, teamWorkspaceInstruction("bot")],
+    workspaces: [
+      PRIVATE_WORKSPACE_INSTRUCTION,
+      OWN_COMPUTER_WORKSPACE_INSTRUCTION,
+      teamWorkspaceInstruction("bot"),
+    ],
     taskCatalog: TASK_CATALOG_GUIDANCE,
     messaging: [
       messagingDmSurfaceNote(),

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { connectedPluginsInstruction, taughtSkillsInstruction } from "./run-instructions.prompt.js";
+import {
+  connectedPluginsInstruction,
+  taughtSkillsInstruction,
+  workspaceInstruction,
+} from "./run-instructions.prompt.js";
 
 describe("connectedPluginsInstruction", () => {
   it("names each connected plugin and prefers its tools to browsing", () => {
@@ -32,5 +36,29 @@ describe("taughtSkillsInstruction", () => {
 
   it("adds nothing when no skill was taught", () => {
     expect(taughtSkillsInstruction([])).toBeUndefined();
+  });
+});
+
+describe("workspaceInstruction", () => {
+  it("tells a bot on the Team Computer where its home folder is", () => {
+    expect(
+      workspaceInstruction({ mode: "team", botId: "bot1", runsOnUserMachine: false }),
+    ).toContain("Your Team Computer home is bots/bot1.");
+  });
+
+  it("tells a bot on its own computer that it is there and that the whole workspace is its home", () => {
+    expect(
+      workspaceInstruction({ mode: "dedicated", botId: "bot1", runsOnUserMachine: false }),
+    ).toBe(
+      "You are on your own computer, not the Team Computer. This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.",
+    );
+  });
+
+  it("does not call a person's own machine the bot's computer", () => {
+    expect(
+      workspaceInstruction({ mode: "dedicated", botId: "bot1", runsOnUserMachine: true }),
+    ).toBe(
+      "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.",
+    );
   });
 });

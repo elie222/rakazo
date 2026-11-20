@@ -9,6 +9,8 @@ import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
  * Team and a Private computer); give them far more than an ordinary RPC.
  */
 export const COMPUTER_LIFECYCLE_TIMEOUT_MS = 120_000;
+/** Moving a bot with its files can start a computer and then copy a whole home onto it. */
+export const COMPUTER_MOVE_TIMEOUT_MS = 10 * 60_000;
 export const SCREEN_URL_OPEN_ATTEMPTS = 5;
 export const SCREEN_URL_RETRY_DELAY_MS = 400;
 /**

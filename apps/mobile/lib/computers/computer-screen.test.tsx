@@ -201,6 +201,8 @@ vi.mock("../../components/native/glass-icon-button", () => {
   };
 });
 
+// The question about the bot's files is answered at once; its own test covers the alert.
+vi.mock("./computer-move", () => ({ askComputerMoveFiles: vi.fn(async () => "bring") }));
 vi.mock("../../components/computers/computer-mode-picker", () => {
   return {
     ComputerModePicker: (props: {

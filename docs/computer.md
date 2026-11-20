@@ -35,6 +35,14 @@ In the bot's settings under **Advanced**, **Computer** is **Team** or **Private*
 - **Private**: the bot gets a computer of its own. Use it when files or sign-ins must not be shared
   with other bots.
 
+Changing it asks whether to bring the bot's files. **Bring files** copies them to the computer the
+bot moves to and leaves the originals where they were; if that computer still has the bot's files
+from an earlier stay, the copy replaces them (on a Windows cloud computer, older files the copy does
+not overwrite stay beside it). The files are everything in the bot's folder, or in a Private
+Computer's home, except the hidden entries at the top, such as browser profiles, which stay with each
+computer. **Start empty** moves the bot and leaves its files behind. Either way the bot is told
+once, in its chat, that its computer changed.
+
 ## Files
 
 Bots save their work on the computer and send you the results as files in the chat. Every file a bot
