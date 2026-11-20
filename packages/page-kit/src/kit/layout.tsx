@@ -6,6 +6,7 @@ import {
   isValidElement,
   useContext,
   useEffect,
+  useLayoutEffect,
   useState,
 } from "react";
 import { ErrorBoundary } from "./boundary.js";
@@ -59,13 +60,33 @@ export function Page({
   const own = typeof lang === "string" && lang.trim() ? lang.trim() : undefined;
   // Without its own lang, a page's built-in words follow the reader's app language.
   const inherited = useContext(PageLanguage);
-  const language = own ?? inherited ?? documentLanguage();
+  const [hostLanguage, setHostLanguage] = useState<{ lang: string | undefined }>();
+  // On the render that removes the override, the DOM still has the previous Page language.
+  const language =
+    own ?? inherited ?? (hostLanguage ? hostLanguage.lang : documentLanguage()) ?? "en-US";
   const words = wordsFor(language);
-  useEffect(() => {
-    if (!own) return;
-    document.documentElement.lang = own;
-    document.documentElement.dir = wordsFor(own).dir;
-  }, [own]);
+  const direction = own ? words.dir : undefined;
+  useLayoutEffect(() => {
+    if (!own || !direction) {
+      setHostLanguage(undefined);
+      return;
+    }
+    const html = document.documentElement;
+    const originalLang = html.getAttribute("lang");
+    const originalDir = html.getAttribute("dir");
+    setHostLanguage({ lang: originalLang || undefined });
+    html.lang = own;
+    html.dir = direction;
+    return () => {
+      // A newer owner may have changed this document's language or direction.
+      if (html.getAttribute("lang") !== own) return;
+      if (originalLang === null) html.removeAttribute("lang");
+      else html.setAttribute("lang", originalLang);
+      if (html.getAttribute("dir") !== direction) return;
+      if (originalDir === null) html.removeAttribute("dir");
+      else html.setAttribute("dir", originalDir);
+    };
+  }, [own, direction]);
   const links = Array.isArray(sources)
     ? sources.filter((source) => typeof source === "string")
     : [];
@@ -89,7 +110,7 @@ export function Page({
           className="rk-page"
           data-width={WIDTHS.has(width) ? width : "column"}
           lang={own}
-          dir={own ? words.dir : undefined}
+          dir={direction}
           style={colors as CSSProperties}
         >
           <header className="rk-header">
