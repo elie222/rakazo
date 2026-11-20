@@ -665,6 +665,120 @@ describe("a key on the screen", () => {
     expect(decoy.helper.paymentPage().purchase).toBeNull();
   });
 
+  it("does not read an acronym glued to Chinese text as a security code", () => {
+    const login = page(`<form><label>学号CSC编码<input name="sid"></label>
+      <label>密码<input type="password" name="pw"></label><button>登录</button></form>
+      <button type="button">取消</button>`);
+    expect(login.intent("登录")).toBeNull();
+    expect(login.intent("取消")).toBeNull();
+    expect(login.helper.paymentPage().purchase).toBeNull();
+  });
+
+  it("still finds a localized checkout by its card fields and keeps its pay button guarded", () => {
+    const zh =
+      page(`<form><label>卡号<input name="n"></label><label>安全码(CVV)<input name="c"></label>
+      <label>有效期<input name="e" placeholder="MM/YY"></label><button>支付</button></form>`);
+    expect(zh.intent("支付")?.reason).toBe("card_form");
+    const suffixed = page(
+      `<form><label>CVV码<input name="c"></label><button>下一步</button></form>`,
+    );
+    expect(suffixed.intent("下一步")?.reason).toBe("card_form");
+    const prefixed = page(
+      `<form><label>安全码CVV<input name="c"></label><button>下一步</button></form>`,
+    );
+    expect(prefixed.intent("下一步")?.reason).toBe("card_form");
+    for (const [label, pay] of [
+      ["信用卡", "付款"],
+      ["クレジットカード", "購入する"],
+      ["신용카드", "결제"],
+      ["Tarjeta de crédito", "Pagar"],
+      ["Carte bancaire", "Payer"],
+      ["Kreditkarte", "Bezahlen"],
+    ]) {
+      const local = page(
+        `<form><label>${label}<input name="n"></label><button>${pay}</button></form>`,
+      );
+      expect(local.intent(pay)?.reason).toBe("card_form");
+    }
+  });
+
+  it("reads a card security code acronym beside Chinese, Japanese or Korean text", () => {
+    for (const label of [
+      "验证码CVV",
+      "CVV安全码",
+      "CVC2安全码",
+      "卡背面CVV",
+      "カードCVV",
+      "카드CVC",
+      "ＣＶＶ",
+    ]) {
+      const form = page(
+        `<form><label>${label}<input name="c"></label><button>提交</button></form>`,
+      );
+      expect(form.intent("提交")?.reason, label).toBe("card_form");
+    }
+  });
+
+  it("keeps a localized order button guarded when it starts with a back or login word", () => {
+    const { intent } = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button">Anmelden und bestellen</button><button type="button">Se connecter et commander</button>
+      <button type="button">Iniciar sesión y reservar</button><button type="button">로그인 후 주문</button>
+      <button type="button">Zurück und bestellen</button>`);
+    for (const name of [
+      "Anmelden und bestellen",
+      "Se connecter et commander",
+      "Iniciar sesión y reservar",
+      "로그인 후 주문",
+      "Zurück und bestellen",
+    ]) {
+      expect(intent(name)?.reason, name).toBeDefined();
+    }
+  });
+
+  it("leaves back, cancel and login alone on a localized payment page, but not a pay button", () => {
+    const { intent } = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button">取消</button><button type="button">返回</button>
+      <button type="button">登錄</button><button type="button">キャンセル</button>
+      <button type="button">취소하기</button><button type="button">Volver</button>
+      <button type="button">Annuler</button><button type="button">Zurück</button>
+      <button type="button">Cancelar y pagar</button><button type="button">登录并支付</button>
+      <button type="button">确认</button><button type="button">支付</button>
+      <button type="button">注文を確定する</button><button type="button">Bestätigen</button>`);
+    for (const name of [
+      "取消",
+      "返回",
+      "登錄",
+      "キャンセル",
+      "취소하기",
+      "Volver",
+      "Annuler",
+      "Zurück",
+    ]) {
+      expect(intent(name), name).toBeNull();
+    }
+    for (const name of [
+      "Cancelar y pagar",
+      "登录并支付",
+      "确认",
+      "支付",
+      "注文を確定する",
+      "Bestätigen",
+    ]) {
+      expect(intent(name)?.reason, name).toBeDefined();
+    }
+  });
+
+  it("does not let a localized gift card or voucher field make a form a card form", () => {
+    const zh = page(`<form><input name="gc" aria-label="礼品卡 CVV"><button>使用</button></form>`);
+    expect(zh.intent("使用")).toBeNull();
+    const de = page(
+      `<input placeholder="Gutschein Kartennummer"><input placeholder="Sicherheitscode">`,
+    );
+    expect(de.helper.paymentPage().purchase).toBeNull();
+    const ja = page(`<input placeholder="ギフトカード番号 CVV">`);
+    expect(ja.helper.paymentPage().purchase).toBeNull();
+  });
+
   it("lists the order lines the checkout shows above its total, and nothing around them", () => {
     const { intent, helper } = page(`
       <header><a href="/cart">Cart · Socks $9.00</a></header>
