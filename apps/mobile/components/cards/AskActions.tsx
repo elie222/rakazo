@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
-import { newClientId, resolveAskChoice } from "@rakazo/core";
+import type { DraftNonce } from "@rakazo/core";
+import { draftNonce, resolveAskChoice } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
@@ -82,7 +83,7 @@ export function AskActions({
   const [typed, setTyped] = useState("");
   const [typedFocused, setTypedFocused] = useState(false);
   const submittingRef = useRef(false);
-  const draftNonceRef = useRef<{ text: string; nonce: string } | null>(null);
+  const draftNonceRef = useRef<DraftNonce | null>(null);
   const submitting = pendingAction !== null;
   const settled = Boolean(disabled) || selectedAnswer !== undefined || acceptedAnswer !== undefined;
   const displayedAnswer = selectedAnswer ?? acceptedAnswer;
@@ -101,21 +102,17 @@ export function AskActions({
         )
       : actions;
 
-  function typedAnswerNonce(text: string): string {
-    if (draftNonceRef.current?.text === text) return draftNonceRef.current.nonce;
-    const nonce = newClientId();
-    draftNonceRef.current = { text, nonce };
-    return nonce;
-  }
-
   async function submit(answer: string, target: { id?: string; typed?: true }) {
     if (settled || submittingRef.current || submitting) return;
     submittingRef.current = true;
     setPendingAction(target);
     try {
-      await (target.typed && onTypeAnswer
-        ? onTypeAnswer(answer, typedAnswerNonce(answer))
-        : onAnswer(answer));
+      if (target.typed && onTypeAnswer) {
+        draftNonceRef.current = draftNonce(draftNonceRef.current, answer);
+        await onTypeAnswer(answer, draftNonceRef.current.nonce);
+      } else {
+        await onAnswer(answer);
+      }
       setAcceptedAnswer(answer);
       if (target.typed) {
         draftNonceRef.current = null;

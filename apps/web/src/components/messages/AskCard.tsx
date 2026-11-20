@@ -3,11 +3,12 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
+import type { DraftNonce } from "@rakazo/core";
 import {
+  draftNonce,
   isApprovalAskBlock,
   isQuestionAskBlock,
   isSecretAskBlock,
-  newClientId,
   receiptItems,
   resolveAskChoice,
   selectedAskActionLabel,
@@ -158,7 +159,7 @@ function PromptAskCard({
   const [pendingAction, setPendingAction] = useState<{ id?: string; typed?: true } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const submittingRef = useRef(false);
-  const draftNonceRef = useRef<{ text: string; nonce: string } | null>(null);
+  const draftNonceRef = useRef<DraftNonce | null>(null);
   const submitting = pendingAction !== null;
   const answered = block.status === "answered" || acceptedAnswer !== undefined;
   const answeredQuestion = answered && isQuestionAskBlock(block);
@@ -183,13 +184,6 @@ function PromptAskCard({
     displayedAnswer !== "approved"
       ? displayedAnswer
       : undefined;
-  function typedAnswerNonce(text: string): string {
-    if (draftNonceRef.current?.text === text) return draftNonceRef.current.nonce;
-    const nonce = newClientId();
-    draftNonceRef.current = { text, nonce };
-    return nonce;
-  }
-
   async function submitAnswer(value: string, typed = false) {
     const submitValue = value.trim();
     if (submittingRef.current || submitting || !submitValue) return;
@@ -197,9 +191,12 @@ function PromptAskCard({
     setPendingAction(typed ? { typed: true } : { id: submitValue });
     setError(null);
     try {
-      await (typed && onTypeAnswer
-        ? onTypeAnswer(submitValue, typedAnswerNonce(submitValue))
-        : onAnswer(submitValue));
+      if (typed && onTypeAnswer) {
+        draftNonceRef.current = draftNonce(draftNonceRef.current, submitValue);
+        await onTypeAnswer(submitValue, draftNonceRef.current.nonce);
+      } else {
+        await onAnswer(submitValue);
+      }
       setAcceptedAnswer(submitValue);
       if (typed) {
         draftNonceRef.current = null;
