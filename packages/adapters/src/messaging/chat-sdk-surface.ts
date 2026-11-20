@@ -16,8 +16,9 @@ import type {
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import { trimEndChars } from "@rakazo/contracts";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import type { Adapter, Message, PostableMarkdown, Root, Thread } from "chat";
+import type { Adapter, Attachment, Message, PostableMarkdown, Root, Thread } from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
 import { getLarkTextParts } from "../providers/messaging/lark/text-parts.js";
 
@@ -98,6 +99,12 @@ export interface MessagingPlatform {
   directThreadId?: (address: string) => string;
   /** Delivery-status events the Chat SDK drops (sendblue is_outbound posts, WhatsApp statuses). */
   peekStatuses?: (payload: unknown) => MessagingOutboundStatus[];
+  /**
+   * The size of an inbound file the adapter left unreported, asked of the platform before the
+   * webhook is answered, so a file over the limit is refused without downloading it (WhatsApp's
+   * media lookup). Undefined when the platform cannot tell.
+   */
+  attachmentSize?: (attachment: Attachment, signal: AbortSignal) => Promise<number | undefined>;
   /**
    * State keys the adapter writes to drop vendor redeliveries of a webhook
    * (Slack's per-event marker). Cleared when the inbound sink fails so the
@@ -228,6 +235,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
             );
           }
         }
+        await fillAttachmentSizes(platform, message);
         const event = this.toInbound(mounted, thread.id, thread.isDM, message);
         if (!event) return;
         try {
@@ -303,14 +311,16 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     context.signal.throwIfAborted();
     // Telegram converts Markdown and retries parse errors as plain text;
     // WhatsApp renders it as its own formatting and Lark posts it as an md
-    // block; Photon's iMessage adapter renders it as native styled text. Keep
-    // the other adapters' plain payloads (Slack markdown_text has a lower
-    // limit, Sendblue's iMessage has no markup).
+    // block; Slack posts it as markdown_text (parts stay under its 12,000
+    // limit, see splitOutboundBody); Photon's iMessage adapter renders it as
+    // native styled text. Sendblue's iMessage has no markup, so it keeps a
+    // plain payload.
     const telegram = mounted.adapterName === "telegram";
     const markdown =
       telegram ||
       mounted.adapterName === "whatsapp" ||
       mounted.adapterName === "lark" ||
+      mounted.adapterName === "slack" ||
       mounted.adapterName === "imessage";
     const { attachment } = request;
     if (telegram && attachment && attachment.data.byteLength > TELEGRAM_UPLOAD_MAX_BYTES) {
@@ -603,6 +613,32 @@ function attachmentMessage(
     };
   }
   return { markdown: body, files: [{ data, filename: file.name, mimeType: file.mimeType }] };
+}
+
+/** Time the platform has to tell a message's file sizes, within its webhook. */
+const ATTACHMENT_SIZE_LOOKUP_MS = 2_000;
+
+/**
+ * Asks the platform the size of each downloadable file it left unreported, so the store can
+ * refuse one over the limit before downloading it. A slow or failed answer leaves it unknown.
+ */
+async function fillAttachmentSizes(platform: MessagingPlatform, message: Message): Promise<void> {
+  const lookup = platform.attachmentSize;
+  if (!lookup) return;
+  const unsized = message.attachments.filter(
+    (attachment) => attachment.fetchData && attachment.size === undefined,
+  );
+  if (unsized.length === 0) return;
+  const signal = deadlineSignal(ATTACHMENT_SIZE_LOOKUP_MS);
+  await Promise.all(
+    unsized.map(async (attachment) => {
+      const size = await bestEffort(
+        "look up the size of an inbound file",
+        withAbort(lookup(attachment, signal), signal),
+      );
+      if (size !== undefined) attachment.size = size;
+    }),
+  );
 }
 
 function inboundAttachments(message: Message): MessagingInboundAttachment[] {

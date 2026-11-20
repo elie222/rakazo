@@ -66,15 +66,20 @@ export function quoteShortcutLabel(host: ShortcutHost) {
   return quoteShortcutKeys(host).join(host.apple ? "" : "+");
 }
 
+function isComposingKey(event: KeyboardEvent) {
+  // The legacy IME key code also covers composition-boundary keydowns.
+  return event.isComposing || event.keyCode === 229;
+}
+
 /**
  * The shell shortcut a key press asks for. Next and previous bot are Ctrl-Tab in the desktop app and
  * Cmd/Ctrl-Shift-ArrowDown/Up in a browser, which owns Ctrl-Tab; arrows rather than brackets because
  * Safari claims Cmd-Shift-] and Cmd-Shift-[ for its own tabs, and not while typing, where they select.
  */
 export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellShortcut | null {
-  if (event.repeat || !event.key) return null;
+  if (event.repeat || !event.key || isComposingKey(event)) return null;
   const key = event.key.toLowerCase();
-  if (key === "l" && !event.isComposing && isQuoteShortcut(event, host)) {
+  if (key === "l" && isQuoteShortcut(event, host)) {
     return { type: "quote-selection" };
   }
   if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
@@ -135,7 +140,7 @@ export function startsTyping(event: KeyboardEvent) {
     !event.metaKey &&
     !event.ctrlKey &&
     !event.altKey &&
-    !event.isComposing &&
+    !isComposingKey(event) &&
     !isEditableTarget(event.target)
   );
 }

@@ -398,6 +398,8 @@ export const CompatibleEndpointPresetSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
   baseUrl: z.string(),
+  /** The model list can be loaded before the connection has a key. */
+  publicModels: z.boolean().optional(),
 });
 export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
 

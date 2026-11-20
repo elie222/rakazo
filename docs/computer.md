@@ -5,11 +5,12 @@ that needs more than a chat.
 
 ## Watch it work
 
-Choose **Agent computer** at the top of the chat to open the bot's screen beside the conversation.
-Choose **Open in full window** for a larger view. The computer starts when a bot needs it and goes
-to sleep when idle; opening it wakes it.
+On web and desktop, select the bot's name at the top of its chat and find **Computer** in the bot
+panel. The preview shows the running screen beside the chat. Choose **Open** on the preview for a
+full-window view, or **Wake** if the computer is asleep. The computer also starts when the bot needs
+it and goes to sleep when idle.
 
-On mobile, open the bot's profile and choose **Open computer**.
+On mobile, tap the bot's name at the top of its chat to open its profile, then tap **Computer**.
 
 ## Take control
 

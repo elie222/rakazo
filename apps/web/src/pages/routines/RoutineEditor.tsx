@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
+import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { cronFromPreset } from "@rakazo/core";
 import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -96,24 +97,24 @@ export function RoutineEditor({
       <div className="mb-5 flex items-center justify-between">
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           onClick={onBack}
           className="text-muted-foreground"
           aria-label={t`Back`}
         >
-          <ChevronLeft />
+          <ChevronLeft className="size-4.5" strokeWidth={1.75} />
         </Button>
         <div className="text-body-lg font-medium text-foreground">
           <Trans>Routine</Trans>
         </div>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           onClick={onClose}
           className="text-muted-foreground"
           aria-label={t`Close`}
         >
-          <X />
+          <X className="size-4.5" strokeWidth={1.75} />
         </Button>
       </div>
 
@@ -153,6 +154,7 @@ export function RoutineEditor({
         <Input
           id={`${fieldId}-name`}
           value={draft.name}
+          maxLength={ROUTINE_NAME_MAX_LENGTH}
           placeholder={t`Name this routine`}
           onChange={(e) => onChange({ ...draft, name: e.target.value })}
           className="mt-2"

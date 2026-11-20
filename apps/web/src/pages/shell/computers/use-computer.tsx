@@ -1,7 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ComputerStatus } from "@rakazo/contracts";
-import { createScreenReconnects, screenProbeUrl, waitForScreenPage } from "@rakazo/core";
+import {
+  abortableDelay,
+  createScreenReconnects,
+  screenProbeUrl,
+  waitForScreenPage,
+} from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ComputerScreenResult } from "../../../lib/computers/computer-screen";
@@ -310,14 +315,31 @@ export function useComputerState({
             async (signal) =>
               isProxiedScreenUrl(url) ? probeScreenStatus(screenProbeUrl(url), fetch, signal) : 200,
             { signal: stopped.signal },
-          ).then((outcome) => {
+          ).then(async (outcome) => {
             if (outcome === "cancelled") return;
             if (outcome === "timeout") {
               screenRefocus.current.forget();
               setScreenLoadError(fallback);
+              return;
             }
-            // A refusal shows once the new frame's own check runs.
-            else setScreenFrameKey((key) => key + 1);
+            // A refused link is stale (the sign-in rotated or the control lease ended), so read the
+            // screen's current URL instead of remounting this one. A read that never settles falls
+            // back to the remount, so the reconnect is never left waiting on it.
+            const botId = computerBotIdRef.current;
+            if (outcome === "refused" && botId) {
+              const fresh = await Promise.race([
+                refreshComputerScreen(botId),
+                abortableDelay(SCREEN_FRAME_LOAD_TIMEOUT_MS, stopped.signal).then(() => null),
+              ]);
+              if (stopped.signal.aborted) return;
+              // setScreen may keep the current URL despite a different answer, which would
+              // leave this effect running; release the hold so the next drop can reconnect.
+              reconnectPending = false;
+              // A new URL swaps the frame through setScreen, which starts this effect over.
+              if (fresh !== null && fresh !== screenUrl) return;
+            }
+            // A refusal that reads the same link shows once the remounted frame's own check runs.
+            setScreenFrameKey((key) => key + 1);
           });
         }, delay);
         return;

@@ -9,6 +9,7 @@ import {
   redactSecrets,
   SITE_SENDING_TOOLS,
   sanitizeMessagingLabel,
+  sliceWellFormed,
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
@@ -474,7 +475,7 @@ function pickScopeLabel(args: Record<string, unknown>): string | undefined {
 }
 
 export function truncate(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+  return value.length > maxLength ? `${sliceWellFormed(value, maxLength)}…` : value;
 }
 
 function screenActionLine(value: unknown): string {

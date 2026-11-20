@@ -1,5 +1,7 @@
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { SearchHit } from "@rakazo/contracts";
+import { SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
+import { sliceWellFormed } from "@rakazo/core";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ActivityListFilters } from "../../../lib/activity-list-filters";
 import { emptyActivityFilters } from "../../../lib/activity-list-filters";
@@ -42,6 +44,7 @@ export function useSidebarSearch({
   const showSpaceSearch = !activityMode && spaceQuery.length > 0;
 
   // Identify this query occurrence, not just its text: A → B → A must not revive old hits.
+  // Use the full trimmed query, since different inputs can share the same capped RPC text.
   const request = useMemo(
     () => (showSpaceSearch ? { query: spaceQuery, attempt: searchAttempt } : null),
     [showSpaceSearch, spaceQuery, searchAttempt],
@@ -61,7 +64,10 @@ export function useSidebarSearch({
       const abort = searchAbort.current;
       if (!abort || !request) return;
       void rpc.search
-        .query({ q: request.query }, { signal: abort.signal })
+        .query(
+          { q: sliceWellFormed(request.query, SEARCH_QUERY_MAX_LENGTH) },
+          { signal: abort.signal },
+        )
         .then((result) => {
           if (!abort.signal.aborted) setSearchResult({ request, hits: result.hits });
         })

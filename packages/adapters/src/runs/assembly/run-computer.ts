@@ -1,4 +1,46 @@
 import type { ComputerRef } from "@rakazo/adapter-kit";
+import {
+  COMPUTER_DAMAGED_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_RECOVERY_REQUIRED_ERROR,
+  COMPUTER_START_FAILED_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
+  isComputerAllowanceUsed,
+} from "@rakazo/contracts";
+import { ComputerRecoveryRequiredError } from "../../computers/computer-lifecycle.js";
+import { isSandboxDamagedError } from "../../computers/sandbox/sandbox-errors.js";
+
+const COMPUTER_RUN_ERRORS = new Set([
+  COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
+  COMPUTER_START_FAILED_ERROR,
+]);
+
+/** The computer cannot be used until its owner recovers it, so trying again cannot help. */
+export function computerNeedsRecovery(error: unknown): boolean {
+  if (error instanceof ComputerRecoveryRequiredError || isSandboxDamagedError(error)) return true;
+  return error instanceof AggregateError && error.errors.some(computerNeedsRecovery);
+}
+
+/** What a run says when its computer failed, so the failure is never taken for the model's. */
+export function computerRunError(error: unknown): string {
+  if (error instanceof ComputerRecoveryRequiredError) return COMPUTER_RECOVERY_REQUIRED_ERROR;
+  if (computerNeedsRecovery(error)) return COMPUTER_DAMAGED_ERROR;
+  const message = error instanceof Error ? error.message : "";
+  return COMPUTER_RUN_ERRORS.has(message) || isComputerAllowanceUsed(message)
+    ? message
+    : COMPUTER_START_FAILED_ERROR;
+}
+
+/** The run's computer failed to start; setup tries again, under the computer's own message. */
+export class RunComputerFailedError extends Error {
+  constructor(readonly computerError: unknown) {
+    super(computerRunError(computerError), { cause: computerError });
+    this.name = "RunComputerFailedError";
+  }
+}
 
 /**
  * A run's computer, started the first time a tool needs it.

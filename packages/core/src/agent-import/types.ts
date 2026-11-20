@@ -115,20 +115,18 @@ export function renameSkillMd(content: string, name: string): string {
   if (!match) return content;
   const head = match[1]!;
   const body = match[2]!;
-  const line = /^name[ \t]*:([^\r\n]*)(\r?)$/m.exec(body);
+  const line = /^(?:name|"name"|'name')[ \t]*:([^\r\n]*)(\r?)$/m.exec(body);
   if (!line) return content;
   const value = line[1]!.trim();
   const start = line.index + line[0].indexOf(":") + 1;
   let end = line.index + line[0].length - line[2]!.length;
-  let replacement = ` ${yamlScalar(name)}`;
   // A block scalar name continues on indented lines; replace those lines too.
   if (/^[|>]/.test(value)) {
-    const rest = body.slice(line.index + line[0].length);
+    const rest = body.slice(end);
     const continuation = /^(?:\r?\n(?:[ \t].*)?(?=\r?\n|$))*/.exec(rest)?.[0] ?? "";
-    end = line.index + line[0].length + continuation.length;
-    replacement = ` ${yamlScalar(name)}${line[2] ?? ""}`;
+    end += continuation.length;
   }
-  const renamed = `${body.slice(0, start)}${replacement}${body.slice(end)}`;
+  const renamed = `${body.slice(0, start)} ${yamlScalar(name)}${body.slice(end)}`;
   return `${head}${renamed}${content.slice(head.length + body.length)}`;
 }
 

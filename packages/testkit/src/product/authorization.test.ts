@@ -360,6 +360,29 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/messages", { botId: "missing-bot", before: 1 }],
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
+      [
+        "threads/nativeCalendarPending",
+        { botId: "missing-bot", deviceKey: "00000000-0000-4000-8000-000000000000" },
+      ],
+      [
+        "threads/nativeCalendarClaim",
+        {
+          id: "missing",
+          runId: "missing",
+          threadId: "missing",
+          deviceKey: "00000000-0000-4000-8000-000000000000",
+        },
+      ],
+      [
+        "threads/nativeCalendarResult",
+        {
+          id: "missing",
+          runId: "missing",
+          threadId: "missing",
+          deviceKey: "00000000-0000-4000-8000-000000000000",
+          response: { status: "cancelled" },
+        },
+      ],
       ["threads/send", { groupId: "missing-group", text: "Nope" }],
       [
         "threads/sendWithRoutines",
@@ -409,6 +432,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/releaseInterrupted"],
       ["computer/dismissUpdate"],
       ["computer/dismissDiskWarning", { botId: "missing-bot" }],
+      ["computer/homeVersions", { botId: "missing-bot" }],
+      ["computer/restoreHomeVersion", { botId: "missing-bot", versionId: "missing-version" }],
       ["computer/downloadFile"],
       ["computer/uploadFile"],
       ["computer/terminalUrl"],
@@ -530,6 +555,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["aiConsent/revoke"],
       ["billing/status"],
       ["billing/computerUsage"],
+      ["cloudComputers/list"],
+      ["cloudComputers/setSize", { computerId: "missing-computer", size: "standard" }],
       ["billing/refresh"],
       ["billing/selectFunding"],
       ["billing/purchaseCredits"],

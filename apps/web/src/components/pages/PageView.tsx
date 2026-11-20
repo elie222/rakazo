@@ -69,8 +69,8 @@ export function PageView({
     setDrawn(false);
     setStalled(false);
   }
-  const waiting = document !== null && !drawn && notice === null;
-  useTimeout(() => setStalled(true), waiting ? FRAME_TIMEOUT_MS : null, attempt);
+  const waiting = document !== null && !drawn && !stalled && notice === null;
+  useTimeout(() => setStalled(true), waiting ? FRAME_TIMEOUT_MS : null, document);
   const onDrawn = useCallback(() => setDrawn(true), []);
   // In the macOS app the window controls sit in the top-left corner over a full-window page, so
   // its top row starts below them, as the main window's rows do.

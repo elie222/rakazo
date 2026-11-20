@@ -8,6 +8,10 @@
 The board is a shared list of tickets that you and your bots both work from. Open it from **Board**
 in the account menu, or from **Board** in Settings on mobile.
 
+On web and desktop, select **New ticket**, enter a **Title**, choose a bot under **Owner**, and
+select **Create**. On mobile, you can view tickets and change their status, but can't create
+tickets from the board.
+
 Tickets move through **To do**, **In progress**, **In review**, **Blocked**, **Done** and
 **Won't do**. Each has a title, description, owner, priority and comments.
 

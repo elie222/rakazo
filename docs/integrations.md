@@ -9,11 +9,13 @@ The easiest way is to ask: "connect my Google Calendar". The bot posts a card in
 
 ## Connect from Integrations
 
-Choose **Connect apps** at the bottom of the sidebar to open **Integrations**. Search or browse
-**Apps** by category, choose one, and then **Connect**.
+On web and desktop, choose **Connect apps** at the bottom of the sidebar to open **Integrations**.
+Search or browse **Apps** by category. For a catalog app such as Gmail, choose **Add**.
 
 Once an app is connected, every bot in the [space](./spaces.md) can use it. You don't set it up per
-bot. From an app's page you can **Reconnect** it, rename an account, or **Uninstall** it.
+bot. Choose **Added** to open the app's details, then **Add another** to connect another account.
+To rename an account, edit its label and press Enter. Choose **Remove** next to an account to
+disconnect only that account, or **Uninstall** to remove the whole app.
 
 > [!NOTE]
 > The app catalog depends on your server. A self-hosted server shows it only when the operator has

@@ -19,6 +19,7 @@ function fixture(
     group?: Row;
     deletion?: Row;
     created?: string;
+    madeSpaces?: string[];
   } = {},
 ) {
   const deps = {
@@ -28,6 +29,9 @@ function fixture(
         findFirst: vi.fn(async () => options.bot ?? null),
       },
       chatGroup: { findFirst: vi.fn(async () => options.group ?? null) },
+      space: {
+        findMany: vi.fn(async () => (options.madeSpaces ?? []).map((id) => ({ id }))),
+      },
       botDeletion: { findFirst: vi.fn(async () => options.deletion ?? null) },
     },
     createBot: vi.fn(
@@ -94,6 +98,26 @@ describe("ensureFirstBot", () => {
     await expect(run()).resolves.toEqual({ botId: null });
     expect(deps.createBot).not.toHaveBeenCalled();
     expect(deps.promptFocus).not.toHaveBeenCalled();
+  });
+
+  it("looks for earlier chats in every Space the person made", async () => {
+    // A new Space or organization starts empty once the person has chatted in one they made.
+    const { deps, run } = fixture({ madeSpaces: ["space-1", "team-space"], bot: { id: "scout" } });
+    await expect(run()).resolves.toEqual({ botId: null });
+    const where = { spaceId: { in: ["space-1", "space-1", "team-space"] } };
+    expect(deps.prisma.bot.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where }));
+    expect(deps.prisma.chatGroup.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where }),
+    );
+    expect(deps.prisma.botDeletion.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where }),
+    );
+    expect(deps.prisma.space.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { createdByUserId: "user-1", memberships: { some: { userId: "user-1" } } },
+      }),
+    );
+    expect(deps.createBot).not.toHaveBeenCalled();
   });
 
   it("returns the bot a concurrent first load created", async () => {

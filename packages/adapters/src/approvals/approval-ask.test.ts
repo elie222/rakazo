@@ -4,7 +4,16 @@ import {
   approvalDetailLength,
   buildApprovalAskBlock,
   readableToolName,
+  truncate,
 } from "./approval-ask.js";
+
+describe("truncate", () => {
+  it("does not leave half an emoji before the ellipsis", () => {
+    const cut = truncate(`${"a".repeat(9)}😀tail`, 10);
+    expect(cut).toBe(`${"a".repeat(9)}…`);
+    expect(() => encodeURIComponent(cut)).not.toThrow();
+  });
+});
 
 describe("buildApprovalAskBlock", () => {
   it("binds the approval to its effect and redacts secrets", () => {
