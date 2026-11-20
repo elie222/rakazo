@@ -33,6 +33,7 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -216,6 +217,7 @@ export default function ModelConnection() {
 
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
+  const signInSetup = selected?.signInSetup;
   const {
     oauth,
     pasteCode,
@@ -595,18 +597,27 @@ export default function ModelConnection() {
                 </>
               ) : (
                 <>
+                  {signInSetup ? (
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void Linking.openURL(signInSetup.url)}
+                    >
+                      <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
+                    </Pressable>
+                  ) : null}
                   <Text style={styles.secondary}>
-                    {t`A sign-in page opened — enter this code there:`}
+                    {signInSetup
+                      ? t`2. Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`
+                      : t`Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`}
                   </Text>
-                  <Pressable onPress={() => void openSignInPage(oauth.verificationUri)}>
-                    <Text style={styles.link}>{oauth.verificationUri}</Text>
-                  </Pressable>
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
                     fill
-                    label={codeCopied ? t`Copied` : t`Copy`}
-                    onPress={() => copyOAuthCode(oauth.userCode)}
-                    prominence="secondary"
+                    label={codeCopied ? t`Code copied, open again` : t`Copy code and open`}
+                    onPress={() => {
+                      copyOAuthCode(oauth.userCode);
+                      void openSignInPage(oauth.verificationUri);
+                    }}
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
