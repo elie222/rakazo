@@ -138,7 +138,15 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   const packs = skillsDialog.getByTestId("skill-packs");
   await packs.scrollIntoViewIfNeeded();
   await expect(packs.getByText("Review Kit", { exact: true })).toBeVisible();
+  expect(await packs.evaluate((grid) => getComputedStyle(grid).display)).toBe("grid");
+  expect(
+    await packs.evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length),
+  ).toBe(1);
   await captureScreenshot(page, testInfo, "skills-packs-phone");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  expect(
+    await packs.evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length),
+  ).toBe(2);
 });
 
 test("shows directly registered MCP servers in Integrations without catalog connections", async ({

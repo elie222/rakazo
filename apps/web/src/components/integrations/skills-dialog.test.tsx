@@ -196,7 +196,7 @@ describe("SkillsDialog browse search", () => {
   });
 });
 
-it("lists skill packs without connectors in the responsive grid", async () => {
+it("lists skill packs without connectors", async () => {
   api.catalog.mockResolvedValue({
     ...catalog,
     entries: [
@@ -215,6 +215,4 @@ it("lists skill packs without connectors in the responsive grid", async () => {
     expect.stringContaining("Notes"),
     expect.stringContaining("Travel"),
   ]);
-  expect(packs.className).toContain("grid-cols-1");
-  expect(packs.className).toContain("sm:grid-cols-2");
 });
