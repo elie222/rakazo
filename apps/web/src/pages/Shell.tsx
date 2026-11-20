@@ -48,7 +48,7 @@ import { peekBootstrapSeed } from "../lib/bootstrap";
 import { setCallMinimized, startCall, useCallSession } from "../lib/calls/call-session";
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
-import { withPendingSend } from "../lib/composer/pending-send";
+import { withPendingSends } from "../lib/composer/pending-send";
 import { computersAreUnavailable } from "../lib/computers/computer-sandbox";
 import { composerModelPickerPreference } from "../lib/models/composer-model-picker-preference";
 import type { ArtifactTarget } from "../lib/pages/artifact-open";
@@ -771,16 +771,17 @@ function SpaceShell() {
     flushPendingBrowserNotifications,
   });
   const { sending, sendError, stopRun } = composer;
-  const { pendingSend } = composer;
+  const { pendingSends } = composer;
   const shownTranscript = useMemo(
     () =>
-      pendingSend
+      pendingSends.length
         ? foldPeerReplies(
-            withPendingSend(
+            withPendingSends(
               activeSnapshot?.messages ?? [],
-              pendingSend,
+              pendingSends,
               inGroup ? groupId : active?.id,
               activeSnapshot?.threadId,
+              userId,
             ),
             { includePeerReceipts: true },
           )
@@ -791,10 +792,12 @@ function SpaceShell() {
       activeSnapshot?.threadId,
       groupId,
       inGroup,
-      pendingSend,
+      pendingSends,
       transcript,
+      userId,
     ],
   );
+
   function openChatSettings(kind: "bot" | "group", id: string) {
     const destKey =
       userId && bootstrapMe?.spaceId

@@ -34,7 +34,7 @@ import {
   usePendingAttachmentPreviewCleanup,
 } from "../../../lib/composer/pending-attachments";
 import type { PendingSend } from "../../../lib/composer/pending-send";
-import { newestMessageSeq } from "../../../lib/composer/pending-send";
+import { newestMessageSeq, withoutDeliveredSends } from "../../../lib/composer/pending-send";
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
 import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
@@ -100,7 +100,15 @@ export function useComposerActions({
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
+  const [pendingSends, setPendingSends] = useState<PendingSend[]>([]);
+  const activeThreadKey = inGroup ? groupId : activeId;
+  const activeMessages = activeSnapshot?.messages;
+  // A send stays shown until the chat holds its stored message, whichever update brings it;
+  // a seq that lands after its message arrived is checked against the messages already here.
+  useEffect(() => {
+    if (activeMessages)
+      setPendingSends((current) => withoutDeliveredSends(current, activeMessages, activeThreadKey));
+  }, [activeMessages, activeThreadKey, pendingSends]);
   const [sentCount, setSentCount] = useState(0);
   useEffect(() => {
     setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
@@ -388,20 +396,25 @@ export function useComposerActions({
       setSentCount((count) => count + 1);
       // Plain text shows in the chat at once; the stored message replaces it when it arrives.
       if (plan.shouldSend && !reroutedToGroup && attachments.length === 0 && trimmed) {
-        setPendingSend({
+        const send = {
           threadKey: originThreadKey!,
           clientNonce,
           text: trimmed,
           afterSeq: newestMessageSeq(activeSnapshot?.messages ?? []),
-        });
+        };
+        setPendingSends((current) => [
+          ...current.filter((pending) => pending.clientNonce !== clientNonce),
+          send,
+        ]);
       }
+      // Without a seq the stored message cannot be told apart, so the refresh shows it instead.
       const settlePendingSend = (acceptedSeq?: number) =>
-        setPendingSend((current) =>
-          current?.clientNonce !== clientNonce
-            ? current
-            : acceptedSeq === undefined
-              ? null
-              : { ...current, acceptedSeq },
+        setPendingSends((current) =>
+          acceptedSeq === undefined
+            ? current.filter((pending) => pending.clientNonce !== clientNonce)
+            : current.map((pending) =>
+                pending.clientNonce === clientNonce ? { ...pending, acceptedSeq } : pending,
+              ),
         );
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
@@ -528,12 +541,8 @@ export function useComposerActions({
         }
         if (groupTarget && activeGroupId.current === groupTarget) setAttachmentNotice(null);
         if (botTarget && activeBotId.current === botTarget) setAttachmentNotice(null);
-        const refreshed = groupTarget
-          ? refreshGroupThreadRef.current(groupTarget)
-          : botTarget
-            ? refreshThreadRef.current(botTarget)
-            : undefined;
-        void refreshed?.catch(() => undefined).finally(() => settlePendingSend());
+        if (groupTarget) void refreshGroupThreadRef.current(groupTarget).catch(() => undefined);
+        else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
         return true;
       } catch (error) {
         settlePendingSend();
@@ -652,7 +661,7 @@ export function useComposerActions({
     setReplyQuote,
     clearReply,
     sending,
-    pendingSend,
+    pendingSends,
     sentCount,
     sendMessage,
     stopRun,
