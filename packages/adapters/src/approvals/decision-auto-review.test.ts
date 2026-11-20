@@ -75,9 +75,8 @@ it("asks the checker one question, with criteria for the kind of action", async 
     {
       decision: {
         type: "choice",
-        instructions: expect.stringMatching(
-          /^The bot wants to run this on its own computer.*only risk is that it sends private data off the computer.*userTask holds only the owner's own words.*args\.page.*args\.addressesInPartLeftOut.*Can it run without asking the owner\?$/,
-        ),
+        // It names the decision state's own fields; the wording itself is the prompt's to change.
+        instructions: expect.stringMatching(/userTask.*args\.page.*args\.addressesInPartLeftOut/),
         criteria: { pass: OWN_COMPUTER_PASS, ask: OWN_COMPUTER_ASK },
       },
     },

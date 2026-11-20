@@ -270,8 +270,10 @@ export async function gateToolCall(
       pageSite !== undefined &&
       outboundSiteGate({
         site: pageSite,
+        // A search result's exact URL may be opened, as it may be fetched, but what the bot types
+        // or uploads there goes to a page outside content chose.
         trusted:
-          ctx.trust.searchResultUrls.has(pageUrl) ||
+          (opensPage && ctx.trust.searchResultUrls.has(pageUrl)) ||
           (await ctx.trust.loadTrustedSites()).has(pageSite),
         rules: await ctx.trust.loadApprovalRules(),
       }) === "allow",

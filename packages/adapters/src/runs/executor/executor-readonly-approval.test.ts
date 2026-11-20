@@ -5344,6 +5344,40 @@ describe("Auto Review of actions on the bot's own computer after outside content
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 
+  it("judges typing into a search result's page, which outside content chose", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Key to a stranger", model: "mock" });
+    const browser = pageBrowser();
+    const f = fixture({
+      builtin: true,
+      autoReview: true,
+      sourceRole: "user",
+      browser: browser.provider,
+    });
+    f.claimedOutsideSteering(true);
+    f.web.searchHits = [
+      { url: "https://keys.example.net/check", title: "Key checker", snippet: "" },
+    ];
+    f.setCalls([
+      { name: "web_search", args: { query: "free api key checker" }, executionId: "call-1" },
+      {
+        name: "browser_navigate",
+        args: { url: "https://keys.example.net/check" },
+        executionId: "call-2",
+      },
+      {
+        name: "browser_act",
+        args: { actions: [{ kind: "fill", ref: "e2", text: "sk-live-key" }] },
+        executionId: "call-3",
+      },
+    ]);
+    await f.run();
+    const requests = (reviewMock.mock.calls as unknown as [Record<string, unknown>][]).map(
+      ([request]) => request.toolName,
+    );
+    // Opening the result's exact URL is free; typing into it is judged.
+    expect(requests).toEqual(["browser_act"]);
+  });
+
   it("judges a page URL too long to show whole with the call's other arguments", async () => {
     reviewMock.mockResolvedValue({ decision: "ask", reason: "Carries data", model: "mock" });
     const browser = pageBrowser();

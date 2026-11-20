@@ -390,7 +390,7 @@ describe("buildAutoReviewPrompt", () => {
     expect(prompt).toContain(`Use pass when: ${OWN_COMPUTER_PASS}.`);
     expect(prompt).toContain(`Use ask when: ${OWN_COMPUTER_ASK}.`);
     expect(prompt).not.toContain(AUTO_REVIEW_PASS);
-    expect(prompt).toContain("user_task holds only the owner's own words");
+    expect(prompt).toMatch(/user_task.*addressesInPartLeftOut/s);
     // Only the owner's words, so all of them: the destination they name can come late.
     expect(prompt).toContain("files.example.com");
     expect(prompt).toContain("collect.example.net");
