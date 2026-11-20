@@ -127,6 +127,12 @@ it("labels chat choices by the serving credential regardless of list order", () 
     [oauth, key],
     [key, oauth],
   ]) {
+    expect(
+      connectedModelChoices(
+        credentials.map((credential) => ({ ...credential, modelId: "model" })),
+        [entry],
+      )[0],
+    ).toMatchObject({ providerLabel: "Example", label: "Model (Example)" });
     expect(connectedModelChoices(credentials, [entry])[0]).toMatchObject({
       providerLabel: "Example",
       label: "Model (Example)",

@@ -314,12 +314,10 @@ export function connectionForModelChoice<C extends CredentialModelRef>(
   const provider = credentials.filter(
     (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
   );
-  return (
-    provider.find((entry) => entry.modelId === choice.modelId) ??
-    [...provider].sort(
-      (left, right) => (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
-    )[0]
+  const preferred = [...provider].sort(
+    (left, right) => (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
   );
+  return preferred.find((entry) => entry.modelId === choice.modelId) ?? preferred[0];
 }
 
 /**
