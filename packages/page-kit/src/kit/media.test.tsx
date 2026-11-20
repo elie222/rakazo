@@ -254,6 +254,9 @@ describe("cards and people", () => {
     { store: "🍎 Shop", storeMark: undefined, mark: "🍎" },
     { store: "𝒜pple Shop", storeMark: undefined, mark: "𝒜" },
     { store: "Shop", storeMark: "A🍎", mark: "A🍎" },
+    { store: "🇨🇦 Shop", storeMark: undefined, mark: "🇨🇦" },
+    { store: "👩‍💻 Dev", storeMark: undefined, mark: "👩‍💻" },
+    { store: "Shop", storeMark: "🇨🇦🇺🇸🇲🇽", mark: "🇨🇦🇺🇸" },
   ])("draws a whole store mark, never half a character: $store -> $mark", (row) => {
     render(<ProductCard {...item} store={row.store} storeMark={row.storeMark} />);
     const mark = q(".rk-store-mark")!.textContent!;

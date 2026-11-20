@@ -6,6 +6,16 @@ import { openViaHost } from "./inline.js";
 import type { Words } from "./labels.js";
 import { useWords } from "./labels.js";
 
+const graphemeSegmenter =
+  typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : undefined;
+/** Whole user-perceived characters, so a flag or ZWJ emoji is never split. */
+const graphemes = (value: string) =>
+  graphemeSegmenter
+    ? Array.from(graphemeSegmenter.segment(value), ({ segment }) => segment)
+    : Array.from(value);
+
 const text = (value: unknown) =>
   typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 
@@ -529,13 +539,13 @@ function StoreLine({ item }: { item: ProductItem }) {
     .filter(Boolean)
     .join(", ")
     .replace(", Rated", ", rated");
-  const mark = text(item.storeMark) || (Array.from(store)[0] ?? "").toUpperCase();
+  const mark = text(item.storeMark) || (graphemes(store)[0] ?? "").toUpperCase();
   return (
     <div className="rk-store" role="img" aria-label={label}>
       {store ? (
         <>
           <span className="rk-store-mark" aria-hidden="true">
-            {Array.from(mark).slice(0, 2).join("")}
+            {graphemes(mark).slice(0, 2).join("")}
           </span>
           <span>{store}</span>
         </>
