@@ -550,9 +550,9 @@ export function PluginDetail({
                       {server.endpoint}
                     </span>
                   </span>
-                  {mcpServerConnection(server) === "connected" ? (
+                  {mcpServerConnection(server) === "connected" || noAuth.has(server.id) ? (
                     <Check role="img" aria-label={t`Connected`} className="size-4 text-success" />
-                  ) : noAuth.has(server.id) || !mcpServerNeedsSignIn(server) ? null : (
+                  ) : !mcpServerNeedsSignIn(server) ? null : (
                     <Button
                       size="sm"
                       variant="secondary"

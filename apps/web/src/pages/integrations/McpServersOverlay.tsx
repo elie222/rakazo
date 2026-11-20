@@ -232,17 +232,13 @@ export function McpServersOverlay({
       const result = await connectMcpOauth(server.id);
       if (result !== "cancelled") setOauthPending(null);
       await refresh();
-      if (result === "connected") return;
+      if (result === "connected" || result === "authorization_not_requested") return;
       if (result === "already_connected") {
         setError(
           errorDetails(
             t`This server is already connected. Disconnect it first to authorize again.`,
           ),
         );
-        return;
-      }
-      if (result === "authorization_not_requested") {
-        setError(errorDetails(t`This server did not request browser authorization.`));
         return;
       }
       setOauthPending((current) => (current === server.id ? null : current));

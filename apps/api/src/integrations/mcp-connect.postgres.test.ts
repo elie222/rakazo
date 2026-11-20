@@ -103,7 +103,10 @@ describe.skipIf(!enabled)("MCP catalog connect (PostgreSQL, offline providers)",
   it(
     "adds one server when two sign-ins to the same new address start together",
     asActor(async () => {
-      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({ status: "authorization_not_requested" });
+      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({
+        status: "authorization_not_requested",
+        revision: 1,
+      });
       const rpc = client();
 
       const [first, second] = await Promise.all([
@@ -119,7 +122,10 @@ describe.skipIf(!enabled)("MCP catalog connect (PostgreSQL, offline providers)",
   it(
     "adds a new server rather than reuse a disabled one",
     asActor(async () => {
-      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({ status: "authorization_not_requested" });
+      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({
+        status: "authorization_not_requested",
+        revision: 1,
+      });
       const rpc = client();
       const endpoint = "https://mcp.tracker.example.test/mcp";
       const { server } = await rpc.mcp.servers.connect({ name: "Tracker", endpoint });
@@ -134,7 +140,10 @@ describe.skipIf(!enabled)("MCP catalog connect (PostgreSQL, offline providers)",
   it(
     "connects past a saved server whose address no longer parses",
     asActor(async () => {
-      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({ status: "authorization_not_requested" });
+      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({
+        status: "authorization_not_requested",
+        revision: 1,
+      });
       const rpc = client();
       const { server } = await rpc.mcp.servers.connect({
         name: "Old",
@@ -154,7 +163,10 @@ describe.skipIf(!enabled)("MCP catalog connect (PostgreSQL, offline providers)",
   it(
     "gives the bot a server that needs no sign-in right away",
     asActor(async () => {
-      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({ status: "authorization_not_requested" });
+      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({
+        status: "authorization_not_requested",
+        revision: 1,
+      });
 
       const { server } = await client().mcp.servers.connect({
         name: "Open tools",
@@ -196,7 +208,10 @@ describe.skipIf(!enabled)("MCP catalog connect (PostgreSQL, offline providers)",
   it(
     "still connects when the bot it was for is gone",
     asActor(async () => {
-      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({ status: "authorization_not_requested" });
+      vi.spyOn(mcpOAuth, "begin").mockResolvedValue({
+        status: "authorization_not_requested",
+        revision: 1,
+      });
       const { server } = await client().mcp.servers.connect({
         name: "Tracker",
         endpoint: "https://mcp.tracker.example.test/mcp",

@@ -574,8 +574,42 @@ describe("MCP server health", () => {
       expect(listed?.health).toMatchObject({ status: "error", code: MCP_OAUTH_CLIENT_REQUIRED });
     });
 
+    it("accepts the localhost spelling of the configured loopback callback", async () => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+        }),
+      });
+      const begin = vi.fn(async () => ({
+        status: "authorization_required" as const,
+        sessionId: "session-1",
+        authorizationUrl: "https://auth.example.test/authorize",
+      }));
+      Object.assign(h.deps, {
+        mcpOAuth: { ...(h.deps.mcpOAuth as object), begin },
+      });
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+
+      await client.mcp.oauth.begin({
+        serverId: "server-1",
+        redirectUri: "http://localhost:5173/mcp/oauth/callback",
+      });
+      expect(begin).toHaveBeenCalledWith(
+        expect.objectContaining({ redirectUri: "http://localhost:5173/mcp/oauth/callback" }),
+      );
+    });
+
     it.each([
-      "http://localhost:5173/mcp/oauth/callback",
       "http://127.0.0.1:5180/mcp/oauth/callback",
       "https://127.0.0.1:5173/mcp/oauth/callback",
       "http://127.0.0.1:5173/other-callback",
@@ -605,6 +639,85 @@ describe("MCP server health", () => {
         client.mcp.oauth.begin({ serverId: "server-1", redirectUri }),
       ).rejects.toMatchObject({ code: "MCP_OAUTH_REDIRECT_MISMATCH", kind: "BAD_REQUEST" });
       expect(begin).not.toHaveBeenCalled();
+    });
+
+    it("marks a server that needs no sign-in as connected", async () => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+        }),
+      });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          begin: vi.fn(async () => ({
+            status: "authorization_not_requested" as const,
+            revision: 1,
+          })),
+        },
+      });
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+
+      await expect(
+        client.mcp.oauth.begin({
+          serverId: "server-1",
+          redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        }),
+      ).resolves.toEqual({ status: "authorization_not_requested" });
+      expect(h.row()).toMatchObject({ healthStatus: "ok", healthMessage: null, revision: 1 });
+    });
+
+    it("keeps an edit's failed check when a no-sign-in result is about the old settings", async () => {
+      const h = harness({
+        row: baseRow({
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+        }),
+      });
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          begin: vi.fn(async () => {
+            Object.assign(h.row() as Row, {
+              revision: 2,
+              healthStatus: "error",
+              healthMessage: "HTTP 500",
+            });
+            return { status: "authorization_not_requested" as const, revision: 1 };
+          }),
+        },
+      });
+
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+
+      await client.mcp.oauth.begin({
+        serverId: "server-1",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+      });
+      expect(h.row()).toMatchObject({
+        revision: 2,
+        healthStatus: "error",
+        healthMessage: "HTTP 500",
+      });
     });
 
     it("uses the registered web callback when a native client omits the redirect", async () => {

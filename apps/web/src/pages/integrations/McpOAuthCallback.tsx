@@ -3,7 +3,10 @@ import { mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { MCP_OAUTH_CHANNEL } from "../../lib/integrations/mcp-connect";
+import {
+  MCP_OAUTH_CHANNEL,
+  mcpOAuthLoopbackReturnHost,
+} from "../../lib/integrations/mcp-connect";
 import { rpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
 
@@ -23,6 +26,19 @@ export function McpOAuthCallbackPage() {
     const appReturn = mobileMcpOAuthReturnUrl(params);
     if (appReturn) {
       window.location.replace(appReturn);
+      return;
+    }
+    // Registration used localhost so the provider would accept the redirect.
+    // Finish on 127.0.0.1, where the app and its session cookie are.
+    const returnHost = mcpOAuthLoopbackReturnHost(window.name);
+    if (
+      returnHost &&
+      window.location.hostname === "localhost" &&
+      window.location.host !== returnHost
+    ) {
+      const target = new URL(window.location.href);
+      target.host = returnHost;
+      window.location.replace(target.href);
       return;
     }
     const fail = (message: string) => {

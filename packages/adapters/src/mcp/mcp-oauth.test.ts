@@ -2351,6 +2351,22 @@ describe("MCP OAuth", () => {
     expect((error as Error).message).not.toContain("[object Response]");
   });
 
+  it("reports field errors when registration is rejected without a description", async () => {
+    const error = await rejectedOAuthBegin(() =>
+      Response.json(
+        {
+          error: "invalid_client_metadata",
+          errors: { redirect_uri: ["must start with https in Production."] },
+        },
+        { status: 400 },
+      ),
+    );
+
+    expect(error.message).toBe(
+      "Could not start MCP OAuth: HTTP 400 invalid_client_metadata: redirect_uri: must start with https in Production.",
+    );
+  });
+
   it("reports the OAuth status and code when the description is redacted", async () => {
     const error = await rejectedOAuthBegin(
       () =>
@@ -3622,6 +3638,7 @@ describe("MCP OAuth", () => {
           id: "server-1",
           endpoint: "https://mcp.example.test/mcp",
           secretId: null,
+          revision: 1,
         }),
       },
       mcpOAuthSession: oauthSessionStore(),
@@ -3635,7 +3652,7 @@ describe("MCP OAuth", () => {
         userId: "user-1",
         redirectUri: "https://app.example.test/mcp/oauth/callback",
       }),
-    ).resolves.toEqual({ status: "authorization_not_requested" });
+    ).resolves.toEqual({ status: "authorization_not_requested", revision: 1 });
     expect(requested.filter((request) => request.startsWith("POST"))).toEqual([
       "POST https://mcp.example.test/mcp",
       "POST https://mcp.example.test/mcp",
@@ -4037,7 +4054,12 @@ describe("MCP setup with an existing access token", () => {
       });
       const prisma = {
         mcpServer: {
-          findFirst: vi.fn(async () => ({ id: "server", endpoint, secretId: "secret" })),
+          findFirst: vi.fn(async () => ({
+            id: "server",
+            endpoint,
+            secretId: "secret",
+            revision: 1,
+          })),
         },
         secret: { findFirst: vi.fn(async () => ({ id: "secret", ciphertext: "encrypted" })) },
         mcpOAuthSession: oauthSessionStore(),
@@ -4063,7 +4085,7 @@ describe("MCP setup with an existing access token", () => {
           spaceId: "space",
           redirectUri: "https://app.example.test/mcp/oauth/callback",
         }),
-      ).resolves.toEqual({ status: "authorization_not_requested" });
+      ).resolves.toEqual({ status: "authorization_not_requested", revision: 1 });
       expect(fetch).toHaveBeenCalled();
       expect(secrets.put).not.toHaveBeenCalled();
     },

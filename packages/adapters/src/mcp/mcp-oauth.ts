@@ -1117,8 +1117,23 @@ async function readOAuthRejection(response: Response): Promise<OAuthRejection | 
   const record = parsed as Record<string, unknown>;
   const code = record.error;
   if (typeof code !== "string" || !/^[\w.-]{1,64}$/.test(code)) return undefined;
-  const description = typeof record.error_description === "string" ? record.error_description : "";
+  const description =
+    typeof record.error_description === "string" && record.error_description.trim()
+      ? record.error_description
+      : oauthErrorFields(record.errors);
   return { status: response.status, code, description };
+}
+
+/** Some providers (Calendly) put the reason in `errors`, not `error_description`. */
+function oauthErrorFields(errors: unknown): string {
+  if (!errors || typeof errors !== "object" || Array.isArray(errors)) return "";
+  const parts: string[] = [];
+  for (const [field, value] of Object.entries(errors)) {
+    const messages = Array.isArray(value) ? value : [value];
+    const text = messages.filter((item): item is string => typeof item === "string").join(", ");
+    if (text) parts.push(`${field}: ${text}`);
+  }
+  return parts.join("; ");
 }
 
 /** Surface a rejection only when it is the error the SDK just threw.
@@ -1137,7 +1152,9 @@ function formatOAuthRejection(
   // Redact the whole description first. A later cut can land inside a secret, and
   // the redactor only matches the complete value.
   const cleaned = sanitizeConnectorError(rejection.description, secrets);
-  if (cleaned.trim() !== sdk.trim()) return undefined;
+  // An empty SDK message is "InvalidClientMetadataError without a message"; the
+  // provider's field errors are still the reason registration failed.
+  if (cleaned.trim() !== sdk.trim() && !sdk.endsWith(" without a message")) return undefined;
   const description = cleaned.replace(/\s+/g, " ").trim().slice(0, 300);
   const detail = description ? `${rejection.code}: ${description}` : rejection.code;
   return sanitizeConnectorError(`HTTP ${rejection.status} ${detail}`, secrets);
@@ -1293,7 +1310,8 @@ export class McpOAuthBroker {
     capturesLoopback?: boolean;
   }): Promise<
     | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
-    | { status: "already_connected" | "authorization_not_requested" }
+    | { status: "already_connected" }
+    | { status: "authorization_not_requested"; revision: number }
   > {
     const server = await this.prisma.mcpServer.findFirst({
       where: {
@@ -1381,7 +1399,7 @@ export class McpOAuthBroker {
       if (await provider.tokens()) {
         return { status: "already_connected" };
       }
-      return { status: "authorization_not_requested" };
+      return { status: "authorization_not_requested", revision: server.revision };
     }
     const sessionMaterial = await this.secrets.put(
       JSON.stringify(loaded.material),

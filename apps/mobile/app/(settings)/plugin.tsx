@@ -397,7 +397,7 @@ function PluginScreen() {
                           {server.endpoint}
                         </Text>
                       </View>
-                      {mcpServerConnection(server) === "connected" ? (
+                      {mcpServerConnection(server) === "connected" || noAuth.has(server.id) ? (
                         <ConnectedMark label={t`Connected`} />
                       ) : null}
                     </View>

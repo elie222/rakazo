@@ -39,6 +39,33 @@ import { serverAvailability, serverSecretSpace } from "../spaces/name-claims.js"
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
+const LOOPBACK_CALLBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+/** The callback begin may register. A loopback alias of WEB_ORIGIN is the same app. */
+export function mcpOAuthCallbackRedirect(webOrigin: string, requested?: string): string {
+  const expected = new URL("/mcp/oauth/callback", webOrigin);
+  if (!requested) return expected.toString();
+  const given = new URL(requested);
+  const same =
+    given.toString() === expected.toString() ||
+    (expected.protocol === "http:" &&
+      given.protocol === "http:" &&
+      LOOPBACK_CALLBACK_HOSTS.has(expected.hostname) &&
+      LOOPBACK_CALLBACK_HOSTS.has(given.hostname) &&
+      given.port === expected.port &&
+      given.pathname === expected.pathname &&
+      given.search === expected.search &&
+      given.hash === expected.hash);
+  if (!same) {
+    throw new ClientError(
+      "BAD_REQUEST",
+      "The sign-in address does not match this server's configuration.",
+      MCP_OAUTH_REDIRECT_MISMATCH,
+    );
+  }
+  return given.toString();
+}
+
 export function mcpRoutes(ctx: RouterContext) {
   const {
     deps,
@@ -119,22 +146,29 @@ export function mcpRoutes(ctx: RouterContext) {
       capturesLoopback?: boolean;
     },
   ) {
-    const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
     // Native clients omit the redirect; the registered web callback is always used.
-    if (input.redirectUri && new URL(input.redirectUri).toString() !== expectedRedirect) {
-      throw new ClientError(
-        "BAD_REQUEST",
-        "The sign-in address does not match this server's configuration.",
-        MCP_OAUTH_REDIRECT_MISMATCH,
-      );
-    }
+    // localhost and 127.0.0.1 are the same loopback server. Providers such as
+    // Calendly only accept the localhost spelling, so that one is registered.
+    const redirectUri = mcpOAuthCallbackRedirect(deps.env.webOrigin, input.redirectUri);
     try {
-      return await mcpOAuth.begin({
+      const signIn = await mcpOAuth.begin({
         ...input,
-        redirectUri: expectedRedirect,
+        redirectUri,
         spaceId: actor.spaceId,
         userId: actor.userId,
       });
+      // No browser login was asked for, and the handshake succeeded. The row shows
+      // Connected from a healthy check; there is no OAuth grant to store.
+      if (signIn.status === "authorization_not_requested") {
+        await recordMcpServerHealth(
+          deps.prisma,
+          input.serverId,
+          { status: "ok" },
+          signIn.revision,
+        );
+        return { status: "authorization_not_requested" as const };
+      }
+      return signIn;
     } catch (error) {
       if (error instanceof McpOAuthClientRequiredError)
         await recordMcpServerHealth(

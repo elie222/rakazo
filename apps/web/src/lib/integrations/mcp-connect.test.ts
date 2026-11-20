@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 import type { RakazoDesktopMcpOAuthCallback, RakazoDesktopOAuthCallback } from "@rakazo/contracts";
 import { beforeEach, expect, it, vi } from "vitest";
-import { connectMcpEndpoint, connectMcpOauth, MCP_OAUTH_CHANNEL } from "./mcp-connect";
+import {
+  connectMcpEndpoint,
+  connectMcpOauth,
+  MCP_OAUTH_CHANNEL,
+  mcpOAuthLoopbackReturnHost,
+  mcpOAuthPopupName,
+  mcpOAuthRedirectUri,
+} from "./mcp-connect";
 
 const rpcMock = vi.hoisted(() => ({
   mcp: { servers: { connect: vi.fn() }, oauth: { begin: vi.fn(), complete: vi.fn() } },
@@ -28,6 +35,19 @@ beforeEach(() => {
     server: { id: "clx456" },
     signIn: { status: "authorization_required", sessionId: "session-1", authorizationUrl },
   });
+});
+
+it("registers a 127.0.0.1 app as localhost and remembers where to finish", () => {
+  expect(mcpOAuthRedirectUri("http://127.0.0.1:5173")).toBe(
+    "http://localhost:5173/mcp/oauth/callback",
+  );
+  expect(mcpOAuthRedirectUri("http://localhost:5173")).toBe(
+    "http://localhost:5173/mcp/oauth/callback",
+  );
+  const page = { hostname: "127.0.0.1", host: "127.0.0.1:5173" } as Location;
+  expect(mcpOAuthPopupName("session-1", page)).toBe(`${MCP_OAUTH_CHANNEL}:session-1@127.0.0.1:5173`);
+  expect(mcpOAuthLoopbackReturnHost(mcpOAuthPopupName("session-1", page))).toBe("127.0.0.1:5173");
+  expect(mcpOAuthLoopbackReturnHost(`${MCP_OAUTH_CHANNEL}:session-1@evil.example`)).toBeNull();
 });
 
 it("gives the desktop shell a per-server sign-in window and completes its captured code once", async () => {

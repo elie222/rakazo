@@ -326,12 +326,8 @@ export function PluginsOverlay({
         const result = await connectMcpOauth(server.id);
         await refresh().catch(() => undefined);
         if (action !== sourceAction.current) return;
-        if (result === "cancelled") {
+        if (result === "cancelled")
           setOauthError(t`Sign-in cancelled. Retry in Manage MCP servers.`);
-          return;
-        }
-        if (result === "authorization_not_requested")
-          setOauthError(t`This server did not request browser authorization.`);
         return;
       }
       const auth =
