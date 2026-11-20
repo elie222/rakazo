@@ -82,10 +82,12 @@ export function ChatModelPicker({
   const textOnly = selected?.images === false;
   const model = selectedLabel ?? selected?.label ?? "";
 
+  // A list closed by its owner (a keyboard shortcut) starts unfiltered next time too.
+  if (!open && query) setQuery("");
+
   function openChange(next: boolean) {
     setOpen(next);
     onOpenChange?.(next);
-    if (!next) setQuery("");
   }
   const sidePanel = compact && open ? aside?.(() => openChange(false)) : null;
   const compactTrigger = (

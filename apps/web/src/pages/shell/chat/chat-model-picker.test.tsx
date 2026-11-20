@@ -136,6 +136,28 @@ describe("ChatModelPicker", () => {
     expect(options()).toHaveLength(0);
   });
 
+  it("starts unfiltered after its owner closes and reopens it", () => {
+    const show = (open: boolean) =>
+      act(() =>
+        root.render(
+          <ChatModelPicker
+            compact
+            choices={choices(11)}
+            value=""
+            onChange={onChange}
+            open={open}
+            onOpenChange={vi.fn()}
+          />,
+        ),
+      );
+    show(true);
+    search("vendor/model-7");
+    expect(options()).toHaveLength(1);
+    show(false);
+    show(true);
+    expect(options()).toHaveLength(12);
+  });
+
   it("says when nothing matches", () => {
     render(choices(11), "");
     act(() => container.querySelector<HTMLButtonElement>("button#model")!.click());

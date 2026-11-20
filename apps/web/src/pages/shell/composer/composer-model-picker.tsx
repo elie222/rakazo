@@ -30,7 +30,6 @@ export function ComposerModelPicker({
   onConnect: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  /** Receives what moves to the next thinking level, or null while there is none to move to. */
   /**
    * Receives what steps to the next thinking level once the button is shown and usable, and null
    * when it stops being either, so the keys act only on a picker that is really there.
