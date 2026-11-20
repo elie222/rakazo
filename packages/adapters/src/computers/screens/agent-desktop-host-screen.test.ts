@@ -313,6 +313,16 @@ describe("agent-desktop host screen", () => {
     expect(calls.filter(([name]) => name === "launch")).toEqual([]);
   });
 
+  it("passes on any other refusal from the Linux bus check unchanged", async () => {
+    const { screen, calls } = cli(
+      { "list-windows": () => ok([]), snapshot: () => refused("APP_UNRESPONSIVE") },
+      "Linux",
+      async () => true,
+    );
+    await expect(screen.observe(scope, "brave")).rejects.toThrow("brave is not responding.");
+    expect(calls.filter(([name]) => name === "launch")).toEqual([]);
+  });
+
   it("launches a Linux app that isn't running, or is on the bus with no window yet", async () => {
     for (const running of [false, true]) {
       let launched = false;

@@ -214,6 +214,9 @@ describe("screen driver download", () => {
       expect(await runningProcessNamed("Brave", proc)).toBe(true);
       expect(await runningProcessNamed("viewer-bin", proc)).toBe(true);
       expect(await runningProcessNamed("viewer", proc)).toBe(false);
+      // A process that exits mid-scan leaves an entry whose files are gone.
+      await mkdir(path.join(proc, "12"));
+      expect(await runningProcessNamed("missing", proc)).toBe(false);
     } finally {
       await rm(proc, { recursive: true, force: true });
     }

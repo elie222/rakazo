@@ -178,13 +178,14 @@ export async function runningProcessNamed(name: string, proc = "/proc"): Promise
       // A process that made itself non-dumpable hides its executable even from its own user.
       const exe = await readlink(path.join(dir, "exe")).catch((error) => {
         const code = (error as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT" && code !== "EACCES" && code !== "EPERM") throw error;
+        if (code !== "EACCES" && code !== "EPERM") throw error;
         return "";
       });
       if (comm === wanted || path.basename(exe).toLowerCase() === wanted) return true;
     } catch (error) {
-      // The process exited while it was being read.
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      // The process exited while it was being read: Linux answers ENOENT or ESRCH.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ESRCH") throw error;
     }
   }
   return false;

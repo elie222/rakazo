@@ -275,7 +275,8 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
       await call(query, ["snapshot", "--app", query, "--max-depth", "1"], signal);
       return;
     } catch (error) {
-      if (!(error instanceof HostScreenError)) throw error;
+      // Any other refusal says something else about the app, so the bot hears it as it is.
+      if (!(error instanceof AgentDesktopError) || error.code !== "APP_NOT_FOUND") throw error;
     }
     throw new HostScreenError(
       `${query} is open but doesn't share its window with screen control. If it's a web browser or a desktop app built on one, ask the user to quit it and start it again with ACCESSIBILITY_ENABLED=1 set and the --force-renderer-accessibility option.`,
