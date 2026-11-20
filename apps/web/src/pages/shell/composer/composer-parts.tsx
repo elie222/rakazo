@@ -68,6 +68,12 @@ export function MentionPicker({
   onHighlight: (mention: ComposerMention) => void;
 }) {
   const { t } = useLingui();
+  const botNames = new Set<string>();
+  const groupNames = new Set<string>();
+  for (const mention of options) {
+    if (mention.kind === "bot") botNames.add(mention.name);
+    if (mention.kind === "group") groupNames.add(mention.name);
+  }
   return (
     <div
       id={listboxId}
@@ -79,6 +85,13 @@ export function MentionPicker({
       {options.map((mention, index) => {
         const optionId = `${listboxId}-option-${index}`;
         const highlighted = index === activeIndex;
+        const labelWithType = Boolean(
+          mention.subtitle &&
+            ((mention.kind === "bot" && groupNames.has(mention.name)) ||
+              (mention.kind === "group" && botNames.has(mention.name))),
+        );
+        const nameId = `${optionId}-name`;
+        const typeId = `${optionId}-type`;
         return (
           <button
             id={optionId}
@@ -86,7 +99,8 @@ export function MentionPicker({
             type="button"
             role="option"
             aria-selected={highlighted}
-            aria-label={t`@${mention.name}`}
+            aria-label={labelWithType ? undefined : t`@${mention.name}`}
+            aria-labelledby={labelWithType ? `${nameId} ${typeId}` : undefined}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPick(mention)}
             // Opening the list under a stationary pointer must not steal the keyboard highlight.
@@ -97,11 +111,19 @@ export function MentionPicker({
           >
             <MentionOptionIcon mention={mention} />
             <span className="min-w-0">
-              <span dir="auto" className="block text-body text-foreground">
+              <span
+                id={labelWithType ? nameId : undefined}
+                dir="auto"
+                className="block text-body text-foreground"
+              >
                 @{mention.name}
               </span>
               {mention.subtitle ? (
-                <span dir="auto" className="block truncate text-body-sm text-muted-foreground">
+                <span
+                  id={labelWithType ? typeId : undefined}
+                  dir="auto"
+                  className="block truncate text-body-sm text-muted-foreground"
+                >
                   {mention.subtitle}
                 </span>
               ) : null}
