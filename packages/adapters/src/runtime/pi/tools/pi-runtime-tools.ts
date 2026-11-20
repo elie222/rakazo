@@ -439,10 +439,13 @@ function toAgentTool(
         };
       }
       if (tool.name === "computer_act") {
+        // null means the model left the optional field out, so it gets the default.
+        const settleMs =
+          raw.settle_ms == null || raw.settle_ms === "" ? NaN : Number(raw.settle_ms);
         return {
           actions: Array.isArray(raw.actions) ? raw.actions : [],
-          observe: raw.observe === undefined ? true : Boolean(raw.observe),
-          settle_ms: Number(raw.settle_ms ?? 350),
+          observe: raw.observe == null ? true : Boolean(raw.observe),
+          settle_ms: Number.isFinite(settleMs) ? settleMs : 350,
         };
       }
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };
