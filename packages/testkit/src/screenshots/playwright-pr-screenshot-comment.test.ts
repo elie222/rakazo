@@ -195,6 +195,33 @@ describe("selectPlaywrightPrFeatureFrames", () => {
     expect(selection.frames.map((frame) => frame.title)).toEqual(["billing byok yearly"]);
   });
 
+  it("matches a name only against the spec whose diff added it", () => {
+    const selection = selectPlaywrightPrFeatureFrames({
+      changedFiles: [
+        specChange("apps/web/e2e/tool-activity-shell.spec.ts", "collapsed"),
+        { filename: "apps/web/e2e/tool-activity-disclosure.spec.ts", patch: "+  // comment" },
+      ],
+      screenshots: [
+        screenshot({ source: "tool-activity-shell-x/collapsed.png", title: "shell collapsed" }),
+        screenshot({
+          source: "tool-activity-disclosure-x/collapsed.png",
+          title: "disclosure collapsed",
+        }),
+      ],
+    });
+
+    expect(selection.frames.map((frame) => frame.title)).toEqual(["shell collapsed"]);
+  });
+
+  it("keeps every checkpoint of a spec whose patch GitHub left out", () => {
+    const selection = selectPlaywrightPrFeatureFrames({
+      changedFiles: [{ filename: "apps/web/e2e/tool-activity-shell.spec.ts" }],
+      screenshots: [screenshot({ source: "tool-activity-shell-x/live.png", title: "shell live" })],
+    });
+
+    expect(selection.frames.map((frame) => frame.title)).toEqual(["shell live"]);
+  });
+
   it("returns an empty selection for suite-vs-main drift only", () => {
     const selection = selectPlaywrightPrFeatureFrames({
       changedFiles: [{ filename: "apps/web/src/components/ToolActivity.tsx" }],

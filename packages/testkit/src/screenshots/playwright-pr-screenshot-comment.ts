@@ -29,22 +29,19 @@ type CaptureNames = { exact: Set<string>; prefixes: string[] };
 // A checkpoint belongs to this PR only when the PR adds or edits the line naming it, as in
 // captureScreenshot(page, testInfo, "billing-account-menu"). Template names match by their
 // literal prefix.
-export function captureNamesFromChangedFiles(files: readonly PrChangedFile[]): CaptureNames {
+function captureNamesFromPatch(patch: string): CaptureNames {
   const exact = new Set<string>();
   const prefixes = new Set<string>();
-  for (const file of files) {
-    if (!SPEC_FILE_PATTERN.test(file.filename) || !file.patch) continue;
-    for (const line of file.patch.split("\n")) {
-      if (!line.startsWith("+") || line.startsWith("+++")) continue;
-      for (const [, quote, value = ""] of line.matchAll(STRING_LITERAL)) {
-        const templateStart = quote === "`" ? value.indexOf("${") : -1;
-        if (templateStart < 0) {
-          if (CAPTURE_NAME.test(value)) exact.add(value.toLowerCase());
-          continue;
-        }
-        const prefix = value.slice(0, templateStart);
-        if (prefix.length >= 2 && CAPTURE_NAME.test(prefix)) prefixes.add(prefix.toLowerCase());
+  for (const line of patch.split("\n")) {
+    if (!line.startsWith("+") || line.startsWith("+++")) continue;
+    for (const [, quote, value = ""] of line.matchAll(STRING_LITERAL)) {
+      const templateStart = quote === "`" ? value.indexOf("${") : -1;
+      if (templateStart < 0) {
+        if (CAPTURE_NAME.test(value)) exact.add(value.toLowerCase());
+        continue;
       }
+      const prefix = value.slice(0, templateStart);
+      if (prefix.length >= 2 && CAPTURE_NAME.test(prefix)) prefixes.add(prefix.toLowerCase());
     }
   }
   return { exact, prefixes: [...prefixes] };
@@ -82,15 +79,23 @@ export function selectPlaywrightPrFeatureFrames(input: {
   screenshots: readonly PlaywrightPrCommentScreenshot[];
 }): PlaywrightPrFeatureFrameSelection {
   const limit = input.limit ?? PLAYWRIGHT_PR_FEATURE_FRAME_LIMIT;
-  const stems = specStemsFromChangedPaths(input.changedFiles.map((file) => file.filename));
-  const names = captureNamesFromChangedFiles(input.changedFiles);
+  // GitHub leaves out the patch of a very large diff; then every checkpoint of that spec counts.
+  const specs = input.changedFiles.flatMap((file) => {
+    const stem = specStemsFromChangedPaths([file.filename])[0];
+    return stem
+      ? [{ names: file.patch ? captureNamesFromPatch(file.patch) : undefined, stem }]
+      : [];
+  });
   // The main baseline can trail main by hours, so checkpoints other merged PRs added look new
   // and unrelated ones look changed. Only checkpoints this PR's diff names are about this PR.
   const checkpoints = input.screenshots.filter(
     (screenshot) =>
       screenshot.captureType === "checkpoint" &&
-      stems.some((stem) => screenshotMatchesSpecStem(screenshot.source, stem)) &&
-      screenshotNamedByChange(screenshot.source, names),
+      specs.some(
+        ({ names, stem }) =>
+          screenshotMatchesSpecStem(screenshot.source, stem) &&
+          (!names || screenshotNamedByChange(screenshot.source, names)),
+      ),
   );
   const frames: PlaywrightPrFeatureFrame[] = [
     ...checkpoints
