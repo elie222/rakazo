@@ -4,16 +4,18 @@ import type { Session } from "electron";
 /**
  * Lets this app's window create accounts on the server the app runs. The page cannot read the
  * cookie, and only the auth routes receive it, so a browser or another user reaching the same
- * port is still refused.
+ * port is still refused. Cookies ignore the port, so it is removed whenever the session opens
+ * any other server, which could be another server on the same host.
  */
-export async function allowLocalSignup(
+export async function syncLocalSignup(
   value: Pick<Session, "cookies">,
-  webUrl: string,
+  localWebUrl: string,
   stackToken: string | null,
 ) {
-  if (stackToken === null) return;
+  const url = new URL(localWebUrl).origin;
+  if (stackToken === null) return value.cookies.remove(url, LOCAL_SIGNUP_COOKIE);
   await value.cookies.set({
-    url: new URL(webUrl).origin,
+    url,
     name: LOCAL_SIGNUP_COOKIE,
     value: localSignupKey(stackToken),
     path: "/api/auth",

@@ -179,14 +179,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             })
           : await authClient.signIn.email({ email: trimmedEmail, password });
       if (result.error) {
-        if (
-          mode === "up" &&
-          reset.registrationOpen &&
-          result.error.code === "REGISTRATION_CLOSED"
-        ) {
-          navigate(`/sign-in${nextQuery}`, { replace: true });
-          return;
-        }
         setError(authErrorText(result.error, t`Could not continue`));
         return;
       }
