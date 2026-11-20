@@ -243,7 +243,12 @@ export function useComputerControls({
   }, [computerBlockedByRun]);
 
   useEventListener(computerOpen ? window : null, "keydown", (event) => {
-    if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229)
+    if (
+      event.key === "Escape" &&
+      !event.defaultPrevented &&
+      !event.isComposing &&
+      event.keyCode !== 229
+    )
       setComputerOpen(false);
   });
 

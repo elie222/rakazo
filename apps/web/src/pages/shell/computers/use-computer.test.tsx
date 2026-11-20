@@ -730,6 +730,11 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
     act(async () => {
       goal.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, ...init }));
     });
+  const consume = (event: Event) => event.preventDefault();
+  document.addEventListener("keydown", consume);
+  await press({ cancelable: true });
+  document.removeEventListener("keydown", consume);
+  expect(state.computerOpen).toBe(true);
   await press({ isComposing: true });
   await press({ keyCode: 229 });
   expect(state.computerOpen).toBe(true);
