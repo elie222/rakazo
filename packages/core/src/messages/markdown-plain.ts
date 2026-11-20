@@ -38,6 +38,14 @@ export function plainTextFromMarkdown(
   const source = boundedPreviewSource(markdown, maxSource);
   let text = source.text.replaceAll(PAYLOAD_MARK, markToken);
   text = takeFencedCode(text, stash, source.truncated);
+  // Recognize the closing marker before inline formatting changes the line.
+  text = text.replace(
+    /(^|\n)( {0,3}#{1,6}(?=[ \t])[^\n]*?)[ \t]#+[ \t]*(?=\n|$)/g,
+    (marker, lineStart: string, heading: string, index: number) =>
+      source.truncated && index + marker.length === text.length
+        ? marker
+        : `${lineStart}${heading} `,
+  );
   text = takeInlineCode(text, stash);
   text = takeEscapes(text, stash);
   // Autolinks may contain stashed escapes; flatten only those literal payloads.
@@ -52,9 +60,13 @@ export function plainTextFromMarkdown(
   // it can see them: a marked line interrupts the table instead of becoming a
   // phantom row, while its stripped text still previews. Runs before the
   // emphasis strips so "| **a** |" still reads "a".
+  // Emphasis needs CommonMark flanking: the opener is followed by a non-space
+  // and the closer is preceded by one, so `2 * y * 3` and `2 ** 3 ** 4` keep
+  // their operators. A preview that is only an empty marker pair stays empty.
   text = flattenTableRows(text)
-    .replace(/(\*\*)(.*?)\1/g, "$2")
-    .replace(/(\*)([^*\n]+)\1/g, "$2")
+    .replace(/^\s*(?:\*\*[ \t]*\*\*|\*[ \t]+\*)\s*$/, "")
+    .replace(/(\*\*)(?=\S)(.*?\S)\1/g, "$2")
+    .replace(/(\*)(?=\S)([^*\n]*[^*\s])\1/g, "$2")
     .replace(/~~(.*?)~~/g, "$1");
   return restore(text).replace(/\s+/g, " ").trim();
 }

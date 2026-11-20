@@ -25,7 +25,6 @@ export async function auditToolCall(
     metadata,
   });
 }
-
 /** Names the saved rules a refusal cites, as a suffix on its message. */
 export function blockingRuleSuffix(
   resolved: ReturnType<typeof resolveActionApprovalForTools>,

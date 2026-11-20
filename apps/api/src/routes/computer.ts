@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import type { SandboxProvider } from "@rakazo/adapter-kit";
+import type { AgentHomeStore, SandboxProvider } from "@rakazo/adapter-kit";
 import { computerControlExpireJobKey, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import {
   applyTeachingDesktopInput,
@@ -13,6 +13,7 @@ import {
   endTeachingWithLease,
   ensureComputerWorkspaceLayout,
   isSandboxGoneError,
+  ObjectAgentHomeStore,
   provisionComputer,
   queueComputerUpdate,
   rateLimitEnds,
@@ -27,6 +28,7 @@ import {
   toComputerRef,
   touchRunningComputer,
   WorkspacePathError,
+  wakeableComputerRef,
 } from "@rakazo/adapters";
 import {
   attachmentMaxBytes,
@@ -71,6 +73,16 @@ const MAX_COMPUTER_TEXT_FILE_BYTES = 2 * 1024 * 1024;
 /** Each command writes a running and a done event, so this keeps about 100 commands. */
 const COMPUTER_COMMAND_HISTORY_EVENTS = 200;
 
+/**
+ * The store that keeps earlier versions of this computer's home. A computer that works in a copy
+ * on a host keeps its own files there, so restoring a stored version could not reach them.
+ */
+function versionedHomeStore(home: AgentHomeStore, kind: string) {
+  if (!(home instanceof ObjectAgentHomeStore)) return undefined;
+  if (sandboxKindCapabilities(kind).storedHomeIsBackup) return undefined;
+  return home;
+}
+
 export function computerRoutes(ctx: RouterContext) {
   const { deps, repos, taughtSkills, authed } = ctx;
   return {
@@ -88,7 +100,7 @@ export function computerRoutes(ctx: RouterContext) {
           try {
             await ensureComputerWorkspaceLayout(
               deps.sandbox,
-              toComputerRef(bot.computer),
+              await wakeableComputerRef(deps.prisma, bot.computer),
               parseComputerMode(bot.computer.scope),
               bot,
               computerContext(context.actor, bot.id, "boot"),
@@ -347,6 +359,28 @@ export function computerRoutes(ctx: RouterContext) {
         }
         return { ok: true as const };
       }),
+      homeVersions: authed.computer.homeVersions.handler(async ({ context, input }) => {
+        const computer = (await repos.getBot(context.actor, input.botId)).computer;
+        if (!computer) return [];
+        const store = versionedHomeStore(deps.home, computer.kind);
+        if (!store) return [];
+        const versions = await store.earlierVersions(computer.homeKey);
+        return versions.map((version) => ({
+          id: version.revision,
+          savedAt: version.savedAt.toISOString(),
+        }));
+      }),
+      restoreHomeVersion: authed.computer.restoreHomeVersion.handler(async ({ context, input }) => {
+        const computer = (await repos.getBot(context.actor, input.botId)).computer;
+        if (!computer) throw new IsolationError();
+        assertNotAnotherPersonsControl(computer, context.actor);
+        const store = versionedHomeStore(deps.home, computer.kind);
+        if (!store)
+          throw new ClientError("BAD_REQUEST", "Earlier versions are not kept for this computer");
+        await store.restoreVersion(computer.homeKey, input.versionId);
+        getLogger().info("computer.home_version_restored", { "computer.id": computer.id });
+        return { ok: true as const };
+      }),
       takeover: authed.computer.takeover.handler(async ({ context, input }) =>
         takeComputerControl(deps, context.actor, input.botId),
       ),
@@ -433,7 +467,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (outcome === "stale") return { ok: true as const };
         if (outcome !== "recorded") {
           await applyTeachingDesktopInput(
-            deps.sandbox,
+            deps,
             computer,
             mapped,
             computerContext(context.actor, bot.id, "input"),
@@ -465,7 +499,7 @@ export function computerRoutes(ctx: RouterContext) {
             data: { updatedAt: new Date() },
           });
           scheduleComputerSleep(deps.jobs, computer.id);
-          const ref = toComputerRef(computer);
+          const ref = await wakeableComputerRef(deps.prisma, computer);
           await ensureComputerWorkspaceLayout(deps.sandbox, ref, computerMode, bot, ctx);
           entries = await deps.sandbox.listFiles(ref, storedPath, ctx);
         } else {
@@ -501,7 +535,7 @@ export function computerRoutes(ctx: RouterContext) {
           });
           scheduleComputerSleep(deps.jobs, bot.computer.id);
           const bytes = await deps.sandbox
-            .readFile(toComputerRef(bot.computer), storedPath, ctx, {
+            .readFile(await wakeableComputerRef(deps.prisma, bot.computer), storedPath, ctx, {
               maxBytes: MAX_COMPUTER_TEXT_FILE_BYTES,
             })
             .catch((error: unknown) => {
@@ -551,7 +585,7 @@ export function computerRoutes(ctx: RouterContext) {
         );
         const bytes = await deps.sandbox
           .readFile(
-            toComputerRef(computer),
+            await wakeableComputerRef(deps.prisma, computer),
             storedPath,
             computerContext(context.actor, bot.id, "download"),
             { maxBytes: attachmentMaxBytes(deps.env) },
@@ -608,7 +642,7 @@ export function computerRoutes(ctx: RouterContext) {
           throw error;
         }
         await deps.sandbox.writeFile(
-          toComputerRef(computer),
+          await wakeableComputerRef(deps.prisma, computer),
           { path: storedPath, content },
           computerContext(context.actor, bot.id, "upload"),
         );
@@ -651,7 +685,7 @@ export function computerRoutes(ctx: RouterContext) {
         }
         const session = await deps.sandbox
           .connectTerminal(
-            toComputerRef(computer),
+            await wakeableComputerRef(deps.prisma, computer),
             {
               controlToken: computer.controlLeaseId,
               cwd: resolveBotWorkspaceCwd(
@@ -705,7 +739,7 @@ export function computerRoutes(ctx: RouterContext) {
         const holder = holdsComputerControl(computer, bot.id, context.actor);
         const session = await deps.sandbox
           .connectScreen(
-            toComputerRef(computer),
+            await wakeableComputerRef(deps.prisma, computer),
             {
               view: "stream",
               interactive: holder,
@@ -758,7 +792,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (!(await stillWaiting())) return { image: null };
         const observation = await deps.sandbox
           .observe(
-            toComputerRef(computer),
+            await wakeableComputerRef(deps.prisma, computer),
             await computerScreenContext(deps.prisma, context.actor, computer.id, bot.id, "screen"),
           )
           .catch(async (error: unknown) => {

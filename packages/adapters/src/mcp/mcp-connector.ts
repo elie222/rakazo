@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
+import { SseError } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   OAuthError,
@@ -96,7 +97,8 @@ type SessionEntry = {
   launchSecrets?: string[];
 };
 class McpSecretChangedError extends Error {
-  constructor() {
+  /** `missing`: the server's current secret record could not be read, which a retry rarely fixes. */
+  constructor(readonly missing = false) {
     super("Secret changed during MCP connection; retry");
   }
 }
@@ -158,10 +160,15 @@ const UNREACHABLE_CODES = new Set([
 function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined {
   if (depth > 5 || !(error instanceof Error)) return undefined;
   if (error instanceof McpConnectFailure) return error.expected;
-  if (error instanceof McpDiscoveryTimeoutError) return "unreachable";
+  // The credential changed again after the one reconnect; the next try reads the new one.
+  if (
+    error instanceof McpDiscoveryTimeoutError ||
+    (error instanceof McpSecretChangedError && !error.missing)
+  )
+    return "unreachable";
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
-  if (error instanceof StreamableHTTPError) {
+  if (error instanceof StreamableHTTPError || error instanceof SseError) {
     // A timeout, rate limit or server error is the server's own outage.
     if (error.code === 408 || error.code === 429 || (error.code ?? 0) >= 500) return "unreachable";
     // A 4xx or a non-MCP body (often an HTML page) means the endpoint is not an MCP server.
@@ -1174,7 +1181,7 @@ export class McpConnector implements ConnectorProvider {
             where: { id: current.secretId, ...itemSecretIn(context) },
           });
         }
-        if (!secret) throw new McpSecretChangedError();
+        if (!secret) throw new McpSecretChangedError(true);
       }
       let ref = secret?.ciphertext;
       let recordId = secret?.id;

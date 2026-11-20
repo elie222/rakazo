@@ -937,6 +937,35 @@ describe("answerTakeoverRequest", () => {
     expect(publish).toHaveBeenCalledWith("thread:group-thread", JSON.stringify({ cursor: 8 }));
   });
 
+  it("settles its card while keeping a sibling block this release does not know", async () => {
+    const tx = takeoverTx([{ count: 1 }]);
+    const legacyBlock = { kind: "block_from_an_earlier_release", detail: "kept" };
+    tx.message.findMany.mockResolvedValue([
+      {
+        id: "message-1",
+        blocks: [
+          { kind: "computer", state: TAKEOVER_COMPUTER_PENDING_STATE, text: "Sign in." },
+          legacyBlock,
+        ],
+      },
+    ]);
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(answerTakeoverRequest(prisma, input)).resolves.toBe(true);
+
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: {
+        blocks: [
+          { kind: "computer", state: TAKEOVER_COMPUTER_DONE_STATE, text: "Sign in." },
+          legacyBlock,
+        ],
+      },
+    });
+  });
+
   it("answers a request once: a second Done never stamps the resumed run's next request", async () => {
     const tx = takeoverTx([{ count: 0 }, { count: 1 }]);
     // The first answer settled the card; the run is running again.
@@ -1619,6 +1648,66 @@ describe("answerRunInput", () => {
       }),
     );
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 9 }));
+  });
+
+  it("answers a card whose message also holds a block this release's schema rejects", async () => {
+    const legacyBlock = { kind: "block_from_an_earlier_release", detail: "kept as stored" };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "message-1",
+          blocks: [{ kind: "ask", text: "Which city?", status: "pending" }, legacyBlock],
+        }),
+        update: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
+      run: {
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-2", userId: "user-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({
+          status: "queued",
+          createdAt: new Date("2026-08-16T12:00:00.000Z"),
+          threadId: "thread-1",
+        }),
+      },
+      task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      answerRunInput(
+        prisma,
+        {
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          messageId: "message-1",
+          answeredByUserId: "user-1",
+          answer: "Berlin",
+        },
+        new TestFanout(),
+      ),
+    ).resolves.toBe(true);
+
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "message-1" },
+      data: {
+        blocks: [
+          { kind: "ask", text: "Which city?", status: "answered", answer: "Berlin" },
+          legacyBlock,
+        ],
+      },
+    });
   });
 
   it("keeps a routine's instructions and every earlier answer across choice resumes", async () => {
@@ -2462,7 +2551,12 @@ describe("answerRunInput approvals", () => {
         type: "approval.decided",
         userId: "user-1",
         spaceId: "workspace-1",
-        metadata: { decision: "allow", effectKind: "connector_write", runId: "run-1" },
+        metadata: {
+          decision: "allow",
+          effectKind: "connector_write",
+          effectId: "effect-1",
+          runId: "run-1",
+        },
       }),
     });
 
@@ -3899,6 +3993,7 @@ describe("queue admission beside pending cards", () => {
       };
       const prisma = {
         message: { findUnique: vi.fn().mockResolvedValue(null) },
+        prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
         $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
       } as unknown as PrismaClient;
       await expect(
@@ -4113,6 +4208,7 @@ describe("sendUserMessage", () => {
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       run: {
         findFirst: vi.fn().mockResolvedValue({ id: "run-1", taskId: "task-1" }),
       },
@@ -4196,6 +4292,7 @@ describe("sendUserMessage", () => {
     const failure = new Error("transaction rollback");
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn().mockRejectedValue(failure),
     } as unknown as PrismaClient;
     const analytics = { capture: vi.fn(), flush: async () => undefined };
@@ -4249,6 +4346,7 @@ describe("sendUserMessage", () => {
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -4525,6 +4623,7 @@ describe("sendUserMessage", () => {
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -4579,6 +4678,7 @@ describe("sendUserMessage", () => {
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 

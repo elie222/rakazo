@@ -19,7 +19,7 @@ import {
   normalizeWorkspacePath,
   resolveBotWorkspacePath,
 } from "../../computers/screens/computer-support.js";
-import { messageBot } from "../../messaging/bot-messages.js";
+import { messageBot, unresolvedBotError } from "../../messaging/bot-messages.js";
 import { startBackgroundHelper } from "../../tasks/background-helpers.js";
 import type { RunContext } from "../assembly/run-context.js";
 import {
@@ -61,7 +61,14 @@ async function prepareSentFiles(
   if ("error" in paths) return paths;
   if (!paths.length) return { files: [], sharedPaths: [] };
   const target = await findRecipient(ctx, recipient);
-  if (!target) return { error: "no bot found with that id or name. Nothing was sent." };
+  if (!target) {
+    if (recipient.groupId) return { error: "no bot found with that id or name. Nothing was sent." };
+    const candidates = await ctx.deps.prisma.bot.findMany({
+      where: { spaceId: ctx.run.spaceId, archivedAt: null },
+      select: { id: true, name: true, thread: { select: { id: true } } },
+    });
+    return { error: `${unresolvedBotError(candidates, ctx.bot.id)}. Nothing was sent.` };
+  }
   const { bot } = ctx;
   if (
     bot.computerId &&

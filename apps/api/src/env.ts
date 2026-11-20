@@ -22,7 +22,12 @@ import { socialAuthFromFields } from "@rakazo/auth";
 import type { LabFeature, MinimumClientBuilds, NavLink } from "@rakazo/contracts";
 import { isPrivateNetworkHost, parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
-import { attachmentCountFromEnv, phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
+import {
+  attachmentCountFromEnv,
+  phoneCallSettings,
+  SIGNUPS_ENABLED_VALUES,
+  uploadSizeFromEnv,
+} from "@rakazo/core";
 import {
   resolveAuthSecret,
   resolveContentEncryption,
@@ -210,6 +215,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     if (value && !["true", "false"].includes(value))
       throw new Error(`${key} must be true or false`);
   }
+  // A typo that read as "open" would expose registration, so refuse anything unrecognized.
+  // Empty means unset, as before.
+  const signupsEnabled = source.SIGNUPS_ENABLED?.trim().toLowerCase();
+  if (signupsEnabled && !(SIGNUPS_ENABLED_VALUES as readonly string[]).includes(signupsEnabled))
+    throw new Error("SIGNUPS_ENABLED must be true or false");
   const passwordAuth = source.AUTH_PASSWORD_ENABLED !== "false";
   if (!passwordAuth && !issuer)
     throw new Error("AUTH_PASSWORD_ENABLED=false requires OIDC configuration");

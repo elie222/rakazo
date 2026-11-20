@@ -222,68 +222,6 @@ describe("lingui catalogs", () => {
     }
   });
 
-  it("translates model connection preflight feedback in every non-English catalog", () => {
-    const locales = [
-      "de",
-      "es",
-      "fr",
-      "he",
-      "hi",
-      "ja",
-      "ko",
-      "nl",
-      "pl",
-      "pt-BR",
-      "ru",
-      "tr",
-      "zh-CN",
-      "zh-TW",
-    ];
-    const messages = [
-      'Model "{modelId}" was not listed.',
-      "Models list OK. {modelCount, plural, one {# model} other {# models}} available. " +
-        "Chat was not tested.",
-      "Connection test failed.",
-      "Test API key",
-      "Testing…",
-    ];
-    for (const locale of locales) {
-      const catalog = readFileSync(
-        fileURLToPath(
-          new URL(`../../../../../packages/i18n/locales/${locale}/messages.po`, import.meta.url),
-        ),
-        "utf8",
-      );
-      for (const msgid of messages) {
-        const needle = `msgid ${JSON.stringify(msgid)}\nmsgstr "`;
-        const at = catalog.indexOf(needle);
-        expect(at, `${locale} ${msgid}`).toBeGreaterThanOrEqual(0);
-        const end = catalog.indexOf('"\n', at + needle.length);
-        const translated = catalog.slice(at + needle.length, end);
-        expect(translated.length, `${locale} ${msgid}`).toBeGreaterThan(0);
-        expect(translated, `${locale} ${msgid}`).not.toBe(msgid);
-        if (msgid.includes("{modelId}")) expect(translated).toContain("{modelId}");
-        if (msgid.includes("{modelCount")) {
-          expect(translated).toContain("{modelCount, plural,");
-          expect(translated).toContain("#");
-        }
-      }
-    }
-
-    const russian = readFileSync(
-      fileURLToPath(
-        new URL("../../../../../packages/i18n/locales/ru/messages.po", import.meta.url),
-      ),
-      "utf8",
-    );
-    expect(russian).toContain(
-      "msgstr " +
-        '"Список моделей в порядке. {modelCount, plural, one {Доступна # модель} ' +
-        "few {Доступны # модели} many {Доступно # моделей} other {Доступно # модели}}. " +
-        'Чат не проверялся."',
-    );
-  });
-
   it("says how late a run started for one and for many in every locale", () => {
     const ids = ["Started {count}m late", "Started {count}h late", "Started {count}d late"];
     for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {

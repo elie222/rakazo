@@ -7,7 +7,7 @@ import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
 import { ContentDecryptionError, ContentKeyRing, LocalKeyProvider } from "@rakazo/db";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   checkpointComputerWorkspace,
   restoreComputerWorkspace,
@@ -19,6 +19,7 @@ import {
   ObjectAgentHomeStore,
   PrismaAgentHomeRecords,
 } from "./home-object-store.js";
+import { HomeRestoreRunningError, HomeVersionNotFoundError } from "./home-versions.js";
 import { MemoryObjectStorage } from "./object-storage.test-support.js";
 
 const context = {
@@ -43,31 +44,64 @@ interface ComputerRow {
   homeStorageRevision: string | null;
   kind: string;
   updatedAt: Date;
+  state?: string;
+  maintenanceId?: string | null;
+  providerRef?: string | null;
+  restorePending?: boolean;
+  homeRevision?: string;
+  homeRevisionAt?: Date | null;
 }
 
-/** The slice of `prisma.computer` the records use, over an array of rows. */
-function fakeComputers(rows: ComputerRow[]) {
-  const matches = (row: ComputerRow, where: Record<string, unknown>) =>
+interface VersionRow {
+  id: string;
+  computerId: string;
+  storageId: string;
+  revision: string;
+  savedAt: Date;
+}
+
+/** The slice of `prisma.computer` and its kept versions the records use, over arrays of rows. */
+function fakeComputers(rows: ComputerRow[], versions: VersionRow[] = []) {
+  const matches = <Row extends object>(row: Row, where: Record<string, unknown>) =>
     Object.entries(where).every(([field, value]) => {
-      const actual = row[field as keyof ComputerRow];
+      const actual = row[field as keyof Row];
       if (value instanceof Date)
         return actual instanceof Date && actual.getTime() === value.getTime();
       if (value && typeof value === "object" && "in" in value)
         return (value.in as unknown[]).includes(actual);
       return actual === value;
     });
-  const pick = (row: ComputerRow, select: Record<string, boolean>) =>
+  const pick = <Row extends object>(
+    row: Row,
+    select: Record<string, unknown>,
+  ): Record<string, unknown> =>
     Object.fromEntries(
-      Object.keys(select).map((field) => [field, row[field as keyof ComputerRow]]),
+      Object.entries(select).map(([field, nested]) =>
+        field === "homeVersions" && typeof nested === "object"
+          ? [
+              field,
+              versions
+                .filter(
+                  (version) =>
+                    version.computerId === (row as unknown as ComputerRow).id &&
+                    matches(version, (nested as { where: Record<string, unknown> }).where),
+                )
+                .map((version) =>
+                  pick(version, (nested as { select: Record<string, unknown> }).select),
+                ),
+            ]
+          : [field, row[field as keyof Row]],
+      ),
     );
-  return {
+  let nextVersion = 0;
+  const client = {
     computer: {
       findUnique: async ({
         where,
         select,
       }: {
         where: Record<string, unknown>;
-        select: Record<string, boolean>;
+        select: Record<string, unknown>;
       }) => {
         const row = rows.find((candidate) => matches(candidate, where));
         return row ? pick(row, select) : null;
@@ -77,7 +111,7 @@ function fakeComputers(rows: ComputerRow[]) {
         select,
       }: {
         where: Record<string, unknown>;
-        select: Record<string, boolean>;
+        select: Record<string, unknown>;
       }) => rows.filter((row) => matches(row, where)).map((row) => pick(row, select)),
       updateMany: async ({
         where,
@@ -92,7 +126,47 @@ function fakeComputers(rows: ComputerRow[]) {
         return { count: updated.length };
       },
     },
-  } as unknown as Pick<PrismaClient, "computer">;
+    computerHomeVersion: {
+      findMany: async ({
+        where,
+        select,
+      }: {
+        where: Record<string, unknown>;
+        select: Record<string, unknown>;
+      }) =>
+        versions
+          .filter((version) => matches(version, where))
+          .sort((a, b) => b.savedAt.getTime() - a.savedAt.getTime())
+          .map((version) => pick(version, select)),
+      createMany: async ({ data }: { data: Omit<VersionRow, "id"> | Omit<VersionRow, "id">[] }) => {
+        let count = 0;
+        for (const version of Array.isArray(data) ? data : [data]) {
+          if (
+            versions.some(
+              (row) => row.storageId === version.storageId && row.revision === version.revision,
+            )
+          )
+            continue;
+          versions.push({ id: `version-${++nextVersion}`, ...version });
+          count += 1;
+        }
+        return { count };
+      },
+      updateMany: async ({ where }: { where: Record<string, unknown> }) => ({
+        count: versions.filter((version) => matches(version, where)).length,
+      }),
+      deleteMany: async ({ where }: { where: Record<string, unknown> }) => {
+        const doomed = versions.filter((version) => matches(version, where));
+        for (const version of doomed) versions.splice(versions.indexOf(version), 1);
+        return { count: doomed.length };
+      },
+    },
+    $transaction: async <T>(work: (tx: unknown) => Promise<T>) => work(client),
+  };
+  return client as unknown as Pick<
+    PrismaClient,
+    "computer" | "computerHomeVersion" | "$transaction"
+  >;
 }
 
 function memoryRing() {
@@ -122,9 +196,16 @@ async function setup(homeKeys = ["bot-1"]) {
     homeStorageRevision: null,
     kind: "boat",
     updatedAt: new Date(0),
+    state: "stopped",
+    maintenanceId: null,
+    providerRef: null,
+    restorePending: false,
+    homeRevision: "empty",
+    homeRevisionAt: null,
   }));
   const storage = new MemoryObjectStorage();
-  const records = new PrismaAgentHomeRecords(fakeComputers(rows), memoryRing());
+  const versions: VersionRow[] = [];
+  const records = new PrismaAgentHomeRecords(fakeComputers(rows, versions), memoryRing());
   const store = new ObjectAgentHomeStore(root, storage, records);
   /** Another API or worker host: same bucket and database, its own empty cache. */
   const otherHost = async () => {
@@ -132,7 +213,12 @@ async function setup(homeKeys = ["bot-1"]) {
     dirs.push(otherRoot);
     return new ObjectAgentHomeStore(otherRoot, storage, records);
   };
-  return { root, rows, storage, records, store, otherHost };
+  return { root, rows, versions, storage, records, store, otherHost };
+}
+
+/** The object keys of the home's kept versions, the only objects a save may leave behind. */
+function keptObjects(versions: readonly VersionRow[]) {
+  return versions.map((version) => `homes/${version.storageId}/${version.revision}`).sort();
 }
 
 /** A sandbox export staged for `commit`. */
@@ -264,7 +350,7 @@ describe("ObjectAgentHomeStore", () => {
   });
 
   it("downloads again when the cache directory is gone but its marker remains", async () => {
-    const { root, store, storage, rows } = await setup();
+    const { root, store, storage, versions } = await setup();
     await store.commit("bot-1", await staged({ "a.txt": "stored" }), context);
     await store.hydrate("bot-1");
     await store.revise("bot-1");
@@ -274,9 +360,7 @@ describe("ObjectAgentHomeStore", () => {
     // A save of a missing cache must not replace the stored home with an empty one.
     await rm(path.join(root, "homes"), { recursive: true });
     await expect(store.revise("bot-1")).rejects.toThrow(/older than its stored revision/);
-    expect([...storage.objects.keys()]).toEqual([
-      `homes/${rows[0]!.homeStorageId}/${rows[0]!.homeStorageRevision}`,
-    ]);
+    expect([...storage.objects.keys()].sort()).toEqual(keptObjects(versions));
 
     // A reconnecting computer's live cache is kept only while it is there.
     await store.hydrate("bot-1", { keepLiveCache: true });
@@ -306,12 +390,15 @@ describe("ObjectAgentHomeStore", () => {
   });
 
   it("does not let a save that started before a newer one replace it", async () => {
-    const { root, storage, records, otherHost } = await setup();
+    const { root, storage, records, versions, otherHost } = await setup();
     let interleave: (() => Promise<unknown>) | undefined;
     const racing = new ObjectAgentHomeStore(root, storage, {
       ...records,
       load: (homeKey) => records.load(homeKey),
       advance: (...args) => records.advance(...args),
+      prune: (...args) => records.prune(...args),
+      versions: (homeKey) => records.versions(homeKey),
+      restore: (...args) => records.restore(...args),
       revisions: (ids) => records.revisions(ids),
       kinds: (keys) => records.kinds(keys),
       create: async (homeKey) => {
@@ -329,13 +416,13 @@ describe("ObjectAgentHomeStore", () => {
 
     await expect(racing.revise("bot-1")).rejects.toThrow(HomeSaveConflictError);
     expect(await (await otherHost()).readFile("bot-1", "a.txt", context)).toBe("newer");
-    expect(storage.objects.size).toBe(1);
+    expect([...storage.objects.keys()].sort()).toEqual(keptObjects(versions));
   });
 
   it.each([false, true])(
     "recovers after a confirmed refusal (previous proposal: %s)",
     async (previousProposal) => {
-      const { root, store, storage, records, otherHost } = await setup();
+      const { root, store, storage, records, versions, otherHost } = await setup();
       await store.commit("bot-1", await staged({ "a.txt": "booted" }), context);
       await store.hydrate("bot-1");
       if (previousProposal) await store.revise("bot-1");
@@ -350,7 +437,7 @@ describe("ObjectAgentHomeStore", () => {
         return advance(...args);
       };
       await expect(store.revise("bot-1")).rejects.toThrow(HomeSaveConflictError);
-      expect(storage.objects.size).toBe(1);
+      expect([...storage.objects.keys()].sort()).toEqual(keptObjects(versions));
       const restarted = new ObjectAgentHomeStore(root, storage, records);
       await expect(restarted.revise("bot-1")).rejects.toThrow(/older than its stored revision/);
       await restarted.hydrate("bot-1");
@@ -372,6 +459,9 @@ describe("ObjectAgentHomeStore", () => {
       create: (homeKey) => records.create(homeKey),
       revisions: (ids) => records.revisions(ids),
       kinds: (keys) => records.kinds(keys),
+      prune: (...args) => records.prune(...args),
+      versions: (homeKey) => records.versions(homeKey),
+      restore: (...args) => records.restore(...args),
       // The update commits, then the connection drops before the reply.
       advance: async (...args) => {
         await records.advance(...args);
@@ -618,11 +708,89 @@ describe("ObjectAgentHomeStore", () => {
     },
   );
 
-  it("keeps only the current revision once a newer one is saved", async () => {
-    const { store, storage, rows } = await setup();
-    await store.commit("bot-1", await staged({ "a.txt": "first" }), context);
+  it("keeps the previous revision as a version once a newer one is saved", async () => {
+    const { store, storage, rows, versions } = await setup();
+    const first = await store.commit("bot-1", await staged({ "a.txt": "first" }), context);
     const second = await store.commit("bot-1", await staged({ "a.txt": "second" }), context);
-    expect([...storage.objects.keys()]).toEqual([`homes/${rows[0]!.homeStorageId}/${second}`]);
+    expect(rows[0]!.homeStorageRevision).toBe(second);
+    expect([...storage.objects.keys()].sort()).toEqual(keptObjects(versions));
+    expect(versions.map((version) => version.revision).sort()).toEqual([first, second].sort());
+    expect((await store.earlierVersions("bot-1")).map((version) => version.revision)).toEqual([
+      first,
+    ]);
+  });
+
+  it("still saves when forgetting old versions fails", async () => {
+    const { store, rows, records } = await setup();
+    const prune = vi.spyOn(records, "prune").mockRejectedValue(new Error("database down"));
+    const revision = await store.commit("bot-1", await staged({ "a.txt": "saved" }), context);
+    expect(prune).toHaveBeenCalled();
+    expect(rows[0]!.homeStorageRevision).toBe(revision);
+  });
+
+  it("deletes the objects of versions the policy stops keeping when it saves", async () => {
+    const { store, storage, versions, rows } = await setup();
+    const saved: string[] = [];
+    // A minute apart, so no two saves share a time.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      for (let save = 0; save < 6; save++) {
+        vi.setSystemTime(new Date(Date.UTC(2026, 10, 19, 12, save)));
+        saved.push(await store.commit("bot-1", await staged({ "a.txt": `${save}` }), context));
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    // All saved the same day: the newest two and the day's first one stay.
+    const kept = [saved[0]!, ...saved.slice(-2)];
+    expect(versions.map((version) => version.revision).sort()).toEqual([...kept].sort());
+    expect([...storage.objects.keys()].sort()).toEqual(
+      kept.map((revision) => `homes/${rows[0]!.homeStorageId}/${revision}`).sort(),
+    );
+  });
+
+  it("restores an earlier version, keeping the one it replaces restorable", async () => {
+    const { store, rows, otherHost } = await setup();
+    const first = await store.commit("bot-1", await staged({ "a.txt": "good" }), context);
+    const damaged = await store.commit("bot-1", await staged({ "b.txt": "empty" }), context);
+    expect(await exported(store, "bot-1")).toEqual({ "b.txt": "empty" });
+    rows[0]!.state = "suspended";
+    rows[0]!.providerRef = "machine-1";
+
+    await store.restoreVersion("bot-1", first);
+
+    expect(rows[0]).toMatchObject({
+      homeStorageRevision: first,
+      homeRevision: first,
+      restorePending: true,
+    });
+    expect(await exported(await otherHost(), "bot-1")).toEqual({ "a.txt": "good" });
+    // The copy cached here held the damaged revision; it is downloaded again.
+    expect(await exported(store, "bot-1")).toEqual({ "a.txt": "good" });
+    expect((await store.earlierVersions("bot-1")).map((version) => version.revision)).toEqual([
+      damaged,
+    ]);
+
+    await store.restoreVersion("bot-1", damaged);
+    expect(rows[0]!.homeStorageRevision).toBe(damaged);
+  });
+
+  it("refuses to restore while the computer runs, or a version no longer kept", async () => {
+    const { store, storage, rows } = await setup();
+    const first = await store.commit("bot-1", await staged({ "a.txt": "good" }), context);
+    const second = await store.commit("bot-1", await staged({ "a.txt": "newer" }), context);
+    rows[0]!.state = "running";
+    await expect(store.restoreVersion("bot-1", first)).rejects.toThrow(HomeRestoreRunningError);
+
+    rows[0]!.state = "stopped";
+    await expect(store.restoreVersion("bot-1", "rev-unknown")).rejects.toThrow(
+      HomeVersionNotFoundError,
+    );
+    // A version whose object is gone is neither listed nor restored.
+    storage.objects.delete(`homes/${rows[0]!.homeStorageId}/${first}`);
+    expect(await store.earlierVersions("bot-1")).toEqual([]);
+    await expect(store.restoreVersion("bot-1", first)).rejects.toThrow(HomeVersionNotFoundError);
+    expect(rows[0]!.homeStorageRevision).toBe(second);
   });
 
   it("saves the cached copy a Docker computer changed in place", async () => {
@@ -687,10 +855,20 @@ describe("ObjectAgentHomeStore", () => {
   });
 
   it("deletes the objects of a deleted computer, and stale revisions, when sweeping", async () => {
-    const { store, storage, rows } = await setup(["bot-1", "bot-2"]);
+    const { store, storage, rows, versions } = await setup(["bot-1", "bot-2"]);
     await store.commit("bot-1", await staged({ "a.txt": "keep" }), context);
     await store.commit("bot-2", await staged({ "a.txt": "delete" }), context);
     const kept = `homes/${rows[0]!.homeStorageId}/${rows[0]!.homeStorageRevision}`;
+    // An earlier version, older than a crashed save's leftovers, is kept as long as its row is.
+    const earlier = `homes/${rows[0]!.homeStorageId}/rev-earlier`;
+    storage.objects.set(earlier, { bytes: Buffer.from("x"), lastModified: new Date(0) });
+    versions.push({
+      id: "version-earlier",
+      computerId: rows[0]!.id,
+      storageId: rows[0]!.homeStorageId!,
+      revision: "rev-earlier",
+      savedAt: new Date(0),
+    });
     const crashed = `homes/${rows[0]!.homeStorageId}/rev-crashed`;
     storage.objects.set(crashed, { bytes: Buffer.from("x"), lastModified: new Date(0) });
     const inProgress = `homes/${rows[0]!.homeStorageId}/rev-in-progress`;
@@ -699,7 +877,7 @@ describe("ObjectAgentHomeStore", () => {
     rows.splice(1, 1);
 
     expect(await store.sweep()).toBe(2);
-    expect([...storage.objects.keys()].sort()).toEqual([kept, inProgress].sort());
+    expect([...storage.objects.keys()].sort()).toEqual([kept, earlier, inProgress].sort());
   });
 
   it("removes folders from the stored copy, so another host never gets them back", async () => {

@@ -260,6 +260,80 @@ it("shows a proxied screen's error only after its reloads stop connecting", asyn
   expect(container.querySelector("iframe")).toBeNull();
 });
 
+/** The frame a viewer sees: the held predecessor is drawn aria-hidden beneath the live one. */
+const liveFrame = () => container.querySelector<HTMLIFrameElement>("iframe:not([aria-hidden])");
+
+it("reads a fresh screen URL when a reconnect probe refuses the stale one", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stale/vnc.html" });
+  await read();
+  await report("connected");
+  // The screen rotated its sign-in: the stale page is refused, and the screen now names another.
+  screenAnswer = () => ({ url: "/novnc/session/view/2.fresh/vnc.html" });
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+  expect(liveFrame()?.dataset.src).toContain("2.fresh");
+});
+
+it("remounts a dropped screen whose probe loads, without a fresh read", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.restart/vnc.html" });
+  await read();
+  await report("connected");
+  const before = liveFrame();
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+  expect(liveFrame()).not.toBe(before);
+  expect(liveFrame()?.dataset.src).toContain("1.restart");
+});
+
+it("remounts the stale screen when a refused reconnect reads the same URL", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stale/vnc.html" });
+  await read();
+  await report("connected");
+  const before = liveFrame();
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+  expect(liveFrame()).not.toBe(before);
+  expect(liveFrame()?.dataset.src).toContain("1.stale");
+});
+
+it("remounts the stale screen when a refused reconnect's fresh read never settles", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stale/vnc.html" });
+  await read();
+  await report("connected");
+  const before = liveFrame();
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+  screenUrl.mockImplementationOnce(() => new Promise<ScreenAnswer>(() => undefined));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000 + SCREEN_FRAME_LOAD_TIMEOUT_MS);
+  });
+  expect(liveFrame()).not.toBe(before);
+  // A later drop reconnects again rather than waiting on the hung read: the same link loads
+  // in a new frame once its probe answers.
+  const remounted = liveFrame();
+  await report("connected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCREEN_RECONNECT_STABLE_MS);
+  });
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5_000);
+  });
+  expect(liveFrame()).not.toBe(remounted);
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+});
+
 it("keeps one reconnect while its screen read is still pending", async () => {
   await read();
   await report("connected");

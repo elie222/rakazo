@@ -240,13 +240,13 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("FORBIDDEN");
         const { actor } = context;
         const { role, scope } = input;
-        const [settings, deploymentPrimary] = await Promise.all([
+        const [settings, deployment] = await Promise.all([
           modelRoleTarget(deps.prisma, actor, scope).then((target) =>
             getModelRole(deps.prisma, target, role),
           ),
           deploymentDefault(actor, role),
         ]);
-        return withImageInput(actor, role, { ...settings, deploymentPrimary });
+        return withImageInput(actor, role, { ...settings, ...deployment });
       }),
       setRole: authed.models.setRole.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
@@ -259,14 +259,14 @@ export function modelsRoutes(ctx: RouterContext) {
           [...(primary ? [primary] : []), ...(backups ?? [])],
           reads,
         );
-        const deploymentPrimary = await deploymentDefault(context.actor, role);
+        const deployment = await deploymentDefault(context.actor, role);
         const settings = await updateModelRole(
           deps.prisma,
           { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
           role,
           { primary, backups },
         );
-        return withImageInput(context.actor, role, { ...settings, deploymentPrimary }, reads);
+        return withImageInput(context.actor, role, { ...settings, ...deployment }, reads);
       }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
@@ -338,9 +338,10 @@ export function modelsRoutes(ctx: RouterContext) {
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           assertModelProviderAllowed(OPENAI_COMPATIBLE_PROVIDER_ID);
+          const preset = compatibleEndpointPreset(input.baseUrl);
           let apiKey = input.apiKey;
           let headers = input.headers;
-          if (!apiKey?.trim() || headers === undefined) {
+          if (!preset?.publicModels && (!apiKey?.trim() || headers === undefined)) {
             try {
               const preferred = await findModelCredential(
                 deps.prisma,
@@ -393,7 +394,7 @@ export function modelsRoutes(ctx: RouterContext) {
             const allowHttp = await httpModelEndpointsAllowed(deps.prisma);
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
-              compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
+              preset ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps), allowHttp },
             );

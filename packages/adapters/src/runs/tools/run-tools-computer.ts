@@ -70,8 +70,8 @@ import { builtinOffered } from "../assembly/run-instructions.prompt.js";
 import { computerScreenToolResult } from "../lifecycle/run-lifecycle.js";
 import { awaitScreenTurn } from "../turn/screen-turn.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "../turn/takeover-resume.prompt.js";
+import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
-import { auditToolCall } from "./run-tool-gate.js";
 
 function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
   const { deps, run, runId, bot, thread } = ctx;
@@ -249,8 +249,13 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   // Where the page is, from the browser's own result: page text the run hides is never a URL to match.
   // A refused step reports no address, which leaves the last one the run saw.
   const raw = ctx.providers.browser;
-  const seen = <T extends { url?: string }>(result: T) => {
+  const seen = <T extends { url?: string; ok?: boolean; uncertain?: boolean }>(result: T) => {
+    // A failed or unsure step may have moved the page, and reports the page it asked for, not the
+    // one the browser shows; only a step that went through says where the page now is.
+    const unsure = result.ok === false || result.uncertain === true;
     if (result.url) ctx.state.pageUrl = result.url;
+    if (unsure) ctx.state.pageUrlUncertain = true;
+    else if (result.url) ctx.state.pageUrlUncertain = false;
     return result;
   };
   const pageUrlTrackingBrowser: BrowserProvider = {

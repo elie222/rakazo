@@ -15,7 +15,22 @@ import { modelProviderAllowlist } from "../model-provider-allowlist.js";
 
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
-const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
+/** Hosted compatible services the catalog offers by name. Each one needs a key. */
+export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
+  { id: "ollama-cloud", name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
+  {
+    id: "concentrate",
+    name: "Concentrate AI",
+    baseUrl: "https://api.concentrate.ai/v1",
+    publicModels: true,
+  },
+];
+
+const BUILT_IN_PUBLIC_MODEL_HOSTS = presetHosts(COMPATIBLE_ENDPOINT_PRESETS);
+
+function presetHosts(presets: CompatibleEndpointPreset[]): ReadonlySet<string> {
+  return new Set(presets.map((preset) => normalizeHost(new URL(preset.baseUrl).hostname)));
+}
 
 /**
  * Public hosts still exempt from RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0: unset keeps the
@@ -24,17 +39,8 @@ const BUILT_IN_PUBLIC_MODEL_HOSTS = new Set(["ollama.com"]);
 function builtInPublicModelHosts(): ReadonlySet<string> {
   const allowlist = modelProviderAllowlist();
   if (allowlist === null) return BUILT_IN_PUBLIC_MODEL_HOSTS;
-  return new Set(
-    compatibleEndpointPresetsFor(allowlist).map((preset) =>
-      normalizeHost(new URL(preset.baseUrl).hostname),
-    ),
-  );
+  return presetHosts(compatibleEndpointPresetsFor(allowlist));
 }
-
-/** Hosted compatible services the catalog offers by name. Each one needs a key. */
-export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
-  { id: "ollama-cloud", name: "Ollama Cloud", baseUrl: "https://ollama.com/v1" },
-];
 
 /**
  * The presets a deployment allowlist still offers. A preset needs the id the list names to

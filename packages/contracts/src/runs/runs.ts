@@ -14,6 +14,17 @@ export const COMPUTER_PROVIDER_UNAVAILABLE_ERROR =
 /** A running computer did not answer a request; its work may or may not have happened. */
 export const COMPUTER_UNRESPONSIVE_ERROR = "The computer stopped responding. Try again.";
 
+/** The computer did not start or could not be set up; a later start may work. */
+export const COMPUTER_START_FAILED_ERROR = "The computer did not start. Try again.";
+
+/** The computer's system can no longer run programs; only Recover rebuilds it. */
+export const COMPUTER_DAMAGED_ERROR =
+  "This computer's system is damaged. Recover the computer to rebuild it.";
+
+/** The computer is isolated until its owner recovers it; nothing starts it before then. */
+export const COMPUTER_RECOVERY_REQUIRED_ERROR =
+  "This computer stopped working. Recover the computer to rebuild it.";
+
 /** Whether an error says the computer hours are spent, which only a plan change can fix. */
 export function isComputerAllowanceUsed(message: string | null | undefined): boolean {
   return message?.startsWith(COMPUTER_ALLOWANCE_USED_ERROR) ?? false;

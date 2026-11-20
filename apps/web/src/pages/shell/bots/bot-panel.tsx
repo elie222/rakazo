@@ -26,6 +26,7 @@ import { ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from "lucide-react
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { BotEmailAddressField } from "../../../components/BotEmailAddressField";
+import { ComputerHomeVersions } from "../../../components/computers/ComputerHomeVersions";
 import { ErrorBoundary, SectionLoadFailed } from "../../../components/ErrorBoundary";
 import { PagesList } from "../../../components/pages/PagesList";
 import { botProfilePatch } from "../../../lib/bots/bot-profile-patch";
@@ -570,12 +571,12 @@ export function BotSettings({
   const headerButtons = (
     <Button
       variant="ghost"
-      size="icon-sm"
+      size="icon"
       className="text-muted-foreground"
       aria-label={t`Close panel`}
       onClick={onClose}
     >
-      <X size={16} strokeWidth={1.8} />
+      <X className="size-4.5" strokeWidth={1.75} />
     </Button>
   );
 
@@ -600,12 +601,12 @@ export function BotSettings({
         <div className="mb-4 flex items-center justify-between">
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             className="text-muted-foreground"
             aria-label={t`Back`}
             onClick={() => onViewChange?.("settings")}
           >
-            <ChevronLeft className="rtl:rotate-180" />
+            <ChevronLeft className="size-4.5 rtl:rotate-180" strokeWidth={1.75} />
           </Button>
           <div className="text-body-lg font-medium text-foreground">
             {view === "routines" ? <Trans>Routines</Trans> : <Trans>Pages</Trans>}
@@ -623,13 +624,13 @@ export function BotSettings({
               render={
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   className="text-muted-foreground"
                   aria-label={t`More actions`}
                 />
               }
             >
-              <MoreHorizontal size={16} strokeWidth={1.8} />
+              <MoreHorizontal className="size-4.5" strokeWidth={1.75} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               {email && !email.address && !claimingEmail ? (
@@ -884,6 +885,7 @@ export function BotSettings({
                   void enqueueSave({ notifyOnFinish: checked });
                 }}
               />
+              {tab === "settings" ? <ComputerHomeVersions botId={bot.id} /> : null}
               {changed.readAloud ? (
                 <SwitchRow
                   id={`${ids}-auto-speak`}
@@ -990,11 +992,9 @@ export function BotSettings({
     </div>
   );
 }
-
 const NO_CREDENTIALS: never[] = [];
 const NO_CATALOG: ModelCatalogEntry[] = [];
 const NO_DEVICES: never[] = [];
-
 function sameStringList(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }

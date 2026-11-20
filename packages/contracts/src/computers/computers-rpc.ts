@@ -4,10 +4,13 @@ import { userDeviceListSchema } from "../account/user-devices.js";
 import { Id } from "../ids.js";
 import { botId } from "../rpc/inputs.js";
 import {
+  CloudComputersSchema,
+  ComputerHomeVersionSchema,
   ComputerProviderSettingsSchema,
   ComputerProviderUpdateSchema,
   ComputerReleaseReasonSchema,
   ComputerScreenSchema,
+  ComputerSizeSchema,
   ComputerStatusSchema,
   ComputerUpdateSchema,
 } from "./computer.js";
@@ -26,6 +29,14 @@ export const computersRpc = {
       update: oc.input(ComputerProviderUpdateSchema).output(ComputerProviderSettingsSchema),
     },
   },
+  /** Null where sizes cannot be chosen: no plan prices them or the provider has one size. */
+  cloudComputers: {
+    list: oc.output(CloudComputersSchema.nullable()),
+    /** Answers once the size is saved; callers read the list again on their own. */
+    setSize: oc
+      .input(z.object({ computerId: Id, size: ComputerSizeSchema }))
+      .output(z.object({ ok: z.literal(true) })),
+  },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),
     boot: oc.input(botId).output(ComputerStatusSchema),
@@ -39,6 +50,12 @@ export const computersRpc = {
       .output(z.object({ ok: z.literal(true) })),
     dismissUpdate: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
     dismissDiskWarning: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    /** Earlier saved copies of the computer's home, newest first. */
+    homeVersions: oc.input(botId).output(z.array(ComputerHomeVersionSchema)),
+    /** Makes an earlier copy current; the stopped computer gets it on its next start. */
+    restoreHomeVersion: oc
+      .input(z.object({ botId: Id, versionId: Id }))
+      .output(z.object({ ok: z.literal(true) })),
     takeover: oc.input(botId).output(z.object({ leaseId: Id, expiresAt: z.string() })),
     release: oc
       .input(

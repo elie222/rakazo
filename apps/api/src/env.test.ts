@@ -370,6 +370,16 @@ describe("OIDC environment", () => {
       "AUTH_BREACHED_PASSWORD_CHECK_ENABLED must be true or false",
     );
   });
+  it("refuses a SIGNUPS_ENABLED value it can't read", () => {
+    for (const value of ["false", "FALSE", " true ", "0", "1", ""]) {
+      expect(loadEnv({ ...base, SIGNUPS_ENABLED: value }).signupsEnabled).toBe(value);
+    }
+    for (const value of ["no", "off", "flase"]) {
+      expect(() => loadEnv({ ...base, SIGNUPS_ENABLED: value })).toThrow(
+        "SIGNUPS_ENABLED must be true or false",
+      );
+    }
+  });
   it("defaults to SSO with no policy bypass", () => {
     expect(loadEnv({ ...base, ...oidc }).oidc).toMatchObject({
       name: "SSO",

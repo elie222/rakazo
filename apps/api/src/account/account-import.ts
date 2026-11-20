@@ -12,6 +12,7 @@ import {
   carriedRoutineModelPin,
   memoryDocumentError,
   normalizeWorkspacePath,
+  ObjectStorageUnavailableError,
   resolveBotWorkspacePath,
 } from "@rakazo/adapters";
 import type {
@@ -43,6 +44,7 @@ import {
   SpaceLimitError,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
+import { markExpectedFailure } from "@rakazo/logging/hono";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { checkPageSource } from "@rakazo/page-kit/validate";
 import type { Hono } from "hono";
@@ -1216,6 +1218,11 @@ export function mountAccountImportRoute(
     } catch (error) {
       if (error instanceof AccountImportError)
         return c.json({ error: error.message }, error.status);
+      // The store already logged its outage as a warning; the person can try again.
+      if (error instanceof ObjectStorageUnavailableError) {
+        markExpectedFailure();
+        return c.json({ error: error.message }, 503);
+      }
       getLogger().error("account import failed", error);
       return c.json({ error: "The import failed." }, 500);
     }

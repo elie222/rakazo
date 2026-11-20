@@ -54,6 +54,7 @@ import {
   hasHostedModelCredits,
   ModelConnectionGoneError,
   PINNED_PROVIDER_NOT_CONNECTED,
+  UNKNOWN_PROVIDER_MODEL,
   UnavailableModelForAuthError,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
@@ -154,7 +155,7 @@ function assertCompatibleModelEnabled(
   if (secret.kind !== "openai_compatible") return;
   if (secret.enabledModelIds !== undefined) {
     if (!enabledOpenAiCompatibleModelIds(secret, credential.defaultModel).includes(modelId)) {
-      throw new UnavailableModelForAuthError("Unknown model for that provider");
+      throw new UnavailableModelForAuthError(UNKNOWN_PROVIDER_MODEL);
     }
     return;
   }
@@ -303,7 +304,7 @@ async function resolveModelKeyMaterial(
         if (requireStoredSecret)
           throw new ModelConnectionGoneError("Backup model credential is no longer available");
         if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-          throw new UnavailableModelForAuthError("Unknown model for that provider");
+          throw new UnavailableModelForAuthError(UNKNOWN_PROVIDER_MODEL);
         }
         cloudflareProviderEnv({ provider });
         return { apiKey: deploymentKeyFor(deps, provider), redact: [] };

@@ -15,6 +15,8 @@ import { useScreenQuery } from "../../lib/query/screen-query";
 import { NativeSymbol } from "../native/native-symbol";
 import { SettingsGroup, SettingsInputRow, SettingsRow } from "../settings/settings-group";
 
+const COPY_CONFIRMATION_MS = 1500;
+
 export type BotEmail = {
   /** Null when this server receives no email, or until it answers. */
   address: BotEmailAddress;
@@ -82,8 +84,8 @@ export function useBotEmailRows({
   });
   const claimError =
     problem ?? (claiming.error ? errorText(claiming.error, t`That address isn't available`) : null);
-  const [copied, setCopied] = useState(false);
-  useTimeout(() => setCopied(false), copied ? 1500 : null);
+  const [copied, setCopied] = useState<object | null>(null);
+  useTimeout(() => setCopied(null), copied ? COPY_CONFIRMATION_MS : null, copied);
   const domain = email.address?.domain;
   const address = email.address?.address ?? null;
 
@@ -123,7 +125,7 @@ export function useBotEmailRows({
         }
         onPress={() =>
           void Clipboard.setStringAsync(address).then(() => {
-            setCopied(true);
+            setCopied({});
           })
         }
       />,
@@ -174,8 +176,8 @@ export function BotEmailAddressesGroup() {
   const read = useScreenQuery(rpcQuery("bots/emailAddresses"), { onForeground: false });
   // The list read before may be another Space's, so a failed read hides it.
   const email = read.error ? null : read.data;
-  const [copied, setCopied] = useState<string | null>(null);
-  useTimeout(() => setCopied(null), copied ? 1500 : null);
+  const [copied, setCopied] = useState<{ address: string } | null>(null);
+  useTimeout(() => setCopied(null), copied ? COPY_CONFIRMATION_MS : null, copied);
   if (!email?.addresses.length) return null;
   return (
     <SettingsGroup label={t`Bot email addresses`}>
@@ -188,15 +190,15 @@ export function BotEmailAddressesGroup() {
           detail={row.address}
           trailing={
             <NativeSymbol
-              ios={copied === row.address ? "checkmark" : "doc.on.doc"}
-              android={copied === row.address ? "checkmark" : "copy-outline"}
+              ios={copied?.address === row.address ? "checkmark" : "doc.on.doc"}
+              android={copied?.address === row.address ? "checkmark" : "copy-outline"}
               color={native.tertiaryLabel}
               size={15}
             />
           }
           onPress={() =>
             void Clipboard.setStringAsync(row.address).then(() => {
-              setCopied(row.address);
+              setCopied({ address: row.address });
             })
           }
         />

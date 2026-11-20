@@ -32,6 +32,16 @@ export class BoatApiError extends Error implements ResponseError {
   }
 }
 
+export function boatResumeInProgress(error: unknown): boolean {
+  return (
+    error instanceof BoatApiError &&
+    (error.code === "sandbox_resuming" ||
+      (error.code === "resume_failed" &&
+        error.response.status === 409 &&
+        /\bAgent resume already in progress\b/i.test(error.message)))
+  );
+}
+
 /** Boat's limit on API requests per minute from one IP address, across every endpoint. */
 const BOAT_IP_RATE_LIMIT = "IP_RATE_LIMIT_EXCEEDED";
 /** Boat counts requests and starts over a rolling minute. */

@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { clearEndedRunState } from "./run-secrets.js";
 
+const card = (approvalEffectId: string, status: "pending" | "answered") => ({
+  kind: "ask",
+  approvalEffectId,
+  text: "Review before sending",
+  status,
+  actions: [
+    { id: "allow", label: "Allow once" },
+    { id: "deny", label: "Deny" },
+  ],
+  ...(status === "answered" ? { answer: "allow" } : {}),
+});
+
 describe("clearEndedRunState", () => {
   it("drops each cancelled run's checkpoint and waiting one-time answer", async () => {
     const prisma = {
@@ -35,17 +47,6 @@ describe("clearEndedRunState", () => {
   });
 
   it("denies only effects behind an unanswered approval card", async () => {
-    const card = (approvalEffectId: string, status: "pending" | "answered") => ({
-      kind: "ask",
-      approvalEffectId,
-      text: "Review before sending",
-      status,
-      actions: [
-        { id: "allow", label: "Allow once" },
-        { id: "deny", label: "Deny" },
-      ],
-      ...(status === "answered" ? { answer: "allow" } : {}),
-    });
     const prisma = {
       externalEffect: { deleteMany: vi.fn(), updateMany: vi.fn(async () => ({ count: 1 })) },
       message: {
@@ -60,6 +61,27 @@ describe("clearEndedRunState", () => {
     await clearEndedRunState(prisma as unknown as PrismaClient, ["run-1"]);
     // An effect with no card may belong to a tool that is still running; it keeps its status.
     expect(prisma.externalEffect.updateMany).toHaveBeenCalledOnce();
+    expect(prisma.externalEffect.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["effect-open"] }, runId: { in: ["run-1"] }, status: "intended" },
+      data: { status: "denied" },
+    });
+  });
+
+  it("finds an open card when another block in its message does not parse", async () => {
+    const prisma = {
+      externalEffect: { deleteMany: vi.fn(), updateMany: vi.fn(async () => ({ count: 1 })) },
+      message: {
+        findMany: vi.fn(async () => [
+          {
+            id: "message-1",
+            blocks: [card("effect-open", "pending"), { kind: "block_from_an_earlier_release" }],
+          },
+        ]),
+      },
+      run: { findMany: vi.fn(async () => []) },
+      secret: { deleteMany: vi.fn() },
+    };
+    await clearEndedRunState(prisma as unknown as PrismaClient, ["run-1"]);
     expect(prisma.externalEffect.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["effect-open"] }, runId: { in: ["run-1"] }, status: "intended" },
       data: { status: "denied" },

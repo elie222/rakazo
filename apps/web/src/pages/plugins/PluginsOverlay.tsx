@@ -7,6 +7,7 @@ import type {
   McpSourcePreset,
 } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED, mcpServerConnection } from "@rakazo/contracts";
+import type { connectedAppMarks } from "@rakazo/core";
 import {
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
@@ -37,7 +38,6 @@ import type {
 } from "../../components/integrations/plugin-marketplace";
 import { PluginDetail, pluginSelection } from "../../components/integrations/plugin-marketplace";
 import { reachesOtherSpaces, useOwnSpaces } from "../../components/integrations/space-availability";
-import type { connectedAppMarks } from "../../lib/integrations/connected-apps";
 import { connectMcpOauth } from "../../lib/integrations/mcp-connect";
 import { rpc } from "../../lib/query/rpc";
 import { errorCode, errorText } from "../../lib/query/user-error";

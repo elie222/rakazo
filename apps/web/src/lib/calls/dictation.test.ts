@@ -1172,6 +1172,34 @@ describe("combineTranscript", () => {
     expect(combineTranscript("a", "a𐐀")).toBe("a a𐐀");
     expect(combineTranscript("a𐐀", "a𐐀 more")).toBe("a𐐀 more");
   });
+
+  it("does not repeat carried Japanese text in the restarted session", () => {
+    expect(combineTranscript("今日は", "今日は天気")).toBe("今日は天気");
+  });
+
+  it("joins a partial Japanese overlap without a space", () => {
+    expect(combineTranscript("昨日は雨。今日は", "今日は天気")).toBe("昨日は雨。今日は天気");
+  });
+
+  it("does not repeat carried Thai text in the restarted session", () => {
+    expect(combineTranscript("สวัสดี", "สวัสดีครับ")).toBe("สวัสดีครับ");
+  });
+
+  it("joins unrelated CJK text without a space", () => {
+    expect(combineTranscript("今日は", "明日")).toBe("今日は明日");
+  });
+
+  it("does not merge a one-character coincidence in Japanese", () => {
+    expect(combineTranscript("今日", "日本の天気")).toBe("今日日本の天気");
+  });
+
+  it("merges a short overlap that starts a Japanese clause", () => {
+    expect(combineTranscript("昨日は雨。今日", "今日は天気")).toBe("昨日は雨。今日は天気");
+  });
+
+  it("still requires a whole Latin word before merging into an unspaced script", () => {
+    expect(combineTranscript("cat", "category")).toBe("cat category");
+  });
 });
 
 describe("dictation engine choice", () => {

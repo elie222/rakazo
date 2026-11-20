@@ -580,6 +580,18 @@ describe("render_plot", () => {
     ).toThrow(/no position channels/);
   });
 
+  it("renders sparse object rows without requiring every column in the first row", () => {
+    const spec = { marks: [{ type: "barY", options: { x: "quarter", y: "sales" } }] };
+    const data = [{ quarter: "Q1" }, { quarter: "Q2", sales: 185 }];
+
+    for (const rows of [data, [...data].reverse()]) {
+      expect(renderPlotSpecToSvg(spec, rows, dom())).toContain("<rect");
+    }
+    expect(() =>
+      renderPlotSpecToSvg(spec, [{ quarter: "Q1" }, { quarter: "Q2", returns: 4 }], dom()),
+    ).toThrow(/y refers to "sales" but the data columns are: quarter, returns/);
+  });
+
   it("coerces numeric strings so bar heights measure instead of stacking ordinally", () => {
     const svg = renderPlotSpecToSvg(
       { marks: [{ type: "barY", options: { x: "quarter", y: "sales" } }] },
