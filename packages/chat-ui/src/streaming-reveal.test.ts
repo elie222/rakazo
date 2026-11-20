@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isIncrementalRevealSource, segmentRevealUnits } from "./streaming-reveal";
+import {
+  commitStreamingReveal,
+  createStreamingRevealState,
+  isIncrementalRevealSource,
+  segmentRevealUnits,
+} from "./streaming-reveal";
 
 describe("streaming reveal units", () => {
   it("reveals Chinese and Japanese by character", () => {
@@ -28,5 +33,28 @@ describe("streaming reveal source", () => {
 
   it("treats a large jump as a mount or backfill instead of animating it", () => {
     expect(isIncrementalRevealSource("", "x".repeat(601))).toBe(false);
+  });
+});
+
+describe("streaming reveal commit", () => {
+  it("drops progress from a render pass that was abandoned", () => {
+    const state = createStreamingRevealState();
+    state.pending.set("paragraph-0", {
+      text: "abandoned",
+      pass: 1,
+      units: 2,
+      now: 10,
+    });
+    commitStreamingReveal(state, 2, ["paragraph-0"]);
+    expect(state.blocks.size).toBe(0);
+    expect(state.pending.size).toBe(0);
+  });
+
+  it("forgets blocks that are no longer in the message", () => {
+    const state = createStreamingRevealState();
+    state.blocks.set("paragraph-0", "old");
+    state.pending.set("paragraph-1", { text: "new", pass: 1, units: 1, now: 10 });
+    commitStreamingReveal(state, 1, ["paragraph-1"]);
+    expect([...state.blocks.keys()]).toEqual(["paragraph-1"]);
   });
 });

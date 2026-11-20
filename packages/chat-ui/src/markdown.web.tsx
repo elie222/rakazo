@@ -61,6 +61,7 @@ import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 import { isMermaidFence, mermaidSvgImage } from "./mermaid";
 import { useMermaidSvg } from "./mermaid.web";
 import { PAGE_ICON } from "./page-icon";
+import type { StreamingRevealState } from "./streaming-reveal";
 import {
   commitStreamingReveal,
   createStreamingRevealPlugin,
@@ -798,13 +799,19 @@ function renderFinishedMarkdown(source: string) {
 const MarkdownBlock = memo(function MarkdownBlock({
   source,
   streaming,
-  revealPlugin,
+  blockKey,
+  reveal,
 }: {
   source: string;
   streaming: boolean;
-  revealPlugin: RehypePlugin | undefined;
+  blockKey: string;
+  reveal: StreamingRevealState;
 }) {
   const parsed = streaming ? closeUnterminatedFence(source) : source;
+  const revealPlugin = useMemo(
+    () => (streaming ? createStreamingRevealPlugin(reveal, blockKey) : undefined),
+    [streaming, reveal, blockKey],
+  );
   const rehype = useMemo(
     () => (streaming && revealPlugin ? [...rehypePlugins, revealPlugin] : rehypePlugins),
     [streaming, revealPlugin],
@@ -889,15 +896,25 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   const revealStateRef = useRef<ReturnType<typeof createStreamingRevealState> | null>(null);
   revealStateRef.current ??= createStreamingRevealState();
   const reveal = revealStateRef.current;
-  const revealSourceRef = useRef("");
-  const revealPlugin = useMemo(() => createStreamingRevealPlugin(reveal), [reveal]);
+  // The effect captures the pass of the render it belongs to, so a later abandoned pass cannot
+  // claim progress that never reached the screen.
+  reveal.pass += 1;
+  const revealPass = reveal.pass;
+  const revealSourceRef = useRef<string | undefined>(undefined);
   // A re-render with the same text keeps the last verdict: its transitions may still be running,
   // and judging it again would call the whole text settled.
   if (children !== revealSourceRef.current) {
-    reveal.incremental = streaming && isIncrementalRevealSource(revealSourceRef.current, children);
+    reveal.incremental =
+      revealSourceRef.current !== undefined &&
+      streaming &&
+      isIncrementalRevealSource(revealSourceRef.current, children);
   }
   useEffect(() => {
-    commitStreamingReveal(reveal);
+    commitStreamingReveal(
+      reveal,
+      revealPass,
+      blocks ? blocks.map((block) => block.key) : ["root-0"],
+    );
     revealSourceRef.current = children;
   });
 
@@ -918,7 +935,8 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                     <MarkdownBlock
                       source={block.source}
                       streaming={streaming && index === blocks.length - 1}
-                      revealPlugin={revealPlugin}
+                      blockKey={block.key}
+                      reveal={reveal}
                     />
                   </Fragment>
                 ))
@@ -926,7 +944,8 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                 <MarkdownBlock
                   source={children}
                   streaming={streaming}
-                  revealPlugin={revealPlugin}
+                  blockKey="root-0"
+                  reveal={reveal}
                 />
               )}
             </PlainTextOnFailure>

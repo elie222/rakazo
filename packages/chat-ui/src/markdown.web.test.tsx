@@ -821,6 +821,7 @@ describe("web markdown streaming", () => {
         root.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
       });
     };
+    await render("");
     await render("First reply");
     const first = reveal();
     expect(first).toHaveLength(2);
@@ -844,20 +845,58 @@ describe("web markdown streaming", () => {
     container.remove();
   });
 
+  it("mounts an existing reply without replaying it", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Restored reply."}</ChatMarkdown>);
+    });
+    expect(container.querySelectorAll('[data-rk-reveal="new"]')).toHaveLength(0);
+    expect(container.textContent).toBe("Restored reply.");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("fades in a new paragraph even when it repeats an earlier one", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Done."}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Done.\n\nDone."}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["Done", "."]);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("shows a replaced snapshot at once instead of replaying it", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
       root.render(<ChatMarkdown streaming>{"A first reply."}</ChatMarkdown>);
     });
     await act(async () => {
       root.render(<ChatMarkdown streaming>{"A different conversation."}</ChatMarkdown>);
     });
-    const units = [...container.querySelectorAll("[data-rk-reveal]")];
-    expect(units.length).toBeGreaterThan(0);
-    expect(units.every((unit) => unit.getAttribute("data-rk-reveal") === "settled")).toBe(true);
+    expect(container.querySelectorAll('[data-rk-reveal="new"]')).toHaveLength(0);
+    expect(container.textContent).toBe("A different conversation.");
     await act(async () => {
       root.unmount();
     });

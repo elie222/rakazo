@@ -34,50 +34,45 @@ const REVEAL_FIRST_WINDOW_MS = 30;
  * message appears without animation. A normal frame is a few characters.
  */
 const REVEAL_MAX_DELTA_CHARS = 600;
-/** Only trailing blocks still change; earlier ones are frozen, so a few recent entries are enough. */
-const REVEAL_COMMITTED_BLOCK_CAP = 16;
 /** The next version of a block may rewrite trailing whitespace or punctuation. */
 const REVEAL_TAIL_SLACK_CHARS = 8;
 const REVEAL_WORD_CHAR_RE = /[\p{L}\p{N}]/u;
 const REVEAL_FALLBACK_WORD_RE = /\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]/gu;
 const REVEAL_CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
 
-type RevealPlan = {
-  /** When this batch arrived, on the `performance.now()` timeline. */
+/** Progress one render pass wrote for a block, committed only if that pass reaches the screen. */
+type PendingBlock = {
+  text: string;
+  pass: number;
+  units: number;
   now: number;
-  start: number;
-  interval: number;
-  end: number;
-  count: number;
 };
 
 export type StreamingRevealState = {
-  /** Rendered text of recently committed blocks; the plugin only reads it while rendering. */
-  committed: string[];
-  /** Rendered texts produced by the current render pass, committed after it is on screen. */
-  pending: string[];
-  /** Start time of the last scheduled unit, so batches continue each other's rhythm. */
-  clock: number;
+  /** Rendered text of each block seen so far, by the block's stable key. */
+  blocks: Map<string, string>;
+  /** Progress written by render passes that have not committed yet. */
+  pending: Map<string, PendingBlock>;
+  /** Incremented once per render pass so an abandoned pass cannot commit its progress. */
+  pass: number;
   /** Arrival speed in units per millisecond, smoothed; unknown until the first commit. */
   rate: number | undefined;
   /** Smoothed gap between two batches of new units, in milliseconds. */
   gap: number | undefined;
   /** When the previous batch of new units arrived. */
   arrival: number;
-  pendingSchedules: Map<string, RevealPlan>;
   /** Whether this frame is a live append; a mount, backfill or session switch never animates. */
   incremental: boolean;
 };
 
 export function createStreamingRevealState(): StreamingRevealState {
   return {
-    committed: [],
-    pending: [],
-    clock: Number.NEGATIVE_INFINITY,
+    blocks: new Map(),
+    pending: new Map(),
+    pass: 0,
     rate: undefined,
     gap: undefined,
     arrival: Number.NEGATIVE_INFINITY,
-    pendingSchedules: new Map(),
     incremental: false,
   };
 }
@@ -139,52 +134,39 @@ function revealPredecessorLength(text: string, entry: string): number {
   return tail.length <= REVEAL_TAIL_SLACK_CHARS && !REVEAL_WORD_CHAR_RE.test(tail) ? prefix : 0;
 }
 
-function resolveRevealedLength(blockText: string, committed: readonly string[]): number {
-  let revealed = 0;
-  for (const entry of committed) {
-    revealed = Math.max(revealed, revealPredecessorLength(blockText, entry));
-  }
-  return revealed;
-}
-
 /**
- * Runs after the render is committed. New units were scheduled during render; folding them in
- * here lets the next render read the progress the previous frame reached.
+ * Runs after the render is committed. Only the pass that reached the screen may record progress;
+ * entries from interrupted passes are dropped, and blocks no longer in the message are forgotten.
  */
-export function commitStreamingReveal(state: StreamingRevealState) {
-  if (state.pendingSchedules.size > 0) {
-    let count = 0;
-    let arrival = Number.NEGATIVE_INFINITY;
-    for (const planned of state.pendingSchedules.values()) {
-      state.clock = Math.max(state.clock, planned.end);
-      count += planned.count;
-      arrival = Math.max(arrival, planned.now);
-    }
-    state.pendingSchedules.clear();
-    // Only a continuous stream updates the speed. A pause keeps the previous speed, or a burst
-    // after a pause would be scheduled at the slow pace it looked like it had.
-    const gap = arrival - state.arrival;
-    if (gap <= REVEAL_PAUSE_MS) {
-      const instant = count / Math.max(gap, REVEAL_MIN_GAP_MS);
-      state.rate =
-        state.rate === undefined
-          ? instant
-          : state.rate + (instant - state.rate) * REVEAL_RATE_ALPHA;
-      state.gap = state.gap === undefined ? gap : state.gap + (gap - state.gap) * REVEAL_RATE_ALPHA;
-    }
-    state.arrival = arrival;
+export function commitStreamingReveal(
+  state: StreamingRevealState,
+  pass: number,
+  blockKeys: readonly string[],
+) {
+  const current = new Set(blockKeys);
+  for (const key of state.blocks.keys()) {
+    if (!current.has(key)) state.blocks.delete(key);
   }
-  if (state.pending.length === 0) return;
-  let committed = state.committed;
-  for (const text of state.pending) {
-    if (text.length === 0) continue;
-    // A block's next version replaces its previous one. The same rule as
-    // resolveRevealedLength also dedupes the same text pushed twice by StrictMode.
-    committed = committed.filter((entry) => revealPredecessorLength(text, entry) === 0);
-    committed.push(text);
+  let units = 0;
+  let arrival = Number.NEGATIVE_INFINITY;
+  for (const [key, pending] of state.pending) {
+    state.pending.delete(key);
+    if (pending.pass !== pass) continue;
+    state.blocks.set(key, pending.text);
+    units += pending.units;
+    arrival = Math.max(arrival, pending.now);
   }
-  state.committed = committed.slice(-REVEAL_COMMITTED_BLOCK_CAP);
-  state.pending = [];
+  if (units === 0) return;
+  // Only a continuous stream updates the speed. A pause keeps the previous speed, or a burst
+  // after a pause would be scheduled at the slow pace it looked like it had.
+  const gap = arrival - state.arrival;
+  if (gap <= REVEAL_PAUSE_MS) {
+    const instant = units / Math.max(gap, REVEAL_MIN_GAP_MS);
+    state.rate =
+      state.rate === undefined ? instant : state.rate + (instant - state.rate) * REVEAL_RATE_ALPHA;
+    state.gap = state.gap === undefined ? gap : state.gap + (gap - state.gap) * REVEAL_RATE_ALPHA;
+  }
+  state.arrival = arrival;
 }
 
 type RevealSlot =
@@ -192,53 +174,29 @@ type RevealSlot =
   | { kind: "element"; node: HastNode; start: number }
   | { kind: "marker"; node: HastNode; start: number };
 
-type RevealSchedule = { now: number; start: number; interval: number };
+type RevealSchedule = { now: number; interval: number };
 
 function clampRevealMs(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
 /**
- * Schedules this batch of new units and returns when the first one starts and how far apart they
- * are. A new batch continues after the last unit already scheduled, and is spread to finish
- * before "now + target lag", where the target lag grows with arrival speed. This keeps a slow
- * model visibly typing and stops a fast one from queueing seconds of delay.
+ * Schedules this batch of new units and returns the arrival time and the gap between units. The
+ * batch starts now and is spread to finish within the target lag, where the lag grows with arrival
+ * speed. This keeps a slow model visibly typing and stops a fast burst from queueing seconds of
+ * delay. Only the tail block renders through this plugin, so there is no second block to chain to.
  */
-function planRevealSchedule(
-  state: StreamingRevealState,
-  blockText: string,
-  count: number,
-): RevealSchedule {
-  const now = performance.now();
-  // The same block rendered again before commit: reuse its schedule instead of queueing twice.
-  const planned = state.pendingSchedules.get(blockText);
-  if (planned) return { now, start: planned.start, interval: planned.interval };
-  // Later blocks in the same pass continue after earlier ones. A prefix version of the current
-  // text is a discarded render whose units never reached the screen, so it does not count.
-  let clock = state.clock;
-  for (const [key, entry] of state.pendingSchedules) {
-    if (blockText.startsWith(key)) state.pendingSchedules.delete(key);
-    else clock = Math.max(clock, entry.end);
-  }
+function planRevealSchedule(state: StreamingRevealState, count: number): RevealSchedule {
   const perUnit = state.rate !== undefined ? 1 / state.rate : REVEAL_FIRST_WINDOW_MS / count;
   const lag = clampRevealMs(
     Math.max(REVEAL_LAG_UNITS * perUnit, REVEAL_LAG_GAP_FACTOR * (state.gap ?? 0)),
     REVEAL_MIN_LAG_MS,
     REVEAL_MAX_LAG_MS,
   );
-  const tail = Math.max(clock, now);
-  const ceiling = Math.max(0, now + REVEAL_MAX_LAG_MS - tail);
-  const available = Math.min(ceiling, Math.max(now + lag - tail, REVEAL_MIN_SPREAD_MS));
-  const interval = Math.min(REVEAL_MAX_INTERVAL_MS, available / count);
-  const start = Math.max(now, clock + interval);
-  state.pendingSchedules.set(blockText, {
-    now,
-    start,
-    interval,
-    end: start + (count - 1) * interval,
-    count,
-  });
-  return { now, start, interval };
+  return {
+    now: performance.now(),
+    interval: Math.min(REVEAL_MAX_INTERVAL_MS, Math.max(lag, REVEAL_MIN_SPREAD_MS) / count),
+  };
 }
 
 /** Appends reveal properties to an existing hast element, keeping any inline style it had. */
@@ -267,11 +225,11 @@ function isMathCodeElement(node: HastNode): boolean {
 }
 
 /**
- * Wraps every rendered unit in a span that carries its fade-in delay. Units that were already
- * on screen are marked settled and keep their DOM position; new units are appended, so React
- * never reuses an existing span for different text.
+ * Wraps every rendered unit in a span that carries its fade-in delay. Units that were already on
+ * screen are marked settled and keep their DOM position; new units are appended, so React never
+ * reuses an existing span for different text.
  */
-export function createStreamingRevealPlugin(state: StreamingRevealState) {
+export function createStreamingRevealPlugin(state: StreamingRevealState, blockKey: string) {
   return function streamingRevealRehypePlugin() {
     return (tree: HastNode) => {
       const slots: RevealSlot[] = [];
@@ -326,12 +284,19 @@ export function createStreamingRevealPlugin(state: StreamingRevealState) {
       walk(tree, false);
 
       const blockText = blockTexts.join("");
-      // Record progress even when nothing animates, or the next frame would treat it all as new.
-      state.pending.push(blockText);
-      if (slots.length === 0) return;
-      const revealed = state.incremental
-        ? resolveRevealedLength(blockText, state.committed)
-        : Number.POSITIVE_INFINITY;
+      const previous = state.blocks.get(blockKey);
+      // A block never seen before is new text, however its text compares to other blocks. A block
+      // already on screen keeps the prefix it had; a rewrite settles it whole rather than replaying
+      // text the reader already saw.
+      let revealed = Number.POSITIVE_INFINITY;
+      if (state.incremental) {
+        if (previous === undefined || previous.length === 0) {
+          revealed = 0;
+        } else {
+          const prefix = revealPredecessorLength(blockText, previous);
+          revealed = prefix > 0 ? prefix : Number.POSITIVE_INFINITY;
+        }
+      }
 
       let fresh = 0;
       for (const slot of slots) {
@@ -345,12 +310,18 @@ export function createStreamingRevealPlugin(state: StreamingRevealState) {
           cursor += unit.length;
         }
       }
-      const schedule = fresh > 0 ? planRevealSchedule(state, blockText, fresh) : undefined;
+      const schedule = fresh > 0 ? planRevealSchedule(state, fresh) : undefined;
+      state.pending.set(blockKey, {
+        text: blockText,
+        pass: state.pass,
+        units: fresh,
+        now: schedule?.now ?? performance.now(),
+      });
+      if (fresh === 0) return;
+
       let revealIndex = 0;
       const nextRevealDelay = () => {
-        const delay = schedule
-          ? schedule.start + revealIndex * schedule.interval - schedule.now
-          : 0;
+        const delay = schedule ? revealIndex * schedule.interval : 0;
         revealIndex += 1;
         return `${delay.toFixed(1)}ms`;
       };
