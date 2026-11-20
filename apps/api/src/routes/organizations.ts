@@ -146,6 +146,7 @@ export function organizationsRoutes(ctx: RouterContext) {
                     deps,
                     { spaceId: departure.spaceId, userId: context.actor.userId },
                     departure,
+                    input.userId,
                   );
                   // Whoever took the Space over sees it change, as when they leave it.
                   void deps.events?.publishRosterChange?.({ spaceIds: [departure.spaceId] });

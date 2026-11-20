@@ -1,14 +1,14 @@
+import type { MentionLink } from "@rakazo/chat-ui/native";
 import { plainTextLinkParts } from "@rakazo/chat-ui/native";
 import type { BotAvatarSet } from "@rakazo/contracts";
 import type { MentionTextPart } from "@rakazo/core";
 import { displayName, everyoneWords, groupMentionNames, splitMentionText } from "@rakazo/core";
-import type { ReactNode } from "react";
 import { createContext } from "react";
 
-/** Draws the bots a reply announces where its text names them. */
-export const MessageMentionsContext = createContext<((id: string) => ReactNode) | undefined>(
-  undefined,
-);
+/** Colors and opens the bots a reply announces where its text names them. */
+export const MessageMentionsContext = createContext<
+  ((id: string) => MentionLink | undefined) | undefined
+>(undefined);
 
 /** A group member a sent message can name with `@Name`, or everyone in the group. */
 export type UserMentionTarget =

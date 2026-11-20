@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Turns the screenshot agent's JSON into a section of the pull request description.
 
-The agent browsed a preview built from the pull request, so its JSON and images are
-untrusted. Only PNG files it saved, and plain-text captions, get through.
+The agent browsed a preview built from the pull request (and one built from main, for
+"before" views), so its JSON and images are untrusted. Only PNG files it saved, and plain-text captions, get through.
 
   pr-screenshots.py ready REPO PR SHA
       prints "ready" when trusted preview deployment and E2E publication have finished
@@ -165,45 +165,76 @@ def clean_caption(value: object) -> str:
     return re.sub(r"([\\`*_{}\[\]()<>#!|@~])", r"\\\1", text)
 
 
-def select(result: object, shots_dir: Path) -> list[tuple[str, str]]:
+def saved_png(name: object, shots_dir: Path) -> bool:
+    if not isinstance(name, str) or not FILE_NAME.match(name) or ".." in name:
+        return False
+    path = shots_dir / name
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_BYTES:
+        return False
+    with path.open("rb") as image:
+        return image.read(len(PNG_MAGIC)) == PNG_MAGIC
+
+
+# (after file, before file or "", caption)
+Shot = tuple[str, str, str]
+
+
+def select(result: object, shots_dir: Path) -> list[Shot]:
     shots = result.get("screenshots") if isinstance(result, dict) else None
     if not isinstance(shots, list):
         return []
-    selected: list[tuple[str, str]] = []
+    selected: list[Shot] = []
+    used: set[str] = set()
     for shot in shots:
         if len(selected) == MAX_SHOTS:
             break
         if not isinstance(shot, dict):
             continue
         name = shot.get("file")
-        if not isinstance(name, str) or not FILE_NAME.match(name) or ".." in name:
+        if name in used or not saved_png(name, shots_dir):
             continue
-        if any(name == chosen for chosen, _ in selected):
-            continue
-        path = shots_dir / name
-        if path.is_symlink() or not path.is_file():
-            continue
-        if path.stat().st_size > MAX_BYTES:
-            continue
-        with path.open("rb") as image:
-            if image.read(len(PNG_MAGIC)) != PNG_MAGIC:
-                continue
-        selected.append((name, clean_caption(shot.get("caption", ""))))
+        before = shot.get("before") or ""
+        if before == name or before in used or (before and not saved_png(before, shots_dir)):
+            before = ""
+        used.update(filter(None, (name, before)))
+        selected.append((name, before, clean_caption(shot.get("caption", ""))))
     return selected
 
 
-def section(selected: list[tuple[str, str]], base_url: str) -> str:
+def image_block(after_url: str, before_url: str, number: int) -> str:
+    if not before_url:
+        return f"![Screenshot {number}]({after_url})"
+    # "Before N" / "After N" alt text lets review tools pair the two images.
+    return "\n".join([
+        "| Before | After |",
+        "| --- | --- |",
+        f"| ![Before {number}]({before_url}) | ![After {number}]({after_url}) |",
+    ])
+
+
+def section(selected: list[Shot], base_url: str) -> str:
     if not selected:
         return ""
+    base = base_url.rstrip("/")
     lines = [START, "## Screenshots", ""]
-    for name, caption in selected:
+    for number, (name, before, caption) in enumerate(selected, 1):
         if caption:
             lines.append(caption)
             lines.append("")
-        lines.append(f"![{name}]({base_url.rstrip('/')}/{name})")
+        lines.append(image_block(f"{base}/{name}", f"{base}/{before}" if before else "", number))
         lines.append("")
     lines.append(END)
     return "\n".join(lines)
+
+
+IMAGE_BLOCK = re.compile(
+    r"!\[[^\n]*\]\((https://[^\s]+)\)"
+    r"|\| Before \| After \|\n\| --- \| --- \|\n\| !\[[^\n]*\]\((https://[^\s)]+)\) \| !\[[^\n]*\]\((https://[^\s)]+)\) \|"
+)
+
+
+def renumber(block: str, number: int) -> str:
+    return re.sub(r"!\[(Screenshot|Before|After) \d+\]", lambda m: f"![{m[1]} {number}]", block)
 
 
 def retain_section(body: str, new_section: str, sha: str) -> str:
@@ -222,9 +253,9 @@ def retain_section(body: str, new_section: str, sha: str) -> str:
         caption = ""
         for block in text.replace("\r\n", "\n").split("\n\n"):
             block = block.strip()
-            match = re.fullmatch(r"!\[[^\n]*\]\((https://[^\s]+)\)", block)
+            match = IMAGE_BLOCK.fullmatch(block)
             if match:
-                url = match[1]
+                url = match[1] or match[3]
                 if url not in seen:
                     entries.append((caption, block))
                     seen.add(url)
@@ -236,10 +267,10 @@ def retain_section(body: str, new_section: str, sha: str) -> str:
     if not entries:
         return ""
     lines = [START, marker, "## Screenshots", ""]
-    for caption, image in entries:
+    for number, (caption, image) in enumerate(entries, 1):
         if caption:
             lines.extend([caption, ""])
-        lines.extend([image, ""])
+        lines.extend([renumber(image, number), ""])
     lines.append(END)
     return "\n".join(lines)
 
@@ -308,15 +339,20 @@ def main(argv: list[str]) -> int:
         if not isinstance(result, dict) or not isinstance(result.get("screenshots"), list) or type(result.get("complete")) is not bool:
             return 2
         requested = result["screenshots"]
-        if len(requested) > MAX_SHOTS or any(not isinstance(shot, dict) or not isinstance(shot.get("file"), str) for shot in requested):
+        if len(requested) > MAX_SHOTS or any(
+            not isinstance(shot, dict) or not isinstance(shot.get("file"), str) or not isinstance(shot.get("before", ""), str)
+            for shot in requested
+        ):
             return 2
         selected = select(result, Path(shots_dir))
-        if len(selected) != len({shot["file"] for shot in requested}):
+        wanted = {(shot["file"], shot.get("before", "")) for shot in requested}
+        if {(name, before) for name, before, _ in selected} != wanted:
             sys.stderr.write("Every selected screenshot must pass publication validation.\n")
             return 2
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
-        (out / "uploads.txt").write_text("".join(f"{name}\n" for name, _ in selected))
+        uploads = [file for name, before, _ in selected for file in (before, name) if file]
+        (out / "uploads.txt").write_text("".join(f"{name}\n" for name in uploads))
         (out / "section.md").write_text(section(selected, base_url))
         return 0
     if len(argv) == 5 and argv[1] == "retain":

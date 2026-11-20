@@ -198,7 +198,8 @@ export function SkillsDialog({
             aria-label={t`Search skills`}
             placeholder={t`Search skills`}
             maxLength={200}
-            className="mb-5 h-11 rounded-xl"
+            size="xl"
+            className="mb-5"
           />
           {catalog.isPending ? (
             <div className="grid place-items-center py-10">
@@ -232,6 +233,15 @@ export function SkillsDialog({
               );
             })}
           </div>
+          {!catalog.isPending &&
+          !catalog.error &&
+          !catalog.data?.unavailableRegistries.length &&
+          query.trim() !== "" &&
+          packs.length === 0 ? (
+            <p role="status" className="text-muted-foreground/80">
+              <Trans>No skills match your search.</Trans>
+            </p>
+          ) : null}
         </section>
       </div>
     );

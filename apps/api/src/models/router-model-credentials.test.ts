@@ -167,6 +167,48 @@ describe("model credential persistence", () => {
     }
   });
 
+  it("refuses zero data retention for a provider that cannot enforce it, and stores nothing", async () => {
+    const { deps, handler } = persistDeps();
+    const response = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "fake-long-enough-key",
+      modelId: "claude-sonnet-4-5",
+      zeroDataRetention: true,
+    });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: {
+        code: "DATA_RETENTION_UNSUPPORTED",
+        message: expect.stringContaining("cannot restrict data retention"),
+      },
+    });
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+  });
+
+  it("hands the zero data retention choice to the connection builder", async () => {
+    const { handler } = persistDeps();
+    const build = vi.spyOn(adapters, "buildModelConnectPlaintext").mockImplementation(() => {
+      throw new Error("stop after validation");
+    });
+    try {
+      for (const zeroDataRetention of [true, false]) {
+        await call(handler, "models/connect", {
+          provider: "openrouter",
+          apiKey: "fake-long-enough-key",
+          modelId: "example/model",
+          zeroDataRetention,
+        });
+        expect(build).toHaveBeenLastCalledWith(
+          expect.objectContaining({ zeroDataRetention }),
+          undefined,
+          expect.anything(),
+        );
+      }
+    } finally {
+      build.mockRestore();
+    }
+  });
+
   it("does not persist a stringified null model id from subscription sign-in", async () => {
     const setup = persistDeps();
     const { upsert } = setup;

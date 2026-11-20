@@ -124,13 +124,14 @@ const rowMenuStyles = StyleSheet.create({
 
 function createStyles() {
   return StyleSheet.create({
-    anchor: { flexShrink: 1, minWidth: 0 },
+    anchor: { flexShrink: 1, minWidth: 0, maxWidth: "100%" },
     title: {
       flexDirection: "row",
       alignItems: "center",
       gap: 4,
       maxWidth: 220,
       flexShrink: 1,
+      minWidth: 0,
       minHeight: 44,
       paddingHorizontal: 8,
     },

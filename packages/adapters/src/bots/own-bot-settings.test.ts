@@ -26,6 +26,7 @@ function deps(): FleetPrepareDeps {
     secretId: "secret-google",
     createdAt: new Date(0),
     updatedAt: new Date(0),
+    userPreferences: [],
   };
   const prisma = {
     userModelCredential: { findMany: vi.fn(async () => [credential]) },

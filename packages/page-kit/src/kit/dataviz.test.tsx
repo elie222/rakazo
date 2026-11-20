@@ -19,6 +19,7 @@ import {
   shade,
   Venn,
 } from "./dataviz.js";
+import { wordsFor } from "./labels.js";
 import { Page } from "./layout.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -465,6 +466,15 @@ describe("charts", () => {
         throw new Error("bad");
       }),
     ).toBe("3k");
+  });
+
+  it("puts a currency symbol after the minus sign in every locale", () => {
+    expect(formatValue(1234.5, "$", undefined, wordsFor("en"))).toBe("$1,234.5");
+    expect(formatValue(-1234.5, "$", undefined, wordsFor("en"))).toBe("-$1,234.5");
+    // Hebrew puts a left-to-right mark before the sign; the symbol still follows the sign.
+    expect(formatValue(-1234.5, "$", undefined, wordsFor("he"))).toBe("\u200E-$1,234.5");
+    // Swedish uses a true minus sign and a no-break space as the group separator.
+    expect(formatValue(-1234.5, "$", undefined, wordsFor("sv"))).toBe("\u2212$1\u00A0234,5");
   });
 });
 

@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Bot, ComputerReleaseReason, ComputerStatus, TaughtSkill } from "@rakazo/contracts";
+import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
@@ -166,6 +167,7 @@ export function ComputerOverlay({
               variant="ghost"
               size="icon-sm"
               className="text-muted-foreground"
+              data-computer-close=""
               aria-label={t`Close computer`}
               onClick={() => onClose()}
             >
@@ -228,7 +230,7 @@ export function ComputerOverlay({
                     </Button>
                   </div>
                 ) : (
-                  computerLabel(computer?.mode, bot.name)
+                  computerPreviewPlaceholder(computer?.state, false)
                 ))}
             </div>
           )}

@@ -117,10 +117,14 @@ export function createCuaHostScreen(options: CuaHostScreenOptions): HostScreen {
     active += 1;
     try {
       if (!client) {
-        await options.permissions();
-        client = options.connect();
-        client.catch(() => {
-          client = undefined;
+        // Stored before the first await, so a call that arrives meanwhile shares this start.
+        const starting: Promise<CuaToolClient> = (async () => {
+          await options.permissions();
+          return options.connect();
+        })();
+        client = starting;
+        starting.catch(() => {
+          if (client === starting) client = undefined;
         });
       }
       let result: CuaToolResult;

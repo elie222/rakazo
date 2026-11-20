@@ -8,7 +8,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Provider rows end with their "Connect" action; models show their name alone. */
-const optionName = (entry: Element) => entry.textContent?.replace(/(Connect|Default)$/, "");
+const optionName = (entry: Element) =>
+  entry.textContent?.replace(/(Connect|Default|Included)$/, "");
 const api = vi.hoisted(() => ({ role: vi.fn(), forRole: vi.fn(), setRole: vi.fn() }));
 vi.mock("../../lib/models/localized-provider-hint", () => ({
   providerDisplayName: (provider: string, name: string, auth?: string) =>
@@ -151,6 +152,7 @@ describe("shared role editor", () => {
     expect(container.querySelector('[data-testid="model-role-default"]')?.textContent).toContain(
       "Deployment default",
     );
+    expect(trigger("Add fallback")).toBeNull();
     await pick("Change Approval model", "Jev 1.14");
     expect(api.setRole).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -162,9 +164,11 @@ describe("shared role editor", () => {
       { context: { spaceId: "space" } },
     );
     expect(rows()).toEqual(["Jev 1.14OpenRouter"]);
+    expect(trigger("Add fallback")).not.toBeNull();
     await menu("Jev 1.14", "Remove");
     expect(saved.primary).toBeNull();
     expect(container.querySelector('[data-testid="model-role-default"]')).not.toBeNull();
+    expect(trigger("Add fallback")).toBeNull();
   });
   it("does not show the unconfigured label before the first load", async () => {
     const hold = new Promise<never>(() => undefined);
@@ -188,6 +192,7 @@ describe("shared role editor", () => {
     expect(api.role.mock.calls.length).toBe(loads + 1);
   });
   it("uses the same add, order and remove controls for main and approval fallbacks", async () => {
+    saved = { ...saved, deploymentPrimary: mini };
     await render();
     await pick("Add fallback", "Chat");
     await pick("Add fallback", "Jev 1.14");
@@ -195,7 +200,7 @@ describe("shared role editor", () => {
     await menu("Jev 1.14", "Move up");
     expect(saved.backups).toEqual([pin(jev), pin(chat)]);
     await menu("Chat", "Remove");
-    expect(saved).toEqual({ primary: null, backups: [pin(jev)] });
+    expect(saved).toEqual({ primary: null, backups: [pin(jev)], deploymentPrimary: mini });
     expect(api.setRole).toHaveBeenLastCalledWith(
       expect.objectContaining({ role: "main" }),
       expect.anything(),
@@ -276,6 +281,17 @@ describe("shared role editor", () => {
     expect(container.querySelector('[data-testid="model-role-default"]')?.textContent).toBe(
       "1ChatOpenRouter",
     );
+  });
+  it("marks a default the deployment pays for as included, in its row and in the picker", async () => {
+    saved = { primary: null, backups: [], deploymentPrimary: jev, deploymentIncluded: true };
+    await render({ modelRole: "approval", title: "Approval model" });
+    expect(container.querySelector('[data-testid="model-role-default"]')?.textContent).toBe(
+      "Jev 1.14Included",
+    );
+    await pick("Change Approval model", "Chat");
+    await click(trigger("Change Chat"));
+    const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+    expect(options[0]?.textContent).toBe("Jev 1.14Included");
   });
   it("leaves a model where the loaded list has it when it is picked again", async () => {
     saved = { primary: chat, backups: [jev] };
@@ -415,7 +431,7 @@ describe("shared role editor", () => {
     api.role.mockRejectedValueOnce(new Error("offline"));
     await render({ modelRole: "approval", title: "Approval model" });
     expect(trigger("Change Approval model")?.disabled).toBe(true);
-    expect(trigger("Add fallback")?.disabled).toBe(true);
+    expect(trigger("Add fallback")).toBeNull();
     expect(api.setRole).not.toHaveBeenCalled();
     const retry = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Retry",
