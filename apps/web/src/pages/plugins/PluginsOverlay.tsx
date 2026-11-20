@@ -1,4 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { useLinkFavicon } from "@rakazo/chat-ui/web";
 import type {
   CapabilityInstall,
   ConnectionCatalogItem,
@@ -6,7 +7,7 @@ import type {
   IntegrationCatalogSurface,
   McpSourcePreset,
 } from "@rakazo/contracts";
-import { MCP_OAUTH_CLIENT_REQUIRED, mcpServerConnection } from "@rakazo/contracts";
+import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { connectedAppMarks } from "@rakazo/core";
 import {
   CONNECTION_CATALOG_PAGE_SIZE,
@@ -14,6 +15,7 @@ import {
   customMcpServerInput,
   installedPluginParts,
   managedAppFor,
+  pluginSite,
 } from "@rakazo/core";
 import {
   Button,
@@ -27,9 +29,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
+  LogoAvatar,
   Spinner,
 } from "@rakazo/ui-web";
-import { ChevronDown, ChevronRight, LayoutTemplate, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../../components/integrations/IntegrationSetup";
 import type {
@@ -58,6 +61,27 @@ type OverlayView = "browse" | "manage" | "github" | "source" | "browseMcp" | "do
 
 const CHIP_COUNT = 6;
 
+/** One added app in the header cluster, using the same site icon as its row. */
+function AddedMark({
+  name,
+  logo,
+  site,
+}: {
+  name: string;
+  logo?: string | null;
+  site?: string | null;
+}) {
+  const favicon = useLinkFavicon(logo ? "" : (site ?? ""));
+  const src = logo || favicon.icon;
+  return src ? (
+    <img src={src} alt="" className="h-6 w-6 rounded-lg bg-favicon-plate object-contain p-0.5" />
+  ) : (
+    <span className="grid h-6 w-6 place-items-center rounded-lg border border-border/60 bg-favicon-plate text-caption font-semibold text-foreground">
+      {Array.from(name)[0]?.toUpperCase()}
+    </span>
+  );
+}
+
 export function PluginsOverlay({
   onConnectedAppsChange,
   onClose,
@@ -84,6 +108,7 @@ export function PluginsOverlay({
   // Where a source form returns: the domain search that prefilled it, or browse.
   const [sourceBack, setSourceBack] = useState<OverlayView>("browse");
   const [plugin, setPlugin] = useState<PluginSelection | null>(null);
+  const [pluginAutoConnect, setPluginAutoConnect] = useState(false);
   const [gitSource, setGitSource] = useState("");
   const [detailKey, setDetailKey] = useState<{
     connectorId: string;
@@ -156,33 +181,39 @@ export function PluginsOverlay({
   );
   const appCount =
     connectedItems.length + standaloneServers.length + sources.length + connectorInstalls.length;
-  const readyInstalls = connectorInstalls.filter((install) => {
-    const servers = pluginServers(install);
-    return (
-      servers.length > 0 && servers.every((server) => mcpServerConnection(server) === "connected")
-    );
+  // An added plugin whose managed app is already counted stays one app, not a second mark.
+  const addedInstalls = pluginInstalls.filter((install) => {
+    const entry = catalogEntries.find((row) => row.installedSource === install.source);
+    return !(entry && managedAppFor(entry, connectedItems));
   });
-  const connectedCount =
-    connectedItems.length +
-    standaloneServers.filter((server) => mcpServerConnection(server) === "connected").length +
-    sources.length +
-    readyInstalls.length;
-  const connectedMarks = [
-    ...connectedItems.map((item) => ({
-      key: catalogItemKey(item),
-      name: item.name,
-      logo: item.logo,
-    })),
-    ...readyInstalls.map((install) => {
+  const addedCount =
+    connectedItems.length + addedInstalls.length + standaloneServers.length + sources.length;
+  const addedMarks = [
+    ...connectedItems.map((item) => {
+      const entry = catalogEntries.find((row) => managedAppFor(row, [item]));
+      return {
+        key: catalogItemKey(item),
+        name: item.name,
+        logo: item.logo || entry?.logo,
+        site: entry ? pluginSite(entry) : null,
+      };
+    }),
+    ...addedInstalls.map((install) => {
       const entry = catalogEntries.find((row) => row.installedSource === install.source);
-      return { key: install.id, name: entry?.displayName ?? install.name, logo: entry?.logo };
+      return {
+        key: install.id,
+        name: entry?.displayName ?? install.name,
+        logo: entry?.logo,
+        site: entry ? pluginSite(entry) : null,
+      };
     }),
   ].slice(0, 4);
 
   const browsing = !plugin && !detailItem && view === "browse";
 
-  function openPlugin(selection: PluginSelection) {
+  function openPlugin(selection: PluginSelection, connect = false) {
     setCatalogError(null);
+    setPluginAutoConnect(connect);
     setPlugin(selection);
   }
 
@@ -392,104 +423,105 @@ export function PluginsOverlay({
       }}
     >
       <DialogContent showCloseButton={false} size="2xl" className="bg-card">
-        <DialogHeader className="flex-row flex-wrap items-start gap-2 px-8 pt-7">
-          <DialogTitle className="mr-auto text-heading2 text-foreground">
-            <Trans>Integrations</Trans>
-          </DialogTitle>
-          <DialogClose
-            render={
+        <DialogHeader className="flex-row items-end justify-between px-8 pt-4">
+          {view === "manage" && !plugin && !detailItem ? (
+            <div className="pb-1">
               <Button
+                type="button"
                 variant="ghost"
-                size="icon-sm"
-                className="sm:hidden"
-                aria-label={t`Close integrations`}
-              />
-            }
-          >
-            <X />
-          </DialogClose>
-          {browsing || view === "manage" ? (
-            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-              {browsing && appCount > 0 ? (
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  className="-my-1 gap-2.5 px-2.5 text-body text-muted-foreground"
-                  onClick={() => setView("manage")}
-                >
-                  <span aria-hidden className="flex -space-x-1.5">
-                    {connectedMarks.map((mark) => (
-                      <span key={mark.key} className="rounded-[9px] ring-2 ring-card">
-                        {mark.logo ? (
-                          <img
-                            src={mark.logo}
-                            alt=""
-                            className="h-6 w-6 rounded-lg bg-favicon-plate object-contain p-0.5"
-                          />
-                        ) : (
-                          <span className="grid h-6 w-6 place-items-center rounded-lg border border-border/60 bg-favicon-plate text-caption font-semibold text-foreground">
-                            {Array.from(mark.name)[0]?.toUpperCase()}
-                          </span>
-                        )}
-                      </span>
-                    ))}
-                  </span>
-                  <Plural value={connectedCount} one="# connected" other="# connected" />
-                  <ChevronRight />
-                </Button>
-              ) : null}
-              {browsing && onOpenTemplates ? (
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  className="-my-1 gap-2 px-2.5 text-body text-muted-foreground"
-                  data-testid="open-bot-templates"
-                  onClick={onOpenTemplates}
-                >
-                  <LayoutTemplate />
-                  <Trans>Templates</Trans>
-                </Button>
-              ) : null}
-              <AddMenu
-                presets={sourcePresets}
-                onGithub={() => openAddView("github")}
-                onSource={beginSource}
-                onBrowseMcp={() => {
-                  setPublicCatalogQuery("");
-                  openAddView("browseMcp");
-                }}
-                onDomainSearch={catalogFeedEnabled ? () => openAddView("domain") : undefined}
-                onOpenMcp={onOpenMcp}
-              />
+                className="-ms-2 gap-1 px-2 text-body font-medium text-foreground"
+                aria-label={t`Back`}
+                onClick={() => setView("browse")}
+              >
+                <ChevronLeft />
+                <Trans>Connect Apps</Trans>
+              </Button>
+              <DialogTitle className="sr-only">
+                <Trans>Connect Apps</Trans>
+              </DialogTitle>
             </div>
-          ) : null}
-          <DialogClose
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="hidden sm:inline-flex"
-                aria-label={t`Close integrations`}
-              />
-            }
-          >
-            <X />
-          </DialogClose>
+          ) : (
+            <DialogTitle className="pb-1.5 text-heading2 text-foreground">
+              <Trans>Connect Apps</Trans>
+            </DialogTitle>
+          )}
+          <div className="flex flex-col items-end gap-1">
+            <DialogClose
+              render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
+            >
+              <X />
+            </DialogClose>
+            {browsing || (view === "manage" && (plugin || detailItem)) ? (
+              <div className="flex items-center gap-1">
+                {browsing && addedCount > 0 ? (
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    className="gap-2.5 px-2.5 text-body text-muted-foreground"
+                    onClick={() => setView("manage")}
+                  >
+                    <span aria-hidden className="flex -space-x-1.5">
+                      {addedMarks.map((mark) => (
+                        <span key={mark.key} className="rounded-[9px] ring-2 ring-card">
+                          <AddedMark name={mark.name} logo={mark.logo} site={mark.site} />
+                        </span>
+                      ))}
+                    </span>
+                    <Plural value={addedCount} one="# connected" other="# connected" />
+                    <ChevronRight />
+                  </Button>
+                ) : null}
+                <AddMenu
+                  presets={sourcePresets}
+                  onGithub={() => openAddView("github")}
+                  onSource={beginSource}
+                  onBrowseMcp={() => {
+                    setPublicCatalogQuery("");
+                    openAddView("browseMcp");
+                  }}
+                  onDomainSearch={catalogFeedEnabled ? () => openAddView("domain") : undefined}
+                  onOpenMcp={onOpenMcp}
+                />
+              </div>
+            ) : null}
+          </div>
         </DialogHeader>
 
         {browsing ? (
           <div className="space-y-4 px-8 pt-4">
-            <Input
-              disabled={loading}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
-              }}
-              aria-label={t`Search apps`}
-              placeholder={t`Search apps`}
-              size="xl"
-            />
+            <div className="flex items-center gap-3">
+              <Input
+                disabled={loading}
+                className="min-w-0 flex-1 rounded-xl bg-foreground/5 dark:bg-foreground/10"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
+                }}
+                aria-label={t`Search apps`}
+                placeholder={t`Search across apps and skills`}
+                size="lg"
+              />
+              {onOpenTemplates ? (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="shrink-0 rounded-full px-3.5"
+                  data-testid="open-bot-templates"
+                  onClick={onOpenTemplates}
+                >
+                  <LogoAvatar
+                    size={16}
+                    motion={false}
+                    className="size-4"
+                    avatarValue="#FFFFFF"
+                    identity="bot-templates"
+                  />
+                  <Trans>Bot templates</Trans>
+                  <ChevronRight />
+                </Button>
+              ) : null}
+            </div>
             {categories.length >= 2 || category ? (
               <div className="flex flex-wrap gap-2" data-testid="integration-categories">
                 {[null, ...categories.slice(0, CHIP_COUNT)].map((name) => (
@@ -583,7 +615,11 @@ export function PluginsOverlay({
               assigned={assigned}
               activeBotId={activeBotId}
               managed={managedLink(plugin)}
-              onBack={() => setPlugin(null)}
+              autoConnect={pluginAutoConnect}
+              onBack={() => {
+                setPluginAutoConnect(false);
+                setPlugin(null);
+              }}
               onChanged={refresh}
             />
           ) : detailItem ? (
@@ -596,7 +632,6 @@ export function PluginsOverlay({
           ) : view === "manage" ? (
             <ManageView
               state={state}
-              tileContext={tileContext}
               connectedItems={connectedItems}
               connectorInstalls={connectorInstalls}
               standaloneServers={standaloneServers}
@@ -608,7 +643,7 @@ export function PluginsOverlay({
               installedSelection={installedSelection}
               pluginServers={pluginServers}
               onOpenPlugin={openPlugin}
-              onBack={() => setView("browse")}
+              onOpenApp={openApp}
             />
           ) : view === "github" ? (
             <GithubImport
@@ -654,6 +689,7 @@ export function PluginsOverlay({
               state={state}
               tileContext={tileContext}
               onOpenPlugin={openPlugin}
+              onConnectPlugin={(selection) => openPlugin(selection, true)}
               onSearchPublic={(publicQuery) => {
                 setPublicCatalogQuery(publicQuery);
                 openAddView("browseMcp");

@@ -91,6 +91,7 @@ export function PluginRow({
   site,
   installed,
   onOpen,
+  onConnect,
 }: {
   name: string;
   description: string;
@@ -98,6 +99,8 @@ export function PluginRow({
   site?: string | null;
   installed: boolean;
   onOpen: () => void;
+  /** Installs the connector and starts sign-in. Absent when the plugin has no connector. */
+  onConnect?: () => void;
 }) {
   const { t } = useLingui();
   return (
@@ -115,10 +118,10 @@ export function PluginRow({
         type="button"
         variant="secondary"
         size="sm"
-        aria-label={installed ? t`Added: ${name}` : t`Add ${name}`}
-        onClick={onOpen}
+        aria-label={installed ? t`Added: ${name}` : onConnect ? undefined : t`Add ${name}`}
+        onClick={() => (!installed && onConnect ? onConnect() : onOpen())}
       >
-        {installed ? <Trans>Added</Trans> : <Trans>Add</Trans>}
+        {installed ? <Trans>Added</Trans> : onConnect ? <Trans>Connect</Trans> : <Trans>Add</Trans>}
       </Button>
     </div>
   );
@@ -149,6 +152,7 @@ export function PluginDetail({
   activeBotId,
   managed: managedApp,
   skillsOnly = false,
+  autoConnect = false,
   onBack,
   onChanged,
 }: {
@@ -160,6 +164,8 @@ export function PluginDetail({
   managed?: ManagedAppLink;
   /** Opened from Skills: only the plugin's skills are added here; its connector belongs to Integrations. */
   skillsOnly?: boolean;
+  /** Install the connector, then start sign-in, the same as Connect followed by Sign in. */
+  autoConnect?: boolean;
   onBack: () => void;
   onChanged: () => Promise<unknown>;
 }) {
@@ -323,6 +329,52 @@ export function PluginDetail({
   const busy = Boolean(pending);
   const everywhere = reachesOtherSpaces(install?.availability, spaceCount);
   const ready = Boolean(detail) && (Boolean(install) || Boolean(preview));
+  const installedConnector = useRef(false);
+  const startedSignIn = useRef(false);
+  useEffect(() => {
+    if (!autoConnect || skillsOnly || busy || !ready) return;
+    let cancelled = false;
+    // Wait a microtask so React's development remount cancels the first pass.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (managed) {
+        if (!installedConnector.current && !managed.connected && !managed.connecting) {
+          installedConnector.current = true;
+          managed.onConnect();
+        }
+        return;
+      }
+      if (!install) {
+        if (installedConnector.current || !preview || skillPack) return;
+        installedConnector.current = true;
+        void setParts("header", ["connector"], t`Could not install plugin`);
+        return;
+      }
+      if (startedSignIn.current) return;
+      const server = servers.find(
+        (row) => mcpServerNeedsSignIn(row) && mcpServerConnection(row) !== "needs_client",
+      );
+      if (!servers.length) return;
+      startedSignIn.current = true;
+      if (server) void signIn(server);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    autoConnect,
+    skillsOnly,
+    busy,
+    ready,
+    managed,
+    install,
+    preview,
+    skillPack,
+    servers,
+    setParts,
+    signIn,
+    t,
+  ]);
 
   function headerAction() {
     if (managed)

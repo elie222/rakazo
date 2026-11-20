@@ -293,8 +293,8 @@ it("opens both Unicode fallback screenshot targets through browse and manage", a
   expect(
     [...apps.querySelectorAll(".place-items-center")].some((el) => el.textContent === "𠮷"),
   ).toBe(true);
-  const added = [...apps.querySelectorAll("button")].find(
-    (button) => button.textContent === "Added",
+  const added = [...apps.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("𠮷野"),
   )!;
   await act(async () => added.click());
   expect(

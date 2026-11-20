@@ -117,7 +117,7 @@ export async function refocus(page: Page) {
 
 /** Opens Integrations' add menu and picks one of its custom sources. */
 export async function openIntegrationsAdd(page: Page, item: string) {
-  const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Connect Apps", exact: true });
   await dialog.getByRole("button", { name: "Add custom", exact: true }).click();
   await page.getByRole("menuitem", { name: item, exact: true }).click();
 }

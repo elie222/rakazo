@@ -35,7 +35,7 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   });
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Connect Apps", exact: true });
   const section = dialog.getByTestId("plugin-section").filter({ hasText: "Productivity" });
   await expect(section.getByText("Planning Notes", { exact: true })).toBeVisible();
   // A skill pack has nothing to connect, so it is offered under Skills instead.
@@ -59,22 +59,27 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   const row = dialog.getByTestId("plugin-results").getByTestId("plugin-row");
   await expect(row).toHaveCount(1);
   await captureScreenshot(page, testInfo, "integrations-plugin-search");
-  await row.getByRole("button", { name: "Add Planning Notes", exact: true }).click();
+  // Connect installs the connector and starts sign-in, the same as Connect then Sign in.
+  const cancelledPopup = page.waitForEvent("popup", { timeout: 30_000 });
+  await row.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "Planning Notes", exact: true })).toBeVisible();
   await expect(
     dialog.getByText("https://marketplace-tools.example.test/mcp", { exact: true }),
   ).toBeVisible();
   await expect(dialog.getByText(/^Not added/)).toHaveCount(0);
-  expect(await rpc(page, "capabilities/list", undefined)).toEqual([]);
   await captureScreenshot(page, testInfo, "integrations-plugin-detail");
 
   // Connecting adds only the connector; the skills are a separate choice.
-  await dialog.getByRole("button", { name: "Connect", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-  const installs = await rpc<CapabilityInstall[]>(page, "capabilities/list", undefined);
-  const install = installs.find((row) => row.kind === "plugin")!;
-  expect(install.version).toBe("f".repeat(40));
-  expect(install.config).toMatchObject({ parts: ["connector"] });
+  let install: CapabilityInstall | undefined;
+  await expect
+    .poll(async () => {
+      const installs = await rpc<CapabilityInstall[]>(page, "capabilities/list", undefined);
+      install = installs.find((row) => row.kind === "plugin");
+      const config = install?.config;
+      return config && typeof config === "object" && "parts" in config ? config.parts : [];
+    })
+    .toEqual(["connector"]);
+  expect(install!.version).toBe("f".repeat(40));
   const skillNames = async () =>
     (await rpc<AgentSkillCatalogEntry[]>(page, "agentSkills/list", undefined)).map(
       (skill) => skill.name,
@@ -91,8 +96,6 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   expect(await rpc(page, "mcp/assignments/list", { botId })).toEqual([]);
 
   // Closing the provider must not claim Connected or lose the install.
-  const cancelledPopup = page.waitForEvent("popup", { timeout: 30_000 });
-  await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
   const first = await cancelledPopup;
   await expect(first.getByRole("heading", { name: "Fixture provider sign-in" })).toBeVisible();
   await first.close();
@@ -252,7 +255,7 @@ test("shows directly registered MCP servers in Integrations without catalog conn
     page.getByRole("button", { name: count, exact: true }).locator("span[aria-hidden]").first();
   await expect(marks("1 connected")).toHaveText("");
   await page.getByRole("button", { name: "1 connected", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Your apps", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Manage plugins and skills", exact: true })).toBeVisible();
   const servers = page.getByTestId("registered-mcp-servers");
   await expect(servers.getByText("Dropbox", { exact: true })).toBeVisible();
   await expect(servers.getByText("GitHub", { exact: true })).toBeVisible();
@@ -304,7 +307,7 @@ test("shows directly registered MCP servers in Integrations without catalog conn
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(marks("0 connected")).toHaveText("");
   await page.getByRole("button", { name: "0 connected", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Your apps", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Manage plugins and skills", exact: true })).toBeVisible();
   await expect(servers.getByTestId("registered-mcp-server")).toHaveCount(6);
   await expect(
     servers.getByTestId("registered-mcp-server").filter({ hasText: "Dropbox" }),
@@ -362,7 +365,7 @@ test("integration fallback icons preserve non-BMP initials", async ({ page }, te
   await signup(page, `unicode-icons-${Date.now()}@rakazo.test`, "password12", "Unicode Icons");
   await completeOnboarding(page);
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Connect Apps", exact: true });
   await expect(dialog.getByText("🦞", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "integrations-unicode-plugin");
   const connected = dialog.getByRole("button", { name: /^\d+ connected$/ });
@@ -405,7 +408,7 @@ test("an app that is also a chat app here leads to messaging settings", async ({
   await signup(page, `chat-app-hint-${Date.now()}@rakazo.test`, "password12", "Chat App Hint");
   await completeOnboarding(page);
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Integrations", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Connect Apps", exact: true });
   const hint = dialog.getByTestId("chat-app-hint");
   await expect(hint).toHaveCount(1);
   await expect(hint).toHaveText("Tools for your bot.Chat from Chatty");

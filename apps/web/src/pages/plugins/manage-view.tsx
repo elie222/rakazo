@@ -1,28 +1,22 @@
 import { Plural, Trans } from "@lingui/react/macro";
 import type { CapabilityInstall, ConnectionCatalogItem, McpServer } from "@rakazo/contracts";
-import { mcpServerNeedsSignIn } from "@rakazo/contracts";
-import { catalogItemKey } from "@rakazo/core";
+import { mcpServerConnection, mcpServerNeedsSignIn } from "@rakazo/contracts";
+import { catalogItemKey, installedPluginParts } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
-import { useId } from "react";
+import { ChevronDown } from "lucide-react";
+import { useId, useState } from "react";
 import type { PluginSelection } from "../../components/integrations/plugin-marketplace";
-import {
-  PluginLogo,
-  ROW_BUTTON,
-  ROW_HOVER,
-  ROW_SHELL,
-} from "../../components/integrations/plugin-marketplace";
+import { PluginLogo, ROW_BUTTON, ROW_HOVER } from "../../components/integrations/plugin-marketplace";
 import {
   AvailabilityControl,
   AvailabilityLabel,
 } from "../../components/integrations/space-availability";
-import type { TileContext } from "./parts";
-import { CatalogTile, ConnectionStatus, ConnectorIcon, ViewTitle } from "./parts";
+import { ConnectionStatus, ConnectorIcon } from "./parts";
 import type { PluginConnections } from "./use-plugin-connections";
 
-/** "Your apps": connected apps, installed plugins, MCP servers, and custom tool sources. */
+/** Installed apps: connected catalog apps, plugins, MCP servers, and custom tool sources. */
 export function ManageView({
   state,
-  tileContext,
   connectedItems,
   connectorInstalls,
   standaloneServers,
@@ -34,10 +28,9 @@ export function ManageView({
   installedSelection,
   pluginServers,
   onOpenPlugin,
-  onBack,
+  onOpenApp,
 }: {
   state: PluginConnections;
-  tileContext: TileContext;
   connectedItems: ConnectionCatalogItem[];
   connectorInstalls: CapabilityInstall[];
   standaloneServers: McpServer[];
@@ -50,14 +43,22 @@ export function ManageView({
   installedSelection: (install: CapabilityInstall) => PluginSelection;
   pluginServers: (install: CapabilityInstall | undefined) => McpServer[];
   onOpenPlugin: (selection: PluginSelection) => void;
-  onBack: () => void;
+  onOpenApp: (item: ConnectionCatalogItem) => void;
 }) {
   const { mcpError, mcpQuery, sources, pending, refresh } = state;
   const appPlugins = connectorInstalls;
+  const pluginNames = new Set(
+    appPlugins.map((install) => installedSelection(install).name.trim().toLowerCase()),
+  );
+  const catalogApps = connectedItems.filter(
+    (item) => !pluginNames.has(item.name.trim().toLowerCase()),
+  );
   const hasApps = appCount > 0 || Boolean(mcpError);
   return (
-    <div data-testid="integrations-manage" className="space-y-8">
-      <ViewTitle title={<Trans>Your apps</Trans>} onBack={onBack} />
+    <div data-testid="integrations-manage" className="space-y-6">
+      <h2 className="text-heading3 font-normal text-foreground">
+        <Trans>Manage plugins and skills</Trans>
+      </h2>
 
       {hasApps ? (
         <section data-testid="connected-apps">
@@ -84,15 +85,15 @@ export function ManageView({
               {sourceError}
             </p>
           ) : null}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {connectedItems.map((item) => (
-              <CatalogTile
+          <p className="mb-2 text-body-sm text-muted-foreground">
+            <Trans>Installed</Trans>
+          </p>
+          <div className="grid grid-cols-1 items-start gap-x-8 gap-y-1 sm:grid-cols-2">
+            {catalogApps.map((item) => (
+              <InstalledCatalogRow
                 key={catalogItemKey(item)}
                 item={item}
-                label={item.name}
-                logo={item.logo}
-                tileTestId={false}
-                context={tileContext}
+                onOpen={() => onOpenApp(item)}
               />
             ))}
             {appPlugins.map((install) => (
@@ -197,6 +198,31 @@ function ToolSourceRow({
   );
 }
 
+function InstalledCatalogRow({
+  item,
+  onOpen,
+}: {
+  item: ConnectionCatalogItem;
+  onOpen: () => void;
+}) {
+  return (
+    <div className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${ROW_HOVER}`}>
+      <button type="button" className={ROW_BUTTON} onClick={onOpen}>
+        <ConnectorIcon name={item.name} logo={item.logo} />
+        <span className="min-w-0 flex-1 text-start">
+          <span className="block truncate text-body-lg font-medium">{item.name}</span>
+          <span className="block truncate text-body-sm text-muted-foreground">
+            <Trans>1 connector</Trans>
+          </span>
+        </span>
+      </button>
+      <span className="shrink-0 text-body-sm font-medium text-success">
+        <Trans>Connected</Trans>
+      </span>
+    </div>
+  );
+}
+
 function InstalledPluginRow({
   install,
   selection,
@@ -209,23 +235,85 @@ function InstalledPluginRow({
   onOpen: (selection: PluginSelection) => void;
 }) {
   const signInNeeded = servers.some(mcpServerNeedsSignIn);
+  const connected =
+    servers.length > 0 &&
+    servers.every((server) => mcpServerConnection(server) === "connected");
+  const attention =
+    servers.find((server) => mcpServerConnection(server) === "needs_client") ??
+    servers.find((server) => {
+      const state = mcpServerConnection(server);
+      return state !== "connected" && state !== "not_connected";
+    });
+  const connectors =
+    servers.length || (installedPluginParts(install.config).includes("connector") ? 1 : 0);
+  const skills = Array.isArray(install.config.skills) ? install.config.skills.length : 0;
   return (
-    <div data-testid="installed-plugin" className={`${ROW_SHELL} ${ROW_HOVER}`}>
-      <button type="button" className={ROW_BUTTON} onClick={() => onOpen(selection)}>
+    <div data-testid="installed-plugin" className="min-w-0">
+      <div className={`flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2 ${ROW_HOVER}`}>
         <PluginLogo name={selection.name} logo={selection.logo} site={selection.site} />
-        <span className="min-w-0 flex-1">
+        <button
+          type="button"
+          className="block min-w-0 flex-1 text-start"
+          onClick={() => onOpen(selection)}
+        >
           <span className="block truncate text-body-lg font-medium">{selection.name}</span>
           <span className="block truncate text-body-sm text-muted-foreground">
-            <Plural value={servers.length} one="# connector" other="# connectors" />
+            <Plural value={connectors} one="# connector" other="# connectors" />
+            {skills > 0 ? (
+              <>
+                {", "}
+                <Plural value={skills} one="# skill" other="# skills" />
+              </>
+            ) : null}
           </span>
-        </span>
-      </button>
-      <AvailabilityLabel availability={install.availability} />
-      {signInNeeded ? (
-        <Button variant="secondary" size="sm" onClick={() => onOpen(selection)}>
-          <Trans>Sign in</Trans>
-        </Button>
-      ) : null}
+        </button>
+        {connected && !signInNeeded ? (
+          <span className="shrink-0 text-body-sm font-medium text-success">
+            <Trans>Connected</Trans>
+          </span>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            onClick={() => onOpen(selection)}
+          >
+            <Trans>Connect</Trans>
+          </Button>
+        )}
+      </div>
+      {attention ? <ServerNotice server={attention} /> : null}
+    </div>
+  );
+}
+
+function ServerNotice({ server }: { server: McpServer }) {
+  const [open, setOpen] = useState(false);
+  const detail = server.health.message?.trim();
+  return (
+    <div className="flex gap-3 px-2.5 pt-1">
+      <span className="w-10 shrink-0" aria-hidden="true" />
+      <div className="min-w-0">
+        {detail ? (
+          <button
+            type="button"
+            className="flex max-w-full items-center gap-1 rounded-md text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            aria-expanded={open}
+            onClick={() => setOpen((current) => !current)}
+          >
+            <ConnectionStatus server={server} />
+            <ChevronDown
+              aria-hidden="true"
+              className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+            />
+          </button>
+        ) : (
+          <ConnectionStatus server={server} />
+        )}
+        {open && detail ? (
+          <p className="mt-1 text-body-sm text-muted-foreground">{detail}</p>
+        ) : null}
+      </div>
     </div>
   );
 }

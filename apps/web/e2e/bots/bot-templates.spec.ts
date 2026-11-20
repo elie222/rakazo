@@ -11,7 +11,7 @@ test("a bot template previews what it adds, then creates a bot with a paused rou
 
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await page
-    .getByRole("dialog", { name: "Integrations", exact: true })
+    .getByRole("dialog", { name: "Connect Apps", exact: true })
     .getByTestId("open-bot-templates")
     .click();
   const dialog = page.getByRole("dialog", { name: "Bot templates", exact: true });

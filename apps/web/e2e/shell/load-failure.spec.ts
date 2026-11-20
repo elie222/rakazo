@@ -109,9 +109,9 @@ for (const result of ["empty", "plugin", "unavailable"] as const) {
     try {
       await expect(loading).toBeVisible();
       await expect(configure).toHaveCount(0);
-      await page.getByPlaceholder("Search apps", { exact: true }).fill("missing");
+      await page.getByPlaceholder("Search across apps and skills", { exact: true }).fill("missing");
       await expect(page.getByText("No apps match your search.", { exact: true })).toHaveCount(0);
-      await page.getByPlaceholder("Search apps", { exact: true }).clear();
+      await page.getByPlaceholder("Search across apps and skills", { exact: true }).clear();
       if (result === "empty")
         await captureScreenshot(page, testInfo, "integrations-plugins-loading");
     } finally {
