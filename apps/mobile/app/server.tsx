@@ -168,6 +168,7 @@ export default function ServerScreen() {
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect={false}
+            editable={!pending}
             keyboardType="url"
             onChangeText={(value) => {
               setDraft(value);
