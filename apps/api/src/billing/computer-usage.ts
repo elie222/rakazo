@@ -1,31 +1,86 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
-import { sandboxDisplayedHourMicros, sandboxHourlyCostMicros } from "@rakazo/adapters";
-import type { ComputerSize } from "@rakazo/contracts";
+import {
+  sandboxDisplayedHourMicros,
+  sandboxHourlyCostMicros,
+  sandboxKindsWhere,
+} from "@rakazo/adapters";
+import type { CloudComputers, ComputerSize } from "@rakazo/contracts";
+import { ComputerSizeSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { computerSizeSettings, sandboxAllowancePlan, sandboxRunHoursByComputer } from "@rakazo/db";
+import {
+  allowedComputerSizes,
+  COMPUTER_SIZE_PLAN_SELECT,
+  effectiveComputerSize,
+  sandboxAllowancePlan,
+  sandboxRunHoursByComputer,
+} from "@rakazo/db";
 
-export async function saveComputerSize(
+const sizedKinds = () => sandboxKindsWhere((capabilities) => capabilities.sizedUsage === true);
+
+async function planSizes(prisma: PrismaClient, organizationId: string) {
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: COMPUTER_SIZE_PLAN_SELECT,
+  });
+  return allowedComputerSizes(organization);
+}
+
+/** The Space's sized computers; a private one shows only while its bot does. */
+export async function readCloudComputers(
   prisma: PrismaClient,
   organizationId: string,
+  spaceId: string,
+  canManage: boolean,
+): Promise<CloudComputers> {
+  const [available, computers] = await Promise.all([
+    planSizes(prisma, organizationId),
+    prisma.computer.findMany({
+      where: { spaceId, space: { organizationId }, kind: { in: sizedKinds() } },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        scope: true,
+        size: true,
+        bots: {
+          where: { archivedAt: null },
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: { name: true },
+        },
+      },
+    }),
+  ]);
+  return {
+    computers: computers.flatMap(({ id, scope, size, bots }): CloudComputers["computers"] => {
+      const shown = {
+        id,
+        size: effectiveComputerSize(size, available),
+        savedSize: ComputerSizeSchema.catch("standard").parse(size),
+      };
+      if (scope !== "dedicated") return [{ ...shown, scope: "team" as const, botName: null }];
+      const botName = bots[0]?.name;
+      return botName ? [{ ...shown, scope: "dedicated" as const, botName }] : [];
+    }),
+    available,
+    canManage,
+  };
+}
+
+export async function saveCloudComputerSize(
+  prisma: PrismaClient,
+  organizationId: string,
+  spaceId: string,
+  computerId: string,
   size: ComputerSize,
 ): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    // Billing sync locks this row before it clears a size the new plan cannot use.
-    await tx.$queryRaw`SELECT "organizationId" FROM "billing_accounts"
-      WHERE "organizationId" = ${organizationId} FOR SHARE`;
-    const current = await tx.organization.findUnique({
-      where: { id: organizationId },
-      select: {
-        computerSize: true,
-        modelCredits: { select: { mode: true } },
-        billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
-      },
-    });
-    if (!current || !computerSizeSettings(current).available.includes(size))
-      throw new ClientError("BAD_REQUEST", "Your plan does not include this computer size");
-    await tx.organization.update({ where: { id: organizationId }, data: { computerSize: size } });
+  if (!(await planSizes(prisma, organizationId)).includes(size))
+    throw new ClientError("BAD_REQUEST", "Your plan does not include this computer size");
+  const { count } = await prisma.computer.updateMany({
+    where: { id: computerId, spaceId, space: { organizationId }, kind: { in: sizedKinds() } },
+    data: { size },
   });
+  if (count === 0) throw new ClientError("NOT_FOUND", "Computer not found");
 }
 
 export async function readComputerUsage(

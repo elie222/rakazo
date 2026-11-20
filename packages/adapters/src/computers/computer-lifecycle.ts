@@ -339,7 +339,7 @@ export async function provisionComputer(
   const startKind = (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? existing.kind;
   if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
     throw new SandboxAllowanceUsedError();
-  const size = await planComputerSize(deps.prisma, existing.spaceId);
+  const size = await planComputerSize(deps.prisma, computerId);
 
   // If we first observe abandoned "booting", remember that stamp before waiting. A concurrent
   // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait

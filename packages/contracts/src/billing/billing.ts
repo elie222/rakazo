@@ -192,9 +192,8 @@ export const BillingStatusSchema = z.object({
   hasCustomer: z.boolean(),
   /** Computer hours left in the current allowance period; absent when computers have no limit. */
   computerHoursLeft: z.number().nonnegative().nullable().optional(),
-  computerSizeSettings: z
-    .object({ size: ComputerSizeSchema, available: z.array(ComputerSizeSchema) })
-    .optional(),
+  /** Hours are counted at the Standard size's rate; larger sizes use them faster. */
+  standardComputerHours: z.literal(true).optional(),
   /** Next allowance renewal, distinct from a yearly subscription payment. */
   computerHoursResetAt: z.string().nullable().optional(),
   /** Present once the organization has subscribed: its invite link and free months earned. */
