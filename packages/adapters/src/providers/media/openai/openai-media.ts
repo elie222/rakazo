@@ -11,6 +11,7 @@ import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { z } from "zod";
 import { detectImageMimeType } from "../../../media/image-mime-type.js";
 import {
+  GENERATED_IMAGE_MIME_TYPES,
   mediaPromptSchema,
   validateGeneratedMedia,
 } from "../../../media/media-generation-provider.js";
@@ -22,7 +23,6 @@ const IMAGE_DEADLINE_MS = 180_000;
 const MAX_RESPONSE_BYTES = ATTACHMENT_MAX_BASE64_LENGTH + 64 * 1024;
 const MODEL_ID_PATTERN = /^[\w.:/@+-]{1,200}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
-const IMAGE_MIME_TYPES = new Set<string>(["image/png", "image/jpeg", "image/webp"]);
 const imagesResponse = z.object({
   data: z.array(z.object({ b64_json: z.string().min(1) })).min(1),
 });
@@ -106,7 +106,7 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
     const bytes = new Uint8Array(Buffer.from(encoded, "base64"));
     // The format is read from the bytes: servers differ in what they return and how they label it.
     const mimeType = detectImageMimeType(bytes);
-    if (!mimeType || !IMAGE_MIME_TYPES.has(mimeType))
+    if (!mimeType || !GENERATED_IMAGE_MIME_TYPES.has(mimeType))
       throw new MediaGenerationError("provider_failure");
     const output = { bytes, mimeType } as GeneratedMedia;
     validateGeneratedMedia(output, "image");

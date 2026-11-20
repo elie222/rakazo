@@ -109,6 +109,15 @@ describe("bot media tools", () => {
       expect.anything(),
     );
   });
+  it("refuses an image in a format generated media does not support", async () => {
+    const { options, provider, attach } = setup();
+    vi.spyOn(provider, "generateImage").mockResolvedValue({
+      bytes: new Uint8Array([0x47, 0x49, 0x46]),
+      mimeType: "image/gif",
+    } as never);
+    expect(await generateMediaFromTool(options)).toHaveProperty("error");
+    expect(attach).not.toHaveBeenCalled();
+  });
   it("rejects invalid inputs before reserving or billing", async () => {
     const { options, externalEffect } = setup();
     for (const args of [{ prompt: " " }, { prompt: "draw", jobId: "job" }, { jobId: 42 }]) {
