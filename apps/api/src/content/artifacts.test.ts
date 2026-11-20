@@ -1,10 +1,13 @@
 import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { attachmentComputerPath } from "@rakazo/core";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { InboundAttachmentUnavailableError } from "../messaging/inbound-attachments.js";
+import type { DownloadBudget } from "../messaging/intake/download-budget.js";
+import { createDownloadBudget } from "../messaging/intake/download-budget.js";
 import {
   ArtifactListCursorError,
   createOwnedArtifact,
@@ -489,23 +492,26 @@ describe("configured artifact upload limit", () => {
 
 describe("storeInboundAttachment", () => {
   const reachedStorage = new Error("reached storage");
-  function setup(existing: unknown = null) {
+  function setup(existing: unknown = null, downloadBudget?: DownloadBudget) {
     const put = vi.fn().mockRejectedValue(reachedStorage);
     const findFirst = vi.fn(async () => existing);
     const deps = {
       prisma: { artifact: { findFirst } } as unknown as PrismaClient,
       artifacts: { put } as unknown as ArtifactStore,
       maxUploadSizeBytes: 8,
+      downloadBudget,
     };
     const store = (
       attachment: Parameters<typeof storeInboundAttachment>[2]["attachment"],
       downloadDeadline?: number,
+      options: { downloadTimeoutMs?: number; attempts?: number } = {},
     ) =>
       storeInboundAttachment(deps, actor, {
         botId: "bot-1",
         attachment,
         clientNonce: "nonce-1",
         downloadDeadline,
+        ...options,
       });
     return { put, store, findFirst };
   }
@@ -528,14 +534,212 @@ describe("storeInboundAttachment", () => {
     }
   });
 
+  it("retries a failed download up to attempts and stores the third try", async () => {
+    vi.useFakeTimers();
+    try {
+      const { put, store } = setup();
+      const fetch = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("reset"))
+        .mockRejectedValueOnce(new Error("reset"))
+        .mockResolvedValue(new Uint8Array(3));
+      const result = expect(
+        store({ name: "a.png", mimeType: "image/png", fetch }, undefined, { attempts: 3 }),
+      ).rejects.toBe(reachedStorage);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await result;
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(put).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up after attempts and rejects with the last failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const { put, store } = setup();
+      const fetch = vi.fn().mockRejectedValue(new Error("reset"));
+      const result = expect(
+        store({ name: "a.png", mimeType: "image/png", fetch }, undefined, { attempts: 3 }),
+      ).rejects.toThrow("reset");
+      await vi.advanceTimersByTimeAsync(6_000);
+      await result;
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(put).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not start another try once the shared deadline has passed", async () => {
+    vi.useFakeTimers();
+    try {
+      const { store } = setup();
+      const fetch = vi.fn().mockRejectedValue(new Error("reset"));
+      const result = expect(
+        store({ name: "a.png", mimeType: "image/png", fetch }, Date.now() + 500, { attempts: 3 }),
+      ).rejects.toThrow("Attachment download timed out");
+      await vi.advanceTimersByTimeAsync(1_000);
+      await result;
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a long download finish within downloadTimeoutMs", async () => {
+    vi.useFakeTimers();
+    try {
+      const { put, store } = setup();
+      const download = deferred<Uint8Array>();
+      const result = expect(
+        store({ name: "a.png", mimeType: "image/png", fetch: () => download.promise }, undefined, {
+          downloadTimeoutMs: 60_000,
+        }),
+      ).rejects.toBe(reachedStorage);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(put).not.toHaveBeenCalled();
+      download.resolve(new Uint8Array(3));
+      await result;
+      expect(put).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not start another download after the shared deadline", async () => {
     const { put, store } = setup();
     const fetch = vi.fn(async () => new Uint8Array(3));
-    await expect(
-      store({ name: "a.png", mimeType: "image/png", fetch }, Date.now() - 1),
-    ).rejects.toThrow("Attachment download timed out");
+    const failure = await store({ name: "a.png", mimeType: "image/png", fetch }, Date.now() - 1)
+      .then(() => null)
+      .catch((error: unknown) => error);
+    // Never tried, so the file was not received rather than failed.
+    expect(failure).toBeInstanceOf(InboundAttachmentUnavailableError);
+    expect(failure).toMatchObject({ reason: "not received" });
     expect(fetch).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it("starts the next try only once a try that ran out of time has settled", async () => {
+    vi.useFakeTimers();
+    try {
+      const { put, store } = setup();
+      const late = deferred<Uint8Array>();
+      const fetch = vi
+        .fn<() => Promise<Uint8Array>>()
+        .mockImplementationOnce(() => late.promise)
+        .mockResolvedValue(new Uint8Array(3));
+      const result = expect(
+        store({ name: "a.png", mimeType: "image/png", fetch }, Date.now() + 60_000, {
+          downloadTimeoutMs: 10_000,
+          attempts: 2,
+        }),
+      ).rejects.toBe(reachedStorage);
+      // The first try runs out of time; after the pause the second waits for it, not alongside it.
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(fetch).toHaveBeenCalledOnce();
+
+      late.resolve(new Uint8Array(3));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      await result;
+      expect(put).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("downloads a file only once its size fits the download budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const budget = createDownloadBudget(8);
+      const held = deferred<Uint8Array>();
+      const busy = budget.acquire(8).then(async (release) => {
+        await held.promise;
+        release();
+      });
+      const { store } = setup(null, budget);
+      const fetch = vi.fn(async () => new Uint8Array(3));
+      const waited = store({ name: "a.png", mimeType: "image/png", size: 3, fetch }, undefined, {
+        downloadTimeoutMs: 10_000,
+      })
+        .then(() => null)
+        .catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(10_000);
+      // No room came free in its time, so it was never tried.
+      expect(await waited).toMatchObject({ reason: "not received" });
+      expect(fetch).not.toHaveBeenCalled();
+
+      // Once the budget frees, a file downloads, an unsized one reserving the whole limit.
+      held.resolve(new Uint8Array(1));
+      await busy;
+      await expect(store({ name: "c.png", mimeType: "image/png", fetch })).rejects.toBe(
+        reachedStorage,
+      );
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("holds at most the budget's worth of files in memory at once", async () => {
+    // The limit is 8 bytes and the budget four files of it.
+    const budget = createDownloadBudget(4 * 8);
+    const { store } = setup(null, budget);
+    const downloads = Array.from({ length: 5 }, () => deferred<Uint8Array>());
+    const started: number[] = [];
+    const results = downloads.map((download, index) =>
+      store({
+        name: `f${index}.png`,
+        mimeType: "image/png",
+        size: 8,
+        fetch: () => {
+          started.push(index);
+          return download.promise;
+        },
+      }),
+    );
+    await vi.waitFor(() => expect(started).toEqual([0, 1, 2, 3]));
+    await flush();
+    expect(started).toEqual([0, 1, 2, 3]);
+
+    downloads[0]?.resolve(new Uint8Array(3));
+    await expect(results[0]).rejects.toBe(reachedStorage);
+    await vi.waitFor(() => expect(started).toEqual([0, 1, 2, 3, 4]));
+    for (const download of downloads.slice(1)) download.resolve(new Uint8Array(3));
+    await Promise.allSettled(results);
+  });
+
+  it("keeps a timed-out try's reservation until its download settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const budget = createDownloadBudget(8);
+      const { store } = setup(null, budget);
+      const late = deferred<Uint8Array>();
+      const first = store(
+        { name: "a.png", mimeType: "image/png", size: 8, fetch: () => late.promise },
+        undefined,
+        { downloadTimeoutMs: 1_000 },
+      ).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await first).toMatchObject({ message: "Attachment download timed out" });
+
+      const other = vi.fn(async () => new Uint8Array(3));
+      const next = store({ name: "b.png", mimeType: "image/png", size: 8, fetch: other });
+      const settled = next.catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(other).not.toHaveBeenCalled();
+
+      late.resolve(new Uint8Array(3));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(other).toHaveBeenCalledOnce();
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("skips the download when the platform reports an oversize file", async () => {

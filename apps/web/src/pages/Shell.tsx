@@ -93,6 +93,7 @@ import { Composer } from "./shell/composer/composer";
 import { ComposerModelPicker } from "./shell/composer/composer-model-picker";
 import { useComposerActions } from "./shell/composer/use-composer-actions";
 import { useComposerMentions } from "./shell/composer/use-composer-mentions";
+import { useComposerModelShortcuts } from "./shell/composer/use-composer-model-shortcuts";
 import { ComputerOverlay } from "./shell/computers/computer-overlay";
 import { ComputerPanel } from "./shell/computers/computer-panel";
 import { useComputerControls, useComputerState } from "./shell/computers/use-computer";
@@ -179,6 +180,7 @@ function SpaceShell() {
     botSections,
     spaces,
     setSpaces,
+    firstBotDue,
     archivedBots,
     archivedGroups,
     initialBotsLoaded,
@@ -258,6 +260,7 @@ function SpaceShell() {
     useQuery(queries.voice.status.queryOptions()).data ?? null;
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
+  const [panelCoversChat, setPanelCoversChat] = useState(false);
   const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [botMenu, setBotMenu] = useState<ChatMenuTarget | null>(null);
@@ -377,6 +380,13 @@ function SpaceShell() {
         focusSidebarSearch();
         return true;
       }
+      // The open model list is a dialog too, but its own chords still close it or step its thinking.
+      if (
+        (shortcut.type === "model-picker" || shortcut.type === "thinking-level") &&
+        modelShortcuts.open
+      ) {
+        return modelShortcuts.run(shortcut.type);
+      }
       // The command menu picks its own Cmd/Ctrl+1–9 from what it lists.
       if (hasOpenDialog(document, true)) return false;
       switch (shortcut.type) {
@@ -394,6 +404,9 @@ function SpaceShell() {
           return toggleChatPanel();
         case "focus-composer":
           return focusComposer();
+        case "model-picker":
+        case "thinking-level":
+          return modelShortcuts.run(shortcut.type);
         case "quote-selection":
           if (mobileSidebarOpen || (isMobileSidebar && panel)) return false;
           return quoteShortcutRef.current?.() ?? false;
@@ -567,6 +580,10 @@ function SpaceShell() {
       : (queryClient.getQueryData(queries.skills.list.queryKey({ input: { botId: active.id } })) ??
         []);
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
+  const modelShortcuts = useComposerModelShortcuts({
+    botId: inGroup ? undefined : active?.id,
+    enabled: showComposerModel && !recordingSkill,
+  });
 
   const sidebarSpaces = useMemo(
     () =>
@@ -714,7 +731,9 @@ function SpaceShell() {
     (groups.length > 0 ||
       archivedBots.length > 0 ||
       archivedGroups.length > 0 ||
-      spaces.some((space) => space.hasContent));
+      spaces.some((space) => space.hasContent) ||
+      // Someone who has chatted before, in a new organization: nothing is on its way to them.
+      !firstBotDue);
   const shellReady =
     initialBotsLoaded &&
     (inGroup
@@ -1133,7 +1152,7 @@ function SpaceShell() {
       <main
         data-space-switch="main"
         aria-hidden={mobileSidebarOpen || undefined}
-        inert={mobileSidebarOpen}
+        inert={mobileSidebarOpen || panelCoversChat}
         className="isolate flex min-w-0 flex-1 flex-col bg-background"
       >
         {/* Inside main so the composer and its menus stay above it. */}
@@ -1171,6 +1190,7 @@ function SpaceShell() {
             activeGroup={activeGroup}
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
+            meetingsEnabled={Boolean(bootstrapMe?.meetingsEnabled)}
             voiceReady={Boolean(voiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
@@ -1272,6 +1292,7 @@ function SpaceShell() {
                   <ComposerModelPicker
                     bot={active}
                     disabled={Boolean(recordingSkill)}
+                    {...modelShortcuts.pickerProps}
                     onConnect={() => openSettings("models")}
                     onSaved={(updated) =>
                       setBots((current) =>
@@ -1387,6 +1408,7 @@ function SpaceShell() {
         refreshBots={refreshBots}
         refreshGroupThread={refreshGroupThread}
         discardChatAttachments={composer.discardThreadAttachments}
+        onCoversChat={setPanelCoversChat}
         computerOpen={computerOpen}
         computerPanel={
           active ? (
@@ -1558,6 +1580,7 @@ function SpaceShell() {
         onOpenChange={setShortcutsOpen}
         host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
         dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
+        modelPicker={showComposerModel}
       />
 
       {computerOpen && computerBot ? (
@@ -1590,7 +1613,7 @@ function SpaceShell() {
     </BotsSidebarLayout>
   );
 
-  // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
+  // Render nothing until the first bot list lands so the chat chrome does not flash a bot-less state.
   return (
     <SpaceRpcProvider spaceId={shellSpaceId}>
       {initialBotsLoaded || initialLoadFailed ? (

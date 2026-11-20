@@ -8,18 +8,14 @@ describe("mobile AI recipient disclosure", () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
     for (const provider of ["openrouter", "vercel-ai-gateway"]) {
-      const recipient = aiRecipient({ provider, use: "model", modelId: "any/model" });
-      expect(recipient?.detail).toBe("any/model, forwarded to its provider");
-      expect(aiRecipient({ provider, use: "model" })?.detail).toBe("Forwards to model providers");
+      const recipient = aiRecipient({ provider, use: "model" });
+      expect(recipient?.detail).toBe("Forwards to model providers");
       expect(recipient?.privacyUrl).toBeTruthy();
       expect(recipient).not.toHaveProperty("payloadFields");
     }
     expect(fetch).not.toHaveBeenCalled();
   });
-  it("uses only the model ID for direct providers", () => {
-    expect(
-      aiRecipient({ provider: "openai", use: "model", modelId: "example-model" })?.detail,
-    ).toBe("example-model");
+  it("adds no detail for direct providers", () => {
     expect(aiRecipient({ provider: "openai", use: "model" })?.detail).toBe("");
   });
   it("supports custom endpoints without exposing secrets or inventing a provider policy", () => {

@@ -1,5 +1,5 @@
-import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "../database/client.js";
+import { readMessageBlocks } from "../threads/message-blocks.js";
 import { clearRunTurnCheckpoints } from "./run-turn-checkpoint.js";
 
 /** A secret card's answer waits under this kind until the resumed run reads it once. */
@@ -65,12 +65,14 @@ export async function clearEndedRunState(
   if (runIds.length === 0) return;
   await clearRunTurnCheckpoints(prisma, runIds);
   // Only effects behind an unanswered card: a tool that needs no approval also runs as intended.
+  // Read entry by entry: one sibling block this release's schema rejects must not hide the cards
+  // in the same message, or a cancelled run would leave its effect waiting for a person forever.
   const messages = await prisma.message.findMany({
     where: { runId: { in: [...runIds] }, role: "bot" },
-    select: { blocks: true },
+    select: { id: true, blocks: true },
   });
-  const openCards = messages.flatMap(({ blocks }) =>
-    (MessageBlockSchema.array().safeParse(blocks).data ?? []).flatMap((block) =>
+  const openCards = messages.flatMap((message) =>
+    readMessageBlocks(message).blocks.flatMap((block) =>
       block.kind === "ask" && block.status !== "answered" && block.approvalEffectId
         ? [block.approvalEffectId]
         : [],

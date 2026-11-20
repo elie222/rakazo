@@ -62,6 +62,7 @@ function fakeRecognizer() {
     fail: (error: string) => emit("error", { error, message: error }),
     speechStart: () => emit("speechstart", null),
     speechEnd: () => emit("speechend", null),
+    volume: (value: number) => emit("volumechange", { value }),
   };
 }
 
@@ -151,6 +152,20 @@ describe("mobile dictation", () => {
     expect(fake.start).toHaveBeenLastCalledWith(
       expect.objectContaining({ iosCategory: CALL_SESSION }),
     );
+  });
+
+  it("reports the microphone's loudness from 0 to 1 only to a caller that follows it", async () => {
+    await listen({ onFinal: vi.fn() });
+    expect(fake.start.mock.lastCall?.[0].volumeChangeEventOptions).toBeUndefined();
+    const onLevel = vi.fn();
+    await listen({ onFinal: vi.fn(), onLevel });
+    expect(fake.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        volumeChangeEventOptions: expect.objectContaining({ enabled: true }),
+      }),
+    );
+    for (const value of [-2, 5, 12]) fake.volume(value);
+    expect(onLevel.mock.calls).toEqual([[0], [0.5], [1]]);
   });
 
   it("ends the turn only after the silence window, not on the recognizer's own final", async () => {

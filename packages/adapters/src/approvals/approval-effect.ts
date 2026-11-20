@@ -2,14 +2,12 @@ import type { AgentToolExecutionResult } from "@rakazo/adapter-kit";
 import { ModelOutputError } from "@rakazo/adapter-kit";
 import { FLEET_WRITE_TOOL_NAMES } from "@rakazo/contracts";
 import { APPROVED_ACTION_NOT_RUN_ERROR } from "@rakazo/core";
+import { APPROVAL_EXPIRED_RESULT } from "@rakazo/db";
 import { argumentGiven } from "../bots/update-bot-patch.js";
 
 export type ApprovalPausedToolResult = AgentToolExecutionResult & { terminate: true };
 
 const internalTermination = Symbol("internalTermination");
-
-export const OWNER_SETTINGS_REFUSAL_REPLY =
-  "I can't change that here. Make the change in Settings, or ask me again in a fresh chat.";
 
 /** Preserve trusted control provenance across result copies without exposing it in JSON. */
 export function internalTerminatingResult<T extends AgentToolExecutionResult>(result: T): T {
@@ -432,6 +430,12 @@ export type ExternalEffectStore = {
   };
 };
 
+function isExpiredResult(result: unknown): boolean {
+  return (
+    typeof result === "object" && result !== null && "expired" in result && result.expired === true
+  );
+}
+
 export function resolveDuplicateEffectGate(
   effect: { status: string; result?: unknown },
   toolName: string,
@@ -442,7 +446,10 @@ export function resolveDuplicateEffectGate(
   if (effect.status === "denied") {
     return {
       action: "return",
-      result: { error: DENIED_ACTION_ERROR },
+      // An expired card says nobody answered rather than that someone said no.
+      result: isExpiredResult(effect.result)
+        ? APPROVAL_EXPIRED_RESULT
+        : { error: DENIED_ACTION_ERROR },
     };
   }
   if (effect.status === "executing") {

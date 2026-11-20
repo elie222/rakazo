@@ -188,7 +188,9 @@ pnpm dev
 ```
 
 `pnpm dev` uses the Postgres in `DATABASE_URL` when it accepts a connection. Otherwise it starts a
-local `rakazo-dev-postgres` container with Docker, and every checkout reuses that one. It applies
+local `rakazo-dev-postgres` container with Docker, and every checkout reuses that one. Without
+Docker, it runs a local Postgres cluster with your installed Postgres (on `PATH` or from Homebrew)
+instead, also shared by every checkout. It applies
 migrations and generates the Prisma client before starting. A branch that adds migrations main
 doesn't have gets its own database on the same server, copied from the shared one when possible,
 so unmerged schema changes stay out of it. When the default ports are taken, for example by
@@ -305,12 +307,12 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 ## UI language
 
 The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
-Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, 日本語, and Polski under
-**Settings → Language**. The Expo app ships the same 15 languages under
+Português (Brasil), 简体中文, 繁體中文, Español, Русский, Français, עברית, Nederlands, 日本語, Polski, and ไทย under
+**Settings → Language**. The Expo app ships the same 16 languages under
 **Account → Language**. A device language or
 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects the starting catalog before a saved choice.
 Native Electron setup and menus also support the web UI's languages, following the saved app
-choice or, on first launch, the system language. The marketing homepage (`apps/www`) offers all
+choice or, on first launch, the system language. The marketing homepage (`apps/www`) offers
 15 languages through footer links, including `/zh/` and `/zh-tw/`; other marketing pages remain
 primarily English.
 

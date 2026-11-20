@@ -75,10 +75,9 @@ export class WorkspacePathError extends Error {
 
 export function normalizeWorkspacePath(value: string): string {
   const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
-  const segments = normalized.split("/").filter(Boolean);
-  if (segments.some((segment) => segment === "." || segment === "..")) {
-    throw new WorkspacePathError("Path escapes the computer workspace");
-  }
+  // "." stays where it is, so "." and "./notes" mean the root and notes; only ".." can leave.
+  const segments = normalized.split("/").filter((segment) => segment && segment !== ".");
+  if (segments.includes("..")) throw new WorkspacePathError("Path escapes the computer workspace");
   return segments.join("/");
 }
 
@@ -93,7 +92,7 @@ const VIRTUAL_HOME = "/home/rakazo";
 /**
  * The directory a command runs in. Empty, ".", "/", the workspace root and any home alias
  * mean the root; absolute paths under one of them keep their tail; anything else is taken
- * relative to the root. "." and ".." segments throw, so a cwd cannot leave the workspace.
+ * relative to the root. ".." segments throw, so a cwd cannot leave the workspace.
  */
 export function workspaceCwd(
   root: string,

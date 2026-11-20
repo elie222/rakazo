@@ -98,4 +98,32 @@ describe("health routes", () => {
       expect(response.status).toBe(404);
     }
   });
+
+  /** Answers as a connection from `remoteAddress` would, which app.request has no socket for. */
+  const fromPeer = (remoteAddress: string, headers: Record<string, string> = {}) =>
+    app.fetch(new Request("http://api.test/internal/health", { headers }), {
+      incoming: { socket: { remoteAddress } },
+    });
+
+  it("answers deployment details to a caller on this deployment's network", async () => {
+    // Loopback, the IPv4-mapped form a dual-stack listener reports, and the bridge address a
+    // published container port reports, which is how the documented curls reach the API port.
+    for (const address of ["127.0.0.1", "::1", "::ffff:127.0.0.1", "172.18.0.1"]) {
+      const response = await fromPeer(address);
+      expect(response.status).toBe(200);
+      expect(Object.keys(await response.json())).toContain("revision");
+    }
+  });
+
+  it("hides details from a caller on the public internet", async () => {
+    for (const address of ["203.0.113.7", "2001:db8::7"]) {
+      const response = await fromPeer(address);
+      expect(response.status).toBe(404);
+    }
+  });
+
+  it("hides details from a local caller that arrived through the proxy", async () => {
+    const response = await fromPeer("127.0.0.1", { "x-forwarded-for": "203.0.113.7" });
+    expect(response.status).toBe(404);
+  });
 });

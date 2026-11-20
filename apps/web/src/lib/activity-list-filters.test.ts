@@ -112,6 +112,40 @@ describe("filterActivityRuns", () => {
     expect(filtered[0]?.botName).toBe("Chief");
   });
 
+  it("matches equivalent accent spellings in bot, group, and preview search", () => {
+    const runs = [
+      row({ runId: "bot", botName: "CAF\u00C9 Desk" }),
+      row({ runId: "group", groupName: "Cafe\u0301 Team" }),
+      row({ runId: "prompt", promptSnippet: "Review CAFE\u0301 today" }),
+      row({
+        runId: "agent",
+        trigger: "bot_message",
+        agentMessage: { fromBotName: "Maya", kind: "update", text: "Caf\u00E9 is ready" },
+      }),
+      row({ runId: "unrelated", botName: "Cafeteria" }),
+    ];
+    const matchingIds = (query: string) =>
+      filterActivityRuns(runs, { ...emptyActivityFilters(), query }).map((run) => run.runId);
+    expect.soft(matchingIds("  cafe\u0301  ")).toEqual(["bot", "group", "prompt", "agent"]);
+    expect(matchingIds("CAF\u00C9")).toEqual(["bot", "group", "prompt", "agent"]);
+  });
+
+  it("keeps different accents and unaccented text distinct", () => {
+    const run = row({ botName: "CAF\u00C9 Desk" });
+    const matches = (query: string) =>
+      runMatchesActivityFilters(run, { ...emptyActivityFilters(), query });
+    expect(matches("  caf\u00E9 d  ")).toBe(true);
+    expect(matches("cafe")).toBe(false);
+    expect(matches("caf\u00E8")).toBe(false);
+  });
+
+  it("normalizes sequences that become composable only after lowercasing", () => {
+    const run = row({ botName: "J\u030C Notes" });
+    expect(runMatchesActivityFilters(run, { ...emptyActivityFilters(), query: "\u01F0" })).toBe(
+      true,
+    );
+  });
+
   it("filters by status and date range", () => {
     const runs = [
       row({ status: "failed", updatedAt: "2026-09-01T10:00:00.000Z" }),

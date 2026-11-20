@@ -6,6 +6,7 @@ export const messageMenuSymbols = [
   "quote",
   "speak",
   "select",
+  "selectMessages",
   "unread",
 ] as const;
 
@@ -44,6 +45,7 @@ export function buildMessageContextMenu({
     react: boolean;
     speak: boolean;
     select: boolean;
+    selectMessages?: boolean;
     unread?: boolean;
   };
 }): MessageMenuEntry[] {
@@ -51,6 +53,7 @@ export function buildMessageContextMenu({
     ...(include.quote ? [entry("quote", labels.quote)] : []),
     ...(include.speak ? [entry("speak", labels.speak)] : []),
     ...(include.select ? [entry("select", labels.select)] : []),
+    ...(include.selectMessages ? [entry("selectMessages", labels.selectMessages)] : []),
   ];
   return [
     ...(include.reply !== false ? [entry("reply", labels.reply)] : []),

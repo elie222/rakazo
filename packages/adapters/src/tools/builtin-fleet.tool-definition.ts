@@ -123,11 +123,11 @@ export const fleetTools: ConnectorTool[] = [
         },
         model_provider: {
           type: "string",
-          description: "Optional connected model provider. Set together with model_id.",
+          description: "Provider id (e.g. opencode-go). Set together with model_id.",
         },
         model_id: {
           type: "string",
-          description: "Optional connected model ID. Set together with model_provider.",
+          description: "Model id or provider/id. Set together with model_provider.",
         },
       },
       required: ["name", "task"],
@@ -433,6 +433,26 @@ export const fleetTools: ConnectorTool[] = [
           maxItems: ATTACHMENT_MAX_COUNT,
           description:
             "Paths of files or folders on your computer to send with it. A bot on your computer reads them in place; one with its own computer gets copies, so zip a folder for it. Never paste file contents into message.",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "post_to_group",
+    description:
+      "Post a message as yourself in one of your groups. Wakes no member; use handoff_to_bot for that.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        group_id: { type: "string", description: "Group id from your groups list." },
+        group_name: { type: "string", description: "Exact group name, if no group_id." },
+        message: { type: "string", description: "Send code, logs and long content as files." },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: ATTACHMENT_MAX_COUNT,
+          description: "Paths on your computer to attach, never their contents. Zip folders.",
         },
       },
       required: ["message"],

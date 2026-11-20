@@ -75,6 +75,7 @@ function inboxBot(): Bot {
     instructions: "File routine mail. Ask before sending anything.",
     color: "ink",
     notifyOnFinish: true,
+    notifyOnReply: true,
     pinned: false,
     sectionId: null,
     archivedAt: null,
@@ -194,6 +195,8 @@ function RoutineShot() {
         onBack={() => undefined}
         onClose={() => undefined}
         onSave={() => undefined}
+        onSetActive={() => undefined}
+        onCopy={() => undefined}
         onTestRun={() => undefined}
         onDelete={() => undefined}
         onEnsureWebhook={async () => undefined}

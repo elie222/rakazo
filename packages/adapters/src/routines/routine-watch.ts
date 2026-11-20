@@ -48,6 +48,7 @@ import { recordVaultItemUse } from "../secrets/vault/vault-activity.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { fetchSafeHttpRequest } from "../web/web-ssrf.js";
 import { ROUTINE_WATCH_NOTE_START, routineWatchNote } from "./routine-watch.prompt.js";
+import { resolveWatchArgs } from "./routine-watch-args.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -89,6 +90,7 @@ export type RoutineWatchTarget = {
   spaceId: string;
   userId: string;
   botId: string;
+  timezone?: string | null;
   watch: unknown;
   watchState: unknown;
 };
@@ -142,7 +144,7 @@ export async function checkRoutineWatch(
     watch.kind === "http"
       ? await readHttp(deps, watch, routine.id)
       : watch.kind === "tool"
-        ? await readTool(deps, routine, watch)
+        ? await readTool(deps, routine, watch, now)
         : await readComputer(deps, routine, watch);
   return compareReading(previous, reading, now);
 }
@@ -511,7 +513,6 @@ export function resolveWatchPath(mode: ComputerMode, botId: string, path: string
 
 /** Where a bot's relative paths and commands start. */
 export function watchFolder(mode: ComputerMode, botId: string): string {
-  // Not resolveBotWorkspacePath(mode, botId, "."): a team computer refuses "." as escaping.
   return mode === "team" ? `${WORKSPACE}/${teamBotWorkspaceDirectory(botId)}` : WORKSPACE;
 }
 
@@ -708,6 +709,7 @@ async function readTool(
   deps: RoutineWatchDeps,
   routine: RoutineWatchTarget,
   watch: RoutineWatch,
+  now: Date,
 ): Promise<Reading> {
   const connector = deps.connector;
   if (!connector) throw new RoutineWatchError("No integrations are available to check.");
@@ -721,7 +723,8 @@ async function readTool(
   }
   // Discovery waits on every provider; the tool call gets its own full budget.
   ctx.signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
-  const call = { tool: toolName, args: watch.args ?? {}, executionId: ctx.operationId };
+  const args = resolveWatchArgs(watch.args ?? {}, now, routine.timezone);
+  const call = { tool: toolName, args, executionId: ctx.operationId };
   const tool = tools.find((candidate) => candidate.name === toolName);
   const resolved = tool
     ? { call: { ...call, route: tool.route }, tool }
@@ -1017,14 +1020,11 @@ export async function validateRoutineWatch(
   const routine = { ...target, id: "validate", watch, watchState: null };
   const ctx = deps.prisma ? await toolContext(deps.prisma, routine) : context(routine);
   const name = watch.tool ?? "";
+  const args = resolveWatchArgs(watch.args ?? {}, new Date());
   const tool =
     (await deps.connector.discoverTools(ctx)).find((tool) => tool.name === name) ??
-    (
-      await deps.connector.resolveCall?.(
-        { tool: name, args: watch.args ?? {}, executionId: ctx.operationId },
-        ctx,
-      )
-    )?.tool;
+    (await deps.connector.resolveCall?.({ tool: name, args, executionId: ctx.operationId }, ctx))
+      ?.tool;
   if (!tool) throw new RoutineWatchError(`No connected integration has a tool named ${name}.`);
   assertWatchToolReadOnly(name, declaredRead(tool));
 }

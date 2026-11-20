@@ -6,9 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-19
+
+### Security
+
+- Approval settings now apply across routines, connected chat apps, and work influenced by outside content. Auto Review considers recent instructions from the owner, asks about new sites when a URL could disclose private information, and can use the deployment's included reviewer when the selected one is unavailable. Unattended approvals expire after 30 minutes. Explicit blocks and spending limits still apply ([approvals](docs/approvals.md)).
+- Creating event triggers or saving skills can require approval when outside content may have influenced the request.
+- Remote secret stores clean up unused credentials after interrupted writes, replaced sign-ins, and deletion of accounts or workspaces with connected services.
+- Locked down which credentials screenshot jobs receive, removed messaging addresses from invalid-address errors, and updated the inbound email authentication dependency.
+- Billing expires checkout sessions created during organization deletion.
+
 ### Added
 
-- Docker computers: `SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL` gives the bot browser a proxy auto-config script, so selected sites, such as ones that block datacenter addresses, go through an HTTP proxy while the rest connect directly. Unset, nothing changes ([Docker computers](docs/self-host-docker-computers.md#browser-proxy)).
+- Meeting bots can join supported calls and return speaker-labeled transcripts to Rakazo. Schedule attendance from Google Calendar for one-off and recurring events. Configured bots can also speak live or show a branded camera ([meeting setup](docs/self-host-meetings.md)).
+- Edit plain-text Gmail and Slack drafts in the approval card before sending. Connected MCP servers can also ask a question or request confirmation in chat.
+- Run routines from webhooks, Git events, connected chat messages, and email. Choose whether a routine runs alongside a chat or as a turn within it. Bots can post to groups they belong to from another chat or routine and hand work back to a coordinator when a step is done.
+- Invite outside guests to a specific Space by email. Members can see which Spaces include guests ([Spaces](docs/spaces.md)).
+- Add an optional model picker to the composer on web, desktop, and mobile. Web and desktop also show thinking controls alongside the models.
+- Sign in to catalog MCP servers from web and mobile. MCP calls can wait up to six minutes, and reuse the session's tool list.
+- Attach QuickTime, 3GP, HEIC and HEIF files, plus RAR and 7z archives. WhatsApp replies support files and images. Text and Markdown previews can be copied directly.
+- Apple Watch users can read recent chats, reply, and respond to eligible requests. Mobile message notifications reach every signed-in device.
+- Billing shows computer hours by computer and lets users choose Rakazo credits or their own model connection where both are available.
+- Saved logins can select an option in a native dropdown without exposing the saved value to the bot.
+- Self-hosters can opt into scheduled stable Compose updates and set chat history retention with `CHAT_HISTORY_RETENTION_DAYS` ([upgrading](docs/self-host-upgrading.md#scheduled-stable-updates), [configuration](docs/self-host-configuration.md)).
+- Docker computers can route selected sites through a browser proxy script with `SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL`. Operators can set the saved-workspace limit with `WORKSPACE_SAVE_MAX_GB` ([Docker computers](docs/self-host-docker-computers.md#browser-proxy), [storage](docs/self-host-storage.md)).
+- Self-hosted public memory servers can connect without enabling private-network access. Discovered `.local` model and voice servers can accept API keys over HTTP on the local network.
+
+### Changed
+
+- Chats open and jump to messages faster. Mobile preloads recent chats across Spaces, renders replies with native Markdown, and displays bot-question choices as rows. Desktop can preview the last message from the collapsed sidebar.
+- Read files from saved, stopped computers without waking them. Idle computers can sleep during runs that do not use them. The bot panel shows the live screen and connection progress.
+- Desktop's **Quit and Stop Bots** action stops its local server. Switching away from **This computer** also stops that server.
+- Agent import guides users through setup, supports more imported routines and memories, and lists anything the new bot still needs help setting up in its chat.
+- Model setup takes fewer steps, and eligible owners get a reminder in their language when they have yet to connect a model. Bots can save standing requests to their instructions alongside other settings changes.
+- Inbound email leaves quoted and repetitive text out of the bot's context and opens attachments on demand.
+- Hosted trials include more computer time. Past-due subscriptions lose paid access after a failed payment and regain it when payment clears.
+
+### Fixed
+
+- On Mac, recover a closed renderer, wait for the local database to accept connections before migrating, restore access to the account menu under the window drag area, and guide users through local Mac control permissions.
+- App sign-in keeps watching slow attempts, connects the attempt that completes, and handles duplicate desktop callbacks once. MCP refreshes preserve newer credentials.
+- Model failover handles a credit limit reported during streaming. Claude Code bots recover from requesting an unavailable tool. Image attachments use their actual format in model requests.
+- Keep replies written before approval or another pause, clear a read chat's notification dot while a bot waits for an answer, and keep completed helper cards readable when a task contains long unbroken text.
+- Mobile computer screens accept typing in more cases and keep the trackpad active until a real mouse move. Calls omit tool status labels, and stale responses leave the current work card in place.
+- Preserve the previous successful source backup when a replacement fails, stop waiting when Postgres cannot start during a restore, and keep volumes when stopping a source Compose stack.
+
+### Self-host upgrade notes
+
+- New published-image Compose installs default to stable images. Existing installs can opt into scheduled stable updates ([upgrading](docs/self-host-upgrading.md#scheduled-stable-updates)).
+- Review bots set to **Never ask** if you previously relied on implicit blocks. To enable meetings for every Space on a configured deployment, set `MEETING_SPACE_IDS=*` ([approvals](docs/approvals.md), [meeting setup](docs/self-host-meetings.md)).
+- Upgrade self-hosted Supermemory to v0.0.9 or later before using the new namespace API. Existing public memory connections classified as private can be saved again to update that classification ([integrations](docs/self-host-integrations.md#self-hosted-memory)).
+- Reconnect Executor using the new sign-in flow. If you use Outlook shared mailbox tools, reconnect the account to grant the expanded permissions.
+- Wait for the previous API and workers to drain before enabling `MODEL_CREDIT_OFFERINGS` ([model credit offerings](docs/deployment/model-credit-offerings.md)).
 
 ## [0.12.0] - 2026-11-16
 

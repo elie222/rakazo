@@ -22,7 +22,7 @@ import { argumentGiven, dropUnchangedOwnBotArgs } from "../../bots/update-bot-pa
 import { validCloudAgentArgs } from "../../cloud-agents/cloud-agent-tools.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { paidRequestEffect, restorePaidRequest } from "../../payments/paid-request.js";
-import type { PurchaseApproval } from "../../payments/purchase-gate.js";
+import type { PurchaseApproval, UncheckedPress } from "../../payments/purchase-gate.js";
 import {
   detectPurchase,
   PURCHASE_CHECKED_TOOLS,
@@ -46,11 +46,9 @@ import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
 import {
-  isRunTainted,
   markReadOutsideContent,
   neverAsks,
   OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
-  refuseOwnerSettingsChange,
 } from "../assembly/run-context.js";
 import {
   approvalReplayEffectToolName,
@@ -82,6 +80,10 @@ export interface ToolRequest {
   fleetSummary: FleetCardSummary | undefined;
   /** Gated like a consequential action, even when the tool alone is not. */
   heldForApproval: boolean;
+  /** Changes the owner's or this bot's settings: the approval model checks it after outside text. */
+  settingsChange: boolean;
+  /** Outside text may have asked for it, so a saved Always allow rule does not skip its approval. */
+  ignoresAllowRules: boolean;
   /** This page tool call completes a purchase, which a person approves each time. */
   purchase: PurchaseApproval | undefined;
   /** This page tool call types a saved card into a checkout, which a person approves each time. */
@@ -309,6 +311,8 @@ export async function resolveToolRequest(
     replayEffectToolName,
     fleetSummary: undefined,
     heldForApproval: false,
+    settingsChange: false,
+    ignoresAllowRules: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: undefined,
@@ -405,7 +409,7 @@ export async function prepareToolRequest(
     );
   }
   // Before the gate, so a run that may never reach the user's computer shows no approval card.
-  if (USER_COMPUTER_TOOLS.has(name)) {
+  if (USER_COMPUTER_TOOLS.has(name) || name === "user_computer_list") {
     if (!ctx.source.userComputerOwner || !deps.userDevices)
       return refusal(
         "user_computer_unavailable",
@@ -413,6 +417,21 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
+    // Routines and webhooks reach no one's computer, including through a run they were handed to.
+    if (
+      await deps.prisma.steeringMessage.findFirst({
+        where: {
+          runId: ctx.runId,
+          claimedAt: { not: null },
+          originTrigger: { in: ["routine", "webhook"] },
+        },
+        select: { id: true },
+      })
+    )
+      return refusal(
+        "user_computer_unavailable",
+        "The user's computer is not available in this run.",
+      );
   }
   // The card shows and the effect stores the events in their short form, so padding can't hide one.
   if ((name === "schedule_create" || name === "schedule_update") && "on" in args) {
@@ -442,12 +461,14 @@ export async function prepareToolRequest(
       return refusal("tool_disabled", "This tool is disabled for this bot.");
     if (!ctx.source.ownerStartedRun)
       return refusal("run_not_owner_started", "Bot management tools need a run you started.");
-    if (fleetWrite && !(await neverAsks(ctx)) && (await ctx.trust.receivedOutsideMessage()))
-      return refusal(
-        "outside_message_blocks_bot_management",
-        "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
-      );
+    // Text from a channel or webhook may have asked for it, so it goes through the approval mode,
+    // and an Always allow rule saved for calls the owner asked for does not skip it.
+    if (fleetWrite && (await ctx.trust.receivedOutsideMessage())) {
+      request.heldForApproval = true;
+      request.ignoresAllowRules = true;
+    }
   }
+  if (name === "update_preferences") request.settingsChange = true;
   if (name === "save_page") {
     const refused = await holdSharedPageSave(ctx, request);
     if (refused) return refused;
@@ -536,14 +557,10 @@ export async function prepareToolRequest(
         error: "Type a saved card and sign in with a saved login in separate browser_act calls.",
       };
     // A desktop press has no check on the page right before it, as a browser_act click does: one the user
-    // approved goes ahead only while the page still shows what the card did. A card that named nothing
-    // (the check failed) has nothing to compare.
-    if (
-      name === "computer_act" &&
-      approved &&
-      (approved.site || approved.label || approved.amount)
-    ) {
+    // approved goes ahead only while the page still shows what the card did.
+    if (name === "computer_act" && approved) {
       const now = await detectPurchase(ctx, name, rest);
+      if (typeof now === "string") return uncheckedPress(now);
       if (
         !now ||
         now.site !== approved.site ||
@@ -558,7 +575,10 @@ export async function prepareToolRequest(
           "The page changed since the user approved this purchase, so nothing was pressed. Look at the screen and try again.",
         );
     }
-    const purchase = approved ?? (await detectPurchase(ctx, name, rest));
+    const detected = approved ?? (await detectPurchase(ctx, name, rest));
+    // A press that could not be checked is never pressed and never asked about, in any approval mode.
+    if (typeof detected === "string") return uncheckedPress(detected);
+    const purchase = detected;
     // One card asks one question: a sign-in is never approved under a payment's.
     if (loginUse && purchase)
       return {
@@ -608,6 +628,32 @@ export async function prepareToolRequest(
   return undefined;
 }
 
+/** What the model is told when a press could not be checked for a payment, so nothing was pressed. */
+function uncheckedPress(why: UncheckedPress): { error: string } {
+  switch (why) {
+    case "opened":
+      return refusal(
+        "purchase_page_opened",
+        "This presses on a page the same call opens, which couldn't be checked first, so nothing was pressed. Open the page first, then press in a separate call.",
+      );
+    case "dialog":
+      return refusal(
+        "purchase_dialog_unchecked",
+        "A confirmation dialog is open and couldn't be checked for a payment, so nothing was pressed. Press Escape to cancel it, or stop and ask the user.",
+      );
+    case "dialog-batch":
+      return refusal(
+        "purchase_dialog_batch",
+        "A dialog is open on the page, so nothing was pressed. Answer it with a single press in its own call, then continue.",
+      );
+    case "unreadable":
+      return refusal(
+        "purchase_page_unreadable",
+        "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot and try once more; if it still can't be read, stop and tell the user.",
+      );
+  }
+}
+
 /** Settings that change what this bot runs on or how it speaks; only the owner's chat sets them. */
 const OWNER_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud"];
 
@@ -653,7 +699,7 @@ async function currentModelNames(
 
 /**
  * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
- * they go through approval like any other action, and outside runs cannot change them.
+ * they go through approval like any other action, and runs someone else started cannot change them.
  */
 async function prepareOwnBotUpdate(
   ctx: RunContext,
@@ -710,11 +756,7 @@ async function prepareOwnBotUpdate(
         "owner_only_model_settings",
         "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
       );
-    if (!unguarded && (await isRunTainted(ctx)))
-      return refuseOwnerSettingsChange(
-        ctx,
-        "Model, thinking, voice and read-aloud changes are blocked for the rest of this run because it read outside content.",
-      );
+    request.settingsChange = true;
   }
   if (!argumentGiven(args.instructions)) return undefined;
   if (isSubagentToolExecution(executionId))
@@ -729,7 +771,9 @@ async function prepareOwnBotUpdate(
     return refusal("instructions_contain_credentials", "Instructions cannot contain credentials.");
   request.args = { ...args, instructions };
   if (unguarded) return undefined;
-  if (!["created", "routine"].includes(run.trigger) && !ctx.source.ownerStartedRun)
+  // A run someone else started acts with their authority, and its card is theirs to answer. A new
+  // bot's first run sets the instructions its creator asked for.
+  if (run.trigger !== "created" && !ctx.source.ownerStartedRun)
     return refusal(
       "instructions_run_not_owner_started",
       "Instruction changes are blocked for runs someone else started.",

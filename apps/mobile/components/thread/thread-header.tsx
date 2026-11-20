@@ -121,7 +121,7 @@ export function useThreadHeader({
         color: tokens.foreground,
         onGroupSettings: () =>
           router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
-        onInvite: canInvite && botId ? openInvite : undefined,
+        onInvite: canInvite && botId ? () => openInvite(router) : undefined,
         onThreads: hasThreads ? () => openThreads.current?.() : undefined,
       }),
       ...(readOnly

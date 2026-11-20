@@ -1,12 +1,8 @@
-import type { ByokTier, ComputerSize } from "@rakazo/contracts";
+import type { ByokTier } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   byokTierPriceCents,
-  COMPUTER_SIZE_SPECS,
-  CREDITS_SANDBOX_ALLOWANCE_PERCENT,
-  DEFAULT_MONTHLY_CREDIT_AMOUNT,
   MODEL_CREDIT_AMOUNTS,
-  sandboxAllowanceHours,
   TRIAL_DAYS,
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
@@ -32,32 +28,9 @@ export type PricingPlan = {
   action: { label: string; href: string };
 };
 
-/** Whole bot computer hours an allowance in cents buys. */
-function computerHours(cents: number) {
-  return Math.floor(sandboxAllowanceHours(cents));
-}
-
-/** What each computer size is good for, in plain words. */
-const COMPUTER_USE: Record<ComputerSize, string> = {
-  standard: "everyday coding and browsing",
-  large: "faster builds and tests",
-  xlarge: "big builds and many apps at once",
-};
-
-/** The exact hours and size behind a computer cell, shown on hover. */
-function computerDetail(hours: string, size: ComputerSize) {
-  const specs = COMPUTER_SIZE_SPECS[size];
-  return `${hours} a month, ${specs.vcpus} vCPU, ${specs.memoryGb} GB RAM: ${COMPUTER_USE[size]}`;
-}
-
 /** Ends each computer hover, so the hours don't read as a meter on everything a bot does. */
 const COMPUTER_TIME_NOTE =
   "Counts only while your bot uses its computer, which most work doesn't need. It pauses when idle.";
-
-/** Computer hours a monthly credit plan of `cents` includes. */
-function creditPlanHours(cents: number) {
-  return computerHours((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
-}
 
 /** Display names for every sandbox a self-hosted deployment can use. */
 const SANDBOX_PROVIDERS = [
@@ -138,22 +111,17 @@ const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
       name: terms.name,
       monthlyCents: monthly ?? 0,
       price: monthly === null ? "Free" : `${dollars(monthly)}/mo`,
-      computerSize: terms.computerSize,
-      hours: computerHours(terms.computerAllowanceCents),
+      computerAllowanceCents: terms.computerAllowanceCents,
     },
   ];
 });
 
-const STANDARD_HOURS = computerHours(STANDARD.computerAllowanceCents);
-const STANDARD_VCPUS = COMPUTER_SIZE_SPECS[STANDARD.computerSize].vcpus;
-
-/** A tier's computer as a multiple of Standard's, so the table compares plans without a meter. */
+/** Compare allowances at the same size without assuming a provider's hourly rate. */
 function tierComputerCell(tier: (typeof TIERS)[number]): PricingCell {
-  const usage = tier.hours / STANDARD_HOURS;
-  const power = COMPUTER_SIZE_SPECS[tier.computerSize].vcpus / STANDARD_VCPUS;
+  const usage = tier.computerAllowanceCents / STANDARD.computerAllowanceCents;
   return {
-    label: usage === 1 ? "Included" : `${usage}× the usage\n${power}× the power`,
-    detail: `${computerDetail(`${tier.hours} hours`, tier.computerSize)}. ${COMPUTER_TIME_NOTE}`,
+    label: usage === 1 ? "Included" : `${usage}× the allowance`,
+    detail: `${dollars(tier.computerAllowanceCents)} in computer time a month. ${COMPUTER_TIME_NOTE}`,
   };
 }
 
@@ -216,7 +184,7 @@ export const PRICING_COMPARISON = {
         ...TIERS.map(tierComputerCell),
         {
           label: "Included",
-          detail: `${computerDetail(`From ${creditPlanHours(MODEL_CREDIT_AMOUNTS[0])} hours`, STANDARD.computerSize)}. Hours grow with your plan: ${dollars(DEFAULT_MONTHLY_CREDIT_AMOUNT)} a month includes ${creditPlanHours(DEFAULT_MONTHLY_CREDIT_AMOUNT)}. ${COMPUTER_TIME_NOTE}`,
+          detail: `Your computer allowance grows with your monthly plan. ${COMPUTER_TIME_NOTE}`,
         },
       ],
     },
@@ -227,7 +195,7 @@ export const PRICING_COMPARISON = {
         false,
         ...TIERS.map(() => ({
           label: `${TRIAL_DAYS} days`,
-          detail: `Includes ${computerHours(TRIAL_SANDBOX_ALLOWANCE_CENTS)} bot computer hours`,
+          detail: `Includes ${dollars(TRIAL_SANDBOX_ALLOWANCE_CENTS)} in computer time`,
         })),
         false,
       ],

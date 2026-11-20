@@ -3,6 +3,7 @@ import type { TopicSummary } from "@rakazo/contracts";
 import type { ThreadItem } from "@rakazo/core";
 import {
   answerableAskMessageIds,
+  continuedSenderMessageIds,
   dismissableAskMessageIds,
   groupVoiceChats,
   memberName,
@@ -22,6 +23,7 @@ import { threadHeaderFloats } from "../../lib/thread/scroll/thread-edges";
 import { previewMessageText } from "../../lib/thread/thread-message-text";
 import type { useThreadTranscript } from "../../lib/thread/thread-transcript";
 import { VoiceChatCard } from "../calls/VoiceChatCard";
+import { hasSenderLabelContent } from "./message-bubble";
 import type { MessageRowActions } from "./message-row";
 import { MessageRow } from "./message-row";
 import { TimeSeparator } from "./time-separator";
@@ -45,6 +47,8 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       openTopic: (message) => rowActionsRef.current.openTopic(message),
       quote: (message) => rowActionsRef.current.quote(message),
       select: (text) => rowActionsRef.current.select(text),
+      startSelection: (message) => rowActionsRef.current.startSelection(message),
+      toggleSelection: (message) => rowActionsRef.current.toggleSelection(message),
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
       markUnread: (message) => rowActionsRef.current.markUnread(message),
@@ -86,6 +90,7 @@ export function useThreadRows({
   highlightedMessageId,
   topicsByRoot,
   canOpenTopic,
+  selectedIds,
 }: {
   snap: MobileSnapshot | null;
   userId: string;
@@ -111,6 +116,8 @@ export function useThreadRows({
   /** The bot chat's topics by the message each replies to. */
   topicsByRoot?: ReadonlyMap<string, TopicSummary>;
   canOpenTopic: boolean;
+  /** The messages chosen to copy together; null while not choosing. */
+  selectedIds: ReadonlySet<string> | null;
 }) {
   const { t } = useLingui();
   const locale = useUiLocale();
@@ -124,7 +131,16 @@ export function useThreadRows({
     [visibleMessages, readSeq, snap?.olderCursor, userId],
   );
   // Group calls in reading order, then reverse for the inverted list.
-  const liveItems = useMemo(() => groupVoiceChats(visibleMessages).reverse(), [visibleMessages]);
+  const { liveItems, continuedSenderIds } = useMemo(() => {
+    const items = groupVoiceChats(visibleMessages);
+    const continuedSenderIds = continuedSenderMessageIds(
+      items,
+      separatorIds,
+      unreadDividerId,
+      hasSenderLabelContent,
+    );
+    return { liveItems: items.reverse(), continuedSenderIds };
+  }, [visibleMessages, separatorIds, unreadDividerId]);
   const messagesById = useMemo(
     () => new Map((snap?.messages ?? []).map((message) => [message.id, message])),
     [snap?.messages],
@@ -171,6 +187,7 @@ export function useThreadRows({
           groupId={groupId}
           topicId={topicId}
           botName={displayName}
+          hideSenderLabel={!options?.enableJump && continuedSenderIds.has(message.id)}
           showBotSenderName={showBotSenderName}
           bots={mentionBots}
           members={snap?.members}
@@ -207,12 +224,15 @@ export function useThreadRows({
           index={options?.index ?? 0}
           topic={topicsByRoot?.get(message.id)}
           canOpenTopic={canOpenTopic}
+          selecting={selectedIds !== null}
+          selected={selectedIds?.has(message.id) ?? false}
         />
       );
     },
     [
       messagesById,
       separateAnswers,
+      continuedSenderIds,
       showBotSenderName,
       snap?.members,
       snap?.activeRuns,
@@ -234,6 +254,7 @@ export function useThreadRows({
       answerableAskIds,
       dismissableAskIds,
       highlightedMessageId,
+      selectedIds,
       separatorIds,
       visibleMessages[0]?.id,
       unreadDividerId,
@@ -266,12 +287,25 @@ export function useThreadRows({
               afterSeparator={Boolean(item.messages[0] && separatorIds.has(item.messages[0].id))}
             />
           ) : null}
-          <VoiceChatCard group={item} />
+          <VoiceChatCard
+            group={item}
+            selectedIds={selectedIds}
+            onToggleSelection={rowActions.toggleSelection}
+            onStartSelection={rowActions.startSelection}
+          />
         </View>
       ) : (
         renderMessageRow(item.message)
       ),
-    [renderMessageRow, separatorIds, unreadDividerId, visibleMessages[0]?.id],
+    [
+      renderMessageRow,
+      rowActions.startSelection,
+      rowActions.toggleSelection,
+      selectedIds,
+      separatorIds,
+      unreadDividerId,
+      visibleMessages[0]?.id,
+    ],
   );
 
   return { liveItems, renderMessageRow, renderItem };

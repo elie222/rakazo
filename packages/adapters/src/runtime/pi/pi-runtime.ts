@@ -54,6 +54,7 @@ import {
   restoreTurnCheckpoint,
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
+  withoutSavedMeetingResult,
 } from "../../runs/turn/turn-checkpoint.js";
 import { neutralizeSpeakerLabels } from "../context/history-speakers.js";
 import type { RuntimeContextDecision } from "../context/runtime-context.js";
@@ -114,6 +115,7 @@ import {
   agentToolDefinitions,
   createQueue,
   describeToolActivity,
+  maxToolCallsPerTurn,
   redactAskUserDetailInMessage,
   releaseToolCallBudget,
   toAgentTools,
@@ -160,6 +162,8 @@ export class PiAgentRuntime implements AgentRuntime {
   private readonly onContextDecision?: PiAgentRuntimeOptions["onContextDecision"];
 
   constructor(options: PiAgentRuntimeOptions = {}) {
+    // A mistyped cap fails when the worker or API starts, not on the first tool call.
+    maxToolCallsPerTurn();
     this.modelFetch = options.modelFetch;
     this.modelCallObserver = options.modelCallObserver;
     this.onContextDecision = options.onContextDecision;
@@ -421,7 +425,7 @@ export class PiAgentRuntime implements AgentRuntime {
                 host.activeModel.config.thinkingLevel,
               ),
               systemPrompt,
-              initialMessages: history,
+              initialMessages: history.map(withoutSavedMeetingResult),
             });
           } catch (error) {
             getLogger().warn("Pi session recording could not start", {
@@ -512,6 +516,7 @@ export class PiAgentRuntime implements AgentRuntime {
                       operationKind: request.usageOperationKind ?? "answer",
                       userId: context?.userId,
                       runId: request.runId,
+                      billing: target.config.billing,
                     },
                     {
                       ...usageHooks,
@@ -946,7 +951,7 @@ export class PiAgentRuntime implements AgentRuntime {
             // Before any copy is kept: the recording below, and the checkpoint and provider
             // payloads that reuse this same message object.
             redactAskUserDetailInMessage(event.message, request.secrets);
-            await piSession?.appendMessage(event.message);
+            await piSession?.appendMessage(withoutSavedMeetingResult(event.message));
           }
           if (event.type === "tool_execution_start") {
             stopThinking();
@@ -1191,7 +1196,9 @@ export class PiAgentRuntime implements AgentRuntime {
                 });
                 unresolved.delete(call);
                 toolCalls += 1;
-                await piSession?.appendMessage(agent.state.messages.at(-1)!);
+                await piSession?.appendMessage(
+                  withoutSavedMeetingResult(agent.state.messages.at(-1)!),
+                );
                 if (host.pausePending || isTerminatingReplyResult(result)) {
                   if (!host.pausePending) {
                     // Replay must not run more calls or another model turn after the

@@ -40,6 +40,7 @@ export function ShellSidePanel({
   modelFocusRequest,
   onClearBot,
   discardChatAttachments,
+  onCoversChat,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   /** The open bot chat's threads; undefined in a group. */
@@ -76,6 +77,7 @@ export function ShellSidePanel({
   onClearBot: (bot: Bot) => void;
   /** Drops a deleted chat's pending attachments with their previews. */
   discardChatAttachments: (threadKey: string) => void;
+  onCoversChat: (covers: boolean) => void;
 }) {
   const { t } = useLingui();
   // A thread opened from another chat, or the list in a group, has nothing to show here.
@@ -100,7 +102,7 @@ export function ShellSidePanel({
   }
 
   return (
-    <ResizableSidePanel open={open} panel={panel ?? "closed"}>
+    <ResizableSidePanel open={open} panel={panel ?? "closed"} onCoversChat={onCoversChat}>
       {threadsView?.topicId ? (
         <ThreadPanel
           key={threadsView.topicId}
@@ -122,7 +124,7 @@ export function ShellSidePanel({
           onClose={() => setPanel(null)}
         />
       ) : open ? (
-        <div className="rk-scroll h-full w-full overflow-y-auto px-5 py-[17px]">
+        <div className="rk-scroll h-full w-full overflow-y-auto px-5 pt-3.5 pb-[17px]">
           {!(botView && active) &&
           panel !== "routine" &&
           panel !== "create-group" &&
@@ -136,11 +138,11 @@ export function ShellSidePanel({
               <div className="ml-auto flex gap-1">
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   aria-label={t`Close panel`}
                   onClick={() => setPanel(null)}
                 >
-                  <X size={16} strokeWidth={1.8} />
+                  <X className="size-4.5" strokeWidth={1.75} />
                 </Button>
               </div>
             </div>

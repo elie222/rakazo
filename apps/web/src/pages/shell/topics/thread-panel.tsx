@@ -272,7 +272,7 @@ export function ThreadPanel({
               aria-label={t`Stop`}
               disabled={stop.pending}
               onClick={() => stop.run()}
-              className="size-8 shrink-0 rounded-full"
+              className="shrink-0 rounded-full"
             >
               <Square size={11} strokeWidth={0} fill="currentColor" />
             </Button>
@@ -282,7 +282,7 @@ export function ThreadPanel({
             aria-label={t`Send`}
             disabled={!draft.trim() || send.pending}
             onClick={submit}
-            className="size-8 shrink-0 rounded-full"
+            className="shrink-0 rounded-full"
           >
             <ArrowUp size={16} strokeWidth={2.2} />
           </Button>
