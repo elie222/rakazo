@@ -8,7 +8,7 @@ import type {
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
-import { connectedBackupOptions, MAX_MODEL_BACKUPS, modelRoleChoiceKey } from "@rakazo/contracts";
+import { MAX_MODEL_BACKUPS, modelRoleChoiceKey } from "@rakazo/contracts";
 import {
   catalogEntryFor,
   connectionForModelChoice,
@@ -17,6 +17,7 @@ import {
   modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
+import { connectedBackupOptions } from "@rakazo/i18n/model-provider";
 import {
   Button,
   DropdownMenu,

@@ -9,7 +9,6 @@ import {
   modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -25,6 +24,7 @@ import {
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
+import { providerDisplayName } from "@rakazo/i18n/model-provider";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {

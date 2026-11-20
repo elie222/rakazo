@@ -5,9 +5,9 @@ import {
   modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
-  providerDisplayName,
 } from "@rakazo/contracts";
 import { connectionFormFields, pickCatalogModelId, popularModelProvidersFirst } from "@rakazo/core";
+import { providerDisplayName } from "@rakazo/i18n/model-provider";
 import { useMemo, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";

@@ -5,8 +5,8 @@ import {
   canonicalPiProviderId,
   connectionDisplayName,
   MAX_MODEL_CONNECTION_LABEL,
-  providerDisplayName,
 } from "@rakazo/contracts";
+import { providerDisplayName } from "@rakazo/i18n/model-provider";
 import { Alert, Platform } from "react-native";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 import { RowMenu } from "./model-role-settings";

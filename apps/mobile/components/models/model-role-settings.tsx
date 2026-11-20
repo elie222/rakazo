@@ -15,11 +15,9 @@ import type {
 } from "@rakazo/contracts";
 import {
   backupChoiceKey,
-  connectedBackupOptions,
   connectionDisplayName,
   MAX_MODEL_BACKUPS,
   modelRoleChoiceKey,
-  providerDisplayName,
   withConnectionName,
 } from "@rakazo/contracts";
 import {
@@ -30,6 +28,7 @@ import {
   modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
+import { connectedBackupOptions, providerDisplayName } from "@rakazo/i18n/model-provider";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";

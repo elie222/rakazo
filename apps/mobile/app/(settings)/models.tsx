@@ -3,11 +3,11 @@ import {
   canonicalPiProviderId,
   compatibleEndpointPresets,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { isFirstModelConnection, popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
+import { providerDisplayName } from "@rakazo/i18n/model-provider";
 import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";

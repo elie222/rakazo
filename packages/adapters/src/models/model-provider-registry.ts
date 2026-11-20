@@ -48,10 +48,15 @@ const bearer = (apiKey: string) => ({ Authorization: `Bearer ${apiKey}` });
 const unauthorized = async (response: Response) =>
   response.status === 401 || response.status === 403;
 
+const subscriptionNames = {
+  codex: /*i18n*/ { id: "ChatGPT subscription", message: "ChatGPT subscription" },
+  anthropic: /*i18n*/ { id: "Claude subscription", message: "Claude subscription" },
+};
+
 export const modelProviders = {
   "openai-codex": {
     displayName: "OpenAI Codex",
-    subscriptionName: "ChatGPT subscription",
+    subscriptionName: subscriptionNames.codex.message,
     recommendedModel: "gpt-6-luna",
     signIn: {
       mode: "device-code",
@@ -75,7 +80,7 @@ export const modelProviders = {
   },
   anthropic: {
     recommendedModel: "claude-haiku-5-5",
-    subscriptionName: "Claude subscription",
+    subscriptionName: subscriptionNames.anthropic.message,
     deployment: { keyEnv: "ANTHROPIC_API_KEY", defaultModel: "claude-sonnet-5" },
     signIn: {
       mode: "auth-url",
