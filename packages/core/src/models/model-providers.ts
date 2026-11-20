@@ -402,12 +402,17 @@ export function groupModelChoices(choices: readonly ChatModelChoice[], query: st
     });
   }
   // The ungrouped section holds the default and saved choices, which stay first. A compatible
-  // endpoint's models stay in the order its owner enabled them.
+  // endpoint's models stay in the order its owner enabled them, after any other provider's
+  // models that share the heading.
   for (const section of sections) {
-    if (section.heading && !section.data.some((c) => c.provider === OPENAI_COMPATIBLE_PROVIDER_ID))
-      section.data = newestModelsFirst(
-        section.data.map((choice) => ({ id: choice.modelId ?? "", choice })),
-      ).map((entry) => entry.choice);
+    if (!section.heading) continue;
+    const own = section.data.filter((c) => c.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
+    const others = newestModelsFirst(
+      section.data
+        .filter((c) => c.provider !== OPENAI_COMPATIBLE_PROVIDER_ID)
+        .map((choice) => ({ id: choice.modelId ?? "", choice })),
+    ).map((entry) => entry.choice);
+    section.data = [...others, ...own];
   }
   return sections;
 }

@@ -538,6 +538,60 @@ describe("groupModelChoices order", () => {
   });
 });
 
+describe("groupModelChoices under a shared heading", () => {
+  it("sorts another provider's models while a compatible endpoint keeps its order", () => {
+    const choices = [
+      {
+        key: "a",
+        label: "x",
+        provider: "openai-compatible",
+        modelId: "model-1",
+        providerLabel: "Shared",
+        modelLabel: "model-1",
+      },
+      {
+        key: "b",
+        label: "x",
+        provider: "openai-compatible",
+        modelId: "model-3",
+        providerLabel: "Shared",
+        modelLabel: "model-3",
+      },
+      {
+        key: "c",
+        label: "x",
+        provider: "zai",
+        modelId: "glm-4.5",
+        providerLabel: "Shared",
+        modelLabel: "glm-4.5",
+      },
+      {
+        key: "d",
+        label: "x",
+        provider: "zai",
+        modelId: "glm-5",
+        providerLabel: "Shared",
+        modelLabel: "glm-5",
+      },
+      {
+        key: "e",
+        label: "x",
+        provider: "openai-compatible",
+        modelId: "model-2",
+        providerLabel: "Shared",
+        modelLabel: "model-2",
+      },
+    ];
+    expect(groupModelChoices(choices, "")[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "glm-5",
+      "glm-4.5",
+      "model-1",
+      "model-3",
+      "model-2",
+    ]);
+  });
+});
+
 describe("groupModelChoices", () => {
   const connected = connectedModelChoices(
     [{ provider: "openrouter", label: "OpenRouter" }],
