@@ -27,20 +27,26 @@ Repository secrets (Settings > Secrets and variables > Actions):
   read and write. Pushes made with the built-in token start no workflows and cannot change workflow
   files.
 
-Secrets of the `desktop-deploy` environment, which only `main` may deploy from. A shell on the mini
-is worth more than anything else here, so keep these out of the repository secrets:
+The deploy joins the tailnet through workload identity federation, so no tailnet secret is stored.
+A shell on the mini is worth more than anything else here, so the trust is narrow:
 
-- `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`: a Tailscale OAuth client with the Auth Keys write
-  scope and the `tag:ci` tag.
-- `DEPLOY_SSH_TARGET`: `<user>@<machine>` on the tailnet.
+1. Add the tag and its access to the tailnet policy. The tag is the deploy's alone, so other CI
+   on the tailnet never reaches the mini:
 
-The tailnet policy must let `tag:ci` reach the mini by Tailscale SSH:
+   ```json
+   "tagOwners": { "tag:rakazo-deploy": ["autogroup:admin"] },
+   "grants": [{ "src": ["tag:rakazo-deploy"], "dst": ["tag:server"], "ip": ["22"] }],
+   "ssh": [{ "action": "accept", "src": ["tag:rakazo-deploy"], "dst": ["tag:server"], "users": ["<user>"] }]
+   ```
 
-```json
-"tagOwners": { "tag:ci": ["autogroup:admin"] },
-"grants": [{ "src": ["tag:ci"], "dst": ["tag:server"], "ip": ["22"] }],
-"ssh": [{ "action": "accept", "src": ["tag:ci"], "dst": ["tag:server"], "users": ["<user>"] }]
-```
+2. Under Trust credentials, add an OpenID Connect credential: issuer GitHub Actions, subject
+   `repo:<owner>/rakazo:environment:desktop-deploy`, scope Auth Keys write, tag
+   `tag:rakazo-deploy`. Only jobs in the `desktop-deploy` environment carry that subject, and only
+   `main` may use the environment.
+
+3. Secrets of the `desktop-deploy` environment: `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE` from that
+   credential (not sensitive, but kept beside the rest), `DEPLOY_SSH_HOST` (the mini's tailnet
+   name), and `DEPLOY_SSH_USER`.
 
 ## Settings the fixes read (`stack/.env`)
 

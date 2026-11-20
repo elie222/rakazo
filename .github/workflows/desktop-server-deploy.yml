@@ -1,7 +1,7 @@
 name: desktop server deploy
 
 # Fork only. Once ci's tests pass on main, builds the server bundle on Apple silicon and swaps it
-# into the Rakazo desktop install at DEPLOY_SSH_TARGET over Tailscale, which restarts that app.
+# into the Rakazo desktop install at DEPLOY_SSH_HOST over Tailscale, which restarts that app.
 # A manual run deploys main's tip without waiting on tests, for example after the desktop app
 # updated itself back to the official server. See docs/fork-desktop-deploy.md.
 on:
@@ -102,11 +102,14 @@ jobs:
   deploy:
     name: Swap it into the desktop install
     needs: [gate, build]
-    # The tailnet credentials live only in this main-only environment, so a workflow on another
-    # branch cannot read them.
+    # Tailscale trusts GitHub's OIDC token only from this main-only environment, so no tailnet
+    # secret is stored and a workflow on another branch cannot join the tailnet.
     environment: desktop-deploy
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -120,11 +123,12 @@ jobs:
       - uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:rakazo-deploy
+          ping: ${{ secrets.DEPLOY_SSH_HOST }}
       - name: Copy the bundle over and swap it in
         env:
-          TARGET: ${{ secrets.DEPLOY_SSH_TARGET }}
+          TARGET: ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}
         run: |
           set -euo pipefail
           ssh_opts=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ServerAliveInterval=30)
