@@ -40,9 +40,12 @@ function MemberPicker({
   const listId = useId();
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const [query, setQuery] = useState("");
-  // Every bot ever picked this session stays listed when collapsed, so an
-  // unchecked member remains re-checkable until the form is saved.
+  // Keep displayed selections visible when collapsed, including selections
+  // from a refreshed group. A member unchecked locally can still be rechecked.
   const [everPicked, setEverPicked] = useState<ReadonlySet<string>>(() => new Set(selected));
+  if (selected.some((id) => !everPicked.has(id))) {
+    setEverPicked(new Set([...everPicked, ...selected]));
+  }
   const selectable = useMemo(() => bots.filter((bot) => !bot.archivedAt), [bots]);
   // The filter field only exists in the expanded view; never let a stale
   // query hide members when the list is collapsed.
