@@ -10,8 +10,12 @@ const native = vi.hoisted(() => ({
   openUrl: vi.fn(async (_url: string) => undefined),
 }));
 
+const failRead = vi.hoisted(() => ({ on: false }));
 vi.mock("expo-secure-store", () => ({
-  getItemAsync: vi.fn(async (key: string) => store.get(key) ?? null),
+  getItemAsync: vi.fn(async (key: string) => {
+    if (failRead.on) throw new Error("keychain locked");
+    return store.get(key) ?? null;
+  }),
   setItemAsync: vi.fn(async (key: string, value: string) => {
     store.set(key, value);
   }),
@@ -62,6 +66,7 @@ describe("store review prompt", () => {
     store.clear();
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.clearAllMocks();
+    failRead.on = false;
     Object.assign(native, { os: "ios", appId: "com.rakazo.app", module: {}, available: true });
   });
 
@@ -104,6 +109,33 @@ describe("store review prompt", () => {
     first.noteRunCompleted();
     await first.askForReviewIfDue(() => true);
     expect(native.requestReview).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not carry a run past a check that was not due yet", async () => {
+    const review = await load();
+    vi.setSystemTime(start);
+    for (let i = 0; i < 3; i++) review.noteRunCompleted();
+    await review.askForReviewIfDue(() => true);
+    vi.setSystemTime(start + DAY);
+    await review.askForReviewIfDue(() => true);
+    expect(native.requestReview).not.toHaveBeenCalled();
+  });
+
+  it("leaves the saved state alone when it cannot be read", async () => {
+    const review = await engaged();
+    await review.askForReviewIfDue(() => true);
+    const saved = store.get("rakazo.store-review");
+    review.resetStoreReviewForTests();
+
+    failRead.on = true;
+    review.noteRunCompleted();
+    await expect(review.askForReviewIfDue(() => true)).rejects.toThrow("keychain locked");
+    expect(store.get("rakazo.store-review")).toBe(saved);
+
+    failRead.on = false;
+    await review.askForReviewIfDue(() => true);
+    expect(native.requestReview).toHaveBeenCalledOnce();
+    expect(JSON.parse(store.get("rakazo.store-review") ?? "{}").askedAt).toBe(start + DAY);
   });
 
   it("keeps the chance when the inbox left view before the prompt", async () => {

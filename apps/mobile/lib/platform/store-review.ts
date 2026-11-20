@@ -54,16 +54,21 @@ export function reviewDue(current: ReviewState, now: number): boolean {
 }
 
 function update(change: (current: ReviewState) => ReviewState): Promise<ReviewState> {
-  const previous =
-    state ?? SecureStore.getItemAsync(STORAGE_KEY).then(parseReviewState, () => EMPTY);
-  const next = previous.then(change);
-  state = next;
-  void next.then((value) =>
-    bestEffort(
+  const previous = state ?? SecureStore.getItemAsync(STORAGE_KEY).then(parseReviewState);
+  // Each save finishes before the next change starts, so the stored state follows their order.
+  const next = previous.then(async (current) => {
+    const value = change(current);
+    await bestEffort(
       "store review state save",
       SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(value)),
-    ),
-  );
+    );
+    return value;
+  });
+  state = next;
+  // A failed read is not kept, so the next change reads again instead of saving over the stored state.
+  next.catch(() => {
+    if (state === next) state = null;
+  });
   return next;
 }
 
@@ -78,7 +83,10 @@ function officialStoreBuild(): boolean {
 /** A run the person watched finish. */
 export function noteRunCompleted(): void {
   winPending = true;
-  void update((current) => ({ ...current, completedRuns: current.completedRuns + 1 }));
+  void bestEffort(
+    "store review run count",
+    update((current) => ({ ...current, completedRuns: current.completedRuns + 1 })),
+  );
 }
 
 /**
@@ -94,16 +102,21 @@ export async function askForReviewIfDue(isActive: () => boolean): Promise<void> 
       ? value
       : { ...value, lastDay: today, activeDays: value.activeDays + 1 },
   );
-  if (!winPending || asking || !reviewDue(current, now) || !officialStoreBuild()) return;
+  if (!winPending || asking) return;
+  winPending = false;
+  if (!reviewDue(current, now) || !officialStoreBuild()) return;
   // An over-the-air update can reach a build made before the module was added.
   if (!requireOptionalNativeModule("ExpoStoreReview")) return;
   asking = true;
   try {
     const StoreReview = await import("expo-store-review");
-    if (!(await StoreReview.isAvailableAsync()) || !isActive()) return;
-    winPending = false;
-    await update((value) => ({ ...value, askedAt: now }));
+    if (!(await StoreReview.isAvailableAsync())) return;
+    if (!isActive()) {
+      winPending = true;
+      return;
+    }
     await StoreReview.requestReview();
+    await update((value) => ({ ...value, askedAt: now }));
   } finally {
     asking = false;
   }
