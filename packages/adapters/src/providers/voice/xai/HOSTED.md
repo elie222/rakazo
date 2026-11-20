@@ -6,7 +6,7 @@ subscription or realtime reasoning engine is required. Use `provider: "xai"`, `v
 and `transcribe.model: "grok-voice-transcribe-2.0"` at 27.77777777777778 micros/second.
 `tts` identifies this adapter's unversioned speech endpoint, not a reasoning model. Copy the generic
 configuration shape from `docs/deployment-voice.md`, replace pricing source URLs with the two xAI
-pricing pages below, and choose reservation amounts and grants under approved policy. These are
+pricing pages below, and choose reservation amounts. These are
 list-price estimates; actual charges require reconciliation. No promotion is assumed.
 
 Official sources:
@@ -66,9 +66,9 @@ Before enabling hosted traffic, use synthetic/consented examples on the operator
    tools and approval waits, Space switching and late answers. Confirm cancelled work cannot
    play in the next call. Verify mobile native/device speech and server-recognition fallback.
 4. Reconcile units and estimated cost against provider billing, including failed/cancelled calls,
-   rounding, Unicode character counting, missing usage and rate changes. Provision paid account
-   grants only after allowance policy is agreed; ensure model-credit balances stay untouched.
+   rounding, Unicode character counting, missing usage and rate changes. Ensure model-credit
+   balances stay untouched.
 
 Operator needs: a dedicated server API key with speech access, account spend limits, validated
-voices/models, approved allowance policy, grant provisioning/revocation, and an evidence import
+voices/models, and an evidence import
 for actual provider costs. No production keys were read or used for this implementation.
