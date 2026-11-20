@@ -14,10 +14,8 @@ const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13];
 const JPEG = [0xff, 0xd8, 0xff, 0xe0, 0, 16];
 const WEBP = [...Buffer.from("RIFF"), 4, 0, 0, 0, ...Buffer.from("WEBPVP8 ")];
 const GIF = [...Buffer.from("GIF89a"), 1, 0];
-const image = (bytes: number[]) => ({
-  created: 1,
-  data: [{ b64_json: Buffer.from(bytes).toString("base64") }],
-});
+const b64 = (bytes: number[]) => Buffer.from(bytes).toString("base64");
+const image = (bytes: number[]) => ({ created: 1, data: [{ b64_json: b64(bytes) }] });
 const json = (value: unknown, init?: ResponseInit) => new Response(JSON.stringify(value), init);
 function setup(...responses: Response[]) {
   const fetch = vi.fn<typeof globalThis.fetch>();
@@ -74,6 +72,12 @@ describe("images API media generation", () => {
   it.each([
     ["an unsupported format", image(GIF)],
     ["bytes that are not an image", image([...Buffer.from("not an image")])],
+    ["base64 with stray characters", { data: [{ b64_json: `${b64(PNG)}@@@@` }] }],
+    [
+      "base64 with a space inside",
+      { data: [{ b64_json: `${b64(PNG).slice(0, 8)} ${b64(PNG).slice(9)}` }] },
+    ],
+    ["truncated base64", { data: [{ b64_json: b64(PNG).slice(0, -1) }] }],
     ["no images", { data: [] }],
     ["a link instead of inline data", { data: [{ url: "https://cdn.example.test/image.png" }] }],
   ])("rejects a response with %s", async (_case, body) => {

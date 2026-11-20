@@ -21,6 +21,7 @@ const IMAGE_DEADLINE_MS = 180_000;
 /** One base64 image at the attachment limit, plus room for the JSON around it. */
 const MAX_RESPONSE_BYTES = ATTACHMENT_MAX_BASE64_LENGTH + 64 * 1024;
 const MODEL_ID_PATTERN = /^[\w.:/@+-]{1,200}$/;
+const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const IMAGE_MIME_TYPES = new Set<string>(["image/png", "image/jpeg", "image/webp"]);
 const imagesResponse = z.object({
   data: z.array(z.object({ b64_json: z.string().min(1) })).min(1),
@@ -99,6 +100,9 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
     const encoded = result.data.data[0]!.b64_json;
     if (encoded.length > ATTACHMENT_MAX_BASE64_LENGTH)
       throw new MediaGenerationError("output_limit");
+    // Buffer.from skips characters that are not base64, so damaged data would decode short.
+    if (encoded.length % 4 || !BASE64_PATTERN.test(encoded))
+      throw new MediaGenerationError("provider_failure");
     const bytes = new Uint8Array(Buffer.from(encoded, "base64"));
     // The format is read from the bytes: servers differ in what they return and how they label it.
     const mimeType = detectImageMimeType(bytes);
