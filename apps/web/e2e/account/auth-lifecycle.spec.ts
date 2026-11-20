@@ -139,7 +139,9 @@ test("a deactivated account's sign-in says so", async ({ page }, testInfo) => {
   await captureScreenshot(page, testInfo, "sign-in-account-deactivated");
 });
 
-test("an existing local account opens sign-in in a fresh browser", async ({ page }, testInfo) => {
+test("a browser outside the desktop app opens sign-in on its local server", async ({
+  page,
+}, testInfo) => {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.route("**/api/auth/capabilities", (route) =>
     route.fulfill({

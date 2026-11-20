@@ -92,6 +92,7 @@ import {
   createLocalComputerChoice,
   saveLocalComputerHost,
 } from "./this-computer/local-settings.js";
+import { allowLocalSignup } from "./this-computer/local-signup.js";
 import {
   defaultSleep,
   LocalStackController,
@@ -357,11 +358,17 @@ function configureHeaderSession(value: Session | undefined) {
   );
 }
 async function openAppOnce(targetUrl: string, switching: boolean) {
-  desktop.hostComputer?.activate(
-    desktop.currentSetup?.mode === "new" && targetUrl === desktop.localStack.webUrl(),
-  );
+  const managedLocal =
+    desktop.currentSetup?.mode === "new" && targetUrl === desktop.localStack.webUrl();
+  desktop.hostComputer?.activate(managedLocal);
   const target = await resolveSessionForTarget(targetUrl);
   configureHeaderSession(target.value);
+  if (managedLocal)
+    await allowLocalSignup(
+      target.value,
+      targetUrl,
+      await readStackToken(stackDir(app.getPath("userData"))),
+    );
   // A failed switch must leave telemetry with the window that remains selected.
   if (desktop.mainWindow === null) activateDesktopMonitoring(targetUrl, target.value);
   const previous = desktop.mainWindow;

@@ -158,7 +158,7 @@ import { mountBillingRoutes } from "./billing/billing-webhook.js";
 import { createSpeechSummarizer } from "./calls/speech-summary.js";
 import { mountVoiceHttpRoutes } from "./calls/voice.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
-import { mountLocalComputerHost } from "./computers/local-settings.js";
+import { localSignupAdmitter, mountLocalComputerHost } from "./computers/local-settings.js";
 import { mountScreenTarget } from "./computers/screen-proxy.js";
 import { storeInboundAttachment } from "./content/artifacts.js";
 import { mountSharedPages } from "./content/shared-pages.js";
@@ -578,7 +578,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     webOrigin: env.webOrigin,
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
-    singleAccount: Boolean(env.desktopStackToken),
+    admitsSignup: env.desktopStackToken ? localSignupAdmitter(env.desktopStackToken) : undefined,
     email,
     logger: authLibraryLogger("auth.request.failed"),
     onEmailError,
@@ -1006,9 +1006,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       c.header("cache-control", "no-store");
     });
   }
-  app.get("/api/auth/capabilities", async (c) => {
+  app.get("/api/auth/capabilities", (c) => {
     const registrationOpen = env.desktopStackToken
-      ? await runAsSystem("read local registration availability", auth.registrationOpen)
+      ? auth.registrationOpen(c.req.raw.headers)
       : undefined;
     return c.json({
       sso: env.oidc
