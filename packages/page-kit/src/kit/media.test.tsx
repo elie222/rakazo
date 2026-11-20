@@ -249,6 +249,19 @@ describe("cards and people", () => {
     expect(q("a")!.getAttribute("aria-label")).toBe("View Linen shirt");
   });
 
+  it.each([
+    { store: "Shop", storeMark: undefined, mark: "S" },
+    { store: "🍎 Shop", storeMark: undefined, mark: "🍎" },
+    { store: "𝒜pple Shop", storeMark: undefined, mark: "𝒜" },
+    { store: "Shop", storeMark: "A🍎", mark: "A🍎" },
+  ])("draws a whole store mark, never half a character: $store -> $mark", (row) => {
+    render(<ProductCard {...item} store={row.store} storeMark={row.storeMark} />);
+    const mark = q(".rk-store-mark")!.textContent!;
+    expect(mark).toBe(row.mark);
+    // encodeURIComponent throws on a lone surrogate, so this proves the mark is well formed.
+    expect(() => encodeURIComponent(mark)).not.toThrow();
+  });
+
   it("makes a compact card one link and drops products and tiles with nothing to show", () => {
     render(
       <>

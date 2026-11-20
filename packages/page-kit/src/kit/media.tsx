@@ -529,13 +529,13 @@ function StoreLine({ item }: { item: ProductItem }) {
     .filter(Boolean)
     .join(", ")
     .replace(", Rated", ", rated");
-  const mark = text(item.storeMark) || store.slice(0, 1).toUpperCase();
+  const mark = text(item.storeMark) || (Array.from(store)[0] ?? "").toUpperCase();
   return (
     <div className="rk-store" role="img" aria-label={label}>
       {store ? (
         <>
           <span className="rk-store-mark" aria-hidden="true">
-            {mark.slice(0, 2)}
+            {Array.from(mark).slice(0, 2).join("")}
           </span>
           <span>{store}</span>
         </>
