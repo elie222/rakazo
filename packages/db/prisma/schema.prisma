@@ -1758,6 +1758,8 @@ model AgentImport {
   /// Idempotency: a retry with the same key and digest returns the same bot.
   importKey     String?
   requestDigest String?
+  /// The template or listing version the bot was made from, when it came from one.
+  sourceVersion Int?
   createdAt     DateTime @default(now())
 
   @@unique([spaceId, userId, importKey])

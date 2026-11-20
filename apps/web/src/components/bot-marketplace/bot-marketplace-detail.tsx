@@ -14,6 +14,7 @@ import { cronLabels } from "../../lib/routines/cron";
 export function BotMarketplaceDetail({
   listing,
   botId,
+  installedVersion = null,
   onAdd,
   onOpen,
   busy = false,
@@ -21,6 +22,8 @@ export function BotMarketplaceDetail({
 }: {
   listing: MarketplaceBot;
   botId?: string | null;
+  /** The listing version the user's bot was made from, when known. */
+  installedVersion?: number | null;
   onAdd?: () => void;
   onOpen?: () => void;
   busy?: boolean;
@@ -31,6 +34,8 @@ export function BotMarketplaceDetail({
   const schedule = (crons: string[]) =>
     crons.map((cron) => formatCron(cron, cronLabels(i18n.locale))).join(", ");
   const apps = listing.apps.map((slug) => appNames[slug] ?? slug);
+  const outdated =
+    Boolean(botId) && installedVersion !== null && installedVersion < listing.version;
 
   return (
     <div data-testid="bot-marketplace-detail" className="space-y-6">
@@ -66,6 +71,17 @@ export function BotMarketplaceDetail({
           ))}
         </ul>
       </div>
+
+      {outdated ? (
+        <div className="rounded-xl border border-border/70 px-4 py-3 text-body-sm">
+          <p className="font-medium text-foreground">
+            <Trans>A newer version of this bot is available.</Trans>
+          </p>
+          {listing.versionNote ? (
+            <p className="mt-1 text-muted-foreground">{listing.versionNote}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       <ul className="divide-y divide-border/60 rounded-xl border border-border/70">
         <li className="flex items-center gap-3 px-4 py-3">

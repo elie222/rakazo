@@ -92,6 +92,8 @@ export const MarketplaceBotGetInput = z.strictObject({ slug });
 export const MarketplaceBotListingSchema = z.object({
   listing: MarketplaceBotSchema,
   botId: z.string().nullable(),
+  /** The listing version the user's bot was made from; null when unknown, such as before this was kept. */
+  installedVersion: z.number().int().positive().nullable().default(null),
 });
 
 export const MarketplaceBotInstallInput = z.strictObject({

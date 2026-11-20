@@ -46,9 +46,12 @@ beforeEach(() => {
 });
 afterEach(() => host.remove());
 
-async function render(value: typeof listing) {
+async function render(
+  value: typeof listing,
+  extra: { botId?: string | null; installedVersion?: number | null } = {},
+) {
   const root = createRoot(host);
-  await act(async () => root.render(<BotMarketplaceDetail listing={value} />));
+  await act(async () => root.render(<BotMarketplaceDetail listing={value} {...extra} />));
   return () => act(() => root.unmount());
 }
 
@@ -69,4 +72,30 @@ it("names the author without a link when the listing gives no address", async ()
   expect(host.querySelector("a")).toBeNull();
   expect(host.textContent).toContain("BotONE Team");
   unmount();
+});
+
+const NEWER = "A newer version of this bot is available.";
+
+it("says a newer version exists, with what changed, when the user's bot is older", async () => {
+  const unmount = await render(
+    { ...listing, version: 3, versionNote: "Now reads your calendar too." },
+    { botId: "bot-1", installedVersion: 2 },
+  );
+  expect(host.textContent).toContain(NEWER);
+  expect(host.textContent).toContain("Now reads your calendar too.");
+  unmount();
+});
+
+it("stays quiet when the bot is current, its version is unknown or it is not added", async () => {
+  for (const extra of [
+    { botId: "bot-1", installedVersion: 3 },
+    { botId: "bot-1", installedVersion: null },
+    { botId: null, installedVersion: 1 },
+    {},
+  ]) {
+    const unmount = await render({ ...listing, version: 3, versionNote: "Changed." }, extra);
+    expect(host.textContent).not.toContain(NEWER);
+    expect(host.textContent).not.toContain("Changed.");
+    unmount();
+  }
 });

@@ -82,8 +82,11 @@ export function botMarketplaceRoutes(ctx: RouterContext) {
     return row;
   }
 
-  /** The bot an earlier install made, while it exists; the listBotTemplates join, per slug. */
-  async function installedBotIds(actor: Actor, slugs: string[]): Promise<Map<string, string>> {
+  /** The bot an earlier install made, while it exists, and the version it came from; per slug. */
+  async function installedBots(
+    actor: Actor,
+    slugs: string[],
+  ): Promise<Map<string, { botId: string; version: number | null }>> {
     if (!slugs.length) return new Map();
     const made = await deps.prisma.agentImport.findMany({
       where: {
@@ -93,12 +96,12 @@ export function botMarketplaceRoutes(ctx: RouterContext) {
         source: "marketplace",
         bot: { archivedAt: null },
       },
-      select: { importKey: true, botId: true },
+      select: { importKey: true, botId: true, sourceVersion: true },
     });
     return new Map(
       made.map((row) => [
         (row.importKey ?? "").slice(BOT_MARKETPLACE_IMPORT_KEY_PREFIX.length),
-        row.botId,
+        { botId: row.botId, version: row.sourceVersion },
       ]),
     );
   }
@@ -123,7 +126,7 @@ export function botMarketplaceRoutes(ctx: RouterContext) {
               (!input.category || listing.category === input.category) &&
               matchesQuery(listing, input.query),
           );
-        const bots = await installedBotIds(
+        const bots = await installedBots(
           context.actor,
           matched.map(({ row }) => row.slug),
         );
@@ -138,14 +141,18 @@ export function botMarketplaceRoutes(ctx: RouterContext) {
             sortOrder: row.sortOrder,
             author: listing.author,
             apps: listing.apps,
-            botId: bots.get(row.slug) ?? null,
+            botId: bots.get(row.slug)?.botId ?? null,
           })),
         };
       }),
       get: authed.botMarketplace.get.handler(async ({ context, input }) => {
         const row = await publishedRow(input.slug);
-        const bots = await installedBotIds(context.actor, [row.slug]);
-        return { listing: listingOf(row), botId: bots.get(row.slug) ?? null };
+        const made = (await installedBots(context.actor, [row.slug])).get(row.slug);
+        return {
+          listing: listingOf(row),
+          botId: made?.botId ?? null,
+          installedVersion: made?.version ?? null,
+        };
       }),
       install: authed.botMarketplace.install.handler(async ({ context, input }) => {
         const row = await publishedRow(input.slug);

@@ -413,6 +413,8 @@ export type ImportedBotRequest = Pick<
   build: () => Promise<Built>;
   /** Posted before the checklist, such as cards for apps the bot works with. */
   cards?: MessageBlock[];
+  /** The template or listing version the bot is made from, kept to tell when it is outdated. */
+  sourceVersion?: number;
   /** Runs first in the create's transaction. */
   beforeWrite?: (tx: Prisma.TransactionClient) => Promise<void>;
 };
@@ -744,6 +746,7 @@ export async function writeImportedBot<PreparedKey>(
         source: plan.source,
         importKey: importKey ?? null,
         requestDigest: digest,
+        sourceVersion: input.sourceVersion ?? null,
         created: record as unknown as Prisma.InputJsonValue,
       },
     });
