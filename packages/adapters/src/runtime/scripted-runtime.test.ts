@@ -15,7 +15,7 @@ describe("inferScript ask resumes", () => {
   ])("completes an answered %s fixture", (prompt, answer, hasChoices) => {
     const initial = inferScript(prompt);
     expect(initial[0]?.ask?.text).toBe("Which city should I use?");
-    expect(Boolean(initial[0]?.ask?.actions?.length)).toBe(hasChoices);
+    expect(initial[0]?.ask?.actions?.length ?? 0).toBe(hasChoices ? 6 : 0);
     expect(initial.some((turn) => turn.complete)).toBe(false);
 
     const resumed = inferScript(`${prompt}\n\nWhich city should I use?\nAnswer: ${answer}`);
