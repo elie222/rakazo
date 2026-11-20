@@ -1003,6 +1003,48 @@ describe("web markdown streaming", () => {
     container.remove();
   });
 
+  it("keeps an escaped character reference literal", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"A \\&amp;"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"A \\&amp; world"}</ChatMarkdown>);
+    });
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
+    ).toEqual(["world"]);
+    expect(container.textContent).toBe("A &amp; world");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("draws escaped markup as text instead of parsing it", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const text = "&lt;/textarea&gt;&lt;img src=x onerror=alert(1)&gt;";
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
+    });
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("textarea")).toBeNull();
+    expect(container.textContent).toBe("</textarea><img src=x onerror=alert(1)>");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("shows a replaced snapshot at once instead of replaying it", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");

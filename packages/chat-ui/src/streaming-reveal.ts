@@ -231,14 +231,55 @@ function sourceOffset(node: HastNode, fallback: number): number {
   return node.position?.start?.offset ?? fallback;
 }
 
-let textDecoder: HTMLTextAreaElement | undefined;
+/** Common entities only; an unknown name stays literal, as it does in the rendered text. */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  apos: "'",
+  copy: "\u00a9",
+  gt: ">",
+  hellip: "\u2026",
+  laquo: "\u00ab",
+  lt: "<",
+  mdash: "\u2014",
+  nbsp: "\u00a0",
+  ndash: "\u2013",
+  quot: '"',
+  raquo: "\u00bb",
+  reg: "\u00ae",
+  trade: "\u2122",
+};
 
-/** Rendered form of a text node's source: entities decode and backslash escapes drop their slash. */
-function decodeMarkdownText(source: string): string {
-  if (typeof document === "undefined") return source.replace(/\\([!-/:-@[-`{-~])/g, "$1");
-  textDecoder ??= document.createElement("textarea");
-  textDecoder.innerHTML = source.replace(/\\([!-/:-@[-`{-~])/g, "$1");
-  return textDecoder.value;
+/** ASCII punctuation is the only set a CommonMark backslash escapes. */
+function isAsciiPunctuation(char: string | undefined): boolean {
+  if (!char) return false;
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 0x21 && code <= 0x2f) ||
+    (code >= 0x3a && code <= 0x40) ||
+    (code >= 0x5b && code <= 0x60) ||
+    (code >= 0x7b && code <= 0x7e)
+  );
+}
+
+/** A character reference at `index`, or undefined when the text is literal there. */
+function entityAt(source: string, index: number): { text: string; length: number } | undefined {
+  const semicolon = source.indexOf(";", index + 1);
+  if (semicolon === -1 || semicolon - index > 34) return undefined;
+  const body = source.slice(index + 1, semicolon);
+  if (/^#\d+$/.test(body)) {
+    const codePoint = Number(body.slice(1));
+    if (codePoint <= 0x10ffff)
+      return { text: String.fromCodePoint(codePoint), length: body.length + 2 };
+    return undefined;
+  }
+  if (/^#x[0-9a-f]+$/i.test(body)) {
+    const codePoint = Number.parseInt(body.slice(2), 16);
+    if (codePoint <= 0x10ffff)
+      return { text: String.fromCodePoint(codePoint), length: body.length + 2 };
+    return undefined;
+  }
+  const named = NAMED_ENTITIES[body];
+  return named ? { text: named, length: body.length + 2 } : undefined;
 }
 
 /**
@@ -249,10 +290,30 @@ function decodeMarkdownText(source: string): string {
 function visiblePrefix(slot: RevealTextSlot, blockSource: string, revealed: number): number {
   if (revealed === Number.POSITIVE_INFINITY || revealed >= slot.end) return slot.value.length;
   if (revealed <= slot.start) return 0;
-  return Math.min(
-    slot.value.length,
-    decodeMarkdownText(blockSource.slice(slot.start, revealed)).length,
-  );
+  const limit = revealed - slot.start;
+  const source = blockSource.slice(slot.start, slot.end);
+  let index = 0;
+  let rendered = 0;
+  while (index < limit) {
+    const char = source[index];
+    // An escape or entity that crosses the boundary was still literal in the previous frame.
+    if (char === "\\" && index + 1 < limit && isAsciiPunctuation(source[index + 1])) {
+      index += 2;
+      rendered += 1;
+      continue;
+    }
+    if (char === "&") {
+      const entity = entityAt(source, index);
+      if (entity && index + entity.length <= limit) {
+        index += entity.length;
+        rendered += entity.text.length;
+        continue;
+      }
+    }
+    index += 1;
+    rendered += 1;
+  }
+  return Math.min(slot.value.length, rendered);
 }
 
 /**
