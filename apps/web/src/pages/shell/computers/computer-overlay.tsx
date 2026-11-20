@@ -74,12 +74,9 @@ export function ComputerOverlay({
   onRefreshTeaching,
   onClose,
 }: ComputerOverlayProps) {
-  // Only a live screen has something to save; a user's own machine has no screen in the app.
-  const showingScreen =
-    !runsOnUserMachine(computer) &&
-    computer?.state === "running" &&
-    Boolean(embeddedScreenUrl) &&
-    !computerScreenError;
+  // The picture is taken on the server from the running computer, so it does not wait for the frame
+  // to connect; a user's own machine has no screen here to take.
+  const canSaveScreenshot = !runsOnUserMachine(computer) && computer?.state === "running";
   return (
     <div className="fixed inset-0 z-30 bg-background">
       <div
@@ -170,7 +167,7 @@ export function ComputerOverlay({
                 onRefresh={onRefreshTeaching}
               />
             ) : null}
-            {showingScreen ? <SaveScreenshotButton botId={bot.id} /> : null}
+            {canSaveScreenshot ? <SaveScreenshotButton botId={bot.id} /> : null}
             <Button
               variant="ghost"
               size="icon-sm"

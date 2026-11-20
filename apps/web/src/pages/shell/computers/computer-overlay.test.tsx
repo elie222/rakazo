@@ -66,13 +66,17 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
 async function render(
   state: ComputerStatus["state"],
   onStart = vi.fn(),
-  options: { hasControl?: boolean; shared?: boolean; screenUrl?: string; error?: string } = {},
+  options: { hasControl?: boolean; shared?: boolean; error?: string; ownMachine?: boolean } = {},
 ) {
   await act(async () => {
     root.render(
       <ComputerOverlay
         bot={bot}
-        computer={{ ...computer(state), ...(options.shared ? { shared: true } : {}) }}
+        computer={{
+          ...computer(state),
+          ...(options.shared ? { shared: true } : {}),
+          ...(options.ownMachine ? { runsOnUserMachine: true } : {}),
+        }}
         computerViewport={null}
         recordingSkill={null}
         teachBusy={false}
@@ -81,7 +85,7 @@ async function render(
         sending={false}
         booting={false}
         sendError={null}
-        embeddedScreenUrl={options.screenUrl ?? null}
+        embeddedScreenUrl={null}
         screenFrameRef={() => undefined}
         computerScreenError={options.error ?? null}
         computerBooting={null}
@@ -142,18 +146,22 @@ it("says sign-ins are shared while someone in a shared space has control", async
   expect(note()).toBeNull();
 });
 
-it("offers to save a screenshot only while a live screen is showing", async () => {
+it("offers to save a screenshot of a running computer, whatever its frame is doing", async () => {
   const save = () => container.querySelector<HTMLElement>('[data-testid="save-screenshot"]');
-  const screenUrl = "/screen/session";
-  await render("running", vi.fn(), { screenUrl });
-  expect(save()?.dataset.bot).toBe("bot-1");
-  await render("running", vi.fn(), { screenUrl, hasControl: true });
-  expect(save()).not.toBeNull();
-  // Nothing to capture while the screen is still loading, failed, or the computer is not running.
   await render("running");
+  expect(save()?.dataset.bot).toBe("bot-1");
+  await render("running", vi.fn(), { hasControl: true });
+  expect(save()).not.toBeNull();
+  await render("running", vi.fn(), { error: "The screen did not respond." });
+  expect(save()).not.toBeNull();
+  // Nothing to capture on a computer that is not running.
+  await render("suspended");
   expect(save()).toBeNull();
-  await render("running", vi.fn(), { screenUrl, error: "The screen did not respond." });
+  await render("stopped");
   expect(save()).toBeNull();
-  await render("suspended", vi.fn(), { screenUrl });
-  expect(save()).toBeNull();
+});
+
+it("offers no screenshot of the user's own machine, which has no screen in the app", async () => {
+  await render("running", vi.fn(), { ownMachine: true });
+  expect(container.querySelector('[data-testid="save-screenshot"]')).toBeNull();
 });
