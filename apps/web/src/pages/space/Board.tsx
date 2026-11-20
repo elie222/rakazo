@@ -229,17 +229,17 @@ function useTicketChange(onFailed?: (error: Error) => void) {
       input: Pick<UpdateTicketInput, "id" | "assigneeBotId" | "priority" | "status">,
       rpc,
     ) => {
+      const before = client
+        .getQueryData(list.queryKey)
+        ?.tickets.find((ticket) => ticket.id === input.id);
       const saved = await rpc.tickets.update(input);
-      // Keep the confirmed change if refreshing fails, and let a newer live read win.
-      client.setQueryData(
-        list.queryKey,
-        (current) =>
-          current && {
-            tickets: current.tickets.map((ticket) =>
-              ticket.id === saved.id && ticket.updatedAt <= saved.updatedAt ? saved : ticket,
-            ),
-          },
-      );
+      // Publish the response only if the cached ticket still matches the one we edited.
+      // A live read may have delivered a newer revision with the same timestamp.
+      if (!before) return;
+      client.setQueryData(list.queryKey, (current) => {
+        if (!current?.tickets.includes(before)) return undefined;
+        return { tickets: current.tickets.map((ticket) => (ticket === before ? saved : ticket)) };
+      });
     },
     stale: [list.queryKey],
     onFailed,

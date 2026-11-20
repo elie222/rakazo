@@ -640,6 +640,51 @@ it("closes a saved ticket even when the board cannot be read again", async () =>
   }
 });
 
+async function selectHighPriority(container: HTMLElement) {
+  const priority = container.querySelector<HTMLButtonElement>('[id$="-priority"]')!;
+  await act(async () => priority.click());
+  const high = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+    (option) => option.textContent === "High",
+  )!;
+  await act(async () => high.click());
+  return priority;
+}
+
+it("keeps a live ticket update when an older save response has the same timestamp", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  const original = ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1");
+  const saved = { ...original, priority: "high" };
+  const liveTicket = { ...saved, title: "Ship today", status: "doing" };
+  const response = deferred<typeof saved>();
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [original] });
+  api.tickets.comments.mockReset().mockResolvedValue([]);
+  api.tickets.update.mockReset().mockReturnValue(response.promise);
+  const live = liveStream();
+  const page = await renderBoard(live.stream);
+  try {
+    const card = () =>
+      page.container.querySelector<HTMLButtonElement>('[data-testid="board-card-ticket-1"]')!;
+    await act(async () => card().click());
+    const priority = await selectHighPriority(page.container);
+
+    api.tickets.list.mockResolvedValue({ tickets: [liveTicket] });
+    await act(async () => live.event(original.id));
+    await settle();
+    expect(card().textContent).toContain("Ship today");
+
+    api.tickets.list.mockRejectedValue(new TypeError("Failed to fetch"));
+    await act(async () => response.resolve(saved));
+    await settle();
+    expect(priority.disabled).toBe(false);
+    expect(card().textContent).toContain("Ship today");
+    expect(card().parentElement?.getAttribute("aria-labelledby")).toBe("board-column-doing");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("clears an earlier comment error before saving a dropdown choice", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
@@ -659,12 +704,7 @@ it("clears an earlier comment error before saving a dropdown choice", async () =
       "Could not reach the server",
     );
 
-    const priority = page.container.querySelector<HTMLButtonElement>('[id$="-priority"]')!;
-    await act(async () => priority.click());
-    const high = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
-      (option) => option.textContent === "High",
-    )!;
-    await act(async () => high.click());
+    const priority = await selectHighPriority(page.container);
     await settle();
 
     expect(api.tickets.update).toHaveBeenCalledExactlyOnceWith({
