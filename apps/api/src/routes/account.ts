@@ -129,6 +129,16 @@ export function accountRoutes(ctx: RouterContext) {
     },
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    cloudComputers: {
+      list: authed.cloudComputers.list.handler(
+        async ({ context }) => (await deps.billing?.cloudComputers(context.actor)) ?? null,
+      ),
+      setSize: authed.cloudComputers.setSize.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        await billing.setComputerSize(context.actor, input.computerId, input.size);
+        return { ok: true as const };
+      }),
+    },
     billing: {
       selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) => {
         const billing = requireBilling(deps);
@@ -161,11 +171,6 @@ export function accountRoutes(ctx: RouterContext) {
       computerUsage: authed.billing.computerUsage.handler(async ({ context }) =>
         requireBilling(deps).computerUsage(context.actor),
       ),
-      setComputerSize: authed.billing.setComputerSize.handler(async ({ context, input }) => {
-        const billing = requireBilling(deps);
-        await billing.setComputerSize(context.actor, input.size);
-        return billing.status(context.actor);
-      }),
       refresh: authed.billing.refresh.handler(async ({ context }) => {
         const billing = requireBilling(deps);
         await billing.syncForActor(context.actor);

@@ -585,7 +585,6 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
       byokAnnualPriceCents: 46800,
       byokTier: "pro",
       computerHoursLeft: 400,
-      computerSizeSettings: { size: "standard", available: ["standard", "large"] },
     };
     await route.fulfill({ json: { json: status } });
   });
@@ -606,23 +605,92 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   await expect.poll(() => changedTo).toBe("pro");
   await expect(plan.getByText("$49 / month", { exact: true })).toBeVisible();
   await expect(plan.getByText("8 vCPU, 16 GB, 100 computer hours a month")).toBeVisible();
-  await page.route("**/rpc/billing/setComputerSize", async (route) => {
-    expect(route.request().postDataJSON()?.json).toEqual({ size: "large" });
-    status = {
-      ...status,
-      computerHoursLeft: 200,
-      computerSizeSettings: { size: "large", available: ["standard", "large"] },
-    };
-    await route.fulfill({ json: { json: status } });
+});
+
+test("computers settings set each cloud computer's size within the plan", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `computer-size-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
   });
-  const size = settings.getByRole("combobox", { name: "Computer size" });
-  await expect(size).toHaveText("Standard");
-  await size.click();
-  await expect(page.getByRole("option", { name: "Large · 2× usage" })).toBeVisible();
-  await captureScreenshot(page, testInfo, "billing-computer-size");
-  await page.getByRole("option", { name: "Large · 2× usage" }).click();
-  await expect(size).toHaveText("Large · 2× usage");
-  await expect(settings.getByText("200", { exact: true })).toBeVisible();
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  await page.route("**/rpc/billing/status", (route) =>
+    route.fulfill({
+      json: {
+        json: billingStatus({
+          access: true,
+          trialAvailable: false,
+          funding: "byok",
+          byokTier: "pro",
+          state: "active",
+          hasCustomer: true,
+          computerHoursLeft: 400,
+          standardComputerHours: true,
+        }),
+      },
+    }),
+  );
+  let computers = {
+    computers: [
+      {
+        id: "computer-team",
+        scope: "team",
+        botName: null,
+        size: "standard",
+        savedSize: "standard",
+      },
+      {
+        id: "computer-private",
+        scope: "dedicated",
+        botName: "Researcher",
+        size: "large",
+        savedSize: "large",
+      },
+    ],
+    available: ["standard", "large"],
+    canManage: true,
+  };
+  await page.route("**/rpc/cloudComputers/list", (route) =>
+    route.fulfill({ json: { json: computers } }),
+  );
+  let sizedTo: unknown = null;
+  await page.route("**/rpc/cloudComputers/setSize", async (route) => {
+    sizedTo = route.request().postDataJSON()?.json;
+    computers = {
+      ...computers,
+      computers: computers.computers.map((computer) =>
+        computer.id === "computer-team"
+          ? { ...computer, size: "large", savedSize: "large" }
+          : computer,
+      ),
+    };
+    await route.fulfill({ json: { json: { ok: true } } });
+  });
+  await page.reload();
+  const settings = await openUserSettings(page, "computer");
+  const team = settings.getByRole("combobox", { name: "Size of Team Computer" });
+  await expect(team).toHaveText("Standard");
+  await expect(settings.getByRole("combobox", { name: "Size of Researcher" })).toHaveText(
+    "Large (uses 2× hours)",
+  );
+  await team.click();
+  await expect(page.getByRole("option", { name: "Extra large (uses 4× hours)" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "computers-cloud-sizes");
+  await page.getByRole("option", { name: "Large (uses 2× hours)" }).click();
+  await expect.poll(() => sizedTo).toEqual({ computerId: "computer-team", size: "large" });
+  await expect(team).toHaveText("Large (uses 2× hours)");
+  await expect(settings.getByText("Applies on its next start.")).toBeVisible();
+
+  await team.click();
+  await page.getByRole("option", { name: "Extra large (uses 4× hours)" }).click();
+  await expect(settings.getByText("Your plan does not include this size.")).toBeVisible();
+  await captureScreenshot(page, testInfo, "computers-size-upgrade");
+  await settings.getByRole("button", { name: "Upgrade" }).click();
+  await expect(settings).toHaveAttribute("data-settings-section", "billing");
 });
 
 test("yearly billing shows the monthly computer reset separately from renewal", async ({

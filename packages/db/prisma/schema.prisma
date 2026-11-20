@@ -479,12 +479,12 @@ model Organization {
   logo         String?
   createdAt    DateTime
   metadata     String?
-  computerSize String @default("standard")
   members      Member[]
   invitations  Invitation[]
   spaces       Space[]
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
+  computerAllowanceGrants ComputerAllowanceGrant[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
@@ -579,6 +579,18 @@ model AccessGrant {
   @@index([email])
   @@index([createdAt])
   @@map("access_grants")
+}
+
+/// Extra computer allowance an operator gave an organization for the period it was granted in.
+model ComputerAllowanceGrant {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  amountCents    Int
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("computer_allowance_grants")
 }
 
 model PluginSubmission {
@@ -1907,6 +1919,8 @@ model Computer {
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
+  /// The size it starts at next, within its organization's plan.
+  size                    String                   @default("standard")
   /// The size used for billing and the stretch it applies to.
   runningSize             String?
   runningSizeSince        DateTime?

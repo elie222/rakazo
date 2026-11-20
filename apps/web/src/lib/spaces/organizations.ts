@@ -128,14 +128,13 @@ export function organizationMembersQuery(userId: string | null, organizationId: 
 }
 
 /**
- * Refreshes organization lists and billing settings on screens showing them.
+ * Refreshes organization lists, billing settings and computer sizes on screens showing them.
  */
 export function organizationsChanged(client = queryClient): Promise<void> {
   return client.invalidateQueries({
     predicate: ({ queryKey }) =>
       queryKey[1] === ORGANIZATIONS_KEY ||
       (Array.isArray(queryKey[0]) &&
-        queryKey[0].at(-2) === "billing" &&
-        queryKey[0].at(-1) === "status"),
+        ["billing.status", "cloudComputers.list"].includes(queryKey[0].slice(-2).join("."))),
   });
 }

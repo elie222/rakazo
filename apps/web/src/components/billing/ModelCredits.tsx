@@ -60,7 +60,6 @@ import { rpc } from "../../lib/query/rpc";
 import { AccountMenu } from "../account/AccountMenu";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { InfoTooltip } from "../InfoTooltip";
-import { ComputerSizeSetting } from "./ComputerSizeSetting";
 import { ComputerUsage } from "./ComputerUsage";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
@@ -849,13 +848,8 @@ export function ModelCreditsSettings({
               </Trans>
             </p>
           ) : null}
-          {status.canManage &&
-          status.computerSizeSettings &&
-          status.computerSizeSettings.available.length > 1 ? (
-            <ComputerSizeSetting settings={status.computerSizeSettings} />
-          ) : null}
           {status.canManage ? (
-            <ComputerUsage standardHours={Boolean(status.computerSizeSettings)} />
+            <ComputerUsage standardHours={status.standardComputerHours === true} />
           ) : null}
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>

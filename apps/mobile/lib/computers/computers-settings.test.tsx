@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
+import type { CloudComputers } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
+import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -8,6 +11,13 @@ import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ComputersSettings from "../../app/(settings)/computers";
 import { listUserDevices, removeUserDevice } from "../account/user-devices";
+import { queryClient } from "../query/query";
+
+const mocks = vi.hoisted(() => ({
+  cloud: vi.fn(),
+  setSize: vi.fn(),
+  push: vi.fn(),
+}));
 
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({ destructive: "#f00" }) }));
@@ -18,36 +28,75 @@ vi.mock("../native/native", () => ({
 vi.mock("../api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
-  captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
+  captureApiRequestContext: async (spaceId: string | null = "space-fixture") => ({
+    apiBase: "https://app.example.test",
+    sessionGeneration: 1,
+    headers: spaceId ? { "x-rakazo-space-id": spaceId } : {},
+  }),
+  rpc: (method: string, body: unknown) => {
+    if (method === "cloudComputers/list") return mocks.cloud();
+    if (method === "cloudComputers/setSize") return mocks.setSize(body);
+    throw new Error(`Unexpected ${method}`);
+  },
 }));
+vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("../account/user-devices", () => ({
   listUserDevices: vi.fn(),
   removeUserDevice: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
+  useRouter: () => ({ push: mocks.push }),
   useFocusEffect: (effect: () => (() => void) | undefined) =>
-    useEffect(() => {
-      focus = () => {
-        blur = effect() ?? (() => {});
-      };
-      focus();
-      return () => blur();
-    }, [effect]),
+    useEffect(() => effect() ?? undefined, [effect]),
 }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
+// The native menu as one button per choice.
+vi.mock("@expo/ui/community/menu", () => ({
+  MenuView: ({
+    actions,
+    onPressAction,
+    children,
+  }: {
+    actions: Array<{ id: string; title: string; state?: string }>;
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
+    children?: ReactNode;
+  }) => (
+    <div>
+      {children}
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          type="button"
+          aria-pressed={action.state === "on"}
+          onClick={() => onPressAction({ nativeEvent: { event: action.id } })}
+        >
+          {`Choose ${action.title}`}
+        </button>
+      ))}
+    </div>
+  ),
+}));
 vi.mock("../../components/settings/settings-group", () => ({
-  SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  SettingsGroup: ({ label, children }: { label?: string; children?: ReactNode }) => (
+    <section>
+      {label ? <h3>{label}</h3> : null}
+      {children}
+    </section>
+  ),
   SettingsRow: ({
     title,
     value,
+    detail,
     accessibilityLabel,
     disabled,
     onPress,
   }: {
     title: string;
     value?: string;
+    detail?: string;
     accessibilityLabel?: string;
     disabled?: boolean;
     onPress?: () => void;
@@ -60,6 +109,7 @@ vi.mock("../../components/settings/settings-group", () => ({
     >
       {title}
       {value}
+      {detail}
     </button>
   ),
 }));
@@ -89,11 +139,7 @@ vi.mock("react-native", () => {
     RefreshControl: ({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) => (
       <button type="button" aria-label="Refresh" aria-busy={refreshing} onClick={onRefresh} />
     ),
-    Text: ({ children, ...props }: { children?: ReactNode; role?: string }) => (
-      <p role={props.role} {...props}>
-        {children}
-      </p>
-    ),
+    Text: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
     ActivityIndicator: ({ accessibilityLabel }: { accessibilityLabel?: string }) => (
       <span role="status" aria-label={accessibilityLabel} />
     ),
@@ -102,12 +148,17 @@ vi.mock("react-native", () => {
   };
 });
 
+// Cache updates reach the screen inside act instead of on a later timer.
+notifyManager.setScheduler((callback) => callback());
+
 let container: HTMLDivElement;
 let root: Root;
-let focus: () => void;
-let blur: () => void;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  i18n.load("en", {});
+  i18n.activate("en");
+  queryClient.clear();
+  mocks.cloud.mockResolvedValue(null);
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -121,368 +172,178 @@ afterEach(async () => {
 
 async function settle() {
   await act(flush);
+  await act(flush);
 }
 async function render() {
   await act(async () => root.render(<ComputersSettings />));
   await settle();
 }
+function button(label: string) {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (candidate) =>
+      candidate.getAttribute("aria-label") === label || candidate.textContent === label,
+  );
+}
+function lastAlertButtons() {
+  return (vi.mocked(Alert.alert).mock.calls.at(-1)?.[2] ?? []) as Array<{
+    text?: string;
+    style?: string;
+    onPress?: () => void;
+  }>;
+}
 
 const laptop = { deviceId: "d1", name: "Laptop", connected: true };
 const desk = { deviceId: "d2", name: "Desk PC", connected: false };
+const cloud: CloudComputers = {
+  computers: [
+    { id: "c1", scope: "team", botName: null, size: "standard", savedSize: "standard" },
+    { id: "c2", scope: "dedicated", botName: "Researcher", size: "large", savedSize: "large" },
+  ],
+  available: ["standard", "large"],
+  canManage: true,
+};
 
-function confirmRemove() {
-  const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)?.[2] ?? [];
-  const remove = buttons.find((button: { style?: string }) => button.style === "destructive");
-  return remove as { onPress?: () => void } | undefined;
-}
-
-it("lists computers with their status and revokes one after confirmation", async () => {
+it("lists paired computers and removes one after confirmation", async () => {
   vi.mocked(listUserDevices).mockResolvedValueOnce([laptop, desk]).mockResolvedValue([laptop]);
   vi.mocked(removeUserDevice).mockResolvedValue();
   await render();
   expect(container.textContent).toContain("LaptopConnected");
   expect(container.textContent).toContain("Desk PCOffline");
-  expect(container.querySelector('[aria-label="Remove Laptop, Connected"]')).not.toBeNull();
-  expect(container.querySelector('[aria-label="Remove Desk PC, Offline"]')).not.toBeNull();
 
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Desk PC, Offline"]')?.click(),
-  );
+  await act(async () => button("Remove Desk PC, Offline")?.click());
   expect(Alert.alert).toHaveBeenCalledWith(
     "Remove Desk PC?",
     "This computer will stop running bots for your account",
-    expect.arrayContaining([
-      expect.objectContaining({ text: "Cancel", style: "cancel" }),
-      expect.objectContaining({ text: "Remove", style: "destructive" }),
-    ]),
+    expect.arrayContaining([expect.objectContaining({ text: "Cancel", style: "cancel" })]),
   );
   expect(removeUserDevice).not.toHaveBeenCalled();
-
-  await act(async () => confirmRemove()?.onPress?.());
+  await act(async () =>
+    lastAlertButtons()
+      .find((b) => b.style === "destructive")
+      ?.onPress?.(),
+  );
   await settle();
   expect(removeUserDevice).toHaveBeenCalledWith("d2");
   expect(container.textContent).not.toContain("Desk PC");
   expect(container.textContent).toContain("LaptopConnected");
 });
 
+it("hides a computer while its removal is pending and shows it again when it fails", async () => {
+  const finishRemove = deferred();
+  vi.mocked(listUserDevices).mockResolvedValue([laptop]);
+  vi.mocked(removeUserDevice).mockReturnValue(finishRemove.promise);
+  await render();
+  await act(async () => button("Remove Laptop, Connected")?.click());
+  await act(async () =>
+    lastAlertButtons()
+      .find((b) => b.style === "destructive")
+      ?.onPress?.(),
+  );
+  expect(container.textContent).not.toContain("Laptop");
+  await act(async () => finishRemove.reject(new Error("offline")));
+  await settle();
+  expect(container.textContent).toContain("LaptopConnected");
+  expect(container.textContent).toContain("offline");
+});
+
+it("keeps a removed computer gone when the list read after it fails", async () => {
+  vi.mocked(listUserDevices)
+    .mockResolvedValueOnce([laptop, desk])
+    .mockRejectedValue(new Error("offline"));
+  vi.mocked(removeUserDevice).mockResolvedValue();
+  await render();
+  await act(async () => button("Remove Desk PC, Offline")?.click());
+  await act(async () =>
+    lastAlertButtons()
+      .find((b) => b.style === "destructive")
+      ?.onPress?.(),
+  );
+  await settle();
+  expect(container.textContent).not.toContain("Desk PC");
+  expect(container.textContent).toContain("LaptopConnected");
+});
+
+it("says when the cloud computers fail to load and retries them", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  mocks.cloud.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(cloud);
+  await render();
+  expect(container.textContent).toContain("offline");
+  expect(container.textContent).not.toContain("No paired computers");
+  await act(async () => button("Retry")?.click());
+  await settle();
+  expect(container.textContent).not.toContain("offline");
+  expect(container.textContent).toContain("Cloud computers");
+});
+
 it("says when none are paired, and retries a failed load", async () => {
   vi.mocked(listUserDevices).mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce([]);
   await render();
   expect(container.textContent).toContain("offline");
-  const retry = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Retry",
-  );
-  await act(async () => retry?.click());
+  await act(async () => button("Retry")?.click());
   await settle();
   expect(container.textContent).toContain("No paired computers");
   expect(container.textContent).not.toContain("offline");
 });
 
-it("re-lists after a revoke error and keeps the error visible", async () => {
-  vi.mocked(listUserDevices).mockResolvedValueOnce([laptop]).mockResolvedValueOnce([]);
-  vi.mocked(removeUserDevice).mockRejectedValue(new Error("offline"));
-  await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  await settle();
-  expect(listUserDevices).toHaveBeenCalledTimes(2);
-  expect(container.textContent).not.toContain("Laptop");
-  expect(container.textContent).toContain("offline");
-  expect(container.textContent).not.toContain("Retry");
-});
-
-it("keeps the revoke error when reconciliation also fails", async () => {
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop])
-    .mockRejectedValueOnce(new Error("list failed"));
-  vi.mocked(removeUserDevice).mockRejectedValue({});
-  await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  await settle();
-  expect(container.textContent).toContain("LaptopConnected");
-  expect(container.textContent).toContain("Could not remove");
-  expect(container.textContent).toContain("Retry");
-});
-
-it("restores a failed removal when a newer refresh fails", async () => {
-  const finishReconcile = deferred<(typeof laptop)[]>();
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(finishReconcile.promise)
-    .mockRejectedValueOnce(new Error("list failed"));
-  vi.mocked(removeUserDevice).mockRejectedValue({});
-  await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  expect(container.textContent).not.toContain("Laptop");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
-  );
-  await act(async () => finishReconcile.resolve([]));
-  expect(container.textContent).toContain("LaptopConnected");
-  expect(container.textContent).toContain("list failed");
-  expect(container.textContent).toContain("Retry");
-});
-
-it("retries a failed reload after a list exists", async () => {
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop])
-    .mockRejectedValueOnce(new Error("list failed"))
-    .mockResolvedValueOnce([desk]);
-  await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
-  );
-  expect(container.textContent).toContain("LaptopConnected");
-  expect(container.textContent).toContain("list failed");
-  const retry = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Retry",
-  );
-  expect(retry).toBeDefined();
-  await act(async () => retry?.click());
-  expect(container.textContent).toContain("Desk PCOffline");
-  expect(container.textContent).not.toContain("list failed");
-  expect(container.textContent).not.toContain("Retry");
-});
-
-function refreshBusy() {
-  return container.querySelector('[aria-label="Refresh"]')?.getAttribute("aria-busy");
-}
-
-it("keeps refreshing until the newest refresh finishes", async () => {
-  const finishFirst = deferred<(typeof laptop)[]>();
-  const finishSecond = deferred<(typeof laptop)[]>();
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(finishFirst.promise)
-    .mockReturnValueOnce(finishSecond.promise);
-  await render();
-  const refresh = () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click();
-  await act(async () => refresh());
-  await act(async () => refresh());
-  expect(refreshBusy()).toBe("true");
-  await act(async () => finishFirst.resolve([laptop]));
-  expect(refreshBusy()).toBe("true");
-  await act(async () => finishSecond.resolve([laptop]));
-  expect(refreshBusy()).toBe("false");
-});
-
-it("resets refreshing on blur and ignores the previous refresh", async () => {
-  const finishFirst = deferred<(typeof laptop)[]>();
-  const finishSecond = deferred<(typeof laptop)[]>();
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(finishFirst.promise)
-    .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(finishSecond.promise);
-  await render();
-  const refresh = () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click();
-  await act(async () => refresh());
-  await act(async () => blur());
-  expect(refreshBusy()).toBe("false");
-  await act(async () => focus());
-  await act(async () => refresh());
-  await act(async () => finishFirst.resolve([laptop]));
-  expect(refreshBusy()).toBe("true");
-  await act(async () => finishSecond.resolve([laptop]));
-  expect(refreshBusy()).toBe("false");
-});
-
-it("ignores a delayed refresh after a successful revoke", async () => {
-  const finishRefresh = deferred<(typeof laptop)[]>();
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop])
-    .mockReturnValueOnce(finishRefresh.promise)
-    .mockResolvedValueOnce([]);
-  vi.mocked(removeUserDevice).mockResolvedValue();
-  await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
-  );
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  await settle();
-  await act(async () => finishRefresh.resolve([laptop]));
-  expect(container.textContent).not.toContain("Laptop");
-});
-
-it("filters refresh results while a revoke is pending", async () => {
-  const finishRemove = deferred();
-  vi.mocked(listUserDevices).mockResolvedValueOnce([laptop]).mockResolvedValueOnce([laptop]);
-  vi.mocked(listUserDevices).mockResolvedValueOnce([]);
-  vi.mocked(removeUserDevice).mockReturnValue(finishRemove.promise);
-  await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
-  );
-  expect(container.textContent).not.toContain("Laptop");
-  await act(async () => finishRemove.resolve());
-  await settle();
-  expect(container.textContent).not.toContain("Laptop");
-});
-
-it("clears a newer visit's load error when an earlier removal reconciles", async () => {
-  const finishRemove = deferred();
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop, desk])
-    .mockRejectedValueOnce(new Error("list failed"))
-    .mockResolvedValueOnce([desk]);
-  vi.mocked(removeUserDevice).mockReturnValue(finishRemove.promise);
-  await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  await act(async () => {
-    blur();
-    focus();
+it("lists cloud computers above paired ones and changes a size", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([laptop]);
+  mocks.cloud.mockResolvedValueOnce(cloud).mockResolvedValue({
+    ...cloud,
+    computers: [
+      cloud.computers[0],
+      { ...cloud.computers[1], size: "standard", savedSize: "standard" },
+    ],
   });
-  await settle();
-  expect(container.textContent).toContain("list failed");
-  expect(container.textContent).toContain("Retry");
+  mocks.setSize.mockResolvedValue(null);
+  await render();
+  const text = container.textContent ?? "";
+  expect(text.indexOf("Cloud computers")).toBeLessThan(text.indexOf("Your devices"));
+  expect(text).toContain("Team ComputerStandard");
+  expect(text).toContain("ResearcherLarge (uses 2× hours)");
 
-  await act(async () => finishRemove.resolve());
+  // Team Computer is already Standard, so the unchecked Standard choice is the Researcher's.
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>('button[aria-pressed="false"]')]
+      .find((candidate) => candidate.textContent === "Choose Standard")
+      ?.click(),
+  );
   await settle();
-  expect(container.textContent).toContain("Desk PCOffline");
-  expect(container.textContent).not.toContain("list failed");
-  expect(container.textContent).not.toContain("Retry");
+  expect(mocks.setSize).toHaveBeenCalledWith({ computerId: "c2", size: "standard" });
+  expect(container.textContent).toContain("ResearcherStandardApplies on its next start.");
 });
 
-it("ignores a previous visit's revoke error after a later removal succeeds", async () => {
-  const failFirst = deferred<never>();
-  const finishSecond = deferred();
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop, desk])
-    .mockResolvedValueOnce([laptop, desk])
-    .mockResolvedValue([laptop]);
-  vi.mocked(removeUserDevice)
-    .mockReturnValueOnce(failFirst.promise)
-    .mockReturnValueOnce(finishSecond.promise);
+it("points a size above the plan to Billing without saving it", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  mocks.cloud.mockResolvedValue({ ...cloud, computers: [cloud.computers[0]] });
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
+  expect(container.textContent).not.toContain("No paired computers");
+  await act(async () => button("Choose Extra large (uses 4× hours)")?.click());
+  expect(mocks.setSize).not.toHaveBeenCalled();
+  expect(vi.mocked(Alert.alert).mock.calls.at(-1)?.[0]).toBe(
+    "Your plan does not include this size.",
   );
-  await act(async () => confirmRemove()?.onPress?.());
-  await act(async () => {
-    blur();
-    focus();
-  });
-  await settle();
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Desk PC, Offline"]')?.click(),
+    lastAlertButtons()
+      .find((b) => b.text === "Upgrade")
+      ?.onPress?.(),
   );
-  await act(async () => confirmRemove()?.onPress?.());
-  await act(async () => finishSecond.resolve());
-  await settle();
-  await act(async () => failFirst.reject(new Error("offline")));
-  await settle();
-  expect(container.textContent).not.toContain("Desk PC");
-  expect(container.textContent).not.toContain("offline");
-  expect(container.textContent).toContain("LaptopConnected");
+  expect(mocks.push).toHaveBeenCalledWith("/billing");
 });
 
-it("keeps the newest list when an earlier load finishes last", async () => {
-  const finishFirst = deferred<(typeof laptop)[]>();
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([])
-    .mockReturnValueOnce(finishFirst.promise)
-    .mockResolvedValueOnce([]);
+it("shows sizes without a menu to members who do not manage billing", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  mocks.cloud.mockResolvedValue({ ...cloud, canManage: false });
   await render();
-  const refresh = () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click();
-  await act(async () => refresh());
-  await act(async () => refresh());
-  await settle();
-  expect(container.textContent).toContain("No paired computers");
-  await act(async () => finishFirst.resolve([laptop]));
-  await settle();
-  expect(container.textContent).not.toContain("Laptop");
+  expect(container.textContent).toContain("ResearcherLarge (uses 2× hours)");
+  expect(button("Choose Standard")).toBeUndefined();
 });
 
-it("restores an uncertain removal after returning when both requests fail", async () => {
-  const failRemove = deferred<never>();
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop])
-    .mockRejectedValue(new Error("list failed"));
-  vi.mocked(removeUserDevice).mockReturnValue(failRemove.promise);
+it("alerts when a size change fails", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  mocks.cloud.mockResolvedValue({ ...cloud, computers: [cloud.computers[0]] });
+  mocks.setSize.mockRejectedValue(new Error("nope"));
   await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  await act(async () => {
-    blur();
-    focus();
-  });
+  await act(async () => button("Choose Large (uses 2× hours)")?.click());
   await settle();
-  await act(async () => failRemove.reject(new Error("remove failed")));
-  await settle();
-  expect(container.textContent).toContain("LaptopConnected");
-  expect(container.textContent).toContain("list failed");
-  expect(container.textContent).not.toContain("remove failed");
-});
-
-it("clears a failed refresh error when successful removal reconciles", async () => {
-  const finishRemove = deferred();
-  vi.mocked(listUserDevices)
-    .mockResolvedValueOnce([laptop])
-    .mockRejectedValueOnce(new Error("list failed"))
-    .mockResolvedValueOnce([]);
-  vi.mocked(removeUserDevice).mockReturnValue(finishRemove.promise);
-  await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')?.click(),
-  );
-  expect(container.textContent).toContain("list failed");
-  await act(async () => finishRemove.resolve());
-  await settle();
-  expect(container.textContent).toContain("No paired computers");
-  expect(container.textContent).not.toContain("list failed");
-  expect(container.textContent).not.toContain("Retry");
-});
-
-it("keeps a newer removal error when an earlier visit reconciles", async () => {
-  const finishFirst = deferred();
-  vi.mocked(listUserDevices).mockResolvedValue([laptop, desk]);
-  vi.mocked(removeUserDevice)
-    .mockReturnValueOnce(finishFirst.promise)
-    .mockRejectedValueOnce(new Error("second removal failed"));
-  await render();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop, Connected"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  await act(async () => {
-    blur();
-    focus();
-  });
-  await settle();
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove Desk PC, Offline"]')?.click(),
-  );
-  await act(async () => confirmRemove()?.onPress?.());
-  await settle();
-  expect(container.textContent).toContain("second removal failed");
-  await act(async () => finishFirst.resolve());
-  await settle();
-  expect(container.textContent).toContain("second removal failed");
+  expect(Alert.alert).toHaveBeenCalledWith("Could not change computer size");
 });
