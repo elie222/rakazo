@@ -37,6 +37,7 @@ const setup = { label: "Turn on device sign-in", url: "https://example.test/sett
 let root: Root;
 let host: HTMLDivElement;
 const onStart = vi.fn();
+const onRestart = vi.fn();
 const onCopyCode = vi.fn();
 const onSubmitCode = vi.fn();
 const onPageOpened = vi.fn();
@@ -53,6 +54,7 @@ function render(
         startLabel="Sign in"
         starting={false}
         onStart={onStart}
+        onRestart={onRestart}
         codeCopied={false}
         onCopyCode={onCopyCode}
         pasteCode={options.pasteCode ?? ""}
@@ -120,4 +122,16 @@ it("opens a paste-back sign-in page from the click and submits only a pasted cod
   render(pasteBack, { pasteCode: "code#state" });
   act(() => submit?.click());
   expect(onSubmitCode).toHaveBeenCalledOnce();
+});
+
+it("starts a new sign-in from either kind once one is under way", () => {
+  render(deviceCode);
+  act(() =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Get a new code")?.click(),
+  );
+  render(pasteBack);
+  act(() =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Start over")?.click(),
+  );
+  expect(onRestart).toHaveBeenCalledTimes(2);
 });

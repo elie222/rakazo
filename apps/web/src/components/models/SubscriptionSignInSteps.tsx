@@ -17,6 +17,7 @@ export function SubscriptionSignInSteps({
   starting,
   disabled = starting,
   onStart,
+  onRestart,
   codeCopied,
   onCopyCode,
   pasteCode,
@@ -31,6 +32,8 @@ export function SubscriptionSignInSteps({
   /** Also while other work on the connection is saving. */
   disabled?: boolean;
   onStart: () => void;
+  /** Drops the sign-in in progress and starts a new one, for a code that expired or was refused. */
+  onRestart: () => void;
   codeCopied: boolean;
   onCopyCode: (code: string) => void;
   pasteCode: string;
@@ -108,11 +111,16 @@ export function SubscriptionSignInSteps({
         busy: true,
         title: t`Waiting for you to sign in`,
         description: (
-          <Plural
-            value={Math.ceil(oauth.expiresInSeconds / 60)}
-            one="The code expires in about # minute."
-            other="The code expires in about # minutes."
-          />
+          <>
+            <Plural
+              value={Math.ceil(oauth.expiresInSeconds / 60)}
+              one="The code expires in about # minute."
+              other="The code expires in about # minutes."
+            />{" "}
+            <Button variant="text" size="sm" onClick={onRestart}>
+              <Trans>Get a new code</Trans>
+            </Button>
+          </>
         ),
       },
     ];
@@ -142,19 +150,24 @@ export function SubscriptionSignInSteps({
         status: "upcoming",
         title: t`Paste the code it shows you`,
         description: (
-          <span className="mt-2 flex items-center gap-2">
-            <Input
-              value={pasteCode}
-              onChange={(e) => onPasteCodeChange(e.target.value)}
-              aria-label={t`Code from ${host}`}
-              placeholder={t`Paste code`}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <Button variant="outline" disabled={!pasteCode.trim()} onClick={onSubmitCode}>
-              <Trans>Submit</Trans>
+          <>
+            <span className="mt-2 flex items-center gap-2">
+              <Input
+                value={pasteCode}
+                onChange={(e) => onPasteCodeChange(e.target.value)}
+                aria-label={t`Code from ${host}`}
+                placeholder={t`Paste code`}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <Button variant="outline" disabled={!pasteCode.trim()} onClick={onSubmitCode}>
+                <Trans>Submit</Trans>
+              </Button>
+            </span>
+            <Button variant="text" size="sm" className="mt-2" onClick={onRestart}>
+              <Trans>Start over</Trans>
             </Button>
-          </span>
+          </>
         ),
       },
     ];

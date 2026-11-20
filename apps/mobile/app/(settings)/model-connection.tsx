@@ -624,6 +624,16 @@ export default function ModelConnection() {
                   </Text>
                 </>
               )}
+              <NativeActionButton
+                fill
+                label={oauth.mode === "device-code" ? t`Get a new code` : t`Start over`}
+                onPress={() => {
+                  cancelOAuth();
+                  void startSubscriptionSignIn();
+                }}
+                prominence="secondary"
+                style={{ marginTop: 12 }}
+              />
             </View>
           ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
             <NativeActionButton

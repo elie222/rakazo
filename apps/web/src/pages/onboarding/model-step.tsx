@@ -354,6 +354,7 @@ function CompatibleModelSelection({ model }: { model: OnboardingModel }) {
 function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
   const {
     beginSelectedSubscriptionSignIn,
+    cancelOAuthAttempt,
     codeCopied,
     copyOAuthCode,
     reportSignInStep,
@@ -374,6 +375,10 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
         startLabel={signInLabel}
         starting={oauthPending}
         onStart={() => beginSelectedSubscriptionSignIn()}
+        onRestart={() => {
+          cancelOAuthAttempt();
+          beginSelectedSubscriptionSignIn();
+        }}
         codeCopied={codeCopied}
         onCopyCode={copyOAuthCode}
         pasteCode={pasteCode}

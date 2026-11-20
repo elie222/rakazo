@@ -12,6 +12,7 @@ export function ConnectionControls({
   apiKey,
   beginSelectedSubscriptionSignIn,
   busy,
+  cancelOAuthAttempt,
   routingReady,
   codeCopied,
   connectKey,
@@ -52,6 +53,7 @@ export function ConnectionControls({
   | "apiKey"
   | "beginSelectedSubscriptionSignIn"
   | "busy"
+  | "cancelOAuthAttempt"
   | "routingReady"
   | "codeCopied"
   | "connectKey"
@@ -114,6 +116,10 @@ export function ConnectionControls({
             starting={oauthPending}
             disabled={busy}
             onStart={() => beginSelectedSubscriptionSignIn()}
+            onRestart={() => {
+              cancelOAuthAttempt();
+              beginSelectedSubscriptionSignIn();
+            }}
             codeCopied={codeCopied}
             onCopyCode={copyOAuthCode}
             pasteCode={pasteCode}
