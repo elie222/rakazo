@@ -1,6 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type { Bot, Ticket, TicketPriority, TicketStatus } from "@rakazo/contracts";
+import type {
+  Bot,
+  Ticket,
+  TicketPriority,
+  TicketStatus,
+  UpdateTicketInput,
+} from "@rakazo/contracts";
 import {
   TICKET_COMMENT_MAX_LENGTH,
   TICKET_DESCRIPTION_MAX_LENGTH,
@@ -24,10 +30,10 @@ import {
   OptionSelect,
   Textarea,
 } from "@rakazo/ui-web";
-import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isCancelledError, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, MessageCircle } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
 import { WindowChrome } from "../../components/WindowChrome";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
@@ -36,6 +42,7 @@ import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
 import { useAppRail } from "../shell/app-rail";
+import { BoardColumns, TicketTable } from "./board-views";
 import { useTicketPriorityLabels } from "./ticket-priority";
 import { useTicketStatusLabels } from "./ticket-status";
 
@@ -43,7 +50,8 @@ export function BoardPage() {
   const { t } = useLingui();
   // From md up the rail holds the window controls and the way back to chats.
   const rail = useAppRail();
-  const statuses = useTicketStatusLabels();
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") === "table" ? "table" : "kanban";
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const ticketsOptions = queries.tickets.list.queryOptions({ input: {} });
@@ -51,10 +59,22 @@ export function BoardPage() {
   const botsQuery = useQuery(queries.bots.list.queryOptions());
   const tickets = ticketsQuery.data?.tickets ?? [];
   const bots = botsQuery.data ?? [];
-  const [selected, setSelected] = useState<Ticket | "new" | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = tickets.find((ticket) => ticket.id === selectedId);
+  const creating = selectedId === "new";
+  const move = useTicketChange();
+  const pendingMove = move.pending ? move.input : undefined;
+  const pendingStatus = pendingMove?.status;
+  const shownTickets =
+    pendingMove && pendingStatus
+      ? tickets.map((ticket) =>
+          ticket.id === pendingMove.id ? { ...ticket, status: pendingStatus } : ticket,
+        )
+      : tickets;
   const [streamError, setError] = useState("");
   const loadFailed = ticketsQuery.error ?? botsQuery.error;
-  const error = streamError || (loadFailed ? errorText(loadFailed) : "");
+  const failure = move.error ?? loadFailed;
+  const error = (failure ? errorText(failure) : "") || streamError;
 
   useEffect(() => {
     let currentController: AbortController | undefined;
@@ -66,6 +86,14 @@ export function BoardPage() {
           ? queries.tickets.comments.queryKey({ input: { ticketId } })
           : queries.tickets.comments.key(),
       });
+    async function refreshTickets() {
+      try {
+        await fetchFresh(queryClient, ticketsOptions);
+      } catch (error) {
+        // A save can replace this read with its own. Keep listening for the next change.
+        if (!isCancelledError(error)) throw error;
+      }
+    }
     const stopped = new AbortController();
     void (async () => {
       while (active) {
@@ -78,7 +106,7 @@ export function BoardPage() {
             signal: controller.signal,
           });
           if (!active) return;
-          await fetchFresh(queryClient, ticketsOptions);
+          await refreshTickets();
           if (!active) return;
           refreshComments();
           setError("");
@@ -86,7 +114,7 @@ export function BoardPage() {
           for await (const event of stream) {
             if (!active) return;
             refreshComments(event.ticketId);
-            await fetchFresh(queryClient, ticketsOptions);
+            await refreshTickets();
           }
         } catch (cause) {
           failure = cause;
@@ -110,7 +138,7 @@ export function BoardPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
-      <header className="app-drag flex items-center gap-3 border-b px-4 py-3">
+      <header className="app-drag flex items-center gap-2 border-b px-3 py-3 sm:gap-3 sm:px-4">
         {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
         {desktopBridge() ? <WindowChrome className={rail ? "md:hidden" : undefined} /> : null}
         <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -131,9 +159,24 @@ export function BoardPage() {
             <Trans>Board</Trans>
           </h1>
         </div>
+        <OptionSelect
+          aria-label={t`Board view`}
+          className="app-no-drag w-auto"
+          value={view}
+          onValueChange={(value) => {
+            const next = new URLSearchParams(params);
+            if (value === "table") next.set("view", "table");
+            else next.delete("view");
+            setParams(next, { replace: true });
+          }}
+          options={[
+            { value: "kanban", label: t`Kanban` },
+            { value: "table", label: t`Table` },
+          ]}
+        />
         <Button
           className="app-no-drag"
-          onClick={() => setSelected("new")}
+          onClick={() => setSelectedId("new")}
           disabled={bots.length === 0}
         >
           <Trans>New ticket</Trans>
@@ -145,46 +188,58 @@ export function BoardPage() {
         </p>
       ) : null}
       <main className="relative min-h-0 min-w-0 flex-1 overflow-auto p-4">
-        <div data-testid="board-columns" className="flex min-h-full gap-3">
-          {TICKET_STATUSES.map((status) => (
-            <section key={status} className="min-w-40 flex-1 space-y-2">
-              <h2 className="px-1 text-body font-medium">{statuses[status]}</h2>
-              {tickets
-                .filter((ticket) => ticket.status === status)
-                .map((ticket) => (
-                  <Button
-                    key={ticket.id}
-                    data-testid={`board-card-${ticket.id}`}
-                    variant="outline"
-                    className="h-auto w-full flex-col items-start gap-1 whitespace-normal p-3 text-left font-normal"
-                    onClick={() => setSelected(ticket)}
-                  >
-                    <span className="text-label text-muted-foreground">{ticket.ref}</span>
-                    <span>{ticket.title}</span>
-                    <span className="text-label text-muted-foreground">
-                      {bots.find((bot) => bot.id === ticket.assigneeBotId)?.name}
-                    </span>
-                  </Button>
-                ))}
-            </section>
-          ))}
-        </div>
+        {view === "table" ? (
+          <TicketTable tickets={shownTickets} bots={bots} onOpen={setSelectedId} />
+        ) : (
+          <BoardColumns
+            tickets={shownTickets}
+            bots={bots}
+            onOpen={setSelectedId}
+            moving={move.pending}
+            onMove={(id, status) => move.run({ id, status })}
+          />
+        )}
         {tickets.length === 0 && !error ? (
           <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-body text-muted-foreground">
             <Trans>No tickets yet</Trans>
           </p>
         ) : null}
       </main>
-      {selected ? (
+      {creating || selected ? (
         <TicketDialog
-          key={selected === "new" ? "new" : selected.id}
-          ticket={selected === "new" ? null : selected}
+          key={selectedId}
+          ticket={selected ?? null}
           bots={bots}
-          onClose={() => setSelected(null)}
+          onClose={() => setSelectedId(null)}
         />
       ) : null}
     </div>
   );
+}
+
+function useTicketChange() {
+  const queries = useSpaceQueries();
+  const client = useQueryClient();
+  const list = queries.tickets.list.queryOptions({ input: {} });
+  return useSave({
+    save: async (
+      input: Pick<UpdateTicketInput, "id" | "assigneeBotId" | "priority" | "status">,
+      rpc,
+    ) => {
+      const saved = await rpc.tickets.update(input);
+      // Keep the confirmed change if refreshing fails, and let a newer live read win.
+      client.setQueryData(
+        list.queryKey,
+        (current) =>
+          current && {
+            tickets: current.tickets.map((ticket) =>
+              ticket.id === saved.id && ticket.updatedAt <= saved.updatedAt ? saved : ticket,
+            ),
+          },
+      );
+    },
+    stale: [list.queryKey],
+  });
 }
 
 function TicketDialog({
@@ -200,11 +255,19 @@ function TicketDialog({
   const formId = useId();
   const statuses = useTicketStatusLabels();
   const priorities = useTicketPriorityLabels();
-  const [title, setTitle] = useState(ticket?.title ?? "");
-  const [description, setDescription] = useState(ticket?.description ?? "");
-  const [owner, setOwner] = useState(ticket?.assigneeBotId ?? bots[0]?.id ?? "");
-  const [status, setStatus] = useState<TicketStatus>(ticket?.status ?? "todo");
-  const [priority, setPriority] = useState<TicketPriority>(ticket?.priority ?? "normal");
+  const [titleDraft, setTitle] = useState<string | null>(null);
+  const [descriptionDraft, setDescription] = useState<string | null>(null);
+  const [newOwner, setOwner] = useState(bots[0]?.id ?? "");
+  const [newPriority, setPriority] = useState<TicketPriority>("normal");
+  const change = useTicketChange();
+  const pendingChange = change.pending ? change.input : undefined;
+  const title = titleDraft ?? ticket?.title ?? "";
+  const description = descriptionDraft ?? ticket?.description ?? "";
+  const owner = ticket ? (pendingChange?.assigneeBotId ?? ticket.assigneeBotId) : newOwner;
+  const priority = ticket ? (pendingChange?.priority ?? ticket.priority) : newPriority;
+  const titleChanged = title !== ticket?.title;
+  const descriptionChanged = description !== (ticket?.description ?? "");
+  const textChanged = titleChanged || descriptionChanged;
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const commentsOptions = queries.tickets.comments.queryOptions({
@@ -218,20 +281,15 @@ function TicketDialog({
       if (ticket)
         await rpc.tickets.update({
           id: ticket.id,
-          ...(title !== ticket.title ? { title } : {}),
-          ...(description !== (ticket.description ?? "") ? { description } : {}),
-          ...(owner !== (ticket.assigneeBotId ?? bots[0]?.id ?? "")
-            ? { assigneeBotId: owner }
-            : {}),
-          ...(status !== ticket.status ? { status } : {}),
-          ...(priority !== ticket.priority ? { priority } : {}),
+          ...(titleChanged ? { title } : {}),
+          ...(descriptionChanged ? { description } : {}),
         });
       else
         await rpc.tickets.create({
           title,
           description,
-          assigneeBotId: owner,
-          priority,
+          assigneeBotId: newOwner,
+          priority: newPriority,
         });
     },
     stale: [queries.tickets.list.key()],
@@ -257,8 +315,8 @@ function TicketDialog({
     stale: [commentsOptions.queryKey],
   });
   const ownerBot = bots.find((bot) => bot.id === owner);
-  const busy = saving.pending || commenting.pending;
-  const failure = saving.error ?? commenting.error;
+  const busy = saving.pending || commenting.pending || change.pending;
+  const failure = saving.error ?? change.error ?? commenting.error;
   const shownError = failure
     ? errorText(failure)
     : commentsQuery.error
@@ -279,7 +337,9 @@ function TicketDialog({
         <form
           onSubmit={(event) => {
             event.preventDefault();
+            if (busy || !title.trim() || (ticket ? !textChanged : !owner)) return;
             commenting.reset();
+            change.reset();
             saving.run();
           }}
         >
@@ -293,6 +353,7 @@ function TicketDialog({
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 maxLength={TICKET_TITLE_MAX_LENGTH}
+                disabled={saving.pending}
                 required
               />
             </Field>
@@ -306,8 +367,16 @@ function TicketDialog({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={TICKET_DESCRIPTION_MAX_LENGTH}
+                disabled={saving.pending}
               />
             </Field>
+            {ticket && textChanged ? (
+              <div className="flex justify-end">
+                <Button type="submit" disabled={busy || !title.trim()}>
+                  <Trans>Save</Trans>
+                </Button>
+              </div>
+            ) : null}
             <Field>
               <FieldLabel htmlFor={`${formId}-owner`}>
                 <Trans>Owner</Trans>
@@ -317,8 +386,13 @@ function TicketDialog({
                   id={`${formId}-owner`}
                   className="min-w-0 flex-1"
                   value={owner || null}
-                  onValueChange={setOwner}
-                  required
+                  onValueChange={(value) => {
+                    if (!ticket) setOwner(value);
+                    else if (value !== ticket.assigneeBotId)
+                      change.run({ id: ticket.id, assigneeBotId: value });
+                  }}
+                  disabled={busy}
+                  required={!ticket}
                   options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
                 />
                 {ownerBot ? (
@@ -345,8 +419,11 @@ function TicketDialog({
                 </FieldLabel>
                 <OptionSelect<TicketStatus>
                   id={`${formId}-status`}
-                  value={status}
-                  onValueChange={setStatus}
+                  value={pendingChange?.status ?? ticket.status}
+                  onValueChange={(status) => {
+                    if (status !== ticket.status) change.run({ id: ticket.id, status });
+                  }}
+                  disabled={busy}
                   options={TICKET_STATUSES.map((value) => ({ value, label: statuses[value] }))}
                 />
               </Field>
@@ -358,15 +435,22 @@ function TicketDialog({
               <OptionSelect<TicketPriority>
                 id={`${formId}-priority`}
                 value={priority}
-                onValueChange={setPriority}
+                onValueChange={(value) => {
+                  if (!ticket) setPriority(value);
+                  else if (value !== ticket.priority)
+                    change.run({ id: ticket.id, priority: value });
+                }}
+                disabled={busy}
                 options={TICKET_PRIORITIES.map((value) => ({ value, label: priorities[value] }))}
               />
             </Field>
-            <div className="flex justify-end">
-              <Button type="submit" disabled={busy || !title.trim() || !owner}>
-                {ticket ? t`Save` : t`Create`}
-              </Button>
-            </div>
+            {!ticket ? (
+              <div className="flex justify-end">
+                <Button type="submit" disabled={busy || !title.trim() || !owner}>
+                  <Trans>Create</Trans>
+                </Button>
+              </div>
+            ) : null}
           </FieldGroup>
         </form>
         {ticket ? (
@@ -390,7 +474,9 @@ function TicketDialog({
               className="space-y-2"
               onSubmit={(event) => {
                 event.preventDefault();
+                if (busy || !body.trim()) return;
                 saving.reset();
+                change.reset();
                 commenting.run(body);
               }}
             >

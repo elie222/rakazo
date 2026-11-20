@@ -173,18 +173,54 @@ it("renders status columns and opens a ticket with comments", async () => {
       "5m ago",
     ]);
     expect(
-      Array.from(page.container.querySelectorAll('[role="combobox"]')).every((node) =>
+      Array.from(page.container.querySelectorAll('form [role="combobox"]')).every((node) =>
         node.classList.contains("w-full"),
       ),
     ).toBe(true);
     const submitButtons = page.container.querySelectorAll('button[type="submit"]');
-    expect(Array.from(submitButtons).map((node) => node.parentElement?.className)).toEqual([
-      "flex justify-end",
-      "flex justify-end",
-    ]);
+    expect(Array.from(submitButtons).map((node) => node.textContent)).toEqual(["Comment"]);
     expect(api.tickets.comments).toHaveBeenCalledWith({ ticketId: "ticket-1" }, expect.anything());
   } finally {
     await page.cleanup();
+  }
+});
+
+it("returns a dragged ticket to its column when the status change fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({
+    tickets: [ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1")],
+  });
+  const moving = deferred();
+  api.tickets.update.mockReset().mockReturnValue(moving.promise);
+  const page = await renderBoard();
+  try {
+    const card = () => page.container.querySelector('[data-testid="board-card-ticket-1"]')!;
+    const done = page.container.querySelector('[aria-labelledby="board-column-done"]')!;
+    const data = new Map<string, string>();
+    const dataTransfer = {
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type),
+    };
+    const dragEvent = (type: string) =>
+      Object.assign(new Event(type, { bubbles: true, cancelable: true }), { dataTransfer });
+
+    await act(async () => card().dispatchEvent(dragEvent("dragstart")));
+    await act(async () => done.dispatchEvent(dragEvent("drop")));
+    expect(api.tickets.update).toHaveBeenCalledExactlyOnceWith({
+      id: "ticket-1",
+      status: "done",
+    });
+    expect(card().parentElement).toBe(done);
+
+    await act(async () => moving.reject(new TypeError("Failed to fetch")));
+    expect(card().parentElement?.getAttribute("aria-labelledby")).toBe("board-column-todo");
+    expect(page.container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Could not reach the server",
+    );
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
   }
 });
 
@@ -204,7 +240,7 @@ it("creates a ticket without a status picker", async () => {
     expect(
       Array.from(page.container.querySelectorAll("label")).map((label) => label.textContent),
     ).not.toContain("Status");
-    const input = page.container.querySelector("input")!;
+    const input = page.container.querySelector<HTMLInputElement>('input[id$="-title"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -274,7 +310,7 @@ it("saves only edits and refreshes comments for the open ticket", async () => {
     expect(page.container.querySelector('[data-testid="ticket-comments"]')?.textContent).toContain(
       "Bot progress",
     );
-    const input = page.container.querySelector("input")!;
+    const input = page.container.querySelector<HTMLInputElement>('input[id$="-title"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -512,7 +548,7 @@ async function openNewTicket(page: { container: HTMLElement }, title: string) {
       .find((button) => button.textContent === "New ticket")!
       .click(),
   );
-  const input = page.container.querySelector("input")!;
+  const input = page.container.querySelector<HTMLInputElement>('input[id$="-title"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, title);
     input.dispatchEvent(new Event("input", { bubbles: true }));
