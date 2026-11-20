@@ -63,8 +63,10 @@ function captureNamesFromPatch(patch: string): CaptureNames {
 
 function screenshotNamedByChange(source: string, names: CaptureNames): boolean {
   const name = (source.split(/[\\/]/).at(-1) ?? source).replace(/\.png$/i, "").toLowerCase();
+  // A capture taller than one image continues in "<name>-2", "<name>-3" and so on.
   return (
     names.exact.has(name) ||
+    names.exact.has(name.replace(/-\d+$/, "")) ||
     names.templates.some(({ prefix, suffix }) => name.startsWith(prefix) && name.endsWith(suffix))
   );
 }

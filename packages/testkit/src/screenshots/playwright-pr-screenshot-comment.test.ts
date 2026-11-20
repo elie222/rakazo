@@ -257,6 +257,18 @@ describe("selectPlaywrightPrFeatureFrames", () => {
     ]);
   });
 
+  it("keeps the numbered continuations of a tall capture", () => {
+    const selection = selectPlaywrightPrFeatureFrames({
+      changedFiles: [specChange("apps/web/e2e/tool-activity-shell.spec.ts", "homepage")],
+      screenshots: [
+        screenshot({ source: "tool-activity-shell-x/homepage.png", title: "homepage" }),
+        screenshot({ source: "tool-activity-shell-x/homepage-2.png", title: "homepage 2" }),
+      ],
+    });
+
+    expect(selection.frames.map((frame) => frame.title)).toEqual(["homepage", "homepage 2"]);
+  });
+
   it("names nothing for a spec renamed without edits", () => {
     const selection = selectPlaywrightPrFeatureFrames({
       changedFiles: [{ changes: 0, filename: "apps/web/e2e/tool-activity-shell.spec.ts" }],
