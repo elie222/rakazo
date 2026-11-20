@@ -8,7 +8,7 @@ import {
   retry,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { oauthCredentialAccountId } from "./pi-oauth-account.js";
+import { oauthCredentialAccountId } from "./model-auth-resolution.js";
 
 const AUTH_BASE_URL = "https://auth.openai.com";
 const USER_CODE_URL = `${AUTH_BASE_URL}/api/accounts/deviceauth/usercode`;

@@ -7,10 +7,11 @@ import { useModelOAuthSignIn } from "./use-model-oauth-signin";
 
 const models = vi.hoisted(() => ({ beginOAuth: vi.fn(), cancelOAuth: vi.fn() }));
 const analytics = vi.hoisted(() => ({ modelSignInStep: vi.fn() }));
+const desktop = vi.hoisted(() => ({ bridge: undefined as unknown }));
 vi.mock("../query/space-rpc", () => ({ useSpaceRpc: () => ({ models, analytics }) }));
 vi.mock("../platform/desktop", () => ({
   analyticsSurface: () => "web",
-  desktopBridge: () => undefined,
+  desktopBridge: () => desktop.bridge,
   oauthStateOf: () => undefined,
   onDesktopOAuthCallback: vi.fn(),
 }));
@@ -47,6 +48,7 @@ beforeEach(() => {
   act(() => root.render(<Harness />));
 });
 afterEach(() => {
+  desktop.bridge = undefined;
   act(() => root.unmount());
   container.remove();
   vi.restoreAllMocks();
@@ -54,37 +56,30 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("opens a link sign-in's page and reports it, despite noopener's null result", async () => {
+it("leaves a link sign-in's page to the person's click, since a tab opened later is blocked", async () => {
   models.beginOAuth.mockResolvedValue({
     mode: "auth-url",
     loginId: "login",
     verificationUri,
     expiresInSeconds: 300,
   });
-  const document = window.document.implementation.createHTMLDocument();
-  const popup = { opener: window, document };
-  const navigate = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
-    this: HTMLAnchorElement,
-  ) {
-    expect(popup.opener).toBeNull();
-    expect(this.rel).toBe("noreferrer");
-    expect(this.href).toBe(verificationUri);
-  });
-  // A browser opens the tab but returns null when noopener/noreferrer is requested.
-  vi.spyOn(window, "open").mockImplementation((_url, _target, features) =>
-    features?.includes("noopener") || features?.includes("noreferrer")
-      ? null
-      : (popup as unknown as Window),
-  );
+  const open = vi.spyOn(window, "open");
   await act(async () => {
     void latest.startSubscriptionSignIn({ provider: "subscription" });
   });
-  expect(navigate).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
+  expect(latest.oauth).toMatchObject({ mode: "auth-url", verificationUri });
   expect(onError).not.toHaveBeenCalled();
-  expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ surface: "web" });
-  expect(analytics.modelSignInStep.mock.calls).toEqual([
-    [{ loginId: "login", step: "page_opened" }],
-  ]);
+  expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ surface: "web", codePage: true });
+  expect(analytics.modelSignInStep).not.toHaveBeenCalled();
+});
+
+it("asks for a code page on a desktop that cannot open the browser itself", async () => {
+  desktop.bridge = { oauth: { onCallback: () => () => undefined } };
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+  expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ codePage: true });
 });
 
 it("shows a device code before its page opens, leaving the opening to the person", async () => {
