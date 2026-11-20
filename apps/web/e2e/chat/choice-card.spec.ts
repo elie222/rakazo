@@ -95,8 +95,9 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await captureScreenshot(page, testInfo, "choice-card");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(berlin).toBeVisible();
-  await expect(cairo).toBeVisible();
+  for (const option of [berlin, seoul, toronto, lisbon, osaka, cairo]) {
+    await expect(option).toBeVisible();
+  }
   const narrowBerlin = await berlin.boundingBox();
   const narrowCairo = await cairo.boundingBox();
   expect(narrowBerlin).toBeTruthy();
