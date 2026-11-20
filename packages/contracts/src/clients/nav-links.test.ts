@@ -40,6 +40,8 @@ describe("parseNavLinks", () => {
     "/%61pi/me",
     "/api%2Fme",
     "/ext/..%2fapi/me",
+    "/api/%2f..",
+    "/API/%2F..%2Fext",
     "/ext/%E0%A4%A",
   ])("rejects the path %s", (path) => {
     expect(() => parseNavLinks(JSON.stringify([{ id: "x", label: "X", path }]))).toThrow(

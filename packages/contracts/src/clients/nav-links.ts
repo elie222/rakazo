@@ -11,12 +11,16 @@ const RESERVED_PREFIXES = ["/app", "/api", "/rpc", "/novnc", "/health"];
 const BASE = "http://rakazo.invalid";
 
 /**
- * The path as a proxy may route it: percent-decoded, lower-cased and resolved again, so `/API`,
- * `/%61pi` and `/x/..%2fapi` count as `/api`. Undefined when the encoding is malformed.
+ * The ways a proxy may route the path: as written (lower-cased), and percent-decoded and
+ * resolved again, so `/API`, `/%61pi`, `/x/..%2fapi` and `/api/%2f..` each count as `/api`.
+ * Undefined when the encoding is malformed.
  */
-function routedPathname(pathname: string): string | undefined {
+function routedPathnames(pathname: string): string[] | undefined {
   try {
-    return new URL(decodeURIComponent(pathname).toLowerCase(), BASE).pathname;
+    return [
+      pathname.toLowerCase(),
+      new URL(decodeURIComponent(pathname).toLowerCase(), BASE).pathname,
+    ];
   } catch {
     return undefined;
   }
@@ -26,10 +30,10 @@ function isSameOriginPath(path: string) {
   if (!path.startsWith("/") || path.startsWith("//") || /[\\\s]/.test(path)) return false;
   const url = new URL(path, BASE);
   if (url.origin !== BASE) return false;
-  const pathname = routedPathname(url.pathname);
-  if (pathname === undefined) return false;
-  return !RESERVED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  const pathnames = routedPathnames(url.pathname);
+  if (pathnames === undefined) return false;
+  return !pathnames.some((pathname) =>
+    RESERVED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)),
   );
 }
 
