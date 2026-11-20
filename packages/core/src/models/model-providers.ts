@@ -164,6 +164,7 @@ type CatalogModelRef = {
 };
 
 type CredentialModelRef = {
+  id?: string;
   authKind?: string;
   provider: string;
   label: string;
@@ -243,19 +244,15 @@ function freeFormChoice(credential: CredentialModelRef, modelId: string): Connec
   };
 }
 
-function catalogChoices(
-  providerModels: readonly CatalogModelRef[],
-  auth?: string,
-): ConnectedModelChoice[] {
+function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedModelChoice[] {
   return providerModels.map((entry) => {
     const modelId = resolveSelectableModelId(providerModels, entry.provider, entry.id);
-    const providerName = providerDisplayName(entry, auth);
     return {
       key: modelOptionKey(entry.provider, modelId),
       provider: entry.provider,
       modelId,
-      label: withConnectionName(entry.label, providerName),
-      providerLabel: providerName,
+      label: withConnectionName(entry.label, entry.providerName ?? entry.provider),
+      providerLabel: entry.providerName ?? entry.provider,
       modelLabel: entry.label,
       images: entry.images,
     };
@@ -303,7 +300,7 @@ export function credentialForModel<C extends CredentialModelRef>(
  * The connection a model row runs on, in the order runs choose it: its pinned connection, else
  * one whose saved model is this one, else the most preferred connection for its provider.
  */
-export function connectionForModelChoice<C extends CredentialModelRef & { id: string }>(
+export function connectionForModelChoice<C extends CredentialModelRef>(
   credentials: readonly C[],
   choice: {
     provider: string;
@@ -337,23 +334,16 @@ export function connectedModelChoices(
 ): ConnectedModelChoice[] {
   const choices: ConnectedModelChoice[] = [];
   const seen = new Set<string>();
+  const modelsByProvider = new Map<string, CatalogModelRef[]>();
+  for (const entry of catalog) {
+    if (entry.placeholder) continue;
+    const provider = canonicalPiProviderId(entry.provider);
+    const models = modelsByProvider.get(provider) ?? [];
+    models.push(entry);
+    modelsByProvider.set(provider, models);
+  }
   for (const credential of credentials) {
-    const providerModels = catalog.filter(
-      (entry) =>
-        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider) &&
-        !entry.placeholder,
-    );
-    const entry = providerModels[0];
-    const providerName = entry ? providerDisplayName(entry, credential.authKind) : undefined;
-    const namedCredential =
-      entry?.subscriptionName && providerName === entry.subscriptionName
-        ? {
-            ...credential,
-            label: connectionDisplayName(credential, providerName, [
-              entry.providerName ?? entry.provider,
-            ]),
-          }
-        : credential;
+    const providerModels = modelsByProvider.get(canonicalPiProviderId(credential.provider)) ?? [];
     const raw = credential.modelId?.trim() ?? "";
     const resolved = raw ? resolveSelectableModelId(providerModels, credential.provider, raw) : "";
     const resolvedInCatalog = providerModels.some(
@@ -366,7 +356,7 @@ export function connectedModelChoices(
             const known = providerModels.find((entry) => entry.id === id)?.images;
             const own = credential.modelSettings?.[id]?.images;
             return {
-              ...freeFormChoice(namedCredential, id),
+              ...freeFormChoice(credential, id),
               images:
                 credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
                   ? (own ?? known)
@@ -374,16 +364,34 @@ export function connectedModelChoices(
             };
           })
         : raw && !resolvedInCatalog
-          ? [freeFormChoice(namedCredential, resolved || raw)]
-          : catalogChoices(providerModels, credential.authKind);
+          ? [freeFormChoice(credential, resolved || raw)]
+          : catalogChoices(providerModels);
     choices.push(...next);
   }
   choices.push(...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)));
-  return choices.filter((choice) => {
-    if (seen.has(choice.key)) return false;
-    seen.add(choice.key);
-    return true;
-  });
+  return choices
+    .filter((choice) => {
+      if (seen.has(choice.key)) return false;
+      seen.add(choice.key);
+      return true;
+    })
+    .map((choice) => {
+      const models = modelsByProvider.get(canonicalPiProviderId(choice.provider)) ?? [];
+      const exact = models.find((entry) => entry.id === choice.modelId);
+      const entry = exact ?? models[0];
+      if (!entry?.subscriptionName) return choice;
+      const serving = connectionForModelChoice(credentials, choice);
+      const name = providerDisplayName(entry, serving?.authKind);
+      const providerLabel =
+        !exact && serving
+          ? connectionDisplayName(serving, name, [entry.providerName ?? entry.provider])
+          : name;
+      return {
+        ...choice,
+        providerLabel,
+        label: withConnectionName(choice.modelLabel ?? choice.modelId, providerLabel),
+      };
+    });
 }
 
 export type ChatModelChoice = {

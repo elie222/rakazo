@@ -95,3 +95,53 @@ it("refreshes subscription names and chat choices when the language changes", ()
     ).toMatchObject({ providerLabel: "Example", label: "Model (Example)" });
   }
 });
+
+it("labels chat choices by the serving credential regardless of list order", () => {
+  i18n.load("en", { "Example subscription": "Example subscription" });
+  i18n.activate("en");
+  const entry = {
+    provider: "example",
+    providerName: "Example",
+    subscriptionName: "Example subscription",
+    auth: "both" as const,
+    id: "model",
+    label: "Model",
+    billing: "",
+  };
+  const oauth = {
+    id: "oauth",
+    provider: "example",
+    label: "Example",
+    authKind: "oauth",
+    preferenceRank: 1,
+  };
+  const key = {
+    id: "key",
+    provider: "example",
+    label: "Example",
+    authKind: "api_key",
+    preferenceRank: 0,
+    modelId: "model",
+  };
+  for (const credentials of [
+    [oauth, key],
+    [key, oauth],
+  ]) {
+    expect(connectedModelChoices(credentials, [entry])[0]).toMatchObject({
+      providerLabel: "Example",
+      label: "Model (Example)",
+    });
+    expect(
+      connectedModelChoices(
+        credentials.map((credential) => ({
+          ...credential,
+          modelId: credential.id === "oauth" ? "model" : undefined,
+        })),
+        [entry],
+      )[0],
+    ).toMatchObject({
+      providerLabel: "Example subscription",
+      label: "Model (Example subscription)",
+    });
+  }
+});
