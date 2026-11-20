@@ -875,6 +875,30 @@ describe("web markdown streaming", () => {
     expect(
       [...container.querySelectorAll('[data-rk-reveal="new"]')].map((unit) => unit.textContent),
     ).toEqual(["Done", "."]);
+    // The earlier paragraph keeps its spans, so a fade still running is not cut short.
+    expect(
+      [...container.querySelectorAll('[data-rk-reveal="settled"]')].map((unit) => unit.textContent),
+    ).toEqual(["Done", "."]);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("draws a block too long to reveal without per-word spans", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const long = "a ".repeat(10_001);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{""}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{long}</ChatMarkdown>);
+    });
+    expect(container.querySelectorAll("[data-rk-reveal]")).toHaveLength(0);
+    expect(container.textContent).toHaveLength(long.trimEnd().length);
     await act(async () => {
       root.unmount();
     });

@@ -934,7 +934,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                     {index > 0 ? "\n" : null}
                     <MarkdownBlock
                       source={block.source}
-                      streaming={streaming && index === blocks.length - 1}
+                      streaming={streaming}
                       blockKey={block.key}
                       reveal={reveal}
                     />

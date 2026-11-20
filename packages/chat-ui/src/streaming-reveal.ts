@@ -34,6 +34,11 @@ const REVEAL_FIRST_WINDOW_MS = 30;
  * message appears without animation. A normal frame is a few characters.
  */
 const REVEAL_MAX_DELTA_CHARS = 600;
+/**
+ * Past this length a block reveals without per-unit spans. A single growing paragraph or a link
+ * definition that prevents splitting would otherwise rebuild thousands of spans on every chunk.
+ */
+const REVEAL_MAX_BLOCK_CHARS = 20_000;
 /** The next version of a block may rewrite trailing whitespace or punctuation. */
 const REVEAL_TAIL_SLACK_CHARS = 8;
 const REVEAL_WORD_CHAR_RE = /[\p{L}\p{N}]/u;
@@ -170,7 +175,7 @@ export function commitStreamingReveal(
 }
 
 type RevealSlot =
-  | { kind: "text"; parent: HastNode; index: number; start: number; units: string[] }
+  | { kind: "text"; parent: HastNode; index: number; start: number; value: string; units: string[] }
   | { kind: "element"; node: HastNode; start: number }
   | { kind: "marker"; node: HastNode; start: number };
 
@@ -251,7 +256,8 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
                 parent: node,
                 index,
                 start: offset,
-                units: segmentRevealUnits(value),
+                value,
+                units: [],
               });
             }
             // Skipped text still occupies offsets, so prefix comparisons follow render order.
@@ -284,12 +290,18 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
       walk(tree, false);
 
       const blockText = blockTexts.join("");
+      const tooLong = blockText.length > REVEAL_MAX_BLOCK_CHARS;
+      if (!tooLong) {
+        for (const slot of slots) {
+          if (slot.kind === "text") slot.units = segmentRevealUnits(slot.value);
+        }
+      }
       const previous = state.blocks.get(blockKey);
       // A block never seen before is new text, however its text compares to other blocks. A block
       // already on screen keeps the prefix it had; a rewrite settles it whole rather than replaying
       // text the reader already saw.
       let revealed = Number.POSITIVE_INFINITY;
-      if (state.incremental) {
+      if (!tooLong && state.incremental) {
         if (previous === undefined || previous.length === 0) {
           revealed = 0;
         } else {
@@ -317,7 +329,6 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
         units: fresh,
         now: schedule?.now ?? performance.now(),
       });
-      if (fresh === 0) return;
 
       let revealIndex = 0;
       const nextRevealDelay = () => {
