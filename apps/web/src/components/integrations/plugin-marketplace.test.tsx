@@ -59,10 +59,10 @@ vi.mock("@rakazo/ui-web", () => {
 });
 
 import { ConnectorDetail } from "../../pages/plugins/connector-detail";
-import { ConnectorIcon } from "../../pages/plugins/parts";
+import type { TileContext } from "../../pages/plugins/parts";
+import { CatalogTile, ConnectorIcon } from "../../pages/plugins/parts";
 import type { PluginConnections } from "../../pages/plugins/use-plugin-connections";
-
-import { PluginDetail, PluginLogo } from "./plugin-marketplace";
+import { PluginDetail, PluginLogo, PluginRow } from "./plugin-marketplace";
 
 const source = "https://github.com/example/notes";
 const preview = {
@@ -416,5 +416,32 @@ describe("integration fallback icons", () => {
     expect(
       [...container.querySelectorAll("img")].map((image) => image.getAttribute("src")),
     ).toEqual([logo, logo, logo]);
+  });
+  it("names each Add button after its app and hides the decorative initial", async () => {
+    const item = { connectorId: "gm", slug: "gmail", name: "Gmail" } as never;
+    const context = {
+      connections: { itemConnected: () => false, pending: null, connect: vi.fn() },
+      pluginForApp: new Map(),
+      onOpenApp: vi.fn(),
+      onOpenDetail: vi.fn(),
+    } as unknown as TileContext;
+    await act(async () =>
+      root.render(
+        <>
+          <PluginRow name="Slack" description="" installed={false} onOpen={() => undefined} />
+          <CatalogTile item={item} label="Gmail" context={context} />
+        </>,
+      ),
+    );
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons.map((node) => node.getAttribute("aria-label"))).toEqual([
+      null,
+      "Add Slack",
+      "Add Gmail",
+    ]);
+    expect(buttons.slice(1).map((node) => node.textContent)).toEqual(["Add", "Add"]);
+    const initials = [...container.querySelectorAll(".place-items-center")];
+    expect(initials).toHaveLength(2);
+    for (const initial of initials) expect(initial.getAttribute("aria-hidden")).toBe("true");
   });
 });
