@@ -9,7 +9,6 @@ import {
   createDb,
   reconcileComputerRuns,
   recordComputerRunEnd,
-  recordComputerRunSize,
   recordComputerRunStart,
   runAsSystem,
   runAsTenant,
@@ -18,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeSandboxProvider } from "../providers/computer/fake/fake-sandbox.js";
 import { LocalAgentHomeStore } from "../storage/home.js";
 import { sleepComputerIfIdle } from "./computer-idle.js";
-import { provisionComputer } from "./computer-lifecycle.js";
+import { provisionComputer, withWakeableComputer } from "./computer-lifecycle.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -90,7 +89,7 @@ describePostgres("computer runs (PostgreSQL)", () => {
         where: { computerId: computer.id },
         orderBy: { startedAt: "asc" },
       });
-    return { id, computer, sandbox, tenant, start, sleep, runs };
+    return { id, computer, sandbox, deps, context, tenant, start, sleep, runs };
   }
 
   it("opens a run when the computer starts and ends it when idle shutdown stops it", async () => {
@@ -133,6 +132,32 @@ describePostgres("computer runs (PostgreSQL)", () => {
     // The next start is a new run.
     await o.start();
     expect((await o.runs()).map((run) => run.endReason)).toEqual(["idle", null]);
+  });
+
+  it("starts a new run when a call wakes the computer at another size than its rate", async () => {
+    const o = await owner();
+    await o.start();
+    const before = await system.computer.update({
+      where: { id: o.id },
+      data: { runningSize: "large", runningSizeSince: (await o.runs())[0]!.startedAt },
+    });
+    Object.assign(o.sandbox, { runningSize: async () => "standard" });
+
+    await runAsTenant(o.tenant, () =>
+      withWakeableComputer(o.deps, before, o.context, async (ref) => ref.startSize),
+    );
+
+    const after = await system.computer.findUniqueOrThrow({ where: { id: o.id } });
+    expect(after.runningSince!.getTime()).toBeGreaterThan(before.runningSince!.getTime());
+    expect(after).toMatchObject({ runningSize: "standard", runningSizeSince: after.runningSince });
+    const [old, resized] = await o.runs();
+    expect(old).toMatchObject({ startedAt: before.runningSince, endReason: "gone" });
+    expect(old!.endedAt).toEqual(old!.lastSeenAt);
+    expect(resized).toMatchObject({
+      startedAt: after.runningSince,
+      size: "standard",
+      endedAt: null,
+    });
   });
 
   it("sleeps past a run waiting for takeover, but not past a run using the computer", async () => {
@@ -386,20 +411,6 @@ describePostgres("computer runs (PostgreSQL)", () => {
         lastSeenAt: runningSince,
       }),
     ]);
-  });
-
-  it("rates the open run at the size a machine came back at, and leaves ended runs", async () => {
-    const o = await owner();
-    await o.start();
-    const { runningSince } = await system.computer.findUniqueOrThrow({ where: { id: o.id } });
-    const stretch = { id: o.id, runningSince: runningSince! };
-
-    await runAsTenant(o.tenant, () => recordComputerRunSize(db.prisma, stretch, "large"));
-    expect((await o.runs()).map((run) => run.size)).toEqual(["large"]);
-
-    await o.sleep();
-    await runAsTenant(o.tenant, () => recordComputerRunSize(db.prisma, stretch, "xlarge"));
-    expect((await o.runs()).map((run) => run.size)).toEqual(["large"]);
   });
 
   it("does not let a late stop close the run of a restart that beat it", async () => {

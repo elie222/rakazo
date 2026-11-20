@@ -216,7 +216,7 @@ export class BoatSandboxProvider implements SandboxProvider {
   });
   private readonly pendingProvisions = new Map<string, Promise<ComputerRef>>();
   private readonly prepared = new Set<string>();
-  /** The machine type each sandbox wakes at, from the latest reference that asked for one. */
+  /** The machine type each sandbox wakes at, from the latest reference used on it. */
   private readonly startTypes = new Map<string, SandboxTypeEnum>();
   private readonly preparations = new Map<string, Promise<void>>();
   private readonly baseSnapshot = new BaseSnapshotCache({
@@ -848,8 +848,8 @@ export class BoatSandboxProvider implements SandboxProvider {
    * before anything runs on the sandbox; elsewhere it is reported unavailable until then. On
    * `reconnect`, a stopped sandbox whose snapshot is older than the saved workspace is gone too.
    *
-   * A stopped sandbox resumes at the reconnect's type, or else at the type its latest reference
-   * asked for. Elsewhere a type Boat refuses is dropped and the sandbox resumes at the one it has.
+   * A stopped or lost machine resumes at the reconnect's type, or else at the type its latest
+   * reference asked for. Elsewhere a type Boat refuses is dropped and it resumes at the one it has.
    */
   private async ensureRunnable(
     id: string,
@@ -894,7 +894,7 @@ export class BoatSandboxProvider implements SandboxProvider {
         await this.resumeAtStartType(id, signal, reconnect);
         started = true;
       } else if (sandbox.state === "error" && !recovering) {
-        logRecovery("wait", await this.recover(id, signal, reconnect?.type));
+        logRecovery("wait", await this.recover(id, signal, reconnect));
         recovering = started = true;
       }
       if (Date.now() >= deadline) {
@@ -1002,15 +1002,15 @@ export class BoatSandboxProvider implements SandboxProvider {
    */
   private async recover(
     id: string,
-    signal?: AbortSignal,
-    type?: SandboxTypeEnum,
+    signal: AbortSignal | undefined,
+    reconnect: { type?: SandboxTypeEnum } | undefined,
   ): Promise<string | undefined> {
     try {
       await this.client.recover({ sandboxId: id }, { signal });
     } catch (error) {
       if (!(error instanceof BoatApiError) || error.response.status !== 409) throw error;
       if (error.code === "no_machine") {
-        await this.resume(id, signal, type);
+        await this.resumeAtStartType(id, signal, reconnect);
         return error.code;
       }
       // Already answering again, or an earlier recover is still running. A machine Boat cannot
@@ -1500,10 +1500,14 @@ export class BoatSandboxProvider implements SandboxProvider {
     return { id, botId, kind: "boat", providerRef: id, fresh };
   }
 
-  /** Every call names its sandbox through here, so a wake during it starts at the ref's size. */
+  /**
+   * Every call names its sandbox through here, so a wake during it starts at the ref's size, and
+   * a ref without one leaves the machine at the size it has.
+   */
   private id(computer: ComputerRef): string {
     const id = computer.providerRef || computer.id;
     if (computer.startSize) this.startTypes.set(id, BOAT_MACHINE_TYPES[computer.startSize]);
+    else this.startTypes.delete(id);
     return id;
   }
 

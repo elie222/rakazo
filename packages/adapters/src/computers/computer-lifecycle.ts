@@ -33,7 +33,6 @@ import {
   parseComputerMode,
   planComputerSize,
   recordComputerRunEnd,
-  recordComputerRunSize,
   recordComputerRunStart,
   spaceTakesWork,
   withTransactionRetry,
@@ -191,15 +190,50 @@ export class ComputerSpaceDeletingError extends ComputerBusyError {}
 
 export { toComputerRef } from "./screens/computer-support.js";
 
+type RunningComputer = {
+  id: string;
+  spaceId: string;
+  userId: string;
+  homeKey: string;
+  kind: string;
+  providerRef: string | null;
+  runningSince: Date | null;
+  runningSize: string | null;
+  runningSizeSince: Date | null;
+};
+
 /**
- * A reference to a running computer that, if a call has to wake it, starts at its planned size.
- * Kept out of the screen helpers, which the desktop app bundles without the database.
+ * Runs a call on a running computer through a reference that, if the call has to wake it,
+ * starts it at its planned size. A machine woken at another size than its stretch is rated at
+ * begins a new stretch at that size. Kept out of the screen helpers, which the desktop app
+ * bundles without the database.
  */
-export async function wakeableComputerRef(
-  prisma: Pick<PrismaClient, "computer">,
-  computer: { id: string; homeKey: string; kind: string; providerRef: string | null },
-): Promise<ComputerRef> {
-  return { ...toComputerRef(computer), startSize: await planComputerSize(prisma, computer.id) };
+export async function withWakeableComputer<Result>(
+  deps: { prisma: PrismaClient; sandbox: SandboxProvider },
+  computer: RunningComputer,
+  context: AdapterContext,
+  call: (ref: ComputerRef) => Promise<Result>,
+): Promise<Result> {
+  const ref: ComputerRef = {
+    ...toComputerRef(computer),
+    startSize: await planComputerSize(deps.prisma, computer.id),
+  };
+  const result = await call(ref);
+  const { runningSince } = computer;
+  if (runningSince && changedRunningSize(computer, runningSince, ref.startSize)) {
+    await bestEffort(
+      "computer woken size",
+      (async () => {
+        const resized = changedRunningSize(
+          computer,
+          runningSince,
+          await deps.sandbox.runningSize?.(ref, context),
+        );
+        if (resized) await startResizedStretch(deps.prisma, computer, runningSince, resized);
+      })(),
+    );
+  }
+  return result;
 }
 
 /**
@@ -305,16 +339,21 @@ export async function provisionComputer(
     const ref: ComputerRef = { ...toComputerRef(existing), startSize: size };
     const checking = performance.now();
     const running = await confirmedRunning(deps.sandbox, ref, context);
-    // A machine woken outside a start may run at another size than the one recorded.
-    const reportedSize =
-      running && sandboxKindCapabilities(ref.kind).sizedUsage
-        ? await bestEffort("computer running size", deps.sandbox.runningSize?.(ref, context))
+    // A wake at the planned size outside a start leaves it running at another than its rate.
+    const resized =
+      running && existing.runningSince && changedRunningSize(existing, existing.runningSince, size)
+        ? changedRunningSize(
+            existing,
+            existing.runningSince,
+            await bestEffort("computer running size", deps.sandbox.runningSize?.(ref, context)),
+          )
         : undefined;
     providerReadyMs += performance.now() - checking;
     if (running) {
       context.signal.throwIfAborted();
-      const runningSince = existing.runningSince ?? new Date();
-      const resized = changedRunningSize(existing, runningSince, reportedSize);
+      // A row activated by an older release has no clock yet, and a resized machine was
+      // stopped and woken since: either starts a stretch now.
+      const runningSince = (!resized && existing.runningSince) || new Date();
       const sizing = resized ? { runningSize: resized, runningSizeSince: runningSince } : {};
       const retained = await deps.prisma.computer.updateMany({
         where: {
@@ -326,13 +365,15 @@ export async function provisionComputer(
           maintenanceId: existing.maintenanceId ?? null,
           ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
         },
-        // A row activated by an older release has no clock yet; start it now.
         data: { updatedAt: new Date(), runningSince, ...sizing },
       });
       if (retained.count !== 1) throw busy("running_claim_lost");
-      await recordComputerRunStart(deps.prisma, { ...existing, ...sizing }, runningSince);
-      if (resized)
-        await recordComputerRunSize(deps.prisma, { id: computerId, runningSince }, resized);
+      await recordComputerRunStart(
+        deps.prisma,
+        { ...existing, ...sizing },
+        runningSince,
+        resized ? "gone" : "reconciled",
+      );
       const damaged = await (async () => {
         await prepare(ref);
         await ensureComputerWorkspaceLayout(
@@ -634,18 +675,21 @@ export async function provisionComputer(
       });
     }
     const activeControl = hasActiveComputerControl(existing);
-    // A reconnect to a computer that stayed up continues its stretch; any start begins one.
+    // A reconnect to a computer that stayed up continues its stretch; any start begins one, as
+    // does finding it at another size than its rate, since it was stopped and woken since.
     const continued =
-      existing.state === "running" && existing.runningSince && !ref.started && !replacement;
+      existing.state === "running" &&
+      existing.runningSince &&
+      !ref.started &&
+      !replacement &&
+      !changedRunningSize(existing, existing.runningSince, ref.size);
     const runningSince = continued ? existing.runningSince! : new Date();
     // Set the rate at the start of a stretch. If the provider cannot confirm size then, use
-    // Standard for that stretch. Reconnects keep the active-lifetime clock, and the rate unless
-    // the provider reports the machine at another size.
+    // Standard for that stretch. Reconnects preserve both the rate and the active-lifetime clock.
     const usageSize =
       ref.size ?? (sandboxKindCapabilities(ref.kind).sizedUsage ? "standard" : null);
-    const resized = continued ? changedRunningSize(existing, runningSince, ref.size) : undefined;
-    const rated = continued ? resized : usageSize;
-    const sizing = rated ? { runningSize: rated, runningSizeSince: runningSince } : {};
+    const sizing =
+      !continued && usageSize ? { runningSize: usageSize, runningSizeSince: runningSince } : {};
     // One write stores the machine and leaves "booting", and the same transaction drops the
     // record that would delete the machine later: from here the computer answers for it.
     const activated = await deps.prisma.$transaction(async (tx) => {
@@ -699,8 +743,6 @@ export async function provisionComputer(
       runningSince,
       existing.state === "running" ? "gone" : "reconciled",
     );
-    if (resized)
-      await recordComputerRunSize(deps.prisma, { id: computerId, runningSince }, resized);
     logProvisioned(ref, replacement ? "create" : ref.started ? "resume" : "reuse");
     return { ...ref, startSize };
   } catch (error) {
@@ -792,20 +834,40 @@ export async function provisionComputer(
   }
 }
 
-/**
- * The size a machine reports when the stretch it continues is rated at another, which happens
- * when it was stopped and woken outside a start.
- */
+/** `size` when the stretch that began at `runningSince` is rated at another size. */
 function changedRunningSize(
   computer: { runningSize: string | null; runningSizeSince: Date | null },
   runningSince: Date,
-  reported: ComputerSize | undefined,
+  size: ComputerSize | undefined,
 ): ComputerSize | undefined {
-  if (!reported) return undefined;
   const rated =
-    computer.runningSize === reported &&
-    computer.runningSizeSince?.getTime() === runningSince.getTime();
-  return rated ? undefined : reported;
+    computer.runningSizeSince?.getTime() === runningSince.getTime() ? computer.runningSize : null;
+  return size && rated && size !== rated ? size : undefined;
+}
+
+/**
+ * Ends the stretch that began at `runningSince` where it was last seen, as a machine stopped
+ * without us, and begins one now at the size it was woken at.
+ */
+async function startResizedStretch(
+  prisma: PrismaClient,
+  computer: RunningComputer,
+  runningSince: Date,
+  size: ComputerSize,
+): Promise<void> {
+  const now = new Date();
+  const sizing = { runningSize: size, runningSizeSince: now };
+  const moved = await prisma.computer.updateMany({
+    where: {
+      id: computer.id,
+      state: "running",
+      providerRef: computer.providerRef,
+      runningSince,
+    },
+    data: { runningSince: now, ...sizing },
+  });
+  if (moved.count === 1)
+    await recordComputerRunStart(prisma, { ...computer, ...sizing }, now, "gone");
 }
 
 /**

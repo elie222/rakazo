@@ -349,6 +349,34 @@ describe("BoatSandboxProvider", () => {
       );
     });
 
+    it("wakes a computer at the size it has on a call whose reference names none", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual([
+        undefined,
+      ]);
+    });
+
+    it("resumes a computer whose machine Boat lost at the reference's size", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.fail(computer.id, "no_machine");
+
+      expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual(["xlarge"]);
+    });
+
     it("reports no running size for a stopped computer", async () => {
       const { api, provider, computer } = await boat();
       await expect(provider.runningSize(computer, context)).resolves.toBe("standard");

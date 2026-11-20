@@ -36,6 +36,7 @@ import {
   replaceComputer,
   screenLeaseIdForRun,
   waitForRunComputerLease,
+  withWakeableComputer,
 } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
 import { SandboxUnsafeStopError, sandboxNotFoundError } from "./sandbox/sandbox-errors.js";
@@ -2347,7 +2348,7 @@ describe("Team Computer wake", () => {
     );
   });
 
-  it("keeps the lifetime but bills at the size a reconnect reports", async () => {
+  it("starts a new run at the size a reconnect finds instead of re-rating the old one", async () => {
     const runningSince = new Date("2024-01-01T00:00:00.000Z");
     const harness = wakeHarness(
       "running",
@@ -2358,15 +2359,15 @@ describe("Team Computer wake", () => {
 
     await boot(harness);
 
+    const startedAt = activation(harness)?.runningSince;
+    expect(startedAt).not.toEqual(runningSince);
     expect(activation(harness)).toMatchObject({
-      runningSince,
       runningSize: "large",
-      runningSizeSince: runningSince,
+      runningSizeSince: startedAt,
     });
-    expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith({
-      where: { computerId: "computer-1", startedAt: runningSince, endedAt: null },
-      data: { size: "large" },
-    });
+    expect(harness.prisma.computerRun.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: [expect.objectContaining({ startedAt, size: "large" })] }),
+    );
   });
 
   it("keeps the rate when a reconnect reports the size it was billed at", async () => {
@@ -2380,10 +2381,8 @@ describe("Team Computer wake", () => {
 
     await boot(harness);
 
+    expect(activation(harness)).toMatchObject({ runningSince });
     expect(activation(harness)).not.toHaveProperty("runningSize");
-    expect(harness.prisma.computerRun.updateMany).not.toHaveBeenCalledWith(
-      expect.objectContaining({ data: { size: expect.anything() } }),
-    );
   });
 
   it("hands back a reference that wakes the computer at its planned size", async () => {
@@ -2427,37 +2426,41 @@ describe("Team Computer wake", () => {
       return harness;
     }
 
-    it("bills the stretch at the size the machine came back at", async () => {
+    it("starts a new run at the size the machine came back at", async () => {
       const harness = runningHarness("standard");
-      vi.mocked(planComputerSize).mockResolvedValueOnce("standard");
 
       const ref = await boot(harness);
 
       expect(harness.sandbox.provision).not.toHaveBeenCalled();
       expect(ref).toMatchObject({ providerRef: "sandbox-1", startSize: "standard" });
-      expect(vi.mocked(harness.prisma.computer.updateMany).mock.calls[0]?.[0].data).toMatchObject({
-        runningSince,
-        runningSize: "standard",
-        runningSizeSince: runningSince,
-      });
-      expect(harness.prisma.computerRun.updateMany).toHaveBeenCalledWith({
-        where: { computerId: "computer-1", startedAt: runningSince, endedAt: null },
-        data: { size: "standard" },
-      });
+      const data = vi.mocked(harness.prisma.computer.updateMany).mock.calls[0]?.[0].data;
+      expect(data?.runningSince).not.toEqual(runningSince);
+      expect(data).toMatchObject({ runningSize: "standard", runningSizeSince: data?.runningSince });
+      expect(harness.prisma.computerRun.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [expect.objectContaining({ startedAt: data?.runningSince, size: "standard" })],
+        }),
+      );
     });
 
-    it("leaves the rate alone when the machine runs at the recorded size", async () => {
+    it("keeps the stretch when the machine runs at the recorded size", async () => {
       const harness = runningHarness("xlarge");
 
       await boot(harness);
 
       expect(harness.sandbox.provision).not.toHaveBeenCalled();
-      expect(
-        vi.mocked(harness.prisma.computer.updateMany).mock.calls[0]?.[0].data,
-      ).not.toHaveProperty("runningSize");
-      expect(harness.prisma.computerRun.updateMany).not.toHaveBeenCalledWith(
-        expect.objectContaining({ data: { size: expect.anything() } }),
-      );
+      const data = vi.mocked(harness.prisma.computer.updateMany).mock.calls[0]?.[0].data;
+      expect(data).toMatchObject({ runningSince });
+      expect(data).not.toHaveProperty("runningSize");
+    });
+
+    it("does not ask the size when the machine is rated at its planned size", async () => {
+      const harness = runningHarness("standard");
+      vi.mocked(planComputerSize).mockResolvedValueOnce("xlarge");
+
+      await boot(harness);
+
+      expect(harness.sandbox.runningSize).not.toHaveBeenCalled();
     });
   });
 
@@ -4523,4 +4526,69 @@ it("fails a changed computer once instead of retrying it as a transient error", 
     ),
   ).rejects.toThrow("computer changed");
   expect(findUnique).toHaveBeenCalledOnce();
+});
+
+describe("withWakeableComputer", () => {
+  const runningSince = new Date("2024-01-01T00:00:00.000Z");
+  const computer = {
+    id: "computer-1",
+    spaceId: "space-1",
+    userId: "user-1",
+    homeKey: "home-1",
+    kind: "boat",
+    providerRef: "sandbox-1",
+    runningSince,
+    runningSize: "standard",
+    runningSizeSince: runningSince,
+  };
+
+  function harness(reported: "standard" | "large") {
+    const prisma = {
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      computerRun: {
+        createMany: vi.fn().mockResolvedValue({ count: 1 }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      $executeRaw: vi.fn().mockResolvedValue(0),
+    } as unknown as PrismaClient;
+    const sandbox = {
+      runningSize: vi.fn().mockResolvedValue(reported),
+    } as unknown as SandboxProvider;
+    return { prisma, sandbox };
+  }
+
+  it("wakes at the planned size and starts a new run when the machine came back at it", async () => {
+    const deps = harness("large");
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+    const call = vi.fn(async (ref: ComputerRef) => ref.startSize);
+
+    await expect(withWakeableComputer(deps, computer, context, call)).resolves.toBe("large");
+
+    const [update] = vi.mocked(deps.prisma.computer.updateMany).mock.calls[0] ?? [];
+    expect(update?.where).toMatchObject({ id: "computer-1", state: "running", runningSince });
+    expect(update?.data).toMatchObject({ runningSize: "large" });
+    expect(update?.data.runningSince).not.toEqual(runningSince);
+    expect(deps.prisma.computerRun.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [expect.objectContaining({ startedAt: update?.data.runningSince, size: "large" })],
+      }),
+    );
+  });
+
+  it("keeps the stretch when the machine still runs at its rate", async () => {
+    const deps = harness("standard");
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+
+    await withWakeableComputer(deps, computer, context, async () => undefined);
+
+    expect(deps.prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not ask the size when the plan matches the rate", async () => {
+    const deps = harness("large");
+
+    await withWakeableComputer(deps, computer, context, async () => undefined);
+
+    expect(deps.sandbox.runningSize).not.toHaveBeenCalled();
+  });
 });
