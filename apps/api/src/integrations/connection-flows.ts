@@ -144,6 +144,27 @@ export async function beginConnection(
   // The row belongs to this attempt until a revoke takes it or a later begin reuses it.
   const attempt = randomUUID();
   const startedAt = Date.now();
+  let connectionId: string | undefined;
+  function logSetup(
+    outcome:
+      | "authorization_ready"
+      | "connected"
+      | "request_aborted"
+      | "auth_config_unavailable"
+      | "provider_failed"
+      | "invalid_authorization_url"
+      | "initial_save_failed"
+      | "save_failed"
+      | "superseded",
+  ) {
+    getLogger().info("tool connection setup", {
+      "connection.id": connectionId,
+      "connection.attempt_id": attempt,
+      "connection.app": matchFeaturedConnectorId(input.provider) ?? undefined,
+      "connection.setup_outcome": outcome,
+      "connection.elapsed_ms": Date.now() - startedAt,
+    });
+  }
   // Share the revoke scope lock so a slug-wide remote delete cannot miss a
   // row that is inserted after SELECT FOR UPDATE and before remote revoke.
   // Complete and revoke hold that lock across provider calls, so wait as long as they may.
@@ -186,7 +207,11 @@ export async function beginConnection(
         },
       });
     },
-  );
+  ).catch((error: unknown) => {
+    logSetup("initial_save_failed");
+    throw error;
+  });
+  connectionId = row.id;
   // Exactly what the first transaction wrote: this attempt's row, with no result saved on it.
   const unsavedRow = {
     id: row.id,
@@ -195,25 +220,6 @@ export async function beginConnection(
     status: "pending",
     metadata: { equals: { attempt } },
   };
-  function logSetup(
-    outcome:
-      | "authorization_ready"
-      | "connected"
-      | "request_aborted"
-      | "auth_config_unavailable"
-      | "provider_failed"
-      | "invalid_authorization_url"
-      | "save_failed"
-      | "superseded",
-  ) {
-    getLogger().info("tool connection setup", {
-      "connection.id": row.id,
-      "connection.attempt_id": attempt,
-      "connection.app": matchFeaturedConnectorId(input.provider) ?? undefined,
-      "connection.setup_outcome": outcome,
-      "connection.elapsed_ms": Date.now() - startedAt,
-    });
-  }
   /**
    * Marks the row failed while it holds nothing. A row whose save landed, even one that reported
    * a failure, stays what the save made it: it is the record of the authorization, and a later
