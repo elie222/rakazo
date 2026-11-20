@@ -30,6 +30,8 @@ const MIN_INTERVAL_MS = 1_000;
 // RFC 8628 section 3.5: `slow_down` adds five seconds to the interval.
 const SLOW_DOWN_STEP_MS = 5_000;
 const REQUEST_ATTEMPTS = 3;
+/** OAuth device-flow errors (RFC 8628 section 3.5) that end the wait. */
+const REFUSALS = new Set(["access_denied", "expired_token"]);
 
 /** A sign-in request the provider answered with an error status. The body stays out. */
 export class SignInHttpError extends Error {
@@ -167,7 +169,10 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
       const error = await failure("poll", response);
       if (error.code === "deviceauth_authorization_pending") return { status: "pending" };
       // The person has not approved the code yet, unless the answer names a refusal.
-      if ((response.status === 403 || response.status === 404) && !error.code) {
+      if (
+        (response.status === 403 || response.status === 404) &&
+        !(error.code && REFUSALS.has(error.code))
+      ) {
         return { status: "pending" };
       }
       if (error.code === "slow_down") return { status: "slow_down" };
@@ -271,8 +276,9 @@ function accountIdOf(accessToken: string): string | undefined {
   try {
     const payload = JSON.parse(
       Buffer.from(accessToken.split(".")[1] ?? "", "base64url").toString("utf8"),
-    ) as Record<string, { chatgpt_account_id?: unknown } | undefined>;
-    const accountId = payload[ACCOUNT_CLAIM]?.chatgpt_account_id;
+    ) as Record<string, unknown> & { chatgpt_account_id?: unknown };
+    const claims = payload[ACCOUNT_CLAIM] as { chatgpt_account_id?: unknown } | undefined;
+    const accountId = claims?.chatgpt_account_id ?? payload.chatgpt_account_id;
     return typeof accountId === "string" && accountId ? accountId : undefined;
   } catch {
     return undefined;

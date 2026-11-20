@@ -176,6 +176,31 @@ describe("ChatGPT device-code sign-in", () => {
     await expect(login).resolves.toMatchObject({ accountId: "acct-1" });
   });
 
+  it("keeps waiting on a not-yet-approved answer with an unfamiliar code", async () => {
+    const provider = fakeProvider({
+      poll: [
+        status(403, JSON.stringify({ error: { code: "deviceauth_authorization_unknown" } })),
+        approved(),
+      ],
+    });
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await expect(login).resolves.toMatchObject({ accountId: "acct-1" });
+  });
+
+  it("reads an account id from a top-level claim", async () => {
+    const access = `h.${Buffer.from(JSON.stringify({ chatgpt_account_id: "acct-2" })).toString("base64url")}.s`;
+    const provider = fakeProvider({
+      poll: [approved()],
+      token: [Response.json({ access_token: access, refresh_token: "r", expires_in: 3600 })],
+    });
+    await expect(
+      createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value),
+    ).resolves.toMatchObject({ accountId: "acct-2" });
+  });
+
   it("refuses a credential that is already expired", async () => {
     const provider = fakeProvider({
       poll: [approved()],
