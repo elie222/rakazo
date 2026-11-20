@@ -1252,8 +1252,11 @@ export async function listBotSecrets(
     select: { ...metadata, ...labels, ...vaultRow, alsoOn: true },
     orderBy: { name: "asc" },
   });
-  return Promise.all(
-    rows.map(async ({ id, userId, spaceId, ciphertext, title, note, alsoOn, ...row }) => {
+  // Each preview may be a remote store read: a full Vault reads a few at a time.
+  return mapConcurrent(
+    rows,
+    VAULT_UNLOCK_CONCURRENCY,
+    async ({ id, userId, spaceId, ciphertext, title, note, alsoOn, ...row }) => {
       const preview = await itemPreview(prisma, secretStore, {
         id,
         userId,
@@ -1273,7 +1276,7 @@ export async function listBotSecrets(
             ? { contact: preview.contact }
             : {}),
       };
-    }),
+    },
   );
 }
 
@@ -1393,8 +1396,15 @@ export async function listVaultItems(
       select: { credentialId: true, botId: true },
     }),
   ]);
-  return Promise.all(
-    rows.map(async ({ id, userId, spaceId, ciphertext, ...row }) => {
+  const limitedIds = new Set(limited.map((entry) => entry.credentialId));
+  const botsOf = new Map<string, string[]>();
+  for (const { credentialId, botId } of chosen)
+    botsOf.set(credentialId, [...(botsOf.get(credentialId) ?? []), botId]);
+  // Each preview may be a remote store read: a full Vault reads a few at a time.
+  return mapConcurrent(
+    rows,
+    VAULT_UNLOCK_CONCURRENCY,
+    async ({ id, userId, spaceId, ciphertext, ...row }) => {
       const preview = withPreview
         ? await itemPreview(prisma, secretStore, {
             id,
@@ -1405,12 +1415,10 @@ export async function listVaultItems(
           })
         : undefined;
       // A choice exists only while the item is limited: one left behind by an earlier save is none.
-      const allBots = !limited.some((entry) => entry.credentialId === id);
-      const botIds = allBots
-        ? []
-        : chosen.flatMap((entry) => (entry.credentialId === id ? [entry.botId] : []));
+      const allBots = !limitedIds.has(id);
+      const botIds = allBots ? [] : (botsOf.get(id) ?? []);
       return { ...row, allBots, botIds, title: vaultItemTitle(row, preview), preview };
-    }),
+    },
   );
 }
 

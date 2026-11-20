@@ -106,6 +106,14 @@ describe("redacting with a growing list", () => {
     expect(redactSecrets("first-secret second-secret", secrets)).toBe("first-secret [redacted]");
   });
 
+  it("streams with more values than one call takes as arguments", () => {
+    const lines = Array.from({ length: 300_000 }, (_, index) => `line-${index}`.padEnd(16, "x"));
+    const redactor = createStreamingRedactor([lines.join("\n")]);
+    expect(redactor.push(`before ${lines[299_999]} after`) + redactor.finish()).toBe(
+      "before [redacted] after",
+    );
+  });
+
   it("streams across chunks with one matcher", () => {
     const redactor = createStreamingRedactor(["hunter2-secret"]);
     expect(redactor.push("pass hunter2-") + redactor.push("secret done") + redactor.finish()).toBe(

@@ -809,7 +809,8 @@ export function sanitizeJsonValue<T>(value: T): T {
 export function createStreamingRedactor(secrets: string[]) {
   const values = protectedValues(secrets);
   const matcher = createSecretMatcher(values);
-  const maxLength = Math.max(0, ...values.map((value) => value.length));
+  // A loop, not a spread: a Vault of many-line values can pass more lengths than a call takes.
+  const maxLength = values.reduce((longest, value) => Math.max(longest, value.length), 0);
   let buffer = "";
   let covered = 0;
 
