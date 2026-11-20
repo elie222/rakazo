@@ -556,6 +556,8 @@ function LayoutContent() {
                       <Stack.Screen name="artifacts" options={glassHeaderOptions(t`Artifacts`)} />
                       <Stack.Screen name="artifact" options={{ title: t`Artifact` }} />
                       <Stack.Screen name="pages" options={glassHeaderOptions(t`Pages`)} />
+                      <Stack.Screen name="shared-pages" />
+                      <Stack.Screen name="page-review" options={glassHeaderOptions(t`Page`)} />
                       <Stack.Screen
                         name="page"
                         options={{
@@ -570,7 +572,7 @@ function LayoutContent() {
                       <Stack.Screen
                         name="page-share"
                         options={{
-                          headerShown: false,
+                          title: t`Share`,
                           presentation: "formSheet",
                           sheetAllowedDetents: [0.6, 1],
                           sheetGrabberVisible: true,

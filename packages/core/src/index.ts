@@ -104,6 +104,7 @@ export * from "./models/model-providers.js";
 export * from "./models/model-role-settings.js";
 export * from "./models/model-settings-form.js";
 export * from "./models/provider-settings-form.js";
+export * from "./pages/review.js";
 export * from "./peers/peer-exchanges.js";
 export * from "./peers/peer-history.js";
 export * from "./peers/peer-messages.js";
