@@ -217,6 +217,31 @@ describe("screen driver download", () => {
       // A process that exits mid-scan leaves an entry whose files are gone.
       await mkdir(path.join(proc, "12"));
       expect(await runningProcessNamed("missing", proc)).toBe(false);
+      // The kernel cuts a script's command name to 15 characters.
+      await fake("13", "photo-organize", "/usr/bin/python3.13");
+      await fake("14", "photo-organizer", "/usr/bin/python3.13");
+      expect(await runningProcessNamed("photo-organizer-app", proc)).toBe(true);
+    } finally {
+      await rm(proc, { recursive: true, force: true });
+    }
+  });
+
+  it("counts only processes of this login session, or of none recorded", async () => {
+    const proc = await mkdtemp(path.join(tmpdir(), "proc-"));
+    try {
+      const fake = async (pid: string, comm: string, session: string) => {
+        await mkdir(path.join(proc, pid));
+        await writeFile(path.join(proc, pid, "comm"), `${comm}\n`);
+        await writeFile(path.join(proc, pid, "sessionid"), session);
+        await symlink(`/usr/bin/${comm}`, path.join(proc, pid, "exe"));
+      };
+      await fake("self", "rakazo", "3");
+      await fake("10", "elsewhere", "4");
+      await fake("11", "here", "3");
+      await fake("12", "unrecorded", "4294967295");
+      expect(await runningProcessNamed("elsewhere", proc)).toBe(false);
+      expect(await runningProcessNamed("here", proc)).toBe(true);
+      expect(await runningProcessNamed("unrecorded", proc)).toBe(true);
     } finally {
       await rm(proc, { recursive: true, force: true });
     }

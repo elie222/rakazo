@@ -162,18 +162,34 @@ export function screenDriverInstaller(options: {
   };
 }
 
+/** The login session a process was started in, unless the kernel didn't record one. */
+async function loginSession(dir: string): Promise<string | undefined> {
+  const id = (await readFile(path.join(dir, "sessionid"), "utf8").catch(() => "")).trim();
+  return id && id !== UNSET_LOGIN_SESSION ? id : undefined;
+}
+const UNSET_LOGIN_SESSION = "4294967295";
+/** The kernel keeps only this many characters of a process's command name. */
+const COMMAND_NAME_LENGTH = 15;
+
 /**
- * Whether this user runs a process whose command or executable is `name`, read from `/proc`.
- * A process's own environment can't place it in a session: Chromium overwrites it.
+ * Whether this user runs a process whose command or executable is `name` in this login session,
+ * read from `/proc`. A process's own environment can't place it in a session: Chromium
+ * overwrites it.
  */
 export async function runningProcessNamed(name: string, proc = "/proc"): Promise<boolean> {
   const wanted = name.trim().toLowerCase();
+  // A script's command name is its own, cut short; its executable is the interpreter.
+  const command = wanted.slice(0, COMMAND_NAME_LENGTH);
   const uid = process.getuid?.();
+  const session = await loginSession(path.join(proc, "self"));
   for (const entry of await readdir(proc)) {
     if (!/^\d+$/.test(entry)) continue;
     const dir = path.join(proc, entry);
     try {
       if (uid !== undefined && (await stat(dir)).uid !== uid) continue;
+      // An app open in the user's other graphical session has no window in this one.
+      const theirs = session && (await loginSession(dir));
+      if (theirs && theirs !== session) continue;
       const comm = (await readFile(path.join(dir, "comm"), "utf8")).trim().toLowerCase();
       // A process that made itself non-dumpable hides its executable even from its own user.
       const exe = await readlink(path.join(dir, "exe")).catch((error) => {
@@ -181,7 +197,7 @@ export async function runningProcessNamed(name: string, proc = "/proc"): Promise
         if (code !== "EACCES" && code !== "EPERM") throw error;
         return "";
       });
-      if (comm === wanted || path.basename(exe).toLowerCase() === wanted) return true;
+      if (comm === command || path.basename(exe).toLowerCase() === wanted) return true;
     } catch (error) {
       // The process exited while it was being read: Linux answers ENOENT or ESRCH.
       const code = (error as NodeJS.ErrnoException).code;
