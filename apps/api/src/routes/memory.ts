@@ -7,6 +7,7 @@ import {
   mapScratchpadItem,
   memoryProviderDescriptors,
   readAgentMemory,
+  listMemoryDreams,
 } from "@rakazo/adapters";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -59,6 +60,15 @@ export function memoryRoutes(ctx: RouterContext) {
           { includeBot: bot.useOwnMemory, includeUser: bot.useSharedMemory },
         );
         return buildAgentMemoryPrompt(documents).plan;
+      }),
+      dreams: authed.memory.dreams.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        return listMemoryDreams(deps.prisma, {
+          spaceId: context.actor.spaceId,
+          botId: input.botId,
+          limit: input.limit,
+          cursor: input.cursor,
+        });
       }),
       update: authed.memory.update.handler(async ({ context, input }) => {
         const doc = await deps.prisma.memoryDocument.findFirst({

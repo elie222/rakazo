@@ -1,0 +1,82 @@
+// @vitest-environment jsdom
+
+import type { MemoryDream } from "@rakazo/contracts";
+import type { ReactNode } from "react";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DreamsList } from "./bot-memory-tabs";
+
+const dreams = vi.hoisted(() => [] as MemoryDream[]);
+vi.mock("@lingui/react/macro", () => {
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
+  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+});
+vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: dreams }) }));
+vi.mock("../../../lib/query/query", () => ({
+  useSpaceQueries: () => ({
+    memory: { dreams: { queryOptions: () => ({ queryKey: ["dreams"], queryFn: async () => [] }) } },
+  }),
+}));
+
+const roots: Array<{ unmount: () => void }> = [];
+afterEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
+  roots.splice(0).forEach((root) => act(() => root.unmount()));
+  document.body.innerHTML = "";
+  dreams.length = 0;
+});
+
+function render(memoryOff = false) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  act(() => {
+    root.render(<DreamsList botId="bot-1" memoryOff={memoryOff} />);
+  });
+  roots.push(root);
+  return container;
+}
+
+const dream = (overrides: Partial<MemoryDream> = {}): MemoryDream => ({
+  id: "dream-1",
+  status: "completed",
+  summary: "Moved to Lisbon.",
+  changedPaths: ["MEMORY.md"],
+  errorKind: null,
+  startedAt: "2026-02-02T23:30:00.000Z",
+  finishedAt: "2026-02-02T23:31:00.000Z",
+  createdAt: "2026-02-02T23:30:00.000Z",
+  ...overrides,
+});
+
+describe("DreamsList", () => {
+  it("explains an empty list", () => {
+    const container = render();
+    expect(container.textContent).toContain("No dreams yet.");
+    expect(container.textContent).toContain("rewrites its notes from your own words");
+  });
+
+  it("says dreams are paused while memory is off", () => {
+    const container = render(true);
+    expect(container.textContent).toContain("Memory is off, so dreams are paused.");
+    expect(container.textContent).not.toContain("No dreams yet.");
+  });
+
+  it("lists the summary, status and changed notes", () => {
+    dreams.push(
+      dream(),
+      dream({ id: "dream-2", status: "failed", errorKind: "spending", summary: null }),
+    );
+    const container = render();
+    expect(container.querySelectorAll("li")).toHaveLength(2);
+    expect(container.textContent).toContain("Moved to Lisbon.");
+    expect(container.textContent).toContain("Done");
+    expect(container.textContent).toContain("Stopped at the spending limit");
+    expect(container.textContent).toContain("Changed: MEMORY.md");
+    // No raw ids reach the screen.
+    expect(container.innerHTML).not.toContain("dream-1");
+  });
+});

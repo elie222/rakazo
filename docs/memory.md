@@ -22,6 +22,10 @@ you can edit or delete them.
 every bot in the space shares. Each bank has a switch; turned off, the bot neither reads nor writes
 it, and the other bank keeps working.
 
+**Dreams** are the bot's nightly consolidation: while you are away, it rewrites its notes from
+your own words. The **Dreams** tab lists each one — when it ran, what it changed and why it stopped
+if it could not finish. Dreams run only while at least one bank is on.
+
 ## Shared memory
 
 Some things every bot should know, such as your name, your company, or how you like reports

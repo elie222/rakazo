@@ -29,6 +29,12 @@ vi.mock("@rakazo/ui-web", () => ({
     />
   ),
 }));
+vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: [] }) }));
+vi.mock("../../../lib/query/query", () => ({
+  useSpaceQueries: () => ({
+    memory: { dreams: { queryOptions: () => ({ queryKey: ["dreams"], queryFn: async () => [] }) } },
+  }),
+}));
 vi.mock("../../space/KnowledgeSection", () => ({
   MemoryDocumentList: ({ input }: { input: { botId?: string; scope: string } }) => (
     <span data-testid="memory-list">{input.scope === "bot" ? input.botId : "shared"}</span>

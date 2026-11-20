@@ -28,6 +28,20 @@ export const MemoryDocumentSchema = z.object({
 });
 export type MemoryDocument = z.infer<typeof MemoryDocumentSchema>;
 
+/** One nightly consolidation, as the Memory page lists it. */
+export const MemoryDreamStatusSchema = z.enum(["queued", "completed", "failed"]);
+export const MemoryDreamSchema = z.object({
+  id: Id,
+  status: MemoryDreamStatusSchema,
+  summary: z.string().nullable(),
+  changedPaths: z.array(z.string()),
+  errorKind: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type MemoryDream = z.infer<typeof MemoryDreamSchema>;
+
 /** Which of a bot's memory documents reach the prompt, and what did not fit. */
 export const MemoryPromptDocumentUseSchema = z.object({
   scope: MemoryScope,

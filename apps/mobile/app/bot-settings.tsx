@@ -34,6 +34,7 @@ import type { ScrollViewInstance } from "react-native";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bots/bot-avatar";
 import { BotContextCards } from "../components/bots/bot-context-cards";
+import { BotDreamsSection } from "../components/bots/bot-dreams-section";
 import { BotLookPicker } from "../components/bots/bot-look-picker";
 import { BotPermissionsSection } from "../components/bots/bot-permissions-section";
 import { ProfileEditDialog } from "../components/bots/profile-edit-dialog";
@@ -695,6 +696,7 @@ export default function BotSettingsScreen() {
                   />
                 </SettingsGroup>
                 <BotContextCards key={`${botId}-memory`} botId={botId} section="memory" />
+                <BotDreamsSection botId={botId} memoryOff={!useOwnMemory && !useSharedMemory} />
               </View>
             ) : null}
             <SettingsGroup label={t`Model`} footer={modelMetaError ?? undefined}>

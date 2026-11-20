@@ -28,7 +28,12 @@ import {
   UpdateBotInput,
 } from "./bot.js";
 import { BotEmailAddressesSchema, BotEmailAddressSchema, BotEmailNameSchema } from "./bot-email.js";
-import { MemoryDocumentSchema, MemoryPromptBudgetSchema, MemoryScopeSchema } from "./bot-memory.js";
+import {
+  MemoryDocumentSchema,
+  MemoryDreamSchema,
+  MemoryPromptBudgetSchema,
+  MemoryScopeSchema,
+} from "./bot-memory.js";
 import {
   BotSecretMetadata,
   BotSecretPutInput,
@@ -120,6 +125,15 @@ export const botsRpc = {
       .input(z.object({ botId: Id.optional(), scope: z.enum(["bot", "user"]).optional() }))
       .output(z.array(MemoryDocumentSchema)),
     budget: oc.input(z.object({ botId: Id })).output(MemoryPromptBudgetSchema),
+    dreams: oc
+      .input(
+        z.object({
+          botId: Id,
+          limit: z.number().int().min(1).max(100).optional(),
+          cursor: Id.optional(),
+        }),
+      )
+      .output(z.array(MemoryDreamSchema)),
     update: oc
       .input(
         z.object({

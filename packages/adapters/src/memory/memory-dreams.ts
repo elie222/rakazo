@@ -1,5 +1,6 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { RetryJobLaterError } from "@rakazo/adapter-kit";
+import type { MemoryDream } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, blocksToAgentHistoryText, MEMORY_DREAM_TRIGGER } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { storedMessageBlocks } from "@rakazo/db";
@@ -369,7 +370,7 @@ export async function pruneMemoryDreams(prisma: PrismaClient): Promise<void> {
 export async function listMemoryDreams(
   prisma: PrismaClient,
   input: { spaceId: string; botId: string; limit?: number; cursor?: string },
-) {
+): Promise<MemoryDream[]> {
   const take = Math.min(Math.max(input.limit ?? 20, 1), 100);
   const rows = await prisma.memoryDream.findMany({
     where: { spaceId: input.spaceId, botId: input.botId },
@@ -389,7 +390,8 @@ export async function listMemoryDreams(
   });
   return rows.map((row) => ({
     id: row.id,
-    status: row.status,
+    status:
+      row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : "queued",
     summary: row.summary,
     changedPaths: row.changedPaths,
     errorKind: row.errorKind,
