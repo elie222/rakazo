@@ -35,7 +35,14 @@ export interface ModelProviderDefinition {
     resolvedAtRequest?: boolean;
   };
   /** Subscription sign-in Rakazo offers. */
-  signIn?: { mode: ModelOAuthSignInMode; loginLabel: string; hint: string; billing: string };
+  signIn?: {
+    mode: ModelOAuthSignInMode;
+    loginLabel: string;
+    hint: string;
+    billing: string;
+    /** A setting the account must turn on first, or the provider refuses the sign-in. */
+    setup?: { label: string; url: string };
+  };
   /** Ids each connection supplies to route its requests. */
   routingFields?: ModelRoutingField[];
   /** A connection can ask that requests only reach endpoints that keep no prompts or replies. */
@@ -56,6 +63,10 @@ export const modelProviders = {
       hint: "ChatGPT Plus/Pro",
       billing:
         "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
+      setup: {
+        label: "Turn on device code sign-in in ChatGPT security settings",
+        url: "https://chatgpt.com/#settings/Security",
+      },
     },
   },
   openai: { recommendedModel: "gpt-6-luna" },
