@@ -1,4 +1,5 @@
 import type { Bot, Group, ThreadMessage } from "@rakazo/contracts";
+import { isConnectionFailure } from "@rakazo/core/user-error";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RpcClient } from "../query/rpc";
 
@@ -153,7 +154,7 @@ describe("exportChat", () => {
     expect(text).toMatch(/\*\*System\*\* · \d\d:\d\d\n\nNotice/);
   });
 
-  it("gives up on a page that never answers, saving nothing", async () => {
+  it("gives up on a page that never answers as a timeout, saving nothing", async () => {
     vi.useFakeTimers();
     try {
       const messages = vi.fn(() => new Promise<never>(() => {}));
@@ -166,14 +167,29 @@ describe("exportChat", () => {
         memberName: noMembers,
       }).then(
         () => "saved",
-        (error: Error) => error.message,
+        (error: unknown) => error,
       );
       await vi.advanceTimersByTimeAsync(15_000);
-      await expect(outcome).resolves.toBe("Peer history page timed out.");
+      const error = await outcome;
+      // A slow connection, which the menu does not report as a bug.
+      expect(isConnectionFailure(error)).toBe(true);
+      expect((error as Error).cause).toEqual(new Error("Peer history page timed out."));
       expect(download).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps a page's own failure as it is", async () => {
+    const failure = new Error("Bad page");
+    const messages = vi.fn(async () => {
+      throw failure;
+    });
+    const rpc = { threads: { messages } } as unknown as RpcClient;
+    await expect(
+      exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time, memberName: noMembers }),
+    ).rejects.toBe(failure);
+    expect(isConnectionFailure(failure)).toBe(false);
   });
 
   it("words a routine's event in the chat's words", async () => {

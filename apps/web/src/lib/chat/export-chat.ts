@@ -23,19 +23,32 @@ export function chatExportFileName(name: string): string {
 async function loadAllMessages(rpc: RpcClient, target: ChatToExport): Promise<ThreadMessage[]> {
   const thread = target.kind === "bot" ? { botId: target.chat.id } : { groupId: target.chat.id };
   let pages = 0;
-  return loadPeerHistory({
-    // Nothing cancels an export once the menu has closed, so the whole read ends at its own deadline.
-    signal: deadlineSignal(TOTAL_TIMEOUT_MS),
-    totalTimeoutMs: TOTAL_TIMEOUT_MS,
-    loadPage: async (before, signal) => {
-      pages += 1;
-      if (pages > MAX_PAGES) throw new Error("The chat is too long to export");
-      return rpc.threads.messages(
-        { ...thread, ...(before === undefined ? {} : { before }) },
-        { signal },
-      );
-    },
-  });
+  let pageSignal: AbortSignal | undefined;
+  try {
+    return await loadPeerHistory({
+      // Nothing cancels an export once the menu has closed, so the whole read ends at its own deadline.
+      signal: deadlineSignal(TOTAL_TIMEOUT_MS),
+      totalTimeoutMs: TOTAL_TIMEOUT_MS,
+      loadPage: async (before, signal) => {
+        pageSignal = signal;
+        pages += 1;
+        if (pages > MAX_PAGES) throw new Error("The chat is too long to export");
+        return rpc.threads.messages(
+          { ...thread, ...(before === undefined ? {} : { before }) },
+          { signal },
+        );
+      },
+    });
+  } catch (error) {
+    // A page or the whole read ran out of time: name it the timeout it is, so it reads as a slow
+    // connection rather than a bug (the history's own deadlines abort with a plain Error).
+    if (pageSignal?.aborted && error === pageSignal.reason) {
+      throw Object.assign(new Error("The chat took too long to export", { cause: error }), {
+        name: "TimeoutError",
+      });
+    }
+    throw error;
+  }
 }
 
 /** Downloads the whole chat as a Markdown file: every page of history, oldest first. */

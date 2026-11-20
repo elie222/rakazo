@@ -152,6 +152,43 @@ describe("chatTranscriptMarkdown", () => {
     expect(text).toContain('deleted routine "Digest"');
   });
 
+  it("keeps your own Markdown-looking text literal, as the chat shows it, and the bot's as Markdown", () => {
+    const text = transcript([
+      message("user", [
+        { kind: "text", text: "# not a heading\n*literal* and 2 * 3\n- dash\n1. one" },
+      ]),
+      message("bot", [{ kind: "text", text: "**Bold** reply" }]),
+    ]);
+    expect(text).toContain(
+      "**You** · 2026-03-04 10:00\n\n\\# not a heading\\\n\\*literal\\* and 2 \\* 3\\\n\\- dash\\\n1\\. one",
+    );
+    expect(text).toContain("**Ada** · 2026-03-04 10:00\n\n**Bold** reply");
+  });
+
+  it("keeps a title or speaker on its own line, so it cannot add headings or speakers", () => {
+    const text = chatTranscriptMarkdown({
+      title: "Project\n\n## Another heading",
+      messages: [message("user", [{ kind: "text", text: "Hi" }])],
+      speaker: () => "Dana**\n\n**Lee",
+      time: () => "10:00",
+      routineEvent: (change, name) => `${change} ${name}`,
+    });
+    expect(text).toBe(
+      "# Project \\#\\# Another heading\n\n---\n\n**Dana\\*\\* \\*\\*Lee** · 10:00\n\nHi\n",
+    );
+  });
+
+  it("keeps labels, names and notes literal, as the chat shows them", () => {
+    const text = transcript([
+      message("bot", [{ kind: "page", pageId: "p_1", version: 1, title: "# Plan_v2" }]),
+      message("bot", [{ kind: "card", lines: [{ k: "*Label*", v: "[x](y)" }] }]),
+      message("system", [{ kind: "meta", text: "> quoted" }]),
+    ]);
+    expect(text).toContain("\n\n\\# Plan\\_v2");
+    expect(text).toContain("- \\*Label\\* → \\[x\\](y)");
+    expect(text).toContain("\n\n\\> quoted");
+  });
+
   it("is just the title for an empty chat", () => {
     expect(transcript([])).toBe("# Ada\n");
   });

@@ -13,59 +13,100 @@ type TranscriptMessage = {
   createdAt: string;
 };
 
-/** A block as the chat shows it, in words; empty for what the chat leaves out. */
+/** Markdown that only character escapes can make, the same in every CommonMark reader. */
+const INLINE_SYNTAX = /[\\`*_[\]<>|~&#]/g;
+/** What starts a list or rule only at the start of a line. */
+const LINE_START_SYNTAX = /^(\s*)([+=-]|\d+[.)])/;
+
+/**
+ * Text the chat shows as typed, escaped so a Markdown reader shows it the same: no formatting,
+ * headings or lists of its own, and each line break kept.
+ */
+function literal(text: string): string {
+  const lines = text
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(INLINE_SYNTAX, "\\$&")
+        .replace(
+          LINE_START_SYNTAX,
+          (_, space: string, mark: string) => `${space}${mark.replace(/[+=.)-]/g, "\\$&")}`,
+        ),
+    );
+  // A backslash at the end of a line is a hard break; a blank line stays a paragraph break.
+  return lines
+    .map((line, i) => (line.trim() && lines[i + 1]?.trim() ? `${line}\\` : line))
+    .join("\n");
+}
+
+/** A name or title on one line, so it can never start a heading or speaker of its own. */
+function oneLine(text: string): string {
+  return literal(text.replace(/\s+/g, " ").trim());
+}
+
+/**
+ * A block as the chat shows it, in words; empty for what the chat leaves out. What the chat renders
+ * as Markdown (a bot's reply, progress, a question, a computer's note) stays Markdown; everything it
+ * shows as typed (your own messages, labels, names) is escaped to read the same.
+ */
 function blockMarkdown(
   block: MessageBlock,
+  role: string,
   routineEvent: (change: RoutineEventChange, name: string) => string,
 ): string {
   if (isToolActivityBlock(block) || isRetiredImportSetup(block)) return "";
   switch (block.kind) {
     case "text":
+      return role === "user" ? literal(block.text) : block.text;
     case "progress":
     case "ask":
-    case "meta":
     case "computer":
-    case "handoff":
       return block.text;
+    case "meta":
+    case "handoff":
+      return literal(block.text);
     case "channel_message":
-      return channelMessageLine(block);
+      return literal(channelMessageLine(block));
     case "image":
     case "file":
-      return `Attachment: ${block.name}`;
+      return `Attachment: ${oneLine(block.name)}`;
     case "choice":
       if (block.answerId === "_dismissed") return "";
       return [
-        block.question,
-        ...(block.subtitle ? [block.subtitle] : []),
+        literal(block.question),
+        ...(block.subtitle ? [literal(block.subtitle)] : []),
         ...block.options.map(
           (option) =>
-            `- ${option.letter}. ${option.label}${block.answerId === option.id ? " ✓" : ""}`,
+            `- ${oneLine(option.letter)}. ${oneLine(option.label)}${block.answerId === option.id ? " ✓" : ""}`,
         ),
       ].join("\n");
     case "card":
-      return block.lines.map((line) => `- ${line.k} → ${line.v}`).join("\n");
+      return block.lines.map((line) => `- ${oneLine(line.k)} → ${oneLine(line.v)}`).join("\n");
     case "page":
     case "voice_call":
     case "cloud_agent":
-      return block.title;
+      return oneLine(block.title);
     case "call_request":
-      return block.reason;
-    case "subagent":
-      return [block.name, block.result ?? block.task].filter(Boolean).join(": ");
+      return literal(block.reason);
+    case "subagent": {
+      // The card shows the helper's result as Markdown under its name.
+      const body = block.result ?? block.task;
+      return [oneLine(block.name), body].filter(Boolean).join(": ");
+    }
     case "routine_event":
-      return routineEvent(block.change, block.name);
+      return oneLine(routineEvent(block.change, block.name));
     case "chart":
     case "child_bot":
     case "app_connect":
     case "mcp_approval":
     case "skill_draft":
-      return block.name;
+      return oneLine(block.name);
     case "app":
-      return `${block.server}: ${block.tool}`;
+      return oneLine(`${block.server}: ${block.tool}`);
     case "tool_question":
-      return block.question.source;
+      return literal(block.question.source);
     case "import_setup":
-      return block.items.map((item) => ("name" in item ? item.name : item.title)).join("\n");
+      return block.items.map((item) => oneLine("name" in item ? item.name : item.title)).join("\n");
     // Left out: a delivery is the bot's prompt, tool steps are activity, and a peer receipt is a
     // chip in the chat whose bot-to-bot replies stay folded away.
     case "connect":
@@ -95,7 +136,7 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   );
   const entries = visibleMessages.flatMap((message) => {
     const body = message.blocks
-      .map((block) => blockMarkdown(block, options.routineEvent).trim())
+      .map((block) => blockMarkdown(block, message.role, options.routineEvent).trim())
       .filter(Boolean)
       .join("\n");
     if (!body) return [];
@@ -104,8 +145,8 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
       ? `\n\n${[...counts].map(([emoji, count]) => (count > 1 ? `${emoji} ${count}` : emoji)).join(" ")}`
       : "";
     return [
-      `**${options.speaker(message)}** · ${options.time(message.createdAt)}\n\n${body}${reactionLine}`,
+      `**${oneLine(options.speaker(message))}** · ${options.time(message.createdAt)}\n\n${body}${reactionLine}`,
     ];
   });
-  return `${[`# ${options.title}`, ...entries].join("\n\n---\n\n")}\n`;
+  return `${[`# ${oneLine(options.title)}`, ...entries].join("\n\n---\n\n")}\n`;
 }
