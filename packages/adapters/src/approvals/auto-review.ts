@@ -267,8 +267,12 @@ const USER_AT_HOST_WORD = /^[^@]+@[^@]+$/;
 /** A whole word that is an IPv4 address, with an optional port and path; `10.0.0.1.sink.example` is a host. */
 const IPV4_WORD = /^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/\S*)?$/;
 const MAX_HOST_CHARS = 253;
-/** An IPv6 address, bracketed or bare: hex groups with at least two colons. */
-const IPV6_WORD = /^\[?[0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}\]?(?::\d+)?$/i;
+/**
+ * An IPv6 address, bracketed or bare: eight hex groups, or fewer around one `::`. Clock times and
+ * MAC addresses have neither shape.
+ */
+const IPV6_WORD =
+  /^\[?(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){7}|(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,6})?::(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,6})?)\]?(?::\d+)?$/i;
 
 /**
  * The addresses a piece of a command names: URLs of any scheme, `user@host`, IPv4 addresses and
@@ -288,7 +292,7 @@ function addressesIn(text: string): string[] | undefined {
       URL_WORD.test(word) ||
       USER_AT_HOST_WORD.test(word) ||
       IPV4_WORD.test(word) ||
-      IPV6_WORD.test(word)
+      (IPV6_WORD.test(word) && /[0-9a-f]/i.test(word))
     )
       found.add(word);
     else {

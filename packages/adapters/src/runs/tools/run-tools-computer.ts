@@ -249,10 +249,11 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   // Where the page is, from the browser's own result: page text the run hides is never a URL to match.
   // A refused step reports no address, which leaves the last one the run saw.
   const raw = ctx.providers.browser;
-  const seen = <T extends { url?: string }>(result: T) => {
+  const seen = <T extends { url?: string; ok?: boolean; uncertain?: boolean }>(result: T) => {
     if (result.url) {
       ctx.state.pageUrl = result.url;
-      ctx.state.pageUrlUncertain = false;
+      // A failed or unsure step reports the page it asked for, not the one the browser shows.
+      ctx.state.pageUrlUncertain = result.ok === false || result.uncertain === true;
     }
     return result;
   };

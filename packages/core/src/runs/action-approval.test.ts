@@ -9,6 +9,7 @@ import {
   approvalRuleChoices,
   approvalRuleEffectChoices,
   batchActions,
+  clicksBeforeTyping,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -1060,6 +1061,18 @@ describe("ownComputerActionNeedsReview", () => {
       await expect(review(name, args, check, check)).resolves.toBe(false);
     }
     expect(checked).toBe(false);
+  });
+});
+
+describe("clicksBeforeTyping", () => {
+  it("is true only when a click comes before something typed or uploaded", () => {
+    const of = (...kinds: string[]) =>
+      clicksBeforeTyping({ actions: kinds.map((kind) => ({ kind })) });
+    expect(of("click", "fill")).toBe(true);
+    expect(of("click", "upload")).toBe(true);
+    expect(of("fill", "click")).toBe(false);
+    expect(of("click", "click")).toBe(false);
+    expect(of("type")).toBe(false);
   });
 });
 

@@ -424,6 +424,15 @@ function whatCouldSend(
   }
 }
 
+/** A click before what a page action types can leave the page, so the typing lands on another. */
+export function clicksBeforeTyping(args: Record<string, unknown>): boolean {
+  const kinds = actionsOf(args).map((action) => String(action.kind));
+  const firstClick = kinds.indexOf("click");
+  return (
+    firstClick !== -1 && kinds.slice(firstClick + 1).some((kind) => PAGE_TYPING_KINDS.has(kind))
+  );
+}
+
 /**
  * web_fetch sends its whole URL, query string included, to the site it names, so a site this run
  * was not given is a new destination that injected text could have picked. Trusted sites (named in

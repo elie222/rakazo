@@ -2,6 +2,7 @@ import type { AgentToolExecutionObserver, ConnectorCall } from "@rakazo/adapter-
 import {
   approvalModeFromPreference,
   batchActions,
+  clicksBeforeTyping,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -667,20 +668,6 @@ export async function gateToolCall(
     for (const trust of connectorTrusts) trusted.add(trust);
   }
   return { call };
-}
-
-/** A click before what a page action types can leave the page, so the typing lands on another. */
-function clicksBeforeTyping(args: Record<string, unknown>): boolean {
-  const kinds = Array.isArray(args.actions)
-    ? args.actions.map((action) => (action as { kind?: unknown } | null)?.kind)
-    : [];
-  const firstClick = kinds.indexOf("click");
-  return (
-    firstClick !== -1 &&
-    kinds.some(
-      (kind, i) => i > firstClick && (kind === "fill" || kind === "type" || kind === "upload"),
-    )
-  );
 }
 
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
