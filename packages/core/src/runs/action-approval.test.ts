@@ -995,6 +995,19 @@ describe("lastingWriteKind", () => {
         args: { instructions: "i", instructions_offset: 0 },
       }),
     ).toBe(undefined);
+    // A null or blank offset is not a paged read: the update still writes the instructions.
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructions_offset: null },
+      }),
+    ).toBe("instructions");
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructionsOffset: "" },
+      }),
+    ).toBe("instructions");
     expect(
       lastingWriteKind({ toolName: "set_child_instructions", args: { instructions: "i" } }),
     ).toBe(undefined);

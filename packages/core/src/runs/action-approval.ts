@@ -364,6 +364,11 @@ export async function savedContextWriteNeedsReview(
 
 export type LastingWrite = "memory" | "routine" | "instructions";
 
+/** An argument the update counts as given: present, and not blank text (as `argumentGiven`). */
+function given(value: unknown): boolean {
+  return value != null && (typeof value !== "string" || value.trim().length > 0);
+}
+
 /**
  * The write that outlives the run an Auto Review is about, which gets its own narrow question:
  * a memory or skill save after outside content, a routine's words, or the bot's own instructions.
@@ -387,14 +392,12 @@ export function lastingWriteKind(input: {
     (Boolean(input.args.prompt) || Boolean(input.args.on))
   )
     return "routine";
-  // A blank value leaves the instructions as they are, as the update itself treats it, and a paged
-  // read (an offset) only returns the settings.
+  // A blank value leaves the instructions as they are, and a paged read (an offset) only returns
+  // the settings, as the update reads its arguments.
   if (
     input.toolName === "update_bot" &&
-    typeof input.args.instructions === "string" &&
-    input.args.instructions.trim() &&
-    input.args.instructions_offset === undefined &&
-    input.args.instructionsOffset === undefined
+    given(input.args.instructions) &&
+    !given(input.args.instructions_offset ?? input.args.instructionsOffset)
   )
     return "instructions";
   return undefined;
