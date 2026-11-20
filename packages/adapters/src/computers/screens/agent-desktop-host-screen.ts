@@ -45,6 +45,11 @@ export interface AgentDesktopHostScreenOptions {
    * given the program running it and the message it would hear otherwise.
    */
   unreadable?: (app: string, message: string) => Promise<string>;
+  /**
+   * Linux only: the ids of the app's processes. An app on a shared runtime lists its windows
+   * under the runtime's name, so only its process ties them to it.
+   */
+  processIds?: (app: string) => Promise<number[]>;
   /** This app's own process. Driving it could answer its own approval cards. */
   selfPid: number;
   /** Shrinks a PNG so its long edge is at most `maxDimension`. */
@@ -259,6 +264,11 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     // Launcher names are read only when the bot's own name finds nothing.
     const names = matching.length ? [query] : await namesFor(query);
     if (!matching.length) matching = named(windows, names);
+    const byProcess = !matching.length && options.processIds !== undefined;
+    if (byProcess && options.processIds) {
+      const ids = new Set(await options.processIds(query));
+      matching = windows.filter((window) => ids.has(window.pid));
+    }
     if (!matching.length) {
       // An app running off the accessibility bus has no windows to list, and launching it
       // again would open a second window of a single-instance app.
@@ -277,7 +287,7 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     );
     // The list runs front to back, so the first restored window is the one the user sees.
     const window = usable.find((window) => !window.minimized);
-    const name = matching[0] ? appName(matching[0]) : query;
+    const name = matching[0] && !byProcess ? appName(matching[0]) : query;
     if (!window)
       throw new HostScreenError(
         usable.length

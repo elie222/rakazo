@@ -45,7 +45,7 @@ function cli(
   handlers: Record<string, Handler> = {},
   system: "Windows" | "Linux" = "Windows",
   running?: (app: string) => Promise<boolean>,
-  linux: Pick<AgentDesktopHostScreenOptions, "aliases" | "unreadable"> = {},
+  linux: Pick<AgentDesktopHostScreenOptions, "aliases" | "unreadable" | "processIds"> = {},
 ) {
   const calls: string[][] = [];
   const all: Record<string, Handler> = {
@@ -377,6 +377,25 @@ describe("agent-desktop host screen", () => {
     expect(aliases).not.toHaveBeenCalled();
     await expect(screen.observe(scope, "Text Editor")).resolves.toMatchObject({ app: "notepad" });
     expect(calls.filter(([name]) => name === "launch")).toEqual([]);
+  });
+
+  it("finds a Linux app on a shared runtime by its process, under the bot's name for it", async () => {
+    const runtime = notepad.map((window) => ({ ...window, app_name: "electron" }));
+    const processIds = vi.fn(async (app: string) => (app === "notes" ? [41] : []));
+    const { screen, calls } = cli(
+      { "list-windows": () => ok(runtime) },
+      "Linux",
+      async () => true,
+      {
+        processIds,
+      },
+    );
+    await expect(screen.observe(scope, "notes")).resolves.toMatchObject({
+      app: "notes",
+      title: "Untitled - Notepad",
+    });
+    expect(calls.filter(([name]) => name === "launch")).toEqual([]);
+    await expect(screen.observe(scope, "other")).rejects.toThrow();
   });
 
   it("lets the desktop explain an app off the bus, found by its launcher's program", async () => {

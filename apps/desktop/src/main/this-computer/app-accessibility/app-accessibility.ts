@@ -18,6 +18,17 @@ const ENGINE_HELPERS = new Set(["--type=zygote", "--type=renderer"]);
 /** The kernel keeps only this many characters of a process's command name. */
 const COMMAND_NAME_LENGTH = 15;
 
+/** Whether `running` descends from the process `pid`. */
+function startedBy(running: UserProcess, pid: number, byPid: Map<number, UserProcess>) {
+  const seen = new Set<number>();
+  for (let parent = byPid.get(running.ppid); parent; parent = byPid.get(parent.ppid)) {
+    if (parent.pid === pid) return true;
+    if (seen.has(parent.pid)) return false;
+    seen.add(parent.pid);
+  }
+  return false;
+}
+
 /** What `/proc` says about an open app: how it was started and what it runs on. */
 export function inspectApp(app: string, processes: UserProcess[], selfPid: number) {
   const named = processes.filter((running) => isNamed(running, app));
@@ -26,7 +37,8 @@ export function inspectApp(app: string, processes: UserProcess[], selfPid: numbe
   if (!main) return undefined;
   const byPid = new Map(processes.map((running) => [running.pid, running]));
   // Scripts that ran the app name it too: the kernel names a script's process after the script.
-  const launchers = [path.basename(main.exe), path.basename(main.argv[0] ?? "")];
+  // The name the app runs under counts too: an app on a shared runtime is named by no file.
+  const launchers = [app, path.basename(main.exe), path.basename(main.argv[0] ?? "")];
   for (let parent = byPid.get(main.ppid); parent; parent = byPid.get(parent.ppid)) {
     const script = parent.argv[1];
     if (!script || path.basename(script).slice(0, COMMAND_NAME_LENGTH) !== parent.comm) break;
@@ -34,7 +46,10 @@ export function inspectApp(app: string, processes: UserProcess[], selfPid: numbe
   }
   return {
     self: named.some((running) => running.pid === selfPid),
-    engine: named.some((running) => running.argv.some((arg) => ENGINE_HELPERS.has(arg))),
+    engine: processes.some(
+      (helper) =>
+        helper.argv.some((arg) => ENGINE_HELPERS.has(arg)) && startedBy(helper, main.pid, byPid),
+    ),
     sharing: main.argv.includes(SHARING_OPTION),
     launchers: [...new Set(launchers.filter(Boolean))],
   };

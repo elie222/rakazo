@@ -85,6 +85,26 @@ describe("app accessibility", () => {
     });
     expect(inspectApp("browser", browser().slice(0, 3), 99)).toMatchObject({ engine: false });
     expect(inspectApp("missing", browser(), 99)).toBeUndefined();
+    // An app on a shared runtime: its launcher script hands over, and only its archive names it.
+    const runtime = (args: string[]): UserProcess => ({
+      pid: 30 + args.length,
+      ppid: args.length === 1 ? 1 : 31,
+      comm: "electron",
+      exe: "/usr/lib/electron/electron",
+      argv: ["/usr/lib/electron/electron", ...args],
+    });
+    expect(
+      inspectApp(
+        "notes",
+        [runtime(["/usr/lib/notes/app.asar"]), runtime(["--type=zygote", "--x"])],
+        99,
+      ),
+    ).toEqual({
+      self: false,
+      engine: true,
+      sharing: false,
+      launchers: ["notes", "electron"],
+    });
   });
 
   it("asks once, then sets up the system entry's launcher when the user allows it", async () => {

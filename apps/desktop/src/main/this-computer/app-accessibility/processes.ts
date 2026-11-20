@@ -74,6 +74,13 @@ export async function userProcesses(proc = "/proc"): Promise<UserProcess[]> {
 export function isNamed(running: UserProcess, name: string): boolean {
   const wanted = name.trim().toLowerCase();
   if (path.basename(running.exe).toLowerCase() === wanted) return true;
+  // An app on a shared Electron runtime is named only by the folder of the archive it runs.
+  if (
+    running.argv.some(
+      (arg) => arg.endsWith(".asar") && path.basename(path.dirname(arg)).toLowerCase() === wanted,
+    )
+  )
+    return true;
   // A script's command name is its own, cut short; its executable is the interpreter.
   const command = wanted.slice(0, COMMAND_NAME_LENGTH);
   if (running.comm.toLowerCase() !== command) return false;

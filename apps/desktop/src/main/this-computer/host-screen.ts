@@ -206,6 +206,10 @@ export function createDesktopHostScreen(options: {
       ...(system === "Linux"
         ? {
             running: (app: string) => runningProcessNamed(app),
+            processIds: async (app: string) =>
+              (await userProcesses())
+                .filter((running) => isNamed(running, app))
+                .map((running) => running.pid),
             ...(accessibility
               ? {
                   aliases: (app: string) => accessibility.aliases(app),
