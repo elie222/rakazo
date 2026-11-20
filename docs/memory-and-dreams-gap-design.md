@@ -8,6 +8,9 @@
 范围：记忆写入规则与上限、整理（tidy）、时间回顾（review）、梦境撤销、记忆来源与历史、记忆
 搜索、长笔记元数据、Dreams 的 E2E 与移动端对齐、翻译与保留数配置。
 
+落地拆解、PR 切分与逐项验收见
+[`memory-and-dreams-execution-plan.md`](./memory-and-dreams-execution-plan.md)。
+
 ---
 
 ## 1. 现状与差距
