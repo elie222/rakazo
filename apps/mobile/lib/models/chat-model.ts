@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { ChatModelChoice } from "@rakazo/core";
-import { chatModelChoices, connectedModelChoices } from "@rakazo/core";
+import { chatModelChoices } from "@rakazo/core";
+import { connectedModelChoices } from "@rakazo/i18n/model-provider";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../api/mobile-types";
 
 /** What a chat's model picker lists, with the space default named after its model. */

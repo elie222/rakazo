@@ -234,7 +234,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     };
   }, []);
 
-  const groups = useMemo(() => {
+  const groups = (() => {
     const grouped = new Map<string, ModelCatalogEntry[]>();
     for (const entry of catalog) {
       const entries = grouped.get(entry.provider) ?? [];
@@ -253,7 +253,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       (group) => group.id,
       (group) => group.name,
     );
-  }, [catalog, credentials]);
+  })();
   const credentialByProvider = useMemo(
     () => new Map(credentials.map((entry) => [entry.provider, entry])),
     [credentials],

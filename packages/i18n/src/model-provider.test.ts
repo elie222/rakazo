@@ -1,6 +1,11 @@
 import { i18n } from "@lingui/core";
 import { afterEach, expect, it } from "vitest";
-import { connectedBackupOptions, providerDisplayName } from "./model-provider";
+import {
+  botModelState,
+  connectedBackupOptions,
+  connectedModelChoices,
+  providerDisplayName,
+} from "./model-provider";
 
 afterEach(() => i18n.activate("en"));
 
@@ -38,4 +43,55 @@ it("localizes descriptor subscription names and leaves API names alone", () => {
   expect(
     providerDisplayName({ ...entry, subscriptionName: "Untranslated subscription" }, "oauth"),
   ).toBe("Untranslated subscription");
+});
+
+it("refreshes subscription names and chat choices when the language changes", () => {
+  const entry = {
+    provider: "example",
+    providerName: "Example",
+    subscriptionName: "Example subscription",
+    auth: "both" as const,
+    id: "model",
+    label: "Model",
+    billing: "",
+  };
+  const credentials = [
+    {
+      id: "credential",
+      hasKey: true,
+      isDefault: true,
+      provider: "example",
+      label: "Example",
+      authKind: "oauth" as const,
+    },
+  ];
+  i18n.load("en", { "Example subscription": "Example subscription" });
+  i18n.load("de", { "Example subscription": "Example Abonnement" });
+  for (const [locale, expected] of [
+    ["en", "Example subscription"],
+    ["de", "Example Abonnement"],
+    ["en", "Example subscription"],
+  ]) {
+    i18n.activate(locale!);
+    expect(providerDisplayName(entry, "oauth")).toBe(expected);
+    expect(
+      connectedModelChoices([{ ...credentials[0]!, enabledModelIds: ["custom"] }], [entry])[0],
+    ).toMatchObject({ providerLabel: expected, label: `custom (${expected})` });
+    expect(
+      botModelState({
+        credentials,
+        catalog: [entry],
+        me: null,
+        modelKey: "example::model",
+        spaceDefaultLabel: "Default",
+      }).choices.find((choice) => choice.key === "example::model"),
+    ).toMatchObject({ label: `Model (${expected})` });
+    expect(connectedModelChoices(credentials, [entry])[0]).toMatchObject({
+      providerLabel: expected,
+      label: `Model (${expected})`,
+    });
+    expect(
+      connectedModelChoices([{ ...credentials[0]!, authKind: "api_key" }], [entry])[0],
+    ).toMatchObject({ providerLabel: "Example", label: "Model (Example)" });
+  }
 });

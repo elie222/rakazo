@@ -299,18 +299,25 @@ async function renderSettings(
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  await act(async () => {
+  const render = () =>
     root.render(
       <QueryClientProvider client={queryClient}>
         <ModelSettingsOverlay embedded={embedded} scope={scope} onClose={() => undefined} />
       </QueryClientProvider>,
     );
+  await act(async () => {
+    render();
   });
   await act(async () => {
     await Promise.resolve();
   });
   return {
     container,
+    async rerender() {
+      await act(async () => {
+        render();
+      });
+    },
     async unmount() {
       await act(async () => {
         root.unmount();
@@ -1911,5 +1918,27 @@ it("shows what a disconnect left, not a read sent before it", async () => {
     expect(providerNames()).not.toContain("DeepSeek (Work)");
   } finally {
     await view.unmount();
+  }
+});
+
+it("updates subscription group names when the language changes with the same catalog", async () => {
+  models.list.mockResolvedValue([
+    { ...deepseekEntry, auth: "oauth", subscriptionName: "Example subscription" },
+  ]);
+  models.credentials.mockResolvedValue([{ ...deepseekCredential, authKind: "oauth" }]);
+  i18n.load("en", { "Example subscription": "Example subscription" });
+  i18n.load("de", { "Example subscription": "Example Abonnement" });
+  const view = await renderSettings();
+  try {
+    expect(view.container.textContent).toContain("Example subscription");
+    await act(async () => {
+      i18n.activate("de");
+    });
+    await view.rerender();
+    expect(view.container.textContent).toContain("Example Abonnement");
+    expect(view.container.textContent).not.toContain("Example subscription");
+  } finally {
+    await view.unmount();
+    i18n.activate("en");
   }
 });

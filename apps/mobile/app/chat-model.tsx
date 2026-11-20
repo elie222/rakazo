@@ -1,7 +1,8 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
-import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
+import { botModelPick, modelOptionKey } from "@rakazo/core";
+import { botModelState } from "@rakazo/i18n/model-provider";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, View } from "react-native";
 import { ModelPickerList } from "../components/models/model-picker-list";

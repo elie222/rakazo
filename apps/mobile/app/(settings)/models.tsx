@@ -170,7 +170,7 @@ export default function Models() {
     });
 
   /** Every provider, popular first, plus the hosted presets of the compatible one. */
-  const allProviders = useMemo(() => {
+  const allProviders = (() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
       if (grouped.has(entry.provider)) continue;
@@ -187,7 +187,7 @@ export default function Models() {
       (provider) => provider.id,
       (provider) => provider.name,
     );
-  }, [catalog]);
+  })();
 
   // Deployment-funded providers stay listed so people can still add their own key.
   const providers = useMemo(() => {

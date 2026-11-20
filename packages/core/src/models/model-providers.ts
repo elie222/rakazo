@@ -1,8 +1,10 @@
 import type { Bot, ModelApiProtocol, ModelCatalogEntry, ModelSettings } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
+  connectionDisplayName,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   selectCompatibleModelCredential,
   withConnectionName,
 } from "@rakazo/contracts";
@@ -155,11 +157,14 @@ type CatalogModelRef = {
   id: string;
   label: string;
   providerName?: string;
+  subscriptionName?: string;
+  auth?: ModelCatalogEntry["auth"];
   placeholder?: boolean;
   images?: boolean;
 };
 
 type CredentialModelRef = {
+  authKind?: string;
   provider: string;
   label: string;
   modelId?: string | null;
@@ -238,15 +243,19 @@ function freeFormChoice(credential: CredentialModelRef, modelId: string): Connec
   };
 }
 
-function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedModelChoice[] {
+function catalogChoices(
+  providerModels: readonly CatalogModelRef[],
+  auth?: string,
+): ConnectedModelChoice[] {
   return providerModels.map((entry) => {
     const modelId = resolveSelectableModelId(providerModels, entry.provider, entry.id);
+    const providerName = providerDisplayName(entry, auth);
     return {
       key: modelOptionKey(entry.provider, modelId),
       provider: entry.provider,
       modelId,
-      label: withConnectionName(entry.label, entry.providerName ?? entry.provider),
-      providerLabel: entry.providerName ?? entry.provider,
+      label: withConnectionName(entry.label, providerName),
+      providerLabel: providerName,
       modelLabel: entry.label,
       images: entry.images,
     };
@@ -334,6 +343,17 @@ export function connectedModelChoices(
         canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider) &&
         !entry.placeholder,
     );
+    const entry = providerModels[0];
+    const providerName = entry ? providerDisplayName(entry, credential.authKind) : undefined;
+    const namedCredential =
+      entry?.subscriptionName && providerName === entry.subscriptionName
+        ? {
+            ...credential,
+            label: connectionDisplayName(credential, providerName, [
+              entry.providerName ?? entry.provider,
+            ]),
+          }
+        : credential;
     const raw = credential.modelId?.trim() ?? "";
     const resolved = raw ? resolveSelectableModelId(providerModels, credential.provider, raw) : "";
     const resolvedInCatalog = providerModels.some(
@@ -346,7 +366,7 @@ export function connectedModelChoices(
             const known = providerModels.find((entry) => entry.id === id)?.images;
             const own = credential.modelSettings?.[id]?.images;
             return {
-              ...freeFormChoice(credential, id),
+              ...freeFormChoice(namedCredential, id),
               images:
                 credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
                   ? (own ?? known)
@@ -354,8 +374,8 @@ export function connectedModelChoices(
             };
           })
         : raw && !resolvedInCatalog
-          ? [freeFormChoice(credential, resolved || raw)]
-          : catalogChoices(providerModels);
+          ? [freeFormChoice(namedCredential, resolved || raw)]
+          : catalogChoices(providerModels, credential.authKind);
     choices.push(...next);
   }
   choices.push(...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)));

@@ -7,7 +7,8 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
-import { botModelState, modelOptionKey } from "@rakazo/core";
+import { modelOptionKey } from "@rakazo/core";
+import { botModelState } from "@rakazo/i18n/model-provider";
 import {
   Button,
   DropdownMenu,

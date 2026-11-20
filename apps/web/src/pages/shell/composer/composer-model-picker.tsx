@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, ThinkingLevel } from "@rakazo/contracts";
-import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
+import { botModelPick, modelOptionKey } from "@rakazo/core";
+import { botModelState } from "@rakazo/i18n/model-provider";
 import { Command, CommandGroup, CommandItem, CommandList, Kbd, toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";

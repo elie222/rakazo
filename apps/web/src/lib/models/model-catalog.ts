@@ -1,7 +1,7 @@
 import { i18n } from "@lingui/core";
 import type { ModelCatalogEntry, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import type { ConnectedModelChoice } from "@rakazo/core";
-import { connectedModelChoices } from "@rakazo/core";
+import { connectedModelChoices } from "@rakazo/i18n/model-provider";
 
 export { modelOptionKey, parseModelOptionKey } from "@rakazo/core";
 
