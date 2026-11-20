@@ -1154,6 +1154,9 @@ importers:
       '@rakazo/core':
         specifier: workspace:*
         version: link:../core
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../ui-tokens

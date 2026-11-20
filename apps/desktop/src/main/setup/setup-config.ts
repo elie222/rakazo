@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DesktopSetup, DesktopStackProbeResponse } from "@rakazo/contracts";
 import { parseServerHeaders } from "@rakazo/contracts";
+import { appLinkUrl } from "@rakazo/contracts/app-links";
 import { isLoopbackHost, isPrivateNetworkHost } from "@rakazo/contracts/network-host";
 import { t } from "../i18n.js";
 
@@ -190,8 +191,10 @@ export function sessionPartitionForServerUrl(targetUrl: string): string | null {
   }
 }
 
-/** External pages are opened by the OS, never in a privileged Electron child window. */
+/** External pages and listed app links are opened by the OS, never in a privileged child window. */
 export function safeExternalUrl(targetUrl: string): string | null {
+  const appLink = appLinkUrl(targetUrl);
+  if (appLink) return appLink;
   try {
     const url = new URL(targetUrl);
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;

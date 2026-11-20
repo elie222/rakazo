@@ -15,6 +15,11 @@
       "development": "./src/clients/client-build.ts",
       "default": "./src/clients/client-build.ts"
     },
+    "./app-links": {
+      "types": "./src/clients/app-links.ts",
+      "development": "./src/clients/app-links.ts",
+      "default": "./src/clients/app-links.ts"
+    },
     "./network-host": {
       "types": "./src/clients/network-host.ts",
       "development": "./src/clients/network-host.ts",

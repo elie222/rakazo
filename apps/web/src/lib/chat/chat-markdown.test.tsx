@@ -146,6 +146,18 @@ describe("ChatMarkdown", () => {
     expect(html).toContain("Call");
   });
 
+  it("links notes in a listed notes app", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>
+        {"[Prep](obsidian://open?vault=Notes&file=Prep.md) [Code](vscode://file/etc/passwd)"}
+      </ChatMarkdown>,
+    );
+
+    expect(html).toContain('href="obsidian://open?vault=Notes&amp;file=Prep.md"');
+    expect(html).not.toContain("vscode:");
+    expect(html.match(/<a /g)).toHaveLength(1);
+  });
+
   it("renders embedded image data inline", () => {
     const html = renderToStaticMarkup(
       <ChatMarkdown>{"![dot](data:image/png;base64,iVBORw0KGgo=)"}</ChatMarkdown>,
