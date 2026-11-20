@@ -1,6 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, UsageBreakdownBot, UsageDateRange } from "@rakazo/contracts";
-import { canonicalPiProviderId } from "@rakazo/contracts";
 import {
   Field,
   FieldLabel,
@@ -24,6 +23,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useEffect, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
+import { usageModelKey, usageModelLabels } from "./usage-model-labels";
 
 export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivElement | null> }) {
   const { t, i18n } = useLingui();
@@ -50,27 +50,11 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
 
   const catalogQuery = useQuery(queries.models.list.queryOptions());
   const catalog = catalogQuery.data ?? NO_CATALOG;
-  const labelsFor = ({ provider, model }: { provider: string; model: string }) => {
-    const entry = catalog.find(
-      (e) =>
-        e.id === model && canonicalPiProviderId(e.provider) === canonicalPiProviderId(provider),
-    );
-    return {
-      modelLabel:
-        entry?.label ??
-        (catalogQuery.isError
-          ? t`Model name unavailable`
-          : catalogQuery.isPending
-            ? t`Loading model name…`
-            : t`Unlisted model`),
-      providerLabel:
-        entry?.providerName ??
-        catalog.find(
-          (e) =>
-            canonicalPiProviderId(e.provider) === canonicalPiProviderId(provider) && e.providerName,
-        )?.providerName,
-    };
-  };
+  const fallbackLabel = catalogQuery.isError
+    ? t`Model name unavailable`
+    : catalogQuery.isPending
+      ? t`Loading model name…`
+      : t`Unlisted model`;
 
   const count = new Intl.NumberFormat(i18n.locale);
   const usd = new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" });
@@ -92,22 +76,8 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const overTime = fresh?.overTime ?? [];
   const monthly = fresh?.overTimeUnit === "month";
   const totals = fresh?.totals;
-  const modelNames = (data?.modelOptions ?? []).map((m) => ({ ...m, ...labelsFor(m) }));
-  const candidates = modelNames.map((m) => {
-    const sharedName = modelNames.some((other) => other !== m && other.modelLabel === m.modelLabel);
-    return {
-      key: JSON.stringify([m.provider, m.model]),
-      label: sharedName && m.providerLabel ? `${m.modelLabel} (${m.providerLabel})` : m.modelLabel,
-      providerLabel: sharedName ? undefined : m.providerLabel,
-    };
-  });
-  const needsReferences = new Set(candidates.map((m) => m.label)).size < candidates.length;
-  const referenceKeys = candidates.map((m) => m.key).sort();
-  const displayModels = candidates.map((m) => ({
-    ...m,
-    label: needsReferences ? `${referenceKeys.indexOf(m.key) + 1}. ${m.label}` : m.label,
-  }));
-  const modelOptions = data ? displayModels : selectedModel ? [selectedModel] : [];
+  const modelLabels = usageModelLabels(data?.modelOptions ?? [], catalog, fallbackLabel);
+  const modelOptions = data ? modelLabels.options : selectedModel ? [selectedModel] : [];
 
   // A new date range can drop the selected bot or model from the lists: go back to all.
   useEffect(() => {
@@ -277,10 +247,8 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
             </TableHeader>
             <TableBody>
               {models.map((row) => {
-                const display = displayModels.find(
-                  (m) => m.key === JSON.stringify([row.provider, row.model]),
-                );
-                const { modelLabel, providerLabel } = labelsFor(row);
+                const display = modelLabels.byKey.get(usageModelKey(row));
+                const { modelLabel, providerLabel } = modelLabels.labelsFor(row);
                 return (
                   <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
                     <TableCell>
