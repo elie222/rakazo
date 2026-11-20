@@ -105,7 +105,9 @@ export function PeerMessagesOverlay({
         showCloseButton={false}
         className="inset-0 top-0 left-0 flex h-full w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none bg-background p-0 text-foreground ring-0 sm:max-w-none"
       >
+        {/* macOS keeps its native window controls on the physical left. */}
         <div
+          dir={desktop?.platform === "darwin" ? "ltr" : undefined}
           className={`app-drag grid items-center gap-4 border-b border-sidebar-border px-[18px] py-3.5 ${
             desktop
               ? "grid-cols-[72px_minmax(0,1fr)_72px]"
