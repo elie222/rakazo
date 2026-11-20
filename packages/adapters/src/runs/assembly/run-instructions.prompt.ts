@@ -282,7 +282,10 @@ function spawnBotClause(disabled?: ReadonlySet<string>): string | undefined {
 }
 
 /** The fleet rules, naming only the tools the run was offered; none without a write tool. */
-function fleetClause(offered: readonly string[] | undefined): string | undefined {
+function fleetClause(
+  offered: readonly string[] | undefined,
+  delegates: boolean,
+): string | undefined {
   const names = new Set(offered);
   if (!FLEET_WRITE_TOOL_NAMES.some((name) => names.has(name))) return undefined;
   const approval = FLEET_WRITE_TOOL_NAMES.filter(
@@ -294,6 +297,9 @@ function fleetClause(offered: readonly string[] | undefined): string | undefined
       ? `${listWords(approval)} ${approval.length > 1 ? "need" : "needs"} the owner's approval; the card shows what will run.`
       : undefined,
     "You can edit, re-model or schedule any bot in your current space.",
+    delegates
+      ? "Subagents cannot use bot management tools; make these changes yourself."
+      : undefined,
     names.has("set_child_instructions")
       ? "Instruction edits use set_child_instructions with expected_version from list_fleet; the owner sees the whole new text on the card."
       : undefined,
@@ -470,7 +476,11 @@ export function userTurnInstructions(parts: {
       "archive_bot",
       "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
     ),
-    fleetClause(parts.offeredFleetTools),
+    fleetClause(
+      parts.offeredFleetTools,
+      Boolean(parts.backgroundHelpersAllowed) &&
+        builtinOffered(parts.disabledBuiltinTools, "run_subagent"),
+    ),
     parts.pluginLine,
     parts.agentSkillsLine,
     parts.agentSkillsLine &&
