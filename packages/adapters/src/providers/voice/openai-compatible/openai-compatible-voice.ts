@@ -619,7 +619,7 @@ function withoutNoisePhrases(body: object, minLogprob: number): string {
         Boolean(segment) && typeof (segment as { text?: unknown }).text === "string",
     )
     .filter((segment) => {
-      const words = segment.text.trim().split(/s+/).filter(Boolean).length;
+      const words = segment.text.trim().split(/\s+/).filter(Boolean).length;
       const logprob = typeof segment.avg_logprob === "number" ? segment.avg_logprob : 0;
       const noise = words <= NOISE_PHRASE_MAX_WORDS && logprob < minLogprob;
       if (noise) dropped += 1;
