@@ -1,6 +1,7 @@
 import type { TouchEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { isComposingKey } from "../shell-shortcuts";
 
 const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 32;
 const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
@@ -25,10 +26,12 @@ export function useMobileSidebar() {
   useEffect(closeMobileSidebar, []);
   useEventListener(desktop, "change", closeMobileSidebar);
   // Bubbling, so a control inside the drawer that handles Escape first (and prevents the default)
-  // keeps it open; the drawer makes the rest of the page inert, so nothing else needs the key.
+  // keeps it open. The key is consumed here (default prevented) so the Escape handlers on window,
+  // like the reply preview's and the transcript's, leave their drafts alone.
   useEventListener(document, "keydown", (event) => {
-    if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
+    if (event.key !== "Escape" || isComposingKey(event) || event.defaultPrevented) return;
     if (!mobileSidebarOpen || isDesktop()) return;
+    event.preventDefault();
     setMobileSidebarOpen(false);
   });
 

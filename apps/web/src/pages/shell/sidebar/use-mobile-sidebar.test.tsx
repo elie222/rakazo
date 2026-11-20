@@ -10,19 +10,32 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { ComposerReplyPreview } from "../chat/chat-context";
 import { useMobileSidebar } from "./use-mobile-sidebar";
 
+vi.mock("@lingui/react/macro", () => ({
+  useLingui: () => ({
+    t: (strings: TemplateStringsArray, ...values: unknown[]) => String.raw(strings, ...values),
+  }),
+}));
+vi.mock("../../../lib/query/rpc", () => ({ rpc: { artifacts: { get: vi.fn() } } }));
+
+const dismissReply = vi.fn();
+let menuOpen = true;
 let latest: ReturnType<typeof useMobileSidebar>;
 
 function Harness() {
   latest = useMobileSidebar();
   return (
-    <DropdownMenu defaultOpen>
-      <DropdownMenuTrigger>More</DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <DropdownMenuItem>Rename</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <ComposerReplyPreview author="Helper" text="Quote" onDismiss={dismissReply} />
+      <DropdownMenu defaultOpen={menuOpen}>
+        <DropdownMenuTrigger>More</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem>Rename</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
   );
 }
 
@@ -56,6 +69,8 @@ function pressEscape(target: EventTarget = document) {
 }
 
 afterEach(() => {
+  dismissReply.mockClear();
+  menuOpen = true;
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -125,6 +140,32 @@ it("closes an open menu on Escape and leaves the drawer open", async () => {
   );
 
   pressEscape(item);
+
+  expect(latest.mobileSidebarOpen).toBe(true);
+});
+
+it("keeps a pending reply when Escape closes the drawer", () => {
+  menuOpen = false;
+  mount(false);
+  act(() => latest.setMobileSidebarOpen(true));
+
+  pressEscape();
+
+  expect(latest.mobileSidebarOpen).toBe(false);
+  expect(dismissReply).not.toHaveBeenCalled();
+  pressEscape();
+  expect(dismissReply).toHaveBeenCalledOnce();
+});
+
+it("does not close the drawer for the legacy composition key code", () => {
+  mount(false);
+  act(() => latest.setMobileSidebarOpen(true));
+
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", keyCode: 229, bubbles: true }),
+    );
+  });
 
   expect(latest.mobileSidebarOpen).toBe(true);
 });

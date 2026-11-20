@@ -66,7 +66,7 @@ export function quoteShortcutLabel(host: ShortcutHost) {
   return quoteShortcutKeys(host).join(host.apple ? "" : "+");
 }
 
-function isComposingKey(event: KeyboardEvent) {
+export function isComposingKey(event: KeyboardEvent) {
   // The legacy IME key code also covers composition-boundary keydowns.
   return event.isComposing || event.keyCode === 229;
 }

@@ -414,8 +414,9 @@ export const Transcript = memo(function Transcript({
   useEventListener(document, "selectionchange", () => {
     if (!selectingWithMouse.current) evaluateSelection();
   });
-  useEventListener(document, "keydown", (event) => {
-    if (event.key === "Escape") setQuoteDraft(null);
+  // On window, so a handler on document (the phone drawer closing) consumes the key first.
+  useEventListener(window, "keydown", (event) => {
+    if (event.key === "Escape" && !event.defaultPrevented) setQuoteDraft(null);
   });
   // A drag that ends outside the window never fires document mouseup; reset
   // the flag on blur so keyboard selections keep working afterwards.
