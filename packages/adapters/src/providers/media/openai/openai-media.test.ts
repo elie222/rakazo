@@ -27,6 +27,10 @@ function setup(...responses: Response[]) {
       imageModel: "image-model",
       baseUrl: "https://images.example.test/v1/",
       fetch,
+      resolveHostname: async (host) =>
+        host === "internal.example.test"
+          ? [{ address: "10.0.0.5", family: 4 }]
+          : [{ address: "93.184.216.34", family: 4 }],
     }),
   };
 }
@@ -79,9 +83,62 @@ describe("images API media generation", () => {
     ],
     ["truncated base64", { data: [{ b64_json: b64(PNG).slice(0, -1) }] }],
     ["no images", { data: [] }],
-    ["a link instead of inline data", { data: [{ url: "https://cdn.example.test/image.png" }] }],
+    ["neither inline data nor a link", { data: [{ revised_prompt: "draw" }] }],
   ])("rejects a response with %s", async (_case, body) => {
     const { provider } = setup(json(body));
+    await expect(provider.generateImage({ prompt: "draw" }, context)).rejects.toMatchObject({
+      code: "provider_failure",
+    });
+  });
+  it("accepts base64 that the server wraps into lines", async () => {
+    const { provider } = setup(
+      json({ data: [{ b64_json: `${b64(PNG).replace(/(.{8})/g, "$1\n")}\r\n` }] }),
+    );
+    expect(await provider.generateImage({ prompt: "draw" }, context)).toEqual({
+      mimeType: "image/png",
+      bytes: new Uint8Array(PNG),
+    });
+  });
+  it("downloads a linked image without sending the API key", async () => {
+    const { provider, fetch } = setup(
+      json({ data: [{ url: "https://cdn.example.test/image.png" }] }),
+      new Response(new Uint8Array(PNG), {
+        headers: { "content-type": "application/octet-stream" },
+      }),
+    );
+    expect(await provider.generateImage({ prompt: "draw" }, context)).toEqual({
+      mimeType: "image/png",
+      bytes: new Uint8Array(PNG),
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [url, init] = fetch.mock.calls[1]!;
+    expect(String(url)).toBe("https://cdn.example.test/image.png");
+    expect(new Headers(init?.headers).get("authorization")).toBeNull();
+  });
+  it.each([
+    ["a private host", "https://internal.example.test/image.png"],
+    ["a loopback address", "http://127.0.0.1/image.png"],
+  ])("refuses a link to %s", async (_case, url) => {
+    const { provider, fetch } = setup(json({ data: [{ url }] }));
+    await expect(provider.generateImage({ prompt: "draw" }, context)).rejects.toMatchObject({
+      code: "provider_failure",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("refuses a link that redirects", async () => {
+    const { provider } = setup(
+      json({ data: [{ url: "https://cdn.example.test/image.png" }] }),
+      new Response(null, { status: 302, headers: { location: "http://127.0.0.1/private" } }),
+    );
+    await expect(provider.generateImage({ prompt: "draw" }, context)).rejects.toMatchObject({
+      code: "provider_failure",
+    });
+  });
+  it("rejects a linked file that is not an image", async () => {
+    const { provider } = setup(
+      json({ data: [{ url: "https://cdn.example.test/image.png" }] }),
+      new Response("<html>nope</html>", { headers: { "content-type": "image/png" } }),
+    );
     await expect(provider.generateImage({ prompt: "draw" }, context)).rejects.toMatchObject({
       code: "provider_failure",
     });

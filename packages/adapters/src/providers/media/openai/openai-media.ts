@@ -6,7 +6,7 @@ import type {
   MediaVideoJob,
 } from "@rakazo/adapter-kit";
 import { MediaGenerationError } from "@rakazo/adapter-kit";
-import { ATTACHMENT_MAX_BASE64_LENGTH } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { z } from "zod";
 import { detectImageMimeType } from "../../../media/image-mime-type.js";
@@ -15,7 +15,8 @@ import {
   mediaPromptSchema,
   validateGeneratedMedia,
 } from "../../../media/media-generation-provider.js";
-import { readBodyCapped } from "../../../web/web-ssrf.js";
+import type { ResolveHostname } from "../../../web/web-ssrf.js";
+import { fetchSafeWebBytes, readBodyCapped } from "../../../web/web-ssrf.js";
 
 const API = "https://api.openai.com/v1";
 const IMAGE_DEADLINE_MS = 180_000;
@@ -23,13 +24,18 @@ const IMAGE_DEADLINE_MS = 180_000;
 const MAX_RESPONSE_BYTES = ATTACHMENT_MAX_BASE64_LENGTH + 64 * 1024;
 const MODEL_ID_PATTERN = /^[\w.:/@+-]{1,200}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 60_000;
 const imagesResponse = z.object({
-  data: z.array(z.object({ b64_json: z.string().min(1) })).min(1),
+  data: z
+    .array(
+      z.union([z.object({ b64_json: z.string().min(1) }), z.object({ url: z.string().min(1) })]),
+    )
+    .min(1),
 });
 
 /**
  * The Images API (`POST /images/generations`). Servers that speak the same API work through the
- * base URL. It returns the image inline, so there is no output URL to fetch; it has no video.
+ * base URL. It returns the image inline or as a link, which is downloaded like any untrusted output URL; it has no video.
  */
 export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
   readonly id = "openai";
@@ -41,6 +47,7 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
       imageModel: string;
       baseUrl?: string;
       fetch?: typeof fetch;
+      resolveHostname?: ResolveHostname;
     },
   ) {
     const url = new URL(options.baseUrl ?? API);
@@ -97,13 +104,9 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
     }
     const result = imagesResponse.safeParse(body);
     if (!result.success) throw new MediaGenerationError("provider_failure");
-    const encoded = result.data.data[0]!.b64_json;
-    if (encoded.length > ATTACHMENT_MAX_BASE64_LENGTH)
-      throw new MediaGenerationError("output_limit");
-    // Buffer.from skips characters that are not base64, so damaged data would decode short.
-    if (encoded.length % 4 || !BASE64_PATTERN.test(encoded))
-      throw new MediaGenerationError("provider_failure");
-    const bytes = new Uint8Array(Buffer.from(encoded, "base64"));
+    const item = result.data.data[0]!;
+    const bytes =
+      "b64_json" in item ? decodeImage(item.b64_json) : await this.download(item.url, context);
     // The format is read from the bytes: servers differ in what they return and how they label it.
     const mimeType = detectImageMimeType(bytes);
     if (!mimeType || !GENERATED_IMAGE_MIME_TYPES.has(mimeType))
@@ -112,10 +115,40 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
     validateGeneratedMedia(output, "image");
     return output;
   }
+  private async download(url: string, context: AdapterContext): Promise<Uint8Array> {
+    try {
+      // Output URLs are untrusted. Pin public DNS, reject private addresses and redirects;
+      // no API credential is ever sent to the output host.
+      const result = await fetchSafeWebBytes(url, {
+        fetch: this.options.fetch,
+        resolveHostname: this.options.resolveHostname,
+        signal: context.signal,
+        maxBytes: ATTACHMENT_MAX_BYTES,
+        maxRedirects: 0,
+        timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,
+      });
+      return result.body;
+    } catch (error) {
+      context.signal.throwIfAborted();
+      throw new MediaGenerationError(
+        error instanceof ResponseTooLargeError ? "output_limit" : "provider_failure",
+      );
+    }
+  }
   async generateVideo(): Promise<MediaVideoJob> {
     throw new MediaGenerationError("unsupported");
   }
   async pollVideo(): Promise<MediaVideoJob> {
     throw new MediaGenerationError("unsupported");
   }
+}
+
+function decodeImage(raw: string): Uint8Array {
+  // Some servers wrap base64 lines.
+  const encoded = raw.replace(/\s/g, "");
+  if (encoded.length > ATTACHMENT_MAX_BASE64_LENGTH) throw new MediaGenerationError("output_limit");
+  // Buffer.from skips characters that are not base64, so damaged data would decode short.
+  if (!encoded || encoded.length % 4 || !BASE64_PATTERN.test(encoded))
+    throw new MediaGenerationError("provider_failure");
+  return new Uint8Array(Buffer.from(encoded, "base64"));
 }
