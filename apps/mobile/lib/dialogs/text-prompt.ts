@@ -11,7 +11,7 @@ export function promptText(
     title: string;
     message?: string;
     value: string;
-    onSave: (value: string) => void;
+    onSave: (value?: string) => void;
   },
 ) {
   alert.prompt(
@@ -22,7 +22,7 @@ export function promptText(
       {
         text: t`Save`,
         isPreferred: true,
-        onPress: (value?: string) => input.onSave(value ?? input.value),
+        onPress: input.onSave,
       },
     ],
     "plain-text",

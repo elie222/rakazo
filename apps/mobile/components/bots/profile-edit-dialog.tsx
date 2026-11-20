@@ -38,7 +38,7 @@ export function useTextEditDialog(
       title: label,
       message,
       value,
-      onSave: (next) => commit(next, onCommit),
+      onSave: (next) => commit(next ?? value, onCommit),
     });
   }
   function ask(value: string, onCommit: (next: string) => void) {

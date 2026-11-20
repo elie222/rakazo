@@ -27,7 +27,7 @@ export function createAccountNameEditor<T>(deps: Dependencies<T>) {
       title: t`Edit name`,
       message,
       value,
-      onSave: saveName,
+      onSave: (draft) => saveName(draft ?? ""),
     });
   }
 
