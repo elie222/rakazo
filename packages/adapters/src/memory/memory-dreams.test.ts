@@ -11,6 +11,7 @@ import {
   recordMemoryDream,
   settleMemoryDream,
   startManualMemoryDream,
+  undoMemoryDream,
 } from "./memory-dreams.js";
 
 const NOW = new Date("2026-02-02T23:30:00.000Z");
@@ -61,7 +62,16 @@ function dreamPrisma(
       create: vi.fn(async () => ({ id: "dream-1" })),
       update: vi.fn(async () => ({})),
     },
-    memoryDocument: { findFirst: vi.fn(async () => ownDocument) },
+    memoryDocument: {
+      findFirst: vi.fn(async () => ownDocument),
+      findUnique: vi.fn(async () => null) as ReturnType<typeof vi.fn>,
+      update: vi.fn(async () => ({ revision: 1 })) as ReturnType<typeof vi.fn>,
+      delete: vi.fn(async () => ({})),
+    },
+    memoryRevision: {
+      findFirst: vi.fn(async () => null) as ReturnType<typeof vi.fn>,
+      create: vi.fn(async () => ({})),
+    },
     bot: { update: vi.fn(async () => ({})) },
     thread: { create: vi.fn(async () => ({ id: "dream-thread" })) },
     task: { create: vi.fn(async () => ({ id: "dream-task" })) },
@@ -427,6 +437,7 @@ describe("listMemoryDreams", () => {
         summary: "Moved.",
         changedPaths: ["MEMORY.md"],
         errorKind: null,
+        undoneAt: null,
         startedAt: new Date("2026-02-02T23:30:00.000Z"),
         finishedAt: new Date("2026-02-02T23:31:00.000Z"),
         createdAt: new Date("2026-02-02T23:30:00.000Z"),
@@ -441,6 +452,7 @@ describe("listMemoryDreams", () => {
           summary: "Moved.",
           changedPaths: ["MEMORY.md"],
           errorKind: null,
+          undoneAt: null,
           startedAt: "2026-02-02T23:30:00.000Z",
           finishedAt: "2026-02-02T23:31:00.000Z",
           createdAt: "2026-02-02T23:30:00.000Z",
@@ -507,5 +519,99 @@ describe("startManualMemoryDream", () => {
     expect(jobs.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ payload: { runId: "dream-run" } }),
     );
+  });
+});
+
+describe("undoMemoryDream", () => {
+  const dreamRow = {
+    id: "dream-1",
+    status: "completed",
+    reason: "idle",
+    summary: null,
+    changedPaths: ["MEMORY.md"],
+    added: [],
+    archived: [],
+    errorKind: null,
+    createdAt: NOW,
+    botId: "bot-1",
+    runId: "run-1",
+    undoneAt: null,
+    startedAt: null,
+    finishedAt: null,
+  };
+
+  function undoDream() {
+    const fixture = dreamPrisma();
+    fixture.raw.memoryDream.findFirst
+      .mockResolvedValueOnce(dreamRow)
+      .mockResolvedValueOnce({ id: "dream-1" });
+    fixture.raw.memoryRevision.findMany.mockResolvedValueOnce([
+      { documentId: "doc-1", revision: 2 },
+    ]);
+    return fixture;
+  }
+
+  it("restores the content the dream replaced", async () => {
+    const { prisma, tx } = undoDream();
+    tx.memoryDocument.findUnique.mockResolvedValueOnce({
+      id: "doc-1",
+      revision: 2,
+      spaceId: "space-1",
+    });
+    tx.memoryRevision.findFirst.mockResolvedValueOnce({ content: "before" });
+    tx.memoryDocument.update.mockResolvedValueOnce({ revision: 3 });
+    tx.memoryDream.update.mockResolvedValueOnce({ ...dreamRow, undoneAt: NOW });
+
+    await expect(
+      undoMemoryDream(prisma, { spaceId: "space-1", dreamId: "dream-1" }),
+    ).resolves.toMatchObject({ id: "dream-1", undoneAt: NOW.toISOString() });
+    expect(tx.memoryDocument.update).toHaveBeenCalledWith({
+      where: { id: "doc-1" },
+      data: { content: "before", revision: 3 },
+    });
+    expect(tx.memoryRevision.create).toHaveBeenCalledWith({
+      data: { documentId: "doc-1", revision: 3, content: "before", sourceKind: "undo" },
+    });
+  });
+
+  it("removes a document the dream created", async () => {
+    const { prisma, tx } = undoDream();
+    tx.memoryDocument.findUnique.mockResolvedValueOnce({
+      id: "doc-1",
+      revision: 2,
+      spaceId: "space-1",
+    });
+    tx.memoryRevision.findFirst.mockResolvedValueOnce(null);
+    tx.memoryDream.update.mockResolvedValueOnce({ ...dreamRow, undoneAt: NOW });
+
+    await undoMemoryDream(prisma, { spaceId: "space-1", dreamId: "dream-1" });
+    expect(tx.memoryDocument.delete).toHaveBeenCalledWith({ where: { id: "doc-1" } });
+    expect(tx.memoryRevision.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses once the memory changed since the dream", async () => {
+    const { prisma, tx } = undoDream();
+    tx.memoryDocument.findUnique.mockResolvedValueOnce({
+      id: "doc-1",
+      revision: 3,
+      spaceId: "space-1",
+    });
+
+    await expect(
+      undoMemoryDream(prisma, { spaceId: "space-1", dreamId: "dream-1" }),
+    ).rejects.toMatchObject({ kind: "CONFLICT" } satisfies Partial<ClientError>);
+    expect(tx.memoryDream.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a dream that is not the latest one", async () => {
+    const { prisma, raw } = undoDream();
+    raw.memoryDream.findFirst
+      .mockReset()
+      .mockResolvedValueOnce(dreamRow)
+      .mockResolvedValueOnce({ id: "newer-dream" });
+
+    await expect(
+      undoMemoryDream(prisma, { spaceId: "space-1", dreamId: "dream-1" }),
+    ).rejects.toMatchObject({ kind: "CONFLICT" } satisfies Partial<ClientError>);
   });
 });

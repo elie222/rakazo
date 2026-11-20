@@ -83,6 +83,7 @@ function dreamStatusLabel(
   t: (parts: TemplateStringsArray, ...values: unknown[]) => string,
   dream: MemoryDream,
 ): string {
+  if (dream.undoneAt) return t`Undone`;
   if (dream.status === "completed") return t`Done`;
   if (dream.status === "queued") return t`Working`;
   return dream.errorKind === "spending" ? t`Stopped at the spending limit` : t`Interrupted`;
@@ -109,6 +110,12 @@ export function DreamsList({ botId, memoryOff }: { botId: string; memoryOff: boo
     save: (_: undefined, rpc) => rpc.memory.dreamNow({ botId }),
     stale: [queries.memory.dreams.queryKey({ input: { botId } })],
   });
+  const undo = useSave({
+    save: ({ dreamId }: { dreamId: string }, rpc) => rpc.memory.undoDream({ dreamId }),
+    stale: [queries.memory.dreams.queryKey({ input: { botId } })],
+  });
+  // Only the newest finished dream can go back, and the server says so too.
+  const undoableId = dreams.find((dream) => dream.status === "completed" && !dream.undoneAt)?.id;
   if (memoryOff) {
     return (
       <p data-testid="bot-dreams-paused" className="text-body-sm text-muted-foreground">
@@ -136,6 +143,7 @@ export function DreamsList({ botId, memoryOff }: { botId: string; memoryOff: boo
       {dreamNow.error ? (
         <p className="text-body-sm text-destructive">{errorText(dreamNow.error)}</p>
       ) : null}
+      {undo.error ? <p className="text-body-sm text-destructive">{errorText(undo.error)}</p> : null}
       {dreams.length === 0 ? (
         <p data-testid="bot-dreams-empty" className="text-body">
           <Trans>No dreams yet.</Trans>
@@ -146,11 +154,22 @@ export function DreamsList({ botId, memoryOff }: { botId: string; memoryOff: boo
             <li key={dream.id} className="rounded-xl bg-muted/50 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3 text-body">
                 <span>{new Date(dream.createdAt).toLocaleString()}</span>
-                <span className="flex items-baseline gap-2 text-body-sm text-muted-foreground">
-                  {dreamReasonLabel(t, dream) ? (
-                    <span>{dreamReasonLabel(t, dream)}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="flex items-baseline gap-2 text-body-sm text-muted-foreground">
+                    {dreamReasonLabel(t, dream) ? <span>{dreamReasonLabel(t, dream)}</span> : null}
+                    <span>{dreamStatusLabel(t, dream)}</span>
+                  </span>
+                  {dream.id === undoableId ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      disabled={undo.pending}
+                      onClick={() => undo.run({ dreamId: dream.id })}
+                    >
+                      <Trans>Undo</Trans>
+                    </Button>
                   ) : null}
-                  <span>{dreamStatusLabel(t, dream)}</span>
                 </span>
               </div>
               {dream.summary ? (

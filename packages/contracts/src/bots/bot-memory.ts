@@ -28,6 +28,25 @@ export const MemoryDocumentSchema = z.object({
 });
 export type MemoryDocument = z.infer<typeof MemoryDocumentSchema>;
 
+/** Who wrote a revision; a row written before kinds existed reads as "user". */
+export const MemorySourceKindSchema = z.enum(["user", "bot", "dream", "import", "undo"]);
+export type MemorySourceKind = z.infer<typeof MemorySourceKindSchema>;
+
+/** One entry in a document's history, without the content it held. */
+export const MemoryRevisionSummarySchema = z.object({
+  id: Id,
+  revision: z.number().int().positive(),
+  sourceKind: MemorySourceKindSchema.default("user"),
+  createdAt: z.string(),
+});
+export type MemoryRevisionSummary = z.infer<typeof MemoryRevisionSummarySchema>;
+
+export const MemoryRevisionSchema = MemoryRevisionSummarySchema.extend({
+  path: z.string(),
+  content: z.string(),
+});
+export type MemoryRevision = z.infer<typeof MemoryRevisionSchema>;
+
 /** One nightly consolidation, as the Memory page lists it. */
 export const MemoryDreamStatusSchema = z.enum(["queued", "completed", "failed"]);
 /**
@@ -47,6 +66,8 @@ export const MemoryDreamSchema = z.object({
   /** Lines the run removed from the notes. */
   archived: z.array(z.string()).default([]),
   errorKind: z.string().nullable(),
+  /** When a person undid this dream; null while it stands. */
+  undoneAt: z.string().nullable().default(null),
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
   createdAt: z.string(),

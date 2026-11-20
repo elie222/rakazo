@@ -138,6 +138,8 @@ function storeWith(read: MemoryStore["read"]): MemoryStore {
     read,
     search: vi.fn<MemoryStore["search"]>(),
     commit: vi.fn<MemoryStore["commit"]>(),
+    listRevisions: vi.fn<MemoryStore["listRevisions"]>(),
+    readRevision: vi.fn<MemoryStore["readRevision"]>(),
     remove: vi.fn<MemoryStore["remove"]>(),
     exportMarkdown: vi.fn<MemoryStore["exportMarkdown"]>(),
     importMarkdown: vi.fn<MemoryStore["importMarkdown"]>(),

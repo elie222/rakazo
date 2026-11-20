@@ -112,6 +112,7 @@ export {
   recordMemoryDream,
   settleMemoryDream,
   startManualMemoryDream,
+  undoMemoryDream,
 } from "./memory/memory-dreams.js";
 export * from "./memory/memory-provider-factory.js";
 export { memoryDocumentError } from "./memory/memory-tools.js";

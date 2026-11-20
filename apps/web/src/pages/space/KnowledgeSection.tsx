@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
-import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
+import type {
+  AgentSkill,
+  AgentSkillCatalogEntry,
+  MemoryDocument,
+  MemorySourceKind,
+} from "@rakazo/contracts";
 import {
   isDeletableMemoryDocument,
   isEmptyBotMemory,
@@ -12,7 +17,7 @@ import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Badge, Button, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Plus } from "lucide-react";
+import { Download, History, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   AvailabilityControl,
@@ -20,6 +25,7 @@ import {
   reachesOtherSpaces,
   useOwnSpaces,
 } from "../../components/integrations/space-availability";
+import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { useSpaceRpc } from "../../lib/query/space-rpc";
@@ -70,7 +76,23 @@ export function SpaceMemorySection() {
   );
 }
 
-type MemoryChange = { kind: "save" | "remove" | "download"; doc: MemoryDocument };
+type MemoryChange =
+  | { kind: "save"; doc: MemoryDocument }
+  | { kind: "restore"; doc: MemoryDocument; revisionId: string }
+  | { kind: "remove"; doc: MemoryDocument }
+  | { kind: "download"; doc: MemoryDocument };
+
+/** Who wrote a revision, in the words the history panel shows. */
+function revisionSourceLabel(
+  t: (parts: TemplateStringsArray, ...values: unknown[]) => string,
+  kind: MemorySourceKind,
+): string {
+  if (kind === "bot") return t`This bot`;
+  if (kind === "dream") return t`Dreaming`;
+  if (kind === "import") return t`Imported`;
+  if (kind === "undo") return t`Restored`;
+  return t`You`;
+}
 
 function isConflict(error: unknown): boolean {
   return error instanceof ORPCError && error.code === "CONFLICT";
@@ -121,13 +143,21 @@ export function MemoryDocumentList({
       : docs.length > 0;
   if (memoryVisible && !memoryShown) setMemoryShown(true);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | undefined>();
   const [conflicted, setConflicted] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const historyOptions = historyId
+    ? queries.memory.revisions.queryOptions({ input: { documentId: historyId } })
+    : null;
+  const historyQuery = useQuery(
+    historyOptions ?? { queryKey: ["memory-history", "none"], queryFn: skipToken },
+  );
   const change = useSave({
-    save: async ({ kind, doc }: MemoryChange, rpc) => {
-      if (kind === "download") {
+    save: async (context: MemoryChange, rpc) => {
+      if (context.kind === "download") {
+        const { doc } = context;
         const latest = (await fetchFresh(queryClient, list)).find((entry) => entry.id === doc.id);
         if (!latest) throw new Error("Document unavailable");
         downloadArtifactBytes(
@@ -137,11 +167,27 @@ export function MemoryDocumentList({
         );
         return;
       }
-      if (kind === "remove") {
+      if (context.kind === "remove") {
+        const { doc } = context;
         await rpc.memory.remove({ documentId: doc.id });
         await setDocs((current) => current.filter((entry) => entry.id !== doc.id));
         return;
       }
+      if (context.kind === "restore") {
+        const { doc, revisionId } = context;
+        const restored = await rpc.memory.restore({
+          documentId: doc.id,
+          revisionId,
+          expectedRevision: doc.revision,
+        });
+        await setDocs((current) =>
+          current.map((entry) => (entry.id === restored.id ? restored : entry)),
+        );
+        setDraft(restored.content);
+        setLoadedRevision(restored.revision);
+        return;
+      }
+      const { doc } = context;
       const updated = await rpc.memory.update({
         documentId: doc.id,
         content: draft,
@@ -154,9 +200,15 @@ export function MemoryDocumentList({
     stale: ({ kind }) =>
       kind === "download"
         ? []
-        : [list.queryKey, ...(budgetOptions ? [budgetOptions.queryKey] : [])],
+        : [
+            list.queryKey,
+            ...(budgetOptions ? [budgetOptions.queryKey] : []),
+            ...(historyId
+              ? [queries.memory.revisions.queryKey({ input: { documentId: historyId } })]
+              : []),
+          ],
     onSaved: (_saved, { kind }) => {
-      if (kind !== "download") closeDoc();
+      if (kind === "save") closeDoc();
     },
     onFailed: async (failure, { kind }) => {
       if (kind !== "save" || !isConflict(failure)) return;
@@ -187,6 +239,7 @@ export function MemoryDocumentList({
   function openDoc(doc: MemoryDocument) {
     setLoadedRevision(doc.revision);
     setConflicted(false);
+    setHistoryId(null);
     setOpenId(doc.id);
     setDraft(doc.content);
     change.reset();
@@ -195,6 +248,7 @@ export function MemoryDocumentList({
 
   function closeDoc() {
     setOpenId(null);
+    setHistoryId(null);
     setConflicted(false);
     setConfirmingDelete(false);
   }
@@ -267,6 +321,19 @@ export function MemoryDocumentList({
                       <Trans>Download</Trans>
                     </TooltipContent>
                   </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={<Button variant="ghost" size="icon-sm" />}
+                      aria-label={t`History`}
+                      disabled={busy}
+                      onClick={() => setHistoryId(historyId === doc.id ? null : doc.id)}
+                    >
+                      <History className="size-4" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <Trans>History</Trans>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 {openId === doc.id ? (
                   <div className="pb-2">
@@ -311,6 +378,42 @@ export function MemoryDocumentList({
                         </Button>
                       ) : null}
                     </div>
+                  </div>
+                ) : null}
+                {historyId === doc.id ? (
+                  <div className="pb-2" data-testid="memory-history">
+                    {historyQuery.isPending ? <Skeleton className="h-8 w-full" /> : null}
+                    {historyQuery.data?.length ? (
+                      <ul className="space-y-1">
+                        {historyQuery.data.map((entry) => (
+                          <li key={entry.id} className="flex items-center justify-between gap-2">
+                            <span className="flex min-w-0 items-baseline gap-2 text-body-sm text-muted-foreground">
+                              <span className="shrink-0">
+                                {revisionSourceLabel(t, entry.sourceKind)}
+                              </span>
+                              <time dateTime={entry.createdAt} className="truncate">
+                                {formatRelativeTime(entry.createdAt)}
+                              </time>
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                change.run({ kind: "restore", doc, revisionId: entry.id })
+                              }
+                            >
+                              <Trans>Restore</Trans>
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : !historyQuery.isPending ? (
+                      <p className="text-body-sm text-muted-foreground">
+                        <Trans>No history yet.</Trans>
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

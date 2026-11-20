@@ -438,6 +438,9 @@ export class MemoryRevisionConflictError extends Error {
   }
 }
 
+/** Who wrote a memory revision; a row written before kinds existed reads as "user". */
+export type MemorySourceKind = "user" | "bot" | "dream" | "import" | "undo";
+
 export interface MemoryCommitRequest {
   scope: "bot" | "user";
   botId?: string;
@@ -445,6 +448,8 @@ export interface MemoryCommitRequest {
   content: string;
   /** When set, commit fails if the live document revision is no longer this value. */
   expectedRevision?: number;
+  /** Who is writing; omitted means a person. */
+  sourceKind?: MemorySourceKind;
   sourceRunId?: string;
   sourceThreadId?: string;
 }
@@ -462,6 +467,27 @@ export interface MemoryRevision {
   path: string;
   revision: number;
   content: string;
+  sourceKind: MemorySourceKind;
+  createdAt: string;
+}
+
+/** One entry in a document's history, without the content it held. */
+export interface MemoryRevisionSummary {
+  id: string;
+  revision: number;
+  sourceKind: MemorySourceKind;
+  createdAt: string;
+}
+
+export interface MemoryRevisionListRequest {
+  documentId: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface MemoryRevisionReadRequest {
+  documentId: string;
+  revisionId: string;
 }
 
 export interface MemoryExportRequest {
@@ -675,6 +701,10 @@ export interface AgentRunRequest {
   /** Awaited producer-side accounting, independent of event-consumer cancellation. */
   onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
   contextStrategy?: AgentContextStrategy;
+  /** Tool calls one turn may make; unset follows the process default. */
+  maxToolCallsPerTurn?: number;
+  /** The runtime's estimate of the input context chosen for the latest model call. */
+  onContextObserved?: (estimatedInputTokens: number) => void;
   /**
    * MCP servers that must return tool results whole. Direct tools match `slugs`
    * (`mcp__<slug>__<tool>`); catalog calls match `ids` (`<server id>:<tool>`).

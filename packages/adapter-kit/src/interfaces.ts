@@ -52,6 +52,9 @@ import type {
   MemoryReadRequest,
   MemoryRemoveRequest,
   MemoryRevision,
+  MemoryRevisionListRequest,
+  MemoryRevisionReadRequest,
+  MemoryRevisionSummary,
   MemorySearchRequest,
   MemorySearchResult,
   MemorySnapshot,
@@ -364,6 +367,16 @@ export interface MemoryStore {
   read(request: MemoryReadRequest, context: AdapterContext): Promise<MemorySnapshot>;
   search(request: MemorySearchRequest, context: AdapterContext): Promise<MemorySearchResult[]>;
   commit(request: MemoryCommitRequest, context: AdapterContext): Promise<MemoryRevision>;
+  /** A document's history, newest first. */
+  listRevisions(
+    request: MemoryRevisionListRequest,
+    context: AdapterContext,
+  ): Promise<MemoryRevisionSummary[]>;
+  /** One revision of one document, with the content it held; null when it is not in this Space. */
+  readRevision(
+    request: MemoryRevisionReadRequest,
+    context: AdapterContext,
+  ): Promise<MemoryRevision | null>;
   /** Delete one document and its history; `removed` is false when nothing matched. */
   remove(request: MemoryRemoveRequest, context: AdapterContext): Promise<{ removed: boolean }>;
   exportMarkdown(

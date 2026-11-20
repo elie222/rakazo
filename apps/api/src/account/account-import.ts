@@ -774,6 +774,7 @@ class AccountImporter implements ArchiveSink {
             documentId,
             revision: record.revision,
             content: record.content,
+            sourceKind: "import",
             sourceThreadId: space.optional(record.sourceThreadId),
             createdAt: new Date(record.createdAt),
           },

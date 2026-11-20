@@ -126,8 +126,8 @@ usage 行改为 "X of 1200 tokens"。
   - `memory.revisions({ documentId, limit?, cursor? })` → `{ id, revision, sourceKind, createdAt }[]`；
   - `memory.revision({ id })` → `{ revision, content, sourceKind, createdAt }`。
 - UI（web）：每条记忆行加 **History**，侧栏按时间倒序列出 revision 与作者标签（You / This bot /
-  Dreaming / Imported / Restored），可 **Restore**（走 `memory.update`，`expectedRevision` 为当前
-  值）；不显示原始 id。
+  Dreaming / Imported / Restored），可 **Restore**（`memory.restore({ documentId, revisionId,
+  expectedRevision })`，以 `undo` 写入新 revision；客户端不选择来源）；不显示原始 id。
 - 移动端：只读历史留到下一期，列表保持现状并在文档注明。
 
 ### G6 记忆搜索

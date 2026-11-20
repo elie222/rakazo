@@ -14,7 +14,7 @@ import {
   zonedDateTime,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { storedMessageBlocks } from "@rakazo/db";
+import { Prisma, storedMessageBlocks, withTransactionRetry } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { memoryDreamPrompt } from "./memory-dream.prompt.js";
@@ -573,6 +573,7 @@ export async function listMemoryDreams(
       added: true,
       archived: true,
       errorKind: true,
+      undoneAt: true,
       startedAt: true,
       finishedAt: true,
       createdAt: true,
@@ -590,6 +591,7 @@ function toMemoryDream(row: {
   added: string[];
   archived: string[];
   errorKind: string | null;
+  undoneAt: Date | null;
   startedAt: Date | null;
   finishedAt: Date | null;
   createdAt: Date;
@@ -604,6 +606,7 @@ function toMemoryDream(row: {
     added: row.added,
     archived: row.archived,
     errorKind: row.errorKind,
+    undoneAt: row.undoneAt?.toISOString() ?? null,
     startedAt: row.startedAt?.toISOString() ?? null,
     finishedAt: row.finishedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
@@ -682,10 +685,116 @@ export async function startManualMemoryDream(
       added: true,
       archived: true,
       errorKind: true,
+      undoneAt: true,
       startedAt: true,
       finishedAt: true,
       createdAt: true,
     },
   });
   return toMemoryDream(dream);
+}
+
+/**
+ * Undoes the bot's latest finished dream: every document it wrote goes back to the content it
+ * held before, as a new "undo" revision, so the history still says what happened. Anything
+ * written since makes the undo impossible instead of losing it.
+ */
+export async function undoMemoryDream(
+  prisma: PrismaClient,
+  input: { spaceId: string; dreamId: string },
+): Promise<MemoryDream> {
+  const dream = await prisma.memoryDream.findFirst({
+    where: { id: input.dreamId, spaceId: input.spaceId },
+    select: {
+      id: true,
+      status: true,
+      reason: true,
+      summary: true,
+      changedPaths: true,
+      added: true,
+      archived: true,
+      errorKind: true,
+      createdAt: true,
+      botId: true,
+      runId: true,
+      undoneAt: true,
+    },
+  });
+  if (!dream) throw new ClientError("NOT_FOUND", "Dream not found.");
+  if (dream.status !== "completed" || dream.undoneAt)
+    throw new ClientError("CONFLICT", "Only a finished dream can be undone.");
+  const latest = await prisma.memoryDream.findFirst({
+    where: { botId: dream.botId, status: "completed", undoneAt: null },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true },
+  });
+  if (latest?.id !== dream.id)
+    throw new ClientError("CONFLICT", "Only the latest dream can be undone.");
+  if (!dream.runId) throw new ClientError("CONFLICT", "This dream wrote no memory.");
+  const revisions = await prisma.memoryRevision.findMany({
+    where: { sourceRunId: dream.runId },
+    select: { documentId: true, revision: true },
+  });
+  if (!revisions.length)
+    throw new ClientError("CONFLICT", "This dream changed nothing, so there is nothing to undo.");
+  return withTransactionRetry(() =>
+    prisma.$transaction(
+      async (tx) => {
+        for (const revision of revisions) {
+          const document = await tx.memoryDocument.findUnique({
+            where: { id: revision.documentId },
+            select: { id: true, revision: true, spaceId: true },
+          });
+          // A document written since the dream cannot go back without losing that write.
+          if (
+            !document ||
+            document.spaceId !== input.spaceId ||
+            document.revision !== revision.revision
+          )
+            throw new ClientError("CONFLICT", "Memory changed since; nothing undone.");
+          const previous = await tx.memoryRevision.findFirst({
+            where: { documentId: document.id, revision: { lt: revision.revision } },
+            orderBy: { revision: "desc" },
+            select: { content: true },
+          });
+          if (!previous) {
+            // The dream created the document, so undoing it removes the document again.
+            await tx.memoryDocument.delete({ where: { id: document.id } });
+            continue;
+          }
+          const restored = await tx.memoryDocument.update({
+            where: { id: document.id },
+            data: { content: previous.content, revision: document.revision + 1 },
+          });
+          await tx.memoryRevision.create({
+            data: {
+              documentId: document.id,
+              revision: restored.revision,
+              content: previous.content,
+              sourceKind: "undo",
+            },
+          });
+        }
+        return tx.memoryDream.update({
+          where: { id: dream.id },
+          data: { undoneAt: new Date() },
+          select: {
+            id: true,
+            status: true,
+            reason: true,
+            summary: true,
+            changedPaths: true,
+            added: true,
+            archived: true,
+            errorKind: true,
+            undoneAt: true,
+            startedAt: true,
+            finishedAt: true,
+            createdAt: true,
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
+  ).then(toMemoryDream);
 }

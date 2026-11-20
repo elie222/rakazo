@@ -5,9 +5,13 @@ import type {
   MemoryReadRequest,
   MemoryRemoveRequest,
   MemoryRevision,
+  MemoryRevisionListRequest,
+  MemoryRevisionReadRequest,
+  MemoryRevisionSummary,
   MemorySearchRequest,
   MemorySearchResult,
   MemorySnapshot,
+  MemorySourceKind,
   MemoryStore,
   PortableFile,
 } from "@rakazo/adapter-kit";
@@ -76,6 +80,7 @@ export class MarkdownMemoryStore implements MemoryStore {
     return withTransactionRetry(() =>
       this.prisma.$transaction(
         async (tx) => {
+          const sourceKind = request.sourceKind ?? "user";
           const existing = await tx.memoryDocument.findFirst({
             where: {
               spaceId: context.spaceId,
@@ -103,20 +108,81 @@ export class MarkdownMemoryStore implements MemoryStore {
                   content: request.content,
                 },
               });
-          await tx.memoryRevision.create({
+          const revision = await tx.memoryRevision.create({
             data: {
               documentId: doc.id,
               revision: doc.revision,
               content: request.content,
+              sourceKind,
               sourceRunId: request.sourceRunId,
               sourceThreadId: request.sourceThreadId,
             },
           });
-          return { id: doc.id, path: doc.path, revision: doc.revision, content: doc.content };
+          return {
+            id: doc.id,
+            path: doc.path,
+            revision: doc.revision,
+            content: doc.content,
+            sourceKind,
+            createdAt: revision.createdAt.toISOString(),
+          };
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       ),
     );
+  }
+
+  async listRevisions(
+    request: MemoryRevisionListRequest,
+    context: AdapterContext,
+  ): Promise<MemoryRevisionSummary[]> {
+    const take = Math.min(Math.max(request.limit ?? 20, 1), 100);
+    const rows = await this.prisma.memoryRevision.findMany({
+      where: {
+        documentId: request.documentId,
+        document: { spaceId: context.spaceId },
+      },
+      orderBy: [{ revision: "desc" }, { id: "desc" }],
+      take,
+      ...(request.cursor ? { cursor: { id: request.cursor }, skip: 1 } : {}),
+      select: { id: true, revision: true, sourceKind: true, createdAt: true },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      revision: row.revision,
+      sourceKind: sourceKind(row.sourceKind),
+      createdAt: row.createdAt.toISOString(),
+    }));
+  }
+
+  async readRevision(
+    request: MemoryRevisionReadRequest,
+    context: AdapterContext,
+  ): Promise<MemoryRevision | null> {
+    const row = await this.prisma.memoryRevision.findFirst({
+      where: {
+        id: request.revisionId,
+        documentId: request.documentId,
+        document: { spaceId: context.spaceId },
+      },
+      select: {
+        id: true,
+        revision: true,
+        content: true,
+        sourceKind: true,
+        createdAt: true,
+        document: { select: { path: true } },
+      },
+    });
+    if (!row) return null;
+    return {
+      id: row.id,
+      path: row.document.path,
+      revision: row.revision,
+      content: row.content,
+      sourceKind: sourceKind(row.sourceKind),
+      createdAt: row.createdAt.toISOString(),
+    };
   }
 
   async remove(
@@ -160,6 +226,7 @@ export class MarkdownMemoryStore implements MemoryStore {
           scope: "user",
           path: file.path,
           content: new TextDecoder().decode(file.content),
+          sourceKind: "import",
         },
         context,
       );
@@ -173,4 +240,11 @@ function snippet(content: string, q: string): string {
   const idx = content.toLowerCase().indexOf(q);
   if (idx < 0) return content.slice(0, 140);
   return content.slice(Math.max(0, idx - 40), idx + q.length + 80);
+}
+
+/** A row written before kinds existed came from a person. */
+function sourceKind(value: string | null): MemorySourceKind {
+  return value === "bot" || value === "dream" || value === "import" || value === "undo"
+    ? value
+    : "user";
 }

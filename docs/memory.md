@@ -30,6 +30,10 @@ ran (**Tidy**, **Review** or **Manual**), the lines it added (`+`) and removed (
 stopped if it could not finish. Dreams run only while at least one bank is on. **Dream now** runs
 one consolidation immediately instead of waiting for a quiet chat.
 
+Each note keeps its history: open a note's **History** to see who wrote each revision — you, the
+bot, a dream, an import, or a restore — and **Restore** one as a new revision. The newest finished
+dream can be **Undo**ne, which puts every note it changed back the way it was.
+
 ## Shared memory
 
 Some things every bot should know, such as your name, your company, or how you like reports

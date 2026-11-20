@@ -60,6 +60,7 @@ const dream = (overrides: Partial<MemoryDream> = {}): MemoryDream => ({
   added: ["Likes tea."],
   archived: ["Old note."],
   errorKind: null,
+  undoneAt: null,
   startedAt: "2026-02-02T23:30:00.000Z",
   finishedAt: "2026-02-02T23:31:00.000Z",
   createdAt: "2026-02-02T23:30:00.000Z",
@@ -115,5 +116,15 @@ describe("DreamsList", () => {
     const button = container.querySelector<HTMLButtonElement>('[data-testid="bot-dream-now"]')!;
     await act(async () => button.click());
     expect(dreamNow).toHaveBeenCalledWith(undefined);
+  });
+
+  it("undoes the newest finished dream", async () => {
+    dreams.push(dream({ id: "dream-9", reason: "manual" }));
+    const container = render();
+    const button = [...container.querySelectorAll("button")].find(
+      (entry) => entry.textContent === "Undo",
+    );
+    await act(async () => button?.click());
+    expect(dreamNow).toHaveBeenCalledWith({ dreamId: "dream-9" });
   });
 });

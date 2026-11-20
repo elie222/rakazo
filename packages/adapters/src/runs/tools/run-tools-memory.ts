@@ -4,6 +4,7 @@ import {
   HistorySearchInputSchema,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
+import { MEMORY_DREAM_TRIGGER } from "@rakazo/core";
 import { readHistory, searchHistory } from "@rakazo/db";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import { editMemory } from "../../memory/memory-tools.js";
@@ -126,6 +127,7 @@ export const memoryTools: ToolHandlers = {
             path,
             content,
             expectedRevision: existing?.revision ?? 0,
+            sourceKind: ctx.run.trigger === MEMORY_DREAM_TRIGGER ? "dream" : "bot",
             sourceRunId: runId,
             sourceThreadId: thread.id,
           },
@@ -157,6 +159,7 @@ export const memoryTools: ToolHandlers = {
           path,
           content: String(args.content ?? ""),
           expectedRevision,
+          sourceKind: ctx.run.trigger === MEMORY_DREAM_TRIGGER ? "dream" : "bot",
           sourceRunId: runId,
           sourceThreadId: thread.id,
         },

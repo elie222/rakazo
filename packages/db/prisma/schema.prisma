@@ -1826,6 +1826,8 @@ model MemoryRevision {
   document       MemoryDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   revision       Int
   content        String
+  /// Who wrote this revision: "user", "bot", "dream", "import" or "undo"; null on older rows.
+  sourceKind     String?
   sourceRunId    String?
   sourceThreadId String?
   createdAt      DateTime       @default(now())
@@ -1857,6 +1859,8 @@ model MemoryDream {
   /// The user-message sequence this dream covered, so the next one starts after it.
   sourceSeq    Int?
   errorKind    String?
+  /// When a person undid this dream; null while it stands.
+  undoneAt     DateTime?
   startedAt    DateTime?
   finishedAt   DateTime?
   createdAt    DateTime  @default(now())

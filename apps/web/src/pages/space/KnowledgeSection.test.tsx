@@ -15,6 +15,8 @@ const memoryApi = vi.hoisted(() => ({
   list: vi.fn(async () => []),
   remove: vi.fn(),
   update: vi.fn(),
+  revisions: vi.fn(async () => []),
+  restore: vi.fn(),
   budget: vi.fn(async () => ({
     limitBytes: 32768,
     usedBytes: 0,
@@ -66,7 +68,7 @@ vi.mock("@rakazo/ui-web", () => {
 
 import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { spaceQueries } from "../../lib/query/query";
-import { AgentSkills, KnowledgeSection } from "./KnowledgeSection";
+import { AgentSkills, KnowledgeSection, SpaceMemorySection } from "./KnowledgeSection";
 
 const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 let queryClient = newClient();
@@ -344,6 +346,24 @@ it.each([" \n", "# Fixture\n\n"])("hides empty memory: %j", async (content) => {
   }
 });
 
+it("shows a shared memory document even when it only holds the seed heading", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  memoryApi.list
+    .mockReset()
+    .mockResolvedValueOnce([
+      { id: "shared", path: "MEMORY.md", content: "# Space memory\n\n", revision: 1 },
+    ] as never);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await show(root, <SpaceMemorySection />);
+    expect(host.textContent).toContain("MEMORY.md");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
 it("keeps the last cleared memory document available to reopen in the session", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const doc = { id: "memory", path: "MEMORY.md", content: "Saved memory", revision: 1 };
@@ -372,6 +392,53 @@ it("keeps the last cleared memory document available to reopen in the session", 
     expect(host.textContent).toContain("MEMORY.md");
     await act(async () => button("MEMORY.md").click());
     expect(host.querySelector("textarea")?.value).toBe("");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows a document's history and restores a revision", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const doc = {
+    id: "memory",
+    scope: "bot" as const,
+    botId: "bot-1",
+    path: "MEMORY.md",
+    content: "Likes tea.",
+    revision: 2,
+    updatedAt: new Date("2026-02-02T23:30:00.000Z").toISOString(),
+  };
+  memoryApi.list.mockReset().mockResolvedValue([doc] as never);
+  memoryApi.revisions.mockReset().mockResolvedValue([
+    {
+      id: "revision-2",
+      revision: 2,
+      sourceKind: "bot",
+      createdAt: new Date("2026-02-02T23:30:00.000Z").toISOString(),
+    },
+  ] as never);
+  memoryApi.restore
+    .mockReset()
+    .mockResolvedValue({ ...doc, content: "Likes coffee.", revision: 3 } as never);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const button = (label: string) =>
+    [...host.querySelectorAll("button")].find(
+      (node) => node.getAttribute("aria-label") === label || node.textContent === label,
+    )!;
+  try {
+    await show(root, <KnowledgeSection botId="bot-1" full />);
+    await act(async () => button("History").click());
+    await settle();
+    expect(host.textContent).toContain("This bot");
+    await act(async () => button("Restore").click());
+    await settle();
+    expect(memoryApi.restore).toHaveBeenCalledWith({
+      documentId: "memory",
+      revisionId: "revision-2",
+      expectedRevision: 2,
+    });
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

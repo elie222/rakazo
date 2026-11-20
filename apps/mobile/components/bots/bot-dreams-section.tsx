@@ -17,6 +17,7 @@ function statusLabel(
   t: (parts: TemplateStringsArray, ...values: unknown[]) => string,
   dream: MemoryDream,
 ): string {
+  if (dream.undoneAt) return t`Undone`;
   if (dream.status === "completed") return t`Done`;
   if (dream.status === "queued") return t`Working`;
   return dream.errorKind === "spending" ? t`Stopped at the spending limit` : t`Interrupted`;

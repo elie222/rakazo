@@ -10,6 +10,7 @@ import {
   memoryProviderDescriptors,
   readAgentMemory,
   startManualMemoryDream,
+  undoMemoryDream,
 } from "@rakazo/adapters";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -78,6 +79,77 @@ export function memoryRoutes(ctx: RouterContext) {
           { spaceId: context.actor.spaceId, botId: input.botId },
         ),
       ),
+      undoDream: authed.memory.undoDream.handler(async ({ context, input }) =>
+        undoMemoryDream(deps.prisma, {
+          spaceId: context.actor.spaceId,
+          dreamId: input.dreamId,
+        }),
+      ),
+      revisions: authed.memory.revisions.handler(async ({ context, input }) => {
+        const doc = await deps.prisma.memoryDocument.findFirst({
+          where: { id: input.documentId, spaceId: context.actor.spaceId },
+          select: { id: true },
+        });
+        if (!doc) throw new IsolationError();
+        return deps.memory.listRevisions(
+          { documentId: doc.id, limit: input.limit, cursor: input.cursor },
+          memoryCallContext(context.actor),
+        );
+      }),
+      revision: authed.memory.revision.handler(async ({ context, input }) => {
+        const doc = await deps.prisma.memoryDocument.findFirst({
+          where: { id: input.documentId, spaceId: context.actor.spaceId },
+          select: { id: true },
+        });
+        if (!doc) throw new IsolationError();
+        const revision = await deps.memory.readRevision(
+          { documentId: doc.id, revisionId: input.revisionId },
+          memoryCallContext(context.actor),
+        );
+        if (!revision) throw new IsolationError();
+        return revision;
+      }),
+      restore: authed.memory.restore.handler(async ({ context, input }) => {
+        const doc = await deps.prisma.memoryDocument.findFirst({
+          where: { id: input.documentId, spaceId: context.actor.spaceId },
+        });
+        if (!doc) throw new IsolationError();
+        const revision = await deps.memory.readRevision(
+          { documentId: doc.id, revisionId: input.revisionId },
+          memoryCallContext(context.actor),
+        );
+        if (!revision) throw new IsolationError();
+        const scope = doc.scope === "user" ? "user" : "bot";
+        const invalid = memoryDocumentError(scope, doc.path, revision.content);
+        if (invalid) throw new ClientError("BAD_REQUEST", invalid);
+        const updated = await deps.memory
+          .commit(
+            {
+              scope,
+              botId: doc.botId ?? undefined,
+              path: doc.path,
+              content: revision.content,
+              expectedRevision: input.expectedRevision,
+              sourceKind: "undo",
+            },
+            memoryCallContext(context.actor),
+          )
+          .catch((error: unknown) => {
+            if (error instanceof MemoryRevisionConflictError) {
+              throw new ClientError("CONFLICT", error.message);
+            }
+            throw error;
+          });
+        return {
+          id: updated.id,
+          scope,
+          botId: doc.botId,
+          path: updated.path,
+          content: updated.content,
+          revision: updated.revision,
+          updatedAt: new Date().toISOString(),
+        };
+      }),
       update: authed.memory.update.handler(async ({ context, input }) => {
         const doc = await deps.prisma.memoryDocument.findFirst({
           where: {
@@ -100,6 +172,7 @@ export function memoryRoutes(ctx: RouterContext) {
               path: doc.path,
               content: input.content,
               expectedRevision: input.expectedRevision,
+              sourceKind: "user",
             },
             {
               operationId: "mem",
@@ -294,5 +367,16 @@ export function memoryRoutes(ctx: RouterContext) {
         agentSkills.remove(context.actor, input.skillId),
       ),
     },
+  };
+}
+
+/** The adapter context every memory store call in this router uses. */
+function memoryCallContext(actor: { spaceId: string; userId: string }) {
+  return {
+    operationId: "mem",
+    traceId: "mem",
+    spaceId: actor.spaceId,
+    userId: actor.userId,
+    signal: new AbortController().signal,
   };
 }
