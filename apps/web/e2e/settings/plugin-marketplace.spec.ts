@@ -45,7 +45,7 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   const row = dialog.getByTestId("plugin-results").getByTestId("plugin-row");
   await expect(row).toHaveCount(1);
   await captureScreenshot(page, testInfo, "integrations-plugin-search");
-  await row.getByRole("button", { name: "Add", exact: true }).click();
+  await row.getByRole("button", { name: "Add Planning Notes", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "Planning Notes", exact: true })).toBeVisible();
   await expect(
     dialog.getByText("https://marketplace-tools.example.test/mcp", { exact: true }),
@@ -381,4 +381,17 @@ test("an app that is also a chat app here leads to messaging settings", async ({
   await captureScreenshot(page, testInfo, "integrations-chat-app-hint");
   await hint.getByRole("button", { name: "Chat from Chatty", exact: true }).click();
   await expect(dialog).toBeHidden();
+});
+
+test("Skills search explains an empty result", async ({ page }, testInfo) => {
+  await signup(page, `skills-search-${Date.now()}@rakazo.test`, "password12", "Skills Search");
+  await completeOnboarding(page);
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Skills", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Skills", exact: true });
+  await dialog
+    .getByRole("textbox", { name: "Search skills", exact: true })
+    .fill("zzzz-no-matching-skill");
+  await expect(dialog.getByRole("status")).toHaveText("No skills match your search.");
+  await captureScreenshot(page, testInfo, "skills-search-empty");
 });
