@@ -106,7 +106,11 @@ describe("push registration on iOS", () => {
 
   it("registers the token once permission is granted", async () => {
     void registerPushToken();
+    // Registration is parked on the permission answer the test still holds, so nothing
+    // after it can run however many timers or microtasks come first.
+    await vi.waitFor(() => expect(Notifications.requestPermissionsAsync).toHaveBeenCalled());
     await flush();
+    expect(Notifications.getExpoPushTokenAsync).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalledWith(
       expect.stringMatching(/notifications\/registerPush$/),
       expect.anything(),
