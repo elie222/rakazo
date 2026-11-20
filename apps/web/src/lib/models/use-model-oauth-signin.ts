@@ -44,7 +44,6 @@ export function useModelOAuthSignIn(options: {
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [oauthPending, setOauthPending] = useState(false);
-  const [popupBlocked, setPopupBlocked] = useState(false);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
@@ -84,7 +83,6 @@ export function useModelOAuthSignIn(options: {
       if (resetState) {
         setOauth(null);
         setOauthPending(false);
-        setPopupBlocked(false);
       }
     });
     if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
@@ -154,7 +152,6 @@ export function useModelOAuthSignIn(options: {
   async function startSubscriptionSignIn(begin: ModelOAuthSignInBegin) {
     onClearErrorRef.current?.();
     setOauthPending(true);
-    setPopupBlocked(false);
     const controller = new AbortController();
     oauthAbortRef.current = controller;
     let waitingForCode = false;
@@ -178,6 +175,7 @@ export function useModelOAuthSignIn(options: {
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
       setOauth(started);
+      // A device code must be read before its page opens, so the user opens that page themselves.
       if (started.mode === "auth-url") {
         // Subscribe before the popup exists: a provider that is already
         // authorized can redirect before React commits the state above.
@@ -186,36 +184,34 @@ export function useModelOAuthSignIn(options: {
           (code) => void submitOAuthCode(code, started),
           oauthStateOf(started.verificationUri),
         );
-      }
-      const browserAuth = desktopBridge()?.oauth;
-      if (browserAuth?.open) {
-        const cancelBrowser = () =>
-          void browserAuth.cancel?.(started.verificationUri).catch(() => undefined);
-        controller.signal.addEventListener("abort", cancelBrowser, { once: true });
-        const releaseCapture = oauthCaptureRef.current;
-        oauthCaptureRef.current = () => {
-          releaseCapture?.();
-          controller.signal.removeEventListener("abort", cancelBrowser);
-          cancelBrowser();
-        };
-        await browserAuth.open(started.verificationUri);
-        if (controller.signal.aborted) return;
-        reportSignInStep("page_opened", started.loginId);
-      } else {
-        // noopener returns null even when the tab opens. Detach a blank tab
-        // before navigating so the handle can distinguish a blocked popup.
-        const popup = window.open("about:blank", "_blank");
-        if (popup) {
-          popup.opener = null;
-          // A noreferrer link suppresses the navigation request's Referer header.
-          const link = popup.document.createElement("a");
-          link.href = started.verificationUri;
-          link.rel = "noreferrer";
-          popup.document.body.append(link);
-          link.click();
-          reportSignInStep("page_opened");
+        const browserAuth = desktopBridge()?.oauth;
+        if (browserAuth?.open) {
+          const cancelBrowser = () =>
+            void browserAuth.cancel?.(started.verificationUri).catch(() => undefined);
+          controller.signal.addEventListener("abort", cancelBrowser, { once: true });
+          const releaseCapture = oauthCaptureRef.current;
+          oauthCaptureRef.current = () => {
+            releaseCapture?.();
+            controller.signal.removeEventListener("abort", cancelBrowser);
+            cancelBrowser();
+          };
+          await browserAuth.open(started.verificationUri);
+          if (controller.signal.aborted) return;
+          reportSignInStep("page_opened", started.loginId);
         } else {
-          setPopupBlocked(true);
+          // noopener returns null even when the tab opens, so open a blank tab and navigate it.
+          // When the tab is blocked, the link beside the code field opens the page.
+          const popup = window.open("about:blank", "_blank");
+          if (popup) {
+            popup.opener = null;
+            // A noreferrer link suppresses the navigation request's Referer header.
+            const link = popup.document.createElement("a");
+            link.href = started.verificationUri;
+            link.rel = "noreferrer";
+            popup.document.body.append(link);
+            link.click();
+            reportSignInStep("page_opened");
+          }
         }
       }
       waitingForCode = started.mode === "auth-url";
@@ -242,7 +238,6 @@ export function useModelOAuthSignIn(options: {
     pasteCode,
     setPasteCode,
     oauthPending,
-    popupBlocked,
     cancelOAuthAttempt,
     reportSignInStep,
     startSubscriptionSignIn,
