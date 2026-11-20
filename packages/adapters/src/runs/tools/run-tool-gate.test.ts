@@ -129,8 +129,11 @@ describe("gateToolCall: a login that asks first", () => {
 });
 
 describe("gateToolCall: typing into a page after outside content, in Auto", () => {
-  const typed = (state: { pageUrl?: string; pageUrlUncertain?: boolean }) => {
-    const args = { actions: [{ kind: "fill", ref: "e2", text: "12 Rua Nova" }] };
+  const typed = (
+    state: { pageUrl?: string; pageUrlUncertain?: boolean },
+    actions: Record<string, unknown>[] = [{ kind: "fill", ref: "e2", text: "12 Rua Nova" }],
+  ) => {
+    const args = { actions };
     const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
     const request = {
       name: "browser_act",
@@ -176,5 +179,17 @@ describe("gateToolCall: typing into a page after outside content, in Auto", () =
     await typed({ pageUrl: "https://shop.example.com/address", pageUrlUncertain: true });
     await typed({ pageUrl: "https://forms.example.net/" });
     expect(reviewOnly).toEqual([false, true, true]);
+  });
+
+  it("judges typing after a click in the same call, which can leave the page", async () => {
+    await typed({ pageUrl: "https://shop.example.com/address" }, [
+      { kind: "fill", ref: "e2", text: "12 Rua Nova" },
+      { kind: "click", ref: "e3" },
+    ]);
+    await typed({ pageUrl: "https://shop.example.com/address" }, [
+      { kind: "click", ref: "e9" },
+      { kind: "fill", ref: "e2", text: "12 Rua Nova" },
+    ]);
+    expect(reviewOnly).toEqual([false, true]);
   });
 });

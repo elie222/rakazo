@@ -1252,9 +1252,9 @@ describe("Pi connector tool dispatch", () => {
     expect(modes.get("remember")).toBe("sequential");
     // Two code requests in one batch would each wait on a card that one answer approves.
     expect(modes.get("request_secret")).toBe("sequential");
-    // A desktop action can change the page a sibling page action would type into.
+    // Page and desktop actions can change the page a sibling page action would type into.
     expect(modes.get("computer_act")).toBe("sequential");
-    expect(modes.get("browser_act")).toBe("default");
+    expect(modes.get("browser_act")).toBe("sequential");
     expect(modes.get("destination_write")).toBe("default");
   });
 

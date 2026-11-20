@@ -442,7 +442,12 @@ export async function runApprovalSuite(
       c.newSite && typeof c.args.url === "string"
         ? { url: c.args.url }
         : c.ownComputerAction
-          ? autoReview.ownComputerReviewArgs(c.toolName, redacted, undefined)
+          ? autoReview.ownComputerReviewArgs(
+              c.toolName,
+              redacted,
+              // A case's page stands for what the browser reported.
+              typeof c.args.page === "string" ? c.args.page : undefined,
+            )
           : redacted;
     // What the product keeps of a run's reads: every result except the bot's own state.
     const outsideText = (c.runSteps ?? [])
