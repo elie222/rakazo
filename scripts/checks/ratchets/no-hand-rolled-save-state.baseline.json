@@ -42,7 +42,6 @@
   "apps/web/src/components/vault/VaultItemEditor.tsx": 1,
   "apps/web/src/components/vault/VaultSettings.tsx": 1,
   "apps/web/src/lib/models/use-model-oauth-signin.ts": 1,
-  "apps/web/src/pages/AdminBotsPanel.tsx": 2,
   "apps/web/src/pages/auth/Auth.tsx": 2,
   "apps/web/src/pages/auth/Paywall.tsx": 1,
   "apps/web/src/pages/integrations/McpServersOverlay.tsx": 2,

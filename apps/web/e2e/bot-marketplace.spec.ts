@@ -1,8 +1,11 @@
+import type { Locator } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { Bot, Routine } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers/helpers";
 
 const ADMIN_EMAIL = "admin@rakazo.test";
+
+const routine = { name: "Morning briefing", prompt: "Summarise my day", crons: ["0 8 * * 1-5"] };
 
 const listing = {
   id: "morning-briefing",
@@ -14,7 +17,7 @@ const listing = {
     "A scannable briefing every weekday morning: your calendar, the emails waiting on you, and the topics you follow. Nothing is sent or changed without your confirmation.",
   instructions: "Summarise the day; never send without confirmation.",
   skills: [],
-  routines: [{ name: "Morning briefing", prompt: "Summarise my day", crons: ["0 8 * * 1-5"] }],
+  routines: [routine],
   apps: ["gmail"],
   author: { name: "Rakazo Team" },
   license: "Apache-2.0",
@@ -24,6 +27,31 @@ const listing = {
   intro: "I brief you every weekday morning. Nothing is sent without your confirmation.",
   firstQuestion: "Which city should I watch the weather for?",
 };
+
+/** Fills the editor's form the way ops would, one labeled field at a time. */
+async function fillListing(editor: Locator) {
+  const field = (label: string) => editor.getByLabel(label, { exact: true }).first();
+  await field("Name").fill(listing.name);
+  await expect(field("Slug")).toHaveValue(listing.id);
+  await field("Tagline").fill(listing.tagline);
+  await field("Summary").fill(listing.summary);
+  await field("Outcomes").fill(listing.outcomes.join("\n"));
+  await field("Instructions").fill(listing.instructions);
+  await field("Sample message").fill(listing.sample);
+
+  await editor.getByRole("button", { name: "Skills, routines and apps" }).click();
+  await field("Apps").fill(listing.apps.join(", "));
+  await editor.getByRole("button", { name: "Add routine", exact: true }).click();
+  await editor.getByRole("group", { name: "Routine 1" }).getByLabel("Name").fill(routine.name);
+  await editor.getByLabel("Prompt", { exact: true }).fill(routine.prompt);
+  await editor.getByLabel("Schedule", { exact: true }).fill(routine.crons.join("\n"));
+
+  await editor.getByRole("button", { name: "More details" }).click();
+  await field("Description").fill(listing.description);
+  await field("First message").fill(listing.intro);
+  await field("First question").fill(listing.firstQuestion);
+  await field("Author").fill(listing.author.name);
+}
 
 /** Open signups get a session at once; the emailed link marks the address verified. */
 async function verifyEmail(page: import("@playwright/test").Page, email: string) {
@@ -66,8 +94,8 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
 
   await panel.getByRole("button", { name: "New bot", exact: true }).click();
   const editor = page.getByRole("dialog");
-  await editor.getByTestId("bot-listing-json").fill(JSON.stringify(listing, null, 2));
-  await captureScreenshot(page, testInfo, "02-ops-editor-json");
+  await fillListing(editor);
+  await captureScreenshot(page, testInfo, "02-ops-editor-form");
   await editor.getByRole("button", { name: "Preview", exact: true }).click();
   const preview = editor.getByTestId("bot-marketplace-detail");
   await expect(preview.getByRole("heading", { name: "Morning briefing" })).toBeVisible();
@@ -178,9 +206,7 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
   // ── Ops: edit bumps the version; unpublishing hides it without touching installs ──
   await page.goto("/admin/bots");
   await row.getByRole("button", { name: "Edit", exact: true }).click();
-  await editor
-    .getByTestId("bot-listing-json")
-    .fill(JSON.stringify({ ...listing, tagline: "A sharper morning overview." }, null, 2));
+  await editor.getByLabel("Tagline", { exact: true }).fill("A sharper morning overview.");
   await editor.getByRole("button", { name: "Save", exact: true }).click();
   await expect(editor).toHaveCount(0);
   await expect(row.getByText(/v2/)).toBeVisible();
