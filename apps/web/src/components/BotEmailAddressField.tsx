@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { parseBotEmailName, suggestedEmailName } from "@rakazo/contracts";
-import { Button, Input } from "@rakazo/ui-web";
+import { Button, CopyTextFallback, Input } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
@@ -32,7 +32,6 @@ function AddressField({
   const queries = useSpaceQueries();
   const rpc = useSpaceRpc();
   const queryClient = useQueryClient();
-  const [copied, copy] = useCopyText();
   const [name, setName] = useState(() => suggestedEmailName(bot.name));
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -72,15 +71,7 @@ function AddressField({
         <span className="min-w-0 flex-1 break-all font-mono text-label text-foreground/75">
           {address}
         </span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={copied ? t`Copied` : t`Copy ${address}`}
-          onClick={() => copy(address)}
-          className="text-muted-foreground"
-        >
-          {copied ? <Check /> : <Copy />}
-        </Button>
+        <BotEmailCopyButton address={address} />
       </div>
     );
   }
@@ -115,5 +106,34 @@ function AddressField({
         </p>
       ) : null}
     </div>
+  );
+}
+
+export function BotEmailCopyButton({ address }: { address: string }) {
+  // Do not carry an earlier copy attempt to a different address, or back to it after a change.
+  return <CopyAddress key={address} address={address} />;
+}
+
+function CopyAddress({ address }: { address: string }) {
+  const { t } = useLingui();
+  const [copied, copy, copyFailed, resetCopy, failedText] = useCopyText();
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label={copied ? t`Copied` : t`Copy ${address}`}
+        onClick={() => copy(address)}
+        className="text-muted-foreground"
+      >
+        {copied ? <Check /> : <Copy />}
+      </Button>
+      <CopyTextFallback
+        open={copyFailed}
+        onOpenChange={resetCopy}
+        text={failedText}
+        label={t`Email address`}
+      />
+    </>
   );
 }
