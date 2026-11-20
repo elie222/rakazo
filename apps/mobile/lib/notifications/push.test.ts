@@ -1,4 +1,4 @@
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../settings/ai-consent", () => ({ promptAiConsent: vi.fn() }));
@@ -106,7 +106,7 @@ describe("push registration on iOS", () => {
 
   it("registers the token once permission is granted", async () => {
     void registerPushToken();
-    await settled(Promise.resolve());
+    await flush();
     expect(fetch).not.toHaveBeenCalledWith(
       expect.stringMatching(/notifications\/registerPush$/),
       expect.anything(),
