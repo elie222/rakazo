@@ -257,8 +257,7 @@ function SpaceShell() {
   };
   const voiceStatus: VoiceStatus | null =
     useQuery(queries.voice.status.queryOptions()).data ?? null;
-  const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers, navigationTriggerRef } =
-    useMobileSidebar();
+  const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
   const [panelCoversChat, setPanelCoversChat] = useState(false);
   const pages = usePagesForChat();
@@ -1168,7 +1167,6 @@ function SpaceShell() {
             voiceReady={Boolean(voiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
-            navigationTriggerRef={navigationTriggerRef}
             onOpenNavigation={() => setMobileSidebarOpen(true)}
             onTogglePanel={toggleChatPanel}
             onCall={(bot) => {

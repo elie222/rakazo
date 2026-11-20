@@ -17,15 +17,17 @@ function isRtl() {
 /** The phone sidebar drawer, opened by its button or a swipe in from the leading edge. */
 export function useMobileSidebar() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const navigationTriggerRef = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef(false);
   useLayoutEffect(() => {
     if (!mobileSidebarOpen && restoreFocus.current) {
       restoreFocus.current = false;
-      const trigger = navigationTriggerRef.current;
-      const target = trigger?.closest("[inert]")
-        ? document.querySelector<HTMLElement>('aside[data-panel]:not([data-panel="closed"])')
-        : trigger;
+      const trigger = document.querySelector<HTMLButtonElement>("[data-navigation-trigger]");
+      const computerClose = document.querySelector<HTMLButtonElement>("[data-computer-close]");
+      const target =
+        computerClose ??
+        (trigger?.closest("[inert]")
+          ? document.querySelector<HTMLElement>('aside[data-panel]:not([data-panel="closed"])')
+          : trigger);
       target?.focus({ preventScroll: true });
     }
   }, [mobileSidebarOpen]);
@@ -79,5 +81,5 @@ export function useMobileSidebar() {
     },
   };
 
-  return { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers, navigationTriggerRef };
+  return { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers };
 }

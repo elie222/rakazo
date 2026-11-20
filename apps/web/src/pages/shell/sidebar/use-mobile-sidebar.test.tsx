@@ -28,7 +28,7 @@ function Harness() {
   latest = useMobileSidebar();
   return (
     <>
-      <button type="button" ref={latest.navigationTriggerRef}>
+      <button type="button" data-navigation-trigger="">
         Open navigation
       </button>
       <ComposerReplyPreview author="Helper" text="Quote" onDismiss={dismissReply} />
@@ -181,14 +181,14 @@ it("returns keyboard focus to the navigation opener after Escape", () => {
   document.body.append(drawerControl);
   drawerControl.focus();
   pressEscape(drawerControl);
-  expect(document.activeElement).toBe(latest.navigationTriggerRef.current);
+  expect(document.activeElement).toBe(container!.querySelector("[data-navigation-trigger]"));
   drawerControl.remove();
 });
 
 it("returns focus to the side panel while the navigation opener is inert", () => {
   menuOpen = false;
   mount(false);
-  const trigger = latest.navigationTriggerRef.current!;
+  const trigger = container!.querySelector<HTMLButtonElement>("[data-navigation-trigger]")!;
   trigger.setAttribute("inert", "");
   const panel = document.createElement("aside");
   panel.dataset.panel = "settings";
@@ -198,4 +198,16 @@ it("returns focus to the side panel while the navigation opener is inert", () =>
   pressEscape();
   expect(document.activeElement).toBe(panel);
   panel.remove();
+});
+
+it("returns focus to the computer when it still covers the chat", () => {
+  menuOpen = false;
+  mount(false);
+  const closeComputer = document.createElement("button");
+  closeComputer.dataset.computerClose = "";
+  document.body.append(closeComputer);
+  act(() => latest.setMobileSidebarOpen(true));
+  pressEscape();
+  expect(document.activeElement).toBe(closeComputer);
+  closeComputer.remove();
 });

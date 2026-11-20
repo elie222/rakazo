@@ -3,7 +3,6 @@ import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { MEETING_CALENDAR_RETURN_PARAM } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import { Gift, Menu, Phone, Video } from "lucide-react";
-import type { Ref } from "react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
@@ -26,7 +25,6 @@ export function ChatHeader({
   inCall,
   panelOpen,
   onOpenNavigation,
-  navigationTriggerRef,
   onTogglePanel,
   onCall,
 }: {
@@ -41,7 +39,6 @@ export function ChatHeader({
   inCall: boolean;
   panelOpen: boolean;
   onOpenNavigation: () => void;
-  navigationTriggerRef?: Ref<HTMLButtonElement>;
   onTogglePanel: () => void;
   onCall: (bot: Bot) => void;
 }) {
@@ -56,7 +53,7 @@ export function ChatHeader({
         <Button
           variant="floating"
           size="icon-lg"
-          ref={navigationTriggerRef}
+          data-navigation-trigger=""
           aria-label={t`Open navigation`}
           onClick={onOpenNavigation}
           className="app-no-drag md:hidden"
