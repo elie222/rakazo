@@ -61,6 +61,12 @@ import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 import { isMermaidFence, mermaidSvgImage } from "./mermaid";
 import { useMermaidSvg } from "./mermaid.web";
 import { PAGE_ICON } from "./page-icon";
+import {
+  commitStreamingReveal,
+  createStreamingRevealPlugin,
+  createStreamingRevealState,
+  isIncrementalRevealSource,
+} from "./streaming-reveal";
 
 function preserveSkippedTableText() {
   return (tree: HastNode) => {
@@ -743,6 +749,7 @@ export function LinkifiedText({
 
 const remarkPlugins = [remarkGfm];
 const rehypePlugins = [preserveSkippedTableText];
+type RehypePlugin = () => (tree: HastNode) => void;
 
 // MarkdownImage decides what an image source may do, so it receives the source as written.
 function urlTransform(url: string, key: string) {
@@ -751,12 +758,12 @@ function urlTransform(url: string, key: string) {
     : (sanitizeMarkdownUrl(url, true) ?? "");
 }
 
-function renderMarkdown(source: string) {
+function renderMarkdown(source: string, rehype: RehypePlugin[] = rehypePlugins) {
   return ReactMarkdown({
     children: source,
     components,
     remarkPlugins,
-    rehypePlugins,
+    rehypePlugins: rehype,
     skipHtml: true,
     urlTransform,
   });
@@ -791,15 +798,21 @@ function renderFinishedMarkdown(source: string) {
 const MarkdownBlock = memo(function MarkdownBlock({
   source,
   streaming,
+  revealPlugin,
 }: {
   source: string;
   streaming: boolean;
+  revealPlugin: RehypePlugin | undefined;
 }) {
   const parsed = streaming ? closeUnterminatedFence(source) : source;
+  const rehype = useMemo(
+    () => (streaming && revealPlugin ? [...rehypePlugins, revealPlugin] : rehypePlugins),
+    [streaming, revealPlugin],
+  );
   return (
     <StreamingSourceContext.Provider value={streaming ? source : undefined}>
       <MarkdownTableSourceContext.Provider value={parsed}>
-        {streaming ? renderMarkdown(parsed) : renderFinishedMarkdown(parsed)}
+        {streaming ? renderMarkdown(parsed, rehype) : renderFinishedMarkdown(parsed)}
       </MarkdownTableSourceContext.Provider>
     </StreamingSourceContext.Provider>
   );
@@ -871,6 +884,23 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     return previousSplit.current.blocks;
   }, [children, split]);
 
+  // Reveal progress belongs to one message. The plugin only reads it while rendering, and the
+  // effect below commits what that render scheduled once it is on screen.
+  const revealStateRef = useRef<ReturnType<typeof createStreamingRevealState> | null>(null);
+  revealStateRef.current ??= createStreamingRevealState();
+  const reveal = revealStateRef.current;
+  const revealSourceRef = useRef("");
+  const revealPlugin = useMemo(() => createStreamingRevealPlugin(reveal), [reveal]);
+  // A re-render with the same text keeps the last verdict: its transitions may still be running,
+  // and judging it again would call the whole text settled.
+  if (children !== revealSourceRef.current) {
+    reveal.incremental = streaming && isIncrementalRevealSource(revealSourceRef.current, children);
+  }
+  useEffect(() => {
+    commitStreamingReveal(reveal);
+    revealSourceRef.current = children;
+  });
+
   const inlineChips = useMemo(() => ({ renderMention, onOpenPage }), [renderMention, onOpenPage]);
   return (
     <ConfirmLinkContext.Provider value={request}>
@@ -888,15 +918,19 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                     <MarkdownBlock
                       source={block.source}
                       streaming={streaming && index === blocks.length - 1}
+                      revealPlugin={revealPlugin}
                     />
                   </Fragment>
                 ))
               ) : (
-                <MarkdownBlock source={children} streaming={streaming} />
+                <MarkdownBlock
+                  source={children}
+                  streaming={streaming}
+                  revealPlugin={revealPlugin}
+                />
               )}
             </PlainTextOnFailure>
           </LinkFaviconsPausedContext.Provider>
-          {streaming ? <span aria-hidden="true" className="rk-chat-markdown-cursor" /> : null}
         </div>
       </InlineChipsContext.Provider>
       {dialog}
