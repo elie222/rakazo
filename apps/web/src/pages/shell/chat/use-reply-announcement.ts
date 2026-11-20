@@ -1,8 +1,10 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ThreadMessage } from "@rakazo/contracts";
 import { isPeerReceiptBlocks, selectableMessageText, truncatedPlainText } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 
 const ANNOUNCED_CHARS = 200;
+const REPEAT_GAP_MS = 100;
 
 /**
  * What a screen reader hears when a bot's reply lands at the end of the chat: the sender and the
@@ -16,7 +18,7 @@ export function useReplyAnnouncement(
   senderName: (message: ThreadMessage) => string,
 ): string {
   const shown = useRef<{ ids: ReadonlySet<string>; lastSeq: number } | null>(null);
-  const [announcement, setAnnouncement] = useState("");
+  const [announcement, setAnnouncement] = useState<{ text: string; repeat: boolean } | null>(null);
   const nameOf = useRef(senderName);
   nameOf.current = senderName;
   useEffect(() => {
@@ -35,7 +37,17 @@ export function useReplyAnnouncement(
         !isPeerReceiptBlocks(message.blocks),
     );
     const text = reply ? truncatedPlainText(selectableMessageText(reply), ANNOUNCED_CHARS) : "";
-    if (reply && text) setAnnouncement(`${nameOf.current(reply)}: ${text}`);
+    if (reply && text) {
+      const next = `${nameOf.current(reply)}: ${text}`;
+      setAnnouncement((current) => ({ text: next, repeat: current?.text === next }));
+    }
   }, [messages]);
-  return announcement;
+
+  // Leave the mounted status empty for a separate DOM update before publishing identical text.
+  useTimeout(
+    () => setAnnouncement((current) => (current?.repeat ? { ...current, repeat: false } : current)),
+    announcement?.repeat ? REPEAT_GAP_MS : null,
+    announcement,
+  );
+  return announcement && !announcement.repeat ? announcement.text : "";
 }
