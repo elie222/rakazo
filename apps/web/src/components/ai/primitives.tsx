@@ -90,7 +90,7 @@ export function LoadingState({
 /** Pop-in green check with a fading-up label — the approval-card success beat. */
 export function SuccessPop({ label }: { label: string }) {
   return (
-    <span className="flex items-center gap-2">
+    <span role="status" className="flex items-center gap-2">
       <span
         className="flex h-6 w-6 items-center justify-center rounded-full bg-success text-background"
         style={{ animation: "bui-pop-in 300ms cubic-bezier(0.23,1,0.32,1) both" }}
