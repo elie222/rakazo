@@ -313,6 +313,33 @@ describe("bot profile setting saves", () => {
     expect(voiceOverrideFindUnique).not.toHaveBeenCalled();
   });
 
+  it("classifies pinning a legacy voice as a voice change without exposing its values", async () => {
+    const { deps, botUpdate } = saveDeps({
+      modelId: spark,
+      preferences: () => null,
+      voiceProvider: null,
+      defaultVoiceProvider: "provider-b",
+    });
+    const capture = vi.fn();
+    const handler = appHandler({
+      ...deps,
+      analytics: { capture, flush: async () => undefined },
+    });
+    const response = await call(handler, "bots/update", {
+      botId: "bot-1",
+      voiceId: "bot-voice",
+    });
+    expect(response.status).toBe(200);
+    expect(botUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ voiceProvider: "provider-b", voiceId: "bot-voice" }),
+      }),
+    );
+    expect(capture.mock.calls).toEqual([
+      [actor.userId, { name: "bot_setting_changed", setting: "voice" }],
+    ]);
+  });
+
   it.each([false, true])(
     "pins a bare voice to the actor's effective Settings provider (Space override: %s)",
     async (spaceVoiceOverride) => {

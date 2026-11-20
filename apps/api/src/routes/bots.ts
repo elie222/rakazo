@@ -548,7 +548,7 @@ export function botsRoutes(ctx: RouterContext) {
             );
           throw error;
         });
-        for (const setting of changedBotSettings(existing, input)) {
+        for (const setting of changedBotSettings(existing, { ...input, ...voiceSelection })) {
           deps.analytics?.capture(context.actor.userId, { name: "bot_setting_changed", setting });
         }
         const bots = await repos.listBots(context.actor);
