@@ -388,6 +388,8 @@ type Session<T> = {
   expiresTimer?: ReturnType<typeof setTimeout>;
   /** The expiry timer fired while the credential was being saved. */
   expired?: boolean;
+  /** Why it was stopped, for a row stored only after that. */
+  stoppedAs?: ModelSignInCancelReason;
 };
 
 type Outcome<T> =
@@ -840,7 +842,7 @@ export class PiOAuthLogins<T = unknown> {
     if (mode === "device-code") this.holdLease(session);
     // Cancelled, replaced or disconnected while saving: no process may resume it.
     if (this.pending.get(session.id) !== session) {
-      await this.forgetRow(session, { ended: "cancelled" });
+      await this.forgetRow(session, { ended: session.stoppedAs ?? "cancelled" });
     }
   }
 
@@ -1060,10 +1062,11 @@ export class PiOAuthLogins<T = unknown> {
   private async endRows(
     where: Prisma.ModelOAuthSessionWhereInput,
     reason: PiOAuthEnd["reason"],
+    statuses: string[] = ["pending"],
   ): Promise<void> {
     const handoff = this.handoff;
     if (!handoff) return;
-    const waiting = { ...where, status: "pending" };
+    const waiting = { ...where, status: { in: statuses } };
     const rows = await handoff.prisma.modelOAuthSession.findMany({
       where: waiting,
       select: PENDING_SIGN_IN_COLUMNS,
@@ -1226,8 +1229,8 @@ export class PiOAuthLogins<T = unknown> {
     const handoff = this.handoff;
     if (!handoff) return;
     await runAsTenant({ userId: actor.userId, spaceId: actor.spaceId }, async () => {
-      // A row still waiting here outlived the process that held it.
-      await this.endRows(rowOf({ id: loginId, ...actor }), "interrupted");
+      // A row still waiting or saving here outlived the process that held it.
+      await this.endRows(rowOf({ id: loginId, ...actor }), "interrupted", ["pending", "saving"]);
       await handoff.prisma.modelOAuthSession.deleteMany({
         where: rowOf({ id: loginId, ...actor }),
       });
@@ -1248,6 +1251,7 @@ export class PiOAuthLogins<T = unknown> {
         continue;
       }
       if (session.state === "pending") waiting = this.pendingOf(session);
+      session.stoppedAs = reason;
       session.abort.abort(new Error("Sign-in cancelled."));
       this.detachSession(session);
       break;
@@ -1370,7 +1374,8 @@ export class PiOAuthLogins<T = unknown> {
   }
 
   /** Drops a sign-in the person or the clock ended, and reports it if it was still waiting. */
-  private removeSession(session: Session<T>, ended: PiOAuthEnd["reason"]): void {
+  private removeSession(session: Session<T>, ended: ModelSignInCancelReason | "timed_out"): void {
+    if (ended !== "timed_out") session.stoppedAs = ended;
     const owned = session.lease !== undefined;
     const waiting = session.state === "pending" ? this.pendingOf(session) : undefined;
     this.detachSession(session);

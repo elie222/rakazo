@@ -5,6 +5,7 @@ import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
+import type { Mock } from "vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   kickModelCredentialRefresh,
@@ -2513,6 +2514,28 @@ describe("PiOAuthLogins across API processes", () => {
       },
       select: expect.objectContaining({ ciphertext: true }),
     });
+  });
+
+  it("reports a sign-in stopped before its row was stored with the reason it was stopped", async () => {
+    const { store } = handoffStore();
+    const create = (store as unknown as { prisma: { modelOAuthSession: { create: Mock } } }).prisma
+      .modelOAuthSession.create;
+    const stored = create.getMockImplementation()!;
+    const held = deferred<void>();
+    create.mockImplementationOnce(async (args: unknown) => {
+      await held.promise;
+      return stored(args);
+    });
+    const ended: PiOAuthEnded[] = [];
+    const process = apiProcess(store, ended);
+    const started = process.logins.begin({ ...member, provider: "anthropic", persist: keep });
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    const loginId = (create.mock.calls[0]![0] as { data: { id: string } }).data.id;
+    await process.logins.cancel(loginId, member, "left");
+    held.resolve();
+    await started;
+
+    expect(ended.map((end) => end.reason)).toEqual(["left"]);
   });
 
   it("reports a sign-in another process cancels once, and not again when it runs out", async () => {
