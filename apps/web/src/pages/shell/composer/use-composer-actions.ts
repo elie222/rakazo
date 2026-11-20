@@ -33,6 +33,8 @@ import {
   revokePendingAttachmentPreviews,
   usePendingAttachmentPreviewCleanup,
 } from "../../../lib/composer/pending-attachments";
+import type { PendingSend } from "../../../lib/composer/pending-send";
+import { newestMessageSeq } from "../../../lib/composer/pending-send";
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
 import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
@@ -98,6 +100,7 @@ export function useComposerActions({
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [pendingSend, setPendingSend] = useState<PendingSend | null>(null);
   const [sentCount, setSentCount] = useState(0);
   useEffect(() => {
     setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
@@ -383,6 +386,23 @@ export function useComposerActions({
       setSendError(null);
       clearReadBoundary();
       setSentCount((count) => count + 1);
+      // Plain text shows in the chat at once; the stored message replaces it when it arrives.
+      if (plan.shouldSend && !reroutedToGroup && attachments.length === 0 && trimmed) {
+        setPendingSend({
+          threadKey: originThreadKey!,
+          clientNonce,
+          text: trimmed,
+          afterSeq: newestMessageSeq(activeSnapshot?.messages ?? []),
+        });
+      }
+      const settlePendingSend = (acceptedSeq?: number) =>
+        setPendingSend((current) =>
+          current?.clientNonce !== clientNonce
+            ? current
+            : acceptedSeq === undefined
+              ? null
+              : { ...current, acceptedSeq },
+        );
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
         if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
@@ -478,6 +498,7 @@ export function useComposerActions({
           ? (await rpc.threads.sendWithRoutines({ ...payload, routineIds: plan.routineIds })).send
           : await rpc.threads.send(payload);
         accepted = true;
+        settlePendingSend(sent?.seq);
         if (sent && botTarget && activeBotId.current === botTarget) {
           updateSnapshot((current) =>
             applyThreadSendReceipt(
@@ -507,10 +528,15 @@ export function useComposerActions({
         }
         if (groupTarget && activeGroupId.current === groupTarget) setAttachmentNotice(null);
         if (botTarget && activeBotId.current === botTarget) setAttachmentNotice(null);
-        if (groupTarget) void refreshGroupThreadRef.current(groupTarget).catch(() => undefined);
-        else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
+        const refreshed = groupTarget
+          ? refreshGroupThreadRef.current(groupTarget)
+          : botTarget
+            ? refreshThreadRef.current(botTarget)
+            : undefined;
+        void refreshed?.catch(() => undefined).finally(() => settlePendingSend());
         return true;
       } catch (error) {
+        settlePendingSend();
         const isConfirmation = isImageInputConfirmation(error);
         // Offer the file resend only for the unchanged draft this send carried.
         const confirmation = isConfirmation && draftEdits.current === editsAtSend;
@@ -626,6 +652,7 @@ export function useComposerActions({
     setReplyQuote,
     clearReply,
     sending,
+    pendingSend,
     sentCount,
     sendMessage,
     stopRun,
