@@ -385,4 +385,41 @@ describe("controls", () => {
     expect(buttons).toHaveLength(200);
     expect(q('[aria-pressed="true"]')!.textContent).toBe("o240");
   });
+
+  it("presses the segment for a numeric value and still reports the choice as a string", () => {
+    const onChange = vi.fn();
+    render(<Segmented options={[1, 2, 3]} value={2} onChange={onChange} />);
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("2");
+    expect(host.querySelectorAll('[aria-pressed="false"]')).toHaveLength(2);
+    click(host.querySelectorAll("button")[2]!);
+    expect(onChange).toHaveBeenCalledWith("3");
+  });
+
+  it("presses the object option whose numeric value is chosen", () => {
+    render(
+      <Segmented
+        options={[
+          { value: 7, label: "Week" },
+          { value: 30, label: "Month" },
+        ]}
+        value={30}
+      />,
+    );
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("Month");
+  });
+
+  it("keeps a numeric chosen segment when there are too many to list", () => {
+    const many = Array.from({ length: 250 }, (_, index) => index);
+    render(<Segmented value={240} options={many} />);
+    expect(host.querySelectorAll("button")).toHaveLength(200);
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("240");
+  });
+
+  it("keeps string values pressed and reports the clicked value as a string", () => {
+    const onChange = vi.fn();
+    render(<Segmented options={["a", "b"]} value="a" onChange={onChange} />);
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("a");
+    click(host.querySelectorAll("button")[1]!);
+    expect(onChange).toHaveBeenCalledWith("b");
+  });
 });
