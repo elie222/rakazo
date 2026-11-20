@@ -1,0 +1,116 @@
+/**
+ * Finds many values in a text in one pass (Aho–Corasick over UTF-16 code units, as `indexOf`
+ * matches), so the cost grows with the text and the matches rather than with values × text.
+ */
+export type SecretMatcher = {
+  /** True when there is no value to find. */
+  empty: boolean;
+  /** The stretches values cover, in order, as [start, end); overlapping matches make one stretch. */
+  ranges(text: string): Array<[number, number]>;
+  /** Whether any value occurs in `text`. */
+  test(text: string): boolean;
+};
+
+const ROOT = 0;
+
+export function createSecretMatcher(values: readonly string[]): SecretMatcher {
+  // Each state's children, keyed by state and code unit in one map.
+  const children = new Map<number, number>();
+  const key = (state: number, code: number) => state * 0x10000 + code;
+  const depth = [0];
+  // The longest value that ends at this state, as a suffix of the text read so far; 0 when none.
+  const longest = [0];
+  for (const value of values) {
+    if (!value) continue;
+    let state = ROOT;
+    for (let index = 0; index < value.length; index += 1) {
+      const edge = key(state, value.charCodeAt(index));
+      let child = children.get(edge);
+      if (child === undefined) {
+        child = depth.length;
+        depth.push(index + 1);
+        longest.push(0);
+        children.set(edge, child);
+      }
+      state = child;
+    }
+    longest[state] = value.length;
+  }
+
+  const fail = new Int32Array(depth.length);
+  // Breadth first, so a state's fallback is settled before its children need it.
+  const byState = new Map<number, Array<[number, number]>>();
+  for (const [edge, child] of children) {
+    const parent = Math.floor(edge / 0x10000);
+    const list = byState.get(parent) ?? [];
+    list.push([edge - parent * 0x10000, child]);
+    byState.set(parent, list);
+  }
+  const queue: number[] = [ROOT];
+  for (let head = 0; head < queue.length; head += 1) {
+    const state = queue[head]!;
+    for (const [code, child] of byState.get(state) ?? []) {
+      if (state !== ROOT) {
+        let fallback = fail[state]!;
+        while (fallback !== ROOT && !children.has(key(fallback, code))) fallback = fail[fallback]!;
+        fail[child] = children.get(key(fallback, code)) ?? ROOT;
+      }
+      if (longest[child] === 0) longest[child] = longest[fail[child]!]!;
+      queue.push(child);
+    }
+  }
+  const empty = depth.length === 1;
+
+  /** Calls `found(end, length)` with the longest value ending at each offset that ends one. */
+  const scan = (text: string, found: (end: number, length: number) => boolean | undefined) => {
+    let state = ROOT;
+    for (let index = 0; index < text.length; index += 1) {
+      const code = text.charCodeAt(index);
+      let child = children.get(key(state, code));
+      while (child === undefined && state !== ROOT) {
+        state = fail[state]!;
+        child = children.get(key(state, code));
+      }
+      state = child ?? ROOT;
+      const length = longest[state]!;
+      if (length > 0 && found(index + 1, length)) return;
+    }
+  };
+
+  return {
+    empty,
+    ranges(text) {
+      if (empty) return [];
+      // Of the matches ending at one offset only the longest counts: the others lie inside it,
+      // so they overlap it and can't change a stretch. Ends only grow, so a match that starts
+      // before the current stretch ends joins it; one that only touches it starts another.
+      const ranges: Array<[number, number]> = [];
+      scan(text, (end, length) => {
+        const start = end - length;
+        const last = ranges.at(-1);
+        if (last && start < last[1]) last[0] = Math.min(last[0], start);
+        else ranges.push([start, end]);
+        // A match starting before earlier stretches swallows them too.
+        while (ranges.length > 1 && ranges.at(-1)![0] < ranges.at(-2)![1]) {
+          const [merged] = ranges.splice(-1, 1);
+          const previous = ranges.at(-1)!;
+          previous[0] = Math.min(previous[0], merged![0]);
+          previous[1] = merged![1];
+        }
+        const current = ranges.at(-1)!;
+        current[1] = end;
+        return undefined;
+      });
+      return ranges;
+    },
+    test(text) {
+      if (empty) return false;
+      let found = false;
+      scan(text, () => {
+        found = true;
+        return true;
+      });
+      return found;
+    },
+  };
+}
