@@ -16,6 +16,7 @@ describe("droppedTableHtmlText", () => {
     ['<img alt="">', ""],
     ['<img alt="First" alt="Second">', "First"],
     ['<img alt="&lt; &#67; &#x1f600; &quot; &apos; &nbsp;">', "< C 😀 \" ' \u00a0"],
+    ['<img alt="a&#xD800;b &#56320;">', "a\ufffdb \ufffd"],
     ['<img data-alt="Decorative">', null],
     ['<img title="alt=Decorative">', null],
     ['<img><span alt="Decorative">', null],

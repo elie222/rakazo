@@ -38,9 +38,9 @@ function decodeHtmlEntities(value: string): string {
         code.slice(code[1]?.toLowerCase() === "x" ? 2 : 1),
         code[1]?.toLowerCase() === "x" ? 16 : 10,
       );
-      return Number.isInteger(point) && point > 0 && point <= 0x10ffff
-        ? String.fromCodePoint(point)
-        : entity;
+      if (!Number.isInteger(point) || point <= 0 || point > 0x10ffff) return entity;
+      // A surrogate code point on its own is not a character; HTML decodes it as U+FFFD.
+      return point >= 0xd800 && point <= 0xdfff ? "\ufffd" : String.fromCodePoint(point);
     },
   );
 }
