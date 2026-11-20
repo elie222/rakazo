@@ -5,6 +5,7 @@ import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
+import { SaveScreenshotButton } from "../../../components/computers/SaveScreenshotButton";
 import { TeachCaptureOverlay } from "../../../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../../../components/teach/TeachComputerOverlay";
 import {
@@ -73,6 +74,12 @@ export function ComputerOverlay({
   onRefreshTeaching,
   onClose,
 }: ComputerOverlayProps) {
+  // Only a live screen has something to save; a user's own machine has no screen in the app.
+  const showingScreen =
+    !runsOnUserMachine(computer) &&
+    computer?.state === "running" &&
+    Boolean(embeddedScreenUrl) &&
+    !computerScreenError;
   return (
     <div className="fixed inset-0 z-30 bg-background">
       <div
@@ -163,6 +170,7 @@ export function ComputerOverlay({
                 onRefresh={onRefreshTeaching}
               />
             ) : null}
+            {showingScreen ? <SaveScreenshotButton botId={bot.id} /> : null}
             <Button
               variant="ghost"
               size="icon-sm"

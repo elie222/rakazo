@@ -21,6 +21,11 @@ vi.mock("@rakazo/ui-web", () => ({
     <button type="button" {...props} />
   ),
 }));
+vi.mock("../../../components/computers/SaveScreenshotButton", () => ({
+  SaveScreenshotButton: ({ botId }: { botId: string }) => (
+    <button type="button" data-testid="save-screenshot" data-bot={botId} />
+  ),
+}));
 vi.mock("../../../components/teach/TeachCaptureOverlay", () => ({
   TeachCaptureOverlay: () => null,
 }));
@@ -61,7 +66,7 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
 async function render(
   state: ComputerStatus["state"],
   onStart = vi.fn(),
-  options: { hasControl?: boolean; shared?: boolean } = {},
+  options: { hasControl?: boolean; shared?: boolean; screenUrl?: string; error?: string } = {},
 ) {
   await act(async () => {
     root.render(
@@ -76,9 +81,9 @@ async function render(
         sending={false}
         booting={false}
         sendError={null}
-        embeddedScreenUrl={null}
+        embeddedScreenUrl={options.screenUrl ?? null}
         screenFrameRef={() => undefined}
-        computerScreenError={null}
+        computerScreenError={options.error ?? null}
         computerBooting={null}
         onStopTeaching={() => undefined}
         onStopRun={() => undefined}
@@ -135,4 +140,20 @@ it("says sign-ins are shared while someone in a shared space has control", async
   expect(note()).toBeNull();
   await render("running", vi.fn(), { shared: true });
   expect(note()).toBeNull();
+});
+
+it("offers to save a screenshot only while a live screen is showing", async () => {
+  const save = () => container.querySelector<HTMLElement>('[data-testid="save-screenshot"]');
+  const screenUrl = "/screen/session";
+  await render("running", vi.fn(), { screenUrl });
+  expect(save()?.dataset.bot).toBe("bot-1");
+  await render("running", vi.fn(), { screenUrl, hasControl: true });
+  expect(save()).not.toBeNull();
+  // Nothing to capture while the screen is still loading, failed, or the computer is not running.
+  await render("running");
+  expect(save()).toBeNull();
+  await render("running", vi.fn(), { screenUrl, error: "The screen did not respond." });
+  expect(save()).toBeNull();
+  await render("suspended", vi.fn(), { screenUrl });
+  expect(save()).toBeNull();
 });
