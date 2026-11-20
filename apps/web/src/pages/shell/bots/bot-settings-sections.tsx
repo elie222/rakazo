@@ -1,5 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ComputerMode, ThinkingLevel, UserDeviceSummary } from "@rakazo/contracts";
+import type {
+  ApprovalMode,
+  ComputerMode,
+  ThinkingLevel,
+  UserDeviceSummary,
+} from "@rakazo/contracts";
 import {
   BOT_COMPUTER_MODES,
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -408,6 +413,56 @@ export function DeviceRow({
         }}
         options={options}
       />
+    </div>
+  );
+}
+
+/**
+ * How much this bot asks before acting: its own mode, or the owner's Space mode. Auto says
+ * why it waits while the Space has no approval model.
+ */
+export function ApprovalModeRow({
+  id,
+  value,
+  autoAvailable,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  /** This bot's own mode; null follows the Space. */
+  value: ApprovalMode | null;
+  /** False while the Space's Auto has no approval model to judge with. */
+  autoAvailable: boolean;
+  disabled?: boolean;
+  onChange: (mode: ApprovalMode | null) => void;
+}) {
+  const { t } = useLingui();
+  return (
+    <div className="flex flex-col gap-1.5 py-3">
+      <div className="flex min-h-12 items-center justify-between gap-3 text-body">
+        <label htmlFor={id} className="text-foreground">
+          <Trans>Approval mode</Trans>
+        </label>
+        <OptionSelect
+          id={id}
+          data-testid="bot-approval-mode"
+          aria-label={t`Approval mode`}
+          value={value ?? ""}
+          disabled={disabled}
+          onValueChange={(next) => onChange(next === "" ? null : (next as ApprovalMode))}
+          options={[
+            { value: "", label: t`Space default` },
+            { value: "ask", label: t`Ask` },
+            { value: "auto", label: t`Auto` },
+            { value: "never", label: t`Never ask` },
+          ]}
+        />
+      </div>
+      {value === "auto" && !autoAvailable ? (
+        <p className="text-body-sm text-muted-foreground">
+          <Trans>Auto needs an approval model; until one is set, this bot asks.</Trans>
+        </p>
+      ) : null}
     </div>
   );
 }

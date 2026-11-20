@@ -60,6 +60,7 @@ function sourceRecords(): AccountExportRecord[] {
       fleetManagement: false,
       replyMode: "messages",
       workspacePath: null,
+      approvalMode: null,
       createdAt: at,
     },
     {
@@ -90,6 +91,7 @@ function sourceRecords(): AccountExportRecord[] {
       fleetManagement: true,
       replyMode: "chat",
       workspacePath: null,
+      approvalMode: null,
       createdAt: at,
     },
     {

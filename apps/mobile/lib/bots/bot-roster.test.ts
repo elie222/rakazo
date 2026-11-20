@@ -38,6 +38,7 @@ function bot(id = "bot-1"): Bot {
     disabledBuiltinTools: [],
     workspacePath: null,
     hostDevice: null,
+    approvalMode: null,
     webhookConfigured: false,
     spawnKey: null,
   };

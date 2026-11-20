@@ -68,6 +68,7 @@ const botRecord = (id: string): Extract<AccountExportRecord, { type: "bot" }> =>
   fleetManagement: true,
   replyMode: "chat",
   workspacePath: null,
+  approvalMode: null,
   createdAt,
 });
 

@@ -111,6 +111,7 @@ function fakeBot(id: string, name: string): Bot {
     replyMode: "chat",
     workspacePath: null,
     hostDevice: null,
+    approvalMode: null,
     spawnKey: null,
   };
 }

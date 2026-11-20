@@ -1,6 +1,12 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { Bot, BotAvatarSet, ComputerMode, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  ApprovalMode,
+  Bot,
+  BotAvatarSet,
+  ComputerMode,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
@@ -54,7 +60,9 @@ import { chatModelPickerChoices } from "../lib/models/chat-model";
 import { thinkingLevelLabel } from "../lib/models/thinking-level";
 import { native, useMobileTokens } from "../lib/native/native";
 import { afterChatNotifyChange } from "../lib/notifications/live-notifications";
+import { rpcQuery } from "../lib/query/query";
 import { createQueuedSave } from "../lib/query/queued-save";
+import { useScreenQuery } from "../lib/query/screen-query";
 import { notifyConversationCleared } from "../lib/thread/conversation-cleared";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/voice/bot-voices";
 import { loadDeviceVoiceEnabled } from "../lib/voice/device-voice";
@@ -81,6 +89,10 @@ export default function BotSettingsScreen() {
   const [color, setColor] = useState<string>(DEFAULT_BOT_AVATAR_COLOR);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [workspacePath, setWorkspacePath] = useState("");
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode | "space">("space");
+  // Auto judges with a model; without one the bot asks, as the picker says.
+  const autoAvailable =
+    useScreenQuery(rpcQuery("autoReview/get", {})).data?.checkerAvailable ?? true;
   const [avatarSet, setAvatarSet] = useState<BotAvatarSet>("organic");
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
@@ -205,6 +217,7 @@ export default function BotSettingsScreen() {
         setAvatarSet(resolveBotAvatarSet(next.avatarSet));
         setComputerMode(next.computerMode);
         setWorkspacePath(next.workspacePath ?? "");
+        setApprovalMode(next.approvalMode ?? "space");
         setModelKey(
           next.modelProvider && next.modelId
             ? modelOptionKey(next.modelProvider, next.modelId)
@@ -290,6 +303,16 @@ export default function BotSettingsScreen() {
       })),
     ],
     [t, thinkingOptions],
+  );
+
+  const approvalChoices: MenuPickerChoice[] = useMemo(
+    () => [
+      { key: "space", label: t`Space default` },
+      { key: "ask", label: t`Ask` },
+      { key: "auto", label: t`Auto` },
+      { key: "never", label: t`Never ask` },
+    ],
+    [t],
   );
 
   useEffect(() => {
@@ -421,6 +444,7 @@ export default function BotSettingsScreen() {
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
         workspacePath?: string | null;
+        approvalMode?: ApprovalMode | null;
       } = { botId };
       const rawWorkspacePath = workspacePath.trim();
       const nextWorkspacePath = rawWorkspacePath
@@ -434,6 +458,8 @@ export default function BotSettingsScreen() {
       }
       if (nextWorkspacePath !== (bot.workspacePath ?? null))
         input.workspacePath = nextWorkspacePath;
+      const nextApprovalMode = approvalMode === "space" ? null : approvalMode;
+      if (nextApprovalMode !== (bot.approvalMode ?? null)) input.approvalMode = nextApprovalMode;
       if (profile.description !== (bot.description ?? "")) {
         input.description = profile.description;
       }
@@ -498,6 +524,7 @@ export default function BotSettingsScreen() {
       computerMode !== bot.computerMode ||
       (workspacePath.trim() ? normalizeBotWorkspacePath(workspacePath.trim()) : null) !==
         (bot.workspacePath ?? null) ||
+      (approvalMode === "space" ? null : approvalMode) !== (bot.approvalMode ?? null) ||
       autoSpeak !== bot.autoSpeak ||
       (selectedModel?.provider ?? null) !== (bot.modelProvider ?? null) ||
       (selectedModel?.modelId ?? null) !== (bot.modelId ?? null) ||
@@ -704,45 +731,56 @@ export default function BotSettingsScreen() {
                 {deviceVoiceEnabled ? voiceRow : null}
               </SettingsGroup>
             ) : null}
-            {changed?.dailyCheckIns ||
-            changed?.crossSpaceCommunication ||
-            changed?.fleetManagement ? (
-              <SettingsGroup label={t`Permissions`}>
-                {changed.dailyCheckIns ? (
-                  <SettingsSwitch
-                    label={t`Daily check-ins on unfinished work`}
-                    value={dailyCheckIns}
-                    onChange={(value) => {
-                      if (!botId) return;
-                      setError(null);
-                      dailyCheckInsSave.update(value);
-                    }}
-                  />
-                ) : null}
-                {changed.crossSpaceCommunication ? (
-                  <SettingsSwitch
-                    label={t`Allow cross-space bot communication`}
-                    value={crossSpaceCommunication}
-                    onChange={(value) => {
-                      if (!botId) return;
-                      setError(null);
-                      crossSpaceSave.update(value);
-                    }}
-                  />
-                ) : null}
-                {changed.fleetManagement ? (
-                  <SettingsSwitch
-                    label={t`Manage other bots`}
-                    onChange={(value) => {
-                      if (!botId) return;
-                      setError(null);
-                      fleetSave.update(value);
-                    }}
-                    value={fleetManagement}
-                  />
-                ) : null}
-              </SettingsGroup>
-            ) : null}
+            <SettingsGroup
+              label={t`Permissions`}
+              footer={
+                approvalMode === "auto" && !autoAvailable
+                  ? t`Auto needs an approval model; until one is set, this bot asks.`
+                  : undefined
+              }
+            >
+              <MenuPicker
+                choices={approvalChoices}
+                label={t`Approval mode`}
+                onChange={(key) =>
+                  setApprovalMode(key === "space" ? "space" : (key as ApprovalMode))
+                }
+                value={approvalMode}
+              />
+              {changed?.dailyCheckIns ? (
+                <SettingsSwitch
+                  label={t`Daily check-ins on unfinished work`}
+                  value={dailyCheckIns}
+                  onChange={(value) => {
+                    if (!botId) return;
+                    setError(null);
+                    dailyCheckInsSave.update(value);
+                  }}
+                />
+              ) : null}
+              {changed?.crossSpaceCommunication ? (
+                <SettingsSwitch
+                  label={t`Allow cross-space bot communication`}
+                  value={crossSpaceCommunication}
+                  onChange={(value) => {
+                    if (!botId) return;
+                    setError(null);
+                    crossSpaceSave.update(value);
+                  }}
+                />
+              ) : null}
+              {changed?.fleetManagement ? (
+                <SettingsSwitch
+                  label={t`Manage other bots`}
+                  onChange={(value) => {
+                    if (!botId) return;
+                    setError(null);
+                    fleetSave.update(value);
+                  }}
+                  value={fleetManagement}
+                />
+              ) : null}
+            </SettingsGroup>
             <View style={{ gap: 7 }}>
               <View
                 style={{

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { ComponentProps, ReactNode } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -32,7 +32,7 @@ vi.mock("@rakazo/ui-web", () => ({
       data-testid={testId}
       value={value ?? ""}
       disabled={disabled}
-      onChange={(event: ComponentProps<"select">["onChange"]) => onValueChange(event.target.value)}
+      onChange={(event: ChangeEvent<HTMLSelectElement>) => onValueChange(event.target.value)}
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>

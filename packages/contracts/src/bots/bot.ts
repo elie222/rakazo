@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { ComputerModeSchema } from "../computers/computer.js";
 import { Id, ReplyModeSchema, ThinkingLevelSchema } from "../ids.js";
+import { ApprovalModeSchema } from "../integrations/approvals.js";
 import { TEAM_CHAT_RULES_MAX_LENGTH } from "../threads/external-conversations.js";
 import { BotSettingsValuesSchema } from "../threads/message-blocks.js";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
@@ -76,6 +77,8 @@ export const BotSchema = z.object({
   dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().default(true),
   replyMode: ReplyModeSchema.default("chat"),
+  /** Overrides the owner's Space mode for this bot; null or absent follows the Space. */
+  approvalMode: ApprovalModeSchema.nullable().default(null),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
@@ -183,6 +186,8 @@ export const UpdateBotInput = z
     dailyCheckIns: z.boolean().optional(),
     fleetManagement: z.boolean().optional(),
     replyMode: ReplyModeSchema.optional(),
+    /** Ask, auto or never for this bot alone; null follows the Space. */
+    approvalMode: ApprovalModeSchema.nullable().optional(),
     disabledBuiltinTools: DisabledBuiltinToolsSchema.optional(),
     /** Write only while these settings still hold, as an undo does. */
     expectedSettings: BotSettingsValuesSchema.optional(),

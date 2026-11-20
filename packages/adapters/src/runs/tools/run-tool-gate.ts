@@ -88,7 +88,11 @@ import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lif
 import { notifyRun } from "../lifecycle/run-notifications.js";
 import { autoReviewCheckerProvider, includedAutoReviewChecker } from "../turn/run-auto-review.js";
 import { refusal } from "../turn/tool-refusal.js";
+import { auditToolCall, blockingRuleSuffix } from "./run-tool-audit.js";
 import type { ToolRequest } from "./run-tool-request.js";
+
+export { auditToolCall } from "./run-tool-audit.js";
+
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
 import { callPaidService } from "./run-tools-integrations.js";
@@ -334,7 +338,12 @@ export async function gateToolCall(
       : ignoresAllowRules && resolvedRules.source === "always_allow"
         ? { ...resolvedRules, source: "default" as const }
         : resolvedRules;
-  const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
+  // A bot's own mode wins over the owner's Space mode; an unset or unrecognized value follows it.
+  const storedMode = ctx.bot.approvalMode;
+  const mode =
+    storedMode === "ask" || storedMode === "auto" || storedMode === "never"
+      ? storedMode
+      : approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   const reviewable = mode === "auto" && !mandatoryInAnyRun;
   const injectedReview = reviewable ? deps.autoReview : undefined;
   const reviewSettings = !reviewable || injectedReview ? null : await ctx.trust.loadApprovalModel();
@@ -657,37 +666,6 @@ export async function gateToolCall(
     for (const trust of connectorTrusts) trusted.add(trust);
   }
   return { call };
-}
-
-/** A bot's consequential tool call, recorded in its organization's audit log. */
-export async function auditToolCall(
-  ctx: RunContext,
-  tool: string,
-  outcome: "success" | "failure" | "denied",
-  metadata: AuditEventInput["metadata"],
-  recorded: Pick<AuditEventInput, "action" | "actor"> = {
-    action: "tool.call",
-    actor: { type: "bot", id: ctx.bot.id, label: ctx.bot.name },
-  },
-): Promise<void> {
-  await recordAuditEvent({
-    ...recorded,
-    spaceId: ctx.run.spaceId,
-    target: { type: "tool", id: tool, label: humanizeToolName(tool) },
-    outcome,
-    runId: ctx.runId,
-    threadId: ctx.thread.id,
-    metadata,
-  });
-}
-
-function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
-  const labels = decisiveActionApprovalRules(resolved).map((rule) => {
-    const value = rule.matchValue.trim().replace(/\s+/g, " ");
-    return JSON.stringify(rule.matchKind === "site" ? value : humanizeToolName(value));
-  });
-  if (labels.length === 0) return "";
-  return ` by the saved ${labels.length === 1 ? "rule" : "rules"} ${labels.join(", ")}`;
 }
 
 function createToolCall(

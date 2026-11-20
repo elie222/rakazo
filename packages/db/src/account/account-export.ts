@@ -175,6 +175,10 @@ async function* spaceRecords(
       dailyCheckIns: bot.dailyCheckIns,
       fleetManagement: bot.fleetManagement,
       replyMode: bot.replyMode === "messages" ? "messages" : "chat",
+      approvalMode:
+        bot.approvalMode === "ask" || bot.approvalMode === "auto" || bot.approvalMode === "never"
+          ? bot.approvalMode
+          : null,
       workspacePath: bot.workspacePath,
       createdAt: iso(bot.createdAt),
     };

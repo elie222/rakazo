@@ -22,6 +22,7 @@ const SETTINGS: Partial<Record<Field, AnalyticsBotSetting>> = {
   dailyCheckIns: "daily_check_ins",
   fleetManagement: "fleet_management",
   replyMode: "reply_mode",
+  approvalMode: "approvals",
   disabledBuiltinTools: "tools",
   hostDeviceId: "computer",
 };

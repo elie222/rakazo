@@ -394,7 +394,9 @@ describe("bot settings device voice menu", () => {
       "Manage other bots",
     ])
       expect(container.querySelector(`[aria-label="${label}"]`)).toBeNull();
-    expect(container.textContent).not.toContain("Permissions");
+    // The approval-mode picker is always offered; the switches stay hidden on their defaults.
+    expect(container.textContent).toContain("Permissions");
+    expect(container.textContent).toContain("Approval mode");
     expect(menu()).not.toBeNull();
   });
 
@@ -834,6 +836,7 @@ describe("bot settings device voice menu", () => {
       model: "Model",
       readAloud: "Read replies aloud",
       voice: "Device voice",
+      approvalMode: "Approval mode",
       dailyCheckIns: "Daily check-ins on unfinished work",
       crossSpaceCommunication: "Allow cross-space bot communication",
       fleetManagement: "Manage other bots",
@@ -857,6 +860,7 @@ describe("bot settings device voice menu", () => {
       "computer",
       "readAloud",
       "voice",
+      "approvalMode",
       "dailyCheckIns",
       "crossSpaceCommunication",
       "fleetManagement",

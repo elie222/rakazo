@@ -4,6 +4,7 @@ import { BotSchema } from "../bots/bot.js";
 import { BotAvatarSetSchema } from "../bots/bot-avatar.js";
 import { normalizeBotWorkspacePath } from "../bots/bot-workspace.js";
 import { Id, IsoDate, ReplyModeSchema } from "../ids.js";
+import { ApprovalModeSchema } from "../integrations/approvals.js";
 import { RoutineSchema } from "../routines/routine.js";
 import { ThreadMessageSchema } from "../threads/thread-message.js";
 
@@ -88,6 +89,8 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     dailyCheckIns: z.boolean().default(true),
     fleetManagement: z.boolean(),
     replyMode: ReplyModeSchema.default("chat"),
+    /** Absent in exports from older servers. */
+    approvalMode: ApprovalModeSchema.nullable().default(null),
     /** Absent in exports from older servers; a value that could escape the workspace is dropped. */
     workspacePath: z
       .string()

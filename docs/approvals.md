@@ -20,6 +20,11 @@ The mode works the same in a routine and in a chat app you linked as in the app 
 
 **Auto** needs an **Approval model**, set in **Settings → Models**. See [Models](./models.md).
 
+To change how much one bot asks, open its settings, expand **Advanced**, and choose its
+**Approval mode** under **Permissions**; **Space default** follows the mode above. A bot set to
+**Auto** where the Space has no approval model asks instead, and its settings say so. Block rules
+still refuse a blocked action in every mode.
+
 > [!TIP]
 > Start with **Ask** or **Auto**. As you approve the same action again and again, choose
 > **Always allow** on the card and the bot stops asking for that one.

@@ -915,6 +915,7 @@ class AccountImporter implements ArchiveSink {
             crossSpaceCommunication: record.crossSpaceCommunication,
             dailyCheckIns: record.dailyCheckIns,
             replyMode: record.replyMode,
+            approvalMode: record.approvalMode,
             workspacePath: record.workspacePath,
             createdAt: new Date(record.createdAt),
           },
