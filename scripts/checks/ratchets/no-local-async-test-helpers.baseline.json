@@ -14,7 +14,7 @@
   "apps/web/src/lib/auth/session-change.test.tsx": 1,
   "apps/web/src/pages/integrations/McpServersOverlay.test.tsx": 1,
   "apps/web/src/pages/model-settings/ModelRoleSettings.test.tsx": 1,
-  "apps/web/src/pages/model-settings/ModelSettingsOverlay.test.tsx": 1,
+  "apps/web/src/pages/model-settings/ModelSettingsOverlay.test.tsx": 2,
   "apps/web/src/pages/settings/VoiceSettingsOverlay.recovery.test.tsx": 1,
   "apps/web/src/pages/settings/VoiceSettingsOverlay.test.tsx": 9,
   "apps/web/src/pages/shell/chat/message-hover-actions.test.tsx": 1,

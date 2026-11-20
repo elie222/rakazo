@@ -1,3 +1,10 @@
+import { randomBytes } from "node:crypto";
+import type { BackgroundJob, QueuedAhead } from "@rakazo/adapter-kit";
+import {
+  MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS,
+  MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
+  messagingInboundSettleJobKey,
+} from "@rakazo/adapter-kit";
 import type { OutboundLane, OutboundRow } from "@rakazo/adapters";
 import {
   inboundDeliveryClientNonce,
@@ -5,8 +12,18 @@ import {
   messagingWakeIdempotencyKey,
 } from "@rakazo/adapters";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
-import { SendClaimLostError, SpaceDeletionInProgressError } from "@rakazo/db";
+import { deferred, flush } from "@rakazo/core/test-async";
+import { decryptText, SendClaimLostError, SpaceDeletionInProgressError } from "@rakazo/db";
+import type { Mock } from "vitest";
 import { describe, expect, it, vi } from "vitest";
+import { storeInboundAttachment } from "../content/artifacts.js";
+import {
+  DIRECT_ATTACHMENT_ATTEMPTS,
+  DIRECT_ATTACHMENT_TIMEOUT_MS,
+  DIRECT_MESSAGE_SETTLE_BUDGET_MS,
+  SHUTDOWN_DOWNLOAD_GRACE_MS,
+  SHUTDOWN_HANDOFF_MARGIN_MS,
+} from "./intake/limits.js";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import {
   createMessagingInboundHandler,
@@ -14,6 +31,11 @@ import {
   wakeMessageRoutines,
 } from "./messaging-inbound.js";
 import type { MessagingReceipts } from "./messaging-receipts.js";
+
+/** The sender's jobs ahead of a message, due until `until`; `own` when it has a job itself. */
+function ahead(until: Date | null, own = false): QueuedAhead {
+  return { until, own };
+}
 
 function createDeps(
   overrides: {
@@ -50,7 +72,15 @@ function createDeps(
   );
   const notify = vi.fn(async () => undefined);
   const enqueue = vi.fn(async () => undefined);
+  const enqueueIn = vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined);
   const cancelIn = vi.fn(async (_tx: unknown, _key: string) => undefined);
+  // The job queue holds none of the sender's backup jobs unless a test says it does.
+  const pendingUntil = vi.fn(
+    async (_queueName: string, _exceptKey?: string): Promise<QueuedAhead> => ahead(null),
+  );
+  const releaseFollowersIn = vi.fn(
+    async (_tx: unknown, _queueName: string, _exceptKey?: string) => undefined,
+  );
   const acknowledge = vi.fn<MessagingReceipts["acknowledge"]>();
   const runs = new Map<string, { status: string; messagingMirroredAt: Date | null }>([
     ["run-1", { status: "running", messagingMirroredAt: null }],
@@ -134,6 +164,8 @@ function createDeps(
     }),
   };
   const prisma = {
+    // The database clock, read for a message's arrival time.
+    $queryRaw: vi.fn(async () => [{ now: new Date() }]),
     messagingIdentity: {
       findUnique: vi.fn(
         async ({
@@ -285,13 +317,22 @@ function createDeps(
         async ({
           where,
         }: {
-          where: { identityId: string; kind: string; status?: { in: string[] } };
+          where: {
+            identityId: string;
+            kind?: string;
+            status?: { in: string[] };
+            idempotencyKey?: { startsWith: string };
+            createdAt?: { gte: Date };
+          };
         }) =>
           outboundRows
             .filter(
               (row) =>
                 row.identityId === where.identityId &&
-                row.kind === where.kind &&
+                (!where.kind || row.kind === where.kind) &&
+                (!where.idempotencyKey ||
+                  (row.idempotencyKey as string).startsWith(where.idempotencyKey.startsWith)) &&
+                (!where.createdAt || (row.createdAt as Date) >= where.createdAt.gte) &&
                 (!where.status ||
                   where.status.in.includes((row.status as string | undefined) ?? "pending")),
             )
@@ -335,7 +376,7 @@ function createDeps(
   return {
     prisma,
     events: { sendUserMessage, notify },
-    jobs: { enqueue, cancelIn },
+    jobs: { enqueue, enqueueIn, cancelIn, pendingUntil, releaseFollowersIn },
     delivery: { recordIn, send },
     provision,
     openSignup: true,
@@ -347,7 +388,10 @@ function createDeps(
     sendUserMessage,
     notify,
     enqueue,
+    enqueueIn,
     cancelIn,
+    pendingUntil,
+    releaseFollowersIn,
     recordIn,
     send,
     outboundRows,
@@ -359,7 +403,10 @@ function createDeps(
     sendUserMessage: ReturnType<typeof vi.fn>;
     notify: ReturnType<typeof vi.fn>;
     enqueue: ReturnType<typeof vi.fn>;
+    enqueueIn: typeof enqueueIn;
     cancelIn: typeof cancelIn;
+    pendingUntil: typeof pendingUntil;
+    releaseFollowersIn: typeof releaseFollowersIn;
     recordIn: typeof recordIn;
     send: typeof send;
     acknowledge: typeof acknowledge;
@@ -399,6 +446,62 @@ function transactions(deps: ReturnType<typeof createDeps>) {
   return opened;
 }
 
+/** The settle jobs handed to the queue to run (due now or after others), in the order handed. */
+function handedOff(deps: ReturnType<typeof createDeps>) {
+  type SettleJob = BackgroundJob & { name: "messaging.inbound_settle" };
+  // A follower is written in a transaction, with the release of its queue.
+  const writes = [
+    ...deps.enqueue.mock.calls.map(([job], index) => ({
+      job: job as SettleJob,
+      order: deps.enqueue.mock.invocationCallOrder[index]!,
+    })),
+    ...deps.enqueueIn.mock.calls
+      .map(([, job], index) => ({
+        job: job as SettleJob,
+        order: deps.enqueueIn.mock.invocationCallOrder[index]!,
+      }))
+      .filter(({ job }) => job.payload.follower === true),
+  ];
+  return writes
+    .toSorted((a, b) => a.order - b.order)
+    .map(({ job }) => job)
+    .filter((job) => job.name === "messaging.inbound_settle");
+}
+
+/**
+ * The sender's job queue as the jobs recorded and handed off so far leave it, for `pendingUntil`:
+ * with a key, only the jobs recorded before that one count.
+ */
+function queueOf(deps: ReturnType<typeof createDeps>) {
+  return async (_queueName: string, exceptKey?: string) => {
+    const due = new Map<string, number>();
+    for (const [, job] of deps.enqueueIn.mock.calls) {
+      if (job.replaceKey && !due.has(job.replaceKey)) due.set(job.replaceKey, 0);
+    }
+    for (const job of [...deps.enqueueIn.mock.calls.map(([, job]) => job), ...handedOff(deps)]) {
+      if (job.replaceKey) due.set(job.replaceKey, job.availableAt!.getTime());
+    }
+    const order = [...due.keys()];
+    const place = exceptKey ? order.indexOf(exceptKey) : -1;
+    const before = place === -1 ? order : order.slice(0, place);
+    return ahead(
+      before.length > 0 ? new Date(Math.max(...before.map((key) => due.get(key)!))) : null,
+      place !== -1,
+    );
+  };
+}
+
+const settleKey = (handle: string) => messagingInboundSettleJobKey("sendblue", handle);
+
+/** Waits until `times` direct messages with files have settled: each ends by cancelling its backup. */
+function settled(deps: ReturnType<typeof createDeps>, times = 1) {
+  return vi.waitFor(() =>
+    expect(
+      deps.cancelIn.mock.calls.filter(([, key]) => key.startsWith("messaging.inbound_settle:")),
+    ).toHaveLength(times),
+  );
+}
+
 const dmEvent = {
   type: "message" as const,
   provider: "sendblue",
@@ -411,6 +514,19 @@ const dmEvent = {
   participants: ["+15551111111"],
   content: "hello bot",
   mediaUrl: null,
+};
+
+const photoEvent = {
+  ...dmEvent,
+  content: "",
+  attachments: [
+    {
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      size: 42,
+      fetch: async () => new Uint8Array([1]),
+    },
+  ],
 };
 
 const groupEvent = {
@@ -483,6 +599,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
 
     expect(storeAttachment).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -528,6 +645,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
 
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -572,6 +690,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
 
     expect(transcribe).toHaveBeenCalledWith({
       spaceId: "ws-1",
@@ -623,6 +742,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
 
     expect(transcribe).toHaveBeenCalledTimes(1);
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
@@ -662,6 +782,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
 
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -698,6 +819,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
 
     expect(transcribe).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
@@ -724,11 +846,12 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
 
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        blocks: [{ kind: "text", text: "[file: voice.oga (unavailable)]" }],
-        prompt: "[file: voice.oga (unavailable)]",
+        blocks: [{ kind: "text", text: "[file: voice.oga (unavailable: download failed)]" }],
+        prompt: "[file: voice.oga (unavailable: download failed)]",
       }),
     );
   });
@@ -759,6 +882,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
     expect(storeAttachment).toHaveBeenCalledTimes(2);
     // A slow transcription must not eat the shared download deadline of later files.
     const firstTranscribe = transcribe.mock.invocationCallOrder[0]!;
@@ -789,6 +913,7 @@ describe("createMessagingInboundHandler DM routing", () => {
       });
       await vi.advanceTimersByTimeAsync(20_001);
       await pending;
+      await settled(deps);
       expect(transcribe).toHaveBeenCalledTimes(1);
       // The stalled provider call is cancelled, not left running in the background.
       const [{ signal }] = transcribe.mock.calls[0] as unknown as [{ signal: AbortSignal }];
@@ -823,6 +948,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         { name: "voice.oga", mimeType: "audio/ogg", size: 3, fetch: async () => audio },
       ],
     });
+    await settled(deps);
     const prompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
     expect(prompt).toContain("voiceTranscripts");
     expect(prompt).toContain("hi there");
@@ -847,6 +973,7 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
 
     const prompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
     expect(prompt).toContain('"files"');
@@ -878,7 +1005,9 @@ describe("createMessagingInboundHandler DM routing", () => {
         ],
       };
       await handle(event);
+      await settled(deps);
       await handle(event);
+      await settled(deps, 2);
       expect(storeAttachment).toHaveBeenCalledTimes(2);
       expect(storeAttachment.mock.invocationCallOrder[0]).toBeLessThan(
         deps.sendUserMessage.mock.invocationCallOrder[0]!,
@@ -901,7 +1030,7 @@ describe("createMessagingInboundHandler DM routing", () => {
     },
   );
 
-  it("caps stored attachments and shares one download deadline", async () => {
+  it("caps stored attachments and gives them one settle budget with patient retries", async () => {
     const storeAttachment = vi.fn<NonNullable<MessagingInboundDeps["storeAttachment"]>>(
       async ({ attachment }) => ({
         id: attachment.name,
@@ -920,21 +1049,65 @@ describe("createMessagingInboundHandler DM routing", () => {
         fetch: async () => new Uint8Array([1]),
       })),
     });
+    await settled(deps);
     expect(storeAttachment).toHaveBeenCalledTimes(ATTACHMENT_MAX_COUNT);
+    // Files past the cap never download, but the backup job names them, so it can list them too.
+    const [, job] = deps.enqueueIn.mock.calls[0]! as [unknown, BackgroundJob];
+    expect(
+      (job as BackgroundJob & { name: "messaging.inbound_settle" }).payload.attachments,
+    ).toHaveLength(ATTACHMENT_MAX_COUNT + 1);
     const deadlines = storeAttachment.mock.calls.map(([input]) => input.downloadDeadline);
     expect(new Set(deadlines).size).toBe(1);
-    expect(deadlines[0]).toBeGreaterThanOrEqual(before + 2_000);
-    expect(deadlines[0]).toBeLessThanOrEqual(Date.now() + 2_000);
+    expect(deadlines[0]).toBeGreaterThanOrEqual(before + DIRECT_MESSAGE_SETTLE_BUDGET_MS);
+    expect(deadlines[0]).toBeLessThanOrEqual(Date.now() + DIRECT_MESSAGE_SETTLE_BUDGET_MS);
+    expect(storeAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        downloadTimeoutMs: DIRECT_ATTACHMENT_TIMEOUT_MS,
+        attempts: DIRECT_ATTACHMENT_ATTEMPTS,
+      }),
+    );
     expect(deps.sendUserMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         blocks: expect.arrayContaining([
           {
             kind: "text",
-            text: `hello bot\n[file: photo-${ATTACHMENT_MAX_COUNT}.jpg (unavailable)]`,
+            text: `hello bot\n[file: photo-${ATTACHMENT_MAX_COUNT}.jpg (unavailable: not received)]`,
           },
         ]),
       }),
     );
+  });
+
+  it("names at most a bounded number of files, with their reported sizes, in the backup job", async () => {
+    const deps = createDeps({
+      storeAttachment: vi.fn(async ({ attachment }) => ({
+        id: attachment.name,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 1,
+      })),
+    });
+    await createMessagingInboundHandler(deps)({
+      ...dmEvent,
+      attachments: Array.from({ length: MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS + 5 }, (_, i) => ({
+        name: `photo-${i}.jpg`,
+        mimeType: "image/jpeg",
+        // A size the chat app did not report, or reported as nonsense, is left out.
+        ...(i === 0 ? { size: 42 } : i === 1 ? { size: -1 } : {}),
+        fetch: async () => new Uint8Array([1]),
+      })),
+    });
+    await settled(deps);
+    const [, job] = deps.enqueueIn.mock.calls[0]! as [
+      unknown,
+      BackgroundJob & { name: "messaging.inbound_settle" },
+    ];
+    expect(job.payload.attachments).toHaveLength(MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS);
+    expect(job.payload.attachments.slice(0, 3)).toStrictEqual([
+      { name: "photo-0.jpg", mimeType: "image/jpeg", size: 42 },
+      { name: "photo-1.jpg", mimeType: "image/jpeg" },
+      { name: "photo-2.jpg", mimeType: "image/jpeg" },
+    ]);
   });
 
   it("sanitizes unavailable file labels and keeps routine failure metadata fenced", async () => {
@@ -949,8 +1122,11 @@ describe("createMessagingInboundHandler DM routing", () => {
         },
       ],
     });
+    await settled(deps);
     const prompt = deps.sendUserMessage.mock.calls[0]?.[0]?.prompt as string;
-    expect(prompt).toContain('"unavailable": [\n    "[file: bad instructions .oga (unavailable)]"');
+    expect(prompt).toContain(
+      '"unavailable": [\n    "[file: bad instructions .oga (unavailable: not received)]"',
+    );
     expect(prompt.indexOf('"unavailable"')).toBeGreaterThan(
       prompt.indexOf("<untrusted_delivery_payload>"),
     );
@@ -976,6 +1152,699 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(deps.provision).not.toHaveBeenCalled();
     expect(storeAttachment).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("tells the sender when a file is too large or of a type the bot cannot take", async () => {
+    const fetch = vi.fn(async () => new Uint8Array([1]));
+    const storeAttachment: NonNullable<MessagingInboundDeps["storeAttachment"]> = ({
+      spaceId,
+      userId,
+      ...input
+    }) =>
+      storeInboundAttachment(
+        {
+          prisma: { artifact: { findFirst: vi.fn(async () => null) } } as never,
+          artifacts: {} as never,
+          maxUploadSizeBytes: 10,
+        },
+        { spaceId, userId },
+        input,
+      );
+    const deps = createDeps({ storeAttachment });
+    await createMessagingInboundHandler(deps)({
+      ...dmEvent,
+      content: "",
+      attachments: [
+        { name: "big.mov", mimeType: "video/quicktime", size: 11, fetch },
+        { name: "setup.exe", mimeType: "application/x-msdownload", size: 1, fetch },
+      ],
+    });
+    await settled(deps);
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          {
+            kind: "text",
+            text: "[file: big.mov (unavailable: too large)]\n[file: setup.exe (unavailable: unsupported type)]",
+          },
+        ],
+      }),
+    );
+    expect(deps.outboundRows).toEqual([
+      expect.objectContaining({
+        kind: "dm",
+        identityId: "mi-1",
+        body: "Some files couldn't be received.",
+      }),
+    ]);
+    expect(deps.send).toHaveBeenLastCalledWith([{ identityId: "mi-1" }]);
+  });
+
+  it("answers the webhook before the download finishes", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({ storeAttachment });
+    await createMessagingInboundHandler(deps)(photoEvent);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+
+    download.resolve();
+    await flush();
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          { kind: "image", artifactId: "artifact-1", mimeType: "image/jpeg", name: "photo.jpg" },
+        ],
+        clientNonce: "messaging:sendblue:handle-1",
+      }),
+    );
+  });
+
+  it("keeps a later text behind an earlier file from the same sender", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({ storeAttachment });
+    const handle = createMessagingInboundHandler(deps);
+    await handle(photoEvent);
+    await handle({ ...dmEvent, handle: "handle-2", content: "make a short of these" });
+    await flush();
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+
+    download.resolve();
+    await settled(deps, 2);
+    expect(
+      deps.sendUserMessage.mock.calls.map(
+        ([input]) => (input as { clientNonce: string }).clientNonce,
+      ),
+    ).toEqual(["messaging:sendblue:handle-1", "messaging:sendblue:handle-2"]);
+  });
+
+  it("downloads a queued message's files while the one ahead of it is still downloading", async () => {
+    const slow = deferred();
+    const storeAttachment = vi.fn<NonNullable<MessagingInboundDeps["storeAttachment"]>>(
+      async ({ attachment, clientNonce }) => {
+        if (clientNonce.includes(":handle-1:")) await slow.promise;
+        return { id: attachment.name, name: attachment.name, mimeType: "image/jpeg", size: 42 };
+      },
+    );
+    const deps = createDeps({ storeAttachment });
+    const handle = createMessagingInboundHandler(deps);
+    await handle(photoEvent);
+    await handle({
+      ...photoEvent,
+      handle: "handle-2",
+      attachments: [{ ...photoEvent.attachments[0]!, name: "clip-2.jpg" }],
+    });
+    // The second file is fetched at once, not when the first message has posted.
+    await vi.waitFor(() => expect(storeAttachment).toHaveBeenCalledTimes(2));
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+
+    slow.resolve();
+    await settled(deps, 2);
+    expect(
+      deps.sendUserMessage.mock.calls.map(
+        ([input]) => (input as { clientNonce: string }).clientNonce,
+      ),
+    ).toEqual(["messaging:sendblue:handle-1", "messaging:sendblue:handle-2"]);
+    // Its time was its own, so it arrived rather than being marked as failed.
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        blocks: [
+          { kind: "image", artifactId: "clip-2.jpg", mimeType: "image/jpeg", name: "clip-2.jpg" },
+        ],
+      }),
+    );
+  });
+
+  it("records and then cancels the settle job", async () => {
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      size: 42,
+    }));
+    const deps = createDeps({ storeAttachment });
+    const handle = createMessagingInboundHandler(deps);
+    const before = Date.now();
+    await handle(photoEvent);
+    await settled(deps);
+
+    const key = messagingInboundSettleJobKey("sendblue", "handle-1");
+    expect(deps.enqueueIn).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      name: "messaging.inbound_settle",
+      payload: {
+        provider: "sendblue",
+        handle: "handle-1",
+        identityId: "mi-1",
+        spaceId: "ws-1",
+        botId: "bot-1",
+        receivedAt: expect.any(Number),
+        text: "",
+        attachments: [{ name: "photo.jpg", mimeType: "image/jpeg", size: 42 }],
+      },
+      availableAt: expect.any(Date),
+      replaceKey: key,
+      queueName: "messaging.inbound:mi-1",
+      maxAttempts: MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
+    });
+    const due = (deps.enqueueIn.mock.calls[0]![1].availableAt as Date).getTime();
+    expect(due).toBeGreaterThanOrEqual(before + DIRECT_MESSAGE_SETTLE_BUDGET_MS + 60_000);
+    expect(due).toBeLessThanOrEqual(Date.now() + DIRECT_MESSAGE_SETTLE_BUDGET_MS + 60_000);
+    expect(deps.cancelIn).toHaveBeenCalledWith(expect.anything(), key);
+    expect(deps.enqueueIn.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.cancelIn.mock.invocationCallOrder[0]!,
+    );
+    // The jobs that waited only for it are due now, in the transaction that ends its own.
+    expect(deps.releaseFollowersIn).toHaveBeenCalledExactlyOnceWith(
+      deps.cancelIn.mock.calls[0]![0],
+      "messaging.inbound:mi-1",
+      key,
+    );
+
+    // Plain text from a sender with nothing pending is delivered at once, with no backup job.
+    await handle({ ...dmEvent, handle: "handle-2" });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ clientNonce: "messaging:sendblue:handle-2" }),
+    );
+    expect(deps.enqueueIn).toHaveBeenCalledOnce();
+  });
+
+  it("seals what the person wrote in the settle job and leaves the media link out", async () => {
+    const key = { id: "key-1", spaceId: "ws-1", version: 1, key: randomBytes(32) };
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      size: 42,
+    }));
+    const deps = createDeps({ storeAttachment });
+    Object.assign(deps.prisma, {
+      $contentEncryption: () => ({ ring: { encryptWrites: true, current: async () => key } }),
+    });
+    await createMessagingInboundHandler(deps)({
+      ...photoEvent,
+      content: "make a short of these",
+      mediaUrl: "https://cdn.example.test/clip.mov",
+    });
+    await settled(deps);
+
+    const { payload } = deps.enqueueIn.mock.calls[0]![1] as BackgroundJob & {
+      name: "messaging.inbound_settle";
+    };
+    expect(payload.text).toMatch(/^rkz1:key-1:/);
+    expect(JSON.stringify(payload)).not.toContain("cdn.example.test");
+    expect(
+      decryptText(
+        key,
+        {
+          table: "graphile_worker.jobs",
+          column: "payload.text",
+          rowId: messagingInboundSettleJobKey("sendblue", "handle-1"),
+          owner: "mi-1",
+        },
+        payload.text,
+      ),
+    ).toBe("make a short of these");
+    // The bot still gets the message as it was sent, link included.
+    expect(deps.sendUserMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: expect.arrayContaining([
+          { kind: "text", text: "make a short of these\nhttps://cdn.example.test/clip.mov" },
+        ]),
+      }),
+    );
+  });
+
+  it("redelivered webhook during a download creates one message", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({ storeAttachment });
+    const handle = createMessagingInboundHandler(deps);
+    await handle(photoEvent);
+    await handle(photoEvent);
+
+    download.resolve();
+    await settled(deps);
+    await flush();
+    expect(storeAttachment).toHaveBeenCalledOnce();
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+  });
+
+  it("hands the message to its backup job at once when settling it fails", async () => {
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      size: 42,
+    }));
+    const deps = createDeps({ storeAttachment });
+    deps.sendUserMessage.mockRejectedValueOnce(new Error("database unavailable"));
+    const before = Date.now();
+    await createMessagingInboundHandler(deps)(photoEvent);
+
+    await vi.waitFor(() =>
+      expect(deps.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "messaging.inbound_settle",
+          replaceKey: messagingInboundSettleJobKey("sendblue", "handle-1"),
+        }),
+      ),
+    );
+    const [job] = deps.enqueue.mock.calls.find(
+      ([queued]) => (queued as BackgroundJob).name === "messaging.inbound_settle",
+    )! as [BackgroundJob];
+    expect(job.availableAt!.getTime()).toBeGreaterThanOrEqual(before);
+    expect(job.availableAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    // Due now, it waits for nothing ahead of it.
+    expect(job.payload).not.toHaveProperty("follower");
+    expect(deps.cancelIn).not.toHaveBeenCalled();
+  });
+
+  it("lets a download still running finish on shutdown, then hands the messages to their jobs", async () => {
+    // The clock stands still, so the times the jobs are due can be checked exactly.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const download = deferred();
+      const stored = vi.fn();
+      const storeAttachment = vi.fn(async () => {
+        await download.promise;
+        stored();
+        return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+      });
+      const deps = createDeps({ storeAttachment });
+      deps.pendingUntil.mockImplementation(queueOf(deps));
+      const handler = createMessagingInboundHandler(deps);
+      await handler(photoEvent);
+      await handler({ ...dmEvent, handle: "handle-2", content: "make a short of these" });
+      const before = Date.now();
+      const soon = before + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS;
+      const dueNow = () => handedOff(deps).filter((job) => job.availableAt!.getTime() < soon);
+
+      // The shutdown starts: each job is due just past the grace at once, without waiting on the
+      // download, so a process killed before the hand-off still leaves them settling soon, in order.
+      await handler.prepareHandOff();
+      const recorded = deps.enqueueIn.mock.calls.map(([, job]) => job);
+      expect(handedOff(deps)).toEqual(
+        recorded.map((job, index) => ({ ...job, availableAt: new Date(soon + index) })),
+      );
+      expect(dueNow()).toEqual([]);
+      // A file message that comes in now fails its webhook, so the provider brings it to a process
+      // that can download it; a text is its job's, after the ones before it.
+      await expect(handler({ ...photoEvent, handle: "handle-4" })).rejects.toThrow("shutting down");
+      await handler({ ...dmEvent, handle: "handle-3", content: "and this one" });
+      expect(handedOff(deps).at(-1)).toMatchObject({
+        replaceKey: settleKey("handle-3"),
+        availableAt: new Date(soon + 2),
+      });
+      expect(dueNow()).toEqual([]);
+
+      const stopping = handler.handOffPending();
+      await flush();
+      // The download may still finish within the grace: nothing is due now yet.
+      expect(dueNow()).toEqual([]);
+      download.resolve();
+      await stopping;
+      expect(dueNow().map((job) => job.replaceKey)).toEqual([
+        settleKey("handle-1"),
+        settleKey("handle-2"),
+        settleKey("handle-3"),
+      ]);
+      // Due now, one after another, so the sender's job queue keeps their order.
+      const due = dueNow().map((job) => job.availableAt!.getTime());
+      expect(due[0]).toBeGreaterThanOrEqual(before);
+      expect(due[1]).toBeGreaterThan(due[0]!);
+      expect(due[2]).toBeGreaterThan(due[1]!);
+      // The file was stored before its job could run now, and the job, not this process, posts it.
+      const firstDueNow = handedOff(deps).indexOf(dueNow()[0]!);
+      expect(stored.mock.invocationCallOrder[0]).toBeLessThan(
+        deps.enqueue.mock.invocationCallOrder[firstDueNow]!,
+      );
+      expect(storeAttachment).toHaveBeenCalledOnce();
+      expect(deps.sendUserMessage).not.toHaveBeenCalled();
+      expect(deps.cancelIn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hands a download still running to its job once the shutdown's grace is over", async () => {
+    vi.useFakeTimers();
+    try {
+      const storeAttachment = vi.fn(() => new Promise<never>(() => {}));
+      const deps = createDeps({ storeAttachment });
+      const handler = createMessagingInboundHandler(deps);
+      await handler(photoEvent);
+      await vi.waitFor(() => expect(storeAttachment).toHaveBeenCalledOnce());
+
+      const soon = Date.now() + SHUTDOWN_DOWNLOAD_GRACE_MS + SHUTDOWN_HANDOFF_MARGIN_MS;
+      await handler.prepareHandOff();
+      // The rest of the shutdown runs a while later; the grace counts from its start.
+      await vi.advanceTimersByTimeAsync(2_000);
+      const stopping = handler.handOffPending();
+      await vi.advanceTimersByTimeAsync(SHUTDOWN_DOWNLOAD_GRACE_MS - 2_000 - 1);
+      // Only the job made due just past the grace, should the process be killed now.
+      expect(handedOff(deps).map((job) => job.availableAt)).toEqual([new Date(soon)]);
+      await vi.advanceTimersByTimeAsync(1);
+      await stopping;
+      expect(handedOff(deps).map((job) => [job.replaceKey, job.availableAt])).toEqual([
+        [settleKey("handle-1"), new Date(soon)],
+        [settleKey("handle-1"), new Date(Date.now())],
+      ]);
+      expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a text behind the sender's backup jobs still queued, wherever they came from", async () => {
+    const deps = createDeps();
+    // An earlier message's job: its process stopped, or it is downloading on another instance.
+    const queued = new Date(Date.now() + 60 * 60_000);
+    deps.pendingUntil.mockResolvedValue(ahead(queued));
+    const handle = createMessagingInboundHandler(deps);
+    await handle({ ...dmEvent, content: "and make it short" });
+
+    // Its own job, should this be a redelivery, is not one it waits for.
+    expect(deps.pendingUntil).toHaveBeenCalledWith("messaging.inbound:mi-1", settleKey("handle-1"));
+    // Its own backup job was recorded before the webhook was answered.
+    expect(deps.enqueueIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        replaceKey: settleKey("handle-1"),
+        queueName: "messaging.inbound:mi-1",
+      }),
+    );
+    await vi.waitFor(() => expect(handedOff(deps)).toHaveLength(1));
+    // Due right after the queued job, in the same queue, so that one settles first; a follower,
+    // so whichever path settles that one makes this one due then.
+    expect(handedOff(deps)[0]).toMatchObject({
+      replaceKey: settleKey("handle-1"),
+      queueName: "messaging.inbound:mi-1",
+      availableAt: new Date(queued.getTime() + 1),
+      payload: { follower: true },
+    });
+    // Written with a release of its queue: had the job ahead settled since it was read, this one
+    // would be due now.
+    const write = deps.enqueueIn.mock.calls.findIndex(
+      ([, job]) => (job.payload as { follower?: boolean }).follower === true,
+    );
+    expect(deps.releaseFollowersIn).toHaveBeenCalledExactlyOnceWith(
+      deps.enqueueIn.mock.calls[write]![0],
+      "messaging.inbound:mi-1",
+    );
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("makes a message due now when the job it followed settled before its hand-off", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({ storeAttachment });
+    // On arrival the queue holds an earlier message's job; it settles while this one downloads.
+    deps.pendingUntil.mockResolvedValueOnce(ahead(new Date(Date.now() + 60 * 60_000)));
+    await createMessagingInboundHandler(deps)(photoEvent);
+    const before = Date.now();
+    download.resolve();
+
+    await vi.waitFor(() => expect(handedOff(deps)).toHaveLength(1));
+    const [job] = handedOff(deps);
+    expect(job!.availableAt!.getTime()).toBeGreaterThanOrEqual(before);
+    expect(job!.availableAt!.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(job!.payload).not.toHaveProperty("follower");
+  });
+
+  it("keeps a message that follows jobs queued elsewhere behind them through a shutdown", async () => {
+    const storeAttachment = vi.fn(() => new Promise<never>(() => {}));
+    const deps = createDeps({ storeAttachment });
+    // Due before this message's own backup would be, after the shutdown's grace.
+    const queued = new Date(Date.now() + 10 * 60_000);
+    deps.pendingUntil.mockResolvedValueOnce(ahead(queued));
+    const handler = createMessagingInboundHandler(deps);
+    await handler(photoEvent);
+    await vi.waitFor(() => expect(storeAttachment).toHaveBeenCalledOnce());
+
+    await handler.prepareHandOff();
+    // Not made due just past the grace, which would put it ahead of the job it follows: kept
+    // right behind that job. Not a follower while its file may still be downloading, so that
+    // job settling meanwhile cannot make it due; no release is written with it.
+    expect(handedOff(deps)).toEqual([
+      expect.objectContaining({
+        replaceKey: settleKey("handle-1"),
+        availableAt: new Date(queued.getTime() + 1),
+      }),
+    ]);
+    expect(handedOff(deps)[0]!.payload).not.toHaveProperty("follower");
+    expect(deps.releaseFollowersIn).not.toHaveBeenCalled();
+  });
+
+  it("lets a message being handed to the bot finish through a shutdown, its job left alone", async () => {
+    const deps = createDeps({
+      storeAttachment: vi.fn(async () => ({
+        id: "artifact-1",
+        name: "photo.jpg",
+        mimeType: "image/jpeg",
+        size: 42,
+      })),
+    });
+    const posting = deferred<{ messageId: string; runId: null; seq: number }>();
+    deps.sendUserMessage.mockReturnValueOnce(posting.promise);
+    const handler = createMessagingInboundHandler(deps);
+    await handler(photoEvent);
+    await vi.waitFor(() => expect(deps.sendUserMessage).toHaveBeenCalledOnce());
+
+    // Making its job due now could post it a second time beside what is being posted here; the
+    // shutdown waits for the posting instead, within its grace.
+    await handler.prepareHandOff();
+    const stopping = handler.handOffPending();
+    await flush();
+    expect(deps.cancelIn).not.toHaveBeenCalled();
+    posting.resolve({ messageId: "msg-1", runId: null, seq: 3 });
+    await stopping;
+    expect(deps.cancelIn).toHaveBeenCalledOnce();
+    expect(handedOff(deps)).toEqual([]);
+  });
+
+  it("ends a redelivered message's own leftover job once it is delivered at once", async () => {
+    const deps = createDeps();
+    // An earlier delivery of it left its job.
+    deps.pendingUntil.mockResolvedValue(ahead(null, true));
+    await createMessagingInboundHandler(deps)(dmEvent);
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+    // Its job, if an earlier delivery left one, no longer holds the sender's next messages back.
+    const [tx, key] = deps.cancelIn.mock.calls[0]!;
+    expect(key).toBe(settleKey("handle-1"));
+    expect(deps.releaseFollowersIn).toHaveBeenCalledExactlyOnceWith(
+      tx,
+      "messaging.inbound:mi-1",
+      settleKey("handle-1"),
+    );
+    expect(deps.cancelIn.mock.invocationCallOrder[0]).toBeGreaterThan(
+      deps.sendUserMessage.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("cancels nothing for a plain text delivered at once that has no job of its own", async () => {
+    const deps = createDeps();
+    await createMessagingInboundHandler(deps)(dmEvent);
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+    expect(deps.cancelIn).not.toHaveBeenCalled();
+    expect(deps.releaseFollowersIn).not.toHaveBeenCalled();
+  });
+
+  it("does not hold a redelivered message back behind its own backup job", async () => {
+    const deps = createDeps();
+    // The first delivery's job is the only one in the sender's queue.
+    deps.pendingUntil.mockImplementation(async (_queue, exceptKey) =>
+      exceptKey === settleKey("handle-1")
+        ? ahead(null, true)
+        : ahead(new Date(Date.now() + 60 * 60_000)),
+    );
+    await createMessagingInboundHandler(deps)(dmEvent);
+    expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ clientNonce: "messaging:sendblue:handle-1" }),
+    );
+    expect(handedOff(deps)).toEqual([]);
+  });
+
+  it("sends a file message and the text behind it after the sender's queued backup jobs", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({ storeAttachment });
+    const queued = new Date(Date.now() - 1_000);
+    const queue = queueOf(deps);
+    deps.pendingUntil.mockResolvedValueOnce(ahead(queued)).mockImplementation(queue);
+    const handle = createMessagingInboundHandler(deps);
+    await handle(photoEvent);
+    await handle({ ...dmEvent, handle: "handle-2", content: "make a short of these" });
+    // The file still downloads here, for its job to find.
+    await vi.waitFor(() => expect(storeAttachment).toHaveBeenCalledOnce());
+    expect(handedOff(deps)).toEqual([]);
+
+    download.resolve();
+    await vi.waitFor(() => expect(handedOff(deps)).toHaveLength(2));
+    const [first, second] = handedOff(deps);
+    expect([first!.replaceKey, second!.replaceKey]).toEqual([
+      settleKey("handle-1"),
+      settleKey("handle-2"),
+    ]);
+    expect(first!.availableAt!.getTime()).toBeGreaterThan(queued.getTime());
+    expect(second!.availableAt!.getTime()).toBeGreaterThan(first!.availableAt!.getTime());
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.cancelIn).not.toHaveBeenCalled();
+
+    // Once the queue holds nothing of theirs, plain text is delivered at once again.
+    deps.pendingUntil.mockResolvedValue(ahead(null));
+    await flush();
+    await handle({ ...dmEvent, handle: "handle-3" });
+    expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ clientNonce: "messaging:sendblue:handle-3" }),
+    );
+  });
+
+  it("keeps a later text behind an earlier file that went to its backup job", async () => {
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      size: 42,
+    }));
+    const deps = createDeps({ storeAttachment });
+    const posting = deferred();
+    deps.sendUserMessage.mockImplementationOnce(async () => {
+      await posting.promise;
+      throw new Error("database unavailable");
+    });
+    deps.pendingUntil.mockImplementation(queueOf(deps));
+    const handle = createMessagingInboundHandler(deps);
+    const before = Date.now();
+    await handle(photoEvent);
+    await handle({ ...dmEvent, handle: "handle-2", content: "make a short of these" });
+    posting.resolve();
+
+    const handed = () => handedOff(deps);
+    await vi.waitFor(() =>
+      expect(handed().map((job) => job.replaceKey)).toEqual([
+        messagingInboundSettleJobKey("sendblue", "handle-1"),
+        messagingInboundSettleJobKey("sendblue", "handle-2"),
+      ]),
+    );
+    for (const job of handed()) {
+      expect(job.queueName).toBe("messaging.inbound:mi-1");
+      expect(job.availableAt!.getTime()).toBeGreaterThanOrEqual(before);
+    }
+    // Due now, the text right after the file, so the queue settles them in that order.
+    const [file, text] = handed().map((job) => job.availableAt!.getTime());
+    expect(file).toBeLessThanOrEqual(Date.now());
+    expect(text).toBeGreaterThan(file!);
+    // The text's backup job was recorded before it handed off, so the queue can order it.
+    expect(deps.enqueueIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        replaceKey: messagingInboundSettleJobKey("sendblue", "handle-2"),
+      }),
+    );
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+
+    // Once the sender has nothing pending here or in the queue, plain text is delivered at once.
+    deps.pendingUntil.mockResolvedValue(ahead(null));
+    await flush();
+    await handle({ ...dmEvent, handle: "handle-3" });
+    expect(deps.sendUserMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ clientNonce: "messaging:sendblue:handle-3" }),
+    );
+  });
+
+  /**
+   * A file message, then a text from the same sender, whose job would be recorded first were the
+   * records not taken in turn: the file's lookups are held until the text has had every chance.
+   */
+  async function fileThenTextRecordingFirst(deps: ReturnType<typeof createDeps>) {
+    const lookup = deferred();
+    const find = deps.prisma.messagingIdentity.findUnique as unknown as Mock<
+      (args: unknown) => Promise<unknown>
+    >;
+    const original = find.getMockImplementation()!;
+    find.mockImplementationOnce(async (args) => {
+      await lookup.promise;
+      return original(args);
+    });
+    deps.pendingUntil.mockImplementation(queueOf(deps));
+    const handle = createMessagingInboundHandler(deps);
+    const answered = Promise.all([
+      handle(photoEvent),
+      handle({ ...dmEvent, handle: "handle-2", content: "make a short of these" }),
+    ]);
+    await flush();
+    lookup.resolve();
+    await answered;
+    return handle;
+  }
+
+  /** When the message's job is due as last written. */
+  const lastDue = (deps: ReturnType<typeof createDeps>, handle: string) =>
+    handedOff(deps)
+      .findLast((job) => job.replaceKey === settleKey(handle))
+      ?.availableAt?.getTime();
+
+  /** The job queue places the jobs as they were first recorded, which is as they arrived. */
+  const expectRecordedInArrivalOrder = (deps: ReturnType<typeof createDeps>) =>
+    expect(deps.enqueueIn.mock.calls.slice(0, 2).map(([, job]) => job.replaceKey)).toEqual([
+      settleKey("handle-1"),
+      settleKey("handle-2"),
+    ]);
+
+  it("keeps a sender's order after a failure when a later message's lookups finish first", async () => {
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      size: 42,
+    }));
+    const deps = createDeps({ storeAttachment });
+    deps.sendUserMessage.mockRejectedValueOnce(new Error("database unavailable"));
+    await fileThenTextRecordingFirst(deps);
+
+    await vi.waitFor(() => expect(lastDue(deps, "handle-2")).toBeDefined());
+    // The file is due now and the text right after it, so the job queue posts the file first.
+    expect(lastDue(deps, "handle-1")).toBeLessThanOrEqual(Date.now());
+    expect(lastDue(deps, "handle-2")).toBeGreaterThan(lastDue(deps, "handle-1")!);
+    expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+    expectRecordedInArrivalOrder(deps);
+  });
+
+  it("keeps a sender's order through a shutdown when a later message's lookups finish first", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({ storeAttachment });
+    const handler = await fileThenTextRecordingFirst(deps);
+
+    await handler.prepareHandOff();
+    const stopping = handler.handOffPending();
+    download.resolve();
+    await stopping;
+    // The file is due now and the text right after it, so the job queue posts the file first.
+    expect(lastDue(deps, "handle-1")).toBeLessThanOrEqual(Date.now());
+    expect(lastDue(deps, "handle-2")).toBeGreaterThan(lastDue(deps, "handle-1")!);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expectRecordedInArrivalOrder(deps);
   });
 
   it("still ignores a truly empty DM", async () => {
@@ -1779,6 +2648,86 @@ describe("createMessagingInboundHandler owner commands", () => {
     expect(deps.prisma.messagingChannelMember.update).not.toHaveBeenCalled();
     expect(deps.prisma.messagingChannelMember.updateMany).not.toHaveBeenCalled();
     expect(deps.sendUserMessage).toHaveBeenCalled();
+  });
+
+  it("lets a stop act at once and keeps the file message sent before it from starting a turn", async () => {
+    const download = deferred();
+    const storeAttachment = vi.fn(async () => {
+      await download.promise;
+      return { id: "artifact-1", name: "photo.jpg", mimeType: "image/jpeg", size: 42 };
+    });
+    const deps = createDeps({
+      storeAttachment,
+      routines: [{ id: "routine-1", name: "Triage", prompt: "Review" }],
+    });
+    Object.assign(deps.prisma.thread, {
+      findFirstOrThrow: vi.fn(async () => ({ id: "thread-1" })),
+    });
+    const cancelRuns = vi.fn(async () => []);
+    Object.assign(deps.txMock.run, { updateManyAndReturn: cancelRuns });
+    Object.assign(deps.txMock, {
+      steeringMessage: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    });
+    deps.sendUserMessage.mockResolvedValue({ messageId: "msg-1", runId: null, seq: 3 });
+    const handle = createMessagingInboundHandler(deps);
+    await handle(photoEvent);
+    await handle({ ...dmEvent, handle: "handle-2", content: "stop" });
+    // The stop does not wait for the file to finish downloading.
+    expect(cancelRuns).toHaveBeenCalledOnce();
+    // Its backup job is left as it was: whichever path settles it reads the stop then.
+    expect(deps.enqueue).not.toHaveBeenCalled();
+
+    download.resolve();
+    await settled(deps);
+    // The file reaches the chat, as plain history: no turn, no routine.
+    expect(deps.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ clientNonce: "messaging:sendblue:handle-1", createRun: false }),
+    );
+    expect(deps.enqueue).not.toHaveBeenCalled();
+
+    // What the owner sends after the stop starts a turn as usual.
+    deps.sendUserMessage.mockResolvedValue({ messageId: "msg-3", runId: "run-1", seq: 4 });
+    await handle({ ...dmEvent, handle: "handle-3" });
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(2);
+    expect(deps.sendUserMessage.mock.lastCall![0]).toMatchObject({ trigger: "webhook" });
+    expect(deps.sendUserMessage.mock.lastCall![0]).not.toHaveProperty("createRun");
+  });
+
+  it("lets a file message sent right after a stop start a turn", async () => {
+    const deps = createDeps({
+      storeAttachment: vi.fn(async () => ({
+        id: "artifact-1",
+        name: "photo.jpg",
+        mimeType: "image/jpeg",
+        size: 42,
+      })),
+    });
+    Object.assign(deps.prisma.thread, {
+      findFirstOrThrow: vi.fn(async () => ({ id: "thread-1" })),
+    });
+    // The stop is still cancelling runs when the photo comes in.
+    const cancelling = deferred<never[]>();
+    Object.assign(deps.txMock.run, { updateManyAndReturn: vi.fn(() => cancelling.promise) });
+    Object.assign(deps.txMock, {
+      steeringMessage: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    });
+    deps.sendUserMessage.mockResolvedValue({ messageId: "msg-1", runId: "run-1", seq: 3 });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const handle = createMessagingInboundHandler(deps);
+      const stop = handle({ ...dmEvent, handle: "handle-0", content: "stop" });
+      const photo = handle(photoEvent);
+      await flush();
+      // The stop's reply row is written; time passes while it finishes.
+      vi.setSystemTime(Date.now() + 1_000);
+      cancelling.resolve([]);
+      await Promise.all([stop, photo]);
+
+      await vi.waitFor(() => expect(deps.sendUserMessage).toHaveBeenCalledOnce());
+      expect(deps.sendUserMessage.mock.lastCall![0]).not.toHaveProperty("createRun");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("answers a stop once, even when the provider redelivers it", async () => {

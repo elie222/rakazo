@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { UserAccessCredential } from "./configured-apps.js";
-import { readBoundedText } from "./integrations/connector-http.js";
 import type {
   CreativeCapabilities,
   CreativeInput,
@@ -12,6 +11,7 @@ import {
   creativeJobSchema,
   creativeReferenceSchema,
 } from "./creative-contracts.js";
+import { readBoundedText } from "./integrations/connector-http.js";
 
 export interface CreativeProvider {
   capabilities(identity: UserAccessCredential, signal: AbortSignal): Promise<CreativeCapabilities>;

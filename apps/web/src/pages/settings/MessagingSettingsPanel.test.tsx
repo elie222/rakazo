@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
-import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -17,7 +16,7 @@ const messaging = vi.hoisted(() => ({
   },
   channels: { list: vi.fn(async () => []), respond: vi.fn(), leave: vi.fn() },
   connections: { list: vi.fn(async () => []), respond: vi.fn(), revoke: vi.fn() },
-  identities: { unlink: vi.fn() },
+  identities: { unlink: vi.fn(), setBot: vi.fn() },
   link: {
     start: vi.fn(async () => ({
       code: "ABCD-2345",
@@ -49,8 +48,7 @@ vi.mock("@lingui/react/macro", () => {
     Trans: ({ children }: { children?: ReactNode }) => children,
   };
 });
-vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { OptionSelect } = await importOriginal<typeof UiWeb>();
+vi.mock("@rakazo/ui-web", () => {
   const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Button: ({
@@ -68,17 +66,31 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogTitle: Pass,
     DropdownMenu: Pass,
     DropdownMenuContent: Pass,
-    DropdownMenuTrigger: ({ children, disabled }: ComponentProps<"button">) => (
+    DropdownMenuGroup: Pass,
+    DropdownMenuLabel: Pass,
+    DropdownMenuSeparator: () => <hr />,
+    DropdownMenuSub: Pass,
+    DropdownMenuSubContent: Pass,
+    SectionHeading: Pass,
+    DropdownMenuTrigger: ({
+      children,
+      disabled,
+      render,
+    }: ComponentProps<"button"> & { render?: { props: { "aria-label"?: string } } }) => (
+      <button type="button" disabled={disabled} aria-label={render?.props["aria-label"]}>
+        {children}
+      </button>
+    ),
+    DropdownMenuSubTrigger: ({ children, disabled }: ComponentProps<"button">) => (
       <button type="button" disabled={disabled}>
         {children}
       </button>
     ),
-    DropdownMenuItem: ({ children, onClick }: ComponentProps<"button">) => (
-      <button type="button" onClick={onClick}>
+    DropdownMenuItem: ({ children, onClick, disabled }: ComponentProps<"button">) => (
+      <button type="button" disabled={disabled} onClick={onClick}>
         {children}
       </button>
     ),
-    OptionSelect,
   };
 });
 
@@ -131,27 +143,40 @@ afterEach(() => {
   messaging.status.mockReset();
   messaging.channels.list.mockReset();
   messaging.channels.list.mockResolvedValue([]);
+  messaging.connections.list.mockReset();
+  messaging.connections.list.mockResolvedValue([]);
 });
 
-/** Picks the bot named `name` in the bot picker. */
-async function pickBot(name: string) {
-  await act(async () => container.querySelector<HTMLElement>('[role="combobox"]')?.click());
-  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (entry) => entry.textContent === name,
+/** The settings row for `app`, or the one also naming `detail`. */
+function appRow(app: string, detail = "") {
+  const rows = [
+    ...container.querySelectorAll<HTMLElement>('[data-testid="messaging-chat-apps"] .px-4'),
+  ];
+  const row = rows.find(
+    (candidate) =>
+      candidate.querySelector("p")?.textContent === app &&
+      (candidate.textContent ?? "").includes(detail),
   );
-  if (!option) throw new Error(`no ${name} option`);
-  await act(async () => option.click());
+  if (!row) throw new Error(`no ${app} row`);
+  return row;
+}
+
+/** The button labeled `label` on `app`'s row. */
+function rowButton(app: string, label: string, detail = "") {
+  const button = [...appRow(app, detail).querySelectorAll("button")].find(
+    (candidate) => candidate.textContent === label,
+  );
+  if (!button) throw new Error(`no ${label} on ${app}`);
+  return button;
 }
 
 function telegramItem() {
-  return [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Telegram",
-  );
+  return rowButton("Telegram", "Connect");
 }
 
 async function startLink() {
   await renderOverlay();
-  await act(async () => telegramItem()?.click());
+  await act(async () => telegramItem().click());
   expect(container.querySelector('[data-testid="messaging-link-code"]')).not.toBeNull();
 }
 
@@ -193,13 +218,24 @@ it.each([
 });
 
 it("detects a same-address relink to the selected bot", async () => {
+  const slackIdentity = { ...identity, provider: "slack" };
+  const slackStatus = (identities: (typeof identity)[]) => ({
+    ...statusWith(identities),
+    providers: ["slack"],
+  });
   messaging.status.mockResolvedValue(
-    statusWith([{ ...identity, botId: "bot-2", botName: "Other" }]),
+    slackStatus([{ ...slackIdentity, botId: "bot-2", botName: "Other" }]),
   );
-  await startLink();
+  messaging.installations.list.mockResolvedValue({
+    available: true,
+    installations: [{ id: "install-1", provider: "slack", workspaceName: "Home", botId: "bot-1" }],
+  } as never);
+  await renderOverlay();
+  await act(async () => rowButton("Slack", "Link DMs", "Home").click());
+  expect(container.querySelector('[data-testid="messaging-link-code"]')).not.toBeNull();
   expect(container.textContent).toContain("424242, Other");
 
-  messaging.status.mockResolvedValue(statusWith([identity]));
+  messaging.status.mockResolvedValue(slackStatus([slackIdentity]));
   await act(async () => vi.advanceTimersByTimeAsync(3_000));
 
   expect(container.textContent).toContain("424242, Chief");
@@ -251,7 +287,7 @@ it("ignores a previous code's pending response after issuing a new code", async 
   const pending = deferred<ReturnType<typeof statusWith>>();
   messaging.status.mockReturnValueOnce(pending.promise);
   await act(async () => vi.advanceTimersByTimeAsync(3_000));
-  await act(async () => telegramItem()?.click());
+  await act(async () => telegramItem().click());
   const calls = messaging.status.mock.calls.length;
   await act(async () => pending.resolve(statusWith([identity])));
 
@@ -284,15 +320,8 @@ it("connects Slack to the default bot through workspace authorization", async ()
   try {
     await renderOverlay();
     const buttons = [...container.querySelectorAll("button")];
-    expect(container.textContent).toContain("Chat with your bot from Slack.");
-    expect(buttons.filter((button) => button.textContent === "Connect")).toHaveLength(1);
-    expect(
-      buttons.some((button) =>
-        ["Slack", "Connect a chat app", "Link DMs"].includes(button.textContent ?? ""),
-      ),
-    ).toBe(false);
-    expect(container.querySelector('[role="combobox"]')).toBeNull();
-    await act(async () => buttons.find((button) => button.textContent === "Connect")!.click());
+    expect(buttons.map((button) => button.textContent)).toEqual(["Connect"]);
+    await act(async () => rowButton("Slack", "Connect").click());
     expect(messaging.installations.start).toHaveBeenCalledWith({});
     expect(messaging.link.start).not.toHaveBeenCalled();
     expect(popup.opener).toBeNull();
@@ -302,24 +331,38 @@ it("connects Slack to the default bot through workspace authorization", async ()
   }
 });
 
-it("shows Slack as its own row, apart from apps linked with a code", async () => {
-  messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack", "telegram"] });
+it("lists Slack and code-linked apps as rows with the same Connect action", async () => {
+  messaging.status.mockResolvedValue({
+    ...statusWith([]),
+    providers: ["slack", "telegram", "teams"],
+  });
   messaging.installations.list.mockResolvedValue({ available: true, installations: [] });
   await renderOverlay();
-  const items = [...container.querySelectorAll("button")].map((button) => button.textContent);
-  expect(items).toContain("Connect");
-  expect(items).toContain("Telegram");
-  expect(items).not.toContain("Slack");
+  for (const app of ["Slack", "Telegram", "Microsoft Teams"]) rowButton(app, "Connect");
+  expect(container.textContent).not.toContain("teams");
+  await act(async () => rowButton("Microsoft Teams", "Connect").click());
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
+  expect(
+    appRow("Microsoft Teams").querySelector('[data-testid="messaging-link-code"]'),
+  ).not.toBeNull();
+});
+
+it("asks which bot a chat app links to when there are several", async () => {
+  messaging.status.mockResolvedValue(statusWith([]));
+  api.bots.list.mockResolvedValue([
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Team" },
+  ]);
+  await renderOverlay();
+  await act(async () => rowButton("Telegram", "Team").click());
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
+  expect(appRow("Telegram").textContent).toContain("ABCD-2345");
 });
 
 it("keeps code linking for legacy Slack deployments", async () => {
   messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack"] });
   await renderOverlay();
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Slack")!
-      .click(),
-  );
+  await act(async () => rowButton("Slack", "Connect").click());
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
   expect(messaging.installations.start).not.toHaveBeenCalled();
 });
@@ -448,10 +491,7 @@ it("says which line to send the code to when the app has one", async () => {
     addresses: { sendblue: "+15550001111" },
   });
   await renderOverlay();
-  const item = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "iMessage",
-  );
-  await act(async () => item?.click());
+  await act(async () => rowButton("iMessage", "Connect").click());
   expect(container.querySelector('[data-testid="messaging-link-code"]')?.textContent).toContain(
     "+15550001111",
   );
@@ -496,12 +536,9 @@ it("keeps other apps usable and withholds Slack when its setup method cannot loa
   messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack", "telegram"] });
   messaging.installations.list.mockRejectedValue(new Error("unavailable"));
   await renderOverlay();
-  const buttons = [...container.querySelectorAll("button")];
-  expect(buttons.find((button) => button.textContent === "Connect a chat app")!.disabled).toBe(
-    false,
-  );
-  expect(buttons.some((button) => button.textContent === "Slack")).toBe(false);
-  await act(async () => telegramItem()!.click());
+  expect(telegramItem().disabled).toBe(false);
+  expect(container.textContent).not.toContain("Slack");
+  await act(async () => telegramItem().click());
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
 });
 
@@ -517,13 +554,13 @@ it("lets a member choose which bot their DMs link to in a teammate's workspace",
     { id: "bot-2", name: "Team" },
   ]);
   await renderOverlay();
-  await pickBot("Team");
-  await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Link DMs")!
-      .click(),
-  );
+  // Its own row beside Connect, so each row keeps one control.
+  const slackRows = [...container.querySelectorAll('[data-testid="messaging-chat-apps"] .px-4')];
+  expect(slackRows.map((row) => row.querySelectorAll(":scope button").length)).toEqual([1, 3]);
+  const team = [...slackRows[1]!.querySelectorAll("button")].find((b) => b.textContent === "Team");
+  await act(async () => team!.click());
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
+  expect(messaging.installations.start).not.toHaveBeenCalled();
 });
 
 it("keeps a teammate's DM link next to the user's own workspace elsewhere", async () => {
@@ -550,39 +587,6 @@ it("keeps a teammate's DM link next to the user's own workspace elsewhere", asyn
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-1" });
 });
 
-it.each(["resolve", "reject"] as const)(
-  "ignores a late code %s after switching bots",
-  async (outcome) => {
-    messaging.status.mockResolvedValue(statusWith([]));
-    api.bots.list.mockResolvedValue([
-      { id: "bot-1", name: "Chief" },
-      { id: "bot-2", name: "Team" },
-    ]);
-
-    const pending = deferred<{ code: string; expiresAt: string }>();
-    messaging.link.start.mockReturnValueOnce(pending.promise);
-    await renderOverlay();
-    await act(async () => {
-      telegramItem()?.click();
-    });
-    expect(messaging.link.start).toHaveBeenCalledTimes(1);
-    await pickBot("Team");
-    await act(async () => {
-      if (outcome === "resolve")
-        pending.resolve({
-          code: "OLD-CODE",
-          expiresAt: new Date(Date.now() + 20_000).toISOString(),
-        });
-      else pending.reject(new Error("old request failed"));
-    });
-    expect(container.textContent).not.toContain("OLD-CODE");
-    expect(container.textContent).not.toContain("Couldn't update messaging settings");
-    await act(async () => telegramItem()?.click());
-    expect(messaging.link.start).toHaveBeenLastCalledWith({ botId: "bot-2" });
-    expect(container.textContent).toContain("ABCD-2345");
-  },
-);
-
 it("does not issue another code while one request is in flight", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
 
@@ -591,8 +595,8 @@ it("does not issue another code while one request is in flight", async () => {
   await renderOverlay();
   const reads = messaging.status.mock.calls.length;
   await act(async () => {
-    telegramItem()?.click();
-    telegramItem()?.click();
+    telegramItem().click();
+    telegramItem().click();
   });
   expect(messaging.link.start).toHaveBeenCalledTimes(1);
   await act(async () =>
@@ -608,7 +612,7 @@ it("ignores a code that arrives after the panel closes", async () => {
   const pending = deferred<{ code: string; expiresAt: string }>();
   messaging.link.start.mockReturnValueOnce(pending.promise);
   await renderOverlay();
-  await act(async () => telegramItem()?.click());
+  await act(async () => telegramItem().click());
   const reads = messaging.status.mock.calls.length;
   await act(async () => root.unmount());
   root = createRoot(container);
@@ -622,67 +626,17 @@ it("ignores a code that arrives after the panel closes", async () => {
   expect(container.textContent).toBe("");
 });
 
-it.each([false, true])(
-  "keeps workspace codes when picker changes (initial load: %s)",
-  async (initialLoad) => {
-    messaging.status.mockResolvedValue({ ...statusWith([]), providers: ["slack", "telegram"] });
-    messaging.installations.list.mockResolvedValue({
-      available: true,
-      installations: [
-        { id: "install-1", provider: "slack", workspaceName: "Workspace", botId: "workspace-bot" },
-      ],
-    } as never);
-    const bots = [
-      { id: "bot-1", name: "Chief" },
-      { id: "bot-2", name: "Team" },
-    ];
-    api.bots.list.mockResolvedValue(bots);
-    const loadingBots = deferred<typeof bots>();
-    if (initialLoad) api.bots.list.mockReturnValueOnce(loadingBots.promise);
-
-    const pending = deferred<{ code: string; expiresAt: string }>();
-    messaging.link.start.mockReturnValueOnce(pending.promise);
-    await renderOverlay();
-    await act(async () =>
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Link DMs")!
-        .click(),
-    );
-    if (initialLoad) {
-      await act(async () => loadingBots.resolve(bots));
-      await vi.waitFor(() => {
-        expect(container.querySelector('[role="combobox"]')).not.toBeNull();
-      });
-    }
-    await pickBot("Team");
-    await act(async () =>
-      pending.resolve({
-        code: "WORKSPACE-CODE",
-        expiresAt: new Date(Date.now() + 20_000).toISOString(),
-      }),
-    );
-    expect(container.textContent).toContain("WORKSPACE-CODE");
-    expect(messaging.link.start).toHaveBeenCalledWith({ botId: "workspace-bot" });
-    await pickBot("Chief");
-    expect(container.textContent).toContain("WORKSPACE-CODE");
-  },
-);
-
 it("blocks issuance across remounts until the previous request settles", async () => {
   messaging.status.mockResolvedValue(statusWith([]));
   const pending = deferred<{ code: string; expiresAt: string }>();
   messaging.link.start.mockReturnValueOnce(pending.promise);
   await renderOverlay();
-  await act(async () => telegramItem()?.click());
+  await act(async () => telegramItem().click());
   await act(async () => root.unmount());
   root = createRoot(container);
   await renderOverlay();
-  expect(
-    [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Connect a chat app",
-    )!.disabled,
-  ).toBe(true);
-  await act(async () => telegramItem()?.click());
+  expect(telegramItem().disabled).toBe(true);
+  await act(async () => telegramItem().click());
   expect(messaging.link.start).toHaveBeenCalledTimes(1);
   await act(async () =>
     pending.resolve({
@@ -691,12 +645,99 @@ it("blocks issuance across remounts until the previous request settles", async (
     }),
   );
   expect(container.textContent).not.toContain("CLOSED-CODE");
-  expect(
-    [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Connect a chat app",
-    )!.disabled,
-  ).toBe(false);
-  await act(async () => telegramItem()?.click());
+  expect(telegramItem().disabled).toBe(false);
+  await act(async () => telegramItem().click());
   expect(messaging.link.start).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("ABCD-2345");
+});
+
+it("moves a linked app to another bot with a code instead of unlinking it", async () => {
+  messaging.status.mockResolvedValue(statusWith([identity]));
+  api.bots.list.mockResolvedValue([
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Team" },
+  ]);
+  await renderOverlay();
+  // One control per row: the row's actions sit in its options menu.
+  const [options] = appRow("Telegram").querySelectorAll("button");
+  expect(options?.getAttribute("aria-label")).toBe("Options for Telegram");
+  expect(rowButton("Telegram", "Change bot")).toBeDefined();
+  // Chief already answers Telegram.
+  expect(rowButton("Telegram", "Chief").disabled).toBe(true);
+  await act(async () => rowButton("Telegram", "Team").click());
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
+  expect(messaging.identities.unlink).not.toHaveBeenCalled();
+  expect(appRow("Telegram").textContent).toContain("ABCD-2345");
+});
+
+it("shows bots already linked elsewhere as unavailable", async () => {
+  messaging.status.mockResolvedValue({
+    ...statusWith([identity]),
+    providers: ["telegram", "whatsapp"],
+  });
+  await renderOverlay();
+  // The only bot answers Telegram: Connect still opens the menu, which says why.
+  expect(rowButton("WhatsApp", "Connect").disabled).toBe(false);
+  expect(rowButton("WhatsApp", "Chief").disabled).toBe(true);
+});
+
+it("links a free bot when another is already linked elsewhere", async () => {
+  messaging.status.mockResolvedValue({
+    ...statusWith([identity]),
+    providers: ["telegram", "whatsapp"],
+  });
+  api.bots.list.mockResolvedValue([
+    { id: "bot-1", name: "Chief" },
+    { id: "bot-2", name: "Team" },
+  ]);
+  await renderOverlay();
+  await act(async () => rowButton("WhatsApp", "Team").click());
+  expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
+});
+
+it("says what each request asks and answers it by its own id", async () => {
+  messaging.status.mockResolvedValue(statusWith([identity]));
+  messaging.channels.list.mockResolvedValue([
+    {
+      id: "cm-1",
+      channelId: "ch-1",
+      identityId: "mi-1",
+      provider: "telegram",
+      name: "Family",
+      status: "invited",
+      memberCount: 3,
+    },
+  ] as never);
+  messaging.connections.list.mockResolvedValue([
+    {
+      id: "ac-1",
+      botId: "bot-1",
+      peerBotName: "Assistant",
+      peerOwnerLabel: "Dana",
+      status: "pending",
+      incoming: true,
+    },
+  ] as never);
+  await renderOverlay();
+
+  const request = (text: string) => {
+    const row = [...container.querySelectorAll("li")].find((item) =>
+      item.textContent?.startsWith(text),
+    );
+    if (!row) throw new Error(`no request ${text}`);
+    return row;
+  };
+  const invite = request("Chief was invited to Family");
+  expect(invite.textContent).toContain("Telegram group");
+  const connection = request("Dana's Assistant wants to connect to Chief");
+
+  await act(async () => [...invite.querySelectorAll("button")][0]?.click());
+  expect(messaging.channels.respond).toHaveBeenCalledWith({ membershipId: "cm-1", accept: true });
+  const [allow, decline] = [...connection.querySelectorAll("button")];
+  expect([allow?.textContent, decline?.textContent]).toEqual(["Allow", "Decline"]);
+  await act(async () => decline?.click());
+  expect(messaging.connections.respond).toHaveBeenCalledWith({
+    connectionId: "ac-1",
+    accept: false,
+  });
 });

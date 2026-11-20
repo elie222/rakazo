@@ -63,7 +63,10 @@ BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 (default `86400000`, 24 hours) is how long before the worker stops it, leaves a status line in the
 thread, and frees the bot's computer. Both take milliseconds from `60000` to `2592000000` (30 days);
 anything else keeps the default. Setting the expiry below the reminder time skips the reminder. A
-takeover request nobody acts on still stops after 30 minutes. The activity list keeps marking old
+takeover request nobody acts on still stops after 30 minutes. `UNATTENDED_APPROVAL_EXPIRE_AFTER_MS`
+(default `1800000`, 30 minutes) is how long an approval card an unattended run posts stays open
+before the action is dropped; it takes the same `60000`–`2592000000` range, and a card from a chat
+someone is in stays open until answered. The activity list keeps marking old
 queued runs after 4 hours. A question the bot asks stays open until someone answers it, unless its
 run holds a login or code it took only for itself: that run still stops at the expiry.
 

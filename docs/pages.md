@@ -12,8 +12,13 @@ can ask for changes. The bot edits the same page rather than making a new one, s
 
 ## Find your pages
 
-The **Pages** tab in a bot's or group's panel lists its pages. From there you can rename, pin or
-delete a page.
+On web and desktop, select the bot or group name at the top of the chat to open its panel.
+
+- In a bot chat, **Pages** appears once the bot has built a page. If the preview doesn't show all
+  the pages, select its **Pages** heading to see the full list.
+- In a group chat, look for **Pages** in **Group settings**.
+
+Use the menu beside a page to rename, pin or delete it.
 
 ## Share a page
 

@@ -26,26 +26,24 @@ const PRIVACY_URLS: Record<string, string> = {
 export function aiRecipient(input: {
   provider: string;
   use: AiDataUse;
-  modelId?: string;
   baseUrl?: string;
 }): Omit<AiRecipient, "allowed"> | null {
   if (input.provider === "scripted") return null;
   const endpoint = input.baseUrl ?? (input.provider === "local" ? localBaseUrl() : undefined);
   const origin = endpoint ? new URL(endpoint).origin : undefined;
   const name = recipientName(input.provider, input.use);
-  // Bind custom connections to the full endpoint without exposing private URL components.
+  // One approval per service: switching models never asks again, while a different custom
+  // endpoint is a different recipient. Private URL components stay out of the disclosure.
   const key = createHash("sha256")
-    .update(JSON.stringify([input.use, input.provider, endpoint ?? "", input.modelId ?? ""]))
+    .update(JSON.stringify([input.use, input.provider, endpoint ?? ""]))
     .digest("hex");
   return {
     key,
     name: origin ? `${name} (${origin})` : name,
     use: input.use,
     detail: ["openrouter", "vercel-ai-gateway"].includes(input.provider)
-      ? input.modelId
-        ? `${input.modelId}, forwarded to its provider`
-        : "Forwards to model providers"
-      : (input.modelId ?? ""),
+      ? "Forwards to model providers"
+      : "",
     privacyUrl: PRIVACY_URLS[input.provider],
   };
 }

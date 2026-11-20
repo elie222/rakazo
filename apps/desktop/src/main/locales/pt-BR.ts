@@ -1,5 +1,6 @@
 export const PT_BR_MESSAGES: Record<string, string> = {
   Rakazo: "BotONE",
+  "Rakazo Cloud": "BotONE Cloud",
   "About {name}": "Sobre o {name}",
   "Check for Updates…": "Buscar Atualizações…",
   "Computer Access…": "Acesso ao Computador…",

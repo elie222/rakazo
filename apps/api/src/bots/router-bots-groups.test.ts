@@ -185,7 +185,12 @@ describe("group restore with archived bots", () => {
       },
       $queryRaw: vi.fn(async () => [{ id: "group-1", lock: "1" }]),
     };
+    const routine = { findMany: vi.fn(async () => []) };
     const prisma = {
+      chatGroupMember: {
+        findMany: vi.fn(async () => archivedBots.map(({ id }) => ({ botId: id }))),
+      },
+      routine,
       $transaction: vi.fn(async (callback: (client: unknown) => Promise<unknown>) => callback(tx)),
     };
     const handler = new RPCHandler(
@@ -215,16 +220,25 @@ describe("group restore with archived bots", () => {
           },
         },
       );
-    return { tx, call };
+    return { tx, routine, call };
   }
 
   it("brings the group's archived bots back before the group, so it can be opened again", async () => {
-    const { tx, call } = fixture([
+    const { tx, routine, call } = fixture([
       { id: "bot-a", computerId: "computer-a" },
       { id: "bot-b", computerId: null },
     ]);
     const response = await call();
     expect(response.status).toBe(200);
+    // The routines archiving those bots turned off are looked up to be turned back on.
+    expect(routine.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          botId: { in: ["bot-a", "bot-b"] },
+          resumeOnRestore: true,
+        }),
+      }),
+    );
     expect(tx.bot.update.mock.calls).toEqual([
       [{ where: { id: "bot-a" }, data: { archivedAt: null } }],
       [{ where: { id: "bot-b" }, data: { archivedAt: null } }],

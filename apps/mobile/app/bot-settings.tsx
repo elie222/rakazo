@@ -27,6 +27,7 @@ import { BotAvatar } from "../components/bots/bot-avatar";
 import { BotContextCards } from "../components/bots/bot-context-cards";
 import { BotLookPicker } from "../components/bots/bot-look-picker";
 import { ProfileEditDialog } from "../components/bots/profile-edit-dialog";
+import { useComputerHomeVersionRows } from "../components/computers/computer-home-versions";
 import { useComputerMaintenanceRows } from "../components/computers/computer-maintenance-actions";
 import { ExecutionSettings } from "../components/execution-settings";
 import { glassHeaderOptions } from "../components/native/glass-title";
@@ -105,6 +106,7 @@ export default function BotSettingsScreen() {
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const computerMaintenanceRows = useComputerMaintenanceRows(botId);
+  const computerHomeVersionRows = useComputerHomeVersionRows(botId);
   const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | undefined>();
@@ -654,6 +656,7 @@ export default function BotSettingsScreen() {
                 onChange={(value) => setComputerMode(value ? "dedicated" : "team")}
               />
               {computerMaintenanceRows}
+              {computerHomeVersionRows}
             </SettingsGroup>
             {changed?.readAloud || deviceVoiceEnabled ? (
               <SettingsGroup label={t`Voice`}>

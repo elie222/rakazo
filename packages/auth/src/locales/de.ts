@@ -93,4 +93,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Sign in with your {subscriptions} subscription, or paste an API key.":
     "Melde dich mit deinem Abo von {subscriptions} an oder füge einen API-Schlüssel ein.",
   "Connect a model": "Modell verbinden",
+  "Bring your old assistant to Rakazo": "Bring deinen bisherigen Assistenten zu Rakazo",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "Hast du schon einen Assistenten in {assistants} eingerichtet? Rakazo kann seine Anweisungen, sein Gedächtnis, seine Skills und Routinen als neuen Bot übernehmen, damit du nicht von vorn anfängst.",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "Das geht auch mit jedem anderen Assistenten: Schick ihm einen Prompt und füge seine Antwort ein.",
+  "Import an agent": "Agenten importieren",
 };

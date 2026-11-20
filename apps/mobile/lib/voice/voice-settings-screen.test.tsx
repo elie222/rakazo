@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   failStatus: false,
   loadDevice: vi.fn(),
   reads: [] as string[],
-  rpc: null as null | ((method: string) => Promise<unknown>),
+  rpc: null as null | ((method: string, input?: unknown) => Promise<unknown>),
   typed: {} as Record<string, (value: string) => void>,
   t: (text: string) => text,
 }));
@@ -47,8 +47,8 @@ vi.mock("../api/api", () => ({
   currentApiBase: () => "https://app.example.test",
   selectedSpaceId: () => "space-fixture",
   captureApiRequestContext: async () => ({ apiBase: "https://app.example.test", headers: {} }),
-  rpc: async (method: string) => {
-    if (mocks.rpc) return mocks.rpc(method);
+  rpc: async (method: string, input?: unknown) => {
+    if (mocks.rpc) return mocks.rpc(method, input);
     if (mocks.failStatus && method === "voice/status") throw new Error("offline");
     mocks.reads.push(method);
     if (method === "voice/catalog")
@@ -380,4 +380,60 @@ it("drops a speech model typed for the provider an opening refresh replaces", as
   expect(field().value).toBe("eleven_v3");
   await act(async () => typeIntoFish("s3"));
   expect(field().value).toBe("eleven_v3");
+});
+
+it("picks a listed speech model and moves to a voice the new model has", async () => {
+  const catalog = [
+    {
+      id: "openrouter",
+      name: "OpenRouter",
+      description: "",
+      transcribe: true,
+      speechModel: true,
+      speechModels: true,
+      freeformVoice: true,
+    },
+  ];
+  let speechModel = "openai/tts";
+  const calls: Array<[string, unknown]> = [];
+  const credential = () => ({ id: "cred", provider: "openrouter", voiceId: "alloy", speechModel });
+  mocks.rpc = async (method, input) => {
+    calls.push([method, input]);
+    if (method === "voice/catalog") return catalog;
+    if (method === "voice/credentials")
+      return [{ ...credential(), voiceId: speechModel === "openai/tts" ? "alloy" : "en_paul" }];
+    if (method === "voice/status")
+      return { configured: true, ready: true, provider: "openrouter", voiceId: "alloy" };
+    if (method === "voice/models")
+      return [
+        { id: "openai/tts", label: "OpenAI TTS" },
+        { id: "mistral/voxtral", label: "Voxtral" },
+      ];
+    if (method === "voice/voices")
+      return speechModel === "openai/tts"
+        ? [{ id: "alloy", label: "alloy" }]
+        : [{ id: "en_paul", label: "en_paul" }];
+    if (method === "voice/setSpeechModel") {
+      speechModel = (input as { speechModel: string }).speechModel;
+      return { ...credential(), voiceId: "en_paul" };
+    }
+    if (method === "voice/setVoice")
+      return { configured: true, ready: true, provider: "openrouter" };
+    return [];
+  };
+  await render();
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent?.startsWith(label));
+  expect(button("Default")).toBeTruthy();
+  expect(button("Voxtral")).toBeTruthy();
+
+  await act(async () => button("Voxtral")!.click());
+
+  expect(calls).toContainEqual([
+    "voice/setSpeechModel",
+    { provider: "openrouter", scope: "account", speechModel: "mistral/voxtral" },
+  ]);
+  expect(calls.some(([method]) => method === "voice/setVoice")).toBe(false);
+  expect(button("Voxtral")?.getAttribute("aria-pressed")).toBe("true");
+  expect(button("en_paul")?.getAttribute("aria-pressed")).toBe("true");
 });

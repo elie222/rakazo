@@ -102,7 +102,7 @@ for (const platform of ["darwin", "linux"]) {
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog).toBeHidden();
     // Settings keeps the choice reachable after the one-time prompt.
-    const settings = await openUserSettings(page);
+    const settings = await openUserSettings(page, "computer");
     const toggle = settings.getByTestId("this-computer-toggle");
     await toggle.scrollIntoViewIfNeeded();
     await expect(toggle).toBeChecked();

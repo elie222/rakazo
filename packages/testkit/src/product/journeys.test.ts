@@ -189,6 +189,11 @@ describeJourneys("required product journeys", () => {
           where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
         })) === 0,
     );
+    // A bot without a computer simply has no earlier versions.
+    const { computerId } = await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } });
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId: null } });
+    expect(await rpc(app, cookie, "computer/homeVersions", { botId: bot.id })).toEqual([]);
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId } });
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     const original = await prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
@@ -663,6 +668,24 @@ describeJourneys("required product journeys", () => {
     expect(
       await rpc(app, cookie, "memory/update", { documentId: doc.id, content: "legacy" }),
     ).toMatchObject({ content: "legacy", revision: doc.revision + 3 });
+  });
+
+  it("keeps saved memory from triggering scripted run commands", async () => {
+    const cookie = await signup(app, `memory-scripted-${stamp}@rakazo.test`, "Memory fixture");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Memory",
+      description: "",
+      instructions: "",
+    });
+    const [doc] = await rpc<Array<{ id: string }>>(app, cookie, "memory/list", {
+      botId: bot.id,
+    });
+    await rpc(app, cookie, "memory/update", {
+      documentId: doc!.id,
+      content: "The phrase for the failure drill is “fail this run”.",
+    });
+    await sendAndWait(app, cookie, bot.id, "Are you ready?");
   });
 
   it("clears a conversation without removing the bot, computer, memory, or routines", async () => {
@@ -1648,6 +1671,40 @@ describeJourneys("required product journeys", () => {
     expect(connector.records.length).toBeGreaterThan(before);
     const snap = await rpc<Snap>(app, cookie, "threads/get", { botId: bot.id });
     expect(JSON.stringify(snap)).not.toContain(secret);
+  });
+
+  it("keeps the zero data retention choice across a key replacement until it is turned off", async () => {
+    const cookie = await signup(app, `zdr-j-${stamp}@rakazo.test`, "Retention");
+    const connect = (extra: Record<string, unknown>) =>
+      rpc<{ id: string; zeroDataRetention?: boolean }>(app, cookie, "models/connect", {
+        provider: "openrouter",
+        modelId: "scripted",
+        ...extra,
+      });
+    const saved = async () =>
+      (
+        await rpc<Array<{ provider: string; zeroDataRetention?: boolean }>>(
+          app,
+          cookie,
+          "models/credentials",
+        )
+      ).find((credential) => credential.provider === "openrouter");
+
+    await connect({ apiKey: "test-zdr-key-one-not-real", zeroDataRetention: true });
+    expect((await saved())?.zeroDataRetention).toBe(true);
+    // A replacement key that does not mention the choice keeps it.
+    await connect({ apiKey: "test-zdr-key-two-not-real" });
+    expect((await saved())?.zeroDataRetention).toBe(true);
+    await connect({ apiKey: "test-zdr-key-three-not-real", zeroDataRetention: false });
+    expect((await saved())?.zeroDataRetention).toBeUndefined();
+
+    const refused = await raw(app, cookie, "models/connect", {
+      provider: "anthropic",
+      apiKey: "test-zdr-anthropic-not-real",
+      modelId: "claude-sonnet-4-5",
+      zeroDataRetention: true,
+    });
+    expect(refused.status).toBe(400);
   });
 
   it("8: retrying a completed effect does not duplicate the destination write", async () => {

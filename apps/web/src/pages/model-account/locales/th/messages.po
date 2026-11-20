@@ -1,0 +1,193 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-08-26 00:00+0000\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: th\n"
+"Project-Id-Version: rakazo-web\n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+msgid "{name} options"
+msgstr "ตัวเลือกของ {name}"
+
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+msgid "Add fallback"
+msgstr "เพิ่มโมเดลสำรอง"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "After authorization, this app will use your {serviceName} account to call models. Model usage is charged to your {serviceName} account balance."
+msgstr "หลังการอนุญาต แอปนี้จะใช้บัญชี {serviceName} ของคุณเพื่อเรียกใช้โมเดล ค่าใช้งานโมเดลจะถูกหักจากยอดคงเหลือในบัญชี {serviceName} ของคุณ"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Agree and authorize"
+msgstr "ยอมรับและอนุญาต"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "API protocol"
+msgstr "โปรโตคอล API"
+
+#: apps/web/src/pages/model-account/ModelAccountSettings.tsx
+msgid "Approval model"
+msgstr "โมเดลสำหรับการอนุมัติ"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Authorization incomplete."
+msgstr "การอนุญาตยังไม่เสร็จสมบูรณ์"
+
+#: apps/web/src/pages/model-account/ModelAccountSettings.tsx
+msgid "Authorize access to {serviceName} models"
+msgstr "อนุญาตการเข้าถึงโมเดลของ {serviceName}"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Authorize again"
+msgstr "อนุญาตอีกครั้ง"
+
+#: apps/web/src/pages/model-account/ModelAccountSettings.tsx
+msgid "Authorize model service"
+msgstr "อนุญาตบริการโมเดล"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Authorize the model account to continue."
+msgstr "อนุญาตบัญชีโมเดลเพื่อดำเนินการต่อ"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Authorizing…"
+msgstr "กำลังอนุญาต…"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Balance unavailable"
+msgstr "ไม่สามารถแสดงยอดคงเหลือ"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Cancel"
+msgstr "ยกเลิก"
+
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+msgid "Change {name}"
+msgstr "เปลี่ยน {name}"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Checking authorization…"
+msgstr "กำลังตรวจสอบการอนุญาต…"
+
+#: apps/web/src/pages/model-account/ModelAccountSettings.tsx
+msgid "Choose a model"
+msgstr "เลือกโมเดล"
+
+#: apps/web/src/pages/model-account/ModelAccountSettings.tsx
+msgid "Close model settings"
+msgstr "ปิดการตั้งค่าโมเดล"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Complete authorization in the opened window."
+msgstr "ทำการอนุญาตให้เสร็จในหน้าต่างที่เปิดขึ้น"
+
+#: apps/web/src/components/ModelAccountOnboarding.tsx
+msgid "Connect a model"
+msgstr "เชื่อมต่อโมเดล"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Connected"
+msgstr "เชื่อมต่อแล้ว"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Continue with {name}"
+msgstr "ดำเนินการต่อด้วย {name}"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Could not confirm authorization. Try again."
+msgstr "ไม่สามารถยืนยันการอนุญาตได้ โปรดลองอีกครั้ง"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Could not continue"
+msgstr "ไม่สามารถดำเนินการต่อได้"
+
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+msgid "Default"
+msgstr "ค่าเริ่มต้น"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Disconnection pending confirmation."
+msgstr "การยกเลิกการเชื่อมต่อกำลังรอการยืนยัน"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Home"
+msgstr "หน้าแรก"
+
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+msgid "Loading model catalog…"
+msgstr "กำลังโหลดรายการโมเดล…"
+
+#: apps/web/src/pages/model-account/ModelAccountSettings.tsx
+msgid "Main model"
+msgstr "โมเดลหลัก"
+
+#: apps/web/src/components/ModelAccount.tsx
+#: apps/web/src/components/ModelAccountOnboarding.tsx
+msgid "Model account"
+msgstr "บัญชีโมเดล"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Model account unavailable"
+msgstr "บัญชีโมเดลไม่พร้อมใช้งาน"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "model service"
+msgstr "บริการโมเดล"
+
+#: apps/web/src/pages/model-account/ModelAccountSettings.tsx
+msgid "Models"
+msgstr "โมเดล"
+
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+msgid "Move down"
+msgstr "เลื่อนลง"
+
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+msgid "Move up"
+msgstr "เลื่อนขึ้น"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Recharge"
+msgstr "เติมเงิน"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Refresh balance"
+msgstr "รีเฟรชยอดคงเหลือ"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Refresh models"
+msgstr "รีเฟรชโมเดล"
+
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+msgid "Remove"
+msgstr "ลบ"
+
+#: apps/web/src/components/ModelAccount.tsx
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+#: apps/web/src/pages/model-account/use-model-account-onboarding.tsx
+msgid "Retry"
+msgstr "ลองอีกครั้ง"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Retry disconnect"
+msgstr "ลองยกเลิกการเชื่อมต่ออีกครั้ง"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "Sign in with SSO to use the model account."
+msgstr "ลงชื่อเข้าใช้ด้วย SSO เพื่อใช้บัญชีโมเดล"
+
+#: apps/web/src/pages/model-account/AccountModelRoleSettings.tsx
+msgid "Thinking"
+msgstr "การคิด"
+
+#: apps/web/src/components/ModelAccount.tsx
+msgid "You will return to the app after authorization."
+msgstr "คุณจะกลับไปยังแอปหลังการอนุญาต"

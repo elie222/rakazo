@@ -1,5 +1,6 @@
 export const HI_MESSAGES: Record<string, string> = {
   Rakazo: "BotONE",
+  "Rakazo Cloud": "BotONE Cloud",
   "About {name}": "{name} के बारे में",
   "Check for Updates…": "अपडेट देखें…",
   "Computer Access…": "कंप्यूटर एक्सेस…",

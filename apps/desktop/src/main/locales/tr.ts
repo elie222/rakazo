@@ -1,5 +1,6 @@
 export const TR_MESSAGES: Record<string, string> = {
   Rakazo: "BotONE",
+  "Rakazo Cloud": "BotONE Cloud",
   "About {name}": "{name} Hakkında",
   "Check for Updates…": "Güncellemeleri Denetle…",
   "Computer Access…": "Bilgisayar Erişimi…",

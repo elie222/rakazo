@@ -1,5 +1,6 @@
 export const JA_MESSAGES: Record<string, string> = {
   Rakazo: "BotONE",
+  "Rakazo Cloud": "BotONE Cloud",
   "About {name}": "{name}について",
   "Check for Updates…": "アップデートを確認…",
   "Computer Access…": "コンピュータへのアクセス…",

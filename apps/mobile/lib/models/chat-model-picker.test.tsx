@@ -293,6 +293,7 @@ vi.mock("expo-router", () => ({
   }),
   useNavigation: () => ({ setOptions: mocks.setOptions }),
   useLocalSearchParams: () => mocks.params,
+  useIsFocused: () => mocks.focused,
   useFocusEffect: (effect: () => (() => void) | undefined) =>
     useEffect(() => (mocks.focused ? effect() : undefined), [effect, mocks.focused]),
 }));

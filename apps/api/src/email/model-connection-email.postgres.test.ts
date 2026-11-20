@@ -10,7 +10,11 @@ import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, claimProductEmail, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "../billing/billing.js";
-import { lifecycleEmailScheduler, MODEL_CONNECTION_EMAIL_DELAY_MS } from "./lifecycle-email.js";
+import {
+  AGENT_IMPORT_EMAIL_DELAY_MS,
+  lifecycleEmailScheduler,
+  MODEL_CONNECTION_EMAIL_DELAY_MS,
+} from "./lifecycle-email.js";
 
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 const WEB_ORIGIN = "https://app.example.test";
@@ -89,8 +93,14 @@ dbTests("model connection email", () => {
     const customer = (await billingAccountForOrganization(prisma, id))!.customerId;
     provider.completeByokCheckout(customer);
     await service.sync(customer);
-    const [job] = queued.slice(before);
-    return { id, actor, customer, job: job?.payload as LifecycleJob };
+    const [job, importJob] = queued.slice(before);
+    return {
+      id,
+      actor,
+      customer,
+      job: job?.payload as LifecycleJob,
+      importJob: importJob?.payload as LifecycleJob,
+    };
   }
 
   const sentTo = (id: string) =>
@@ -104,7 +114,7 @@ dbTests("model connection email", () => {
     // A later sync of the same subscription is not another start.
     await billing.sync(customer);
     const added = queued.slice(before);
-    expect(added).toHaveLength(1);
+    expect(added).toHaveLength(2);
     expect(added[0]).toMatchObject({
       name: "email.lifecycle",
       replaceKey: `email.lifecycle:model-connection:${id}:${id}`,
@@ -254,6 +264,61 @@ dbTests("model connection email", () => {
     expect(sentTo(id)).toHaveLength(0);
     expect(await claims(id)).toBe(1);
     expect(capture.mock.calls.filter(([userId]) => userId === id)).toHaveLength(0);
+  });
+
+  it("queues the import mail two days after any plan starts and sends it once", async () => {
+    const before = queued.length;
+    const startedAt = Date.now();
+    const { id, importJob } = await subscriber("import");
+    const added = queued.slice(before);
+    expect(added[1]).toMatchObject({
+      name: "email.lifecycle",
+      replaceKey: `email.lifecycle:agent-import:${id}:${id}`,
+      payload: { kind: "agent-import", organizationId: id, userId: id },
+    });
+    const dueIn = added[1]!.availableAt!.getTime() - startedAt;
+    expect(dueIn).toBeGreaterThanOrEqual(AGENT_IMPORT_EMAIL_DELAY_MS);
+    expect(dueIn).toBeLessThan(AGENT_IMPORT_EMAIL_DELAY_MS + 60_000);
+
+    await send(importJob);
+    await send(importJob);
+    const [message, ...extra] = sentTo(id);
+    expect(extra).toHaveLength(0);
+    expect(message!.subject).toBe("Bring your old assistant to Rakazo");
+    expect(message!.text).toContain(`${WEB_ORIGIN}/sign-in?next=%2Fapp%3Fimport`);
+  });
+
+  it("holds the import mail back a day when the model mail has just gone out", async () => {
+    const { id, job, importJob } = await subscriber("import-after-model");
+    await send(job);
+    const before = queued.length;
+    await send(importJob);
+    expect(sentTo(id)).toHaveLength(1);
+    expect(queued.slice(before)).toEqual([
+      expect.objectContaining({ name: "email.lifecycle", payload: importJob }),
+    ]);
+  });
+
+  it("drops the import mail once the owner has imported an agent, or the plan has ended", async () => {
+    const imported = await subscriber("import-done");
+    const bot = await prisma.bot.create({
+      data: { spaceId: imported.id, userId: imported.id, name: "Bramble", color: "ink" },
+    });
+    await prisma.agentImport.create({
+      data: {
+        spaceId: imported.id,
+        userId: imported.id,
+        botId: bot.id,
+        source: "document",
+        created: {},
+      },
+    });
+    const ended = await subscriber("import-ended");
+    provider.setStatus(ended.customer, "canceled");
+    await billing.sync(ended.customer);
+    await send(imported.importJob);
+    await send(ended.importJob);
+    expect([...sentTo(imported.id), ...sentTo(ended.id)]).toHaveLength(0);
   });
 
   it("queues nothing where account mail is not configured", async () => {

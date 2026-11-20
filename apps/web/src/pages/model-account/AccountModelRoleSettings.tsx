@@ -145,7 +145,7 @@ export function AccountModelRoleSettings({
       onConnect={() => undefined}
       defaultOption={
         isPrimary && role !== "main" && settings?.deploymentPrimary
-          ? name(settings.deploymentPrimary)
+          ? { label: name(settings.deploymentPrimary), included: settings.deploymentIncluded }
           : undefined
       }
       disabled={busy}

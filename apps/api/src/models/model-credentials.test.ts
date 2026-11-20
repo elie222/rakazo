@@ -2,9 +2,9 @@ import type * as Adapters from "@rakazo/adapters";
 import type { CodexLiveCatalog } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { ModelConnectInputSchema, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
-import { createModelConnector } from "./model-credentials.js";
+import { createModelConnector, prepareModelCredential } from "./model-credentials.js";
 
 const compatibleKeyCheck = vi.hoisted(() => vi.fn());
 vi.mock("@rakazo/adapters", async (importOriginal) => {
@@ -214,5 +214,31 @@ describe("failed connection messages", () => {
     await expect(verify({ apiKey: "replacement-fixture-key" })).rejects.toThrow(
       "Incorrect API key provided: •••. Check the key.",
     );
+  });
+});
+
+describe("model provider allowlist", () => {
+  const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+
+  afterEach(() => {
+    if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
+  });
+
+  it("refuses a key for a provider the deployment allowlist leaves out", async () => {
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "openrouter";
+    await expect(
+      prepareModelCredential(
+        {} as unknown as RouterDeps,
+        { userId: "fixture-user", spaceId: "fixture-space" } as Actor,
+        {
+          provider: "anthropic",
+          credentialId: null,
+          plaintext: "fixture-key",
+          signal: undefined,
+        },
+        {} as unknown as CodexLiveCatalog,
+      ),
+    ).rejects.toThrow("This model provider is not allowed on this server.");
   });
 });

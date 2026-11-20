@@ -15,7 +15,7 @@ import {
 } from "../providers/voice/scripted/scripted-voice.js";
 import { XaiVoiceProvider } from "../providers/voice/xai/xai-voice.js";
 import { createVoiceProvider, isVoiceProviderId, listVoiceCatalog } from "./voice-factory.js";
-import { MAX_VOICE_JSON_BYTES } from "./voice-http.js";
+import { MAX_VOICE_JSON_BYTES, VoiceProviderUnavailableError } from "./voice-http.js";
 
 const ctx = {
   operationId: "voice",
@@ -52,6 +52,7 @@ describe("createVoiceProvider", () => {
       "cartesia",
       "fish-audio",
       "xai",
+      "openrouter",
       "openai-compatible",
     ]);
     expect(listVoiceCatalog().map((entry) => entry.id)).toEqual([
@@ -60,6 +61,7 @@ describe("createVoiceProvider", () => {
       "cartesia",
       "fish-audio",
       "xai",
+      "openrouter",
     ]);
     expect(createVoiceProvider("elevenlabs").describe().id).toBe("elevenlabs");
     expect(createVoiceProvider("openai").describe().capabilities.transcribe).toBe(true);
@@ -626,11 +628,13 @@ describe("FishAudioVoiceProvider", () => {
       .synthesize({ text: "Hi", voiceId: "voice-id", apiKey }, ctx)
       .catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe(
-      "speaking failed: model s1 is not enabled for [Redacted]",
-    );
-    expect((error as Error).message).not.toContain(apiKey);
+    expect(error).toBeInstanceOf(VoiceProviderUnavailableError);
+    expect(error).toMatchObject({
+      kind: "SERVICE_UNAVAILABLE",
+      message: "The voice service is not responding. Try again in a moment.",
+      cause: { message: "speaking failed: model s1 is not enabled for [Redacted]" },
+    });
+    expect(JSON.stringify((error as Error).cause)).not.toContain(apiKey);
 
     const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
     expect(event).toMatchObject({
@@ -641,7 +645,7 @@ describe("FishAudioVoiceProvider", () => {
       "error.detail": "model s1 is not enabled for [Redacted]",
     });
     expect(JSON.stringify(event)).not.toContain(apiKey);
-    expect(event?.level).toBe("error");
+    expect(event?.level).toBe("warn");
   });
 
   it.each([
@@ -703,9 +707,9 @@ describe("FishAudioVoiceProvider", () => {
       ),
     );
 
-    await expect(call(new FishAudioVoiceProvider())).rejects.toThrow(
-      `${operation} failed: Voice response is too large.`,
-    );
+    await expect(call(new FishAudioVoiceProvider())).rejects.toMatchObject({
+      cause: { message: `${operation} failed: Voice response is too large.` },
+    });
 
     const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
     expect(event).toMatchObject({
@@ -727,7 +731,9 @@ describe("FishAudioVoiceProvider", () => {
 
     await expect(
       new FishAudioVoiceProvider().synthesize({ text: "Hi", voiceId: "voice-id", apiKey }, ctx),
-    ).rejects.toThrow("speaking failed (502)");
+    ).rejects.toMatchObject({
+      cause: { message: expect.stringContaining("speaking failed (502)") },
+    });
 
     const event = sink.events.find((entry) => entry.message === "Fish Audio request failed");
     expect(event).toMatchObject({

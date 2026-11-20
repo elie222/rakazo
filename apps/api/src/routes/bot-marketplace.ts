@@ -7,9 +7,9 @@ import {
   marketplaceBotTemplate,
 } from "@rakazo/contracts";
 import type { Prisma } from "@rakazo/db";
+import { managedAppCatalog } from "../account/onboarding.js";
 import { requireAdmin } from "../auth/admins.js";
 import { createBotFromTemplateDefinition } from "../bots/bot-templates.js";
-import { managedAppCatalog } from "../account/onboarding.js";
 import type { RouterContext } from "./context.js";
 
 type MarketplaceBotRow = {

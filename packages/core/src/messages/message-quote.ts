@@ -181,6 +181,7 @@ function replyBlockText(block: MessageBlock): string {
     case "app_connect":
     case "mcp_approval":
     case "chart":
+    case "routine_event":
       return block.name;
     case "app":
       return block.server;

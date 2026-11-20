@@ -117,7 +117,7 @@ jobs:
     needs: screenshot-context
     if: needs.screenshot-context.outputs.pr != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     # Only Codex uses the shared login; other agents get a run-specific group.
     concurrency:
       group: ${{ (vars.PR_SCREENSHOT_AGENT || 'codex') == 'codex' && 'codex-subscription' || format('screenshot-agent-{0}-{1}-{2}', github.run_id, github.run_attempt, inputs.pull_request) }}
@@ -185,7 +185,7 @@ jobs:
           prompt: ${{ needs.screenshot-context.outputs.prompt }}
           claude_args: >-
             --model ${{ vars.PR_SCREENSHOT_MODEL || 'claude-sonnet-5-5' }}
-            --max-turns 60
+            --max-turns 90
             --mcp-config ${{ runner.temp }}/pr-screenshots-mcp.json
             --allowedTools ${{ steps.browser.outputs.tools }}
             --disallowedTools Read,Grep,Glob,Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,mcp__playwright__browser_evaluate,mcp__playwright__browser_run_code_unsafe,mcp__playwright__browser_file_upload,mcp__playwright__browser_drop,mcp__playwright__browser_network_request,mcp__playwright__browser_network_requests
@@ -245,7 +245,7 @@ jobs:
           [[ -z $MODEL ]] || args+=(--model "$MODEL")
           # No checkout instructions or inherited credentials; browser tools only.
           status=0
-          printf '%s' "$PROMPT" | timeout --kill-after=30s 20m sudo -n -H -u codex-screenshots env -i \
+          printf '%s' "$PROMPT" | timeout --kill-after=30s 30m sudo -n -H -u codex-screenshots env -i \
             PATH="$PATH" HOME=/home/codex-screenshots CODEX_HOME="$CODEX_HOME" \
             "$codex" exec --ephemeral --skip-git-repo-check \
             -C /srv/pr-screenshot-agent "${args[@]}" \

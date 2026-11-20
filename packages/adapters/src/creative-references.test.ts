@@ -1,9 +1,9 @@
 import type { ConnectorCall } from "@rakazo/adapter-kit";
 import { expect, it, vi } from "vitest";
-import { ConnectorRegistry } from "./integrations/connector-registry.js";
 import { capabilities, creativeFixture } from "./creative.test-support.js";
 import type { CreativeCapabilities } from "./creative-contracts.js";
 import { creativeReferenceSchema, creativeToolInputSchema } from "./creative-contracts.js";
+import { ConnectorRegistry } from "./integrations/connector-registry.js";
 
 const image = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jM1sAAAAASUVORK5CYII=",

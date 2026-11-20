@@ -14,8 +14,14 @@ import type { ExternalEffect } from "@rakazo/db";
 import { assertRunCanWriteHistory, isUniqueViolation, parseComputerMode } from "@rakazo/db";
 import { quote } from "shell-quote";
 import { BACKGROUND_WORK_LAUNCH } from "./../computers/computer-idle.js";
-import { acquireComputerExecutionLease, provisionComputer } from "./../computers/computer-lifecycle.js";
-import { resolveBotWorkspaceCwd, resolveBotWorkspacePath } from "./../computers/screens/computer-support.js";
+import {
+  acquireComputerExecutionLease,
+  provisionComputer,
+} from "./../computers/computer-lifecycle.js";
+import {
+  resolveBotWorkspaceCwd,
+  resolveBotWorkspacePath,
+} from "./../computers/screens/computer-support.js";
 import { persistMessageInTransaction } from "./../runs/assembly/run-messages.js";
 import { attachWorkspaceFileToThread } from "./../storage/thread-artifacts.js";
 import type { HostExecutionDeps } from "./host-execution.js";

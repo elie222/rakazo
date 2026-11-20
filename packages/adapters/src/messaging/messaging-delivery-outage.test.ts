@@ -112,7 +112,7 @@ describe("chat delivery while the database is unavailable", () => {
 
   it("folds the job queue's own polling errors into the outage and passes everything else on", () => {
     const outage = new DatabaseOutage();
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const logger = jobQueueLogger(outage);
     const refused = Object.assign(new Error("connect ECONNREFUSED 10.0.0.5:5432"), {
       code: "ECONNREFUSED",
@@ -126,9 +126,35 @@ describe("chat delivery while the database is unavailable", () => {
       failure: true,
       error: refused,
     });
-    expect({
-      outage: logged(),
-      passedOn: consoleError.mock.calls.length,
-    }).toEqual({ outage: ["error:database unavailable; backing off"], passedOn: 1 });
+    // The queue's lines are single structured events that leave the job's payload out.
+    logger.info("Completed task 8 (messaging.send, 4.20ms) with success", {
+      job: { payload: { secret: "not for the log" } },
+    });
+    expect(logged()).toEqual([
+      "error:database unavailable; backing off",
+      "error:job_queue.log",
+      "info:job_queue.log",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      "queue.message": "Completed task 8 (messaging.send, 4.20ms) with success",
+    });
+    expect(JSON.stringify(events)).not.toContain("not for the log");
+    // The task's failure travels with its line, and a line without one keeps its text.
+    expect(events.at(-2)).toMatchObject({
+      "queue.message": "Failed task 7 (messaging.send) with error 'connect ECONNREFUSED'",
+      error: { message: "connect ECONNREFUSED 10.0.0.5:5432" },
+    });
+    logger.error("Worker exited unexpectedly");
+    expect(events.at(-1)).toMatchObject({
+      level: "error",
+      "queue.message": "Worker exited unexpectedly",
+    });
+    logger.warn("Task took long to release", { error: new Error("still held") });
+    expect(events.at(-1)).toMatchObject({
+      level: "warn",
+      "queue.message": "Task took long to release",
+      error: { message: "still held" },
+    });
+    expect(consoleLog).not.toHaveBeenCalled();
   });
 });

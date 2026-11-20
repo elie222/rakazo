@@ -89,6 +89,7 @@ import type {
   UnreferencedMachine,
   VoiceCapabilities,
   VoiceInfo,
+  VoiceModelInfo,
   VoiceSynthesizeRequest,
   VoiceTranscribeRequest,
   VoiceUsage,
@@ -451,6 +452,34 @@ export interface JobPublisher {
   close(): Promise<void>;
 }
 
+/** A named queue's jobs ahead of one, as `JobQueueOrder.pendingUntil` reads them. */
+export interface QueuedAhead {
+  /** When the last of them is due; null when there are none. */
+  until: Date | null;
+  /** Whether the job keyed `exceptKey` is recorded at all; false without a key. */
+  own: boolean;
+}
+
+/**
+ * Order between the jobs of a named queue beyond running them one at a time, for work that must
+ * not overtake jobs already queued. A job whose payload has `follower: true` is due late only so
+ * it runs after the jobs ahead of it in its queue.
+ */
+export interface JobQueueOrder {
+  /**
+   * When the last unfinished job of a named queue is due; null when the queue has none. With
+   * `exceptKey`, only the jobs queued ahead of that job count, all of them while it is not queued,
+   * and the answer also says whether it is.
+   */
+  pendingUntil(queueName: string, exceptKey?: string): Promise<QueuedAhead>;
+  /**
+   * In the caller's transaction, makes the followers at the head of a named queue due now, a
+   * millisecond apart in their order, up to the first job that is not one or is running. The job
+   * keyed `exceptKey`, the one settling, is left out.
+   */
+  releaseFollowersIn(tx: JobTransaction, queueName: string, exceptKey?: string): Promise<void>;
+}
+
 export interface JobWorkerHost {
   start(handlers: BackgroundJobHandlers): Promise<void>;
   stop(): Promise<void>;
@@ -651,12 +680,17 @@ export interface ExecutionRunner {
 export interface VoiceProvider {
   describe(): AdapterDescriptor<VoiceCapabilities>;
   verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult>;
-  /** `options.language` narrows the listing for providers that advertise `languages`. */
+  /**
+   * `options.language` narrows the listing for providers that advertise `languages`;
+   * `options.model` selects the speech model for providers whose voices belong to one.
+   */
   listVoices(
     apiKey: string,
     context: AdapterContext,
-    options?: { language?: string },
+    options?: { language?: string; model?: string },
   ): Promise<VoiceInfo[]>;
+  /** The speech models the account can pick from, for providers that list them. */
+  listModels?(apiKey: string, context: AdapterContext): Promise<VoiceModelInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
   transcribe?(
     request: VoiceTranscribeRequest,
@@ -769,7 +803,8 @@ export interface BrowserProvider {
   ): Promise<BrowserActResult>;
   /**
    * Whether these clicks, or a click or key on the screen, would complete a purchase, without acting.
-   * A browser that cannot tell, such as an older computer image, answers none.
+   * A browser that cannot tell, such as an older computer image, answers none. A check that started
+   * and could not read the page throws, and the press is refused.
    */
   purchaseCheck?(
     computer: ComputerRef,

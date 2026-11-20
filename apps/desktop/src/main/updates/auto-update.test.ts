@@ -90,6 +90,19 @@ describe("classifyUpdaterFailure", () => {
     }
   });
 
+  it("stays silent when the release host fails or rate limits the feed", () => {
+    for (const statusCode of [429, 500, 502, 503]) {
+      const error = Object.assign(new Error(`${statusCode} \nmethod: GET url: <feed>`), {
+        statusCode,
+      });
+      expect(classifyUpdaterFailure(error)).toEqual({ kind: "offline", message: null });
+    }
+    const forbidden = Object.assign(new Error("403 \nmethod: GET url: <feed>"), {
+      statusCode: 403,
+    });
+    expect(classifyUpdaterFailure(forbidden).kind).toBe("other");
+  });
+
   it("treats an unreachable Linux signature fetch as offline, not a fault", () => {
     expect(classifyUpdaterFailure(new SignatureUnreachableError())).toEqual({
       kind: "offline",
@@ -121,6 +134,7 @@ describe("classifyUpdaterFailure", () => {
     for (const message of [
       "ditto: /private/update/Rakazo.app/x.js.map: No space left on device\nditto: Couldn't read pkzip signature.",
       "未能完成该操作。设备上无剩余空间: 设备上无剩余空间",
+      "No se pudo completar la operación. No queda espacio en el dispositivo: No queda espacio en el dispositivo",
     ]) {
       expect(classifyUpdaterFailure(new Error(message)), message).toEqual({
         kind: "disk-full",

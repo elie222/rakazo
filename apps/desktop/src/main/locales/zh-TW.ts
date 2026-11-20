@@ -1,5 +1,6 @@
 export const ZH_TW_MESSAGES: Record<string, string> = {
   Rakazo: "BotONE",
+  "Rakazo Cloud": "BotONE Cloud",
   "About {name}": "關於 {name}",
   "Check for Updates…": "檢查更新項目…",
   "Computer Access…": "電腦存取權…",

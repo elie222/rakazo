@@ -120,10 +120,10 @@ function connected(providers: string[]) {
     secretId: `secret-${provider}`,
     createdAt: new Date(0),
     updatedAt: new Date(0),
+    userPreferences: [],
   }));
   const prisma = {
     userModelCredential: { findMany: vi.fn(async () => credentials) },
-    userModelPreference: { findMany: vi.fn(async () => []) },
     secret: {
       findMany: vi.fn(async () =>
         credentials.map((credential) => ({ id: credential.secretId, ciphertext: "fake" })),

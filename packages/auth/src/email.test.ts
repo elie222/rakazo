@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { agentImportEmail } from "./agent-import-email.js";
 import {
   accountDeletionEmail,
   CATALOGS,
@@ -70,6 +71,7 @@ it("shares the layout across account, product and marketplace emails", async () 
     homeDeletionEmail(user, new Date(), "unused", url),
     referralEmail(user, url, url),
     modelConnectionEmail(user, { webOrigin: url, unsubscribeUrl: url }),
+    agentImportEmail(user, { webOrigin: url, unsubscribeUrl: url }),
     organizationInvitationEmail(user.email, {
       organizationName: "Acme",
       inviterName: "Sam",
@@ -306,4 +308,18 @@ it("asks for one thing in the model connection email: the connect step", async (
   );
   expect(german.subject).toBe("Verbinde ein Modell, um mit Rakazo loszulegen");
   expect(german.text).toContain("Abo von ChatGPT oder Claude");
+});
+
+it("asks for one thing in the agent import email: opening the import", async () => {
+  const unsubscribeUrl = "https://app.example.test/unsubscribe?token=fake-token";
+  const message = await agentImportEmail(
+    { name: "Ana", email: "user@example.test" },
+    { webOrigin: "https://app.example.test", unsubscribeUrl },
+  );
+  expect(message.subject).toBe("Bring your old assistant to Rakazo");
+  expect(message.text).toContain("Hi Ana,");
+  expect(message.text).toContain("Already set up an assistant in Grok Bot, Hermes, or OpenClaw?");
+  const links = [...message.html!.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
+  expect(links).toEqual(["https://app.example.test/sign-in?next=%2Fapp%3Fimport", unsubscribeUrl]);
+  expect(message.headers?.["List-Unsubscribe"]).toBe(`<${unsubscribeUrl}>`);
 });

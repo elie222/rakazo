@@ -883,6 +883,145 @@ describe("production backup deployment and archive behavior", () => {
     expect(existsSync(f.snapshots)).toBe(false);
   });
 
+  function composeFiles(command: string[]) {
+    return command.flatMap((arg, index) => (command[index - 1] === "-f" ? [arg] : []));
+  }
+
+  it.each([false, true])(
+    "backs up a published-images install, with its override: %s",
+    (override) => {
+      const f = fixture();
+      write(path.join(f.checkout, "docker-compose.images.yml"), "services: {}\n");
+      if (override) write(path.join(f.checkout, "docker-compose.override.yml"), "services: {}\n");
+      const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: f.checkout });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("Verified Rakazo backup");
+      const commands = f.commands().filter((args) => args[0] === "compose");
+      expect(commands.length).toBeGreaterThan(0);
+      for (const command of commands) {
+        expect(composeFiles(command)).toEqual(
+          ["docker-compose.images.yml", ...(override ? ["docker-compose.override.yml"] : [])].map(
+            (file) => path.join(f.checkout, file),
+          ),
+        );
+      }
+    },
+  );
+
+  it("prefers a checkout's production file over a published-images file beside it", () => {
+    const f = fixture();
+    write(path.join(f.checkout, "docker-compose.images.yml"), "services: {}\n");
+    write(path.join(f.checkout, "infra/compose/docker-compose.prod.yml"), "services: {}\n");
+    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: f.checkout });
+    expect(result.status, result.stderr).toBe(0);
+    for (const command of f.commands().filter((args) => args[0] === "compose")) {
+      expect(composeFiles(command)).toEqual([
+        path.join(f.checkout, "infra/compose/docker-compose.prod.yml"),
+      ]);
+    }
+  });
+
+  it.each([":", ";"])("uses the listed Compose files in order, separated by %s", (separator) => {
+    const f = fixture();
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_DEPLOY_DIR: f.checkout,
+      RAKAZO_COMPOSE_FILE: ["docker-compose.images.yml", "ops/overlay.yml"].join(separator),
+      ...(separator === ":" ? {} : { COMPOSE_PATH_SEPARATOR: separator }),
+    });
+    expect(result.status, result.stderr).toBe(0);
+    for (const command of f.commands().filter((args) => args[0] === "compose")) {
+      expect(composeFiles(command)).toEqual([
+        path.join(f.checkout, "docker-compose.images.yml"),
+        path.join(f.checkout, "ops/overlay.yml"),
+      ]);
+    }
+  });
+
+  it.each([
+    ["RAKAZO_COMPOSE_FILE=a.yml:ops/b.yml\n", ["a.yml", "ops/b.yml"]],
+    [
+      'RAKAZO_COMPOSE_FILE="a.yml:ops/b.yml" # the updater reads this too\r\n',
+      ["a.yml", "ops/b.yml"],
+    ],
+    [
+      "RAKAZO_COMPOSE_FILE=old.yml\n# RAKAZO_COMPOSE_FILE=no.yml\nRAKAZO_COMPOSE_FILE \t  = 'new.yml'",
+      ["new.yml"],
+    ],
+    [
+      "COMPOSE_PATH_SEPARATOR=;\nRAKAZO_COMPOSE_FILE=a.yml;ops/b.yml # overlay\n",
+      ["a.yml", "ops/b.yml"],
+    ],
+    ["OTHER_RAKAZO_COMPOSE_FILE=no.yml\nRAKAZO_COMPOSE_FILE=\n", ["docker-compose.images.yml"]],
+    ["exported=no\nexport RAKAZO_COMPOSE_FILE=a.yml:ops/b.yml\n", ["a.yml", "ops/b.yml"]],
+  ])("reads the file list the updater uses from the deployment environment: %j", (env, files) => {
+    const f = fixture();
+    write(path.join(f.checkout, ".env"), env);
+    write(path.join(f.checkout, "docker-compose.images.yml"), "services: {}\n");
+    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: f.checkout });
+    expect(result.status, result.stderr).toBe(0);
+    const commands = f.commands().filter((args) => args[0] === "compose");
+    expect(commands.length).toBeGreaterThan(0);
+    for (const command of commands) {
+      expect(composeFiles(command)).toEqual(files.map((file) => path.join(f.checkout, file)));
+    }
+  });
+
+  it("prefers the service's own setting and ignores spaces and empty entries, as the updater does", () => {
+    const f = fixture();
+    write(path.join(f.checkout, ".env"), "RAKAZO_COMPOSE_FILE=from-env-file.yml\n");
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_DEPLOY_DIR: f.checkout,
+      RAKAZO_COMPOSE_FILE: " a.yml : ops/b.yml ::",
+    });
+    expect(result.status, result.stderr).toBe(0);
+    for (const command of f.commands().filter((args) => args[0] === "compose")) {
+      expect(composeFiles(command)).toEqual([
+        path.join(f.checkout, "a.yml"),
+        path.join(f.checkout, "ops/b.yml"),
+      ]);
+    }
+  });
+
+  it("refuses a list it would have to expand, instead of backing up some other stack", () => {
+    const f = fixture();
+    write(
+      path.join(f.checkout, ".env"),
+      "OVERLAY=ops/b.yml\nRAKAZO_COMPOSE_FILE=a.yml:${OVERLAY}\n",
+    );
+    write(path.join(f.checkout, "docker-compose.images.yml"), "services: {}\n");
+    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: f.checkout });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("set the plain value in /etc/rakazo/backup.env");
+    expect(f.commands()).toEqual([]);
+    expect(existsSync(f.snapshots)).toBe(false);
+  });
+
+  it("rejects a list that names no Compose file", () => {
+    const f = fixture();
+    const result = f.run("infra/compose/backup-prod.sh", [], {
+      RAKAZO_DEPLOY_DIR: f.checkout,
+      RAKAZO_COMPOSE_FILE: " : ",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("at least one Compose file");
+    expect(f.commands()).toEqual([]);
+  });
+
+  it.each(["/etc/compose.yml", "../other/compose.yml", "ops/../../compose.yml", "a.yml: /b.yml"])(
+    "rejects a Compose file outside the deployment directory: %s",
+    (files) => {
+      const f = fixture();
+      const result = f.run("infra/compose/backup-prod.sh", [], {
+        RAKAZO_DEPLOY_DIR: f.checkout,
+        RAKAZO_COMPOSE_FILE: files,
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("inside the deployment directory");
+      expect(f.commands()).toEqual([]);
+      expect(existsSync(f.snapshots)).toBe(false);
+    },
+  );
+
   it("preserves host archiving and the live-file warning allowance from PR #618", () => {
     const f = fixture();
     const result = f.run("infra/compose/backup-prod.sh", [], { CHANGED_TAR: "1" });

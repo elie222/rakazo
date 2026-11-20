@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     ok: true as const,
     botId: "bot-servo",
     name: "Servo",
+    delivered: "deploy this",
     note: "Sent",
   })),
   handoffToGroupBot: vi.fn(async (..._args: unknown[]) => ({ ok: true as const })),
@@ -36,7 +37,10 @@ const mocks = vi.hoisted(() => ({
     },
   })),
 }));
-vi.mock("../../messaging/bot-messages.js", () => ({ messageBot: mocks.messageBot }));
+vi.mock(import("../../messaging/bot-messages.js"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  messageBot: mocks.messageBot,
+}));
 vi.mock("../../bots/group-handoff.js", () => ({ handoffToGroupBot: mocks.handoffToGroupBot }));
 vi.mock("../../bots/group-post.js", () => ({
   findPostableGroup: mocks.findPostableGroup,
@@ -64,8 +68,20 @@ function context(servoComputerId: string) {
     path === "bots/bot-coder" ? [{ path: "bots/bot-coder/site", kind: "directory" }] : [],
   );
   const findMany = vi.fn(async (..._args: unknown[]) => [
-    { id: "bot-coder", name: "Coder", computerId: "computer-team", computerSwitching: false },
-    { id: "bot-servo", name: "Servo", computerId: servoComputerId, computerSwitching: false },
+    {
+      id: "bot-coder",
+      name: "Coder",
+      computerId: "computer-team",
+      computerSwitching: false,
+      thread: { id: "thread-coder" },
+    },
+    {
+      id: "bot-servo",
+      name: "Servo",
+      computerId: servoComputerId,
+      computerSwitching: false,
+      thread: { id: "thread-servo" },
+    },
   ]);
   const ctx = {
     deps: { prisma: { bot: { findMany } }, sandbox: { listFiles } },
@@ -106,8 +122,9 @@ describe("sending files to another bot", () => {
   });
 
   it("passes paths on a shared computer instead of copying them", async () => {
-    const { ctx } = context("computer-team");
+    const { ctx, findMany } = context("computer-team");
     await messagingTools.message_bot!(ctx, callWith("message_bot", { files: ["site"] }));
+    expect(findMany).toHaveBeenCalledTimes(1);
     expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
     expect(mocks.saveWorkspaceFile).not.toHaveBeenCalled();
     expect(mocks.messageBot).toHaveBeenCalledWith(
@@ -196,15 +213,24 @@ describe("sending files to another bot", () => {
     expect(mocks.messageBot).not.toHaveBeenCalled();
   });
 
-  it("reads nothing for a recipient it cannot find", async () => {
-    const { ctx } = context("computer-servo");
+  it("lists reachable bots without reading files when it cannot find the recipient", async () => {
+    const { ctx, findMany } = context("computer-servo");
     await expect(
       messagingTools.message_bot!(
         ctx,
         callWith("message_bot", { bot_id: "bot-gone", files: ["site.zip"] }),
       ),
-    ).resolves.toEqual({ error: "no bot found with that id or name. Nothing was sent." });
+    ).resolves.toEqual({
+      error:
+        "no bot found with that id or name. Bots reachable from this space (use bot_id): Servo (bot-servo). Nothing was sent.",
+    });
+    expect(findMany).toHaveBeenCalledTimes(2);
+    expect(findMany).toHaveBeenNthCalledWith(2, {
+      where: { spaceId: "space-1", archivedAt: null },
+      select: { id: true, name: true, thread: { select: { id: true } } },
+    });
     expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.messageBot).not.toHaveBeenCalled();
   });
 
   it("files a handoff's copies under the group that shows them", async () => {

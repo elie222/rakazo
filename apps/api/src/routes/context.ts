@@ -6,6 +6,7 @@ import {
   applyProviderLiveCatalog,
   approvedModelCreditCatalogEntry,
   approvedModelCreditSeesImages,
+  assertModelProviderAllowed,
   availableModelCreditOfferings,
   CHATGPT_OAUTH_PROVIDER,
   CodexCatalogCache,
@@ -15,6 +16,7 @@ import {
   createFaviconResolver,
   decisionModelCatalog,
   deploymentModelRole,
+  deploymentPaysForReview,
   findConnectedModelCredential,
   hasHostedModelCredits,
   hasReadyModelCredential,
@@ -25,6 +27,8 @@ import {
   McpOAuthBroker,
   modelCredentialAuthKindsForSpace,
   modelCreditOfferings,
+  modelProviderAllowed,
+  modelProviderAllowlist,
   offeredCatalog,
   providerCatalogCache,
   providerLiveCatalogsForSpace,
@@ -172,12 +176,16 @@ export function createRouterContext(deps: RouterDeps) {
     const configured = deps.billing?.modelCreditsEnabled
       ? (modelCreditOfferings()?.offerings ?? [])
       : [];
+    // Narrowed before any offering is read, so an excluded provider's key is never decrypted.
+    const allowlist = modelProviderAllowlist();
     const fundedProviders = new Set(
       (
         await Promise.all(
-          [...new Set(configured.map((entry) => entry.provider))].map(async (provider) =>
-            (await hasHostedModelCredits(deps.prisma, actor, provider, true)) ? provider : null,
-          ),
+          [...new Set(configured.map((entry) => entry.provider))]
+            .filter((provider) => modelProviderAllowed(allowlist, provider))
+            .map(async (provider) =>
+              (await hasHostedModelCredits(deps.prisma, actor, provider, true)) ? provider : null,
+            ),
         )
       ).filter((provider): provider is string => provider !== null),
     );
@@ -212,10 +220,15 @@ export function createRouterContext(deps: RouterDeps) {
         auth,
         applyProviderLiveCatalog(codexMerged, auth, providerLive, selected),
       ),
-      ...(role === "approval" ? decisionModelCatalog() : []),
+      ...(role === "approval"
+        ? decisionModelCatalog().filter((entry) =>
+            modelProviderAllowed(modelProviderAllowlist(), entry.provider),
+          )
+        : []),
     ];
     for (const offering of approved) {
       if (
+        !modelProviderAllowed(modelProviderAllowlist(), offering.provider) ||
         !fundedProviders.has(offering.provider) ||
         merged.some(
           (entry) => entry.provider === offering.provider && entry.id === offering.modelId,
@@ -289,26 +302,32 @@ export function createRouterContext(deps: RouterDeps) {
       );
   };
 
-  // Shown where a member chose no model, so the list names what actually runs.
+  // Shown where a member chose no model, so the list names what actually runs and whether
+  // the deployment pays for it.
   const deploymentDefault = async (
     actor: Actor,
     role: ModelRole,
-  ): Promise<ModelRoleChoice | null> => {
+  ): Promise<Pick<ModelRoleView, "deploymentPrimary" | "deploymentIncluded">> => {
     if (role === "main") {
-      if (!deps.env.deploymentModelConfigured) return null;
+      if (!deps.env.deploymentModelConfigured) return { deploymentPrimary: null };
       const access = await bestEffort(
         "read main model default funding",
         deploymentModelAccess(deps, actor),
       );
-      return access?.hasDeployment
-        ? deploymentModelRole(role, {
-            settings: await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-            deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
-          }).primary
-        : null;
+      return {
+        deploymentPrimary: access?.hasDeployment
+          ? deploymentModelRole(role, {
+              settings: await deps.prisma.deploymentSettings.findUnique({
+                where: { id: "default" },
+              }),
+              deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
+            }).primary
+          : null,
+      };
     }
+    const creditsEnabled = deps.billing?.modelCreditsEnabled === true;
     let deploymentPrimary = deploymentModelRole(role, {
-      includedApproval: deps.billing?.modelCreditsEnabled === true,
+      includedApproval: creditsEnabled,
     }).primary;
     if (
       role === "approval" &&
@@ -334,7 +353,14 @@ export function createRouterContext(deps: RouterDeps) {
         deploymentPrimary = null;
       }
     }
-    return deploymentPrimary;
+    return role === "approval" &&
+      deploymentPrimary &&
+      deploymentPaysForReview(
+        { provider: deploymentPrimary.provider, model: deploymentPrimary.modelId },
+        creditsEnabled,
+      )
+      ? { deploymentPrimary, deploymentIncluded: true }
+      : { deploymentPrimary };
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings
@@ -475,6 +501,7 @@ export function createRouterContext(deps: RouterDeps) {
     if (choices.length === 0) return;
     const catalog = await modelRoleCatalog(actor, role, reads);
     for (const choice of choices) {
+      assertModelProviderAllowed(choice.provider);
       const entry = catalog.find(
         (entry) =>
           entry.provider === canonicalPiProviderId(choice.provider) && entry.id === choice.modelId,
