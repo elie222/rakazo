@@ -208,7 +208,7 @@ describe("mobile incoming calls", () => {
     expect(fake.native.finishAnswer).not.toHaveBeenCalledWith("call-1", true);
   });
   it.each([true, undefined])(
-    "answers with native speech when hosted voice is unavailable (Device choice=%s)",
+    "keeps native speech and enables available server transcription (Device choice=%s)",
     async (deviceVoice) => {
       const call = await ring();
       fake.deviceVoice = deviceVoice;
@@ -230,7 +230,7 @@ describe("mobile incoming calls", () => {
       );
       expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-1", true);
       expect(fake.rpc.mock.calls.filter(([path]) => path === "voice/status")).toHaveLength(1);
-      expect(fake.setCallProviderTranscribe).not.toHaveBeenCalled();
+      expect(fake.setCallProviderTranscribe).toHaveBeenCalledWith(true, "call-1");
     },
   );
   it("keeps explicit Device speech when a hosted bot voice is ready", async () => {

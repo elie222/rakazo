@@ -52,13 +52,13 @@ export async function resolveVoiceCallPlan(
   return { kind: "provider", transcribe: status.transcribe };
 }
 
-/** True only when the provider is ready to transcribe. Any other outcome is false. */
+/** Device speech can use server transcription even when the bot has no hosted speaking voice. */
 export async function probeProviderTranscribe(
   loadVoiceStatus: () => Promise<VoiceCallStatus>,
 ): Promise<boolean> {
   try {
     const status = await loadVoiceStatus();
-    return status.ready && status.transcribe;
+    return status.transcribe;
   } catch {
     return false;
   }

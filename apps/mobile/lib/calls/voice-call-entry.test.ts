@@ -135,10 +135,10 @@ describe("probeProviderTranscribe", () => {
     await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(true);
   });
 
-  it("is false when the provider is not ready", async () => {
+  it("allows server transcription when the phone supplies speech", async () => {
     const loadVoiceStatus = vi.fn(async () => ({ ready: false, transcribe: true }));
 
-    await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(false);
+    await expect(probeProviderTranscribe(loadVoiceStatus)).resolves.toBe(true);
   });
 
   it("is false for a speak-only provider", async () => {
