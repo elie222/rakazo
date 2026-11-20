@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { Me, RakazoDesktop } from "@rakazo/contracts";
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -137,6 +137,51 @@ it("opens each time without the failure from the last attempt", async () => {
   await act(async () => dialog.onOpenChange?.(false));
   expect(dialogIsOpen()).toBe(false);
 
+  await openFromMenu();
+  expect(dialogIsOpen()).toBe(true);
+  expect(alertText()).toBeNull();
+  expect(button("Check again")).toBeUndefined();
+});
+
+it("does not show a save that fails after the dialog closed", async () => {
+  const save = deferred<void>();
+  macWith({ revokeAccess: vi.fn(() => save.promise) });
+  vi.mocked(rpc.me).mockResolvedValueOnce(docker).mockResolvedValueOnce(docker);
+  await renderPrompt();
+  await openFromMenu();
+  await click("Docker");
+
+  await act(async () => dialog.onOpenChange?.(false));
+  await act(async () => {
+    save.reject(new Error("Computer access was refused"));
+    await flush();
+  });
+  await openFromMenu();
+  expect(dialogIsOpen()).toBe(true);
+  expect(alertText()).toBeNull();
+});
+
+it("does not show a check that fails after the dialog closed", async () => {
+  const check = deferred<Me>();
+  macWith({
+    revokeAccess: vi.fn(async () => {
+      throw new Error("Computer access was refused");
+    }),
+  });
+  vi.mocked(rpc.me)
+    .mockResolvedValueOnce(docker)
+    .mockReturnValueOnce(check.promise)
+    .mockResolvedValueOnce(docker);
+  await renderPrompt();
+  await openFromMenu();
+  await click("Docker");
+  await click("Check again");
+
+  await act(async () => dialog.onOpenChange?.(false));
+  await act(async () => {
+    check.reject(new Error("Still refused"));
+    await flush();
+  });
   await openFromMenu();
   expect(dialogIsOpen()).toBe(true);
   expect(alertText()).toBeNull();
