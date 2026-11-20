@@ -275,7 +275,8 @@ export async function newVaultItemName(
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^[^a-z]+|-+$/g, "")
+    // Runs are already one dash, so one trailing dash is all there is to drop.
+    .replace(/^[^a-z]+|-$/g, "")
     .slice(0, 56);
   const stem = slug || kind;
   const taken = new Set(
