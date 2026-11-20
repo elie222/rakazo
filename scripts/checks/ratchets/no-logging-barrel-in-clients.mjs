@@ -3,4 +3,4 @@ export const message =
 
 export const include = ["apps/mobile/**/*.{ts,tsx}", "apps/web/src/**/*.{ts,tsx}"];
 
-export const pattern = /from\s+["']@rakazo\/logging["']/g;
+export const pattern = /(?:from|import\s*\(?)\s*["']@rakazo\/logging["']/g;
