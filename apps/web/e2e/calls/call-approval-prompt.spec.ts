@@ -17,7 +17,7 @@ test("a call answers each turn and sends the caller to the screen for an approva
   await expect(call.getByText("Listening", { exact: true })).toBeVisible();
 
   await say(page, "show a fetch approval card");
-  await expect(call.getByText("Allow Web fetch example.test?.", { exact: true })).toBeVisible({
+  await expect(call.getByText("Allow Web fetch example.test?", { exact: true })).toBeVisible({
     timeout: 60_000,
   });
   await finishClip(page);

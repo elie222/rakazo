@@ -17,6 +17,8 @@ export type MenuPickerChoice = {
   label: string;
   /** An action shown in red, such as removing the item the row picks for. */
   destructive?: boolean;
+  /** Shown but not choosable. */
+  disabled?: boolean;
 };
 
 /** Native choice menu shared by rows with different layouts. */
@@ -55,7 +57,7 @@ export function MenuPickerMenu({
               id: `choice:${choice.key}`,
               title: choice.label,
               state: choice.key === value ? ("on" as const) : ("off" as const),
-              attributes: { disabled },
+              attributes: { disabled: disabled || choice.disabled },
             })),
           // Destructive choices are actions, not values: their own section, without a checkmark.
           ...destructive(choices, disabled),

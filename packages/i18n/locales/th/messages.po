@@ -156,6 +156,16 @@ msgstr "{0} หยุดชั่วคราวจนกว่าจะเป�
 msgid "{0}% used"
 msgstr "ใช้แล้ว {0}%"
 
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{agent} was invited to {group}"
+msgstr "{agent} ได้รับเชิญเข้า {group}"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{agent} was invited to a group"
+msgstr "{agent} ได้รับเชิญเข้ากลุ่ม"
+
 #: apps/web/src/lib/billing/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -195,6 +205,11 @@ msgstr "สัปดาห์นี้ใช้ไป {amount}"
 #: apps/mobile/lib/account/spending-limit.ts
 msgid "{amount} spent today"
 msgstr "วันนี้ใช้ไป {amount}"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{app} group"
+msgstr "กลุ่ม {app}"
 
 #: apps/mobile/lib/thread/thread-voice.ts
 msgid "{bot} here."
@@ -503,6 +518,19 @@ msgstr "{names} ใช้โมเดลของตัวเองต่อไ�
 msgid "{names} keeps its own model"
 msgstr "{names} ใช้โมเดลของตัวเองต่อไป"
 
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{owner}'s {peer} wants to connect to {agent}"
+msgstr "{peer} ของ {owner} ต้องการเชื่อมต่อกับ {agent}"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+msgid "{owner}'s {peer} wants to connect to {named}"
+msgstr "{peer} ของ {owner} ต้องการเชื่อมต่อกับ {named}"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{owner}'s {peer} wants to connect to your bot"
+msgstr "{peer} ของ {owner} ต้องการเชื่อมต่อกับบอทของคุณ"
+
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "{picked} of {total}"
 msgstr "{picked} จาก {total}"
@@ -728,8 +756,7 @@ msgstr "ใช้ไป {used}%"
 msgid "{variable} is reserved. Choose another name."
 msgstr "{variable} เป็นชื่อที่สงวนไว้ เลือกชื่ออื่น"
 
-#: apps/mobile/app/(settings)/billing.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: packages/i18n/src/computer-usage.ts
 msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgstr "{vcpus} vCPU, {memoryGb} GB, คอมพิวเตอร์ {hours} ชั่วโมงต่อเดือน"
 
@@ -964,6 +991,7 @@ msgstr "Access token (ไม่บังคับ)"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/paywall.tsx
+#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/mobile/components/inbox/inbox-header.tsx
 #: apps/mobile/lib/inbox/use-inbox-header.ts
 #: apps/web/src/components/account/AccountMenu.tsx
@@ -1371,9 +1399,11 @@ msgstr "ทุกช่วงเวลา"
 msgid "Allow"
 msgstr "อนุญาต"
 
+#: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Allow"
 msgstr "อนุญาต"
 
@@ -1631,6 +1661,11 @@ msgstr "รูปลักษณ์"
 msgid "Appearance: {label}"
 msgstr "รูปลักษณ์: {label}"
 
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Applies on its next start."
+msgstr "มีผลเมื่อเริ่มทำงานครั้งถัดไป"
+
 #: apps/mobile/components/cards/AskActions.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Apply"
@@ -1652,10 +1687,8 @@ msgstr "รูปแบบการอนุมัติ"
 msgid "Approvals"
 msgstr "การอนุมัติ"
 
-#: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
-#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Approve"
 msgstr "อนุมัติ"
@@ -1785,10 +1818,6 @@ msgstr "ไฟล์แนบ"
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Authentication"
 msgstr "การตรวจสอบสิทธิ์"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Authentication failed."
-msgstr "การตรวจสอบสิทธิ์ไม่สำเร็จ"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
@@ -2231,6 +2260,7 @@ msgstr "อ่านรูปภาพไม่ได้"
 #: apps/mobile/components/bots/profile-edit-dialog.tsx
 #: apps/mobile/components/cards/AskActions.tsx
 #: apps/mobile/components/cards/secret-ask-sheet.tsx
+#: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/mobile/components/computers/computer-maintenance-actions.tsx
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
@@ -2356,6 +2386,11 @@ msgstr "เปลี่ยน {name}"
 msgid "Change {title}"
 msgstr "เปลี่ยน {title}"
 
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Change bot"
+msgstr "เปลี่ยนบอท"
+
 #: apps/mobile/lib/cards/run-error-presentation.ts
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Change model"
@@ -2413,10 +2448,10 @@ msgstr "การตั้งค่าแชท"
 msgid "Chat Settings"
 msgstr "การตั้งค่าแชท"
 
-#: apps/mobile/app/(settings)/messaging.tsx
-#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Chat with your bot from Slack."
-msgstr "แชทกับบอทจาก Slack ได้"
+#. placeholder {0}: ownerBot.name
+#: apps/web/src/pages/space/Board.tsx
+msgid "Chat with {0}"
+msgstr "แชทกับ {0}"
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Chat with your bots from other apps."
@@ -2452,14 +2487,6 @@ msgstr "ตรวจสอบการอัปเดต"
 #: apps/web/src/pages/shell/use-routine-editor.ts
 msgid "Check in."
 msgstr "ตรวจสอบสถานการณ์"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Check the API key or sign-in, then test again."
-msgstr "ตรวจสอบ API key หรือการเข้าสู่ระบบ แล้วทดสอบอีกครั้ง"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Check the server URL and network, then test again."
-msgstr "ตรวจสอบ URL ของเซิร์ฟเวอร์และเครือข่าย แล้วทดสอบอีกครั้ง"
 
 #: apps/mobile/components/cards/ImportSetupCard.tsx
 #: apps/web/src/pages/shell/bots/import-setup-card.tsx
@@ -2624,6 +2651,7 @@ msgstr "กำลังล้าง…"
 #: apps/mobile/components/native/sheet-close-button.ios.tsx
 #: apps/mobile/components/native/sheet-close-button.tsx
 #: apps/web/src/components/ErrorBoundary.tsx
+#: apps/web/src/components/I18nBootstrap.tsx
 #: apps/web/src/components/WindowChrome.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
@@ -2722,6 +2750,11 @@ msgstr "คลาวด์"
 msgid "Cloud agent"
 msgstr "เอเจนต์คลาวด์"
 
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Cloud computers"
+msgstr "คอมพิวเตอร์บนคลาวด์"
+
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/components/vault/confirm-identity.tsx
@@ -2809,7 +2842,6 @@ msgstr "เสร็จสิ้นแล้ว"
 #: apps/mobile/components/cards/ComputerCard.tsx
 #: apps/mobile/components/computers/computer-mode-picker.tsx
 #: apps/web/src/components/computers/ComputerCard.tsx
-#: apps/web/src/pages/settings/settings-nav.ts
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Computer"
 msgstr "คอมพิวเตอร์"
@@ -2818,6 +2850,10 @@ msgstr "คอมพิวเตอร์"
 #: packages/i18n/src/computer-preview.ts
 msgid "Computer failed to boot"
 msgstr "คอมพิวเตอร์บูตไม่สำเร็จ"
+
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Computer files"
+msgstr "ไฟล์ในคอมพิวเตอร์"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -2861,8 +2897,7 @@ msgstr "โมเดลใช้งานคอมพิวเตอร์…"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
-#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
-#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
+#: apps/web/src/pages/settings/settings-nav.ts
 msgid "Computers"
 msgstr "คอมพิวเตอร์"
 
@@ -2898,10 +2933,6 @@ msgstr "ยืนยันรหัสผ่าน"
 msgid "Confirm removal"
 msgstr "ยืนยันการนำออก"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Confirm the URL is reachable from this browser session, then test again."
-msgstr "ยืนยันว่าเข้าถึง URL ได้จากเซสชันเบราว์เซอร์นี้ แล้วทดสอบอีกครั้ง"
-
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -2927,6 +2958,11 @@ msgstr "เชื่อมต่อ"
 msgid "Connect {0}"
 msgstr "เชื่อมต่อ {0}"
 
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Connect {app}"
+msgstr "เชื่อมต่อ {app}"
+
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
@@ -2937,11 +2973,6 @@ msgstr "เชื่อมต่อ {name}"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Connect {selectedProviderName}"
 msgstr "เชื่อมต่อ {selectedProviderName}"
-
-#: apps/mobile/app/(settings)/messaging.tsx
-#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Connect a chat app"
-msgstr "เชื่อมต่อแอปแชท"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/app/chat-model.tsx
@@ -2966,6 +2997,7 @@ msgstr "เชื่อมต่อผู้ให้บริการเสี
 msgid "Connect API key"
 msgstr "เชื่อมต่อ API key"
 
+#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
@@ -3077,10 +3109,6 @@ msgstr "ไม่พบการเชื่อมต่อ"
 msgid "Connection pending"
 msgstr "รอการเชื่อมต่อ"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Connection test failed."
-msgstr "ทดสอบการเชื่อมต่อไม่สำเร็จ"
-
 #. placeholder {0}: item.name
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Connection to {0} is still pending. You can close this and check again."
@@ -3166,6 +3194,10 @@ msgstr "Control"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Conversations"
 msgstr "การสนทนา"
+
+#: apps/mobile/lib/settings/ai-consent.ts
+msgid "Conversations, names and searches are sent to store and recall context."
+msgstr "การสนทนา ชื่อ และการค้นหา จะถูกส่งเพื่อจัดเก็บและเรียกใช้บริบท"
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
@@ -3315,6 +3347,11 @@ msgstr "ยกเลิกคำเชิญไม่สำเร็จ"
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 msgid "Could not change"
 msgstr "เปลี่ยนไม่สำเร็จ"
+
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Could not change computer size"
+msgstr "เปลี่ยนขนาดคอมพิวเตอร์ไม่สำเร็จ"
 
 #: apps/mobile/app/(settings)/language.tsx
 msgid "Could not change language"
@@ -3643,6 +3680,9 @@ msgstr "ออกจากสเปซไม่สำเร็จ"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/lib/account/user-devices.ts
 #: apps/web/src/components/account/PasskeySettings.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
 #: apps/web/src/components/ErrorBoundary.tsx
 #: apps/web/src/lib/auth/user-devices.ts
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -3716,6 +3756,10 @@ msgstr "โหลดข้อมูลลับไม่สำเร็จ"
 #: apps/mobile/lib/thread/thread-paging.ts
 msgid "Could not load earlier messages"
 msgstr "โหลดข้อความก่อนหน้าไม่สำเร็จ"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+msgid "Could not load earlier versions"
+msgstr "โหลดเวอร์ชันก่อนหน้าไม่สำเร็จ"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
@@ -3930,10 +3974,6 @@ msgstr "ดูตัวอย่างปลั๊กอินไม่สำเ
 msgid "Could not reach that server"
 msgstr "เชื่อมต่อเซิร์ฟเวอร์นั้นไม่สำเร็จ"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Could not reach the model server."
-msgstr "เชื่อมต่อเซิร์ฟเวอร์โมเดลไม่สำเร็จ"
-
 #: apps/mobile/components/inbox/inbox-error-state.tsx
 #: apps/mobile/lib/api/user-error.ts
 #: apps/mobile/lib/pages/page-load-failure.tsx
@@ -3948,6 +3988,7 @@ msgid "Could not reach the server"
 msgstr "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/pages/model-settings/use-model-connection-form.ts
 msgid "Could not reach this model server"
 msgstr "เชื่อมต่อเซิร์ฟเวอร์โมเดลนี้ไม่สำเร็จ"
 
@@ -4046,6 +4087,11 @@ msgstr "รีเซ็ตรหัสผ่านไม่สำเร็จ"
 #: apps/mobile/components/thread/thread-header.tsx
 msgid "Could not restore bot"
 msgstr "กู้คืนบอทไม่สำเร็จ"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Could not restore files"
+msgstr "คืนค่าไฟล์ไม่สำเร็จ"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
@@ -4577,6 +4623,10 @@ msgstr "นิพจน์ Cron"
 msgid "Currency"
 msgstr "สกุลเงิน"
 
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Current"
+msgstr "ปัจจุบัน"
+
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/mobile/components/settings/account-deletion.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -4688,12 +4738,14 @@ msgstr "ปฏิเสธ"
 msgid "Declined"
 msgstr "ปฏิเสธแล้ว"
 
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "ค่าเริ่มต้น"
@@ -5301,6 +5353,10 @@ msgstr "ฝังในตัว"
 msgid "Enable {0}"
 msgstr "เปิดใช้ {0}"
 
+#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+msgid "Enabled models"
+msgstr "โมเดลที่เปิดใช้"
+
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Enabled routine \"{name}\""
@@ -5360,10 +5416,6 @@ msgstr "ป้อนจำนวนเต็มตั้งแต่ 1 ถึง
 #: apps/mobile/app/(settings)/spending-limit.tsx
 msgid "Enter an amount"
 msgstr "ป้อนจำนวนเงิน"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Enter an API key before testing."
-msgstr "ป้อน API key ก่อนทดสอบ"
 
 #: apps/web/src/lib/routines/routine-draft.ts
 msgid "Enter an HTTPS URL"
@@ -5477,12 +5529,9 @@ msgid "Everyone here sees its chats, bots and memory"
 msgstr "ทุกคนที่นี่เห็นแชท บอท และความจำได้"
 
 #: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {app}."
 msgstr "ทุกคนในสเปซของบอทนี้อ่านแชทที่ได้รับจาก {app} ได้"
-
-#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
-msgstr "ทุกคนในสเปซของบอทนี้อ่านแชทที่ได้รับจาก {linkApp} ได้"
 
 #. placeholder {0}: first.name
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -5583,6 +5632,10 @@ msgstr "สูงมาก"
 msgid "Extra high"
 msgstr "สูงมาก"
 
+#: packages/i18n/src/computer-usage.ts
+msgid "Extra large (uses {rate}× hours)"
+msgstr "ใหญ่พิเศษ (ใช้ชั่วโมง {rate}×)"
+
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
 msgid "failed"
@@ -5677,12 +5730,6 @@ msgstr "ค้นหาในแชท"
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
-msgid "Find models"
-msgstr "ค้นหาโมเดล"
-
-#: apps/mobile/components/models/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Finding…"
 msgstr "กำลังค้นหา…"
 
@@ -5726,14 +5773,6 @@ msgstr "ไปที่ช่องข้อความ"
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Forgot password?"
 msgstr "ลืมรหัสผ่าน?"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Found {count} model."
-msgstr "พบ {count} โมเดล"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Found {count} models."
-msgstr "พบ {count} โมเดล"
 
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -6018,7 +6057,7 @@ msgstr "ซ่อน"
 msgid "Hide {label}"
 msgstr "ซ่อน {label}"
 
-#: apps/mobile/components/thread/header/chat-route-header.tsx
+#: apps/mobile/components/inbox/inbox-header.tsx
 msgid "Hide chats"
 msgstr "ซ่อนแชท"
 
@@ -6228,6 +6267,12 @@ msgstr "คัดกรองกล่องจดหมาย"
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Include API keys"
 msgstr "รวม API key ด้วย"
+
+#: apps/mobile/components/models/model-role-settings.tsx
+#: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
+#: apps/web/src/pages/model-settings/role-model-picker.tsx
+msgid "Included"
+msgstr "รวมอยู่แล้ว"
 
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -6514,6 +6559,10 @@ msgstr "ห้องทดลอง"
 msgid "Language"
 msgstr "ภาษา"
 
+#: packages/i18n/src/computer-usage.ts
+msgid "Large (uses {rate}× hours)"
+msgstr "ใหญ่ (ใช้ชั่วโมง {rate}×)"
+
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Large paste"
 msgstr "การวางข้อความยาว"
@@ -6658,6 +6707,10 @@ msgstr "โหลดการรันก่อนหน้า"
 msgid "Load web images automatically"
 msgstr "โหลดรูปภาพจากเว็บโดยอัตโนมัติ"
 
+#: apps/web/src/components/I18nBootstrap.tsx
+msgid "Loading"
+msgstr "กำลังโหลด"
+
 #: apps/web/src/pages/space/ActivityList.tsx
 msgid "Loading activity…"
 msgstr "กำลังโหลดกิจกรรม…"
@@ -6687,6 +6740,10 @@ msgstr "กำลังโหลดการตั้งค่าความจ
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "กำลังโหลดแคตตาล็อกโมเดล…"
+
+#: apps/web/src/components/pages/PageNotice.tsx
+msgid "Loading page…"
+msgstr "กำลังโหลดหน้า…"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
@@ -7090,6 +7147,10 @@ msgstr "ส่งข้อความถึง {peer} แล้ว"
 msgid "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines."
 msgstr "ข้อความ, ประวัติแชท, คำสั่งของบอท, ความจำ, ไฟล์แนบ, สกรีนช็อต และเนื้อหาจากแอปที่เชื่อมต่อ จะถูกส่งเพื่อรันบอท รวมถึงรูทีนด้วย"
 
+#: apps/mobile/lib/settings/ai-consent.ts
+msgid "Messages, files, bot instructions, memories and connected-app content are sent to run your bots."
+msgstr "ข้อความ ไฟล์ คำสั่งของบอท ความจำ และเนื้อหาจากแอปที่เชื่อมต่อ จะถูกส่งเพื่อรันบอทของคุณ"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
@@ -7144,10 +7205,12 @@ msgstr "โหมด"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-picker.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
@@ -7155,10 +7218,6 @@ msgstr "โหมด"
 #: apps/web/src/pages/shell/chat/chat-model-picker.tsx
 msgid "Model"
 msgstr "โมเดล"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Model \"{modelId}\" was not listed."
-msgstr "โมเดล \"{modelId}\" ไม่อยู่ในรายการ"
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -7208,10 +7267,6 @@ msgstr "โมเดลตามต้นทุนผู้ให้บริก
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 msgid "Models from server"
 msgstr "โมเดลจากเซิร์ฟเวอร์"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
-msgstr "รายการโมเดลปกติ {modelCount, plural, other {# โมเดลพร้อมใช้งาน}} แชทยังไม่ได้ทดสอบ"
 
 #: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
@@ -7667,10 +7722,6 @@ msgstr "ยังไม่มีข้อความ"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "No model catalog is available."
 msgstr "ไม่มีแคตตาล็อกโมเดลที่ใช้งานได้"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "No models listed."
-msgstr "ไม่มีโมเดลในรายการ"
 
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
@@ -8160,6 +8211,11 @@ msgstr "ไม่บังคับ"
 msgid "Optional header value"
 msgstr "ค่า Header (ไม่บังคับ)"
 
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Options for {app}"
+msgstr "ตัวเลือกสำหรับ {app}"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
 msgstr "หรือเชื่อมต่อ API key"
@@ -8373,11 +8429,6 @@ msgstr "เกินกำหนดชำระ"
 msgid "Paste a replacement key"
 msgstr "วาง key ใหม่เพื่อใช้แทน"
 
-#: apps/mobile/components/models/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
-msgstr "วางที่อยู่แบบ OpenAI-compatible จากเซิร์ฟเวอร์ หากจำเป็น Rakazo จะเพิ่ม /v1 ให้"
-
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Paste the reply"
 msgstr "วางข้อความตอบกลับ"
@@ -8386,10 +8437,6 @@ msgstr "วางข้อความตอบกลับ"
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "วาง API key"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Paste your API key, then test again."
-msgstr "วาง API key แล้วทดสอบอีกครั้ง"
 
 #: apps/mobile/components/calls/voice-player-bar.tsx
 #: apps/mobile/components/media/audio-attachment.tsx
@@ -8468,14 +8515,6 @@ msgstr "เลือก {min}–{max}"
 #: apps/mobile/components/inbox/pick-chat-pane.tsx
 msgid "Pick a chat"
 msgstr "เลือกแชท"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Pick a model from the catalog."
-msgstr "เลือกโมเดลจากแคตตาล็อก"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Pick a model from the list or enter a model id served by this endpoint."
-msgstr "เลือกโมเดลจากรายการ หรือป้อน id โมเดลที่เอนด์พอยต์นี้รองรับ"
 
 #: apps/web/src/lib/routines/routine-draft.ts
 msgid "Pick a tool to check"
@@ -8608,7 +8647,6 @@ msgstr "ความเป็นส่วนตัว"
 msgid "Privacy policies"
 msgstr "นโยบายความเป็นส่วนตัว"
 
-#: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 msgid "Privacy policy"
 msgstr "นโยบายความเป็นส่วนตัว"
@@ -8894,7 +8932,6 @@ msgid "Redirect URI"
 msgstr "URI เปลี่ยนเส้นทาง"
 
 #: apps/web/src/App.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
 #: apps/web/src/components/ErrorBoundary.tsx
 msgid "Refresh"
 msgstr "รีเฟรช"
@@ -9293,10 +9330,12 @@ msgid "Restart to update"
 msgstr "รีสตาร์ทเพื่ออัปเดต"
 
 #: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/mobile/components/inbox/archived-bot-list.ios.tsx
 #: apps/mobile/components/inbox/archived-bot-list.tsx
 #: apps/mobile/components/thread/header/chat-route-header.tsx
 #: apps/mobile/components/thread/thread-header.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
 #: apps/web/src/pages/shell/bots/instruction-settings.tsx
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Restore"
@@ -9305,6 +9344,15 @@ msgstr "คืนค่า"
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Restore {name}"
 msgstr "คืนค่า {name}"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Restore earlier version"
+msgstr "คืนค่าเวอร์ชันก่อนหน้า"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+msgid "Restore files from {savedAt}?"
+msgstr "คืนค่าไฟล์จาก {savedAt} ไหม?"
 
 #: apps/mobile/components/computers/computer-maintenance-actions.tsx
 #: apps/web/src/components/computers/ComputerMaintenanceActions.tsx
@@ -9320,6 +9368,11 @@ msgstr "คืนค่าแล้ว"
 #: apps/web/src/components/computers/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
 msgstr "กำลังคืนค่าพื้นที่ทำงาน"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Restoring…"
+msgstr "กำลังคืนค่า…"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 #: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
@@ -9346,6 +9399,8 @@ msgstr "เปิดการแจ้งเตือนอีกครั้ง
 #: apps/web/src/components/account/AccountAccess.tsx
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/components/vault/VaultItemActivity.tsx
@@ -9386,10 +9441,6 @@ msgstr "กลับไปที่กล่องจดหมาย"
 #: apps/web/src/pages/integrations/SlackInstallCallback.tsx
 msgid "Return to Rakazo"
 msgstr "กลับไปที่ Rakazo"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Review provider settings and test again."
-msgstr "ตรวจสอบการตั้งค่าผู้ให้บริการ แล้วทดสอบอีกครั้ง"
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -9568,7 +9619,6 @@ msgstr "วันเสาร์"
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
-#: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
@@ -9611,6 +9661,10 @@ msgstr "บันทึกแล้ว"
 #: apps/mobile/lib/artifacts/artifact-open.ts
 msgid "Saved {name} locally"
 msgstr "บันทึก {name} ไว้ในเครื่องแล้ว"
+
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Saved at"
+msgstr "บันทึกเมื่อ"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -9832,10 +9886,6 @@ msgstr "ความปลอดภัยและ Ops"
 msgid "Security code"
 msgstr "รหัสความปลอดภัย"
 
-#: apps/web/src/pages/shell/chat/chat-header.tsx
-msgid "Select a bot"
-msgstr "เลือกบอท"
-
 #: apps/mobile/components/calls/VoiceChatCard.tsx
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select messages"
@@ -9870,12 +9920,12 @@ msgid "Send {code} to {address} from {app} within 10 minutes."
 msgstr "ส่ง {code} จาก {app} ไปยัง {address} ภายใน 10 นาที"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
-msgstr "ส่ง <0>{linkCode}</0> จาก {linkApp} ภายใน 10 นาที"
+msgid "Send <0>{code}</0> from {app} within 10 minutes."
+msgstr "ส่ง <0>{code}</0> จาก {app} ภายใน 10 นาที"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
-msgstr "ส่ง <0>{linkCode}</0> จาก {linkApp} ไปยัง <1>{linkAddress}</1> ภายใน 10 นาที"
+msgid "Send <0>{code}</0> to <1>{address}</1> from {app} within 10 minutes."
+msgstr "ส่ง <0>{code}</0> ไปที่ <1>{address}</1> จาก {app} ภายใน 10 นาที"
 
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Send answer"
@@ -9885,6 +9935,10 @@ msgstr "ส่งคำตอบ"
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Send as file"
 msgstr "ส่งเป็นไฟล์"
+
+#: apps/mobile/lib/settings/ai-consent.ts
+msgid "Send data to {name}?"
+msgstr "ส่งข้อมูลไปยัง {name} ไหม?"
 
 #: apps/mobile/components/settings/account-deletion.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -9931,10 +9985,6 @@ msgstr "ส่งแล้ว"
 #: apps/mobile/app/server.tsx
 msgid "Server"
 msgstr "เซิร์ฟเวอร์"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Server found. Enter a model name."
-msgstr "พบเซิร์ฟเวอร์แล้ว ป้อนชื่อโมเดล"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 msgid "Server integrations"
@@ -10000,9 +10050,7 @@ msgstr "การตั้งค่า: การใช้งาน"
 msgid "Setup complete"
 msgstr "ตั้งค่าเสร็จสิ้น"
 
-#: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/components/computers/ComputersUnavailableHint.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "ช่วยเหลือการตั้งค่า"
 
@@ -10039,10 +10087,6 @@ msgstr "แชร์ “{title}”"
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Share {name}"
 msgstr "แชร์ {name}"
-
-#: apps/mobile/lib/settings/ai-consent.ts
-msgid "Share data with {name}?"
-msgstr "แชร์ข้อมูลกับ {name} ไหม?"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -10273,6 +10317,10 @@ msgstr "เว็บไซต์"
 #: apps/web/src/pages/shell/computers/computer-overlay.tsx
 msgid "Sites you sign in to stay signed in for everyone in this space"
 msgstr "เว็บไซต์ที่เข้าสู่ระบบจะคงสถานะการเข้าสู่ระบบไว้สำหรับทุกคนในสเปซนี้"
+
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Size of {name}"
+msgstr "ขนาดของ {name}"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "sk-…"
@@ -10521,6 +10569,15 @@ msgstr "SSO"
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO ไม่พร้อมใช้งานชั่วคราว ลองอีกครั้ง"
 
+#: packages/i18n/src/computer-usage.ts
+msgid "Standard"
+msgstr "มาตรฐาน"
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/billing/ComputerUsage.tsx
+msgid "Standard hours by computer"
+msgstr "ชั่วโมงมาตรฐานแยกตามคอมพิวเตอร์"
+
 #: apps/web/src/pages/shell/composer/github-star-prompt.tsx
 msgid "Star on GitHub"
 msgstr "ให้ดาวบน GitHub"
@@ -10636,6 +10693,11 @@ msgstr "หยุดอ่านออกเสียง"
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
 msgstr "หยุดการสอน"
+
+#: apps/mobile/lib/api/user-error.ts
+#: apps/web/src/lib/query/user-error.ts
+msgid "Stop the computer first."
+msgstr "หยุดคอมพิวเตอร์ก่อน"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/SubagentCard.tsx
@@ -10805,11 +10867,6 @@ msgstr "ตาราง"
 msgid "Take control"
 msgstr "เข้าควบคุม"
 
-#: apps/mobile/app/index.tsx
-#: apps/mobile/components/inbox/inbox-render-item.tsx
-msgid "Tap + to create a bot"
-msgstr "แตะ + เพื่อสร้างบอท"
-
 #: apps/mobile/components/media/inline-image-attachment.tsx
 msgid "Tap to open"
 msgstr "แตะเพื่อเปิด"
@@ -10866,10 +10923,6 @@ msgstr "ข้อกำหนด"
 msgid "Test"
 msgstr "ทดสอบ"
 
-#: apps/web/src/components/models/ModelConnectionPreflightNotice.tsx
-msgid "Test API key"
-msgstr "ทดสอบ API key"
-
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "ทดสอบการเชื่อมต่อ"
@@ -10877,10 +10930,6 @@ msgstr "ทดสอบการเชื่อมต่อ"
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 msgid "Testing"
 msgstr "กำลังทดสอบ"
-
-#: apps/web/src/components/models/ModelConnectionPreflightNotice.tsx
-msgid "Testing…"
-msgstr "กำลังทดสอบ…"
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -10941,13 +10990,13 @@ msgstr "เบราว์เซอร์ของบอทจะยังเข
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr "เบราว์เซอร์หลุดไมโครโฟนเรื่อยๆ ให้เริ่มพิมพ์ด้วยเสียงอีกครั้งเพื่อลองใหม่"
 
-#: apps/web/src/pages/settings/settings-nav.ts
-msgid "The computer your bots work on."
-msgstr "คอมพิวเตอร์ที่บอทใช้ทำงาน"
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "The computer gets the files from the chosen time when it next starts. Its current files stay restorable."
+msgstr "คอมพิวเตอร์จะได้รับไฟล์จากเวลาที่เลือกเมื่อเริ่มทำงานครั้งถัดไป ไฟล์ปัจจุบันยังคืนค่าได้ภายหลัง"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "The connection timed out."
-msgstr "การเชื่อมต่อหมดเวลา"
+#: apps/mobile/components/computers/computer-home-versions.tsx
+msgid "The computer gets these files when it next starts. Its current files stay restorable."
+msgstr "คอมพิวเตอร์จะได้รับไฟล์เหล่านี้เมื่อเริ่มทำงานครั้งถัดไป ไฟล์ปัจจุบันยังคืนค่าได้ภายหลัง"
 
 #: packages/i18n/src/bot-removal.ts
 msgid "The group {names} will be deleted too, including its messages, files, and pages."
@@ -10979,10 +11028,6 @@ msgstr "เจ้าของอาจปิดลิงก์นี้หรื
 #: apps/mobile/lib/cards/run-error-presentation.ts
 msgid "The provider couldn't serve the model selected for this bot."
 msgstr "ผู้ให้บริการไม่สามารถให้บริการโมเดลที่เลือกไว้สำหรับบอทนี้ได้"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "The provider is rate-limiting requests."
-msgstr "ผู้ให้บริการกำลังจำกัดจำนวนคำขอ"
 
 #: apps/mobile/lib/cards/run-error-presentation.ts
 msgid "The provider received too many requests to answer this bot."
@@ -11016,6 +11061,12 @@ msgstr "ผู้ให้บริการความจำที่เลื
 #: apps/mobile/lib/api/api.ts
 msgid "The server changed while starting the request"
 msgstr "เซิร์ฟเวอร์เปลี่ยนไปขณะเริ่มส่งคำขอ"
+
+#: apps/mobile/components/models/compatible-endpoint-form.tsx
+#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/onboarding/model-step.tsx
+msgid "The server didn’t list this model."
+msgstr "เซิร์ฟเวอร์ไม่ได้แสดงโมเดลนี้ในรายการ"
 
 #: apps/mobile/components/inbox/inbox-error-state.tsx
 msgid "The server had a problem"
@@ -11307,10 +11358,6 @@ msgstr "บัญชี บอท การสนทนา ความจำ �
 msgid "This permanently removes every message and stops current work. The chat remains available."
 msgstr "ข้อความทั้งหมดจะถูกลบอย่างถาวรและงานที่กำลังทำจะหยุด แชทยังใช้งานได้ต่อไป"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "This provider cannot be tested without saving."
-msgstr "ต้องบันทึกก่อนจึงจะทดสอบผู้ให้บริการนี้ได้"
-
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 msgid "This removes every message and stops current work. The bot, computer, memory, and routines are kept."
 msgstr "ข้อความทั้งหมดจะถูกลบและงานปัจจุบันจะหยุด ส่วนบอท คอมพิวเตอร์ ความจำ และรูทีนจะยังคงอยู่"
@@ -11581,13 +11628,16 @@ msgstr "เว็บไซต์ที่เชื่อถือ"
 #: apps/mobile/app/routines.tsx
 #: apps/mobile/app/search.tsx
 #: apps/mobile/components/inbox/inbox-error-state.tsx
+#: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/mobile/components/routines/routine-run-history.tsx
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/mobile/components/ui/app-error-boundary.tsx
 #: apps/mobile/lib/pages/page-load-failure.tsx
 #: apps/web/src/components/pages/PageNotice.tsx
 #: apps/web/src/components/pages/PagesList.tsx
+#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/first-bot.tsx
+#: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/SharedPage.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
@@ -11749,6 +11799,14 @@ msgstr "ขึ้น"
 msgid "Up to {limit} sites."
 msgstr "สูงสุด {limit} เว็บไซต์"
 
+#: apps/web/src/components/billing/ModelCredits.tsx
+msgid "Up to {times}× the vCPUs"
+msgstr "vCPU สูงสุด {times}×"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Up to {vcpus} vCPU and {memoryGb} GB, {hours} Standard computer hours a month"
+msgstr "สูงสุด {vcpus} vCPU และ {memoryGb} GB, คอมพิวเตอร์มาตรฐาน {hours} ชั่วโมงต่อเดือน"
+
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
 msgstr "เป็นเวอร์ชันล่าสุดแล้ว"
@@ -11834,8 +11892,10 @@ msgstr "กำลังอัปเดตคอมพิวเตอร์ขอ
 msgid "Updating Team Computer"
 msgstr "กำลังอัปเดตคอมพิวเตอร์ของทีม"
 
+#: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
@@ -11910,10 +11970,6 @@ msgstr "ใช้บัญชีที่มีอีเมลเดียวก
 #: apps/mobile/lib/api/endpoint.ts
 msgid "Use an http or https URL"
 msgstr "ใช้ URL แบบ http หรือ https"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Use Connect to verify the key."
-msgstr "ใช้ปุ่มเชื่อมต่อเพื่อตรวจสอบ key"
 
 #: apps/mobile/app/server.tsx
 msgid "Use default server"
@@ -12089,6 +12145,10 @@ msgstr "ดูซอร์สโค้ด"
 msgid "View transcript"
 msgstr "ดูสคริปต์"
 
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "View transcript: {platform}, {time}"
+msgstr "ดูบทถอดเสียง: {platform}, {time}"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -12113,10 +12173,6 @@ msgstr "ไม่ได้รับอนุญาตให้แชร์ข้
 #: apps/web/src/lib/calls/tts.ts
 msgid "Voice request timed out."
 msgstr "คำขอเสียงหมดเวลา"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Wait a moment and test again."
-msgstr "รอสักครู่แล้วทดสอบอีกครั้ง"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/meeting.ts
@@ -12439,10 +12495,6 @@ msgstr "หากไม่เปลี่ยนเส้นทางอัตโ
 msgid "You can close this window."
 msgstr "ปิดหน้าต่างนี้ได้"
 
-#: apps/mobile/lib/settings/ai-consent.ts
-msgid "You can turn this off in Account → AI data sharing."
-msgstr "ปิดได้ที่ บัญชี → การแชร์ข้อมูลกับ AI"
-
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "คุณปฏิเสธ"
@@ -12469,6 +12521,11 @@ msgstr "Anthropic ของคุณ"
 #: apps/web/src/pages/plugins/manage-view.tsx
 msgid "Your apps"
 msgstr "แอปของคุณ"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Your bot"
+msgstr "บอทของคุณ"
 
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
@@ -12510,6 +12567,11 @@ msgstr "ภาพรวมของวันในหน้าเดียว �
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Your defaults"
 msgstr "ค่าเริ่มต้นของคุณ"
+
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
+msgid "Your devices"
+msgstr "อุปกรณ์ของคุณ"
 
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Your email address"
@@ -12557,6 +12619,15 @@ msgstr "เมื่อช่วงทดลองใช้สิ้นสุด
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your plan becomes {tierTargetLabel} when your trial ends."
 msgstr "เมื่อช่วงทดลองใช้สิ้นสุด แพ็กเกจจะเป็น {tierTargetLabel}"
+
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Your plan does not include this size."
+msgstr "แผนของคุณไม่รวมขนาดนี้"
+
+#: apps/mobile/lib/settings/ai-consent.ts
+msgid "Your recordings and the text you play are sent for transcription and speech."
+msgstr "เสียงที่คุณบันทึกและข้อความที่คุณเล่นจะถูกส่งไปเพื่อถอดเสียงและสร้างเสียงพูด"
 
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/VoiceConsentDialog.tsx

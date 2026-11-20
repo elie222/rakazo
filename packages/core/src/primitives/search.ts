@@ -1,9 +1,16 @@
 import type { SearchHit } from "@rakazo/contracts";
 import { textBoundary, truncatePlainText } from "../messages/markdown-plain.js";
 
-const URL_PATTERN = /https?:\/\/[^\s<>"'`\]][^\s<>"'`]*/gi;
+// A bare link never contains CJK or typographic punctuation, or the quotes and guillemets that wrap
+// one. Ideographs, kana and hangul stay in the link: Wikipedia paths use them. A right single quote
+// stays too, since it is an apostrophe in paths such as O’Connor; linkUrl drops it when it closes a
+// left single quote before the link.
+const URL_PATTERN =
+  /https?:\/\/[^\s<>"'`\]、。〈-】（）！，：；？‘“”«»][^\s<>"'`、。〈-】（）！，：；？‘“”«»]*/gi;
 
-const URL_START = /https?:\/\/[^\s<>"'`\]]/gi;
+const URL_START = /https?:\/\/[^\s<>"'`\]、。〈-】（）！，：；？‘“”«»]/gi;
+
+const TRAILING_LINK_PUNCTUATION = /[.,;:!?]+$/;
 
 function linkEnd(text: string, start: number, limit: number): number {
   let parentheses = 0;
@@ -17,6 +24,23 @@ function linkEnd(text: string, start: number, limit: number): number {
   return limit;
 }
 
+function linkUrl(text: string, start: number, end: number): string | null {
+  let url = text.slice(start, end).replace(TRAILING_LINK_PUNCTUATION, "");
+  if (text[start - 1] === "‘" && url.endsWith("’")) url = url.slice(0, -1);
+  const beforeOpener = text[start - 3];
+  const hasBoldWrapper =
+    url.endsWith("**") &&
+    text.startsWith("**", start - 2) &&
+    beforeOpener !== "*" &&
+    beforeOpener !== "\\" &&
+    url.at(-3) !== "\\" &&
+    !(beforeOpener === "`" && text[end] === "`");
+  if (!hasBoldWrapper) return url;
+
+  const unwrapped = url.slice(0, -2);
+  return /^https?:\/\/$/i.test(unwrapped) ? null : unwrapped;
+}
+
 function findLinks(text: string): string[] {
   const links: string[] = [];
   for (const match of text.matchAll(URL_PATTERN)) {
@@ -24,7 +48,8 @@ function findLinks(text: string): string[] {
     let start = match.index;
     while (start < limit) {
       const end = linkEnd(text, start, limit);
-      links.push(text.slice(start, end).replace(/[.,;:!?]+$/, ""));
+      const url = linkUrl(text, start, end);
+      if (url !== null) links.push(url);
       URL_START.lastIndex = end;
       start = URL_START.exec(text)?.index ?? limit;
     }

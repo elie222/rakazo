@@ -17,13 +17,15 @@ test("a bot template previews what it adds, then creates a bot with a paused rou
   const dialog = page.getByRole("dialog", { name: "Bot templates", exact: true });
   const cards = dialog.getByTestId("bot-template-card");
   await expect(cards).toHaveCount(4);
-  const briefing = cards.filter({ hasText: "Morning briefing" });
+  const briefing = dialog.getByRole("button", { name: "Morning briefing", exact: true });
+  await expect(briefing).toHaveAccessibleDescription("Your day at a glance, every weekday morning");
   await expect(briefing.getByText("Needs you", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "bot-templates");
 
   await briefing.click();
   const detail = dialog.getByTestId("bot-template-detail");
   await expect(detail.getByRole("heading", { name: "Morning briefing" })).toBeVisible();
+  await expect(detail.getByText("Needs you", { exact: true })).toBeVisible();
   await expect(detail.getByText("Skill", { exact: true })).toBeVisible();
   await expect(detail.getByText(/paused until you turn it on$/)).toBeVisible();
   await captureScreenshot(page, testInfo, "bot-template-detail");
@@ -42,6 +44,6 @@ test("a bot template previews what it adds, then creates a bot with a paused rou
 
   // Opening the template again offers the bot it made instead of a second one.
   await page.goto(`/app/${botId}?templates`);
-  await dialog.getByTestId("bot-template-card").filter({ hasText: "Morning briefing" }).click();
+  await dialog.getByRole("button", { name: "Morning briefing", exact: true }).click();
   await expect(detail.getByRole("button", { name: "Open", exact: true })).toBeVisible();
 });

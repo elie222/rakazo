@@ -1,7 +1,15 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
-import { BROWSER_STILL_RUNNING_EXIT } from "@rakazo/core/node/desktop-runtime";
+import {
+  BROWSER_STILL_RUNNING_EXIT,
+  SCREEN_NOT_READY_EXIT,
+} from "@rakazo/core/node/desktop-runtime";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it } from "vitest";
-import { BrowserStillRunningError, BrowserStoppedReleaseError } from "./computer-screens.js";
+import {
+  BrowserStillRunningError,
+  BrowserStoppedReleaseError,
+  ComputerScreenUnavailableError,
+} from "./computer-screens.js";
 import { LinuxDesktop } from "./linux-desktop.js";
 
 const context = {
@@ -126,5 +134,47 @@ describe("LinuxDesktop.stopBrowsers", () => {
     await expect(desktop.stopBrowsers(computer, context)).rejects.toBeInstanceOf(
       BrowserStillRunningError,
     );
+  });
+});
+
+describe("screen startup", () => {
+  it("answers a screen that did not come up as unavailable, with a warning", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      const desktop = new LinuxDesktop(
+        host({
+          code: SCREEN_NOT_READY_EXIT,
+          stdout: "",
+          stderr: "computer browser CDP not ready on 9241 (running=yes)\nbrowser log line\n",
+        }),
+      );
+
+      await expect(
+        desktop.connectScreen(computer, { view: "stream", interactive: false }, context),
+      ).rejects.toBeInstanceOf(ComputerScreenUnavailableError);
+      expect(sink.events).toEqual([
+        expect.objectContaining({
+          level: "warn",
+          message: "computer.screen_not_ready",
+          reason: "computer browser CDP not ready on 9241 (running=yes)",
+        }),
+      ]);
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
+  });
+
+  it("keeps the same status from any other desktop command as a failure", async () => {
+    const desktop = new LinuxDesktop(
+      host({ code: SCREEN_NOT_READY_EXIT, stdout: "", stderr: "app exited\n" }),
+    );
+
+    const error = await desktop
+      .stopBrowsers(computer, context)
+      .catch((failure: unknown) => failure);
+
+    expect(error).not.toBeInstanceOf(ComputerScreenUnavailableError);
+    expect(error).toMatchObject({ message: "app exited\n" });
   });
 });

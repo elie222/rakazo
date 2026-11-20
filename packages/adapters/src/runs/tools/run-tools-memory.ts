@@ -180,7 +180,7 @@ export const memoryTools: ToolHandlers = {
     );
     // All recalled knowledge is derived data; an omitted provider marker cannot certify it.
     if (response.ok && response.value.length > 0) {
-      await markReadOutsideContent(ctx);
+      await markReadOutsideContent(ctx, response.value);
     }
     return response;
   },
@@ -197,7 +197,7 @@ export const memoryTools: ToolHandlers = {
     if (!response.ok) return response;
     const text = response.value.trim();
     // Reflection is provider-generated prose; it cannot attest that its answer is clean.
-    if (text) await markReadOutsideContent(ctx);
+    if (text) await markReadOutsideContent(ctx, text);
     return { ok: true, value: text || "No relevant memories." };
   },
   search_history: readHistoryTool,

@@ -625,7 +625,7 @@ export function botsRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
         if (!bot.archivedAt) {
           // Finishes a restore that brought the bot back but stopped before its routines.
-          await resumeRoutinesAfterRestore(deps, [bot.id]);
+          await resumeRoutinesAfterRestore(deps, context.actor.userId, [bot.id]);
           return { ok: true as const };
         }
         if (bot.computer) {
@@ -638,7 +638,7 @@ export function botsRoutes(ctx: RouterContext) {
         } else {
           await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
         }
-        await resumeRoutinesAfterRestore(deps, [bot.id]);
+        await resumeRoutinesAfterRestore(deps, context.actor.userId, [bot.id]);
         return { ok: true as const };
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
@@ -782,6 +782,7 @@ export function botsRoutes(ctx: RouterContext) {
         });
         await resumeRoutinesAfterRestore(
           deps,
+          context.actor.userId,
           members.map((member) => member.botId),
         );
         return { ok: true as const };

@@ -203,6 +203,7 @@ export function comparePlugins(a: PluginMarketplaceEntry, b: PluginMarketplaceEn
 
 function searchWords(text: string): string[] {
   return text
+    .normalize("NFC")
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);
