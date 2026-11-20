@@ -173,6 +173,14 @@ describe("SkillsDialog browse search", () => {
     expect(container.textContent).not.toContain(noMatchLine);
   });
 
+  it("does not claim no match when a registry could not load", async () => {
+    api.catalog.mockResolvedValue({ ...catalog, unavailableRegistries: ["test"] });
+    await render();
+    await vi.waitUntil(() => container.querySelector('[role="alert"]'));
+    type("zzzz");
+    expect(container.textContent).not.toContain(noMatchLine);
+  });
+
   it("shows no line while the catalog is still loading", async () => {
     const pending = deferred<PluginMarketplaceCatalog>();
     api.catalog.mockReturnValue(pending.promise);

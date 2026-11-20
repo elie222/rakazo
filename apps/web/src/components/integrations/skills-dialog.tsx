@@ -233,7 +233,11 @@ export function SkillsDialog({
               );
             })}
           </div>
-          {!catalog.isPending && !catalog.error && query.trim() !== "" && packs.length === 0 ? (
+          {!catalog.isPending &&
+          !catalog.error &&
+          !catalog.data?.unavailableRegistries.length &&
+          query.trim() !== "" &&
+          packs.length === 0 ? (
             <p className="text-muted-foreground/80">
               <Trans>No skills match your search.</Trans>
             </p>
