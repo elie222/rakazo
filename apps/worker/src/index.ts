@@ -75,6 +75,10 @@ import {
   withSecretWriteAhead,
 } from "@rakazo/adapters";
 import { abortableDelay, parseEnvFlag } from "@rakazo/core";
+import {
+  MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+  sandboxCommandTimeoutExceedsMax,
+} from "@rakazo/core/node/sandbox-command";
 import { resolveMeetingSigningKey, resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createBoardEvents,
@@ -104,6 +108,10 @@ async function main() {
   const stopStallWatch = watchEventLoopStalls("worker.event_loop_stalled");
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
+  if (sandboxCommandTimeoutExceedsMax(process.env))
+    logger.warn("SANDBOX_COMMAND_TIMEOUT_MS is above the maximum; using the maximum", {
+      maximumMs: MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+    });
   const poolMax = parsePositiveInteger(process.env.DB_POOL_MAX, 8);
   // Three queue listeners and reconciliation leadership hold connections. Leave
   // room for job queries and transactions instead of starting a stalled worker.

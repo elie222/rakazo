@@ -33,6 +33,10 @@ import {
   uploadSizeFromEnv,
 } from "@rakazo/core";
 import {
+  MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+  sandboxCommandTimeoutExceedsMax,
+} from "@rakazo/core/node/sandbox-command";
+import {
   resolveAuthSecret,
   resolveContentEncryption,
   resolveEncryptionKey,
@@ -192,6 +196,11 @@ export function withEnvOverrides(env: AppEnv, overrides: Partial<AppEnv>): AppEn
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   secretStoreOptionsFromEnv(source);
+  if (sandboxCommandTimeoutExceedsMax(source)) {
+    getLogger().warn("SANDBOX_COMMAND_TIMEOUT_MS is above the maximum; using the maximum", {
+      maximumMs: MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+    });
+  }
   const issuer = optional(source.OIDC_ISSUER);
   const clientId = optional(source.OIDC_CLIENT_ID);
   const clientSecret = optional(source.OIDC_CLIENT_SECRET);
