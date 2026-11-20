@@ -384,6 +384,9 @@ describe("purchase detection for the page tools", () => {
       [ok, { kind: "type", text: "go\n" }],
       [{ ...ok, double: true }],
       [{ kind: "type", text: "\n\n" }],
+      // An Escape or a scroll may close the dialog first, so the click after it would reach the page.
+      [{ kind: "key", key: "Escape" }, ok],
+      [{ kind: "scroll", x: 1, y: 1 }, ok],
     ]) {
       expect(await prepare(actions)).toEqual({
         error:

@@ -145,7 +145,7 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
       };
     });
     const presses = steps.filter((step) => step.kind === "click").length;
-    return presses ? { actions: steps, presses } : undefined;
+    return presses ? { actions: steps, presses, acts: steps.length } : undefined;
   }
   const points: Array<{ x: number; y: number }> = [];
   let enter = false;
@@ -159,6 +159,8 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
   let unchecked = false;
   // Clicks, presses, releases and submitting keys: each one may answer a dialog or press the page.
   let presses = 0;
+  // Every step but a pointer move: any of them (Escape, a scroll, typing) may close a dialog first.
+  let acts = 0;
   let pointer: { x: number; y: number } | undefined;
   for (const raw of actions) {
     const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -168,6 +170,7 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
         ? // Rounded as the desktop rounds it before pressing.
           { x: Math.round(step.x), y: Math.round(step.y) }
         : undefined;
+    if (kind !== "move") acts += 1;
     if (kind === "move") {
       pointer = own ?? pointer;
     } else if (["click", "down", "up"].includes(kind) && step.button === "right") {
@@ -209,7 +212,7 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
     }
   }
   return points.length || enter || unplaced
-    ? { desktop: true, enter, points, unplaced, unchecked, presses }
+    ? { desktop: true, enter, points, unplaced, unchecked, presses, acts }
     : undefined;
 }
 
@@ -240,7 +243,7 @@ export async function detectPurchase(
   if (ctx.computer.heldForTakeover) return undefined;
   // A press after the batch opens a URL lands on a page nobody could look at yet.
   if ("unchecked" in probe && probe.unchecked) return "opened";
-  const { presses, ...request } = probe;
+  const { presses, acts, ...request } = probe;
   let found: Awaited<ReturnType<NonNullable<typeof browser.purchaseCheck>>>["purchase"];
   let dialog: string | undefined;
   let computer: Awaited<ReturnType<RunContext["computer"]["get"]>>;
@@ -264,11 +267,11 @@ export async function detectPurchase(
     });
     return "unreadable";
   }
-  // The page is blocked by a dialog, so only the call's first press reaches it; a later one would land on
-  // the page once the dialog closes, unchecked.
+  // The page is blocked by a dialog, so only the call's first step reaches it; anything after it (even
+  // after an Escape that closes the dialog) would land on the page unchecked.
   if (dialog) {
     if (!HARMLESS_DIALOGS.has(dialog)) return "dialog";
-    return presses === 1 ? undefined : "dialog-batch";
+    return presses === 1 && acts === 1 ? undefined : "dialog-batch";
   }
   if (!found) return undefined;
   // Page text is stored with the approval: a value the run must keep secret never goes with it, not even
