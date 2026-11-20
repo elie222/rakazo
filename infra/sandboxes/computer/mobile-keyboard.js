@@ -1,23 +1,32 @@
 const DEFAULT_INPUT_LENGTH = 100;
 
-/** Return the remote key changes represented by a mobile input event. */
+const isHighSurrogate = (code) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code) => code >= 0xdc00 && code <= 0xdfff;
+
+/**
+ * Return the remote key changes represented by a mobile input event. The remote receives one key
+ * per code point, so Backspaces are counted in code points (one emoji is one Backspace) and the
+ * changed text never starts with half of a surrogate pair.
+ */
 export function mobileInputChanges(oldValue, newValue, selectionStart = newValue.length) {
   const newLength = Math.max(selectionStart ?? newValue.length, newValue.length);
-  const oldLength = oldValue.length;
-  let inputCount = newLength - oldLength;
-  let backspaces = inputCount < 0 ? -inputCount : 0;
-
-  for (let index = 0; index < Math.min(oldLength, newLength); index += 1) {
-    if (newValue.charAt(index) !== oldValue.charAt(index)) {
-      inputCount = newLength - index;
-      backspaces = oldLength - index;
-      break;
-    }
+  const limit = Math.min(oldValue.length, newLength);
+  let prefix = 0;
+  while (prefix < limit && oldValue.charCodeAt(prefix) === newValue.charCodeAt(prefix)) {
+    prefix += 1;
+  }
+  // A change that starts between the halves of a pair keeps the whole pair in the change.
+  if (
+    prefix > 0 &&
+    isHighSurrogate(oldValue.charCodeAt(prefix - 1)) &&
+    (isLowSurrogate(oldValue.charCodeAt(prefix)) || isLowSurrogate(newValue.charCodeAt(prefix)))
+  ) {
+    prefix -= 1;
   }
 
   return {
-    backspaces,
-    text: newValue.slice(newLength - inputCount, newLength),
+    backspaces: Array.from(oldValue.slice(prefix)).length,
+    text: newValue.slice(prefix, newLength),
   };
 }
 
