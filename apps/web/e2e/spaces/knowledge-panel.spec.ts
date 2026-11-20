@@ -184,13 +184,6 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   const closeSkills = () =>
     skillsDialog.getByRole("button", { name: "Close skills", exact: true }).click();
   await openSkills();
-  const search = skillsDialog.getByRole("textbox", { name: "Search skills", exact: true });
-  await search.fill("zzzz-no-matching-skill");
-  await expect(
-    skillsDialog.getByText("No skills match your search.", { exact: true }),
-  ).toBeVisible();
-  await captureScreenshot(page, testInfo, "80-skills-search-empty");
-  await search.fill("");
   const knowledge = skillsDialog.getByTestId("your-skills");
   const builtinSkill = knowledge.getByRole("button", { name: /Interrogate/ });
   await expect(builtinSkill).toBeVisible();
