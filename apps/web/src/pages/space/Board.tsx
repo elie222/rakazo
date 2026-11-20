@@ -17,16 +17,21 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  Field,
+  FieldGroup,
+  FieldLabel,
   Input,
   OptionSelect,
   Textarea,
 } from "@rakazo/ui-web";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, MessageCircle } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
+import { IconTooltip } from "../../components/IconTooltip";
 import { WindowChrome } from "../../components/WindowChrome";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
+import { desktopBridge } from "../../lib/platform/desktop";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
@@ -102,19 +107,32 @@ export function BoardPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
-      <WindowChrome />
-      <header className="flex items-center gap-3 border-b px-4 py-3">
-        <Link
-          to="/app"
-          className={buttonVariants({ variant: "ghost", size: "icon" })}
-          aria-label={t`Back`}
+      <header className="app-drag flex items-center gap-3 border-b px-4 py-3">
+        {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
+        {desktopBridge() ? <WindowChrome /> : null}
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <IconTooltip label={t`Back`}>
+            <Link
+              to="/app"
+              aria-label={t`Back`}
+              className={buttonVariants({
+                variant: "ghost",
+                size: "icon",
+                className: "app-no-drag text-muted-foreground",
+              })}
+            >
+              <ChevronLeft />
+            </Link>
+          </IconTooltip>
+          <h1 className="font-medium">
+            <Trans>Board</Trans>
+          </h1>
+        </div>
+        <Button
+          className="app-no-drag"
+          onClick={() => setSelected("new")}
+          disabled={bots.length === 0}
         >
-          <ChevronLeft />
-        </Link>
-        <h1 className="flex-1 font-medium">
-          <Trans>Board</Trans>
-        </h1>
-        <Button onClick={() => setSelected("new")} disabled={bots.length === 0}>
           <Trans>New ticket</Trans>
         </Button>
       </header>
@@ -235,6 +253,7 @@ function TicketDialog({
     },
     stale: [commentsOptions.queryKey],
   });
+  const ownerBot = bots.find((bot) => bot.id === owner);
   const busy = saving.pending || commenting.pending;
   const failure = saving.error ?? commenting.error;
   const shownError = failure
@@ -255,85 +274,110 @@ function TicketDialog({
           <DialogTitle>{ticket?.title ?? t`New ticket`}</DialogTitle>
         </DialogHeader>
         <form
-          className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
             commenting.reset();
             saving.run();
           }}
         >
-          <label htmlFor={`${formId}-title`} className="block space-y-1 text-body">
-            <span>
-              <Trans>Title</Trans>
-            </span>
-            <Input
-              id={`${formId}-title`}
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              maxLength={TICKET_TITLE_MAX_LENGTH}
-              required
-            />
-          </label>
-          <label htmlFor={`${formId}-description`} className="block space-y-1 text-body">
-            <span>
-              <Trans>Description</Trans>
-            </span>
-            <Textarea
-              id={`${formId}-description`}
-              data-testid="ticket-description"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              maxLength={TICKET_DESCRIPTION_MAX_LENGTH}
-            />
-          </label>
-          <label htmlFor={`${formId}-owner`} className="block space-y-1 text-body">
-            <span>
-              <Trans>Owner</Trans>
-            </span>
-            <OptionSelect
-              id={`${formId}-owner`}
-              value={owner || null}
-              onValueChange={setOwner}
-              required
-              options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
-            />
-          </label>
-          {ticket ? (
-            <label htmlFor={`${formId}-status`} className="block space-y-1 text-body">
-              <span>
-                <Trans>Status</Trans>
-              </span>
-              <OptionSelect<TicketStatus>
-                id={`${formId}-status`}
-                value={status}
-                onValueChange={setStatus}
-                options={TICKET_STATUSES.map((value) => ({ value, label: statuses[value] }))}
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-title`}>
+                <Trans>Title</Trans>
+              </FieldLabel>
+              <Input
+                id={`${formId}-title`}
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                maxLength={TICKET_TITLE_MAX_LENGTH}
+                required
               />
-            </label>
-          ) : null}
-          <label htmlFor={`${formId}-priority`} className="block space-y-1 text-body">
-            <span>
-              <Trans>Priority</Trans>
-            </span>
-            <OptionSelect<TicketPriority>
-              id={`${formId}-priority`}
-              value={priority}
-              onValueChange={setPriority}
-              options={TICKET_PRIORITIES.map((value) => ({ value, label: priorities[value] }))}
-            />
-          </label>
-          <div className="flex justify-end">
-            <Button type="submit" disabled={busy || !title.trim() || !owner}>
-              {ticket ? t`Save` : t`Create`}
-            </Button>
-          </div>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-description`}>
+                <Trans>Description</Trans>
+              </FieldLabel>
+              <Textarea
+                id={`${formId}-description`}
+                data-testid="ticket-description"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={TICKET_DESCRIPTION_MAX_LENGTH}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-owner`}>
+                <Trans>Owner</Trans>
+              </FieldLabel>
+              <div className="flex items-center gap-2">
+                <OptionSelect
+                  id={`${formId}-owner`}
+                  className="min-w-0 flex-1"
+                  value={owner || null}
+                  onValueChange={setOwner}
+                  required
+                  options={bots.map((bot) => ({ value: bot.id, label: bot.name }))}
+                />
+                {ownerBot ? (
+                  <IconTooltip label={t`Chat with ${ownerBot.name}`}>
+                    <Link
+                      to={`/app/${ownerBot.id}`}
+                      aria-label={t`Chat with ${ownerBot.name}`}
+                      className={buttonVariants({
+                        variant: "ghost",
+                        size: "icon",
+                        className: "text-muted-foreground",
+                      })}
+                    >
+                      <MessageCircle />
+                    </Link>
+                  </IconTooltip>
+                ) : null}
+              </div>
+            </Field>
+            {ticket ? (
+              <Field>
+                <FieldLabel htmlFor={`${formId}-status`}>
+                  <Trans>Status</Trans>
+                </FieldLabel>
+                <OptionSelect<TicketStatus>
+                  id={`${formId}-status`}
+                  value={status}
+                  onValueChange={setStatus}
+                  options={TICKET_STATUSES.map((value) => ({ value, label: statuses[value] }))}
+                />
+              </Field>
+            ) : null}
+            <Field>
+              <FieldLabel htmlFor={`${formId}-priority`}>
+                <Trans>Priority</Trans>
+              </FieldLabel>
+              <OptionSelect<TicketPriority>
+                id={`${formId}-priority`}
+                value={priority}
+                onValueChange={setPriority}
+                options={TICKET_PRIORITIES.map((value) => ({ value, label: priorities[value] }))}
+              />
+            </Field>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={busy || !title.trim() || !owner}>
+                {ticket ? t`Save` : t`Create`}
+              </Button>
+            </div>
+          </FieldGroup>
         </form>
         {ticket ? (
           <div data-testid="ticket-comments" className="space-y-3 border-t pt-3">
             {comments.map((row) => (
               <div key={row.id} className="text-body">
                 <div className="mb-1 flex items-center justify-between gap-3 text-label text-muted-foreground">
-                  <span>{row.authorName}</span>
+                  {row.authorBotId && bots.some((bot) => bot.id === row.authorBotId) ? (
+                    <Link to={`/app/${row.authorBotId}`} className="hover:text-foreground">
+                      {row.authorName}
+                    </Link>
+                  ) : (
+                    <span>{row.authorName}</span>
+                  )}
                   <time dateTime={row.createdAt}>{formatRelativeTime(row.createdAt)}</time>
                 </div>
                 <ChatMarkdown>{row.body}</ChatMarkdown>

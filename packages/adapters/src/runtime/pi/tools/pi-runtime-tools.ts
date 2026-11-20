@@ -20,6 +20,7 @@ import {
   isToolPauseResult,
 } from "../../../approvals/approval-effect.js";
 import type { FinishedShellCommand } from "../../../computers/sandbox/shell-command-stream.js";
+import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
 import { textContentArg } from "../../../runs/turn/tool-text.js";
@@ -86,6 +87,15 @@ export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost)
     tool.name === USE_TOOL ? useToolAgentTool(tool, runnable, host) : tool,
   );
 }
+
+/** Tools that can change the page a sibling page action would type into. */
+const PAGE_CHANGING_TOOL_NAMES = new Set([
+  "computer_act",
+  "open_path",
+  "launch_app",
+  "browser_navigate",
+  "browser_act",
+]);
 
 /**
  * Unwraps to the real tool before anything else, so its gate, approvals, checkpoint, audit
@@ -377,11 +387,14 @@ function toAgentTool(
     // Pi runs a turn's tool calls concurrently by default, so a batch that
     // creates a routine and lists routines can read the list before the row
     // exists. Pi runs the whole batch in order when any call in it is
-    // sequential. Remember also needs this to avoid competing revision writes, and request_secret
-    // so a sibling request cannot start after one pauses for its card and share its answer.
+    // sequential. Remember also needs this to avoid competing revision writes, request_secret
+    // so a sibling request cannot start after one pauses for its card and share its answer, and the
+    // page and desktop tools so a page action is gated against the page it will act on, never one
+    // a sibling is about to change.
     ...(SCHEDULE_TOOL_NAMES.has(tool.name) ||
     tool.name === "remember" ||
-    tool.name === "request_secret"
+    tool.name === "request_secret" ||
+    PAGE_CHANGING_TOOL_NAMES.has(tool.name)
       ? { executionMode: "sequential" as const }
       : {}),
     parameters: parametersFor(tool),
@@ -646,20 +659,22 @@ function toAgentTool(
                     ? result
                     : boundAgentToolResult(result);
                 }
+                const lifted = liftMcpResultImages(result);
                 return {
                   content: [
                     {
                       type: "text",
                       text: serializeToolResult(
-                        result,
+                        lifted.result,
                         host.request.contextStrategy,
                         tool.name,
                         args,
                         host.request.verbatimMcpServers,
                       ),
                     },
+                    ...lifted.images,
                   ],
-                  details: result,
+                  details: lifted.result,
                 };
               }
               return {

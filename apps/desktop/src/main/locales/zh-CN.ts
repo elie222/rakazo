@@ -1,5 +1,6 @@
 export const ZH_CN_MESSAGES: Record<string, string> = {
   Rakazo: "BotONE",
+  "Rakazo Cloud": "BotONE Cloud",
   "About {name}": "关于 {name}",
   "Check for Updates…": "检查更新…",
   "Computer Access…": "电脑访问权限…",

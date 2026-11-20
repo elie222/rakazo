@@ -225,7 +225,7 @@ describe("MCP output schema patterns", () => {
     expect(sink.events).toEqual([]);
   });
 
-  it("drops an illegal patternProperties key and still checks the other constraints", () => {
+  it("repairs an illegal patternProperties key and still checks the other constraints", () => {
     const validate = createMcpJsonSchemaValidator().getValidator({
       type: "object",
       properties: { id: { type: "string" } },
@@ -233,10 +233,133 @@ describe("MCP output schema patterns", () => {
       patternProperties: { [PAYPAL_STYLE_PATTERN]: { type: "number" } },
     });
 
-    expect(validate({ id: "charge-1", "https://example.test": "text" })).toMatchObject({
+    expect(validate({ id: "charge-1", "https://example.test": 2 })).toMatchObject({ valid: true });
+    expect(validate({ id: "charge-1", "https://example.test": "text" }).valid).toBe(false);
+    expect(validate({ id: 1 }).valid).toBe(false);
+  });
+
+  it("keeps a repaired patternProperties key on a closed object", () => {
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      patternProperties: { [PAYPAL_STYLE_PATTERN]: { type: "string" } },
+      additionalProperties: false,
+    });
+
+    expect(validate({ "https://example.test/pay": "ok" })).toMatchObject({ valid: true });
+    expect(validate({ "https://example.test/pay": 1 }).valid).toBe(false);
+    expect(validate({ "http://example.test": "ok" }).valid).toBe(false);
+  });
+
+  it("keeps an escaped dash literal when repairing a patternProperties class", () => {
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      patternProperties: { "[a\\-z\\:]": { type: "string" } },
+      additionalProperties: false,
+    });
+
+    expect(validate({ a: "ok", "-": "ok", ":": "ok" })).toMatchObject({ valid: true });
+    expect(validate({ b: "ok" }).valid).toBe(false);
+  });
+
+  it("does not reject matches when a patternProperties key cannot be repaired", () => {
+    // `a{` is a legacy pattern and a unicode syntax error, and it is not an identity escape.
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
+      patternProperties: { "a{": { type: "number" } },
+      additionalProperties: false,
+    });
+
+    expect(validate({ id: "charge-1", "a{1}": 1 })).toMatchObject({ valid: true });
+    expect(validate({ id: 1, "a{1}": 1 }).valid).toBe(false);
+  });
+
+  it("does not apply additionalProperties to a pattern key that was dropped", () => {
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      patternProperties: { "a{": { type: "number" } },
+      additionalProperties: { type: "string" },
+    });
+
+    expect(validate({ "a{1}": 1 })).toMatchObject({ valid: true });
+  });
+
+  it("checks every subschema when pattern keys normalize to the same key", () => {
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      patternProperties: {
+        ":": { type: "string", minLength: 2 },
+        "\\:": { type: "string", maxLength: 3 },
+      },
+      additionalProperties: false,
+    });
+
+    expect(validate({ "a:b": "ok" })).toMatchObject({ valid: true });
+    expect(validate({ ":": "x" }).valid).toBe(false);
+    expect(validate({ "a:bcd": "long" }).valid).toBe(false);
+    expect(validate({ other: "ok" }).valid).toBe(false);
+  });
+
+  it("repairs an escaped dash after an empty negated class", () => {
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      patternProperties: { "[^]\\-": { type: "number" } },
+      additionalProperties: false,
+    });
+
+    expect(validate({ "a-": 1 })).toMatchObject({ valid: true });
+    expect(validate({ "a-": "not-a-number" }).valid).toBe(false);
+    expect(validate({ other: 1 }).valid).toBe(false);
+  });
+
+  it("keeps a repaired __proto__ pattern key", () => {
+    const schema = {
+      type: "object" as const,
+      patternProperties: { "\\__proto__": { type: "number" } },
+    };
+    const open = createMcpJsonSchemaValidator().getValidator(schema);
+    const closed = createMcpJsonSchemaValidator().getValidator({
+      ...schema,
+      additionalProperties: false,
+    });
+
+    expect(open(JSON.parse('{"__proto__":1}'))).toMatchObject({ valid: true });
+    expect(open(JSON.parse('{"__proto__":"x"}')).valid).toBe(false);
+    expect(closed(JSON.parse('{"__proto__":1}'))).toMatchObject({ valid: true });
+    expect(closed(JSON.parse('{"other":1}')).valid).toBe(false);
+  });
+
+  it("repairs an invalid pattern in a keyword-named dependent schema", () => {
+    const dependent = {
+      properties: { href: { type: "string", pattern: PAYPAL_STYLE_PATTERN } },
+      required: ["href"],
+    };
+    const validate = createMcpJsonSchemaValidator().getValidator({
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        href: { type: "string" },
+      },
+      required: ["id"],
+      // `dependencies` is the draft this compiler enforces. `dependentSchemas` is the same map;
+      // an entry named `const` has to be walked as a schema either way.
+      dependencies: { const: dependent },
+      dependentSchemas: {
+        const: {
+          properties: { href: { type: "string", pattern: PAYPAL_STYLE_PATTERN } },
+          required: ["href"],
+        },
+      },
+    });
+
+    expect(validate({ id: "charge-1" })).toMatchObject({ valid: true });
+    expect(validate({ id: 1 }).valid).toBe(false);
+    expect(validate({ id: "charge-1", const: true, href: "not-a-url" })).toMatchObject({
       valid: true,
     });
-    expect(validate({ id: 1 }).valid).toBe(false);
+    expect(validate({ id: "charge-1", const: true }).valid).toBe(false);
+    expect(validate({ id: "charge-1", const: true, href: 1 }).valid).toBe(false);
   });
 
   it("skips output validation for one schema that still cannot be compiled", () => {

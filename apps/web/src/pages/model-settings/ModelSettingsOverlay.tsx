@@ -33,7 +33,7 @@ import type { ModelCredential } from "../../lib/models/model-auth";
 import { useSpaceQueries } from "../../lib/query/query";
 import { ModelSettingsEntry } from "../model-account/ModelSettingsEntry";
 import { CompatibleModelFields } from "./compatible-model-fields";
-import { CompatibleKeyControls, ConnectionControls } from "./connection-controls";
+import { CompatibleKeyInput, ConnectionControls } from "./connection-controls";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { ModelSettingsPanel } from "./model-settings-panel";
@@ -235,8 +235,17 @@ function ConnectionModelSettings({
   const connection = selected ? (
     isOpenAiCompatible ? (
       <>
-        <CompatibleModelFields {...model} />
-        <CompatibleKeyControls {...model} />
+        <CompatibleModelFields {...model} keyField={<CompatibleKeyInput {...model} />} />
+        <Button
+          type="button"
+          variant="secondary"
+          className="mt-3"
+          size="sm"
+          disabled={busy || !model.openAiCompatibleReady}
+          onClick={() => void connectKey()}
+        >
+          {pending === "connect" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+        </Button>
       </>
     ) : credential ? (
       <>

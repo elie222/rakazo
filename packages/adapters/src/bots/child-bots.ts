@@ -328,6 +328,11 @@ export async function archiveBot(
   const now = new Date();
   const cancelledRuns = await deps.prisma.$transaction(async (tx) => {
     const cancelled = await cancelRunsInTransaction(tx, activeRuns, now);
+    // The routines that were on are marked, so restoring the bot turns the same ones back on.
+    await tx.routine.updateMany({
+      where: { botId: bot.id, active: true },
+      data: { resumeOnRestore: true },
+    });
     await tx.routine.updateMany({
       where: { botId: bot.id },
       data: { active: false, nextRunAt: null },

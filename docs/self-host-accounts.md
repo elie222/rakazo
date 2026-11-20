@@ -349,7 +349,7 @@ associated with (`app.rakazo.com`), so it hides passkeys for other servers.
 Native apps can use a domain's passkeys only when the domain vouches for them and the app was
 built for that domain. The iOS app's associated domain comes from `EXPO_PUBLIC_API_URL` at build
 time. A macOS desktop build takes it from `RAKAZO_PASSKEY_RP_ID` (default `app.rakazo.com`): set
-it to the same domain for `pnpm build` and for `scripts/passkey-entitlements.ts`, then package with
+it to the same domain for `pnpm build` and for `apps/desktop/scripts/passkey-entitlements.ts`, then package with
 electron-builder's `-c.mac.entitlements` set to that script's output and `-c.mac.provisioningProfile`
 set to a profile for your App ID with the Associated Domains capability, as the release workflow
 does. Without both, macOS ignores the association and the app hides passkeys. When Apple's CDN

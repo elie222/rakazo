@@ -78,7 +78,7 @@ async function pruneThreadChunk(
         where: { threadId, ...(Number.isFinite(stopAt) ? { seq: { lt: stopAt } } : {}) },
         orderBy: { seq: "asc" },
         take: CHUNK_SIZE,
-        select: { seq: true },
+        select: { id: true, seq: true, clientNonce: true },
       });
       // Events repeat message content, so none that could belong to a message that stays goes:
       // only those older than the oldest message left after this chunk (and than the cutoff).
@@ -98,6 +98,13 @@ async function pruneThreadChunk(
 
       const last = due.at(-1);
       if (last) {
+        // A signed delivery stays valid after its message goes, so its nonce must still stop a replay.
+        await tx.prunedMessageNonce.createMany({
+          data: due.flatMap(({ id, seq, clientNonce }) =>
+            clientNonce ? [{ threadId, clientNonce, messageId: id, seq }] : [],
+          ),
+          skipDuplicates: true,
+        });
         await tx.message.deleteMany({ where: { threadId, seq: { lte: last.seq } } });
         // As when a chat is cleared: the cursor sits on the last deleted message, so compaction
         // resumes at the first one left instead of stopping at a gap; the summary, which was

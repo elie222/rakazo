@@ -1,6 +1,6 @@
 import type { JobPublisher, JobTransaction } from "@rakazo/adapter-kit";
 import { approvalExpireJob } from "@rakazo/adapter-kit";
-import { approvalCardExpires, UNATTENDED_APPROVAL_EXPIRE_AFTER_MS } from "@rakazo/core";
+import { approvalCardExpires, unattendedApprovalExpireAfterMs } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { storedMessageBlocks } from "@rakazo/db";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
@@ -18,11 +18,7 @@ export async function scheduleApprovalExpiry(
   if (!approvalCardExpires(card.trigger)) return;
   await jobs.enqueueIn(
     tx,
-    approvalExpireJob(
-      card.runId,
-      card.effectId,
-      new Date(now + UNATTENDED_APPROVAL_EXPIRE_AFTER_MS),
-    ),
+    approvalExpireJob(card.runId, card.effectId, new Date(now + unattendedApprovalExpireAfterMs())),
   );
 }
 

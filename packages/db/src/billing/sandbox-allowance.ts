@@ -2,12 +2,14 @@ import type { ByokTier, ComputerSize } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   ByokTierSchema,
+  ComputerSizeSchema,
   CREDITS_SANDBOX_ALLOWANCE_PERCENT,
+  computerSizesUpTo,
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
-import { runAsSystem } from "../database/row-security.js";
+import { runAsSystem, runAsSystemInTransaction } from "../database/row-security.js";
 import { hasBillingAccess } from "./billing.js";
 
 /**
@@ -31,13 +33,15 @@ function byokTierOf(
  * The organization's computer allowance in cents and the moment its period began, or null when
  * it has no limit: a deployment without model-credit billing never limits computers. The period
  * is the subscription's billing period, or the calendar month in UTC without one. A cancelled
- * trial gets nothing more. Credit an admin granted, without a monthly plan, brings its share once.
+ * trial gets nothing more from its plan. Credit an admin granted, without a monthly plan, brings its
+ * share once. Extra allowance an operator granted counts only in the period it was granted in, and
+ * is not a reset: when the plan renews nothing, `resetsAt` stays null.
  */
 export async function sandboxAllowancePlan(
   prisma: PrismaClient,
   organizationId: string,
   now = new Date(),
-): Promise<{ limitCents: number; since: Date; resetsAt: Date | null } | null> {
+): Promise<{ limitCents: number; extraCents: number; since: Date; resetsAt: Date | null } | null> {
   const [settings, organization] = await Promise.all([
     prisma.deploymentSettings.findUnique({
       where: { id: "default" },
@@ -85,14 +89,34 @@ export async function sandboxAllowancePlan(
       _sum: { creditCents: true },
       _min: { appliedAt: true },
     });
-    if (granted._sum.creditCents && granted._min.appliedAt)
+    if (granted._sum.creditCents && granted._min.appliedAt) {
+      const since = granted._min.appliedAt;
+      // Grants from a paid plan's earlier periods already reset; its last period's still count. A
+      // yearly plan's period is the month that began on its last anniversary before it ended.
+      const periodStartsAt = billing?.currentPeriodStartsAt;
+      const lastPeriod =
+        periodStartsAt && billing?.byokInterval === "year"
+          ? latestMonthlyAnniversary(
+              periodStartsAt,
+              billing.currentPeriodEndsAt && billing.currentPeriodEndsAt < now
+                ? billing.currentPeriodEndsAt
+                : now,
+            )
+          : periodStartsAt;
+      const extraCents = await grantedAllowanceCents(
+        prisma,
+        organizationId,
+        lastPeriod && lastPeriod > since ? lastPeriod : since,
+      );
       return {
-        limitCents: creditShare(granted._sum.creditCents),
-        since: granted._min.appliedAt,
+        limitCents: creditShare(granted._sum.creditCents) + extraCents,
+        extraCents,
+        since,
         resetsAt: null,
       };
+    }
   }
-  const limitCents =
+  const baseCents =
     billing?.status === "trialing"
       ? billing.cancelAtPeriodEnd
         ? 0
@@ -100,6 +124,8 @@ export async function sandboxAllowancePlan(
       : tier
         ? BYOK_TIERS[tier].computerAllowanceCents
         : creditShare(billing?.creditAmountCents ?? 0);
+  const extraCents = await grantedAllowanceCents(prisma, organizationId, since);
+  const limitCents = baseCents + extraCents;
   const periodEnd = live ? billing?.currentPeriodEndsAt : null;
   const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   const nextAnniversary =
@@ -109,7 +135,7 @@ export async function sandboxAllowancePlan(
   const reset = periodStart ? (nextAnniversary ?? periodEnd ?? null) : nextMonth;
   const resetsAt =
     reset === null ||
-    limitCents <= 0 ||
+    baseCents <= 0 ||
     (!tier && !live) ||
     billing?.status === "trialing" ||
     reset <= now ||
@@ -118,31 +144,93 @@ export async function sandboxAllowancePlan(
     (live && billing?.cancelAtPeriodEnd)
       ? null
       : reset;
-  return { limitCents, since, resetsAt };
+  return { limitCents, extraCents, since, resetsAt };
 }
 
-/**
- * The machine size a Space's computers start at: its organization's own-key tier's size, and
- * standard on credits. A computer moves to this size when it next starts or resumes, so a plan
- * change reaches running computers on their next resume.
- */
-export async function planComputerSize(
-  prisma: Pick<PrismaClient, "space">,
-  spaceId: string,
-): Promise<ComputerSize> {
-  const space = await prisma.space.findUnique({
-    where: { id: spaceId },
-    select: {
-      organization: {
-        select: {
-          modelCredits: { select: { mode: true } },
-          billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
+async function grantedAllowanceCents(
+  prisma: Pick<PrismaClient, "computerAllowanceGrant">,
+  organizationId: string,
+  since: Date,
+): Promise<number> {
+  const granted = await runAsSystem("an operator's computer allowance grants", () =>
+    prisma.computerAllowanceGrant.aggregate({
+      where: { organizationId, createdAt: { gte: since } },
+      _sum: { amountCents: true },
+    }),
+  );
+  return granted._sum.amountCents ?? 0;
+}
+
+/** Operator-only: extra allowance for the organization's current period, kept in the journal. */
+export async function grantComputerAllowance(
+  prisma: PrismaClient,
+  organizationId: string,
+  amountCents: number,
+) {
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || amountCents > 1_000_000)
+    throw new Error("Extra allowance must be between 1 cent and $10,000");
+  await prisma.$transaction((tx) =>
+    runAsSystemInTransaction(tx, "record an operator's computer allowance grant", async () => {
+      const grant = await tx.computerAllowanceGrant.create({
+        data: { organizationId, amountCents },
+        select: { id: true },
+      });
+      await tx.billingAuditEvent.create({
+        data: {
+          source: `computer-allowance:${grant.id}`,
+          kind: "computer_allowance_granted",
+          organizationId,
+          details: { amountCents, by: "operator" },
         },
-      },
+      });
+    }),
+  );
+}
+
+/** What `allowedComputerSizes` reads from an organization. */
+export const COMPUTER_SIZE_PLAN_SELECT = {
+  modelCredits: { select: { mode: true } },
+  billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
+} as const;
+
+type ComputerSizePlan =
+  | {
+      modelCredits: { mode: string | null } | null;
+      billing: {
+        status: string | null;
+        byokTier: string | null;
+        byokPriceCents: number | null;
+      } | null;
+    }
+  | null
+  | undefined;
+
+/** The sizes an organization's plan lets its computers run at, smallest first. */
+export function allowedComputerSizes(organization: ComputerSizePlan): ComputerSize[] {
+  const tier = byokTierOf(organization?.modelCredits?.mode, organization?.billing);
+  return computerSizesUpTo(tier ? BYOK_TIERS[tier].computerSize : "standard");
+}
+
+/** A stored size the plan no longer allows runs at the largest size it does allow. */
+export function effectiveComputerSize(stored: string, allowed: readonly ComputerSize[]) {
+  const size = ComputerSizeSchema.catch("standard").parse(stored);
+  return allowed.includes(size) ? size : (allowed.at(-1) ?? "standard");
+}
+
+/** The size the computer starts at next: its own choice, within its organization's plan. */
+export async function planComputerSize(
+  prisma: Pick<PrismaClient, "computer">,
+  computerId: string,
+): Promise<ComputerSize> {
+  const computer = await prisma.computer.findUnique({
+    where: { id: computerId },
+    select: {
+      size: true,
+      space: { select: { organization: { select: COMPUTER_SIZE_PLAN_SELECT } } },
     },
   });
-  const tier = byokTierOf(space?.organization.modelCredits?.mode, space?.organization.billing);
-  return tier ? BYOK_TIERS[tier].computerSize : "standard";
+  if (!computer) return "standard";
+  return effectiveComputerSize(computer.size, allowedComputerSizes(computer.space.organization));
 }
 
 /** Months between two UTC calendar months, without rounding partial months. */
@@ -180,13 +268,13 @@ export async function sandboxRunHours(
   organizationId: string,
   since: Date,
   now = new Date(),
-): Promise<Array<{ kind: string; hours: number }>> {
+): Promise<Array<{ kind: string; size: string | null; hours: number }>> {
   // The allowance is per organization, so it counts the computers of all its Spaces.
   return runAsSystem("computer allowance across an organization's Spaces", () =>
-    prisma.$queryRaw<Array<{ kind: string; hours: number }>>(Prisma.sql`
-      SELECT "kind", SUM("seconds")::float8 / 3600 AS "hours"
+    prisma.$queryRaw<Array<{ kind: string; size: string | null; hours: number }>>(Prisma.sql`
+      SELECT "kind", "size", SUM("seconds")::float8 / 3600 AS "hours"
       FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
-      GROUP BY "kind"`),
+      GROUP BY "kind", "size"`),
   );
 }
 
@@ -197,16 +285,18 @@ export function sandboxRunHoursByComputer(
   now: Date,
 ) {
   return runAsSystem("computer usage across an organization's Spaces", () =>
-    prisma.$queryRaw<Array<{ computerId: string; kind: string; hours: number }>>(Prisma.sql`
-      SELECT "computerId", "kind", SUM("seconds")::float8 / 3600 AS "hours"
+    prisma.$queryRaw<
+      Array<{ computerId: string; kind: string; size: string | null; hours: number }>
+    >(Prisma.sql`
+      SELECT "computerId", "kind", "size", SUM("seconds")::float8 / 3600 AS "hours"
       FROM (${sandboxRunWindow(organizationId, since, now)}) AS runs
-      GROUP BY "computerId", "kind"`),
+      GROUP BY "computerId", "kind", "size"`),
   );
 }
 
 function sandboxRunWindow(organizationId: string, since: Date, now: Date) {
   return Prisma.sql`
-    SELECT r."computerId", r."kind", EXTRACT(EPOCH FROM (
+    SELECT r."computerId", r."kind", r."size", EXTRACT(EPOCH FROM (
         LEAST(COALESCE(r."endedAt", ${now}::timestamp(3)), ${now}::timestamp(3))
         - GREATEST(r."startedAt", ${since}::timestamp(3))
       )) AS "seconds"

@@ -441,10 +441,12 @@ async function messagingConnectionDto(
   },
 ) {
   const incoming = myBotIds.has(connection.targetBotId);
+  const botId = incoming ? connection.targetBotId : connection.requesterBotId;
   // The target's identity stays opaque until they approve (mirrors connect_agent).
   if (!incoming && connection.status !== "approved") {
     return {
       id: connection.id,
+      botId,
       peerBotName: "agent",
       peerOwnerLabel: "owner",
       status: connection.status as "pending" | "approved" | "declined" | "revoked",
@@ -469,6 +471,7 @@ async function messagingConnectionDto(
     : null;
   return {
     id: connection.id,
+    botId,
     peerBotName: peerBot?.name ?? "",
     peerOwnerLabel: displayName(peerOwner?.name, "").split(/\s+/)[0] ?? "",
     status: connection.status as "pending" | "approved" | "declined" | "revoked",

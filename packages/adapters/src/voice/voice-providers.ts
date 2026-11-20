@@ -4,6 +4,7 @@ import { fishAudioVoice } from "../providers/voice/fish-audio/fish-audio-voice.j
 import { macOsVoice } from "../providers/voice/macos/macos-voice.js";
 import { openaiVoice } from "../providers/voice/openai/openai-voice.js";
 import { openAiCompatibleVoice } from "../providers/voice/openai-compatible/openai-compatible-voice.js";
+import { openRouterVoice } from "../providers/voice/openrouter/openrouter-voice.js";
 import { scriptedVoice } from "../providers/voice/scripted/scripted-voice.js";
 import { xaiVoice } from "../providers/voice/xai/xai-voice.js";
 import type { VoiceProviderDefinition } from "./voice-provider-descriptor.js";
@@ -19,6 +20,7 @@ export const voiceProviders = {
   cartesia: cartesiaVoice,
   "fish-audio": fishAudioVoice,
   xai: xaiVoice,
+  openrouter: openRouterVoice,
   "openai-compatible": openAiCompatibleVoice,
   scripted: scriptedVoice,
 } satisfies Record<string, VoiceProviderDefinition>;

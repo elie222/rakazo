@@ -38,6 +38,8 @@ export interface ModelProviderDefinition {
   signIn?: { mode: ModelOAuthSignInMode; loginLabel: string; hint: string; billing: string };
   /** Ids each connection supplies to route its requests. */
   routingFields?: ModelRoutingField[];
+  /** A connection can ask that requests only reach endpoints that keep no prompts or replies. */
+  dataRetentionControl?: true;
 }
 
 const bearer = (apiKey: string) => ({ Authorization: `Bearer ${apiKey}` });
@@ -66,6 +68,7 @@ export const modelProviders = {
       rejected: unauthorized,
     },
     deployment: { keyEnv: "OPENROUTER_API_KEY", defaultModel: "anthropic/claude-haiku-5.5" },
+    dataRetentionControl: true,
   },
   anthropic: {
     recommendedModel: "claude-haiku-5-5",

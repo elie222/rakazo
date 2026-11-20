@@ -1,5 +1,6 @@
 export const KO_MESSAGES: Record<string, string> = {
   Rakazo: "BotONE",
+  "Rakazo Cloud": "BotONE Cloud",
   "About {name}": "{name}에 관하여",
   "Check for Updates…": "업데이트 확인…",
   "Computer Access…": "컴퓨터 접근…",

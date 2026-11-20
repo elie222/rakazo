@@ -10,6 +10,11 @@ pick a **Provider** and add its **API key**:
 - **ElevenLabs**, **OpenAI**, **Fish Audio** and **xAI** can speak and transcribe. If xAI is
   connected in **Models**, with a SuperGrok or X Premium sign-in or a key, leave the **API key**
   empty to use that connection.
+- **OpenRouter** speaks and transcribes with models from many providers. If OpenRouter is
+  connected in **Models**, leave the **API key** empty to use that connection. **Speech model**
+  suggests the models OpenRouter lists, and each model has its own voices. A model that returns
+  only raw audio is converted to WAV, so it still plays. Speech is billed on your OpenRouter
+  account; Rakazo does not track that spend.
 - **Cartesia** speaks only.
 - **Self-hosted** uses your own OpenAI-compatible speech server, such as Kokoro or Whisper. Enter its
   **Server URL**. If another server transcribes, enter it as **Transcription server URL**, with its own
@@ -24,8 +29,11 @@ Voice settings apply to every [space](./spaces.md). A space can customize them i
 
 ## Talk instead of typing
 
-Hold the microphone in the composer and speak; release to send. Slide up to lock recording so you
-don't have to keep holding.
+On web and desktop, hold the microphone in the composer and speak; release to send. Slide up to
+lock recording so you don't have to keep holding.
+
+On mobile, tap the microphone to dictate into the message box. Tap **Stop dictating** to finish,
+then review or send the text.
 
 ## Hear replies
 

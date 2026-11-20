@@ -44,16 +44,13 @@ describe("codex catalog auth", () => {
     const prisma = {
       userModelCredential: {
         findMany: vi.fn().mockResolvedValue([
-          { provider: "openai-codex", secretId: "secret-api" },
-          { provider: "openai-codex", secretId: "secret-oauth" },
+          { provider: "openai-codex", secretId: "secret-api", userPreferences: [] },
+          {
+            provider: "openai-codex",
+            secretId: "secret-oauth",
+            userPreferences: [{ modelId: null, thinkingLevel: null, updatedAt: new Date(0) }],
+          },
         ]),
-      },
-      userModelPreference: {
-        findMany: vi
-          .fn()
-          .mockResolvedValue([
-            { credential: { provider: "openai-codex", secretId: "secret-oauth" } },
-          ]),
       },
       secret: {
         findMany: vi.fn().mockResolvedValue([{ id: "secret-oauth", ciphertext: "cipher-oauth" }]),
@@ -88,7 +85,7 @@ describe("codex catalog auth", () => {
     expect(body.json.some((entry) => entry.provider === "openai-codex" && entry.id === luna)).toBe(
       true,
     );
-    expect(prisma.userModelPreference.findMany).toHaveBeenCalledWith(
+    expect(prisma.userModelCredential.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { userId: actor.userId },
       }),
@@ -173,7 +170,9 @@ describe("codex live catalog", () => {
             userModelCredential: {
               findMany: vi
                 .fn()
-                .mockResolvedValue([{ provider: "openai-codex", secretId: "secret-api" }]),
+                .mockResolvedValue([
+                  { provider: "openai-codex", secretId: "secret-api", userPreferences: [] },
+                ]),
             },
             userModelPreference: { findMany: vi.fn().mockResolvedValue([]) },
             secret: {
@@ -183,16 +182,19 @@ describe("codex live catalog", () => {
         : {
             userModelCredential: {
               findMany: vi.fn().mockResolvedValue([
-                { id: "credential-api", provider: "openai-codex", secretId: "secret-api" },
-                { id: "credential-oauth", provider: "openai-codex", secretId: "secret-oauth" },
+                {
+                  id: "credential-api",
+                  provider: "openai-codex",
+                  secretId: "secret-api",
+                  userPreferences: [],
+                },
+                {
+                  id: "credential-oauth",
+                  provider: "openai-codex",
+                  secretId: "secret-oauth",
+                  userPreferences: [{ modelId: null, thinkingLevel: null, updatedAt: new Date(0) }],
+                },
               ]),
-            },
-            userModelPreference: {
-              findMany: vi
-                .fn()
-                .mockResolvedValue([
-                  { credential: { provider: "openai-codex", secretId: "secret-oauth" } },
-                ]),
             },
             secret: {
               findMany: vi
@@ -300,26 +302,16 @@ describe("codex live catalog", () => {
       secretId: "secret-a",
       createdAt: stamp,
       updatedAt: stamp,
+      userPreferences: [{ modelId: luna, thinkingLevel: null, updatedAt: stamp }],
     };
-    const credentialB = { ...credentialA, id: "cred-b", secretId: "secret-b" };
+    const credentialB = {
+      ...credentialA,
+      id: "cred-b",
+      secretId: "secret-b",
+      userPreferences: [{ modelId: spark, thinkingLevel: null, updatedAt: stamp }],
+    };
     const prisma = {
       userModelCredential: { findMany: vi.fn().mockResolvedValue([credentialA, credentialB]) },
-      userModelPreference: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            id: "pref-luna",
-            modelId: luna,
-            updatedAt: stamp,
-            credential: credentialA,
-          },
-          {
-            id: "pref-spark",
-            modelId: spark,
-            updatedAt: stamp,
-            credential: credentialB,
-          },
-        ]),
-      },
       secret: {
         findMany: vi.fn().mockResolvedValue([
           { id: "secret-a", ciphertext: "cipher-a" },
@@ -378,7 +370,9 @@ describe("codex live catalog", () => {
       userModelCredential: {
         findMany: vi
           .fn()
-          .mockResolvedValue([{ provider: "openai-codex", secretId: "secret-oauth" }]),
+          .mockResolvedValue([
+            { provider: "openai-codex", secretId: "secret-oauth", userPreferences: [] },
+          ]),
       },
       userModelPreference: { findMany: vi.fn().mockResolvedValue([]) },
       secret: {
@@ -431,6 +425,7 @@ describe("codex live catalog", () => {
       secretId: "secret-oauth",
       createdAt: stamp,
       updatedAt: stamp,
+      userPreferences: [],
     };
     const upsert = vi.fn(async () => ({ id: "pref-spark" }));
     const tx = {
@@ -487,6 +482,7 @@ describe("codex live catalog", () => {
       secretId: "secret-oauth",
       createdAt: stamp,
       updatedAt: stamp,
+      userPreferences: [],
     };
     const tx = {
       userModelCredential: { findMany: vi.fn().mockResolvedValue([oauthCredential]) },
@@ -646,6 +642,7 @@ describe("API-key live model catalog", () => {
         secretId: "secret-test",
         createdAt: new Date(0),
         updatedAt: new Date(0),
+        userPreferences: [],
       };
       const prisma = {
         userModelCredential: { findMany: vi.fn(async () => [credential]) },

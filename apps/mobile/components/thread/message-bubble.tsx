@@ -33,6 +33,8 @@ import {
   userMentionTargets,
 } from "../../lib/messages/message-mentions";
 import { messagePresentationSegments } from "../../lib/messages/message-presentation";
+import type { RoutineEventBlock } from "../../lib/messages/routine-event-label";
+import { routineEventLabel } from "../../lib/messages/routine-event-label";
 import type { UserBubble } from "../../lib/messages/user-bubble";
 import { withUserBubble } from "../../lib/messages/user-bubble";
 import { useResolvedAppearance } from "../../lib/native/native";
@@ -393,6 +395,26 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
           {channelMessage.fromLabel}: {channelMessage.text}
         </Text>
+      </Pressable>
+    );
+  }
+  const routineEvents = message.blocks.filter(
+    (block): block is RoutineEventBlock => block.kind === "routine_event",
+  );
+  if (routineEvents.length > 0 && routineEvents.length === message.blocks.length) {
+    return (
+      <Pressable
+        {...actionProps}
+        style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
+      >
+        {routineEvents.map((block, index) => (
+          <Text
+            key={`${block.change}-${index}`}
+            style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}
+          >
+            {routineEventLabel(block)}
+          </Text>
+        ))}
       </Pressable>
     );
   }

@@ -25,11 +25,13 @@ import {
   desktopWorkCommand,
   managedDesktopCommand,
   releaseDesktopCommand,
+  SCREEN_NOT_READY_EXIT,
   screenDisplayArgv,
   screenPorts,
   shellQuote,
   stopAllDesktopBrowsersCommand,
 } from "@rakazo/core/node/desktop-runtime";
+import { getLogger } from "@rakazo/logging";
 import {
   BrowserStillRunningError,
   BrowserStoppedReleaseError,
@@ -97,11 +99,25 @@ export function onBotScreen(
 export class LinuxDesktop {
   constructor(private readonly host: LinuxDesktopHost) {}
 
-  private async run(computer: ComputerRef, command: string, context: AdapterContext) {
+  private async run(
+    computer: ComputerRef,
+    command: string,
+    context: AdapterContext,
+    startsScreen = false,
+  ) {
     context.signal.throwIfAborted();
     const result = await this.host.run(computer, command, context);
     if (result.code === 75) throw new ComputerScreenUnavailableError();
     if (result.code === BROWSER_STILL_RUNNING_EXIT) throw new BrowserStillRunningError();
+    // Only the screen startup script sets this status; an app the desktop launched may exit with it.
+    if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
+      // Only the first line: the rest is the browser's or display's own log.
+      getLogger().warn("computer.screen_not_ready", {
+        provider: computer.kind,
+        reason: result.stderr?.trim().split("\n")[0]?.slice(0, 200),
+      });
+      throw new ComputerScreenUnavailableError();
+    }
     if (result.code !== 0) {
       if (result.stderr?.trim()) throw new Error(result.stderr);
       const output = result.stdout.trim().split("\n").at(-1)?.slice(0, 300);
@@ -119,6 +135,7 @@ export class LinuxDesktop {
       computer,
       managedDesktopCommand(key, context.screenLeaseId, env, randomUUID()),
       context,
+      true,
     );
     const match = output.match(/RAKAZO_DESKTOP=(\d+):([a-zA-Z0-9_-]+)/);
     if (!match) throw new ComputerScreenUnavailableError();
@@ -491,24 +508,45 @@ const BROWSER_POLICY_DIRS = [
   "/etc/brave/policies/managed",
 ];
 
+/**
+ * The machine's own package jobs (or an earlier setup cut off mid-install) can hold APT's locks
+ * while setup runs; waiting for them beats failing the run on the spot.
+ */
+const APT = "apt-get -o DPkg::Lock::Timeout=60";
+
 export const PREPARE_LINUX_DESKTOP = [
   "set -eu",
+  // Two processes can prepare the same computer at once, and their package installs would
+  // collide on APT's locks. The second waits, within the command's own timeout, and then finds
+  // the tools the first installed.
+  "if command -v flock >/dev/null 2>&1; then exec 9>/tmp/rakazo-desktop-prepare.lock; flock 9; fi",
   ...FIND_MISSING_DESKTOP_TOOLS,
   'if [ "$(id -u)" -eq 0 ]; then root=""; else root="sudo -n"; fi',
+  // The lock timeout covers installs, not the package-list lock a refresh takes, so a refresh
+  // retries while that lock is busy and fails at once for anything else.
+  "apt_update() {",
+  "  tries=0",
+  `  while ! err=$($root ${APT} update -qq 2>&1); do`,
+  '    case "$err" in',
+  '      *"Could not get lock"*|*"Unable to lock"*) tries=$((tries + 1)); [ "$tries" -lt 12 ] || { echo "$err" >&2; return 1; }; sleep 5 ;;',
+  '      *) echo "$err" >&2; return 1 ;;',
+  "    esac",
+  "  done",
+  "}",
   'if [ -n "$missing" ]; then',
   // Separate commands: set -e ignores a failure on the left of &&.
-  "  $root apt-get update -qq",
-  "  if ! $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove $missing; then",
+  "  apt_update",
+  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --no-remove $missing; then`,
   // Provider images can arrive with unrelated, unfinished package dependencies. Let APT
   // solve those without specifying the desktop packages, and never remove existing tools.
-  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --fix-broken --no-remove",
-  "    $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-remove $missing",
+  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --fix-broken --no-remove`,
+  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --no-remove $missing`,
   "  fi",
   "fi",
   // Bots read pages visually; without a color emoji font every emoji is an empty box. The
   // desktop works without it, so an image whose package manager is broken still runs.
   "if [ ! -e /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf ]; then",
-  '  { $root apt-get update -qq && $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq fonts-noto-color-emoji; } || echo "could not install the emoji font" >&2',
+  `  { apt_update && $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq fonts-noto-color-emoji; } || echo "could not install the emoji font" >&2`,
   "fi",
   `policy=${shellQuote(BROWSER_POLICY)}`,
   `for dir in ${BROWSER_POLICY_DIRS.join(" ")}; do`,
@@ -525,7 +563,7 @@ export const INSTALL_LINUX_BROWSER = [
   "  package=$(mktemp /tmp/rakazo-chrome-XXXXXX.deb)",
   "  trap 'rm -f \"$package\"' EXIT",
   '  curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -o "$package"',
-  '  $root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$package"',
+  `  $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq "$package"`,
   "fi",
 ].join("\n");
 

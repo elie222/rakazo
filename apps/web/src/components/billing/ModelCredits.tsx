@@ -15,6 +15,7 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
+import { tierComputerDescription } from "@rakazo/i18n/computer-usage";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,7 +45,7 @@ import {
   ToggleGroupItem,
 } from "@rakazo/ui-web";
 import { cn } from "@rakazo/ui-web/lib/utils";
-import { Check } from "lucide-react";
+import { Check, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSignOut } from "../../lib/auth/sign-out";
 import {
@@ -121,16 +122,6 @@ function tierPriceCents(offer: TierOffer, interval: ByokInterval): number | null
   return interval === "year" ? offer.annualPriceCents : offer.monthlyPriceCents;
 }
 
-/** "8 vCPU, 16 GB, 100 computer hours a month" */
-function useTierComputer() {
-  const { t } = useLingui();
-  return (offer: TierOffer) => {
-    const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
-    const hours = offer.computerHours;
-    return t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
-  };
-}
-
 /** The own-key plan's tiers at `interval`, each with its price and computer. */
 function ByokTierSelect({
   tiers,
@@ -146,7 +137,6 @@ function ByokTierSelect({
   onChange: (offer: TierOffer) => void;
 }) {
   const { t, i18n } = useLingui();
-  const computer = useTierComputer();
   const offered = tiers.flatMap((offer) => {
     const cents = tierPriceCents(offer, interval);
     return cents === null
@@ -186,7 +176,9 @@ function ByokTierSelect({
                 <span>
                   {offer.name} · {price}
                 </span>
-                <span className="text-label text-muted-foreground">{computer(offer)}</span>
+                <span className="text-label text-muted-foreground">
+                  {tierComputerDescription(offer)}
+                </span>
               </span>
             </SelectItem>
           ))}
@@ -280,11 +272,14 @@ function TierPlans({
   const power = (offer: TierOffer, base: TierOffer) => {
     const times =
       COMPUTER_SIZE_SPECS[offer.computerSize].vcpus / COMPUTER_SIZE_SPECS[base.computerSize].vcpus;
-    return t`A ${times}× more powerful computer for your bot`;
+    return offer.computerSizeChoice
+      ? t`Up to ${times}× the vCPUs`
+      : t`A ${times}× more powerful computer for your bot`;
   };
   const powerDetail = (offer: TierOffer, base: TierOffer) => {
     const { memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
     const usage = Math.round(offer.computerHours / base.computerHours);
+    if (offer.computerSizeChoice) return tierComputerDescription(offer);
     return t`${memoryGb} GB of RAM and ${usage}× the computer time of ${base.name}. Time counts only while your bot uses its computer.`;
   };
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
@@ -647,7 +642,6 @@ export function ModelCreditsSettings({
   const [checkoutTier, setCheckoutTier] = useState<ByokTier>("standard");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<"failed" | "uncharged" | null>(null);
-  const computer = useTierComputer();
   const balance = new Intl.NumberFormat(i18n.locale, {
     style: "currency",
     currency: "USD",
@@ -741,8 +735,8 @@ export function ModelCreditsSettings({
           {currentTier ? (
             <p className="mt-2 text-body text-muted-foreground">
               {tierChange
-                ? computer(currentTier)
-                : `${currentTier.name} · ${computer(currentTier)}`}
+                ? tierComputerDescription(currentTier)
+                : `${currentTier.name} · ${tierComputerDescription(currentTier)}`}
             </p>
           ) : null}
           {tierChange || yearlySavings !== null ? (
@@ -774,13 +768,13 @@ export function ModelCreditsSettings({
             <Trans>Available credits</Trans>
           </h3>
           <Button
-            size="sm"
+            size="icon-sm"
             variant="ghost"
             aria-label={t`Refresh credits`}
             disabled={pending}
             onClick={() => void action(refresh)}
           >
-            <Trans>Refresh</Trans>
+            <RefreshCw />
           </Button>
         </div>
         <p className="mt-2 text-display font-medium tabular-nums">{balance}</p>
@@ -854,7 +848,9 @@ export function ModelCreditsSettings({
               </Trans>
             </p>
           ) : null}
-          {status.canManage ? <ComputerUsage /> : null}
+          {status.canManage ? (
+            <ComputerUsage standardHours={status.standardComputerHours === true} />
+          ) : null}
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">

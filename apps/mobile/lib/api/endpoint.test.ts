@@ -32,7 +32,7 @@ describe("normalizeApiBase", () => {
     });
     expect(normalizeApiBase("http://app.example.com")).toEqual({
       ok: false,
-      error: "Public servers need https://",
+      error: "Public servers need https://. HTTP only works on your local network.",
     });
   });
 

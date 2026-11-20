@@ -1,4 +1,7 @@
 {
+  "apps/web/src/components/ModelAccount.tsx": 4,
   "apps/web/src/components/call/CallCard.tsx": 2,
-  "apps/web/src/components/call/IncomingCall.tsx": 2
+  "apps/web/src/components/call/IncomingCall.tsx": 2,
+  "apps/web/src/pages/AdminBotsPanel.tsx": 1,
+  "apps/web/src/pages/plugins/PluginsOverlay.tsx": 1
 }

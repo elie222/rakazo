@@ -2,6 +2,7 @@
 
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { Button } from "@rakazo/ui-web/components/ui/button";
+import { useKitLabels } from "@rakazo/ui-web/components/ui/kit-labels";
 
 import { cn } from "@rakazo/ui-web/lib/utils";
 import type { VariantProps } from "class-variance-authority";
@@ -72,6 +73,7 @@ function DialogContent({
     showCloseButton?: boolean;
     overlayClassName?: string;
   }) {
+  const labels = useKitLabels();
   return (
     <DialogPortal>
       <DialogOverlay className={overlayClassName} />
@@ -90,7 +92,7 @@ function DialogContent({
             }
           >
             <XIcon />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{labels.close}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>
@@ -112,6 +114,7 @@ function DialogFooter({
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean;
 }) {
+  const labels = useKitLabels();
   return (
     <div
       data-slot="dialog-footer"
@@ -123,7 +126,9 @@ function DialogFooter({
     >
       {children}
       {showCloseButton && (
-        <DialogPrimitive.Close render={<Button variant="outline" />}>Close</DialogPrimitive.Close>
+        <DialogPrimitive.Close render={<Button variant="outline" />}>
+          {labels.close}
+        </DialogPrimitive.Close>
       )}
     </div>
   );

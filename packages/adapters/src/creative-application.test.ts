@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { ApplicationCredentialError, loadConfiguredApps } from "./configured-apps.js";
-import { ConnectorRegistry } from "./integrations/connector-registry.js";
 import { creativeFixture, musicInput } from "./creative.test-support.js";
 import { CreativeServiceError } from "./creative-provider.js";
+import { ConnectorRegistry } from "./integrations/connector-registry.js";
 
 afterEach(() => vi.unstubAllGlobals());
 it("loads creative logic only on the application host and uses its credential boundary", async () => {

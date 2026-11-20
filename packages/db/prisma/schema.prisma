@@ -484,6 +484,7 @@ model Organization {
   spaces       Space[]
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
+  computerAllowanceGrants ComputerAllowanceGrant[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
@@ -578,6 +579,18 @@ model AccessGrant {
   @@index([email])
   @@index([createdAt])
   @@map("access_grants")
+}
+
+/// Extra computer allowance an operator gave an organization for the period it was granted in.
+model ComputerAllowanceGrant {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  amountCents    Int
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("computer_allowance_grants")
 }
 
 model PluginSubmission {
@@ -680,6 +693,7 @@ model Member {
 
 model Space {
   meetingSessions MeetingSession[]
+  meetingAllowanceUses MeetingAllowanceUse[]
   aiDataConsents              AiDataConsent[]
   id                          String                       @id
   organizationId              String
@@ -1189,6 +1203,7 @@ model Thread {
   historyCompactionRetryAfterSeq Int?
   reads                       ThreadRead[]
   messages                    Message[]
+  prunedMessageNonces         PrunedMessageNonce[]
   events                      Event[]
   tasks                       Task[]
   runs                        Run[]
@@ -1255,6 +1270,20 @@ model Message {
   @@index([searchTokens], type: Gin)
   // Partial index messages_tool_work_idx (bot replies that used tools) is created in SQL.
   @@map("messages")
+}
+
+/// The send nonce of a message that history retention deleted, so a replayed signed delivery
+/// still finds it was handled. Holds no message content.
+model PrunedMessageNonce {
+  threadId    String
+  thread      Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  clientNonce String
+  messageId   String
+  seq         Int
+  createdAt   DateTime @default(now())
+
+  @@id([threadId, clientNonce])
+  @@map("pruned_message_nonces")
 }
 
 model Event {
@@ -1599,6 +1628,8 @@ model Routine {
   nextRunAt      DateTime?
   /// Runs in a row the model provider refused for the account; each one spaces out the schedule.
   accountFailures Int      @default(0)
+  /// Archiving its bot turned it off; restoring the bot turns it back on.
+  resumeOnRestore Boolean  @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   runs           Run[]
@@ -1919,6 +1950,11 @@ model Computer {
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
+  /// The size it starts at next, within its organization's plan.
+  size                    String                   @default("standard")
+  /// The size used for billing and the stretch it applies to.
+  runningSize             String?
+  runningSizeSince        DateTime?
   /// The home's disk as the computer last reported it; null where it was never measured.
   diskUsedBytes           BigInt?
   diskFreeBytes           BigInt?
@@ -1932,9 +1968,26 @@ model Computer {
   updates                 ComputerUpdate[]
   homeDeletionNotice      HomeDeletionNotice?
   executionConnections    ExecutionConnection[]
+  homeVersions            ComputerHomeVersion[]
 
   @@index([spaceId, scope])
   @@map("computers")
+}
+
+/// A stored revision of a computer's home, kept so its owner can restore an earlier one. Saves
+/// prune these; clearing or deleting the stored home deletes them with it.
+model ComputerHomeVersion {
+  id         String   @id @default(cuid())
+  computerId String
+  computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  /// The `homeStorageId` the revision was stored under.
+  storageId  String
+  revision   String
+  savedAt    DateTime
+
+  @@unique([storageId, revision])
+  @@index([computerId, savedAt])
+  @@map("computer_home_versions")
 }
 
 /// Hosted billing only: a stopped computer whose saved home is due for deletion after its plan
@@ -1975,6 +2028,8 @@ model ComputerRun {
   userId     String?
   user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   kind       String
+  /// Null for older runs or providers that do not bill by size.
+  size       String?
   /// The provider's id for the sandbox, to match runs with the provider's own usage and billing.
   providerRef String?
   startedAt  DateTime
@@ -3091,6 +3146,17 @@ model MeetingSession {
   @@unique([provider, externalId])
   @@index([spaceId, scheduledFor])
   @@map("meeting_sessions")
+}
+
+/// Meetings a deleted bot already used, so deleting it does not give the Space its allowance back.
+model MeetingAllowanceUse {
+  id        String   @id @default(cuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  countedAt DateTime
+
+  @@index([spaceId, countedAt])
+  @@map("meeting_allowance_uses")
 }
 
 model MeetingCalendarConnection {

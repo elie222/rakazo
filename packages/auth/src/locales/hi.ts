@@ -88,4 +88,10 @@ export const HI_MESSAGES: Record<string, string> = {
   "Sign in with your {subscriptions} subscription, or paste an API key.":
     "अपने {subscriptions} सब्सक्रिप्शन से साइन इन करें, या API कुंजी पेस्ट करें।",
   "Connect a model": "मॉडल कनेक्ट करें",
+  "Bring your old assistant to Rakazo": "अपने पुराने असिस्टेंट को Rakazo में लाएँ",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "क्या आपने {assistants} में पहले से कोई असिस्टेंट सेट अप किया है? Rakazo उसके निर्देश, मेमोरी, स्किल और रूटीन एक नए बॉट के रूप में ला सकता है, ताकि आपको फिर से शुरू न करना पड़े।",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "यह किसी भी दूसरे असिस्टेंट के साथ भी काम करता है: उसे एक प्रॉम्प्ट भेजें और उसका जवाब पेस्ट करें।",
+  "Import an agent": "एजेंट इंपोर्ट करें",
 };

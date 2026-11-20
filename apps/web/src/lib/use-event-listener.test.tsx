@@ -43,6 +43,32 @@ it("calls the latest handler without subscribing again", () => {
   expect(remove).not.toHaveBeenCalled();
 });
 
+it("handles a synchronous native event while another render is in progress", () => {
+  const target = new EventTarget();
+  const committed = vi.fn();
+  const next = vi.fn();
+  const event = new Event("ping");
+  function DispatchDuringRender() {
+    target.dispatchEvent(event);
+    return null;
+  }
+
+  act(() => root.render(<Listener target={target} handler={committed} />));
+  act(() =>
+    root.render(
+      <>
+        <Listener target={target} handler={next} />
+        <DispatchDuringRender />
+      </>,
+    ),
+  );
+
+  expect(committed).toHaveBeenCalledExactlyOnceWith(event);
+  expect(next).not.toHaveBeenCalled();
+  target.dispatchEvent(event);
+  expect(next).toHaveBeenCalledExactlyOnceWith(event);
+});
+
 it("moves to a new target or type, and a null target listens to nothing", () => {
   const before = new EventTarget();
   const after = new EventTarget();

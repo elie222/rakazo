@@ -67,6 +67,7 @@ export type StoredModelSecret =
       gatewayId?: string;
       projectId?: string;
       region?: string;
+      zeroDataRetention?: true;
     } & StoredModelLimits &
       StoredModelSettings)
   | ({ kind: "oauth"; reconnectRequired: true; maxTokens?: number } & StoredModelSettings)
@@ -197,6 +198,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     return {
       kind: "api_key",
       key: parsed.key,
+      ...(parsed.zeroDataRetention === true ? { zeroDataRetention: true as const } : {}),
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...(accountId ? { accountId } : {}),
       ...(gatewayId ? { gatewayId } : {}),
@@ -282,6 +284,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
     secret.gatewayId === undefined &&
     secret.projectId === undefined &&
     secret.region === undefined &&
+    secret.zeroDataRetention === undefined &&
     secret.contextWindow === undefined &&
     secret.cacheCapabilities === undefined &&
     !models.models
@@ -296,6 +299,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
     ...(secret.gatewayId ? { gatewayId: secret.gatewayId } : {}),
     ...(secret.projectId ? { projectId: secret.projectId } : {}),
     ...(secret.region ? { region: secret.region } : {}),
+    ...(secret.zeroDataRetention === true ? { zeroDataRetention: true } : {}),
     ...modelLimits(secret as unknown as Record<string, unknown>),
     ...models,
   });
