@@ -155,6 +155,23 @@ it("offers Voice settings when an automatic read finds no voice connected", asyn
   expect(openVoiceSettings).toHaveBeenCalledTimes(1);
 });
 
+it("opens Voice settings through the latest callback when the toast is clicked after a rerender", async () => {
+  speak.mockResolvedValueOnce(NOT_READY as never);
+  const stale = vi.fn();
+  const latestCallback = vi.fn();
+  renderRead({ snapshot: snapshot([message("m1", "first reply")]), openVoiceSettings: stale });
+  act(() => latest.speakMessage(message("m2", "spoken words")));
+  await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  rerenderRead({
+    snapshot: snapshot([message("m1", "first reply")]),
+    openVoiceSettings: latestCallback,
+  });
+  const [, options] = toastError.mock.calls[0] as [string, ToastOptions];
+  options.action?.onClick();
+  expect(stale).not.toHaveBeenCalled();
+  expect(latestCallback).toHaveBeenCalledTimes(1);
+});
+
 it("keeps other read-aloud failures as a plain toast", async () => {
   speak.mockResolvedValueOnce("Could not play that clip." as never);
   renderRead({ snapshot: snapshot([message("m1", "first reply")]), openVoiceSettings: vi.fn() });
