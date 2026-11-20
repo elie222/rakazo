@@ -1,7 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
 import { AnalyticsSurface } from "../account/analytics.js";
-import { ComputerSizeSchema } from "../computers/computer.js";
 import { Id } from "../ids.js";
 import { AccessGrantInputSchema, AccessGrantSchema } from "./access-grants.js";
 import {
@@ -44,7 +43,6 @@ export const billingRpc = {
         otherHours: z.number().nonnegative(),
       }),
     ),
-    setComputerSize: oc.input(z.object({ size: ComputerSizeSchema })).output(BillingStatusSchema),
     /** Re-reads the subscription from the provider, e.g. right after a mobile checkout. */
     refresh: oc.output(BillingStatusSchema),
     selectFunding: oc

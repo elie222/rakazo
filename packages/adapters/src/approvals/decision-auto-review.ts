@@ -25,7 +25,7 @@ import type { DecisionCalibration } from "./model-descriptor.js";
 
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v7";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v8";
 
 /** A decision model's verdict and, when it answered, its probability that the action may pass. */
 export interface DecisionVerdict {

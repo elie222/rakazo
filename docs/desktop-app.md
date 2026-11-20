@@ -77,7 +77,8 @@ you are.
 - Ctrl+Tab / Ctrl+Shift+Tab (desktop app): switch to the next or previous bot.
 - Cmd/Ctrl+Shift+Down / Cmd/Ctrl+Shift+Up (browser): switch to the next or previous bot.
 - Cmd+[ / Cmd+] (Alt+Left / Alt+Right on Windows and Linux, desktop app): go back or forward.
-- Cmd+F (desktop app): search.
+- Cmd+F (desktop app): find text in the open chat.
+- Cmd+Shift+F (desktop app): search for bots in the sidebar.
 - Cmd+B: show or hide the sidebar.
 - Cmd+, (desktop app): open Settings.
 - Esc in the message box: stop the bot's reply.
