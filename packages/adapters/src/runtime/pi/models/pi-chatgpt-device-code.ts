@@ -41,7 +41,7 @@ export class SignInHttpError extends Error {
     readonly code?: string,
   ) {
     // The code is the provider's fixed OAuth error name, never free text from its response.
-    super(`Device sign-in ${step} failed (status ${status})${code ? `: ${code}` : ""}.`);
+    super(`Device sign-in ${step} failed (status ${status}${code ? `, ${code}` : ""}).`);
     this.name = "SignInHttpError";
   }
 }

@@ -187,7 +187,7 @@ describe("pendingSignInOfRow", () => {
 describe("signInFailureText", () => {
   it.each([
     [
-      "Device sign-in poll failed (status 400): access_denied.",
+      "Device sign-in poll failed (status 400, access_denied).",
       "Sign-in was declined. Start again.",
     ],
     [

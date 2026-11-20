@@ -1006,12 +1006,16 @@ export class PiOAuthLogins<T = unknown> {
     }
   }
 
-  /** The provider's message can quote its response: it is read here and only a fixed text and
-   *  class leave. */
+  /** The provider's message can quote its response: the person sees fixed text, and the log
+   *  keeps only the part before any quoted payload. */
   private async fail(session: Session<T>, message: string): Promise<void> {
     if (session.state !== "pending") return;
     const end = signInFailure(message);
-    getLogger().warn("model sign-in failed", { provider: session.provider, ...end });
+    getLogger().warn("model sign-in failed", {
+      provider: session.provider,
+      ...end,
+      detail: statusHeader(message).slice(0, 200),
+    });
     session.state = "failed";
     session.error = signInFailureText(end);
     this.releaseLease(session);

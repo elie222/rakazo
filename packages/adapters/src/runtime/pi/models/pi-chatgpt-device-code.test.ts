@@ -105,7 +105,7 @@ describe("ChatGPT device-code sign-in", () => {
       interaction().value,
     ).catch((failure: unknown) => failure as Error);
 
-    expect(error.message).toContain("status 400): access_denied");
+    expect(error.message).toContain("(status 400, access_denied)");
     expect(error.message).not.toContain(PROVIDER_BODY);
     expect(provider.count("poll")).toBe(1);
   });
