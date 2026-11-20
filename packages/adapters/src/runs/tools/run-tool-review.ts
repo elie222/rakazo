@@ -84,19 +84,21 @@ export async function reviewToolCall(
         Boolean(
           lastingWriteKind({ toolName: name, args, savedContextWrite: review.savedContextWrite }),
         ));
-    const reviewArgs = newSiteUrl
+    const redacted = redactToolArgsForReview(args, ctx.secrets);
+    // Targets come from the whole call: an edit's changes list addresses it removes or keeps too.
+    const targetArgs = newSiteUrl
       ? { url: redactSecrets(newSiteUrl, ctx.secrets) }
       : review.ownComputerAction
         ? ownComputerReviewArgs(
             name,
-            redactToolArgsForReview(args, ctx.secrets),
+            redacted,
             review.pageUrl && redactSecrets(review.pageUrl, ctx.secrets),
           )
-        : changedTextReviewArgs(
-            name,
-            redactToolArgsForReview(args, ctx.secrets),
-            await currentRoutinePrompt(ctx, name, args),
-          );
+        : redacted;
+    const reviewArgs =
+      targetArgs === redacted
+        ? changedTextReviewArgs(name, redacted, await currentRoutinePrompt(ctx, name, args))
+        : targetArgs;
     const reviewRequest: AutoReviewRequest = {
       toolName: name,
       connectorKind,
@@ -110,7 +112,7 @@ export async function reviewToolCall(
       ...(newSiteUrl ? { newSite: true } : {}),
       ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
       ...(review.ownComputerAction ? { ownComputerAction: true } : {}),
-      ...(await reviewOwnerContext(ctx, reviewArgs, !newSiteUrl && !review.savedContextWrite)),
+      ...(await reviewOwnerContext(ctx, targetArgs, !newSiteUrl && !review.savedContextWrite)),
     };
     // The usage names the reviewed action, so a run's reviews are counted and priced one by one.
     const operationId = applied
