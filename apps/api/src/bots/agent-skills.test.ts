@@ -25,9 +25,11 @@ function savedSkill(name: string, source = "user") {
   };
 }
 
-function setup(rows: ReturnType<typeof savedSkill>[] = []) {
+type SavedSkillRow = ReturnType<typeof savedSkill> & { allSpaces?: boolean };
+
+function setup(rows: SavedSkillRow[] = []) {
   type Where = { id?: string; spaceId?: string; userId: string; source?: string; OR?: object[] };
-  const matches = (row: ReturnType<typeof savedSkill>, where: object): boolean =>
+  const matches = (row: SavedSkillRow, where: object): boolean =>
     Object.entries(where).every(([key, value]) =>
       key === "OR"
         ? (value as object[]).some((branch) => matches(row, branch))
