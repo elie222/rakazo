@@ -5,6 +5,7 @@ import {
   canonicalPiProviderId,
   connectionDisplayName,
   MAX_MODEL_CONNECTION_LABEL,
+  providerDisplayName,
 } from "@rakazo/contracts";
 import { Alert, Platform } from "react-native";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
@@ -27,15 +28,20 @@ export function ModelProviders({
   onDisconnect: (credential: ModelCredential) => void;
 }) {
   const { t } = useLingui();
-  const providerName = (credential: ModelCredential) =>
+  const catalogEntry = (credential: ModelCredential) =>
     catalog.find(
       (entry) =>
         canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider),
-    )?.providerName ?? credential.provider;
+    );
   const rows = credentials
     .map((credential) => {
-      const provider = providerName(credential);
-      const name = connectionDisplayName(credential, provider);
+      const entry = catalogEntry(credential);
+      const provider = entry
+        ? providerDisplayName(entry, credential.authKind)
+        : credential.provider;
+      const name = connectionDisplayName(credential, provider, [
+        entry?.providerName ?? credential.provider,
+      ]);
       return {
         credential,
         name,

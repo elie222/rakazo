@@ -263,6 +263,7 @@ describe("Pi model catalog", () => {
     for (const entry of codex) {
       expect(entry).toMatchObject({
         providerName: "OpenAI Codex",
+        subscriptionName: "ChatGPT subscription",
         auth: "oauth",
         oauthLabel: "Sign in with ChatGPT",
         subscription: true,

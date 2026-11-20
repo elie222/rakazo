@@ -9,6 +9,7 @@ import {
   modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -278,9 +279,11 @@ export default function ModelConnection() {
     }, [cancelInFlightWork, load]),
   );
 
-  const providerName = selected?.providerName ?? selected?.provider ?? "";
+  const providerName = selected ? providerDisplayName(selected, credential?.authKind) : "";
   const selectedProviderLabel = credential
-    ? connectionDisplayName(credential, providerName)
+    ? connectionDisplayName(credential, providerName, [
+        selected?.providerName ?? selected?.provider ?? "",
+      ])
     : (endpointPreset?.name ?? providerName);
   useScreenHeader({ title: selectedProviderLabel || undefined });
   const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(

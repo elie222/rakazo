@@ -415,6 +415,8 @@ export const ModelCatalogEntrySchema = z.object({
   creditOfferingId: Id.optional(),
   provider: z.string(),
   providerName: z.string().optional(),
+  /** What a signed-in connection is called, by the plan people pay for. */
+  subscriptionName: z.string().optional(),
   id: z.string(),
   label: z.string(),
   billing: z.string(),

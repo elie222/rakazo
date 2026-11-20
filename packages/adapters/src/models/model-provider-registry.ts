@@ -14,6 +14,8 @@ import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
 export interface ModelProviderDefinition {
   /** Kept where the registry renamed a provider, so existing names stay. */
   displayName?: string;
+  /** What a signed-in connection is called, by the plan people pay for. */
+  subscriptionName?: string;
   /** The model a new connection preselects; only an exact catalog id. */
   recommendedModel?: string;
   /** Bundled or live-listed ids the provider refuses agent runs for every new account. */
@@ -49,6 +51,7 @@ const unauthorized = async (response: Response) =>
 export const modelProviders = {
   "openai-codex": {
     displayName: "OpenAI Codex",
+    subscriptionName: "ChatGPT subscription",
     recommendedModel: "gpt-6-luna",
     signIn: {
       mode: "device-code",
@@ -72,6 +75,7 @@ export const modelProviders = {
   },
   anthropic: {
     recommendedModel: "claude-haiku-5-5",
+    subscriptionName: "Claude subscription",
     deployment: { keyEnv: "ANTHROPIC_API_KEY", defaultModel: "claude-sonnet-5" },
     signIn: {
       mode: "auth-url",

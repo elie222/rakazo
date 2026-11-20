@@ -3,6 +3,7 @@ import {
   canonicalPiProviderId,
   compatibleEndpointPresets,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { isFirstModelConnection, popularModelProvidersFirst } from "@rakazo/core";
@@ -175,7 +176,7 @@ export default function Models() {
       if (grouped.has(entry.provider)) continue;
       grouped.set(entry.provider, {
         id: entry.provider,
-        name: entry.providerName ?? entry.provider,
+        name: providerDisplayName(entry),
       });
     }
     const all = [...grouped.values()];

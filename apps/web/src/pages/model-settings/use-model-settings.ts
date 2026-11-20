@@ -3,6 +3,7 @@ import type { Me, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
   connectionDisplayName,
   modelRoutingDirty,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -20,7 +21,6 @@ import { fetchFresh } from "@rakazo/core/query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/models/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { analyticsSurface } from "../../lib/platform/desktop";
@@ -245,8 +245,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       [...grouped].map(([id, entries]) => ({
         id,
         name: providerDisplayName(
-          id,
-          entries[0]?.providerName ?? id,
+          entries[0] ?? { provider: id },
           credentials.find((entry) => entry.provider === id)?.authKind,
         ),
         entries,

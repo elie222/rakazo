@@ -42,6 +42,18 @@ export function creditOfferingFromConnectionId(connectionId?: string | null): st
 }
 
 /**
+ * What a provider is called on screen: the plan people pay for when they sign in with one
+ * (`auth` is a saved credential's kind or an onboarding option), else the catalog's name.
+ */
+export function providerDisplayName(
+  entry: Pick<ModelCatalogEntry, "provider" | "providerName" | "subscriptionName" | "auth">,
+  auth?: string,
+): string {
+  const signedIn = entry.auth === "oauth" || auth === "oauth" || auth === "sign-in";
+  return (signedIn && entry.subscriptionName) || (entry.providerName ?? entry.provider);
+}
+
+/**
  * How a connection is named: its own label, prefixed by the provider when the label
  * does not already say which provider it is (a renamed key or a signed-in account).
  */
@@ -103,14 +115,16 @@ export function connectedBackupOptions(
   for (const [provider, models] of entries) {
     const owners = connections.get(provider) ?? [];
     const option = (entry: ModelCatalogEntry, connection?: ModelCredential) => {
-      const providerName = entry.providerName ?? entry.provider;
+      const providerName = providerDisplayName(entry, connection?.authKind);
       return {
         provider: entry.provider,
         modelId: entry.id,
         label: entry.label,
         providerName,
         ...(connection ? { credentialId: connection.id } : {}),
-        connectionName: connection ? connectionDisplayName(connection, providerName) : providerName,
+        connectionName: connection
+          ? connectionDisplayName(connection, providerName, [entry.providerName ?? entry.provider])
+          : providerName,
       };
     };
     for (const entry of models) {

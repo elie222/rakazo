@@ -19,6 +19,7 @@ import {
   connectionDisplayName,
   MAX_MODEL_BACKUPS,
   modelRoleChoiceKey,
+  providerDisplayName,
   withConnectionName,
 } from "@rakazo/contracts";
 import {
@@ -149,8 +150,13 @@ export function ModelRoleSettings({
     options.find((option) => backupChoiceKey(option) === backupChoiceKey(choice));
   const modelLabel = (choice: ModelRoleChoice) =>
     entryFor(choice)?.label ?? optionFor(choice)?.label ?? choice.modelId;
-  const providerName = (choice: ModelRoleChoice) =>
-    entryFor(choice)?.providerName ??
+  const providerName = (choice: ModelRoleChoice) => {
+    const entry = entryFor(choice);
+    return entry
+      ? providerDisplayName(entry, connectionFor(choice)?.authKind)
+      : providerNameFallback(choice);
+  };
+  const providerNameFallback = (choice: ModelRoleChoice) =>
     optionFor(choice)?.providerName ??
     providers.find((provider) => provider.id === choice.provider)?.name ??
     choice.provider;
@@ -165,7 +171,9 @@ export function ModelRoleSettings({
     if (choice.creditOfferingId) return t`Rakazo credits`;
     const connection = choice.credentialId ? connectionFor(choice) : undefined;
     return connection
-      ? connectionDisplayName(connection, providerName(choice))
+      ? connectionDisplayName(connection, providerName(choice), [
+          entryFor(choice)?.providerName ?? choice.provider,
+        ])
       : providerName(choice);
   };
   const isPrimarySlot = (slot: Slot) => slot === "empty" || (slot === 0 && primary !== null);
