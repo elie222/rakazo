@@ -48,6 +48,7 @@ function escapeRegExp(text: string) {
 
 function nativeMarkdownStyle(
   palette: ColorTokens,
+  colorScheme: ResolvedAppearance,
   mentionColors: ReadonlyMap<string, string>,
   pagesOpen: boolean,
 ): MarkdownStyle {
@@ -132,6 +133,14 @@ function nativeMarkdownStyle(
       fontSize: typeScale.caption.fontSize,
       color: palette.mutedForeground,
       headerTextColor: palette.foreground,
+      // Without overrides the native renderer uses its light table fills in both modes.
+      ...(colorScheme === "dark"
+        ? {
+            headerBackgroundColor: palette.muted,
+            rowEvenBackgroundColor: palette.background,
+            rowOddBackgroundColor: palette.card,
+          }
+        : {}),
       borderColor: palette.input,
       borderWidth: 0.5,
     },
@@ -180,8 +189,8 @@ export function NativeMarkdown({
     [mentionColorList],
   );
   const style = useMemo(
-    () => nativeMarkdownStyle(palette, mentionColors, Boolean(onOpenPage)),
-    [palette, mentionColors, onOpenPage],
+    () => nativeMarkdownStyle(palette, colorScheme, mentionColors, Boolean(onOpenPage)),
+    [palette, colorScheme, mentionColors, onOpenPage],
   );
   const pillContent = useMemo(() => {
     const content: Record<string, LinkPillContent> = {};
