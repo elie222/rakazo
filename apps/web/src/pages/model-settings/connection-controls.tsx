@@ -1,8 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useSignInSetup } from "@rakazo/chat-ui/sign-in-setup";
 import { Button, Disclosure, Input, Label, OptionSelect, Switch } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
 import { PasteCodeSignIn } from "../../components/models/PasteCodeSignIn";
+import { SignInSetupStep } from "../../components/models/SignInSetupStep";
 import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -96,6 +98,12 @@ export function ConnectionControls({
     subscriptionSignIn &&
     credential?.authKind === "oauth" &&
     keyShownFor !== (selected?.provider ?? null);
+  // Signing in again, the setting is already on.
+  const signInSetup = useSignInSetup(
+    credential?.authKind === "oauth" ? undefined : selected?.signInSetup,
+    selected?.provider,
+    beginSelectedSubscriptionSignIn,
+  );
   // Opening the fold swaps the summary for the form, so focus moves to the key field.
   useEffect(() => {
     if (keyShownFor) document.getElementById("model-api-key")?.focus();
@@ -117,7 +125,6 @@ export function ConnectionControls({
               ) : (
                 <DeviceCodeSignIn
                   oauth={oauth}
-                  setup={selected?.signInSetup}
                   codeCopied={codeCopied}
                   onCopyCode={copyOAuthCode}
                   onPageOpened={() => reportSignInStep("page_opened")}
@@ -133,13 +140,22 @@ export function ConnectionControls({
                 <Trans>Cancel</Trans>
               </Button>
             </div>
+          ) : signInSetup.setup ? (
+            <div className="w-full rounded-xl border border-border px-4 py-3">
+              <SignInSetupStep
+                setup={signInSetup.setup}
+                disabled={busy}
+                onContinue={signInSetup.proceed}
+                onCancel={signInSetup.dismiss}
+              />
+            </div>
           ) : (
             <Button
               type="button"
               variant="outline"
               size="sm"
               disabled={busy}
-              onClick={() => beginSelectedSubscriptionSignIn()}
+              onClick={signInSetup.begin}
             >
               {oauthPending ? (
                 <Trans>Starting…</Trans>

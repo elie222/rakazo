@@ -608,7 +608,7 @@ test("an approval default the deployment pays for reads as included", async ({
   expect(settings.primary).toBeNull();
 });
 
-test("a device-code sign-in shows its setup and code before opening the page", async ({
+test("a device-code sign-in shows its setup before issuing the code", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -619,8 +619,10 @@ test("a device-code sign-in shows its setup and code before opening the page", a
     body.json.needsSignupSurvey = false;
     await route.fulfill({ response, json: body });
   });
-  await page.route("**/rpc/models/beginOAuth", (route) =>
-    route.fulfill({
+  let codesIssued = 0;
+  await page.route("**/rpc/models/beginOAuth", (route) => {
+    codesIssued += 1;
+    return route.fulfill({
       json: {
         json: {
           mode: "device-code",
@@ -631,8 +633,8 @@ test("a device-code sign-in shows its setup and code before opening the page", a
           expiresInSeconds: 900,
         },
       },
-    }),
-  );
+    });
+  });
   await page.route("**/rpc/models/completeOAuth", (route) =>
     route.fulfill({ json: { json: { status: "pending" } } }),
   );
@@ -640,12 +642,19 @@ test("a device-code sign-in shows its setup and code before opening the page", a
   await chooseOption(page.getByLabel("Provider", { exact: true }), "ChatGPT subscription");
   const opened = page.waitForEvent("popup", { timeout: 1000 }).catch(() => null);
   await page.getByRole("button", { name: "Sign in with ChatGPT" }).click();
+  // The setting comes first, so the code's clock starts only once the person is ready.
+  const setup = page.getByRole("link", {
+    name: "Turn on device code sign-in in ChatGPT security settings",
+  });
+  await expect(setup).toHaveAttribute("href", "https://chatgpt.com/#settings/Security");
+  await expect(page.getByText("Workspace accounts need an admin to turn this on.")).toBeVisible();
+  expect(codesIssued).toBe(0);
+  await captureScreenshot(page, testInfo, "onboarding-device-code-setup");
+  await page.getByRole("button", { name: "I’ve turned it on" }).click();
   await expect(page.getByText("TI9B-J5KAM")).toBeVisible();
   // The page opens only when the person asks, so they never land there without the code.
   expect(await opened).toBeNull();
-  await expect(
-    page.getByRole("link", { name: "Turn on device code sign-in in ChatGPT security settings" }),
-  ).toBeVisible();
+  await expect(setup).toBeHidden();
   await expect(page.getByRole("link", { name: "Copy code and open" })).toHaveAttribute(
     "href",
     "https://auth.example.test/device",
