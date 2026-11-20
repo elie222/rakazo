@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import { act } from "react";
+import type { ReactElement, ReactNode } from "react";
+import { act, cloneElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PluginsOverlay } from "./PluginsOverlay";
@@ -47,7 +47,6 @@ vi.mock("@rakazo/ui-web", async () => {
     ...[
       "Badge",
       "Dialog",
-      "DialogClose",
       "DialogContent",
       "DialogHeader",
       "DialogTitle",
@@ -64,6 +63,11 @@ vi.mock("@rakazo/ui-web", async () => {
       "SectionHeading",
       "Spinner",
     ].map((name) => [name, container]),
+    [
+      "DialogClose",
+      ({ children, render }: { children?: ReactNode; render: ReactElement }) =>
+        cloneElement(render, undefined, children),
+    ],
     [
       "Button",
       ({
@@ -353,4 +357,21 @@ it("leads from an app that is also a chat app here to messaging, and says nothin
   ]);
   await act(async () => hints[0]!.querySelector("button")!.click());
   expect(onOpenMessaging).toHaveBeenCalledOnce();
+});
+
+it("keeps Close outside the wrapping action group so narrow screens still reach it", async () => {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} onOpenTemplates={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  const close = host.querySelector('button[aria-label="Close integrations"]');
+  expect(close).not.toBeNull();
+  const templates = Array.from(host.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes("Templates"),
+  )!;
+  expect(templates.parentElement!.contains(close!)).toBe(false);
 });

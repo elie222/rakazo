@@ -392,11 +392,11 @@ export function PluginsOverlay({
       }}
     >
       <DialogContent showCloseButton={false} size="2xl" className="bg-card">
-        <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
-          <DialogTitle className="text-heading2 text-foreground">
+        <DialogHeader className="flex-row flex-wrap items-start gap-2 px-8 pt-7">
+          <DialogTitle className="mr-auto text-heading2 text-foreground">
             <Trans>Integrations</Trans>
           </DialogTitle>
-          <div className="flex items-center gap-2">
+          <div className="order-last flex w-full flex-wrap items-center gap-2 sm:order-none sm:w-auto">
             {browsing && appCount > 0 ? (
               <Button
                 variant="ghost"
@@ -450,12 +450,12 @@ export function PluginsOverlay({
                 onOpenMcp={onOpenMcp}
               />
             ) : null}
-            <DialogClose
-              render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
-            >
-              <X />
-            </DialogClose>
           </div>
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
+          >
+            <X />
+          </DialogClose>
         </DialogHeader>
 
         {browsing ? (
