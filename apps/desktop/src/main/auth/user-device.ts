@@ -170,7 +170,7 @@ export function createUserDeviceAccess(deps: {
   const unavailable = new Set<string>();
   const prompts = new Map<string, Promise<boolean>>();
   const pairings = new Map<string, Promise<void>>();
-  const pairingTokens = new Map<string, string>();
+  const pairingKeys = new Map<string, string>();
   /** Saved tokens not yet tied to a sign-in this launch; pairings from before that was recorded. */
   const untied = new Map<string, string>();
   const tying = new Map<string, { again: boolean }>();
@@ -343,17 +343,17 @@ export function createUserDeviceAccess(deps: {
       return;
     }
     let device: PairedDevice;
-    let token = pairingTokens.get(origin);
-    if (!token) {
-      token = randomBytes(32).toString("hex");
-      pairingTokens.set(origin, token);
+    let pairingKey = pairingKeys.get(origin);
+    if (!pairingKey) {
+      pairingKey = randomBytes(32).toString("hex");
+      pairingKeys.set(origin, pairingKey);
     }
     try {
       const response = await deps.fetch(new URL(USER_DEVICE_PAIR_PATH, origin).href, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...(await deps.device()), token }),
+        body: JSON.stringify({ ...(await deps.device()), pairingKey }),
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
       });
@@ -362,9 +362,9 @@ export function createUserDeviceAccess(deps: {
         // Signed out, a busy server or a deploy in progress: the next page load tries again.
         if (PAIRING_REFUSALS.has(response.status)) {
           unavailable.add(origin);
-          pairingTokens.delete(origin);
+          pairingKeys.delete(origin);
         }
-        if (response.status === 401) pairingTokens.delete(origin);
+        if (response.status === 401) pairingKeys.delete(origin);
         return;
       }
       const body = (await response.json()) as Partial<
@@ -376,7 +376,7 @@ export function createUserDeviceAccess(deps: {
         body.token.length > MAX_TOKEN_LENGTH ||
         typeof body.deviceId !== "string"
       ) {
-        pairingTokens.delete(origin);
+        pairingKeys.delete(origin);
         unavailable.add(origin);
         return;
       }
@@ -390,11 +390,11 @@ export function createUserDeviceAccess(deps: {
     } catch {
       // A token that cannot be kept must not stay valid on the server.
       await revokeToken(origin, device.token);
-      pairingTokens.delete(origin);
+      pairingKeys.delete(origin);
       unavailable.add(origin);
       return;
     }
-    pairingTokens.delete(origin);
+    pairingKeys.delete(origin);
     paired.set(origin, { deviceId: device.deviceId, userId: device.userId });
     if (current === origin) start(origin, device.token);
   }

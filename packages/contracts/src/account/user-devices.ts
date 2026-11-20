@@ -10,8 +10,8 @@ export const USER_DEVICE_SESSION_PATH = `${USER_DEVICE_PATH}/self/session`;
 export const userDevicePairRequest = z.object({
   name: z.string().min(1).max(128),
   platform: z.enum(["darwin", "win32", "linux"]),
-  /** A cryptographically random credential reused when a pairing response is lost. */
-  token: z
+  /** A random request key reused when a pairing response is lost; never a bearer credential. */
+  pairingKey: z
     .string()
     .regex(/^[a-f0-9]{64}$/)
     .optional(),

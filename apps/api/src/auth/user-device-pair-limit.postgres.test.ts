@@ -64,11 +64,11 @@ describe.skipIf(!databaseUrl)("pairing holds the per-user device limit under rac
     return { signIn };
   }
 
-  const pairRequest = (cookie: string, name: string, token?: string) =>
+  const pairRequest = (cookie: string, name: string, pairingKey?: string) =>
     handles.app.request(USER_DEVICE_PAIR_PATH, {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ name, platform: "darwin", token }),
+      body: JSON.stringify({ name, platform: "darwin", pairingKey }),
     });
 
   async function pair(cookie: string) {
@@ -93,14 +93,16 @@ describe.skipIf(!databaseUrl)("pairing holds the per-user device limit under rac
     expect((await pairRequest(cookie, "Another desktop")).status).toBe(409);
   });
 
-  it("refuses a credential raced by another account without a server error", async () => {
+  it("isolates the same retry key raced by different accounts", async () => {
     const first = await newAccount();
     const second = await newAccount();
     const cookies = await Promise.all([first.signIn(), second.signIn()]);
     const responses = await Promise.all(
       cookies.map((cookie) => pairRequest(cookie, "Desktop", "d".repeat(64))),
     );
-    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+    expect(responses.map((response) => response.status)).toEqual([201, 201]);
+    const [a, b] = await Promise.all(responses.map((response) => response.json()));
+    expect(a.token).not.toBe(b.token);
   });
 
   it("keeps exactly the limit when two pairings race at it", async () => {

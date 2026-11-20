@@ -189,7 +189,7 @@ describe("remote computer access", () => {
     expect(JSON.parse(String(requests[0]!.init.body))).toEqual({
       name: "Test Mac",
       platform: "darwin",
-      token: expect.stringMatching(/^[a-f0-9]{64}$/),
+      pairingKey: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(clients).toMatchObject([{ origin, token: "device-token", closed: false }]);
     expect(access.state(origin)).toEqual({ deviceId: "device-1", allowed: false });
@@ -539,10 +539,10 @@ describe("remote computer access", () => {
     const tokens: string[] = [];
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
-      const { token } = JSON.parse(init!.body as string);
-      tokens.push(token);
+      const { pairingKey } = JSON.parse(init!.body as string);
+      tokens.push(pairingKey);
       if (tokens.length < 3) throw new Error("response lost");
-      return Response.json({ deviceId: "device-1", token });
+      return Response.json({ deviceId: "device-1", token: "server-token" });
     });
     const { access, clients } = setup({ fetch });
     await access.select(other);

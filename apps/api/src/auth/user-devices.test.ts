@@ -162,6 +162,7 @@ function setup() {
     hub,
     devices: new UserDevices({ prisma: db.prisma, forwardSecret: secret, hub }),
     forwardSecret: secret,
+    pairingSecret: "test-pairing-secret",
     session: async (request) => {
       const userId = request.headers.get("x-test-user");
       return userId
@@ -201,7 +202,7 @@ afterEach(async () => {
 describe("device pairing", () => {
   it("recovers a lost response without adding devices or repeating security events", async () => {
     const { pair, rows, events } = setup();
-    const body = { name: "Laptop", platform: "darwin", token: "a".repeat(64) };
+    const body = { name: "Laptop", platform: "darwin", pairingKey: "a".repeat(64) };
     const first = await pair("user-1", { body });
     const result = await first.json();
     for (let index = 1; index < 10; index += 1) await pair("user-1");
@@ -210,25 +211,28 @@ describe("device pairing", () => {
     expect(await retried.json()).toEqual(result);
     expect(rows).toHaveLength(10);
     expect(events.filter((event) => event.type === "device.paired")).toHaveLength(10);
-    expect(rows[0]?.tokenHash).toBe(hashUserDeviceToken(body.token));
+    expect(result.token).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.token).not.toBe(body.pairingKey);
+    expect(rows[0]?.tokenHash).toBe(hashUserDeviceToken(result.token));
   });
 
-  it("never reuses a pairing across accounts, sessions, or revocation", async () => {
+  it("scopes retry keys to the account and session without reviving revoked pairings", async () => {
     const { pair, rows } = setup();
-    const body = { name: "Laptop", platform: "darwin", token: "b".repeat(64) };
+    const body = { name: "Laptop", platform: "darwin", pairingKey: "b".repeat(64) };
     expect((await pair("user-1", { body, session: "desktop" })).status).toBe(201);
-    expect((await pair("user-2", { body, session: "desktop" })).status).toBe(409);
-    expect((await pair("user-1", { body, session: "other" })).status).toBe(409);
+    expect((await pair("user-2", { body, session: "desktop" })).status).toBe(201);
+    expect((await pair("user-1", { body, session: "other" })).status).toBe(201);
     rows[0]!.revokedAt = new Date();
     expect((await pair("user-1", { body, session: "desktop" })).status).toBe(409);
-    expect(rows).toHaveLength(1);
+    expect(new Set(rows.map((row) => row.tokenHash)).size).toBe(3);
   });
 
   it("rejects malformed retry credentials", async () => {
     const { pair, rows } = setup();
     for (const token of ["", "short", "g".repeat(64), "a".repeat(65)]) {
       expect(
-        (await pair("user-1", { body: { name: "Laptop", platform: "darwin", token } })).status,
+        (await pair("user-1", { body: { name: "Laptop", platform: "darwin", pairingKey: token } }))
+          .status,
       ).toBe(400);
     }
     expect(rows).toEqual([]);
