@@ -360,6 +360,29 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/messages", { botId: "missing-bot", before: 1 }],
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
+      [
+        "threads/nativeCalendarPending",
+        { botId: "missing-bot", deviceKey: "00000000-0000-4000-8000-000000000000" },
+      ],
+      [
+        "threads/nativeCalendarClaim",
+        {
+          id: "missing",
+          runId: "missing",
+          threadId: "missing",
+          deviceKey: "00000000-0000-4000-8000-000000000000",
+        },
+      ],
+      [
+        "threads/nativeCalendarResult",
+        {
+          id: "missing",
+          runId: "missing",
+          threadId: "missing",
+          deviceKey: "00000000-0000-4000-8000-000000000000",
+          response: { status: "cancelled" },
+        },
+      ],
       ["threads/send", { groupId: "missing-group", text: "Nope" }],
       [
         "threads/sendWithRoutines",

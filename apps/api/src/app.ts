@@ -1188,6 +1188,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       context: {
         actor,
         sessionId: session?.sessionId,
+        nativeSessionId:
+          c.req.header("origin") === "rakazo://" &&
+          c.req.header("authorization")?.startsWith("Bearer ")
+            ? session?.sessionId
+            : undefined,
         signal: c.req.raw.signal,
         // Same user in the same space, so leaving the space also ends a stream.
         // A database failure rejects this check; only a missing membership is unauthorized.

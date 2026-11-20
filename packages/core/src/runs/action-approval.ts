@@ -70,6 +70,9 @@ const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
+  "create_calendar_event",
+  "create_reminder",
+  "complete_reminder",
   "generate_image",
   "generate_video",
   "service_call",
