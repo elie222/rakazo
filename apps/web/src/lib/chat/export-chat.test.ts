@@ -1,0 +1,136 @@
+import type { Bot, Group, ThreadMessage } from "@rakazo/contracts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { RpcClient } from "../query/rpc";
+
+const download = vi.hoisted(() => vi.fn());
+vi.mock("../pages/artifact-open", () => ({ downloadArtifactBytes: download }));
+
+import { chatExportFileName, exportChat } from "./export-chat";
+
+afterEach(() => download.mockReset());
+
+let seq = 0;
+function message(
+  text: string,
+  extra: Partial<ThreadMessage> = {},
+  role: ThreadMessage["role"] = "bot",
+): ThreadMessage {
+  seq += 1;
+  return {
+    id: `m_${seq}`,
+    threadId: "t_1",
+    seq,
+    role,
+    blocks: [{ kind: "text", text }],
+    createdAt: `2026-03-04T10:0${seq % 10}:00.000Z`,
+    ...extra,
+  };
+}
+
+const bot = { id: "bot-1", name: "Ada" } as Bot;
+const group = {
+  id: "group-1",
+  name: "Launch crew",
+  members: [
+    { botId: "bot-1", name: "Ada", color: "ink" },
+    { botId: "bot-2", name: "Lee", color: "ink" },
+  ],
+} as Group;
+const labels = { you: "You", system: "System" };
+const time = (createdAt: string) => createdAt.slice(11, 16);
+
+type Page = { messages: ThreadMessage[]; olderCursor: number | null };
+function rpcWith(pages: Page[]) {
+  const messages = vi.fn(async (_input: unknown) => ({ threadId: "t_1", ...pages.shift()! }));
+  return { rpc: { threads: { messages } } as unknown as RpcClient, messages };
+}
+
+function exported() {
+  const [name, mimeType, bytes] = download.mock.calls[0] as [string, string, Uint8Array];
+  return { name, mimeType, text: new TextDecoder().decode(bytes) };
+}
+
+describe("exportChat", () => {
+  it("reads every page of history and writes it oldest first", async () => {
+    const first = message(
+      "Hi",
+      { author: { id: "u_1", name: "Dana" }, createdAt: "2026-03-04T01:00:00.000Z" },
+      "user",
+    );
+    const second = message("Hello Dana", { createdAt: "2026-03-04T02:00:00.000Z" });
+    const third = message("Summarize my inbox", { createdAt: "2026-03-04T03:00:00.000Z" }, "user");
+    const { rpc, messages } = rpcWith([
+      { messages: [third], olderCursor: 40 },
+      { messages: [second], olderCursor: 20 },
+      { messages: [first], olderCursor: null },
+    ]);
+    await exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time });
+
+    expect(messages.mock.calls.map(([input]) => input)).toEqual([
+      { botId: "bot-1" },
+      { botId: "bot-1", before: 40 },
+      { botId: "bot-1", before: 20 },
+    ]);
+    const file = exported();
+    expect(file.name).toBe("ada-chat.md");
+    expect(file.mimeType).toBe("text/markdown;charset=utf-8");
+    expect(file.text.indexOf("Hi")).toBeLessThan(file.text.indexOf("Hello Dana"));
+    expect(file.text.indexOf("Hello Dana")).toBeLessThan(file.text.indexOf("Summarize my inbox"));
+    expect(file.text).toContain("**Dana** · 01:00\n\nHi");
+    expect(file.text).toContain("**You** · 03:00\n\nSummarize my inbox");
+    expect(file.text).toContain("**Ada** · 02:00\n\nHello Dana");
+  });
+
+  it("names each group message for the bot that wrote it", async () => {
+    const { rpc, messages } = rpcWith([
+      {
+        messages: [
+          message("From Lee", { botId: "bot-2" }),
+          message("From a removed bot", { botId: "bot-9" }),
+          message("Notice", {}, "system"),
+        ],
+        olderCursor: null,
+      },
+    ]);
+    await exportChat({ rpc, target: { kind: "group", chat: group }, labels, time });
+    expect(messages).toHaveBeenCalledWith({ groupId: "group-1" });
+    const { name, text } = exported();
+    expect(name).toBe("launch-crew-chat.md");
+    expect(text).toMatch(/\*\*Lee\*\* · \d\d:\d\d\n\nFrom Lee/);
+    expect(text).toMatch(/\*\*Launch crew\*\* · \d\d:\d\d\n\nFrom a removed bot/);
+    expect(text).toMatch(/\*\*System\*\* · \d\d:\d\d\n\nNotice/);
+  });
+
+  it("saves nothing when a page fails to load", async () => {
+    const messages = vi
+      .fn()
+      .mockResolvedValueOnce({ threadId: "t_1", messages: [message("Newest")], olderCursor: 5 })
+      .mockRejectedValueOnce(new Error("offline"));
+    const rpc = { threads: { messages } } as unknown as RpcClient;
+    await expect(
+      exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time }),
+    ).rejects.toThrow("offline");
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("fails instead of saving a history it stopped reading", async () => {
+    const messages = vi.fn(async () => ({
+      threadId: "t_1",
+      messages: [message("Again")],
+      olderCursor: 1,
+    }));
+    const rpc = { threads: { messages } } as unknown as RpcClient;
+    await expect(
+      exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time }),
+    ).rejects.toThrow("too long");
+    expect(download).not.toHaveBeenCalled();
+  });
+});
+
+describe("chatExportFileName", () => {
+  it("turns a chat's name into a file name in any script, with a fallback", () => {
+    expect(chatExportFileName("Ada's inbox  (work)")).toBe("ada-s-inbox-work-chat.md");
+    expect(chatExportFileName("研究 ボット")).toBe("研究-ボット-chat.md");
+    expect(chatExportFileName("???")).toBe("chat.md");
+  });
+});

@@ -1,9 +1,11 @@
+import { useLingui } from "@lingui/react/macro";
 import type { Bot, BotSection, Group } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
-import { ContextMenu } from "@rakazo/ui-web";
+import { ContextMenu, toast } from "@rakazo/ui-web";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Suspense, useEffect } from "react";
 import { lazyOverlay } from "../../../components/ErrorBoundary";
+import { exportChat } from "../../../lib/chat/export-chat";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import type { ShellDialogsState } from "../shell-dialogs";
 import type { SnoozeChat } from "../sidebar/use-chat-snooze";
@@ -93,6 +95,7 @@ export function ChatContextMenu({
   openChatSettings: (kind: "bot" | "group", id: string) => void;
   navigate: (path: string) => void;
 }) {
+  const { t, i18n } = useLingui();
   const chat = bot ?? group;
   if (!chat) return null;
   const target = bot
@@ -158,6 +161,16 @@ export function ChatContextMenu({
           await refreshBots();
           navigate(bot ? `/app/${copy.id}` : `/app/g/${copy.id}`);
         });
+      }}
+      onExportChat={() => {
+        onClose();
+        void exportChat({
+          rpc,
+          target,
+          labels: { you: t`You`, system: t`System` },
+          time: (createdAt) =>
+            i18n.date(new Date(createdAt), { dateStyle: "medium", timeStyle: "short" }),
+        }).catch(() => toast.error(t`Could not export chat`));
       }}
       onClear={() => {
         dialogs.setClearTarget(target);
