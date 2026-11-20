@@ -53,6 +53,16 @@ describe("ResizableSidePanel", () => {
     expect(show(true, 390).hasAttribute("inert")).toBe(true);
   });
 
+  it("moves focus from the chat to the panel when the panel covers it", () => {
+    const message = show(false, 390).querySelector("button")!;
+    message.focus();
+    expect(document.activeElement).toBe(message);
+
+    show(true, 390);
+
+    expect(document.activeElement).toBe(host.querySelector('[data-testid="side-panel"]'));
+  });
+
   it("frees the chat again when the panel closes", () => {
     show(true, 390);
     expect(show(false, 390).hasAttribute("inert")).toBe(false);
@@ -74,6 +84,10 @@ describe("ResizableSidePanel", () => {
   });
 
   it("leaves the chat alone when the panel sits beside it", () => {
+    const message = show(false, 1500).querySelector("button")!;
+    message.focus();
+
     expect(show(true, 1500).hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(message);
   });
 });
