@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
 
 import type { Bot, ComputerStatus, Me, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
-import { flush as flushTimer } from "@rakazo/core/test-async";
+import { deferred, flush as flushTimer } from "@rakazo/core/test-async";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { composerHoldsUnsavedWork } from "../../../lib/composer/composer-draft";
 import type { PageSession } from "../../../lib/pages/pages";
 import { createPageSession } from "../../../lib/pages/pages";
+import { createQueryRoot } from "../../../lib/query/query-root.test-support";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { useComposerActions } from "./use-composer-actions";
 
@@ -19,6 +18,11 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t }) };
 });
+vi.mock("../../../lib/query/rpc", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/query/rpc")>()),
+  rpcForSpace: () => rpc,
+  createSpaceRpc: () => rpc,
+}));
 vi.mock("../../../lib/composer/prepare-image", () => ({
   canPrepareImage: () => false,
   prepareImage: async (file: File) => file,
@@ -27,13 +31,17 @@ vi.mock("../../../lib/composer/prepare-image", () => ({
 type Rpc = {
   routines: { testRun: ReturnType<typeof vi.fn> };
   artifacts: { create: ReturnType<typeof vi.fn> };
-  threads: { send: ReturnType<typeof vi.fn>; sendWithRoutines: ReturnType<typeof vi.fn> };
+  threads: {
+    send: ReturnType<typeof vi.fn>;
+    sendWithRoutines: ReturnType<typeof vi.fn>;
+    retry: ReturnType<typeof vi.fn>;
+  };
 };
 
 let rpc: Rpc;
 let me: Me | null;
 let navigate: ReturnType<typeof vi.fn>;
-let root: Root;
+let root: ReturnType<typeof createQueryRoot>;
 let latest: ReturnType<typeof useComposerActions>;
 let pageSession: PageSession;
 let activeChat: string;
@@ -113,9 +121,9 @@ beforeEach(() => {
   rpc = {
     routines: { testRun: vi.fn() },
     artifacts: { create: vi.fn() },
-    threads: { send: vi.fn(), sendWithRoutines: vi.fn() },
+    threads: { send: vi.fn(), sendWithRoutines: vi.fn(), retry: vi.fn() },
   };
-  root = createRoot(document.createElement("div"));
+  root = createQueryRoot(document.createElement("div"));
   act(() => root.render(<Harness />));
 });
 
@@ -569,4 +577,74 @@ it("clears a quoted reply re-picked as a fresh object after a thread refresh", a
   );
   expect(latest.replyTarget).toBeNull();
   expect(latest.replyQuote).toBeNull();
+});
+
+function failedReply(runId: string): ThreadSnapshot {
+  return {
+    run: { id: runId, status: "failed", trigger: "user", userId: "user-1", error: "terminated" },
+  } as ThreadSnapshot;
+}
+
+function pendingRetry() {
+  const retry = deferred<{ runId: string }>();
+  rpc.threads.retry.mockReturnValue(retry.promise);
+  return retry.reject;
+}
+
+it("offers no retry anywhere while one is in flight, then offers another chat's", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  act(() => root.render(<Harness />));
+  const reject = pendingRetry();
+  act(() => void latest.retryRun?.());
+  expect(latest.retryRun).toBeUndefined();
+
+  activeSnapshot = failedReply("run-2");
+  switchChat("bot-2");
+  expect(latest.retryRun).toBeUndefined();
+  reject(new Error("Conflict"));
+  await flush();
+  expect(latest.retryRun).toBeDefined();
+  rpc.threads.retry.mockResolvedValue({ runId: "run-3" });
+  act(() => void latest.retryRun?.());
+  expect(rpc.threads.retry).toHaveBeenLastCalledWith({ botId: "bot-2", runId: "run-2" });
+});
+
+it("drops a late retry error once a newer failure is on screen", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  act(() => root.render(<Harness />));
+  const reject = pendingRetry();
+  act(() => void latest.retryRun?.());
+
+  activeSnapshot = failedReply("run-2");
+  act(() => root.render(<Harness />));
+  reject(new Error("Conflict"));
+  await flush();
+  expect(latest.sendError).toBeNull();
+  expect(latest.displayedRunErrorId).toBe("run-2");
+});
+
+it("shows a retry error for the failure still on screen", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  act(() => root.render(<Harness />));
+  const reject = pendingRetry();
+  act(() => void latest.retryRun?.());
+  reject(new Error("Conflict"));
+  await flush();
+  expect(latest.sendError).toBeTruthy();
+  expect(latest.retryRun).toBeUndefined();
+});
+
+it("holds the retry while a new message is sending", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  const send = deferred<unknown>();
+  rpc.threads.send.mockReturnValue(send.promise);
+  act(() => root.render(<Harness />));
+  expect(latest.retryRun).toBeDefined();
+  act(() => void latest.sendMessage("Never mind.", [], "nonce-retry"));
+  await flush();
+  expect(latest.retryRun).toBeUndefined();
 });

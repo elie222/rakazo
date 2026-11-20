@@ -1273,6 +1273,7 @@ function SpaceShell() {
               runErrorId={composer.displayedRunErrorId}
               onRunErrorPresented={composer.handleRunErrorPresented}
               onDismissError={composer.dismissComposerError}
+              onRetryRun={composer.retryRun}
               sending={sending}
               fileInputRef={composer.fileInputRef}
               onAttachmentPick={composer.onAttachmentPick}

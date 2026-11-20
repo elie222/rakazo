@@ -51,6 +51,7 @@ import {
   setThreadSnooze,
   setThreadUnreadState,
 } from "../threads/thread-read-state.js";
+import { retryThreadRun } from "../threads/thread-retry.js";
 import { threadSnapshot } from "../threads/thread-snapshot.js";
 import { isStopMessage, stopThreadRuns } from "../threads/thread-stop.js";
 import type { ThreadTarget } from "../threads/thread-target.js";
@@ -309,6 +310,24 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await stopThreadRuns(deps, context.actor, target);
         return { ok: true as const };
+      }),
+      retry: authed.threads.retry.handler(async ({ context, input }) => {
+        const { actor } = context;
+        const target = await resolveThreadTarget(deps.prisma, actor, input);
+        // The same model check as a send, so a retry never queues a turn that cannot run.
+        if ((await modelSetup(deps, actor)).needsModel) {
+          const failed = await deps.prisma.run.findFirst({
+            where: { id: input.runId, spaceId: actor.spaceId, threadId: target.threadId },
+            select: { botId: true },
+          });
+          if (failed && !(await botsRunOwnModels(deps, actor, [failed.botId]))) {
+            throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+          }
+        }
+        if (target.kind === "bot") {
+          await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
+        }
+        return retryThreadRun(deps, actor, target, input.runId);
       }),
       stopHelper: authed.threads.stopHelper.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
