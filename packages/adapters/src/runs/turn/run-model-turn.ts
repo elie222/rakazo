@@ -17,6 +17,7 @@ import {
 } from "../assembly/run-instructions.prompt.js";
 import {
   GROUP_UNADDRESSED_REPLY_GUIDANCE,
+  runNarratesLive,
   runReplyGuidance,
 } from "../assembly/run-replies.prompt.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
@@ -332,6 +333,8 @@ function modelTurnRequest(
     },
     script,
     allowSilentEmpty: allowSilentEmptyRun,
+    // The same runs the reply guidance tells to narrate live.
+    narratesLive: runNarratesLive(run.trigger) && !groupReplyOptional && replyMode !== "messages",
     emptyResponseText,
     executeTool: scripted
       ? undefined

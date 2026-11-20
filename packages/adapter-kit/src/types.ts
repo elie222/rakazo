@@ -765,6 +765,11 @@ export interface AgentRunRequest {
    * When set, skip synthetic empty-turn fallbacks (including after tools).
    */
   allowSilentEmpty?: boolean;
+  /**
+   * The model is told to narrate live, so each tool is offered a `live_status` field whose
+   * value shows as the working line. Other runs are not offered it.
+   */
+  narratesLive?: boolean;
   /** Contextual fallback when a non-silent run produces no written response. */
   emptyResponseText?: string;
   executeTool?: (

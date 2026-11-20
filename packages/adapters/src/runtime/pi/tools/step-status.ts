@@ -1,20 +1,17 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import {
-  narrationStatusLine,
-  openingAcknowledgementEnabled,
-} from "../../../runs/lifecycle/user-progress.js";
+import { narrationStatusLine } from "../../../runs/lifecycle/user-progress.js";
 import { USE_TOOL } from "../../../tools/builtin.tool-definition.js";
 import { sanitizeSensitiveText } from "../pi-runtime-errors.js";
 import type { ToolHost } from "./pi-runtime-tools.js";
 import { STEP_STATUS_DESCRIPTION, STEP_STATUS_FIELD } from "./step-status.tool-definition.js";
 
 /**
- * With live narration on, offers the model the `live_status` field on a tool and records the
+ * On a run told to narrate live, offers the model the `live_status` field on a tool and records the
  * tool as narrated. Only a field this runtime added is read as a status; a tool's own `status`
  * argument is the tool's business.
  */
 export function withStepStatus(agentTool: AgentTool, host: ToolHost, toolName: string): AgentTool {
-  if (!openingAcknowledgementEnabled() || STATUSLESS_TOOLS.has(toolName)) return agentTool;
+  if (!host.request.narratesLive || STATUSLESS_TOOLS.has(toolName)) return agentTool;
   const narrated = withStepStatusField(agentTool);
   if (narrated !== agentTool) {
     host.narratedTools ??= new Set();

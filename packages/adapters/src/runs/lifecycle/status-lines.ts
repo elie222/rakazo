@@ -7,7 +7,7 @@ import { getLogger } from "@rakazo/logging";
 import { effectiveModelRole } from "../../models/model-roles.js";
 import { isRuntimeFailureText } from "../../runtime/runtime-failure-text.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
-import { resolveConnectedModelKey } from "../turn/run-model.js";
+import { resolveConnectedModelKey, resolvedModelRunFields } from "../turn/run-model.js";
 import {
   openingStatusPrompt,
   STATUS_LINE_INSTRUCTIONS,
@@ -134,28 +134,13 @@ export async function createStatusLineWriter(
             history: [],
             tools: [],
             model: {
+              // Every field the connection carries, as any run gets it: no-retention routing,
+              // project, region and protocol included.
+              ...resolvedModelRunFields(key),
               provider: choice.provider,
               id: choice.modelId,
-              apiKey: key.oauth ? undefined : key.apiKey,
-              accountId: key.accountId,
-              gatewayId: key.gatewayId,
-              baseUrl: key.baseUrl,
-              headers: key.headers,
-              allowPrivateEndpoint: key.allowPrivateEndpoint,
-              cacheCapabilities: key.cacheCapabilities,
-              contextWindow: key.contextWindow,
-              maxTokens: key.maxTokens,
-              reasoning: key.reasoning,
               // A status line needs no extended thinking; it only adds delay.
               thinkingLevel: choice.thinkingLevel ?? "off",
-              oauth: key.oauth
-                ? {
-                    credential: key.oauth,
-                    persist: key.persistOAuth,
-                    refresh: key.refreshOAuth,
-                    retire: key.retireOAuth,
-                  }
-                : undefined,
               // Credit charges belong to the run, not to this request's own id.
               callObserver: key.callObserver && {
                 ...key.callObserver,

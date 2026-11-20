@@ -48,8 +48,27 @@ describe("step status field", () => {
       );
     });
 
+    it("offers the status field only to a run told to narrate live", () => {
+      const tool = {
+        name: "crm_lookup",
+        description: "Look up a CRM record.",
+        inputSchema: { type: "object", properties: { id: { type: "string" } } },
+      };
+      const fieldOf = (narratesLive: boolean) => {
+        const host = { request: { narratesLive } } as ToolHost;
+        const [built] = toAgentTools([structuredClone(tool)], host);
+        const parameters = built!.parameters as unknown as { properties: Record<string, unknown> };
+        return { offered: "live_status" in parameters.properties, host };
+      };
+      expect(fieldOf(true).offered).toBe(true);
+      // A webhook or bot-to-bot run is never asked for statuses, so it gets no field.
+      const quiet = fieldOf(false);
+      expect(quiet.offered).toBe(false);
+      expect(quiet.host.narratedTools).toBeUndefined();
+    });
+
     it("leaves a free-form object tool's schema alone", () => {
-      const host = {} as ToolHost;
+      const host = { request: { narratesLive: true } } as ToolHost;
       const [tool] = toAgentTools(
         [{ name: "crm_call", description: "Call the CRM.", inputSchema: { type: "object" } }],
         host,

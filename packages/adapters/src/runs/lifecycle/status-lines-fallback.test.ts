@@ -2,6 +2,7 @@ import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { effectiveModelRole } from "../../models/model-roles.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
+import type * as RunModel from "../turn/run-model.js";
 import { resolveConnectedModelKey } from "../turn/run-model.js";
 import { createStatusLineWriter } from "./status-lines.js";
 
@@ -12,14 +13,18 @@ vi.mock("../../models/model-roles.js", () => ({
     primarySource: "member",
   })),
 }));
-vi.mock("../turn/run-model.js", () => ({
+vi.mock("../turn/run-model.js", async (importOriginal) => ({
+  resolvedModelRunFields: (await importOriginal<typeof RunModel>()).resolvedModelRunFields,
   resolveConnectedModelKey: vi.fn(async (...args: unknown[]) => {
     // Resolving a key registers its secret values for redaction, as the real one does.
     (args[4] as (values: string[]) => void)(["sk-resolved-secret"]);
     return { credential: null, resolved: { apiKey: "test-key" } };
   }),
 }));
-vi.mock("@rakazo/db", () => ({ recordUsage: vi.fn(async () => undefined) }));
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  recordUsage: vi.fn(async () => undefined),
+}));
 
 const scope = {
   runId: "run-1",
@@ -188,5 +193,34 @@ describe("createStatusLineWriter", () => {
       true,
       undefined,
     );
+  });
+
+  it("sends the status model every field its connection carries", async () => {
+    const requests: AgentRunRequest[] = [];
+    vi.mocked(resolveConnectedModelKey).mockResolvedValueOnce({
+      credential: null,
+      resolved: {
+        apiKey: "test-key",
+        zeroDataRetention: true,
+        projectId: "project-1",
+        region: "us-east5",
+        apiProtocol: "chat-completions",
+      },
+    } as never);
+    const { deps: d } = deps(() => "Checking availability");
+    const run = d.runtime.run;
+    d.runtime.run = (request, context) => {
+      requests.push(request);
+      return run(request, context);
+    };
+    const writer = await createStatusLineWriter(d, scope, []);
+    await writer?.step("Is it in stock?", "Running: curl …", new AbortController().signal);
+    expect(requests[0]?.model).toMatchObject({
+      zeroDataRetention: true,
+      projectId: "project-1",
+      region: "us-east5",
+      apiProtocol: "chat-completions",
+      thinkingLevel: "off",
+    });
   });
 });
