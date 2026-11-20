@@ -20,6 +20,8 @@ const ACTIVITY_HIDDEN_TRIGGERS = [
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
 ] as const;
+// The prompt of these runs is written by the product, not the user, so it is no preview.
+const SYSTEM_PROMPT_TRIGGERS: readonly string[] = ["created", "call_end"];
 const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
 function promptSnippet(prompt: string, max = 120): string {
@@ -32,6 +34,8 @@ export function activityPreview(
   input: { trigger: string; prompt: string; sourceBlocks?: unknown },
   max = 120,
 ): Pick<RunActivityRow, "promptSnippet" | "agentMessage"> {
+  if (SYSTEM_PROMPT_TRIGGERS.includes(input.trigger))
+    return { promptSnippet: "", agentMessage: null };
   if (input.trigger !== "bot_message")
     return { promptSnippet: promptSnippet(input.prompt, max), agentMessage: null };
   const parsed = MessageBlock.array().safeParse(input.sourceBlocks);
