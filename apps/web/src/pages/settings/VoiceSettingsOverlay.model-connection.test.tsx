@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -141,7 +141,7 @@ describe("a provider the account's model connection can authenticate", () => {
       );
     });
     await act(async () => {
-      await Promise.resolve();
+      await flush();
     });
     return {
       container,
