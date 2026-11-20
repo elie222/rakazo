@@ -153,6 +153,12 @@ export async function openBotSettings(page: Page) {
   await page.getByTestId("bot-tab-settings").click();
 }
 
+/** Opens the bot panel and switches to its Memory tab (the bot's own memory documents). */
+export async function openBotMemory(page: Page) {
+  await openBotPanel(page);
+  await page.getByTestId("bot-tab-memory").click();
+}
+
 /** Opens the bot panel and switches to its Computer tab (preview, recovery, own computer). */
 export async function openBotComputer(page: Page) {
   await openBotPanel(page);

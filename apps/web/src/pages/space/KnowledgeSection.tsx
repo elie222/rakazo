@@ -210,91 +210,93 @@ function MemoryDocumentList({
           </div>
         ) : null}
         {loading ? <Skeleton className="h-10 w-full" /> : null}
-        {!compact && !loading && docs.length === 0 && !error ? (
+        {!compact && !loading && !memoryVisible && !error ? (
           <div className="py-1 text-body-sm text-muted-foreground">
             <Trans>Nothing remembered yet</Trans>
           </div>
         ) : null}
-        <div>
-          {(compact && !showAll ? docs.slice(0, 5) : docs).map((doc) => (
-            <div key={doc.id} className="border-b border-border last:border-0">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
-                  className="-ms-2 h-auto min-w-0 flex-1 justify-start whitespace-normal px-2 py-2.5 text-start"
-                >
-                  <span
-                    className="min-w-0 truncate text-body font-normal text-foreground"
-                    dir="auto"
-                  >
-                    {doc.path}
-                  </span>
-                </Button>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<Button variant="ghost" size="icon-sm" />}
-                    aria-label={t`Download`}
+        {memoryVisible ? (
+          <div>
+            {(compact && !showAll ? docs.slice(0, 5) : docs).map((doc) => (
+              <div key={doc.id} className="border-b border-border last:border-0">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    type="button"
                     disabled={busy}
-                    onClick={() => change.run({ kind: "download", doc })}
+                    onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
+                    className="-ms-2 h-auto min-w-0 flex-1 justify-start whitespace-normal px-2 py-2.5 text-start"
                   >
-                    <Download className="size-4" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <Trans>Download</Trans>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              {openId === doc.id ? (
-                <div className="pb-2">
-                  <Textarea
-                    aria-label={doc.path}
-                    disabled={busy}
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
-                    className={fieldClass}
-                    dir="auto"
-                  />
-                  <div className="mt-2 flex gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      type="button"
-                      disabled={busy || conflicted || draft === doc.content}
-                      onClick={() => change.run({ kind: "save", doc })}
+                    <span
+                      className="min-w-0 truncate text-body font-normal text-foreground"
+                      dir="auto"
                     >
-                      <Trans>Save</Trans>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      type="button"
+                      {doc.path}
+                    </span>
+                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={<Button variant="ghost" size="icon-sm" />}
+                      aria-label={t`Download`}
                       disabled={busy}
-                      onClick={closeDoc}
-                      size="sm"
+                      onClick={() => change.run({ kind: "download", doc })}
                     >
-                      <Trans>Cancel</Trans>
-                    </Button>
-                    {isDeletableMemoryDocument(doc.path) ? (
+                      <Download className="size-4" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <Trans>Download</Trans>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {openId === doc.id ? (
+                  <div className="pb-2">
+                    <Textarea
+                      aria-label={doc.path}
+                      disabled={busy}
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
+                      className={fieldClass}
+                      dir="auto"
+                    />
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        disabled={busy || conflicted || draft === doc.content}
+                        onClick={() => change.run({ kind: "save", doc })}
+                      >
+                        <Trans>Save</Trans>
+                      </Button>
                       <Button
                         variant="ghost"
                         type="button"
                         disabled={busy}
-                        onClick={() => remove(doc)}
+                        onClick={closeDoc}
                         size="sm"
-                        className="ml-auto text-destructive"
                       >
-                        {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                        <Trans>Cancel</Trans>
                       </Button>
-                    ) : null}
+                      {isDeletableMemoryDocument(doc.path) ? (
+                        <Button
+                          variant="ghost"
+                          type="button"
+                          disabled={busy}
+                          onClick={() => remove(doc)}
+                          size="sm"
+                          className="ml-auto text-destructive"
+                        >
+                          {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
         {compact && docs.length > 5 && !showAll ? (
           <Button
             variant="ghost"
