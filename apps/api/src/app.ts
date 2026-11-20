@@ -714,10 +714,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
       },
     });
-  const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
-    runtimeEnv,
-    connectors,
-    {
+  const { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions } =
+    createRunRuntime(runtimeEnv, connectors, {
       billingEnabled: modelCreditsEnabled,
       mediaGeneration,
       meetingWork: meetingProvider && meetings.work.bind(meetings),
@@ -726,6 +724,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       contextStrategy,
       prisma,
       runtime: baseRuntime,
+      pageRevisionRuntime: runtimeOverride ?? new PiAgentRuntime(),
       codexCatalog,
       sandbox,
       memory,
@@ -762,8 +761,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       stoppingSignal: shutdown.signal,
       shutdownSignal: runDrain.signal,
       now,
-    },
-  );
+    });
 
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
@@ -851,6 +849,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
 
   const router = createRouter({
+    pageRevisions,
     meetings,
     meetingCalendar,
     meetingAnswers: createMeetingAnswers({

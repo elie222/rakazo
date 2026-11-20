@@ -6,16 +6,16 @@ import {
 } from "../../lib/calls/voice-consent";
 import { lazyComponent } from "../../lib/platform/preload-recovery";
 
-const VoiceConsentDialog = lazyComponent(() =>
-  import("./VoiceConsentDialog").then((module) => module.VoiceConsentDialog),
+const AiDataConsentDialog = lazyComponent(() =>
+  import("./AiDataConsentDialog").then((module) => module.AiDataConsentDialog),
 );
 
-export function VoiceConsentPrompt() {
+export function AiDataConsentPrompt() {
   const request = useSyncExternalStore(subscribeVoiceConsent, pendingVoiceConsent, () => null);
   useEffect(() => cancelVoiceConsent, []);
   return request ? (
     <Suspense fallback={null}>
-      <VoiceConsentDialog request={request} />
+      <AiDataConsentDialog request={request} />
     </Suspense>
   ) : null;
 }
