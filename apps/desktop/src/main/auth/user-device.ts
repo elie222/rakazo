@@ -15,6 +15,7 @@ import {
   USER_DEVICE_SESSION_PATH,
 } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
+import { parseRetryAfter } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { readPrivateFile, writePrivateFile } from "../setup/setup-store.js";
 
@@ -171,6 +172,7 @@ export function createUserDeviceAccess(deps: {
   const prompts = new Map<string, Promise<boolean>>();
   const pairings = new Map<string, Promise<void>>();
   const pairingKeys = new Map<string, string>();
+  const pairingRetryAfter = new Map<string, number>();
   /** Saved tokens not yet tied to a sign-in this launch; pairings from before that was recorded. */
   const untied = new Map<string, string>();
   const tying = new Map<string, { again: boolean }>();
@@ -329,6 +331,7 @@ export function createUserDeviceAccess(deps: {
 
   function pairOnce(origin: string) {
     if (paired.has(origin) || unavailable.has(origin)) return Promise.resolve();
+    if ((pairingRetryAfter.get(origin) ?? 0) > Date.now()) return Promise.resolve();
     let pairing = pairings.get(origin);
     if (!pairing) {
       pairing = pairWith(origin).finally(() => pairings.delete(origin));
@@ -359,12 +362,16 @@ export function createUserDeviceAccess(deps: {
       });
       if (!response.ok) {
         await response.body?.cancel();
-        // Signed out, a busy server or a deploy in progress: the next page load tries again.
-        if (PAIRING_REFUSALS.has(response.status)) {
-          unavailable.add(origin);
+        if (PAIRING_REFUSALS.has(response.status)) unavailable.add(origin);
+        if (response.status === 401 || PAIRING_REFUSALS.has(response.status)) {
+          pairingRetryAfter.delete(origin);
           pairingKeys.delete(origin);
+        } else {
+          pairingRetryAfter.set(
+            origin,
+            Date.now() + (parseRetryAfter(response.headers.get("retry-after")) ?? 5_000),
+          );
         }
-        if (response.status === 401) pairingKeys.delete(origin);
         return;
       }
       const body = (await response.json()) as Partial<
@@ -382,8 +389,10 @@ export function createUserDeviceAccess(deps: {
       }
       device = { token: body.token, deviceId: body.deviceId, userId: optionalString(body.userId) };
     } catch {
+      pairingRetryAfter.set(origin, Date.now() + 5_000);
       return;
     }
+    pairingRetryAfter.delete(origin);
     try {
       await removals.get(origin);
       await savePairedDevice(deps.userDataDir, origin, device, deps.cipher);

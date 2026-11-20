@@ -35,6 +35,7 @@ beforeEach(async () => {
   userData = await mkdtemp(path.join(tmpdir(), "rakazo-device-"));
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await rm(userData, { recursive: true, force: true, maxRetries: 5 });
 });
 
@@ -514,7 +515,8 @@ describe("remote computer access", () => {
     }
   });
 
-  it("retries a pairing the server could not answer on the next page load", async () => {
+  it("retries a pairing the server could not answer on a later page load", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     for (const failure of [503, 502, 500, 429, 408, "network"] as const) {
       let failing = true;
       const fetch = vi.fn(async (url: string) => {
@@ -529,13 +531,16 @@ describe("remote computer access", () => {
       await access.pair();
       await access.pair();
       expect(clients).toEqual([]);
+      expect(fetch).toHaveBeenCalledTimes(1);
       failing = false;
+      vi.advanceTimersByTime(5_000);
       await access.pair();
       expect(clients).toHaveLength(1);
     }
   });
 
-  it("reuses a random credential after a lost pairing response", async () => {
+  it("reuses a random request key after a lost pairing response", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const tokens: string[] = [];
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
@@ -547,7 +552,9 @@ describe("remote computer access", () => {
     const { access, clients } = setup({ fetch });
     await access.select(other);
     await access.pair();
+    vi.advanceTimersByTime(5_000);
     await access.pair();
+    vi.advanceTimersByTime(5_000);
     await access.pair();
     expect(tokens.length).toBeGreaterThanOrEqual(3);
     expect(new Set(tokens).size).toBe(1);
@@ -556,6 +563,7 @@ describe("remote computer access", () => {
   });
 
   it("starts a fresh pairing after the server refuses recovery by another sign-in", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const keys: string[] = [];
     const fetch = vi.fn(async (url: string, init?: RequestInit) => {
       if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
@@ -567,11 +575,32 @@ describe("remote computer access", () => {
     const { access, clients } = setup({ fetch });
     await access.select(other);
     await access.pair();
+    vi.advanceTimersByTime(5_000);
     await access.pair();
     await access.pair();
     expect(keys).toHaveLength(3);
     expect(keys[1]).toBe(keys[0]);
     expect(keys[2]).not.toBe(keys[0]);
+    expect(clients).toHaveLength(1);
+  });
+
+  it.each([429, 503])("honors Retry-After after %i without scheduling requests", async (status) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const fetch = vi.fn(async () =>
+      fetch.mock.calls.length === 1
+        ? new Response(null, { status, headers: { "retry-after": "60" } })
+        : Response.json({ deviceId: "device-1", token: "server-token" }),
+    );
+    const { access, clients } = setup({ fetch });
+    await access.select(other);
+    await access.pair();
+    await access.pair();
+    vi.advanceTimersByTime(59_999);
+    await access.pair();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await access.pair();
     expect(clients).toHaveLength(1);
   });
 
