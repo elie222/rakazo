@@ -17,7 +17,8 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
   const previous = useRef<ComputerUpdate[]>([]);
   const completed = useRef(onCompleted);
   completed.current = onCompleted;
-  const [error, setError] = useState(false);
+  // The id of the update whose last Dismiss or Recover failed; the error shows only on that update.
+  const [error, setError] = useState<string | null>(null);
   const [recovering, setRecovering] = useState(false);
   useEffect(() => computerUpdates.watch(), []);
   useEffect(() => {
@@ -61,7 +62,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
             variant="outline"
             className="h-auto gap-3 rounded-xl bg-card px-4 py-2 shadow-sm"
             onClick={() => {
-              setError(false);
+              setError(null);
               computerUpdates.open(update.id);
             }}
           >
@@ -145,7 +146,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                 {labels[COMPUTER_UPDATE_STAGES.indexOf(selected.stage)]}
               </span>
             )}
-            {error ? (
+            {error === selected.id ? (
               <p role="alert" className="px-6 pb-3 text-body text-destructive">
                 <Trans>Could not complete action</Trans>
               </p>
@@ -155,7 +156,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                 <Button
                   variant="outline"
                   onClick={() =>
-                    void computerUpdates.dismiss(selected.id).catch(() => setError(true))
+                    void computerUpdates.dismiss(selected.id).catch(() => setError(selected.id))
                   }
                 >
                   <Trans>Dismiss</Trans>
@@ -170,10 +171,10 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                   disabled={recovering}
                   onClick={() => {
                     setRecovering(true);
-                    setError(false);
+                    setError(null);
                     void computerUpdates
                       .start(selected.botId, "recover")
-                      .catch(() => setError(true))
+                      .catch(() => setError(selected.id))
                       .finally(() => setRecovering(false));
                   }}
                 >
