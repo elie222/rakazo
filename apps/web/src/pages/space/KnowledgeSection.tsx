@@ -103,7 +103,11 @@ function MemoryDocumentList({
   const [showAll, setShowAll] = useState(false);
   // Once shown, memory stays visible while the panel is open, even if emptied.
   const [memoryShown, setMemoryShown] = useState(false);
-  const memoryVisible = memoryShown || docs.some((doc) => !isEmptyBotMemory(doc));
+  // Only a bot's untouched index is hidden; shared memory is always the user's to open.
+  const memoryVisible =
+    input.scope === "bot"
+      ? memoryShown || docs.some((doc) => !isEmptyBotMemory(doc))
+      : docs.length > 0;
   if (memoryVisible && !memoryShown) setMemoryShown(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
