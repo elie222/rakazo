@@ -749,7 +749,7 @@ describe("ChatSdkMessagingSurface outbound", () => {
     });
   });
 
-  it.each(["whatsapp", "lark"])("posts %s replies as Markdown", async (provider) => {
+  it.each(["whatsapp", "lark", "slack"])("posts %s replies as Markdown", async (provider) => {
     const { surface, adapter } = createSurface({ provider });
     const body = "**bold** and [link](https://example.test)";
     const threadId = `${provider}:C1:9`;
@@ -770,14 +770,66 @@ describe("ChatSdkMessagingSurface outbound", () => {
     });
   });
 
-  it.each(["slack", "sendblue"])("keeps %s replies as strings", async (provider) => {
-    const { surface, adapter } = createSurface({ provider });
+  it("keeps sendblue replies as strings", async () => {
+    const { surface, adapter } = createSurface({ provider: "sendblue" });
     const body = "**bold** and [link](https://example.test)";
-    const threadId = `${provider}:C1:9`;
 
-    await surface.sendToThread({ threadId, body }, context);
+    await surface.sendToThread({ threadId: "sendblue:C1:9", body }, context);
 
-    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, body);
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith("sendblue:C1:9", body);
+  });
+
+  /** A real Slack adapter whose HTTP transport records each chat.postMessage body. */
+  function slackSurface() {
+    const posts: Record<string, string>[] = [];
+    const adapter = createSlackAdapter({
+      botToken: "xoxb-fake",
+      botUserId: "UBOT",
+      signingSecret: "test-slack-signing-secret",
+      webClientOptions: {
+        adapter: async (config) => {
+          posts.push(
+            Object.fromEntries(new URLSearchParams(String(config.data))) as Record<string, string>,
+          );
+          return {
+            data: { ok: true, ts: `1700000000.00000${posts.length}`, channel: "C1" },
+            status: 200,
+            statusText: "OK",
+            headers: {},
+            config,
+            request: { path: "/api/chat.postMessage" },
+          };
+        },
+      },
+    });
+    const surface = new ChatSdkMessagingSurface([
+      {
+        provider: "slack",
+        capabilities: { direct: true, groups: true, receipt: "reaction" },
+        adapter,
+      },
+    ]);
+    return { surface, posts };
+  }
+
+  it("sends a Slack reply as Markdown for Slack to render, not as literal text", async () => {
+    const { surface, posts } = slackSurface();
+    const body = "**Done**: see [docs](https://x.y/z)\n# Head";
+
+    await surface.sendToThread({ threadId: "slack:C1:9", body }, context);
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ markdown_text: body });
+    expect(posts[0]).not.toHaveProperty("text");
+  });
+
+  it("sends a short plain Slack reply unchanged", async () => {
+    const { surface, posts } = slackSurface();
+
+    await surface.sendToThread({ threadId: "slack:C1:9", body: "On it." }, context);
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ markdown_text: "On it." });
   });
 
   it("posts a Telegram image attachment as a photo", async () => {

@@ -404,7 +404,7 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
   // More logins than the empty Vault holds: the review counts and lists those that don't fit.
   const big = [
     "url,password",
-    ...Array.from({ length: 106 }, (_, index) => `https://s${index}.example.test,fake-pass`),
+    ...Array.from({ length: 1_006 }, (_, index) => `https://s${index}.example.test,fake-pass`),
   ].join("\n");
   await vault.getByTestId("vault-import-file").setInputFiles({
     name: "big.csv",
@@ -412,9 +412,9 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
     buffer: Buffer.from(big),
   });
   const full = page.getByTestId("vault-import-page");
-  await expect(full.getByTestId("vault-import-count")).toHaveText(["To add100", "Vault full6"]);
+  await expect(full.getByTestId("vault-import-count")).toHaveText(["To add1000", "Vault full6"]);
   await expect(full.getByTestId("vault-import-problems")).toContainText(
-    "Row 102 · s100.example.test · Vault full",
+    "Row 1002 · s1000.example.test · Vault full",
   );
   await expect(full.getByTestId("vault-import-problems")).toContainText("And 1 more");
   await captureScreenshot(page, testInfo, "vault-import-full");

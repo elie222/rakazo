@@ -15,6 +15,7 @@ import { CalendarResults } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
 import { isComposioOutage } from "./composio-errors.js";
+import { ianaZone } from "./windows-zones.js";
 
 type ProxyRequest = Omit<ToolProxyParams, "connectedAccountId">;
 type Proxy = (request: ProxyRequest) => Promise<{ status: number; data?: unknown }>;
@@ -401,8 +402,8 @@ async function outlook(
       .map((item) => {
         const start = graphUtc(item.start);
         const end = graphUtc(item.end);
-        const timeZone = item.originalStartTimeZone ?? item.start.timeZone;
-        const endTimeZone = item.originalEndTimeZone ?? item.end.timeZone;
+        const timeZone = ianaZone(item.originalStartTimeZone ?? item.start.timeZone);
+        const endTimeZone = ianaZone(item.originalEndTimeZone ?? item.end.timeZone);
         return {
           id: item.id,
           calendar,
