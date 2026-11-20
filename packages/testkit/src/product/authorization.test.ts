@@ -423,6 +423,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["memory/list", {}],
       ["memory/budget", { botId: "missing-bot" }],
       ["memory/dreams", { botId: "missing-bot" }],
+      ["memory/dreamRetention"],
+      ["memory/setDreamRetention", { dreamRetention: 100 }],
       ["memory/dreamNow", { botId: "missing-bot" }],
       ["memory/undoDream", { dreamId: "missing-dream" }],
       ["memory/revisions", { documentId: "missing-memory" }],
