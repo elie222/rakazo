@@ -33,6 +33,20 @@ export const nativeCalendarDeviceDigest = (key: string) =>
 
 type RequestId = Pick<Request, "id" | "runId" | "threadId">;
 
+export async function pruneExpiredNativeCalendarRequests(store: Store, now: Date) {
+  // A running or resumable turn still needs its write record to prevent another save.
+  const { count } = await runAsSystem("prune finished phone calendar requests", () =>
+    store.nativeCalendarRequest.deleteMany({
+      where: {
+        expiresAt: { lte: now },
+        run: { status: { in: ["completed", "failed", "cancelled"] } },
+      },
+      limit: 1_000,
+    }),
+  );
+  return count;
+}
+
 export function nativeCalendarScope({ spaceId, userId, sessionId }: Session) {
   return `native-calendar:${createHash("sha256")
     .update(JSON.stringify([spaceId, userId, sessionId]))

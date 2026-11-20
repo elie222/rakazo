@@ -18,6 +18,7 @@ import {
   finishNativeCalendar,
   nativeCalendarDeviceDigest,
   pendingNativeCalendar,
+  pruneExpiredNativeCalendarRequests,
   requestNativeCalendar,
 } from "./native-calendar.js";
 
@@ -243,6 +244,10 @@ describe.skipIf(!url)("phone calendar execution", () => {
       },
     });
     expect(await tryClaim()).toBeNull();
+    await pruneExpiredNativeCalendarRequests(db.prisma, new Date());
+    expect(
+      await system.nativeCalendarRequest.findUnique({ where: { id: target.id } }),
+    ).not.toBeNull();
     await system.nativeCalendarRequest.update({
       where: { id: target.id },
       data: { expiresAt: new Date(Date.now() + 60_000) },
@@ -267,5 +272,11 @@ describe.skipIf(!url)("phone calendar execution", () => {
     }
     await system.run.update({ where: { id: record.id }, data: { status: "cancelled" } });
     expect(await tryClaim()).toBeNull();
+    await pruneExpiredNativeCalendarRequests(db.prisma, new Date());
+    expect(
+      await system.nativeCalendarRequest.findUnique({ where: { id: target.id } }),
+    ).not.toBeNull();
+    await pruneExpiredNativeCalendarRequests(db.prisma, new Date(Date.now() + 60_000));
+    expect(await system.nativeCalendarRequest.findUnique({ where: { id: target.id } })).toBeNull();
   });
 });

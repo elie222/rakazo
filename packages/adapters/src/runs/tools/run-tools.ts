@@ -13,6 +13,7 @@ import {
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "../../models/model-vision.prompt.js";
 import { personalCalendarTools } from "../../personal-calendar/personal-calendar.tool-definition.js";
+import { calendarTool } from "../../personal-calendar/run-calendar-tool.js";
 import { strategicInitiativeToolAllowed } from "../../routines/strategic-initiative.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
@@ -28,7 +29,6 @@ import {
   PAGE_BROWSER_TOOL_NAMES,
   SUBAGENT_HIDDEN_TOOLS,
 } from "./run-tool-selection.js";
-import { calendarTool } from "./run-tools-calendar.js";
 import { computerTools, pageBrowserTool } from "./run-tools-computer.js";
 import { emailTools } from "./run-tools-email.js";
 import { feedbackTools } from "./run-tools-feedback.js";

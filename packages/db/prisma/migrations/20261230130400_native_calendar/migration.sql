@@ -16,6 +16,7 @@ CREATE TABLE "native_calendar_requests" (
 
 CREATE INDEX "native_calendar_requests_sessionId_status_expiresAt_idx"
     ON "native_calendar_requests"("sessionId", "status", "expiresAt");
+CREATE INDEX "native_calendar_requests_expiresAt_idx" ON "native_calendar_requests"("expiresAt");
 CREATE INDEX "native_calendar_requests_runId_idx" ON "native_calendar_requests"("runId");
 CREATE INDEX "native_calendar_requests_userId_idx" ON "native_calendar_requests"("userId");
 ALTER TABLE "native_calendar_requests" ENABLE ROW LEVEL SECURITY;

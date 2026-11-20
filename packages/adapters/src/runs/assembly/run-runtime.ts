@@ -22,6 +22,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   chatHistoryRetentionDays,
   createChatHistoryPruner,
+  createRetentionPruner,
   createSecurityEventPruner,
   securityEventRetentionDays,
 } from "@rakazo/db";
@@ -48,6 +49,7 @@ import {
 } from "../../models/deployment-model.js";
 import { ExpoPushProvider } from "../../notifications/expo-push.js";
 import { reconcilePurchases } from "../../payments/purchase-poll.js";
+import { pruneExpiredNativeCalendarRequests } from "../../personal-calendar/native-calendar.js";
 import { T3CodeConnections } from "../../providers/cloud-agent/t3code/t3code-connections.js";
 import type { ComposioProvider } from "../../providers/integration/composio/composio-connector.js";
 import {
@@ -421,6 +423,11 @@ export function createRunReconciler(
     reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
     reconcileChatHistoryRetention:
       chatHistoryDays === null ? undefined : createChatHistoryPruner(prisma, chatHistoryDays),
+    reconcileNativeCalendarRetention: createRetentionPruner(
+      "native_calendar_requests",
+      (now) => pruneExpiredNativeCalendarRequests(prisma, now),
+      { intervalMs: 60_000 },
+    ),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
   });
 }

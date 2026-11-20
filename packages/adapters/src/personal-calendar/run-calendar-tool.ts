@@ -1,11 +1,11 @@
 import type { ConnectedCalendarOperation } from "@rakazo/adapter-kit";
 import type { CalendarResponse } from "@rakazo/contracts";
 import { CalendarOperation, CalendarResults, calendarOperationSource } from "@rakazo/contracts";
-import { connectedContext } from "../../integrations/connection-context.js";
-import { calendarWriteKey } from "../../personal-calendar/calendar-write-key.js";
-import { requestNativeCalendar } from "../../personal-calendar/native-calendar.js";
-import type { RunContext } from "../assembly/run-context.js";
-import type { ToolHandler } from "./run-tool-gate.js";
+import { connectedContext } from "../integrations/connection-context.js";
+import type { RunContext } from "../runs/assembly/run-context.js";
+import type { ToolHandler } from "../runs/tools/run-tool-gate.js";
+import { calendarWriteKey } from "./calendar-write-key.js";
+import { requestNativeCalendar } from "./native-calendar.js";
 
 async function connectedCalendar(
   ctx: RunContext,

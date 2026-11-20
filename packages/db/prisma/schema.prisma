@@ -1554,6 +1554,7 @@ model NativeCalendarRequest {
   result    Json?
   expiresAt DateTime
   @@index([sessionId, status, expiresAt])
+  @@index([expiresAt])
   @@index([runId])
   @@index([userId])
   @@map("native_calendar_requests")
