@@ -27,7 +27,11 @@ import { rakazoPwa } from "./server/pwa-plugin.js";
 export default defineConfig(({ command, mode }) => {
   // Names this build in every API request; the dev server has none, so the handshake stays off.
   const buildId = command === "build" ? buildIdAt(new Date()) : "";
-  const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
+  // RAKAZO_ENV_FILE=none means the caller passes the whole environment, as for loadRootEnv.
+  const rootEnv: Record<string, string> =
+    process.env.RAKAZO_ENV_FILE === "none"
+      ? {}
+      : loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const webPort = Number(process.env.WEB_PORT ?? rootEnv.WEB_PORT ?? 5173);
   const settings = webServerSettings(
     (name) => process.env[name] ?? rootEnv[name],

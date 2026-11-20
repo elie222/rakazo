@@ -37,6 +37,7 @@
     "test:computer-replay": "tsx packages/testkit/src/cli/computer-replay.ts",
     "test:computer": "tsx packages/testkit/src/cli/computer.ts",
     "test:flows": "tsx packages/testkit/src/cli/flows.ts",
+    "verify:stack": "tsx packages/testkit/src/cli/verify-stack.ts",
     "perf:desktop": "tsx packages/testkit/src/performance/desktop-performance.ts",
     "perf:compare": "tsx packages/testkit/src/performance/compare-performance.ts",
     "perf:mobile-stack": "tsx packages/testkit/src/performance/mobile-stack.ts",

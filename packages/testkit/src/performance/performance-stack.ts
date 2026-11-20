@@ -11,18 +11,20 @@ export const repositoryRoot = path.resolve(import.meta.dirname, "../../../..");
 
 /**
  * The offline API and web settings both performance benchmarks run with: scripted agent, fake
- * computers, no provider keys, analytics, or telemetry.
+ * computers, no provider keys, analytics, or telemetry. Laid over `base`, the caller's environment
+ * unless given.
  */
 export function benchmarkEnvironment(options: {
   databaseUrl: string;
   webPort: number;
   apiPort: number;
   dataDir: string;
+  base?: NodeJS.ProcessEnv;
 }): NodeJS.ProcessEnv {
   const webOrigin = `http://127.0.0.1:${options.webPort}`;
   const apiOrigin = `http://127.0.0.1:${options.apiPort}`;
   return {
-    ...process.env,
+    ...(options.base ?? process.env),
     NODE_ENV: "production",
     ...disposableDatabaseEnv(options.databaseUrl),
     VERIFY_DATABASE: "1",
