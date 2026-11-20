@@ -49,7 +49,7 @@ export function AdminBotListingPreview({
       </header>
       <p className="text-body-lg text-foreground">{listing.tagline}</p>
       {outcomes.length ? (
-        <Block title={<Trans>What it does for users</Trans>}>
+        <Block title={<Trans>It helps you</Trans>}>
           <div className="space-y-1 text-body-lg text-foreground">
             {outcomes.map((outcome) => (
               <p key={outcome}>{outcome}</p>
