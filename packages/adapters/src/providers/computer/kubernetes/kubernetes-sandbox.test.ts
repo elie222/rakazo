@@ -3,7 +3,7 @@ import { link, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Exec, V1Pod } from "@kubernetes/client-node";
-import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import type { AdapterContext, ComputerRef, PortableFile, ProcessEvent } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
@@ -843,7 +843,8 @@ describe("KubernetesSandboxProvider", () => {
     ]);
     expect(commands.at(-1)).toContain("rm");
     // Element-wise toEqual on a 2 MiB array takes minutes; compare bytes directly.
-    expect(Buffer.from(files[0]!.content).equals(binary)).toBe(true);
+    // Files up to 5 MiB come whole (larger ones are streamed).
+    expect(Buffer.from((files[0] as PortableFile).content).equals(binary)).toBe(true);
     expect(files).toEqual([
       { path: "a.txt", content: expect.any(Uint8Array) },
       { path: "run.sh", content: new Uint8Array(Buffer.from("#!")), executable: true },
@@ -1127,10 +1128,9 @@ describe("KubernetesSandboxProvider", () => {
         for await (const file of providerFor({}, exec).exportWorkspace(computer, context))
           exported.push(file);
         expect(exported.map((file) => file.path)).toEqual([long, "linked.txt"]);
-        expect(exported.map((file) => Buffer.from(file.content).toString())).toEqual([
-          "long file",
-          "long file",
-        ]);
+        expect(
+          exported.map((file) => Buffer.from((file as PortableFile).content).toString()),
+        ).toEqual(["long file", "long file"]);
       } finally {
         await rm(root, { recursive: true, force: true });
       }

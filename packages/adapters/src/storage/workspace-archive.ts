@@ -3,6 +3,7 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import type {
   PortableFile,
+  SkippedWorkspaceFile,
   StreamedPortableFile,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
@@ -54,7 +55,41 @@ export async function* readWorkspaceArchive(
   }
 }
 
-async function* readTar(reader: ByteReader): AsyncGenerator<PortableFile | StreamedPortableFile> {
+/** What an uncompressed export may leave out instead of failing. */
+export interface WorkspaceTarOptions {
+  /** A regular file larger than this is skipped: its bytes are read past, never held. */
+  maxFileBytes?: number;
+  onSkippedFile?: (file: SkippedWorkspaceFile) => void;
+}
+
+/**
+ * The same reader over an uncompressed tar stream (a computer's `tar -c` output). Files over
+ * 5 MiB come as streams, so memory stays bounded whatever the file sizes; a file over
+ * `maxFileBytes` is skipped and reported, and the entries after it are read in place.
+ */
+export async function* readWorkspaceTar(
+  stream: AsyncIterable<Uint8Array>,
+  options: WorkspaceTarOptions = {},
+): AsyncGenerator<PortableFile | StreamedPortableFile> {
+  async function* buffers() {
+    for await (const chunk of stream) {
+      yield Buffer.isBuffer(chunk)
+        ? chunk
+        : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    }
+  }
+  const source = buffers();
+  try {
+    yield* readTar(new ByteReader(source, Number.POSITIVE_INFINITY), options);
+  } finally {
+    await source.return(undefined);
+  }
+}
+
+async function* readTar(
+  reader: ByteReader,
+  options: WorkspaceTarOptions = {},
+): AsyncGenerator<PortableFile | StreamedPortableFile> {
   let extended: { path?: string; size?: number } = {};
   while (true) {
     const block = await reader.read(BLOCK, true);
@@ -81,6 +116,18 @@ async function* readTar(reader: ByteReader): AsyncGenerator<PortableFile | Strea
         const path = archivePath(extended.path ?? header.name);
         const executable = (header.mode & 0o111) !== 0 ? { executable: true } : {};
         extended = {};
+        if (options.maxFileBytes !== undefined && size > options.maxFileBytes) {
+          // Reported before its bytes are read past, so a caller that refuses it stops at once.
+          options.onSkippedFile?.({
+            path,
+            reason: "too_large",
+            bytes: size,
+            limit: options.maxFileBytes,
+          });
+          // Its data blocks are consumed (not held), so the next header is read in place.
+          await reader.skip(size + padding);
+          continue;
+        }
         if (size <= MAX_HELD_FILE_BYTES) {
           const content = await reader.read(size);
           await reader.skip(padding);

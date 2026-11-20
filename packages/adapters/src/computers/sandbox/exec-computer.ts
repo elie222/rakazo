@@ -8,10 +8,15 @@ import type {
   ComputerRef,
   PortableFile,
   ProcessEvent,
+  SkippedWorkspaceFile,
+  StreamedPortableFile,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import { getLogger } from "@rakazo/logging";
+import { readWorkspaceTar } from "../../storage/workspace-archive.js";
 import {
   shouldSkipPortableWorkspaceFile,
   workspaceSaveFindCommand,
@@ -327,11 +332,36 @@ export class ExecComputer {
     }
   }
 
-  /** The caller quiesces the desktop browsers first so profile databases are consistent. */
+  /**
+   * The caller quiesces the desktop browsers first so profile databases are consistent. Files
+   * over 5 MiB come as streams, so memory stays bounded. With `limits.maxFileBytes`, a larger
+   * regular file is left out of the export and reported instead of failing the whole save;
+   * without it, a file over 64 MiB fails the export as before.
+   */
   async *exportWorkspace(
     computer: ComputerRef,
     context: AdapterContext,
-  ): AsyncIterable<PortableFile> {
+    limits?: WorkspaceExportLimits,
+  ): AsyncIterable<PortableFile | StreamedPortableFile> {
+    const tarOptions =
+      limits?.maxFileBytes === undefined
+        ? {
+            maxFileBytes: MAX_FILE_BYTES,
+            onSkippedFile: () => {
+              throw new SandboxFileTooLargeError(MAX_FILE_BYTES);
+            },
+          }
+        : {
+            maxFileBytes: limits.maxFileBytes,
+            onSkippedFile:
+              limits.onSkippedFile ??
+              ((file: SkippedWorkspaceFile) =>
+                getLogger().warn("computer.checkpoint_file_skipped", {
+                  "computer.id": computer.id,
+                  provider: computer.kind,
+                  ...file,
+                })),
+          };
     // One exec streams the whole home as a tar archive. Per-file execs cost a
     // round trip each, which took minutes for a restored home.
     const listing = await this.run(
@@ -350,10 +380,10 @@ export class ExecComputer {
       .split("\0")
       .filter((name) => name && !shouldSkipPortableWorkspaceFile(name));
     if (names.length === 0) return;
-    const reader = new TarReader(MAX_FILE_BYTES);
     const list = Buffer.from(names.map((name) => `${name}\0`).join(""));
-    let code = 1;
+    let code: number | undefined;
     let stderr = "";
+    const exec = this.exec;
     // Kata can stall large stdout while exec also has stdin attached. Stage the
     // NUL-delimited file list separately so the archive exec only reads stdout.
     const listPath = `/tmp/rakazo-workspace-${randomUUID()}`;
@@ -368,36 +398,44 @@ export class ExecComputer {
       );
       if (staged.code !== 0)
         throw new Error(staged.stderr.toString("utf8") || "could not stage workspace file list");
-      for await (const event of this.exec(
-        computer,
-        withTimeout(
-          [
-            "tar",
-            "--format=pax",
-            "--hard-dereference",
-            "-c",
-            "-C",
-            WORKSPACE,
-            "--null",
-            "--no-recursion",
-            "-T",
-            listPath,
-            "-f",
-            "-",
-          ],
+      // stdout only; exit code and stderr are kept for after the archive.
+      async function* archive(): AsyncGenerator<Buffer> {
+        for await (const event of exec(
+          computer,
+          withTimeout(
+            [
+              "tar",
+              "--format=pax",
+              "--hard-dereference",
+              "-c",
+              "-C",
+              WORKSPACE,
+              "--null",
+              "--no-recursion",
+              "-T",
+              listPath,
+              "-f",
+              "-",
+            ],
+            BULK_TRANSFER_TIMEOUT_MS,
+          ),
+          context.signal,
           BULK_TRANSFER_TIMEOUT_MS,
-        ),
-        context.signal,
-        BULK_TRANSFER_TIMEOUT_MS,
-      )) {
-        if (event.type === "exit") code = event.code;
-        else if (event.type === "stderr") stderr += event.data.toString("utf8");
-        else {
-          for (const file of reader.push(event.data)) {
-            context.signal.throwIfAborted();
-            yield file;
-          }
+        )) {
+          if (event.type === "exit") code = event.code;
+          else if (event.type === "stderr") stderr += event.data.toString("utf8");
+          else yield event.data;
         }
+      }
+      try {
+        for await (const file of readWorkspaceTar(archive(), tarOptions)) {
+          context.signal.throwIfAborted();
+          yield file;
+        }
+      } catch (error) {
+        // tar failed: its message says more than the cut-short archive does.
+        if (code !== undefined && code !== 0 && stderr) throw new Error(stderr, { cause: error });
+        throw error;
       }
     } finally {
       await this.run(
@@ -411,7 +449,6 @@ export class ExecComputer {
       );
     }
     if (code !== 0) throw new Error(stderr || "could not export computer workspace");
-    reader.finish();
   }
 
   /** The caller quiesces the desktop browsers first, as for export. */
