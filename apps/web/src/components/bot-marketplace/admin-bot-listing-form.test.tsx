@@ -50,8 +50,8 @@ vi.mock("react-router-dom", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
   useNavigate: () => api.navigate,
 }));
-vi.mock("./bot-marketplace-detail", () => ({
-  BotMarketplaceDetail: ({ listing }: { listing: { name: string } }) => (
+vi.mock("./admin-bot-listing-preview", () => ({
+  AdminBotListingPreview: ({ listing }: { listing: { name: string } }) => (
     <div data-testid="bot-preview">{listing.name}</div>
   ),
 }));

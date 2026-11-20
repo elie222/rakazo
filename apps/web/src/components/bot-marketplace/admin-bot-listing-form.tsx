@@ -3,14 +3,12 @@ import type { MarketplaceBotAdminRow, MarketplaceBotSource } from "@rakazo/contr
 import { formatCron } from "@rakazo/core";
 import {
   Button,
-  Disclosure,
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
   Input,
   OptionSelect,
-  SectionHeading,
   Textarea,
 } from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
@@ -28,22 +26,52 @@ import {
   newListing,
   parseListing,
 } from "./admin-bot-form";
+import { AdminBotListingPreview } from "./admin-bot-listing-preview";
 import { AdminBotSourcePicker, NameTile, SourceCounts } from "./admin-bot-source-picker";
-import { BotMarketplaceDetail } from "./bot-marketplace-detail";
 
 const EXAMPLE_FIELDS = new Set(["sample", "intro", "firstQuestion"]);
 const COPIED_FIELDS = new Set(["instructions", "skills", "routines", "apps"]);
 
 function Label({ children, required }: { children: ReactNode; required?: boolean }) {
   return (
-    <>
+    <span className="font-semibold text-foreground">
       {children}
       {required ? (
-        <span aria-hidden className="text-muted-foreground">
+        <span aria-hidden className="ps-1 text-muted-foreground">
           *
         </span>
       ) : null}
-    </>
+    </span>
+  );
+}
+
+function Heading({ children }: { children: ReactNode }) {
+  return <h2 className="text-body-lg font-semibold text-foreground">{children}</h2>;
+}
+
+/** A native disclosure, so the browser owns the arrow, keyboard and screen reader state. */
+function Fold({
+  open,
+  onOpenChange,
+  title,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+      className="py-3.5"
+    >
+      <summary className="cursor-pointer select-none text-body-lg font-semibold text-foreground">
+        {title}
+      </summary>
+      <div className="pt-4">{children}</div>
+    </details>
   );
 }
 
@@ -256,15 +284,15 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
         {step === "edit" ? (
           <>
             <section className="space-y-3">
-              <SectionHeading as="h2">
+              <Heading>
                 <Trans>Source bot</Trans>
-              </SectionHeading>
-              <div className="flex items-center gap-3 rounded-xl border border-border/70 bg-muted/40 px-4 py-3">
+              </Heading>
+              <div className="flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-3.5">
                 {sourceName ? <NameTile name={sourceName} /> : null}
                 <div className="min-w-0 flex-1">
                   {sourceName ? (
                     <>
-                      <p className="truncate text-body-lg font-medium text-foreground">
+                      <p className="truncate text-body-lg font-semibold text-foreground">
                         {sourceName}
                       </p>
                       <SourceCounts
@@ -286,9 +314,9 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
             </section>
 
             <section className="space-y-4">
-              <SectionHeading as="h2">
+              <Heading>
                 <Trans>Listing</Trans>
-              </SectionHeading>
+              </Heading>
               <FieldGroup>
                 <div className="grid gap-5 sm:grid-cols-[1fr_12rem]">
                   <TextField
@@ -336,13 +364,11 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
               </FieldGroup>
             </section>
 
-            <div className="divide-y divide-border/60 border-y border-border/60">
-              <Disclosure
+            <div className="divide-y divide-border border-y border-border">
+              <Fold
                 open={exampleOpen}
                 onOpenChange={setExampleOpen}
-                summary={<Trans>Example and opening line</Trans>}
-                summaryClassName="py-3 text-body-lg font-medium text-foreground"
-                contentClassName="pb-5"
+                title={<Trans>Example and opening line</Trans>}
               >
                 <FieldGroup>
                   <AreaField
@@ -365,13 +391,11 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
                     onChange={(value) => set("firstQuestion", value)}
                   />
                 </FieldGroup>
-              </Disclosure>
-              <Disclosure
+              </Fold>
+              <Fold
                 open={copiedOpen}
                 onOpenChange={setCopiedOpen}
-                summary={<Trans>Copied with the template</Trans>}
-                summaryClassName="py-3 text-body-lg font-medium text-foreground"
-                contentClassName="pb-5"
+                title={<Trans>Copied with the template</Trans>}
               >
                 <FieldGroup>
                   <AreaField
@@ -417,22 +441,25 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
                     </Field>
                   ) : null}
                 </FieldGroup>
-              </Disclosure>
+              </Fold>
             </div>
           </>
         ) : (
           <section className="space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <SectionHeading as="h2" variant="heading">
+              <Heading>
                 <Trans>What users see</Trans>
-              </SectionHeading>
+              </Heading>
               <Button type="button" variant="outline" onClick={() => setStep("edit")}>
                 <Trans>Back to edit</Trans>
               </Button>
             </div>
-            <div className="rounded-xl border border-border/70 bg-card p-6">
-              {parsed.success ? <BotMarketplaceDetail listing={parsed.data} /> : null}
-            </div>
+            {parsed.success ? (
+              <AdminBotListingPreview
+                listing={parsed.data}
+                categoryLabel={categoryLabels[parsed.data.category]}
+              />
+            ) : null}
           </section>
         )}
 
@@ -444,7 +471,7 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
           ) : null}
           <Button
             type="button"
-            variant="ghost"
+            variant={step === "edit" ? "outline" : "ghost"}
             disabled={save.pending}
             onClick={() => finish(false)}
           >

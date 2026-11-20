@@ -19,7 +19,7 @@ export function NameTile({ name }: { name: string }) {
   return (
     <span
       aria-hidden
-      className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted font-medium text-foreground"
+      className="grid size-10 shrink-0 place-items-center rounded-xl bg-border font-semibold text-foreground"
     >
       {Array.from(name.trim())[0] ?? ""}
     </span>

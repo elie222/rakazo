@@ -33,11 +33,11 @@ async function fillListing(page: Page) {
   const field = (label: string) => page.getByLabel(label).first();
   await field("One-line intro").fill(listing.tagline);
   await field("What it does for users").fill(listing.outcomes.join("\n"));
-  await page.getByRole("button", { name: "Example and opening line" }).click();
+  await page.getByText("Example and opening line", { exact: true }).click();
   await field("Example output").fill(listing.sample);
   await field("First message after install").fill(listing.intro);
   await field("First question").fill(listing.firstQuestion);
-  await page.getByRole("button", { name: "Copied with the template" }).click();
+  await page.getByText("Copied with the template", { exact: true }).click();
   await field("Apps").fill(listing.apps.join(", "));
 }
 
@@ -99,9 +99,9 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
   await fillListing(page);
   await captureScreenshot(page, testInfo, "02-ops-listing-form");
   await page.getByRole("button", { name: "Preview listing" }).click();
-  const preview = page.getByTestId("bot-marketplace-detail");
-  await expect(preview.getByRole("heading", { name: "Morning briefing" })).toBeVisible();
-  await expect(preview.getByText("Demo data, not your real content.")).toBeVisible();
+  const preview = page.getByTestId("bot-listing-preview");
+  await expect(preview.getByRole("heading", { name: "Morning briefing", level: 2 })).toBeVisible();
+  await expect(preview.getByText("Demo data", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "03-ops-listing-preview");
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/bots$/);
