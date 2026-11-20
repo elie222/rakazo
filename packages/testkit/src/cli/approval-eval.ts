@@ -437,10 +437,18 @@ export async function runApprovalSuite(
   );
   const request = (c: ApprovalCase): AutoReviewRequest => {
     const earlier = reviewOwnerMessages(c.earlierOwnerMessages ?? []);
+    const redacted = autoReview.redactToolArgsForReview(c.args, []);
     const args =
       c.newSite && typeof c.args.url === "string"
         ? { url: c.args.url }
-        : autoReview.redactToolArgsForReview(c.args, []);
+        : c.ownComputerAction
+          ? autoReview.ownComputerReviewArgs(
+              c.toolName,
+              redacted,
+              // A case's page stands for what the browser reported.
+              typeof c.args.page === "string" ? c.args.page : undefined,
+            )
+          : redacted;
     // What the product keeps of a run's reads: every result except the bot's own state.
     const outsideText = (c.runSteps ?? [])
       .filter((step) => step.outside || toolResultTaintsRun(step.tool))

@@ -18,8 +18,9 @@ import { markReadOutsideContent } from "../assembly/run-context.js";
 import { noteComputerTaskStep } from "../lifecycle/run-progress.js";
 import { logToolRefusal } from "../turn/tool-completion-audit.js";
 import { refusal } from "../turn/tool-refusal.js";
+import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolHandler } from "./run-tool-gate.js";
-import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
+import { gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
