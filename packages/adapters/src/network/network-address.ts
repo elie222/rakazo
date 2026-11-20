@@ -31,6 +31,13 @@ function lookupOptions(options: unknown): { all?: boolean; family?: number } {
   return {};
 }
 
+function preferredLookupFamily(): 0 | 4 | 6 {
+  const order = dns.getDefaultResultOrder();
+  if (order === "ipv4first") return 4;
+  if (order === "ipv6first") return 6;
+  return 0;
+}
+
 function selectLookupAddress(
   addresses: ResolvedAddress[],
   options: { all?: boolean; family?: number },
@@ -43,12 +50,12 @@ function selectLookupAddress(
     if (candidates.length === 0) throw new Error("Endpoint did not resolve to an address");
     return { all: true, addresses: candidates };
   }
-  // A single address for any family is the first IPv4 one when there is one. Resolution is
-  // `verbatim` (DNS order), so a dual-stack host's first answer is often IPv6; on a network with no
-  // IPv6 route that connect fails at once (ENETUNREACH). Every address is still validated first,
-  // `all` keeps DNS order, and an IPv6-only host keeps its IPv6 address.
+  // Resolution is `verbatim` (DNS order), which ignores Node's `--dns-result-order`. For a single
+  // address with no requested family, honour that setting here so a host with no IPv6 route can
+  // run with `--dns-result-order=ipv4first`. The default (`verbatim`) keeps the first answer.
+  const preferredFamily = requestedFamily === 0 ? preferredLookupFamily() : 0;
   const selected =
-    (requestedFamily === 0 ? candidates.find((entry) => entry.family === 4) : undefined) ??
+    (preferredFamily ? candidates.find((entry) => entry.family === preferredFamily) : undefined) ??
     candidates[0];
   if (!selected) throw new Error("Endpoint did not resolve to an address");
   return { all: false, address: selected.address, family: selected.family };
