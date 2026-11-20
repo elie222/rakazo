@@ -152,7 +152,10 @@ export function ModelRoleSettings({
   const providerName = (choice: ModelRoleChoice) => {
     const entry = entryFor(choice);
     return entry
-      ? providerDisplayName(entry, connectionFor(choice)?.authKind)
+      ? providerDisplayName(
+          entry,
+          choice.credentialId ? connectionFor(choice)?.authKind : undefined,
+        )
       : providerNameFallback(choice);
   };
   const providerNameFallback = (choice: ModelRoleChoice) =>

@@ -38,6 +38,11 @@ for (const folder of [".", "apps/web"]) {
 
 test("subscription descriptors retain existing translation keys", async () => {
   const filename = path.join(root, "packages/adapters/src/models/model-provider-registry.ts");
+  const workflow = readFileSync(
+    path.join(root, ".github/workflows/translation-catalogs.yml"),
+    "utf8",
+  );
+  assert(workflow.includes("- packages/adapters/src/models/model-provider-registry.ts"));
   const messages = [];
   await extractFromFileWithBabel(
     filename,
