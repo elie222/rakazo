@@ -6749,7 +6749,7 @@ msgstr "Modelcatalogus laden…"
 
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
-msgstr ""
+msgstr "Pagina laden…"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
@@ -12153,7 +12153,7 @@ msgstr "Transcript bekijken"
 
 #: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "View transcript: {platform}, {time}"
-msgstr ""
+msgstr "Transcript bekijken: {platform}, {time}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
