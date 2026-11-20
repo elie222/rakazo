@@ -10,10 +10,6 @@ import { errorText } from "../../../lib/query/user-error";
 import { ChatModelPicker } from "../chat/chat-model-picker";
 import { chordKeys, chordLabel, isApplePlatform } from "../shell-shortcuts";
 
-/**
- * The chat's model beside Send, for people who turned it on. Its panel lists the models with the
- * thinking levels beside them; each pick saves to the bot.
- */
 /** What the shell's keys can do with the picker while it is shown. */
 export type ComposerModelKeys = {
   stepThinking: () => boolean;
@@ -21,6 +17,10 @@ export type ComposerModelKeys = {
   canOpen: () => boolean;
 };
 
+/**
+ * The chat's model beside Send, for people who turned it on. Its panel lists the models with the
+ * thinking levels beside them; each pick saves to the bot.
+ */
 export function ComposerModelPicker({
   bot,
   disabled,
@@ -150,7 +150,7 @@ export function ComposerModelPicker({
         <>
           {t`Model`}
           <Kbd>{chordLabel({ apple }, modelKeys)}</Kbd>
-          {thinkingLevels.length ? (
+          {thinkingLevels.length > 1 ? (
             <>
               <span className="ms-1">{t`Thinking`}</span>
               <Kbd>{chordLabel({ apple }, thinkingKeys)}</Kbd>
