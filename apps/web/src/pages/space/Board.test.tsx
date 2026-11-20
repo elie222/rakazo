@@ -194,6 +194,7 @@ it("returns a dragged ticket to its column when the status change fails", async 
     tickets: [ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1")],
   });
   const moving = deferred();
+  api.tickets.comments.mockReset().mockResolvedValue([]);
   api.tickets.update.mockReset().mockReturnValue(moving.promise);
   const page = await renderBoard();
   try {
@@ -214,9 +215,15 @@ it("returns a dragged ticket to its column when the status change fails", async 
       status: "done",
     });
     expect(card().parentElement).toBe(done);
+    await act(async () => (card() as HTMLButtonElement).click());
+    const status = page.container.querySelector<HTMLButtonElement>('[id$="-status"]')!;
+    expect(status.textContent).toBe("Done");
+    expect(status.disabled).toBe(true);
 
     await act(async () => moving.reject(new TypeError("Failed to fetch")));
     expect(card().parentElement?.getAttribute("aria-labelledby")).toBe("board-column-todo");
+    expect(status.textContent).toBe("To do");
+    expect(status.disabled).toBe(false);
     expect(toast.error).toHaveBeenCalledExactlyOnceWith("Could not reach the server");
     expect(page.container.querySelector('[role="alert"]')).toBeNull();
   } finally {
@@ -627,6 +634,48 @@ it("closes a saved ticket even when the board cannot be read again", async () =>
     // Left open with an error, a second Create would add the ticket twice.
     expect(form.create()).toBeUndefined();
     expect(api.tickets.create).toHaveBeenCalledTimes(1);
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("clears an earlier comment error before saving a dropdown choice", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  const original = ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1");
+  const updated = { ...original, priority: "high" };
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [original] });
+  api.tickets.comments.mockReset().mockResolvedValue([]);
+  api.tickets.comment.mockReset().mockRejectedValue(new TypeError("Failed to fetch"));
+  api.tickets.update.mockReset().mockImplementation(async () => {
+    api.tickets.list.mockResolvedValue({ tickets: [updated] });
+    return updated;
+  });
+  const page = await renderBoard();
+  try {
+    await openTicketAndComment(page, "A draft comment");
+    expect(page.container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Could not reach the server",
+    );
+
+    const priority = page.container.querySelector<HTMLButtonElement>('[id$="-priority"]')!;
+    await act(async () => priority.click());
+    const high = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (option) => option.textContent === "High",
+    )!;
+    await act(async () => high.click());
+    await settle();
+
+    expect(api.tickets.update).toHaveBeenCalledExactlyOnceWith({
+      id: "ticket-1",
+      priority: "high",
+    });
+    expect(priority.textContent).toBe("High");
+    expect(page.container.querySelector('[role="alert"]')).toBeNull();
+    expect(
+      page.container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Comment"]')?.value,
+    ).toBe("A draft comment");
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();

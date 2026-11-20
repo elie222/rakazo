@@ -61,7 +61,6 @@ export function BoardPage() {
   const tickets = ticketsQuery.data?.tickets ?? [];
   const bots = botsQuery.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = tickets.find((ticket) => ticket.id === selectedId);
   const creating = selectedId === "new";
   const move = useTicketChange((failure) => {
     toast.error(errorText(failure));
@@ -74,6 +73,7 @@ export function BoardPage() {
           ticket.id === pendingMove.id ? { ...ticket, status: pendingStatus } : ticket,
         )
       : tickets;
+  const selected = shownTickets.find((ticket) => ticket.id === selectedId);
   const [streamError, setError] = useState("");
   const loadFailed = ticketsQuery.error ?? botsQuery.error;
   const error = streamError || (loadFailed ? errorText(loadFailed) : "");
@@ -211,6 +211,7 @@ export function BoardPage() {
         <TicketDialog
           key={selectedId}
           ticket={selected ?? null}
+          moving={pendingMove?.id === selectedId}
           bots={bots}
           onClose={() => setSelectedId(null)}
         />
@@ -247,10 +248,12 @@ function useTicketChange(onFailed?: (error: Error) => void) {
 
 function TicketDialog({
   ticket,
+  moving,
   bots,
   onClose,
 }: {
   ticket: Ticket | null;
+  moving: boolean;
   bots: Bot[];
   onClose: () => void;
 }) {
@@ -318,13 +321,20 @@ function TicketDialog({
     stale: [commentsOptions.queryKey],
   });
   const ownerBot = bots.find((bot) => bot.id === owner);
-  const busy = saving.pending || commenting.pending || change.pending;
+  const busy = moving || saving.pending || commenting.pending || change.pending;
   const failure = saving.error ?? change.error ?? commenting.error;
   const shownError = failure
     ? errorText(failure)
     : commentsQuery.error
       ? errorText(commentsQuery.error)
       : "";
+
+  function changeField(input: Parameters<typeof change.run>[0]) {
+    if (busy) return;
+    saving.reset();
+    commenting.reset();
+    change.run(input);
+  }
 
   return (
     <Dialog
@@ -392,7 +402,7 @@ function TicketDialog({
                   onValueChange={(value) => {
                     if (!ticket) setOwner(value);
                     else if (value !== ticket.assigneeBotId)
-                      change.run({ id: ticket.id, assigneeBotId: value });
+                      changeField({ id: ticket.id, assigneeBotId: value });
                   }}
                   disabled={busy}
                   required={!ticket}
@@ -424,7 +434,7 @@ function TicketDialog({
                   id={`${formId}-status`}
                   value={pendingChange?.status ?? ticket.status}
                   onValueChange={(status) => {
-                    if (status !== ticket.status) change.run({ id: ticket.id, status });
+                    if (status !== ticket.status) changeField({ id: ticket.id, status });
                   }}
                   disabled={busy}
                   options={TICKET_STATUSES.map((value) => ({ value, label: statuses[value] }))}
@@ -441,7 +451,7 @@ function TicketDialog({
                 onValueChange={(value) => {
                   if (!ticket) setPriority(value);
                   else if (value !== ticket.priority)
-                    change.run({ id: ticket.id, priority: value });
+                    changeField({ id: ticket.id, priority: value });
                 }}
                 disabled={busy}
                 options={TICKET_PRIORITIES.map((value) => ({ value, label: priorities[value] }))}
