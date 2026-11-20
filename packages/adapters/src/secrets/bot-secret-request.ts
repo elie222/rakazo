@@ -1,6 +1,7 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { commandVariableName, isPrivateNetworkHost, SecretHttpRequest } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { combineSignals, redactConnectorPayload } from "../integrations/connector-safety.js";
 import type { RemoteTransportDependencies } from "../mcp/remote-mcp.js";
 import {
@@ -314,6 +315,9 @@ export async function requestWithBotSecret(input: {
     return { error: "Authenticated request failed. Check the destination and credential." };
   } finally {
     controller.abort();
-    await withAbort(fetch.close(), AbortSignal.timeout(1000)).catch(() => undefined);
+    await bestEffort(
+      "close the secret request transport",
+      withAbort(fetch.close(), AbortSignal.timeout(1000)),
+    );
   }
 }
