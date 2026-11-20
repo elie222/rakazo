@@ -172,10 +172,13 @@ export function formatValue(
 }
 
 // Currency symbols lead the figure, short scale and percent marks follow it closely, and words
-// ("ms", "users") follow after a space: $12, 40%, 80K, 120 ms.
+// ("ms", "users") follow after a space: $12, 40%, 80K, 120 ms. A currency goes after any sign
+// the locale puts first, including bidi marks and a true minus: -$12, \u200E-$12 (he), \u2212$12 (sv).
 function withUnit(text: string, unit: string): string {
-  if (/^\p{Sc}$/u.test(unit))
-    return text.startsWith("-") ? `-${unit}${text.slice(1)}` : `${unit}${text}`;
+  if (/^\p{Sc}$/u.test(unit)) {
+    const sign = /^[\u200E\u200F\u061C]*[-\u2212]/.exec(text)?.[0];
+    return sign ? `${sign}${unit}${text.slice(sign.length)}` : `${unit}${text}`;
+  }
   if (/^(?:%|‰|[kKMBT]|bn)$/.test(unit)) return `${text}${unit}`;
   return `${text} ${unit}`;
 }
