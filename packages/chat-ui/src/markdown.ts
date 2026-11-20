@@ -285,7 +285,8 @@ export function sanitizeMarkdownUrl(url: string, allowRelative = false): string 
     (value.startsWith("/") ||
       value.startsWith("./") ||
       value.startsWith("../") ||
-      value.startsWith("#"))
+      value.startsWith("#")) &&
+    !/[\\\p{Cc}]/u.test(value)
   ) {
     return value;
   }
@@ -313,7 +314,9 @@ export function markdownLinkRequiresConfirmation(url: string, appOrigin?: string
     return false;
   }
   if (!httpUrlProtocols.has(parsed.protocol)) return false;
-  const explicitDestination = /^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith("//");
+  const baseOrigin = new URL(markdownLinkBase(appOrigin)).origin;
+  const explicitDestination =
+    /^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith("//") || parsed.origin !== baseOrigin;
   if (!explicitDestination) return false;
   if (!appOrigin) return true;
   try {

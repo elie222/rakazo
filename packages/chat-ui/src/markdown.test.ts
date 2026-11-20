@@ -150,6 +150,21 @@ describe("sanitizeMarkdownUrl", () => {
     expect(sanitizeMarkdownUrl("data:text/html,<script>alert(1)</script>", true)).toBeUndefined();
     expect(sanitizeMarkdownUrl("/docs")).toBeUndefined();
   });
+
+  it("rejects relative values that a browser would read as another host", () => {
+    expect(sanitizeMarkdownUrl("/\\evil.example", true)).toBeUndefined();
+    expect(sanitizeMarkdownUrl("/\\/evil.example", true)).toBeUndefined();
+    expect(sanitizeMarkdownUrl("/\t/evil.example", true)).toBeUndefined();
+    expect(sanitizeMarkdownUrl("\\\\evil.example", true)).toBeUndefined();
+    expect(sanitizeMarkdownUrl("/app/x\\y", true)).toBeUndefined();
+  });
+
+  it("keeps ordinary relative links", () => {
+    expect(sanitizeMarkdownUrl("/app/x", true)).toBe("/app/x");
+    expect(sanitizeMarkdownUrl("./a", true)).toBe("./a");
+    expect(sanitizeMarkdownUrl("../b", true)).toBe("../b");
+    expect(sanitizeMarkdownUrl("#h", true)).toBe("#h");
+  });
 });
 
 describe("markdownLinkRequiresConfirmation", () => {
@@ -160,6 +175,8 @@ describe("markdownLinkRequiresConfirmation", () => {
     expect(markdownLinkRequiresConfirmation("http://evil.example", origin)).toBe(true);
     expect(markdownLinkRequiresConfirmation(" HTTPS://evil.example/a ", origin)).toBe(true);
     expect(markdownLinkRequiresConfirmation("//evil.example/a", origin)).toBe(true);
+    expect(markdownLinkRequiresConfirmation("/\\evil.example", origin)).toBe(true);
+    expect(markdownLinkRequiresConfirmation("/\\/evil.example", origin)).toBe(true);
     expect(markdownLinkRequiresConfirmation("https://files.app.example.test/a", origin)).toBe(true);
     expect(markdownLinkRequiresConfirmation("https://app.example.test:8443/a", origin)).toBe(true);
     expect(markdownLinkRequiresConfirmation("http://app.example.test/a", origin)).toBe(true);
@@ -176,6 +193,7 @@ describe("markdownLinkRequiresConfirmation", () => {
       false,
     );
     expect(markdownLinkRequiresConfirmation("/threads/1", origin)).toBe(false);
+    expect(markdownLinkRequiresConfirmation("/app/x", origin)).toBe(false);
     expect(markdownLinkRequiresConfirmation("./notes.md", origin)).toBe(false);
     expect(markdownLinkRequiresConfirmation("../notes.md", origin)).toBe(false);
     expect(markdownLinkRequiresConfirmation("#section", origin)).toBe(false);
