@@ -249,6 +249,45 @@ export function useComposerActions({
     },
     [],
   );
+  /** Sends a card's typed answer through the composer-answer path targeted at that card. */
+  const typeAnswerMessage = useCallback(
+    async (message: ThreadMessage, text: string, clientNonce?: string) => {
+      const botId = activeBotId.current;
+      const groupId = activeGroupId.current;
+      if (!botId && !groupId) return;
+      clearReadBoundary();
+      const sent = await rpc.threads.send({
+        ...(groupId ? { groupId } : { botId: botId! }),
+        text,
+        replyToMessageId: message.id,
+        answersQuestion: true,
+        clientNonce: clientNonce ?? newClientId(),
+      });
+      setSentCount((count) => count + 1);
+      if (sent && botId && activeBotId.current === botId) {
+        updateSnapshot((current) =>
+          applyThreadSendReceipt(
+            current,
+            {
+              botId,
+              runId: sent.runId,
+              taskId: sent.taskId,
+            },
+            terminalRunReceipts.current,
+          ),
+        );
+      }
+      // The answer is saved; live events can reconcile a failed refresh.
+      try {
+        if (groupId && activeGroupId.current === groupId) {
+          await refreshGroupThreadRef.current(groupId);
+        } else if (botId && activeBotId.current === botId) {
+          await refreshThreadRef.current(botId);
+        }
+      } catch {}
+    },
+    [],
+  );
   const reactToMessage = useCallback(
     async (message: ThreadMessage, reaction: MessageReaction) => {
       const botId = activeBotId.current;
@@ -637,6 +676,7 @@ export function useComposerActions({
     sendMessage,
     stopRun,
     answerMessage,
+    typeAnswerMessage,
     reactToMessage,
     sendError,
     setSendError,

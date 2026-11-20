@@ -1212,6 +1212,7 @@ function SpaceShell() {
               onLoadOlder={loadOlder}
               onOpenBot={openBot}
               onAnswer={composer.answerMessage}
+              onTypeAnswer={composer.typeAnswerMessage}
               onReply={replyToMessage}
               onMarkUnread={markMessageUnread}
               onQuote={quoteMessage}

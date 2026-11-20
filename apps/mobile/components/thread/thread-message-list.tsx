@@ -1,11 +1,12 @@
 import type { ThreadItem } from "@rakazo/core";
 import { threadWindowMessages } from "@rakazo/core";
 import type { ReactElement, ReactNode } from "react";
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ListRenderItem } from "react-native";
 import { ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, View } from "react-native";
 import type { MobileMessage } from "../../lib/api/mobile-types";
 import { mobileTokens } from "../../lib/appearance/appearance";
+import { InlineInputFocusContext } from "../../lib/thread/inline-input-focus";
 import type { ThreadColumnPadding } from "../../lib/thread/scroll/thread-edges";
 import type { ThreadListScroll } from "../../lib/thread/scroll/thread-list-scroll";
 import type { useThreadPaging } from "../../lib/thread/thread-paging";
@@ -68,6 +69,12 @@ export function ThreadMessageList({
   showLatest: () => void;
 }) {
   const tokens = mobileTokens();
+  const [inlineInputFocused, setInlineInputFocused] = useState(false);
+  const inlineFocusCount = useRef(0);
+  const onInlineInputFocus = useCallback((focused: boolean) => {
+    inlineFocusCount.current = Math.max(0, inlineFocusCount.current + (focused ? 1 : -1));
+    setInlineInputFocused(inlineFocusCount.current > 0);
+  }, []);
   const { showPinnedPage, pinnedTarget, pinnedNewerCursor, behavior, state } = scroll;
   const { jumpTarget } = scroll;
   const listContentStyle = useMemo(
@@ -84,91 +91,95 @@ export function ThreadMessageList({
 
   return (
     // The floor keeps a tall suggestion list from sliding under the transparent header.
-    <View
-      ref={scroll.helperViewport}
-      collapsable={false}
-      style={{ flex: 1, minHeight: headerClearance.minHeight, position: "relative" }}
-    >
-      {showPinnedPage ? (
-        <ThreadScrollSurface key={`pinned:${jumpTarget ?? pinnedTarget?.messageId ?? threadKey}`}>
-          <ScrollView
-            key={jumpTarget ?? pinnedTarget?.messageId ?? threadKey}
-            ref={scroll.pinnedList}
-            style={styles.list}
-            // A pinned page always shows the floating jump button (44pt, 12pt from the
-            // bottom), so its last message must be able to scroll clear of it.
-            contentContainerStyle={{
-              paddingTop: headerClearance.padding,
-              paddingBottom: bottomInset + 12 + 44 + 16,
-              ...columnPadding,
+    <InlineInputFocusContext.Provider value={onInlineInputFocus}>
+      <View
+        ref={scroll.helperViewport}
+        collapsable={false}
+        style={{ flex: 1, minHeight: headerClearance.minHeight, position: "relative" }}
+      >
+        {showPinnedPage ? (
+          <ThreadScrollSurface key={`pinned:${jumpTarget ?? pinnedTarget?.messageId ?? threadKey}`}>
+            <ScrollView
+              key={jumpTarget ?? pinnedTarget?.messageId ?? threadKey}
+              ref={scroll.pinnedList}
+              style={styles.list}
+              // A pinned page always shows the floating jump button (44pt, 12pt from the
+              // bottom), so its last message must be able to scroll clear of it.
+              contentContainerStyle={{
+                paddingTop: headerClearance.padding,
+                paddingBottom: bottomInset + 12 + 44 + 16,
+                ...columnPadding,
+              }}
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
+              keyboardShouldPersistTaps={inlineInputFocused ? "handled" : undefined}
+              maintainVisibleContentPosition={messageListPosition}
+              scrollEventThrottle={16}
+              {...pinnedListHandlers}
+            >
+              {loadEarlierControl}
+              {threadWindowMessages(visibleMessages, pinnedNewerCursor).map((message, index) =>
+                renderMessageRow(message, { enableJump: true, index }),
+              )}
+              {pinnedNewerCursor === null ? failedSendBubbles : null}
+              {errorNotice}
+              {pinnedNewerCursor === null ? (
+                workingFooter
+              ) : loadingNewer ? (
+                <ActivityIndicator color={tokens.mutedForeground} style={{ marginVertical: 12 }} />
+              ) : null}
+            </ScrollView>
+          </ThreadScrollSurface>
+        ) : (
+          <ThreadScrollSurface key={`live:${threadKey}`}>
+            <FlatList
+              key={threadKey}
+              ref={scroll.list}
+              data={liveItems}
+              inverted
+              keyExtractor={threadItemKey}
+              // This callback tracks every row input, including reply, reaction and highlight state.
+              extraData={renderMessageRow}
+              style={styles.list}
+              // On iOS a swipe down hides the keyboard, following the finger; Android keeps it open.
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
+              keyboardShouldPersistTaps={inlineInputFocused ? "handled" : undefined}
+              // Inverted, so the bottom padding is the visual top, clear of the transparent header.
+              contentContainerStyle={listContentStyle}
+              // Follow changes to the recovery card while already at the newest content.
+              maintainVisibleContentPosition={liveMessageListPosition}
+              scrollEventThrottle={16}
+              {...scroll.liveListHandlers}
+              ListFooterComponent={loadEarlierControl ?? undefined}
+              ListHeaderComponent={
+                <View onLayout={() => scroll.performScroll(behavior.current.onLayout())}>
+                  {errorNotice}
+                  {failedSendBubbles}
+                  {workingFooter}
+                </View>
+              }
+              renderItem={renderItem}
+              // A screenful of the newest messages draws first and the rest follow in small
+              // batches, so opening a chat neither waits on rows off screen nor stalls behind them.
+              initialNumToRender={6}
+              maxToRenderPerBatch={4}
+            />
+          </ThreadScrollSurface>
+        )}
+        {showPinnedPage || state.detached ? (
+          <JumpToLatestButton
+            bottomInset={bottomInset}
+            insetEnd={columnPadding.paddingEnd}
+            unread={state.unread}
+            onPress={() => {
+              if (showPinnedPage) {
+                showLatest();
+                return;
+              }
+              scroll.follow(behavior.current.jumpToLatest());
             }}
-            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
-            maintainVisibleContentPosition={messageListPosition}
-            scrollEventThrottle={16}
-            {...pinnedListHandlers}
-          >
-            {loadEarlierControl}
-            {threadWindowMessages(visibleMessages, pinnedNewerCursor).map((message, index) =>
-              renderMessageRow(message, { enableJump: true, index }),
-            )}
-            {pinnedNewerCursor === null ? failedSendBubbles : null}
-            {errorNotice}
-            {pinnedNewerCursor === null ? (
-              workingFooter
-            ) : loadingNewer ? (
-              <ActivityIndicator color={tokens.mutedForeground} style={{ marginVertical: 12 }} />
-            ) : null}
-          </ScrollView>
-        </ThreadScrollSurface>
-      ) : (
-        <ThreadScrollSurface key={`live:${threadKey}`}>
-          <FlatList
-            key={threadKey}
-            ref={scroll.list}
-            data={liveItems}
-            inverted
-            keyExtractor={threadItemKey}
-            // This callback tracks every row input, including reply, reaction and highlight state.
-            extraData={renderMessageRow}
-            style={styles.list}
-            // On iOS a swipe down hides the keyboard, following the finger; Android keeps it open.
-            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
-            // Inverted, so the bottom padding is the visual top, clear of the transparent header.
-            contentContainerStyle={listContentStyle}
-            // Follow changes to the recovery card while already at the newest content.
-            maintainVisibleContentPosition={liveMessageListPosition}
-            scrollEventThrottle={16}
-            {...scroll.liveListHandlers}
-            ListFooterComponent={loadEarlierControl ?? undefined}
-            ListHeaderComponent={
-              <View onLayout={() => scroll.performScroll(behavior.current.onLayout())}>
-                {errorNotice}
-                {failedSendBubbles}
-                {workingFooter}
-              </View>
-            }
-            renderItem={renderItem}
-            // A screenful of the newest messages draws first and the rest follow in small
-            // batches, so opening a chat neither waits on rows off screen nor stalls behind them.
-            initialNumToRender={6}
-            maxToRenderPerBatch={4}
           />
-        </ThreadScrollSurface>
-      )}
-      {showPinnedPage || state.detached ? (
-        <JumpToLatestButton
-          bottomInset={bottomInset}
-          insetEnd={columnPadding.paddingEnd}
-          unread={state.unread}
-          onPress={() => {
-            if (showPinnedPage) {
-              showLatest();
-              return;
-            }
-            scroll.follow(behavior.current.jumpToLatest());
-          }}
-        />
-      ) : null}
-    </View>
+        ) : null}
+      </View>
+    </InlineInputFocusContext.Provider>
   );
 }

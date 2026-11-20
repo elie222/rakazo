@@ -10,11 +10,13 @@ import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/con
 import {
   GROUP_MEMBER_MIN,
   MessageBlock as MessageBlockSchema,
+  QUESTION_ALREADY_ANSWERED_ERROR,
   resolveBotAvatarSet,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
+  ClientError,
   callIdFromClientNonce,
   isConversationalRun,
   isQuestionAskBlock,
@@ -57,6 +59,14 @@ import {
 import type { ImageAdmissionRun } from "./thread-image-admission.js";
 import { assertThreadImageInput } from "./thread-image-admission.js";
 import { cancelThreadRuns, finishThreadStop, isStopMessage } from "./thread-stop.js";
+
+/** Strict card-answer send targeted a question that is already closed or belongs to someone else. */
+export class QuestionAlreadyAnsweredError extends ClientError {
+  constructor() {
+    super("CONFLICT", "This question was already answered", QUESTION_ALREADY_ANSWERED_ERROR);
+    this.name = "QuestionAlreadyAnsweredError";
+  }
+}
 
 export type ThreadTarget =
   | {
@@ -318,9 +328,14 @@ export async function lockAndLoadGroupMembers(
  */
 function groupSendTargets(
   members: Array<{ botId: string; name: string }>,
-  input: { text?: string; mentions?: MentionTargetInput[] },
+  input: { text?: string; mentions?: MentionTargetInput[]; answersQuestion?: true },
   replied: string | undefined,
 ) {
+  if (input.answersQuestion) {
+    return replied && members.some((member) => member.botId === replied)
+      ? { botIds: [replied], namesNobody: false }
+      : { botIds: [], namesNobody: false };
+  }
   const targeting = {
     text: input.text ?? "",
     members: members.map((member) => ({ id: member.botId, name: member.name })),
@@ -365,7 +380,7 @@ export function sendTargetBotIds(
   target:
     | { kind: "bot"; botId: string }
     | { kind: "group"; members: Array<{ botId: string; name: string }> },
-  input: { text?: string; mentions?: MentionTargetInput[] },
+  input: { text?: string; mentions?: MentionTargetInput[]; answersQuestion?: true },
   replied?: string,
 ): string[] {
   if (target.kind === "bot") return [target.botId];
@@ -507,6 +522,7 @@ export async function sendThreadMessage(
     replyToMessageId?: string;
     replyQuote?: string;
     fromPage?: true;
+    answersQuestion?: true;
     clientNonce?: string;
     nativeCalendarSessionId?: string;
     nativeCalendarDeviceDigest?: string;
@@ -530,6 +546,9 @@ export async function sendThreadMessage(
   const requestedReplyQuote = input.replyQuote?.trim() || undefined;
   if (requestedReplyQuote && !input.replyToMessageId) {
     throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
+  }
+  if (input.answersQuestion && !input.replyToMessageId) {
+    throw new ClientError("BAD_REQUEST", "answersQuestion requires replyToMessageId.");
   }
 
   const commit = () =>
@@ -626,6 +645,35 @@ export async function sendThreadMessage(
             run.status === "waiting_input" &&
             run.userId === actor.userId,
         )?.id;
+      const loadStrictQuestionRun = async <
+        R extends { id: string; status: string; userId: string },
+      >(
+        runs: readonly R[],
+      ): Promise<R> => {
+        if (!replyToMessageId) throw new QuestionAlreadyAnsweredError();
+        // Re-read under the thread lock so a concurrent answer or another member's card
+        // is refused rather than falling back to a newer question.
+        const card = await tx.message.findFirst({
+          where: { id: replyToMessageId, threadId: target.threadId, role: "bot" },
+          select: { id: true, runId: true, blocks: true },
+        });
+        const parsed = card ? MessageBlockSchema.array().safeParse(card.blocks) : undefined;
+        const pendingQuestion =
+          parsed?.success &&
+          parsed.data.some(
+            (block) =>
+              block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
+          );
+        if (!card?.runId || !pendingQuestion) throw new QuestionAlreadyAnsweredError();
+        const run = runs.find(
+          (candidate) =>
+            candidate.id === card.runId &&
+            candidate.status === "waiting_input" &&
+            candidate.userId === actor.userId,
+        );
+        if (!run) throw new QuestionAlreadyAnsweredError();
+        return run;
+      };
 
       if (target.kind === "bot") {
         const mentionTargets = splitMentionTargets(input.mentions);
@@ -669,6 +717,12 @@ export async function sendThreadMessage(
             imageAdmission: deps.imageAdmission,
           });
         }
+        const strictRun = input.answersQuestion
+          ? await loadStrictQuestionRun(activeRuns)
+          : undefined;
+        if (strictRun && input.noModel) {
+          throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+        }
         const blocks = buildUserMessageBlocks(
           input.text,
           sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
@@ -685,30 +739,44 @@ export async function sendThreadMessage(
           nativeCalendarDeviceDigest: input.nativeCalendarDeviceDigest,
         });
         // A bare "stop" from the owner while work is active is the Stop button, not a reply.
-        const stopping = activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
+        const stopping =
+          !strictRun && activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
         if (input.noModel && !stopping) {
           throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
         const answered: typeof activeRuns = [];
-        const targetedRunId = targetedQuestionRun(activeRuns);
-        // Someone else's question stays on its card; this message starts the sender's own run.
-        for (const run of activeRuns.filter(
-          (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
-        )) {
-          if (targetedRunId && run.id !== targetedRunId) continue;
+        if (strictRun) {
           if (
-            await answerWaitingRunWithTextInTransaction(tx, {
+            !(await answerWaitingRunWithTextInTransaction(tx, {
               ...composerAnswerInput(message),
-              runId: run.id,
-            })
-          )
-            answered.push({ ...run, status: "queued" });
-          else
-            await retireWaitingQuestionInTransaction(tx, {
-              ...composerAnswerInput(message),
-              botId: target.botId,
-              runId: run.id,
-            });
+              messageId: replyToMessageId,
+              runId: strictRun.id,
+            }))
+          ) {
+            throw new QuestionAlreadyAnsweredError();
+          }
+          answered.push({ ...strictRun, status: "queued" });
+        } else {
+          const targetedRunId = targetedQuestionRun(activeRuns);
+          // Someone else's question stays on its card; this message starts the sender's own run.
+          for (const run of activeRuns.filter(
+            (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
+          )) {
+            if (targetedRunId && run.id !== targetedRunId) continue;
+            if (
+              await answerWaitingRunWithTextInTransaction(tx, {
+                ...composerAnswerInput(message),
+                runId: run.id,
+              })
+            )
+              answered.push({ ...run, status: "queued" });
+            else
+              await retireWaitingQuestionInTransaction(tx, {
+                ...composerAnswerInput(message),
+                botId: target.botId,
+                runId: run.id,
+              });
+          }
         }
         if (answered.length) {
           const primary = answered[0];
@@ -906,6 +974,10 @@ export async function sendThreadMessage(
           });
         }
       }
+      const strictRun = input.answersQuestion ? await loadStrictQuestionRun(activeRuns) : undefined;
+      if (strictRun && input.noModel) {
+        throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
+      }
       const blocks = buildUserMessageBlocks(
         input.text,
         sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
@@ -922,7 +994,7 @@ export async function sendThreadMessage(
       // A bare "stop" while any member, or a helper it started, works is the Stop button,
       // as in a bot's own chat.
       const working =
-        !routineRuns.length && isStopMessage(input)
+        !strictRun && !routineRuns.length && isStopMessage(input)
           ? await tx.run.findFirst({
               where: {
                 OR: [
@@ -973,36 +1045,47 @@ export async function sendThreadMessage(
       const rank = (candidate: (typeof activeRuns)[number]) =>
         steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
-      const targetedRunId = targetedQuestionRun(activeRuns);
-      for (const run of activeRuns) {
-        if (run.status === "waiting_input") {
-          // Someone else's question stays on its card; this message starts the sender's own run.
-          if (run.userId !== actor.userId || (targetedRunId && run.id !== targetedRunId)) continue;
-          const answered = await answerWaitingRunWithTextInTransaction(tx, {
-            ...composerAnswerInput(message),
-            runId: run.id,
-          });
-          if (answered) {
-            const queuedForBot = answeredByBotId.get(run.botId) ?? [];
-            queuedForBot.push({ ...run, status: "queued" });
-            answeredByBotId.set(run.botId, queuedForBot);
-          } else {
-            await retireWaitingQuestionInTransaction(tx, {
+      if (strictRun) {
+        const answered = await answerWaitingRunWithTextInTransaction(tx, {
+          ...composerAnswerInput(message),
+          messageId: replyToMessageId,
+          runId: strictRun.id,
+        });
+        if (!answered) throw new QuestionAlreadyAnsweredError();
+        answeredByBotId.set(strictRun.botId, [{ ...strictRun, status: "queued" }]);
+      } else {
+        const targetedRunId = targetedQuestionRun(activeRuns);
+        for (const run of activeRuns) {
+          if (run.status === "waiting_input") {
+            // Someone else's question stays on its card; this message starts the sender's own run.
+            if (run.userId !== actor.userId || (targetedRunId && run.id !== targetedRunId))
+              continue;
+            const answered = await answerWaitingRunWithTextInTransaction(tx, {
               ...composerAnswerInput(message),
-              botId: run.botId,
               runId: run.id,
             });
+            if (answered) {
+              const queuedForBot = answeredByBotId.get(run.botId) ?? [];
+              queuedForBot.push({ ...run, status: "queued" });
+              answeredByBotId.set(run.botId, queuedForBot);
+            } else {
+              await retireWaitingQuestionInTransaction(tx, {
+                ...composerAnswerInput(message),
+                botId: run.botId,
+                runId: run.id,
+              });
+            }
+            continue;
           }
-          continue;
+          if (
+            !STEERABLE_RUN_STATUSES.has(run.status) ||
+            messageBypassesTakeoverWait(run) ||
+            !runHoldsChat(run)
+          )
+            continue;
+          const current = activeByBotId.get(run.botId);
+          if (!current || rank(run) > rank(current)) activeByBotId.set(run.botId, run);
         }
-        if (
-          !STEERABLE_RUN_STATUSES.has(run.status) ||
-          messageBypassesTakeoverWait(run) ||
-          !runHoldsChat(run)
-        )
-          continue;
-        const current = activeByBotId.get(run.botId);
-        if (!current || rank(run) > rank(current)) activeByBotId.set(run.botId, run);
       }
       const runs: Array<{
         id: string;

@@ -152,7 +152,7 @@ export function threadsRoutes(ctx: RouterContext) {
     const noModel =
       setup.needsModel &&
       !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
-    if (noModel && !isStopMessage(input)) {
+    if (noModel && (input.answersQuestion || !isStopMessage(input))) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }
     if (target.kind === "bot") {

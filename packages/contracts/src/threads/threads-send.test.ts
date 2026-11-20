@@ -21,4 +21,18 @@ describe("threads.send input bounds", () => {
     const parsed = threadSendInput.safeParse({ botId: "bot-1", text: "a".repeat(100_001) });
     expect(parsed.success).toBe(false);
   });
+
+  it("requires replyToMessageId when answersQuestion is set", () => {
+    expect(
+      threadSendInput.safeParse({ botId: "bot-1", text: "Kyoto", answersQuestion: true }).success,
+    ).toBe(false);
+    expect(
+      threadSendInput.safeParse({
+        botId: "bot-1",
+        text: "Kyoto",
+        replyToMessageId: "ask-1",
+        answersQuestion: true,
+      }).success,
+    ).toBe(true);
+  });
 });

@@ -28,7 +28,7 @@ import { resumeLiveNotifications } from "../../notifications/live-notifications"
 import { startWorkActivity } from "../../notifications/work-activity";
 import { takePageReply } from "../../pages/pages";
 import type { ThreadListScroll } from "../scroll/thread-list-scroll";
-import { answerThreadMessage } from "../thread-answer";
+import { answerThreadMessage, typeAnswerThreadMessage } from "../thread-answer";
 import type { ThreadHistory } from "../thread-history";
 import { previewMessageText } from "../thread-message-text";
 import type { useThreadAttachments } from "./thread-attachments";
@@ -322,6 +322,26 @@ export function useThreadSend({
     [botId, groupId, readOnly, navigation],
   );
 
+  const typeAnswer = useCallback(
+    (message: MobileMessage, answer: string, clientNonce?: string) =>
+      typeAnswerThreadMessage(
+        {
+          botId,
+          groupId,
+          readOnly,
+          rpc,
+          isCurrentTarget,
+          isFocused: () => navigation.isFocused(),
+          refresh,
+          markRead: markCaughtUp,
+        },
+        message,
+        answer,
+        clientNonce,
+      ),
+    [botId, groupId, readOnly, navigation],
+  );
+
   async function react(message: MobileMessage, reaction: MessageReaction) {
     if (readOnly) return false;
     const targetBotId = botId;
@@ -359,6 +379,7 @@ export function useThreadSend({
     send,
     retry,
     answer,
+    typeAnswer,
     react,
     runSlashAction,
   };

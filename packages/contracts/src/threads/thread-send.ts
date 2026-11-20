@@ -4,6 +4,9 @@ import { NativeCalendarDeviceKey } from "../personal-calendar/personal-calendar.
 import { ATTACHMENT_COUNT_CEILING } from "./attachments.js";
 import { REPLY_QUOTE_MAX_LENGTH, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "./thread.js";
 
+/** Stable error code when a strict card-answer send targets a closed or foreign question. */
+export const QUESTION_ALREADY_ANSWERED_ERROR = "QUESTION_ALREADY_ANSWERED";
+
 export const threadTarget = z
   .object({
     botId: Id.optional(),
@@ -42,6 +45,8 @@ const threadSendFields = threadTarget.safeExtend({
   nativeCalendarDeviceKey: NativeCalendarDeviceKey.optional(),
   /** Sent from the open page: a reply to its card that quotes nothing. */
   fromPage: z.literal(true).optional(),
+  /** Sent from a pending question card: answers only that card, never falls back or stops work. */
+  answersQuestion: z.literal(true).optional(),
   clientNonce: z.string().min(1).max(200).optional(),
 });
 
@@ -60,6 +65,13 @@ export const threadSendInput = threadSendFields.superRefine((input, ctx) => {
       code: "custom",
       message: "replyQuote requires replyToMessageId",
       path: ["replyQuote"],
+    });
+  }
+  if (input.answersQuestion && !input.replyToMessageId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "answersQuestion requires replyToMessageId",
+      path: ["answersQuestion"],
     });
   }
 });

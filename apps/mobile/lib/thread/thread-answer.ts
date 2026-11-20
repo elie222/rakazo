@@ -1,4 +1,5 @@
 import type { LoginFieldInput, RpcInput } from "@rakazo/contracts";
+import { newClientId } from "@rakazo/core";
 import type { MobileMessage } from "../api/mobile-types";
 import { hapticSuccess } from "../native/haptics";
 
@@ -41,6 +42,51 @@ export async function answerThreadMessage(
     ...(fields ? { fields: [...fields] } : {}),
     ...(remember === false ? { remember } : {}),
     ...(dismiss ? { dismiss: true as const } : {}),
+  });
+  // The answer is saved once the server accepts it; a failed refresh only delays the card.
+  if (isCurrentTarget(botId, groupId)) {
+    if (isFocused()) hapticSuccess();
+    await refresh().catch(() => undefined);
+  }
+}
+
+export type ThreadTypeAnswerContext = {
+  botId: string | undefined;
+  groupId: string | undefined;
+  readOnly: boolean;
+  rpc: (proc: "threads/send", body: RpcInput<"threads/send">) => Promise<unknown>;
+  isCurrentTarget: (botId: string | undefined, groupId: string | undefined) => boolean;
+  isFocused: () => boolean;
+  refresh: () => Promise<unknown>;
+  markRead: () => void;
+  clientNonce?: () => string;
+};
+
+/** Sends a card's typed answer through the composer-answer path targeted at that card. */
+export async function typeAnswerThreadMessage(
+  {
+    botId,
+    groupId,
+    readOnly,
+    rpc,
+    isCurrentTarget,
+    isFocused,
+    refresh,
+    markRead,
+    clientNonce: defaultClientNonce = newClientId,
+  }: ThreadTypeAnswerContext,
+  message: Pick<MobileMessage, "id">,
+  answer: string,
+  clientNonce?: string,
+) {
+  if (readOnly || (!botId && !groupId)) return;
+  markRead();
+  await rpc("threads/send", {
+    ...(groupId ? { groupId } : { botId }),
+    text: answer,
+    replyToMessageId: message.id,
+    answersQuestion: true,
+    clientNonce: clientNonce ?? defaultClientNonce(),
   });
   // The answer is saved once the server accepts it; a failed refresh only delays the card.
   if (isCurrentTarget(botId, groupId)) {

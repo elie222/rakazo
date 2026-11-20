@@ -70,6 +70,7 @@ export type MessageRowActions = {
     dismiss?: boolean,
     remember?: false,
   ) => Promise<void>;
+  typeAnswer?: (message: MobileMessage, answer: string, clientNonce?: string) => Promise<void>;
   openBot: (id: string, name: string) => void;
   openComputer: (id: string, name: string) => void;
   previewFile: (artifactId: string) => void;
@@ -496,6 +497,7 @@ export const MessageRow = memo(function MessageRow({
                 separateAnswers={separateAnswers}
                 canDismiss={canDismiss}
                 onAnswer={actions.answer}
+                onTypeAnswer={actions.typeAnswer}
                 onOpenBot={actions.openBot}
                 onOpenComputer={actions.openComputer}
                 onChoiceDismissed={onChoiceDismissed}

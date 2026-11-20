@@ -4,6 +4,7 @@ import {
   CONNECTOR_AUTH_UNAVAILABLE,
   isVoiceAccountErrorCode,
   MCP_OAUTH_CLIENT_REQUIRED,
+  QUESTION_ALREADY_ANSWERED_ERROR,
 } from "@rakazo/contracts";
 import type { CredentialField } from "@rakazo/core";
 import {
@@ -34,6 +35,8 @@ export function errorText(error: unknown, fallback = t`Something went wrong. Try
     return t`This app needs its own sign-in setup to connect.`;
   if (errorCode(error) === MCP_OAUTH_CLIENT_REQUIRED) return t`Needs an OAuth client ID`;
   if (errorCode(error) === COMPUTER_RUNNING_ERROR) return t`Stop the computer first.`;
+  if (errorCode(error) === QUESTION_ALREADY_ANSWERED_ERROR)
+    return t`This question was already answered`;
   return (
     voiceAccountErrorText(error) ??
     userErrorMessage(error, { fallback, offline: t`Could not reach the server` })
