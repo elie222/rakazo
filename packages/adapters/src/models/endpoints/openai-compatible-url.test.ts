@@ -267,6 +267,9 @@ describe("model provider allowlist and built-in public hosts", () => {
     expect(assertAllowedOpenAiCompatibleUrl("https://ollama.com/v1", OWNER).href).toBe(
       "https://ollama.com/v1",
     );
+    expect(assertAllowedOpenAiCompatibleUrl("https://llmtr.com/v1", OWNER).href).toBe(
+      "https://llmtr.com/v1",
+    );
     process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "ollama-cloud";
     expect(assertAllowedOpenAiCompatibleUrl("https://ollama.com/v1", OWNER).href).toBe(
       "https://ollama.com/v1",
