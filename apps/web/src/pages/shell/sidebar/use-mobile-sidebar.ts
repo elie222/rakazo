@@ -22,7 +22,11 @@ export function useMobileSidebar() {
   useLayoutEffect(() => {
     if (!mobileSidebarOpen && restoreFocus.current) {
       restoreFocus.current = false;
-      navigationTriggerRef.current?.focus();
+      const trigger = navigationTriggerRef.current;
+      const target = trigger?.closest("[inert]")
+        ? document.querySelector<HTMLElement>('aside[data-panel]:not([data-panel="closed"])')
+        : trigger;
+      target?.focus({ preventScroll: true });
     }
   }, [mobileSidebarOpen]);
   const swipeRef = useRef<{ startX: number; startY: number } | null>(null);

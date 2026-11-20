@@ -184,3 +184,18 @@ it("returns keyboard focus to the navigation opener after Escape", () => {
   expect(document.activeElement).toBe(latest.navigationTriggerRef.current);
   drawerControl.remove();
 });
+
+it("returns focus to the side panel while the navigation opener is inert", () => {
+  menuOpen = false;
+  mount(false);
+  const trigger = latest.navigationTriggerRef.current!;
+  trigger.setAttribute("inert", "");
+  const panel = document.createElement("aside");
+  panel.dataset.panel = "settings";
+  panel.tabIndex = -1;
+  document.body.append(panel);
+  act(() => latest.setMobileSidebarOpen(true));
+  pressEscape();
+  expect(document.activeElement).toBe(panel);
+  panel.remove();
+});
