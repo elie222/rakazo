@@ -1,4 +1,4 @@
-import type { Actor, RunActivityRow } from "@rakazo/contracts";
+import type { Actor, RunActivityRow, RunTrigger } from "@rakazo/contracts";
 import { MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -21,7 +21,10 @@ const ACTIVITY_HIDDEN_TRIGGERS = [
   HELPER_RESULT_TRIGGER,
 ] as const;
 // The prompt of these runs is written by the product, not the user, so it is no preview.
-const SYSTEM_PROMPT_TRIGGERS: readonly string[] = ["created", "call_end"];
+const SYSTEM_PROMPT_TRIGGERS: readonly string[] = [
+  "created",
+  "call_end",
+] as const satisfies readonly RunTrigger[];
 const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
 function promptSnippet(prompt: string, max = 120): string {
