@@ -159,6 +159,21 @@ export function SkillsDialog({
             <AgentSkills />
           </div>
         </section>
+        {installs.isLoadingError ? (
+          <div
+            role="alert"
+            className="mx-2.5 flex flex-wrap items-center gap-3 text-body text-muted-foreground"
+          >
+            <Trans>Could not load installed skill packs.</Trans>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void installs.refetch({ cancelRefetch: false })}
+            >
+              <Trans>Retry</Trans>
+            </Button>
+          </div>
+        ) : null}
         {skillSets.length ? (
           <section data-testid="plugin-skill-sets">
             <h3 className="mb-2 px-2.5 text-body font-medium text-muted-foreground">
