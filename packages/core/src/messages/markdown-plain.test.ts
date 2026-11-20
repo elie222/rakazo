@@ -133,6 +133,21 @@ describe("plainTextFromMarkdown", () => {
     );
   });
 
+  it.each([
+    ["x = 2 * y + 3 * z", "x = 2 * y + 3 * z"],
+    ["2 ** 3 ** 4", "2 ** 3 ** 4"],
+    ["cost * 5 and 6* items", "cost * 5 and 6* items"],
+    ["**total** = 2 * 3", "total = 2 * 3"],
+    ["**bold**", "bold"],
+    ["*it*", "it"],
+    ["*a*", "a"],
+    ["**bold** and *it*", "bold and it"],
+    ["**a** * b", "a * b"],
+    ["**a** **b**", "a b"],
+  ])("keeps operators and strips only emphasis that is flanked: %s", (source, expected) => {
+    expect(plainTextFromMarkdown(source)).toBe(expected);
+  });
+
   it("keeps link labels and heading or list words", () => {
     expect(plainTextFromMarkdown("# Status\n- see [the report](https://example.com)")).toBe(
       "Status see the report",
@@ -366,7 +381,9 @@ describe("plainTextFromMarkdown", () => {
 
   it("returns empty when only markers remain", () => {
     expect(plainTextFromMarkdown("")).toBe("");
+    expect(plainTextFromMarkdown("   **a**   ")).toBe("a");
     expect(plainTextFromMarkdown("   **  **   ")).toBe("");
+    expect(plainTextFromMarkdown("****")).toBe("");
   });
 });
 

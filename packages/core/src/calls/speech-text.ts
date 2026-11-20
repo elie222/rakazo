@@ -73,7 +73,13 @@ function stripSingleEmphasis(text: string): string {
     const char = chars[k] ?? "";
     for (const [marker, next] of Object.entries(nextCloser)) {
       if (LINE_END.test(char)) next[k] = -1;
-      else if (char === marker && k > 0 && !SPACE.test(chars[k - 1] ?? " ") && !isWordChar(k + 1))
+      else if (
+        char === marker &&
+        k > 0 &&
+        !SPACE.test(chars[k - 1] ?? " ") &&
+        chars[k - 1] !== marker &&
+        !isWordChar(k + 1)
+      )
         next[k] = k;
       else next[k] = next[k + 1] ?? -1;
     }
@@ -84,7 +90,13 @@ function stripSingleEmphasis(text: string): string {
   while (i < n) {
     const char = chars[i] ?? "";
     const next = nextCloser[char];
-    if (next && !isWordChar(i - 1) && i + 1 < n && !SPACE.test(chars[i + 1] ?? " ")) {
+    if (
+      next &&
+      !isWordChar(i - 1) &&
+      i + 1 < n &&
+      !SPACE.test(chars[i + 1] ?? " ") &&
+      chars[i + 1] !== char
+    ) {
       const close = next[i + 1] ?? -1;
       if (close !== -1) {
         out += chars.slice(i + 1, close).join("");
@@ -144,7 +156,7 @@ export function speakable(input: string): string {
   text = text.replace(/^\s*\d+[.)]\s+/gm, "");
   text = text.replace(/^\s*>\s?/gm, "");
 
-  text = text.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  text = text.replace(/(\*\*|__)(?=\S)(.*?\S)\1/g, "$2");
   text = stripSingleEmphasis(text);
   text = text.replace(/~~(.*?)~~/g, "$1");
 
