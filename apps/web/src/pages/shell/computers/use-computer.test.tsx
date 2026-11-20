@@ -24,6 +24,8 @@ vi.mock("../../../components/computers/ComputerMaintenanceActions", () => ({
   ComputerMaintenanceActions: () => <button type="button">Recover computer</button>,
 }));
 
+import { ComposerReplyPreview } from "../chat/chat-context";
+
 import type { ComputerState } from "./use-computer";
 import { useComputerControls, useComputerState } from "./use-computer";
 
@@ -698,6 +700,7 @@ it("reads no screen for a failed control call of a bot that is no longer shown",
 });
 
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
+  const dismissReply = vi.fn();
   function Controls() {
     state = useComputerState({
       rpc: {} as never,
@@ -721,7 +724,12 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
       onUpgrade: vi.fn(),
     });
     // Stands in for the view's "Teach a task" goal box, whose popover lets a composing Escape bubble.
-    return <textarea aria-label="Goal" />;
+    return (
+      <>
+        <textarea aria-label="Goal" />
+        <ComposerReplyPreview author="Helper" text="Quote" onDismiss={dismissReply} />
+      </>
+    );
   }
   await act(async () => root.render(<Controls />));
   await act(async () => state.setComputerOpen(true));
@@ -731,15 +739,18 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
       goal.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, ...init }));
     });
   const consume = (event: Event) => event.preventDefault();
-  document.addEventListener("keydown", consume);
+  goal.addEventListener("keydown", consume);
   await press({ cancelable: true });
-  document.removeEventListener("keydown", consume);
+  goal.removeEventListener("keydown", consume);
   expect(state.computerOpen).toBe(true);
   await press({ isComposing: true });
   await press({ keyCode: 229 });
   expect(state.computerOpen).toBe(true);
-  await press();
+  await press({ cancelable: true });
   expect(state.computerOpen).toBe(false);
+  expect(dismissReply).not.toHaveBeenCalled();
+  await press({ cancelable: true });
+  expect(dismissReply).toHaveBeenCalledOnce();
 });
 
 it("reads a running computer's screen for the bot panel without keeping it awake or waking it", async () => {
