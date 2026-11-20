@@ -55,8 +55,10 @@ export async function userProcesses(proc = "/proc"): Promise<UserProcess[]> {
         if (code !== "EACCES" && code !== "EPERM") throw error;
         return "";
       });
-      const argv = (await readFile(path.join(dir, "cmdline"), "utf8")).split("\0");
+      let argv = (await readFile(path.join(dir, "cmdline"), "utf8")).split("\0");
       if (argv.at(-1) === "") argv.pop();
+      // Chromium rewrites its processes' titles, joining their arguments with spaces.
+      if (argv.length === 1 && argv[0]?.includes(" --")) argv = argv[0].split(" ");
       const ppid = Number(/^PPid:\s+(\d+)/m.exec(status)?.[1] ?? 0);
       found.push({ pid: Number(entry), ppid, comm, exe, argv });
     } catch (error) {

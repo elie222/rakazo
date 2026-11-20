@@ -107,6 +107,21 @@ describe("app accessibility", () => {
     );
   });
 
+  it("asks for an app started with only the option, and tells apart one Rakazo's launcher started", async () => {
+    const { access, dirs, answer, ask } = await setup(browser(["--force-renderer-accessibility"]));
+    await access.explain("browser", FALLBACK);
+    expect(ask).toHaveBeenCalledTimes(1);
+    answer.resolve(true);
+    await vi.waitFor(async () =>
+      expect(await readFile(path.join(dirs.user, "web-browser.desktop"), "utf8")).toContain(
+        "X-Rakazo-Launcher=",
+      ),
+    );
+    expect(await access.explain("browser", FALLBACK)).toBe(
+      "Web Browser was started for screen control but still doesn't share its window. Ask the user to quit Web Browser completely and open it again from their app launcher.",
+    );
+  });
+
   it("doesn't ask again after Not Now until Rakazo restarts", async () => {
     const { access, answer, ask } = await setup(browser());
     await access.explain("browser", FALLBACK);
@@ -145,11 +160,6 @@ describe("app accessibility", () => {
     for (const [processes, selfPid, expected] of [
       [plain, 99, FALLBACK],
       [browser(), 21, "Rakazo can't use its own window."],
-      [
-        browser(["--force-renderer-accessibility"]),
-        99,
-        "browser was started for screen control but still doesn't share its window. Ask the user to quit browser completely and open it again from their app launcher.",
-      ],
     ] as const) {
       const { access, ask } = await setup([...processes], selfPid);
       expect(await access.explain("browser", FALLBACK)).toBe(expected);

@@ -97,16 +97,17 @@ export function createAppAccessibility(deps: {
       const found = inspectApp(app, await deps.processes(), deps.selfPid);
       if (found?.self) return "Rakazo can't use its own window.";
       if (!found?.engine) return fallback;
-      if (found.sharing)
-        return `${app} was started for screen control but still doesn't share its window. Ask the user to quit ${app} completely and open it again from their app launcher.`;
       const entry = launcherEntry(found.launchers, await readDesktopEntries(deps.dirs.system));
       if (!entry) return fallback;
       const name = entry.keys.get("Name") || app;
       const owner = await launcherOwner(entry.id, deps.dirs);
       if (owner === "user")
         return `${name} has a launcher entry the user made, so Rakazo leaves it alone. Ask the user to make it start ${name} with ACCESSIBILITY_ENABLED=1 set and the ${SHARING_OPTION} option, then quit and reopen ${name}.`;
+      // The option alone doesn't put an app on the bus; only Rakazo's launcher sets both.
       if (owner === "rakazo")
-        return `${name} is set up for screen control but is still running from before. Ask the user to quit ${name} completely and open it again.`;
+        return found.sharing
+          ? `${name} was started for screen control but still doesn't share its window. Ask the user to quit ${name} completely and open it again from their app launcher.`
+          : `${name} is set up for screen control but is still running from before. Ask the user to quit ${name} completely and open it again.`;
       if (declined.has(entry.id))
         return `The user chose not to set ${name} up for screen control for now.`;
       if (!asking.has(entry.id)) {
