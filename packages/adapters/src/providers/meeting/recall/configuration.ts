@@ -17,6 +17,14 @@ export async function configuredRecallMeeting(source: NodeJS.ProcessEnv) {
   const origin = `https://${region}.recall.ai`;
   const meeting = new RecallMeetingProvider({ origin, apiKey, verification: { secret, prefix } });
 
+  const calendarProvider = source.MEETING_CALENDAR_PROVIDER?.trim() || "google";
+  if (calendarProvider === "caldav") {
+    // The CalDAV calendar lives outside this provider; it reserves bots through this API.
+    const { RecallScheduledBots } = await import("./recall-scheduled-bots.js");
+    return { meeting, scheduledBots: new RecallScheduledBots({ origin, apiKey }) };
+  }
+  if (calendarProvider !== "google") throw new Error("Unknown meeting calendar provider");
+
   const oauthClientId = source.MEETING_CALENDAR_CLIENT_ID?.trim();
   const oauthClientSecret = source.MEETING_CALENDAR_CLIENT_SECRET?.trim();
   if (!oauthClientId && !oauthClientSecret) return { meeting };

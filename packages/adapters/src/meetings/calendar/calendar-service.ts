@@ -11,15 +11,17 @@ import { ClientError, deadlineSignal } from "@rakazo/core";
 import type { HeldLease, Prisma, PrismaClient } from "@rakazo/db";
 import { assertLeaseHeld, LeaseHeldError, runAsSystem, withLease } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
-import { parseMeetingUrl } from "../meeting-link.js";
 import {
   countSpaceMeetingsForDay,
   MEETING_DAILY_LIMIT,
   MEETING_SESSION_DURATION,
   meetingUtcDayStart,
 } from "../meeting-service.js";
+import type { MeetingCalendarAccountVault } from "./calendar-accounts.js";
 import { CalendarAuthorization, signCalendarConnectionRef } from "./calendar-authorization.js";
+import { releaseSessionBooking } from "./calendar-release.js";
 import {
+  eligibleCalendarLink,
   matchCalendarRule,
   meetingBookingKey,
   selectedCalendarRule,
@@ -56,6 +58,8 @@ export interface MeetingCalendarOptions {
   oauthStateKey: string;
   buildJoin: (input: MeetingJoinRequest) => MeetingJoinRequest | Promise<MeetingJoinRequest>;
   publish: (owner: Owner) => Promise<void>;
+  /** Seals the account details of password sign-in calendars (CalDAV). */
+  accounts?: MeetingCalendarAccountVault;
   now?: () => Date;
 }
 
@@ -91,6 +95,7 @@ export class MeetingCalendarService {
       ),
       disconnecting: connection?.disconnecting ?? false,
       calendarLabel: provider.calendarLabel,
+      signIn: provider.signIn ?? "oauth",
     };
     if (!connection?.externalCalendarId || connection.disconnecting)
       return { ...calendar, events: [] };
@@ -173,6 +178,10 @@ export class MeetingCalendarService {
     const connection = await this.connection(actor);
     if (!connection?.externalCalendarId || connection.disconnecting) {
       throw new ClientError("CONFLICT", "Connect a calendar first.");
+    }
+    const owner = provider.eventCalendarId?.(eventId);
+    if (owner !== undefined && owner !== connection.externalCalendarId) {
+      throw new ClientError("NOT_FOUND", "This calendar meeting is no longer available.");
     }
     const event = await provider.getEvent(eventId, deadlineSignal(10_000));
     if (!event || event.calendarId !== connection.externalCalendarId || !this.eligibleLink(event)) {
@@ -357,6 +366,12 @@ export class MeetingCalendarService {
             throw new RetryJobLaterError(CONNECT_RETRY_MS);
           }
           if (status !== "connected") {
+            if (provider.schedulesPerSession) {
+              // These participants are not tied to the calendar, so removing it keeps them.
+              for (const booking of connection.bookings)
+                if (booking.startsAt > this.now())
+                  await this.removeBooking(connectionId, booking, lease);
+            }
             await provider.disconnect(calendarId, deadlineSignal(12_000, lease.signal));
             await prisma.$transaction(async (tx) => {
               await assertLeaseHeld(tx, lease);
@@ -613,10 +628,10 @@ export class MeetingCalendarService {
   private async scheduleCalendarRefresh(connectionId: string) {
     // Sparse backup for missed webhooks, with a stable per-calendar phase so
     // all connections on a deployment do not refresh together.
-    const phase =
-      createHash("sha256").update(connectionId).digest().readUInt32BE() % CALENDAR_REFRESH_MS;
+    const interval = this.options.provider.refreshIntervalMs ?? CALENDAR_REFRESH_MS;
+    const phase = createHash("sha256").update(connectionId).digest().readUInt32BE() % interval;
     const after = this.now().getTime() + 60_000;
-    const time = Math.ceil((after - phase) / CALENDAR_REFRESH_MS) * CALENDAR_REFRESH_MS + phase;
+    const time = Math.ceil((after - phase) / interval) * interval + phase;
     await this.options.jobs.enqueue({
       ...this.backup(connectionId),
       availableAt: new Date(time),
@@ -840,8 +855,12 @@ export class MeetingCalendarService {
   }
 
   private async removeBooking(connectionId: string, booking: Booking, lease: HeldLease) {
-    await this.options.provider.unschedule(booking.eventId, lease.signal);
-    await this.dropBooking(connectionId, booking, lease);
+    const { prisma, provider } = this.options;
+    const drop = () => this.dropBooking(connectionId, booking, lease);
+    if (provider.schedulesPerSession)
+      return releaseSessionBooking(prisma, provider, connectionId, booking, lease, drop);
+    await provider.unschedule(booking.eventId, lease.signal);
+    await drop();
   }
 
   private async dropBooking(connectionId: string, booking: Booking, lease: HeldLease) {
@@ -913,25 +932,8 @@ export class MeetingCalendarService {
     return { upcoming, startsThrough: new Date(upcoming.getTime() + CALENDAR_LOOKAHEAD_MS) };
   }
 
-  private eligibleLink(
-    event: MeetingCalendarEvent,
-    { upcoming, startsThrough } = this.upcomingWindow(),
-  ) {
-    if (
-      event.cancelled ||
-      event.declined ||
-      event.startsAt <= upcoming ||
-      event.startsAt > startsThrough ||
-      event.endsAt <= event.startsAt ||
-      !event.meetingUrl
-    )
-      return null;
-    try {
-      return parseMeetingUrl(event.meetingUrl);
-    } catch (error) {
-      if (error instanceof ClientError) return null;
-      throw error;
-    }
+  private eligibleLink(event: MeetingCalendarEvent, window = this.upcomingWindow()) {
+    return eligibleCalendarLink(event, window);
   }
 
   private requireEnabled(spaceId: string) {

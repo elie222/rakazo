@@ -7,6 +7,7 @@ import {
   MeetingCalendarService,
   meetingCalendarScope,
   PostgresRealtimeFanout,
+  PrismaMeetingCalendarAccounts,
   PrismaPushTokenStore,
   UserDevices,
   unwrapEnvFromKeyManager,
@@ -60,7 +61,14 @@ try {
   } else {
     const active = action === "reactivate";
     const events = createThreadEvents(prisma, realtime);
-    const provider = active ? undefined : (await configuredMeetingProviders()).calendar;
+    const provider = active
+      ? undefined
+      : (
+          await configuredMeetingProviders(
+            process.env,
+            new PrismaMeetingCalendarAccounts(prisma, env.encryptionKey),
+          )
+        ).calendar;
     const meetingCalendar =
       provider &&
       new MeetingCalendarService({
