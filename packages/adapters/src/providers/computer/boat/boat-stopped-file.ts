@@ -6,7 +6,7 @@ import {
   ResponseTooLargeError,
   readResponseWithin,
 } from "@rakazo/core";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { BoatSandboxSdk } from "./boat-client.js";
 import { BoatApiError } from "./boat-errors.js";
 
@@ -41,13 +41,15 @@ export async function readBoatStoppedFile(
   const signal = deadlineSignal(STOPPED_READ_TIMEOUT_MS, callerSignal);
   const startedAt = Date.now();
   const stepMs: Partial<Record<Step, number>> = {};
-  const inFlightAtDeadline: Step[] = [];
+  const unfinished = new Map<Step, number>();
+  const cutOff = new Set<Step>();
   const report: { reason?: string; status?: number; bytes?: number } = {};
 
   const timed = <T>(step: Step, call: Promise<T>): Promise<T> => {
-    const stepStartedAt = Date.now();
+    unfinished.set(step, Date.now());
     const finish = () => {
-      stepMs[step] = Date.now() - stepStartedAt;
+      stepMs[step] = Date.now() - (unfinished.get(step) ?? startedAt);
+      unfinished.delete(step);
     };
     return call.then(
       (value) => {
@@ -56,7 +58,7 @@ export async function readBoatStoppedFile(
       },
       (error: unknown) => {
         finish();
-        if (signal.aborted && !callerSignal.aborted) inFlightAtDeadline.push(step);
+        if (signal.aborted && !callerSignal.aborted) cutOff.add(step);
         throw error;
       },
     );
@@ -69,12 +71,12 @@ export async function readBoatStoppedFile(
   const startAside = <T>(step: Step, call: (signal: AbortSignal) => Promise<T>) => {
     const controller = new AbortController();
     const request = timed(step, call(anySignal([signal, controller.signal])));
-    request.then(undefined, () => undefined);
+    void bestEffort(`unused Boat ${step} request`, request);
     return {
       request,
       drop: (release?: (value: T) => void) => {
         controller.abort();
-        request.then(release, () => undefined);
+        void bestEffort(`discard Boat ${step} request`, request.then(release));
       },
     };
   };
@@ -180,13 +182,16 @@ export async function readBoatStoppedFile(
     outcome = "error";
     throw error;
   } finally {
+    const now = Date.now();
+    for (const [step, stepStartedAt] of unfinished) stepMs[step] = now - stepStartedAt;
     getLogger().info("computer.stopped_file_read", {
       provider: "boat",
       outcome,
       ...report,
-      totalMs: Date.now() - startedAt,
+      totalMs: now - startedAt,
       stepMs,
-      inFlightAtDeadline: inFlightAtDeadline.length ? inFlightAtDeadline : undefined,
+      unfinishedSteps:
+        unfinished.size + cutOff.size ? [...cutOff, ...unfinished.keys()] : undefined,
     });
   }
 }

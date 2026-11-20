@@ -232,7 +232,6 @@ describe("stopped workspace files", () => {
     ).rejects.toThrow("cancelled");
     const read = sink.events.find((event) => event.message === "computer.stopped_file_read");
     expect(read).toMatchObject({ outcome: "aborted" });
-    expect(read).not.toHaveProperty("inFlightAtDeadline");
   });
 
   it("names the step that was still running when the deadline passed", async () => {
@@ -260,7 +259,7 @@ describe("stopped workspace files", () => {
         message: "computer.stopped_file_read",
         outcome: "fallback",
         reason: "deadline",
-        inFlightAtDeadline: ["stop"],
+        unfinishedSteps: ["stop"],
       }),
     );
   });
