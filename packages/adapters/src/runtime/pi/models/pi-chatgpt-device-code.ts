@@ -189,22 +189,31 @@ export function createChatGptDeviceCodeLogin(options: { fetch?: typeof fetch } =
       },
     );
 
-    return persist(async () => {
-      const response = await post(
-        "token exchange",
-        TOKEN_URL,
-        new URLSearchParams({
-          grant_type: "authorization_code",
-          client_id: CLIENT_ID,
-          code: authorization.authorizationCode,
-          code_verifier: authorization.codeVerifier,
-          redirect_uri: DEVICE_REDIRECT_URI,
-        }).toString(),
-        "application/x-www-form-urlencoded",
-      );
-      if (!response.ok) throw await failure("token exchange", response);
-      return credentialOf(await readJson(response));
-    });
+    // The authorization code is single-use: retry only an answer that says the provider failed,
+    // never a timeout or a cut-off body after which it may already be spent.
+    return retry(
+      async () => {
+        const response = await post(
+          "token exchange",
+          TOKEN_URL,
+          new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: CLIENT_ID,
+            code: authorization.authorizationCode,
+            code_verifier: authorization.codeVerifier,
+            redirect_uri: DEVICE_REDIRECT_URI,
+          }).toString(),
+          "application/x-www-form-urlencoded",
+        );
+        if (!response.ok) throw await failure("token exchange", response);
+        return credentialOf(await readJson(response));
+      },
+      {
+        attempts: REQUEST_ATTEMPTS,
+        retryable: (error) => error instanceof SignInHttpError && isTransient(error),
+        signal,
+      },
+    );
   };
 }
 
@@ -219,7 +228,8 @@ async function errorCode(response: Response): Promise<string | undefined> {
   }
   const error = json.error;
   const code = error && typeof error === "object" ? (error as { code?: unknown }).code : error;
-  return typeof code === "string" ? code : undefined;
+  // Only an OAuth error name is kept; anything else could be free text.
+  return typeof code === "string" && /^[a-z_]{1,64}$/.test(code) ? code : undefined;
 }
 
 function credentialOf(json: Record<string, unknown>): OAuthCredential {

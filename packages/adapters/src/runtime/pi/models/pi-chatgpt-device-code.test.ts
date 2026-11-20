@@ -128,6 +128,28 @@ describe("ChatGPT device-code sign-in", () => {
     expect(provider.count("poll")).toBe(2);
   });
 
+  it("does not retry a token exchange whose answer was cut off, since the code may be spent", async () => {
+    const provider = fakeProvider({
+      poll: [approved()],
+      token: [new TypeError("fetch failed"), tokenAnswer()],
+    });
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
+
+    await expect(login).rejects.toThrow("could not reach the provider");
+    expect(provider.count("token")).toBe(1);
+  });
+
+  it("keeps only an OAuth error name from a refusal", async () => {
+    const provider = fakeProvider({
+      poll: [status(400, JSON.stringify({ error: `free text ${PROVIDER_BODY}` }))],
+    });
+    const error = await createChatGptDeviceCodeLogin({ fetch: provider.fetch })(
+      interaction().value,
+    ).catch((failure: unknown) => failure as Error);
+
+    expect(error.message).toBe("Device sign-in poll failed (status 400).");
+  });
+
   it("slows down when the provider asks", async () => {
     const provider = fakeProvider({
       poll: [status(400, JSON.stringify({ error: "slow_down" })), approved()],
