@@ -217,9 +217,14 @@ describe("screen driver download", () => {
       // A process that exits mid-scan leaves an entry whose files are gone.
       await mkdir(path.join(proc, "12"));
       expect(await runningProcessNamed("missing", proc)).toBe(false);
-      // The kernel cuts a script's command name to 15 characters.
-      await fake("13", "photo-organize", "/usr/bin/python3.13");
-      await fake("14", "photo-organizer", "/usr/bin/python3.13");
+      // The kernel cuts a script's command name to 15 characters; the script's path tells them apart.
+      const script = async (pid: string, file: string) => {
+        await fake(pid, path.basename(file).slice(0, 15), "/usr/bin/python3.13");
+        await writeFile(path.join(proc, pid, "cmdline"), `python3\0${file}\0--quiet\0`);
+      };
+      await script("13", "/opt/tools/photo-organizer-cli");
+      expect(await runningProcessNamed("photo-organizer-app", proc)).toBe(false);
+      await script("14", "/opt/tools/photo-organizer-app");
       expect(await runningProcessNamed("photo-organizer-app", proc)).toBe(true);
     } finally {
       await rm(proc, { recursive: true, force: true });
@@ -242,6 +247,11 @@ describe("screen driver download", () => {
       expect(await runningProcessNamed("elsewhere", proc)).toBe(false);
       expect(await runningProcessNamed("here", proc)).toBe(true);
       expect(await runningProcessNamed("unrecorded", proc)).toBe(true);
+      // A process whose session can't be read stops the scan rather than counting as unrecorded.
+      await mkdir(path.join(proc, "13"));
+      await writeFile(path.join(proc, "13", "comm"), "unreadable\n");
+      await mkdir(path.join(proc, "13", "sessionid"));
+      await expect(runningProcessNamed("unreadable", proc)).rejects.toThrow();
     } finally {
       await rm(proc, { recursive: true, force: true });
     }

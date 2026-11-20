@@ -164,7 +164,14 @@ export function screenDriverInstaller(options: {
 
 /** The login session a process was started in, unless the kernel didn't record one. */
 async function loginSession(dir: string): Promise<string | undefined> {
-  const id = (await readFile(path.join(dir, "sessionid"), "utf8").catch(() => "")).trim();
+  let id: string;
+  try {
+    id = (await readFile(path.join(dir, "sessionid"), "utf8")).trim();
+  } catch (error) {
+    // A kernel built without login sessions has no such file.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return undefined;
+  }
   return id && id !== UNSET_LOGIN_SESSION ? id : undefined;
 }
 const UNSET_LOGIN_SESSION = "4294967295";
@@ -197,7 +204,12 @@ export async function runningProcessNamed(name: string, proc = "/proc"): Promise
         if (code !== "EACCES" && code !== "EPERM") throw error;
         return "";
       });
-      if (comm === command || path.basename(exe).toLowerCase() === wanted) return true;
+      if (path.basename(exe).toLowerCase() === wanted) return true;
+      if (comm !== command) continue;
+      if (command === wanted) return true;
+      // A cut name matches every script sharing its first characters, so check the script's own.
+      const args = (await readFile(path.join(dir, "cmdline"), "utf8")).split("\0").slice(0, 2);
+      if (args.some((arg) => path.basename(arg).toLowerCase() === wanted)) return true;
     } catch (error) {
       // The process exited while it was being read: Linux answers ENOENT or ESRCH.
       const code = (error as NodeJS.ErrnoException).code;
