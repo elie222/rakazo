@@ -1,8 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MemoryDream } from "@rakazo/contracts";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@rakazo/ui-web";
+import { Button, Tabs, TabsContent, TabsList, TabsTrigger } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { useSpaceQueries } from "../../../lib/query/query";
+import { useSave, useSpaceQueries } from "../../../lib/query/query";
+import { errorText } from "../../../lib/query/user-error";
 import { MemoryDocumentList } from "../../space/KnowledgeSection";
 import { SettingsCard, SwitchRow } from "./bot-settings-sections";
 
@@ -93,6 +94,10 @@ export function DreamsList({ botId, memoryOff }: { botId: string; memoryOff: boo
   const queries = useSpaceQueries();
   const dreams =
     useQuery(queries.memory.dreams.queryOptions({ input: { botId } })).data ?? NO_DREAMS;
+  const dreamNow = useSave({
+    save: (_: undefined, rpc) => rpc.memory.dreamNow({ botId }),
+    stale: [queries.memory.dreams.queryKey({ input: { botId } })],
+  });
   if (memoryOff) {
     return (
       <p data-testid="bot-dreams-paused" className="text-body-sm text-muted-foreground">
@@ -102,9 +107,24 @@ export function DreamsList({ botId, memoryOff }: { botId: string; memoryOff: boo
   }
   return (
     <div className="space-y-3">
-      <p className="text-body-sm text-muted-foreground">
-        <Trans>Between conversations, the bot rewrites its notes from your own words.</Trans>
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-body-sm text-muted-foreground">
+          <Trans>Between conversations, the bot rewrites its notes from your own words.</Trans>{" "}
+          <Trans>Dreaming now uses one model call.</Trans>
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="bot-dream-now"
+          disabled={dreamNow.pending}
+          onClick={() => dreamNow.run(undefined)}
+        >
+          <Trans>Dream now</Trans>
+        </Button>
+      </div>
+      {dreamNow.error ? (
+        <p className="text-body-sm text-destructive">{errorText(dreamNow.error)}</p>
+      ) : null}
       {dreams.length === 0 ? (
         <p data-testid="bot-dreams-empty" className="text-body">
           <Trans>No dreams yet.</Trans>

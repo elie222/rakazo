@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import type { MemoryDream } from "@rakazo/contracts";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DreamsList } from "./bot-memory-tabs";
 
 const dreams = vi.hoisted(() => [] as MemoryDream[]);
+const dreamNow = vi.hoisted(() => vi.fn());
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
@@ -16,8 +17,17 @@ vi.mock("@lingui/react/macro", () => {
 vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: dreams }) }));
 vi.mock("../../../lib/query/query", () => ({
   useSpaceQueries: () => ({
-    memory: { dreams: { queryOptions: () => ({ queryKey: ["dreams"], queryFn: async () => [] }) } },
+    memory: {
+      dreams: {
+        queryOptions: () => ({ queryKey: ["dreams"], queryFn: async () => [] }),
+        queryKey: () => ["dreams"],
+      },
+    },
   }),
+  useSave: () => ({ run: dreamNow, pending: false, error: null }),
+}));
+vi.mock("@rakazo/ui-web", () => ({
+  Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
 }));
 
 const roots: Array<{ unmount: () => void }> = [];
@@ -26,6 +36,7 @@ afterEach(() => {
   roots.splice(0).forEach((root) => act(() => root.unmount()));
   document.body.innerHTML = "";
   dreams.length = 0;
+  dreamNow.mockClear();
 });
 
 function render(memoryOff = false) {
@@ -78,5 +89,13 @@ describe("DreamsList", () => {
     expect(container.textContent).toContain("Changed: MEMORY.md");
     // No raw ids reach the screen.
     expect(container.innerHTML).not.toContain("dream-1");
+  });
+
+  it("starts a dream now and says what it costs", async () => {
+    const container = render();
+    expect(container.textContent).toContain("Dreaming now uses one model call.");
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="bot-dream-now"]')!;
+    await act(async () => button.click());
+    expect(dreamNow).toHaveBeenCalledWith(undefined);
   });
 });

@@ -1,5 +1,6 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { RetryJobLaterError } from "@rakazo/adapter-kit";
+import type { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -8,6 +9,7 @@ import {
   reconcileMemoryDreams,
   recordMemoryDream,
   settleMemoryDream,
+  startManualMemoryDream,
 } from "./memory-dreams.js";
 
 const NOW = new Date("2026-02-02T23:30:00.000Z");
@@ -55,7 +57,14 @@ function dreamPrisma(
     run: { create: vi.fn(async () => ({ id: "dream-run" })) },
   };
   const prisma = {
-    bot: { findMany: vi.fn(async () => options.bots ?? [bot()]) },
+    bot: {
+      findMany: vi.fn(async () => options.bots ?? [bot()]),
+      findFirst: vi.fn(async () => options.bots?.[0] ?? bot()),
+    },
+    run: {
+      findUnique: vi.fn(async () => null) as ReturnType<typeof vi.fn>,
+      findFirst: vi.fn(async () => null) as ReturnType<typeof vi.fn>,
+    },
     user: { findMany: vi.fn(async () => [{ id: "user-1", timezone: "UTC" }]) },
     memoryDocument: { findMany: vi.fn(async () => []) },
     message: { findMany: vi.fn(async () => options.messages ?? []) },
@@ -65,12 +74,21 @@ function dreamPrisma(
       update: vi.fn(async () => ({})),
       deleteMany: vi.fn(async () => ({ count: 0 })),
       findMany: vi.fn(async () => []) as ReturnType<typeof vi.fn>,
+      findUniqueOrThrow: vi.fn(async () => ({
+        id: "dream-1",
+        status: "queued",
+        summary: null,
+        changedPaths: [],
+        errorKind: null,
+        startedAt: null,
+        finishedAt: null,
+        createdAt: new Date("2026-02-02T23:30:00.000Z"),
+      })) as ReturnType<typeof vi.fn>,
     },
     memoryRevision: {
       findMany: vi.fn(async () => []) as ReturnType<typeof vi.fn>,
     },
     thread: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    run: { findUnique: vi.fn(async () => null) as ReturnType<typeof vi.fn> },
     $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => {
       if (options.txError) throw options.txError;
       return work(tx);
@@ -79,7 +97,7 @@ function dreamPrisma(
   };
   type Mock = ReturnType<typeof vi.fn>;
   type Raw = {
-    bot: { findMany: Mock };
+    bot: { findMany: Mock; findFirst: Mock };
     user: { findMany: Mock };
     memoryDocument: { findMany: Mock };
     message: { findMany: Mock };
@@ -89,10 +107,11 @@ function dreamPrisma(
       update: Mock;
       deleteMany: Mock;
       findMany: Mock;
+      findUniqueOrThrow: Mock;
     };
     memoryRevision: { findMany: Mock };
     thread: { deleteMany: Mock };
-    run: { findUnique: Mock };
+    run: { findUnique: Mock; findFirst: Mock };
     $transaction: Mock;
     $queryRaw: Mock;
   };
@@ -298,6 +317,66 @@ describe("listMemoryDreams", () => {
           createdAt: "2026-02-02T23:30:00.000Z",
         },
       ],
+    );
+  });
+});
+
+describe("startManualMemoryDream", () => {
+  it("refuses while both memory banks are off", async () => {
+    const { prisma } = dreamPrisma({
+      bots: [bot({ useOwnMemory: false, useSharedMemory: false })],
+    });
+    await expect(
+      startManualMemoryDream(
+        { prisma, jobs: jobPublisher() },
+        {
+          spaceId: "space-1",
+          botId: "bot-1",
+        },
+      ),
+    ).rejects.toMatchObject({ kind: "BAD_REQUEST" } satisfies Partial<ClientError>);
+  });
+
+  it("refuses while the bot is working", async () => {
+    const { prisma, raw } = dreamPrisma();
+    raw.run.findFirst.mockResolvedValueOnce({ id: "run-busy" });
+    await expect(
+      startManualMemoryDream(
+        { prisma, jobs: jobPublisher() },
+        {
+          spaceId: "space-1",
+          botId: "bot-1",
+        },
+      ),
+    ).rejects.toMatchObject({ kind: "CONFLICT" } satisfies Partial<ClientError>);
+  });
+
+  it("refuses a second dream inside the manual cooldown", async () => {
+    const { prisma, tx } = dreamPrisma({
+      messages: [userMessage(5, "hello")],
+      existingDream: { id: "earlier", status: "completed" },
+    });
+    await expect(
+      startManualMemoryDream(
+        { prisma, jobs: jobPublisher() },
+        {
+          spaceId: "space-1",
+          botId: "bot-1",
+        },
+      ),
+    ).rejects.toMatchObject({ kind: "CONFLICT" } satisfies Partial<ClientError>);
+    expect(tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it("starts a dream and returns its record", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma({ messages: [userMessage(7, "New fact.")] });
+    await expect(
+      startManualMemoryDream({ prisma, jobs }, { spaceId: "space-1", botId: "bot-1" }),
+    ).resolves.toMatchObject({ id: "dream-1", status: "queued" });
+    expect(tx.run.create).toHaveBeenCalledOnce();
+    expect(jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { runId: "dream-run" } }),
     );
   });
 });

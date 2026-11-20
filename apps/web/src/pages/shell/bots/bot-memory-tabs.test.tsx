@@ -12,6 +12,7 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => ({
+  Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TabsTrigger: ({ children }: { children: ReactNode }) => <button type="button">{children}</button>,
@@ -32,8 +33,14 @@ vi.mock("@rakazo/ui-web", () => ({
 vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: [] }) }));
 vi.mock("../../../lib/query/query", () => ({
   useSpaceQueries: () => ({
-    memory: { dreams: { queryOptions: () => ({ queryKey: ["dreams"], queryFn: async () => [] }) } },
+    memory: {
+      dreams: {
+        queryOptions: () => ({ queryKey: ["dreams"], queryFn: async () => [] }),
+        queryKey: () => ["dreams"],
+      },
+    },
   }),
+  useSave: () => ({ run: vi.fn(), pending: false, error: null }),
 }));
 vi.mock("../../space/KnowledgeSection", () => ({
   MemoryDocumentList: ({ input }: { input: { botId?: string; scope: string } }) => (

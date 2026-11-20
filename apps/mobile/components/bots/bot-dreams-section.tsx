@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { MemoryDream } from "@rakazo/contracts";
-import { rpcQuery } from "../../lib/query/query";
+import { errorText } from "../../lib/api/user-error";
+import { rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 
@@ -19,7 +20,12 @@ function statusLabel(
 /** The bot's nightly consolidations, newest first; the whole list lives on the web. */
 export function BotDreamsSection({ botId, memoryOff }: { botId: string; memoryOff: boolean }) {
   const { t } = useLingui();
-  const dreams = useScreenQuery(rpcQuery("memory/dreams", { botId })).data ?? NO_DREAMS;
+  const dreamsRead = rpcQuery("memory/dreams", { botId });
+  const dreams = useScreenQuery(dreamsRead).data ?? NO_DREAMS;
+  const dreamNow = useSave({
+    save: (_: undefined, send) => send("memory/dreamNow", { botId }),
+    stale: [dreamsRead.queryKey],
+  });
   return (
     <SettingsGroup
       label={t`Dreams`}
@@ -41,6 +47,20 @@ export function BotDreamsSection({ botId, memoryOff }: { botId: string; memoryOf
               value={statusLabel(t, dream)}
             />
           ))
+      )}
+      {memoryOff ? null : (
+        <SettingsRow
+          title={t`Dream now`}
+          detail={
+            dreamNow.error
+              ? errorText(dreamNow.error, t`Could not start a dream`)
+              : dreamNow.pending
+                ? t`Starting…`
+                : t`Uses one model call.`
+          }
+          disabled={dreamNow.pending}
+          onPress={() => dreamNow.run(undefined)}
+        />
       )}
     </SettingsGroup>
   );

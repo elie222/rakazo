@@ -110,6 +110,7 @@ export {
   reconcileMemoryDreams,
   recordMemoryDream,
   settleMemoryDream,
+  startManualMemoryDream,
 } from "./memory/memory-dreams.js";
 export * from "./memory/memory-provider-factory.js";
 export * from "./messaging/bot-messages.js";

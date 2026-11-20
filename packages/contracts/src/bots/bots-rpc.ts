@@ -134,6 +134,8 @@ export const botsRpc = {
         }),
       )
       .output(z.array(MemoryDreamSchema)),
+    /** Consolidates the bot's notes now, for a person who does not want to wait for the night. */
+    dreamNow: oc.input(z.object({ botId: Id })).output(MemoryDreamSchema),
     update: oc
       .input(
         z.object({

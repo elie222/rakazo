@@ -8,6 +8,7 @@ import {
   memoryProviderDescriptors,
   readAgentMemory,
   listMemoryDreams,
+  startManualMemoryDream,
 } from "@rakazo/adapters";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -70,6 +71,12 @@ export function memoryRoutes(ctx: RouterContext) {
           cursor: input.cursor,
         });
       }),
+      dreamNow: authed.memory.dreamNow.handler(async ({ context, input }) =>
+        startManualMemoryDream(
+          { prisma: deps.prisma, jobs: deps.jobs },
+          { spaceId: context.actor.spaceId, botId: input.botId },
+        ),
+      ),
       update: authed.memory.update.handler(async ({ context, input }) => {
         const doc = await deps.prisma.memoryDocument.findFirst({
           where: {

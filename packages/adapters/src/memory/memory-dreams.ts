@@ -1,7 +1,12 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { RetryJobLaterError } from "@rakazo/adapter-kit";
 import type { MemoryDream } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, blocksToAgentHistoryText, MEMORY_DREAM_TRIGGER } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  blocksToAgentHistoryText,
+  ClientError,
+  MEMORY_DREAM_TRIGGER,
+} from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -10,6 +15,8 @@ import { memoryDreamPrompt } from "./memory-dream.prompt.js";
 
 /** One consolidation per bot per night, and a day's wait after one starts. */
 export const MEMORY_DREAM_COOLDOWN_MS = 12 * 60 * 60_000;
+/** A person may ask for a dream this soon after one started; the run itself still takes minutes. */
+export const MANUAL_DREAM_MIN_INTERVAL_MS = 10 * 60_000;
 /** A dream run this old is treated as lost, and its backup job starts it again. */
 export const MEMORY_DREAM_TIMEOUT_MS = 15 * 60_000;
 /** Bots one sweep considers; each needs its own reads and transaction. */
@@ -103,11 +110,13 @@ async function startMemoryDream(
     useSharedMemory: boolean;
     /** The user-message sequence the previous dream covered; null before the first. */
     sinceSeq: number | null;
-    sourceMessageId: string;
-    sourceSeq: number;
+    sourceMessageId: string | null;
+    sourceSeq: number | null;
+    /** A dream started or requested this recently is not started again. */
+    cooldownMs: number;
     now: Date;
   },
-): Promise<"started" | "too-soon"> {
+): Promise<{ dreamId: string; runId: string } | "too-soon"> {
   const [documents, messages] = await Promise.all([
     deps.prisma.memoryDocument.findMany({
       where: {
@@ -136,13 +145,16 @@ async function startMemoryDream(
     sharedMemory,
     messages,
   });
-  const cooldownStart = new Date(input.now.getTime() - MEMORY_DREAM_COOLDOWN_MS);
+  const cooldownStart = new Date(input.now.getTime() - input.cooldownMs);
   const started = await deps.prisma.$transaction(async (tx) => {
     // One dream per bot at a time: a sweep, a retry and a backup job all wait here.
     await tx.$queryRaw`SELECT id FROM bots WHERE id = ${input.botId} FOR UPDATE`;
     if (
       await tx.memoryDream.findFirst({
-        where: { botId: input.botId, createdAt: { gte: cooldownStart } },
+        where: {
+          botId: input.botId,
+          OR: [{ status: "queued" }, { createdAt: { gte: cooldownStart } }],
+        },
         select: { id: true },
       })
     )
@@ -197,7 +209,7 @@ async function startMemoryDream(
   });
   if (!started) return "too-soon";
   await wakeRun(deps.jobs, started.runId);
-  return "started";
+  return started;
 }
 
 /**
@@ -268,11 +280,11 @@ export async function reconcileMemoryDreams(deps: DreamDeps): Promise<void> {
       sinceSeq: last?.sourceSeq ?? null,
       sourceMessageId: source.id,
       sourceSeq: source.seq,
+      cooldownMs: MEMORY_DREAM_COOLDOWN_MS,
       now,
     });
-    if (result === "started")
-      getLogger().info("memory.dream.started", { "bot.id": bot.id, "space.id": bot.spaceId });
-    else skip("too-soon");
+    if (result === "too-soon") skip("too-soon");
+    else getLogger().info("memory.dream.started", { "bot.id": bot.id, "space.id": bot.spaceId });
   }
 }
 
@@ -388,7 +400,20 @@ export async function listMemoryDreams(
       createdAt: true,
     },
   });
-  return rows.map((row) => ({
+  return rows.map(toMemoryDream);
+}
+
+function toMemoryDream(row: {
+  id: string;
+  status: string;
+  summary: string | null;
+  changedPaths: string[];
+  errorKind: string | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+}): MemoryDream {
+  return {
     id: row.id,
     status:
       row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : "queued",
@@ -398,5 +423,76 @@ export async function listMemoryDreams(
     startedAt: row.startedAt?.toISOString() ?? null,
     finishedAt: row.finishedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
-  }));
+  };
+}
+
+/**
+ * A person's "dream now": the same consolidation, but it may start outside the night and skips
+ * the nightly cooldown. It still refuses while the bot works, while another dream runs, and
+ * while one started in the last ten minutes.
+ */
+export async function startManualMemoryDream(
+  deps: DreamDeps,
+  input: { spaceId: string; botId: string },
+): Promise<MemoryDream> {
+  const bot = await deps.prisma.bot.findFirst({
+    where: { id: input.botId, spaceId: input.spaceId, archivedAt: null },
+    select: {
+      id: true,
+      spaceId: true,
+      userId: true,
+      name: true,
+      useOwnMemory: true,
+      useSharedMemory: true,
+      thread: { select: { id: true } },
+    },
+  });
+  if (!bot) throw new ClientError("NOT_FOUND", "Bot not found.");
+  if (!bot.useOwnMemory && !bot.useSharedMemory)
+    throw new ClientError(
+      "BAD_REQUEST",
+      "Memory is off for this bot, so there is nothing to dream.",
+    );
+  if (!bot.thread)
+    throw new ClientError("CONFLICT", "This bot has no conversation to consolidate.");
+  if (
+    await deps.prisma.run.findFirst({
+      where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+      select: { id: true },
+    })
+  )
+    throw new ClientError("CONFLICT", "The bot is working. Try again when it is idle.");
+  const now = deps.now?.() ?? new Date();
+  const messages = await recentUserMessages(deps.prisma, bot.thread.id, null);
+  const source = messages[messages.length - 1];
+  const started = await startMemoryDream(deps, {
+    botId: bot.id,
+    spaceId: bot.spaceId,
+    userId: bot.userId,
+    botName: bot.name,
+    threadId: bot.thread.id,
+    useOwnMemory: bot.useOwnMemory,
+    useSharedMemory: bot.useSharedMemory,
+    sinceSeq: null,
+    sourceMessageId: source?.id ?? null,
+    sourceSeq: source?.seq ?? null,
+    cooldownMs: MANUAL_DREAM_MIN_INTERVAL_MS,
+    now,
+  });
+  if (started === "too-soon")
+    throw new ClientError("CONFLICT", "A dream ran recently. Try again in a few minutes.");
+  const dream = await deps.prisma.memoryDream.findUniqueOrThrow({
+    where: { id: started.dreamId },
+    select: {
+      id: true,
+      status: true,
+      summary: true,
+      changedPaths: true,
+      errorKind: true,
+      startedAt: true,
+      finishedAt: true,
+      createdAt: true,
+    },
+  });
+  return toMemoryDream(dream);
 }
