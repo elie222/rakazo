@@ -1,4 +1,3 @@
-import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   offerSelfHostedSupportOnce,
@@ -7,7 +6,7 @@ import {
 } from "./self-hosted-support";
 
 const store = new Map<string, string>();
-const fail = vi.hoisted(() => ({ read: false, write: false }));
+const fail = vi.hoisted(() => ({ read: false }));
 const native = vi.hoisted(() => ({
   apiBase: "https://chat.example.test",
   alert: vi.fn(),
@@ -20,11 +19,7 @@ vi.mock("expo-secure-store", () => ({
     return store.get(key) ?? null;
   }),
   setItemAsync: vi.fn(async (key: string, value: string) => {
-    if (fail.write) throw new Error("keychain locked");
     store.set(key, value);
-  }),
-  deleteItemAsync: vi.fn(async (key: string) => {
-    store.delete(key);
   }),
 }));
 vi.mock("react-native", () => ({ Alert: { alert: native.alert } }));
@@ -46,7 +41,6 @@ describe("self-hosted support offer", () => {
     native.openUrl.mockClear();
     native.apiBase = "https://chat.example.test";
     fail.read = false;
-    fail.write = false;
     resetSelfHostedSupportForTests();
   });
 
@@ -77,29 +71,13 @@ describe("self-hosted support offer", () => {
     expect(native.alert).toHaveBeenCalledTimes(1);
   });
 
-  it("leaves the offer for a later visit when storage fails", async () => {
+  it("leaves the offer for a later visit when the read fails", async () => {
     fail.read = true;
     await expect(offerSelfHostedSupportOnce(() => true)).resolves.toBe(false);
-    fail.read = false;
-    fail.write = true;
-    await expect(offerSelfHostedSupportOnce(() => true)).resolves.toBe(false);
     expect(native.alert).not.toHaveBeenCalled();
 
-    fail.write = false;
+    fail.read = false;
     await expect(offerSelfHostedSupportOnce(() => true)).resolves.toBe(true);
     expect(native.alert).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not ask once the inbox has gone during the save", async () => {
-    let active = true;
-    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
-      async (key: string, value: string) => {
-        store.set(key, value);
-        active = false;
-      },
-    );
-    await expect(offerSelfHostedSupportOnce(() => active)).resolves.toBe(false);
-    expect(native.alert).not.toHaveBeenCalled();
-    expect(store.size).toBe(0);
   });
 });

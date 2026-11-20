@@ -34,7 +34,7 @@ export function showSelfHostedSupport(): void {
 
 /**
  * Asks a self-hosted server's user once per device; Settings keeps the way back. Resolves true
- * when it asked. A failed read or write leaves the offer for a later inbox visit.
+ * when it asked. A failed read leaves the offer for a later inbox visit.
  */
 export async function offerSelfHostedSupportOnce(isActive: () => boolean): Promise<boolean> {
   if (asked || !selfHosted()) return false;
@@ -44,23 +44,13 @@ export async function offerSelfHostedSupportOnce(isActive: () => boolean): Promi
     SecureStore.getItemAsync(ASKED_KEY).then((value) => value ?? ""),
   );
   if (stored === "1") return false;
-  const saved =
-    stored !== undefined &&
-    isActive() &&
-    (await bestEffort(
-      "self-hosted support save",
-      SecureStore.setItemAsync(ASKED_KEY, "1").then(() => true),
-    ));
-  if (!saved) {
+  if (stored === undefined || !isActive()) {
     asked = false;
-    return false;
-  }
-  if (!isActive()) {
-    asked = false;
-    await bestEffort("self-hosted support undo", SecureStore.deleteItemAsync(ASKED_KEY));
     return false;
   }
   showSelfHostedSupport();
+  // A failed save only means asking once more after a restart.
+  await bestEffort("self-hosted support save", SecureStore.setItemAsync(ASKED_KEY, "1"));
   return true;
 }
 
