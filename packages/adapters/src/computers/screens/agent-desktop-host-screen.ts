@@ -391,7 +391,11 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
           // A GTK4 list row has no press action, so only the pointer could choose it.
           if (!(error instanceof AgentDesktopError) || error.code !== "POLICY_DENIED") throw error;
           throw new HostScreenError(
-            `${found.name} only takes a click on element ${action.element} from the user's pointer. Look for another control that does the same thing, such as a button, a menu item, or a field to set.`,
+            `${found.name} only takes a click on element ${action.element} from the user's pointer. ${
+              error.notDelivered
+                ? "Look for another control that does the same thing, such as a button, a menu item, or a field to set."
+                : "It may have taken effect; check before trying another control."
+            }`,
           );
         }
         return;

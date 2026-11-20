@@ -297,6 +297,15 @@ describe("agent-desktop host screen", () => {
     );
   });
 
+  it("warns that a pointer-only click refused after delivery may have taken effect", async () => {
+    const { screen } = cli({ click: () => refused("POLICY_DENIED", "unsafe") }, "Linux");
+    await screen.observe(scope, "notepad");
+    const result = await screen.act(scope, "notepad", [{ kind: "click", element: 2 }]);
+    expect(result.error).toBe(
+      "notepad only takes a click on element 2 from the user's pointer. It may have taken effect; check before trying another control.",
+    );
+  });
+
   it("caps the rows and says the rest were cut off", async () => {
     const children = Array.from({ length: HOST_SCREEN_MAX_ELEMENTS + 5 }, (_, index) => ({
       ref_id: `@s0000000a:e${index}`,
