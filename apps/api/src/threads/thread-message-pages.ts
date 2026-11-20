@@ -103,6 +103,23 @@ export async function loadMessagePage(
   }
 }
 
+/** The bot chat message a topic replies to, as the topic's snapshot shows it. */
+export async function loadTopicRootMessage(
+  prisma: MessageDb,
+  topicId: string,
+): Promise<ThreadMessage | undefined> {
+  const topic = await prisma.thread.findUnique({
+    where: { id: topicId },
+    select: { parentMessageId: true },
+  });
+  if (!topic?.parentMessageId) return undefined;
+  const rows = await prisma.message.findMany({
+    where: { id: topic.parentMessageId },
+    include: { replyTo: { select: replySelection } },
+  });
+  return (await toThreadMessages(prisma, rows))[0];
+}
+
 export async function loadAllMessages(
   prisma: PrismaClient,
   threadId: string,

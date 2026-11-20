@@ -87,6 +87,7 @@ export const MessageView = memo(function MessageView({
   rpc,
   showToolActivity,
   onReply,
+  onReplyInThread,
   onMarkUnread,
   markedUnread = false,
   onReact,
@@ -140,10 +141,12 @@ export const MessageView = memo(function MessageView({
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
   rpc: ReturnType<typeof createSpaceRpc>;
   showToolActivity: boolean;
-  onReply: (message: ThreadMessage) => void;
-  onMarkUnread: (message: ThreadMessage) => void;
+  /** Hover actions; one left out is not offered. */
+  onReply?: (message: ThreadMessage) => void;
+  onReplyInThread?: (message: ThreadMessage) => void;
+  onMarkUnread?: (message: ThreadMessage) => void;
   markedUnread?: boolean;
-  onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
+  onReact?: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
   const isNarration =
@@ -254,6 +257,7 @@ export const MessageView = memo(function MessageView({
       message={message}
       side={message.role === "user" ? "start" : "end"}
       onReply={onReply}
+      onReplyInThread={onReplyInThread}
       onMarkUnread={onMarkUnread}
       markedUnread={markedUnread}
       onReact={onReact}

@@ -1159,6 +1159,14 @@ model Thread {
   historyCompactionGeneration Int        @default(0)
   /// After a summary came back over the size limit, compaction waits until nextMessageSeq reaches this.
   historyCompactionRetryAfterSeq Int?
+  /// Set only on a topic thread: the bot chat message it replies to. Removing it removes the topic.
+  parentMessageId             String?    @unique
+  parentMessage               Message?   @relation("MessageTopic", fields: [parentMessageId], references: [id], onDelete: Cascade)
+  /// True when the bot opened the topic with post_item: it is listed before anyone replies.
+  item                        Boolean    @default(false)
+  /// When the topic was marked done, and by whom ("user" or "bot"). Null while open.
+  settledAt                   DateTime?
+  settledBy                   String?
   reads                       ThreadRead[]
   messages                    Message[]
   events                      Event[]
@@ -1207,6 +1215,7 @@ model Message {
   replyQuote       String?
   replyTo          Message?  @relation("MessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
   replies          Message[] @relation("MessageReplies")
+  topic            Thread?   @relation("MessageTopic")
   runId            String?
   clientNonce      String?
   /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.

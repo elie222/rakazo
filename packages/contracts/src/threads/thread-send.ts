@@ -7,6 +7,8 @@ export const threadTarget = z
   .object({
     botId: Id.optional(),
     groupId: Id.optional(),
+    /** A topic in the bot's chat: a thread of replies to one of its messages. */
+    topicId: Id.optional(),
   })
   .superRefine((input, ctx) => {
     const hasBot = Boolean(input.botId);
@@ -17,6 +19,9 @@ export const threadTarget = z
         message: "Provide exactly one of botId or groupId",
         path: ["botId"],
       });
+    }
+    if (input.topicId && !hasBot) {
+      ctx.addIssue({ code: "custom", message: "topicId requires botId", path: ["topicId"] });
     }
   });
 

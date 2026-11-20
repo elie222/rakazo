@@ -110,6 +110,7 @@ import {
   trustLinkSite,
   useTrustedLinkSites,
 } from "../lib/settings/trusted-link-sites";
+import { threadEdgeOptions } from "../lib/thread/scroll/thread-edges";
 import { startUnsentSends } from "../lib/thread/send/unsent-sends";
 import { InboxPane } from "./index";
 
@@ -617,6 +618,15 @@ function LayoutContent() {
                           ...chatRouteHeader(route, { split, inboxHidden, foldActive }, canInvite),
                         })}
                       />
+                      <Stack.Screen
+                        name="topic"
+                        options={{
+                          title: t`Thread`,
+                          headerTitleAlign: "center",
+                          ...threadEdgeOptions(),
+                        }}
+                      />
+                      <Stack.Screen name="topics" options={glassHeaderOptions(t`Threads`)} />
                       <Stack.Screen name="routines" options={glassHeaderOptions(t`Routines`)} />
                       <Stack.Screen name="routine" options={glassHeaderOptions(t`Routine`)} />
                       <Stack.Screen

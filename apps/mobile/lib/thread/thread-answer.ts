@@ -1,10 +1,12 @@
 import type { LoginFieldInput, RpcInput } from "@rakazo/contracts";
 import type { MobileMessage } from "../api/mobile-types";
 import { hapticSuccess } from "../native/haptics";
+import { chatTargetInput } from "./thread-target";
 
 export type ThreadAnswerContext = {
   botId: string | undefined;
   groupId: string | undefined;
+  topicId?: string;
   readOnly: boolean;
   rpc: (proc: "threads/answer", body: RpcInput<"threads/answer">) => Promise<unknown>;
   isCurrentTarget: (botId: string | undefined, groupId: string | undefined) => boolean;
@@ -18,6 +20,7 @@ export async function answerThreadMessage(
   {
     botId,
     groupId,
+    topicId,
     readOnly,
     rpc,
     isCurrentTarget,
@@ -34,7 +37,7 @@ export async function answerThreadMessage(
   if (readOnly || (!botId && !groupId) || !message.runId) return;
   markRead();
   await rpc("threads/answer", {
-    ...(groupId ? { groupId } : { botId }),
+    ...chatTargetInput({ botId, groupId, topicId }),
     runId: message.runId,
     messageId: message.id,
     answer,

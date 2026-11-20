@@ -32,6 +32,8 @@ export type SendPayload = {
   initialBotTarget?: string;
   botTarget?: string;
   groupTarget?: string;
+  /** A topic in the bot's chat; its attachments still belong to the bot. */
+  topicTarget?: string;
   reroutedToGroup: boolean;
   plan: ReturnType<typeof resolveComposerSendPlan>;
   attachments: PickedAttachment[];
@@ -67,8 +69,9 @@ export async function deliverSend(
   attempt: SendAttempt,
   request: typeof rpc,
 ): Promise<number | undefined> {
-  const { plan, groupTarget, botTarget, reroutedToGroup, attachments } = payload;
-  const target = groupTarget ? { groupId: groupTarget } : { botId: botTarget! };
+  const { plan, groupTarget, botTarget, topicTarget, reroutedToGroup, attachments } = payload;
+  const owner = groupTarget ? { groupId: groupTarget } : { botId: botTarget! };
+  const target = topicTarget && !groupTarget ? { ...owner, topicId: topicTarget } : owner;
   if (!plan.shouldSend) {
     if (plan.shouldRunRoutines)
       await request("threads/sendWithRoutines", {
@@ -85,7 +88,7 @@ export async function deliverSend(
       const artifact = await request(
         "artifacts/create",
         {
-          ...target,
+          ...owner,
           name: pending.name,
           mimeType: pending.mimeType,
           contentBase64: pending.contentBase64,

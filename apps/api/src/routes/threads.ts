@@ -20,8 +20,11 @@ import {
   createThreadMessageInTransaction,
   IsolationError,
   isUniqueViolation,
+  listTopics,
   loadMessageAuthor,
   lockSpaceGroup,
+  openTopic,
+  settleTopic,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   withTransactionRetry,
@@ -317,6 +320,10 @@ export function threadsRoutes(ctx: RouterContext) {
       }),
       clear: authed.threads.clear.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        // A topic goes with its message; clearing applies to whole chats.
+        if (target.kind === "bot" && target.topicId) {
+          throw new ClientError("BAD_REQUEST", "Clear the chat instead of one thread");
+        }
         const contextBotId = target.kind === "bot" ? target.botId : target.memberBotIds[0];
         if (!contextBotId) throw new IsolationError();
         const { cancelledRunIds, historyCompactionGeneration, removedStorageKeys } =
@@ -658,6 +665,35 @@ export function threadsRoutes(ctx: RouterContext) {
       snooze: authed.threads.snooze.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await setThreadSnooze(deps.prisma, context.actor, target, input.until);
+        return { ok: true as const };
+      }),
+      topics: authed.threads.topics.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input, {
+          includeArchived: true,
+        });
+        if (target.kind !== "bot") throw new IsolationError();
+        const topics = await listTopics(deps.prisma, {
+          mainThreadId: target.mainThreadId,
+          userId: context.actor.userId,
+        });
+        return { topics };
+      }),
+      openTopic: authed.threads.openTopic.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (target.kind !== "bot") throw new IsolationError();
+        const topicId = await openTopic(deps.prisma, {
+          mainThreadId: target.mainThreadId,
+          messageId: input.messageId,
+        });
+        if (!topicId) throw new ClientError("NOT_FOUND", "That message is not in this chat");
+        return { topicId };
+      }),
+      settleTopic: authed.threads.settleTopic.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (target.kind !== "bot" || !target.topicId) throw new IsolationError();
+        await settleTopic(deps.prisma, { topicId: target.topicId, by: input.done ? "user" : null });
+        // Topic lists are read again on the runs signal; see the apps' space change reads.
+        await deps.events.publishSpaceChange?.(context.actor.spaceId, "runs");
         return { ok: true as const };
       }),
     },

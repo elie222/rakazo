@@ -9,10 +9,10 @@ import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
-import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
 import { native, useMobileTokens } from "../../lib/native/native";
 import { useSave } from "../../lib/query/query";
 import { useThreadReadOnly } from "../../lib/thread/thread-read-only";
+import type { chatTargetInput } from "../../lib/thread/thread-target";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSwitch } from "../native/native-switch";
 import { MenuPicker } from "../ui/menu-picker";
@@ -134,7 +134,8 @@ export function ToolQuestionCard({
 }: {
   block: ToolQuestionBlock;
   messageId: string;
-  target: MobileArtifactTarget;
+  /** The conversation the question was asked in, a topic included. */
+  target: ReturnType<typeof chatTargetInput>;
   canAnswer: boolean;
 }) {
   const { t } = useLingui();

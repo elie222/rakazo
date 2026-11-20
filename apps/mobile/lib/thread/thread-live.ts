@@ -19,6 +19,7 @@ import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
 import { getHapticsEnabled, hapticSuccess } from "../native/haptics";
 import type { ThreadJumpAnchor } from "./thread-jump";
+import { chatTargetInput } from "./thread-target";
 import type { PinnedThreadWindow } from "./thread-window";
 
 type FeedbackBoundary = {
@@ -37,6 +38,7 @@ const FEEDBACK_HEAD_BUDGET_MS = 250;
 export function useThreadLiveSubscription({
   botId,
   groupId,
+  topicId,
   foreground,
   focused = false,
   readOnly,
@@ -60,6 +62,7 @@ export function useThreadLiveSubscription({
 }: {
   botId?: string;
   groupId?: string;
+  topicId?: string;
   foreground: boolean;
   focused?: boolean;
   readOnly: boolean;
@@ -91,12 +94,13 @@ export function useThreadLiveSubscription({
   const feedbackBoundary = useRef<FeedbackBoundary | null>(null);
   const visible = useRef(false);
   visible.current = foreground && focused;
+  const target = chatTargetInput({ botId, groupId, topicId });
 
   useEffect(() => {
     liveCursor.current = null;
     liveProjectionFloor.current = -1;
     completedRuns.current.clear();
-  }, [botId, groupId, sessionEpoch]);
+  }, [botId, groupId, topicId, sessionEpoch]);
 
   useEffect(() => {
     feedbackBoundary.current = null;
@@ -123,7 +127,7 @@ export function useThreadLiveSubscription({
       while (current() && getHapticsEnabled()) {
         let failure: unknown;
         try {
-          const head = await rpc("threads/head", groupId ? { groupId } : { botId: botId! }, {
+          const head = await rpc("threads/head", target, {
             signal: abort.signal,
             ...(firstAttempt ? { timeoutMs: FEEDBACK_HEAD_BUDGET_MS } : {}),
           });
@@ -154,7 +158,7 @@ export function useThreadLiveSubscription({
       boundary.pending.clear();
       if (feedbackBoundary.current === boundary) feedbackBoundary.current = null;
     };
-  }, [botId, groupId, foreground, focused, readOnly, sessionEpoch]);
+  }, [botId, groupId, topicId, foreground, focused, readOnly, sessionEpoch]);
 
   useEffect(() => {
     // Resume the same chat from its applied cursor so pinned and expanded windows catch up.
@@ -182,12 +186,10 @@ export function useThreadLiveSubscription({
       const next = resuming
         ? null
         : messageId
-          ? await rpc("threads/get", groupId ? { groupId } : { botId: botId! }).catch(
-              (err: unknown) => {
-                setError(errorText(err));
-                return null;
-              },
-            )
+          ? await rpc("threads/get", target).catch((err: unknown) => {
+              setError(errorText(err));
+              return null;
+            })
           : await refresh().catch((err: unknown) => {
               setError(errorText(err));
               return null;
@@ -217,7 +219,7 @@ export function useThreadLiveSubscription({
         try {
           liveSubscribed.current = true;
           await subscribeThread(
-            groupId ? { groupId } : { botId: botId! },
+            target,
             cursor,
             (event) => {
               if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) return;
@@ -318,6 +320,7 @@ export function useThreadLiveSubscription({
   }, [
     botId,
     groupId,
+    topicId,
     foreground,
     readOnly,
     markReadIfVisible,

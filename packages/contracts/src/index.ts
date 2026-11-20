@@ -87,3 +87,4 @@ export * from "./threads/search.js";
 export * from "./threads/thread.js";
 export * from "./threads/thread-message.js";
 export { threadSendInput } from "./threads/thread-send.js";
+export * from "./threads/topics.js";

@@ -35,6 +35,8 @@ async function runNotice(
   /** The bot's owner still wants its replies, not only what needs them. */
   replies: boolean;
   groupId: string | null;
+  /** The run's thread when it is a topic in the bot's chat. */
+  topicId?: string;
   bot?: { id: string; name: string; color: string; avatarSet: string };
 }> {
   // A routine carries its own notify setting, which decides on its failures.
@@ -59,7 +61,7 @@ async function runNotice(
           notifyOnReply: true,
         },
       },
-      thread: { select: { groupId: true } },
+      thread: { select: { groupId: true, parentMessageId: true } },
     },
   });
   if (!source) return { enabled: false, replies: false, groupId: null };
@@ -67,6 +69,7 @@ async function runNotice(
     enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
     replies: Boolean(source.thread.groupId || source.bot.notifyOnReply),
     groupId: source.thread.groupId,
+    ...(source.thread.parentMessageId ? { topicId: run.threadId } : {}),
     bot: source.bot,
   };
 }
@@ -119,7 +122,7 @@ export async function notifyRun(
   await deliverChatNotice(deps, {
     spaceId: run.spaceId,
     recipients,
-    message,
+    message: notice.topicId ? { ...message, topicId: notice.topicId } : message,
     groupId: notice.groupId,
     bot: notice.bot,
     retryOnFailure: options.retryOnFailure,
@@ -291,6 +294,7 @@ export function publishChatAlert(
       botId: message.botId,
       threadId: message.threadId,
       ...(groupId ? { groupId } : {}),
+      ...(message.topicId ? { topicId: message.topicId } : {}),
     }))().catch((error) => getLogger().error("chat alert publish", error));
 }
 

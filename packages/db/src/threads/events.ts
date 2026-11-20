@@ -90,6 +90,7 @@ import {
   pauseRunForTakeover,
   releaseUserControl,
 } from "./thread-takeover.js";
+import { lockChatTopics } from "./topic-locks.js";
 
 export { THREAD_LOCK_TRANSACTION_OPTIONS };
 
@@ -317,10 +318,14 @@ export async function clearThread(
       select: { nextMessageSeq: true, historyCompactionGeneration: true, userId: true },
     });
     await clearThreadReads(tx, input.threadId);
+    // Topics hang off the chat's messages and go with them, so their runs stop here too. Their
+    // rows are locked as a send to them locks them, so none can start a run until this commits.
+    const topicThreadIds = await lockChatTopics(tx, input.threadId);
     const activeRuns = await tx.run.findMany({
       where: {
         spaceId: input.spaceId,
-        ...conversationRunsWhere(input.threadId),
+        // Each topic is a conversation too: its own runs and the helpers it started.
+        OR: [input.threadId, ...topicThreadIds].map(conversationRunsWhere),
         status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
       },
       select: { id: true, taskId: true, userId: true, spaceId: true },
@@ -338,7 +343,7 @@ export async function clearThread(
             runs: {
               some: {
                 trigger: BACKGROUND_HELPER_TRIGGER,
-                sourceMessage: { threadId: input.threadId },
+                sourceMessage: { threadId: { in: [input.threadId, ...topicThreadIds] } },
               },
             },
           },
@@ -348,7 +353,12 @@ export async function clearThread(
       select: { id: true },
     });
     const helperThreadIds = helperThreads.map((thread) => thread.id);
-    const cleared = { OR: [{ threadId: input.threadId }, { threadId: { in: helperThreadIds } }] };
+    const cleared = {
+      OR: [
+        { threadId: input.threadId },
+        { threadId: { in: [...helperThreadIds, ...topicThreadIds] } },
+      ],
+    };
     // A reply's kept screenshots belong to its messages, so they go with them.
     const clearedRuns = await tx.message.findMany({
       where: { ...cleared, runId: { not: null } },

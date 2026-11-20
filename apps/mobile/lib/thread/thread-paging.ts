@@ -8,6 +8,7 @@ import { prependMobileMessagePage } from "../api/mobile-types";
 import { errorText } from "../api/user-error";
 import type { ThreadListScroll } from "./scroll/thread-list-scroll";
 import type { ThreadHistory } from "./thread-history";
+import { chatTargetInput } from "./thread-target";
 
 type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;
 
@@ -25,6 +26,7 @@ export function useThreadPaging({
   scroll,
   botId,
   groupId,
+  topicId,
   visibleMessages,
   anchor,
   setError,
@@ -34,6 +36,7 @@ export function useThreadPaging({
   scroll: ThreadListScroll;
   botId?: string;
   groupId?: string;
+  topicId?: string;
   visibleMessages: MobileMessage[];
   /** Where a jump target settles below the header. */
   anchor: number;
@@ -77,7 +80,7 @@ export function useThreadPaging({
     try {
       // Pages come back centered on the seq, so the one after the cursor overlaps what is loaded.
       const page = await rpc("threads/messages", {
-        ...(groupId ? { groupId } : { botId: botId! }),
+        ...chatTargetInput({ botId, groupId, topicId }),
         around: { seq: probe },
       });
       if (epoch !== historyEpoch.current || pinnedAroundRef.current !== pinned || !snapRef.current)
@@ -134,7 +137,7 @@ export function useThreadPaging({
     const pinned = pinnedAroundRef.current;
     try {
       const page = await rpc("threads/messages", {
-        ...(groupId ? { groupId } : { botId: botId! }),
+        ...chatTargetInput({ botId, groupId, topicId }),
         before: snap.olderCursor,
         includePeerReceipts: true,
       });

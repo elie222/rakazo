@@ -1456,7 +1456,7 @@ describe("run notification preference", () => {
             notifyOnReply: true,
           },
         },
-        thread: { select: { groupId: true } },
+        thread: { select: { groupId: true, parentMessageId: true } },
       },
     });
 

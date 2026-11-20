@@ -35,6 +35,15 @@ describe("thread route identity", () => {
 });
 
 describe("notification tap routing", () => {
+  it("opens the topic a run in a bot's chat thread was in", () => {
+    expect(
+      notificationOpenTarget({ botId: "bot-1", threadId: "topic-1", topicId: "topic-1" }),
+    ).toEqual({
+      pathname: "/topic",
+      params: { botId: "bot-1", topicId: "topic-1", threadId: "topic-1" },
+    });
+  });
+
   it("opens the bot thread from an Expo push payload", () => {
     expect(
       notificationOpenTarget({

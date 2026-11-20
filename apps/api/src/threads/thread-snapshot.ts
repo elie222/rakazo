@@ -10,7 +10,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { botRunStatuses, spaceIsShared } from "@rakazo/db";
 import { resolveComputerWork, toComputerStatus } from "../computers/computer-status.js";
 import { THREAD_MESSAGE_PAGE_SIZE } from "../routes/shared.js";
-import { loadMessagePage } from "./thread-message-pages.js";
+import { loadMessagePage, loadTopicRootMessage } from "./thread-message-pages.js";
 import type { ThreadTarget } from "./thread-target.js";
 
 export async function threadSnapshot(
@@ -80,6 +80,9 @@ export async function threadSnapshot(
               botName: target.bot.name,
             }),
           ]);
+        const topicRoot = target.topicId
+          ? await loadTopicRootMessage(tx, target.topicId)
+          : undefined;
         const run = pickPrimaryPrivateActiveRun(activeRuns) ?? busyOrFailed;
         // A failure only surfaces while it is still the newest terminal run, or a stale
         // failure would reappear on every load. Compare by ordering, not timestamps:
@@ -129,11 +132,13 @@ export async function threadSnapshot(
           shared,
           computer,
           work,
+          topicRoot,
         };
       },
       { timeout: 15_000, maxWait: 5_000 },
     );
     return {
+      ...(core.topicRoot ? { topicRoot: core.topicRoot } : {}),
       botId: target.botId,
       threadId: target.threadId,
       cursor: core.last?.seq ?? -1,

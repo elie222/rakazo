@@ -61,6 +61,7 @@ export function expoPushData(
     deliveryId,
     ...(spaceId ? { spaceId } : {}),
     ...(message.groupId ? { groupId: message.groupId } : {}),
+    ...(message.topicId ? { topicId: message.topicId } : {}),
   };
 }
 

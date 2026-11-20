@@ -5,6 +5,7 @@ import { allocateTicketNumber, createDb, createThreadMessage, ensureBoard } from
 import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { PNG } from "pngjs";
 import { sessionCookieHeader } from "../index.js";
+import { ensureTopic } from "./ios-screenshot-topic-seed.js";
 
 const MARKER = "marigold checklist";
 const READY = "The fixture workspace is ready.";
@@ -43,6 +44,8 @@ export interface IosScreenshotFixture {
   conversationId: string;
   /** A bot whose thread shows the cards a bot sends when it needs something. */
   cardsBotId: string;
+  /** A thread of replies under the Researcher's ready message. */
+  topicId: string;
 }
 
 interface BotRow {
@@ -320,6 +323,7 @@ export async function seedIosScreenshotFixture(input: {
       peer: writer,
       artifact: notes,
     });
+    const topicId = await ensureTopic(db.prisma, READY, researcher, me.userId);
     const conversation = await ensureTeamConversation(db.prisma, {
       spaceId: me.spaceId,
       userId: me.userId,
@@ -378,6 +382,7 @@ export async function seedIosScreenshotFixture(input: {
       teamSpaceId: teamSpace.id,
       conversationId: conversation.id,
       cardsBotId: support.id,
+      topicId,
     };
   } finally {
     await db.prisma.$disconnect();

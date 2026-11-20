@@ -41,6 +41,16 @@ export function useRightPanel({
     }
   }, []);
 
+  // The topic the "thread" panel shows, with the bot chat it belongs to.
+  const [topic, setTopic] = useState<{ botId: string; topicId: string } | null>(null);
+  const openTopic = useCallback(
+    (botId: string, topicId: string) => {
+      setTopic({ botId, topicId });
+      setPanel("thread");
+    },
+    [setPanel],
+  );
+
   /** Opens `next` in another chat, saved under that chat's `destKey` rather than this one's. */
   function openPanelInChat(destKey: string | null, next: Panel, navigateToChat: () => void) {
     explicitPanelTarget.current = destKey;
@@ -51,11 +61,24 @@ export function useRightPanel({
     setRestoredPanelKey(destKey);
   }
 
+  /** Opens a topic in another bot's chat, as an alert for it does. */
+  function openTopicInChat(
+    destKey: string | null,
+    target: { botId: string; topicId: string },
+    navigateToChat: () => void,
+  ) {
+    setTopic(target);
+    openPanelInChat(destKey, "thread", navigateToChat);
+  }
+
   return {
     panel,
     setPanel,
     setPanelState,
     openPanelInChat,
+    topic,
+    openTopic,
+    openTopicInChat,
     modelFocusRequest,
     setModelFocusRequest,
     restoredPanelKey,

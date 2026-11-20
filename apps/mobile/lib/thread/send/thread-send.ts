@@ -29,6 +29,7 @@ import type { ThreadListScroll } from "../scroll/thread-list-scroll";
 import { answerThreadMessage } from "../thread-answer";
 import type { ThreadHistory } from "../thread-history";
 import { previewMessageText } from "../thread-message-text";
+import { chatTargetInput } from "../thread-target";
 import type { useThreadAttachments } from "./thread-attachments";
 import type { SendAttempt, useThreadFeedback } from "./thread-feedback";
 import { subscribeDelivered } from "./thread-feedback";
@@ -41,6 +42,7 @@ import { prepareUnsentSends } from "./unsent-sends";
 export function useThreadSend({
   botId,
   groupId,
+  topicId,
   readOnly,
   threadKey,
   history,
@@ -48,8 +50,6 @@ export function useThreadSend({
   feedback,
   attachments,
   mentionBotsRef,
-  activeBotId,
-  activeGroupId,
   isCurrentTarget,
   refresh,
   showLatest,
@@ -58,6 +58,7 @@ export function useThreadSend({
 }: {
   botId?: string;
   groupId?: string;
+  topicId?: string;
   readOnly: boolean;
   threadKey: string | undefined;
   history: ThreadHistory;
@@ -65,8 +66,6 @@ export function useThreadSend({
   feedback: ReturnType<typeof useThreadFeedback>;
   attachments: ReturnType<typeof useThreadAttachments>;
   mentionBotsRef: RefObject<MobileBot[]>;
-  activeBotId: RefObject<string | undefined>;
-  activeGroupId: RefObject<string | undefined>;
   isCurrentTarget: (botId: string | undefined, groupId: string | undefined) => boolean;
   refresh: () => Promise<MobileSnapshot | undefined>;
   showLatest: () => void;
@@ -144,7 +143,7 @@ export function useThreadSend({
     const initialBotTarget = botId;
     const initialGroupTarget = groupId;
     if ((!initialBotTarget && !initialGroupTarget) || preparingSend.current) return;
-    const originThreadKey = initialGroupTarget ?? initialBotTarget;
+    const originThreadKey = threadKey;
     const submitted = composerRef.current?.snapshot();
     if (!submitted) return;
     const attachments = attachmentsForThread(pendingAttachments, originThreadKey);
@@ -200,6 +199,7 @@ export function useThreadSend({
         initialBotTarget,
         botTarget,
         groupTarget,
+        topicTarget: reroutedToGroup ? undefined : topicId,
         reroutedToGroup,
         plan: { ...plan, trimmed: fromPage.text },
         attachments,
@@ -256,11 +256,7 @@ export function useThreadSend({
           return resumeLiveNotifications(apiBase, token, spaceId ?? "");
       })
       .catch(() => undefined);
-    if (
-      attempt.payload.originThreadKey !== (activeGroupId.current ?? activeBotId.current) ||
-      !navigation.isFocused()
-    )
-      return;
+    if (attempt.payload.originThreadKey !== threadKey || !navigation.isFocused()) return;
     hapticSuccess();
     if (reroutedToGroup && groupTarget) {
       router.push({
@@ -299,6 +295,7 @@ export function useThreadSend({
         {
           botId,
           groupId,
+          topicId,
           readOnly,
           rpc,
           isCurrentTarget,
@@ -312,7 +309,7 @@ export function useThreadSend({
         dismiss,
         remember,
       ),
-    [botId, groupId, readOnly, navigation],
+    [botId, groupId, topicId, readOnly, navigation],
   );
 
   async function react(message: MobileMessage, reaction: MessageReaction) {
@@ -322,7 +319,7 @@ export function useThreadSend({
     if (!targetBotId && !targetGroupId) return false;
     try {
       const result = await rpc("threads/react", {
-        ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
+        ...chatTargetInput({ botId: targetBotId, groupId: targetGroupId, topicId }),
         messageId: message.id,
         reaction,
         clientNonce: newClientId(),

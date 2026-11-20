@@ -1172,6 +1172,8 @@ export interface NotificationMessage {
   runId?: string;
   /** Group chat that owns threadId, so a tap does not open the bot's direct thread. */
   groupId?: string;
+  /** Set when threadId is a topic in the bot's chat, so a tap opens that topic. */
+  topicId?: string;
   /** Unread chats to show on the app icon, when the sender knows them. */
   badge?: number;
 }

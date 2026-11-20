@@ -4,6 +4,7 @@ import { buildMessageContextMenu, messageMenuReaction } from "./message-context-
 
 const labels: Record<MessageMenuSymbol, string> = {
   reply: "Reply",
+  thread: "Reply in Thread",
   copy: "Copy",
   react: "React",
   quote: "Quote",
@@ -89,6 +90,20 @@ describe("message context menu", () => {
         }),
       ),
     ).not.toContain("unread");
+  });
+
+  it("offers Reply in Thread right after Reply, only when asked", () => {
+    const include = { quote: false, react: false, speak: false, select: false };
+    expect(ids(buildMessageContextMenu({ labels, reactions, include }))).not.toContain("thread");
+    expect(
+      buildMessageContextMenu({ labels, reactions, include: { ...include, thread: true } }).map(
+        (entry) => [entry.id, entry.title],
+      ),
+    ).toEqual([
+      ["reply", "Reply"],
+      ["thread", "Reply in Thread"],
+      ["copy", "Copy"],
+    ]);
   });
 
   it("reads a reaction id back out of a menu event", () => {

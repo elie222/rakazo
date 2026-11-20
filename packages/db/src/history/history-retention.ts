@@ -1,4 +1,4 @@
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, BACKGROUND_HELPER_TRIGGER } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { createRetentionPruner } from "../account/security-events.js";
 import type { PrismaClient } from "../database/client.js";
@@ -9,6 +9,7 @@ import {
   withTransactionRetry,
 } from "../database/transaction-retry.js";
 import { conversationRunsWhere } from "../runs/cancel-runs.js";
+import { lockChatTopics } from "../threads/topic-locks.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** About a century: far enough to mean never, and well inside the range of a date. */
@@ -70,9 +71,41 @@ async function pruneThreadChunk(
         orderBy: { message: { seq: "asc" } },
         select: { message: { select: { seq: true } } },
       });
+      // A message's topic goes with it, so one whose topic is still in use is kept, with all after.
+      // Locked first, as a reply locks it, so no reply lands between this check and the delete.
+      await lockChatTopics(tx, threadId);
+      const liveTopicRoot = await tx.message.findFirst({
+        where: {
+          threadId,
+          topic: {
+            is: {
+              OR: [
+                { messages: { some: { createdAt: { gte: cutoff } } } },
+                { runs: { some: { status: { in: [...ACTIVE_RUN_STATUSES] } } } },
+                // A helper started there runs in its own thread but answers in the topic.
+                {
+                  messages: {
+                    some: {
+                      sourceRuns: {
+                        some: {
+                          trigger: BACKGROUND_HELPER_TRIGGER,
+                          status: { in: [...ACTIVE_RUN_STATUSES] },
+                        },
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+        orderBy: { seq: "asc" },
+        select: { seq: true },
+      });
       const stopAt = Math.min(
         firstKept?.seq ?? Number.POSITIVE_INFINITY,
         waiting?.message.seq ?? Number.POSITIVE_INFINITY,
+        liveTopicRoot?.seq ?? Number.POSITIVE_INFINITY,
       );
       const due = await tx.message.findMany({
         where: { threadId, ...(Number.isFinite(stopAt) ? { seq: { lt: stopAt } } : {}) },

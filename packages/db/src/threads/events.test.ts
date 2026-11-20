@@ -5276,7 +5276,11 @@ describe("clearThread", () => {
         deleteMany: vi.fn(async () => ({ count: 0 })),
         updateMany: vi.fn(async () => ({ count: 0 })),
       },
-      $queryRaw: vi.fn(async () => [{ id: "group-1" }]),
+      // The group's lock, then the chat's topics (a group has none).
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValueOnce([{ id: "group-1" }])
+        .mockResolvedValue([]),
       externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       thread: {
         findMany: vi.fn(async () => []),
@@ -5332,8 +5336,12 @@ describe("clearThread", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           OR: [
-            { threadId: "thread-group" },
-            { trigger: "helper", sourceMessage: { threadId: "thread-group" } },
+            {
+              OR: [
+                { threadId: "thread-group" },
+                { trigger: "helper", sourceMessage: { threadId: "thread-group" } },
+              ],
+            },
           ],
           spaceId: "workspace-1",
         }),

@@ -81,6 +81,7 @@ export * from "./messages/message-visibility.js";
 export * from "./messages/page-links.js";
 export * from "./messages/remote-images.js";
 export * from "./messages/time-separators.js";
+export * from "./messages/topics.js";
 export * from "./messages/unread-divider.js";
 export * from "./messaging/messaging.prompt.js";
 export * from "./messaging/messaging-commands.js";

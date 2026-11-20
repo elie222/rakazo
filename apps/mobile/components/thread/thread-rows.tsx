@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import type { TopicSummary } from "@rakazo/contracts";
 import type { ThreadItem } from "@rakazo/core";
 import {
   answerableAskMessageIds,
@@ -41,6 +42,7 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       helperToggle: (measure, toggle, opening) =>
         rowActionsRef.current.helperToggle(measure, toggle, opening),
       reply: (message) => rowActionsRef.current.reply(message),
+      openTopic: (message) => rowActionsRef.current.openTopic(message),
       quote: (message) => rowActionsRef.current.quote(message),
       select: (text) => rowActionsRef.current.select(text),
       speak: (message) => rowActionsRef.current.speak(message),
@@ -69,6 +71,7 @@ export function useThreadRows({
   rowActions,
   botId,
   groupId,
+  topicId,
   inGroup,
   readOnly,
   onCall,
@@ -81,6 +84,8 @@ export function useThreadRows({
   readSeq,
   markedUnreadMessageId,
   highlightedMessageId,
+  topicsByRoot,
+  canOpenTopic,
 }: {
   snap: MobileSnapshot | null;
   userId: string;
@@ -88,6 +93,8 @@ export function useThreadRows({
   rowActions: MessageRowActions;
   botId?: string;
   groupId?: string;
+  /** Set on a topic's screen: its cards answer and stop in the topic, not the bot's chat. */
+  topicId?: string;
   inGroup: boolean;
   readOnly: boolean;
   onCall: boolean;
@@ -101,6 +108,9 @@ export function useThreadRows({
   readSeq: number | null;
   markedUnreadMessageId?: string;
   highlightedMessageId: string | null;
+  /** The bot chat's topics by the message each replies to. */
+  topicsByRoot?: ReadonlyMap<string, TopicSummary>;
+  canOpenTopic: boolean;
 }) {
   const { t } = useLingui();
   const locale = useUiLocale();
@@ -121,7 +131,11 @@ export function useThreadRows({
   );
 
   const renderMessageRow = useCallback(
-    (message: MobileMessage, options?: { enableJump?: boolean; index?: number }) => {
+    (
+      message: MobileMessage,
+      options?: { enableJump?: boolean; index?: number; readOnly?: boolean },
+    ) => {
+      const rowReadOnly = readOnly || (options?.readOnly ?? false);
       const parent = message.replyToMessageId
         ? messagesById.get(message.replyToMessageId)
         : undefined;
@@ -155,13 +169,14 @@ export function useThreadRows({
           botId={botId}
           bubbleBotId={botId ?? snap?.members?.[0]?.botId ?? ""}
           groupId={groupId}
+          topicId={topicId}
           botName={displayName}
           showBotSenderName={showBotSenderName}
           bots={mentionBots}
           members={snap?.members}
-          readOnly={readOnly}
+          readOnly={rowReadOnly}
           onCall={onCall}
-          canAnswer={!readOnly && answerableAskIds.has(message.id)}
+          canAnswer={!rowReadOnly && answerableAskIds.has(message.id)}
           canDismiss={dismissableAskIds.has(message.id)}
           highlighted={highlightedMessageId === message.id}
           separator={separatorIds.has(message.id)}
@@ -190,6 +205,8 @@ export function useThreadRows({
           columnWidth={columnWidth}
           enableJump={options?.enableJump ?? false}
           index={options?.index ?? 0}
+          topic={topicsByRoot?.get(message.id)}
+          canOpenTopic={canOpenTopic}
         />
       );
     },
@@ -207,6 +224,7 @@ export function useThreadRows({
       inGroup,
       botId,
       groupId,
+      topicId,
       currentBot,
       currentBotStatus,
       userBubble,
@@ -222,6 +240,8 @@ export function useThreadRows({
       markedUnreadMessageId,
       columnWidth,
       userId,
+      topicsByRoot,
+      canOpenTopic,
       t,
       locale,
     ],

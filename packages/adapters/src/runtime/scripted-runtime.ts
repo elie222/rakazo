@@ -693,6 +693,25 @@ code-b
       },
     ];
   }
+  const item = /post an item:\s*([^\n<&]+)/i.exec(prompt);
+  if (item) {
+    return [
+      {
+        assistant: "posted it.",
+        toolCalls: [{ name: "post_item", args: { text: clean(item[1]!) } }],
+        complete: true,
+      },
+    ];
+  }
+  if (lower.includes("settle this thread")) {
+    return [
+      {
+        assistant: "marked done.",
+        toolCalls: [{ name: "settle_thread", args: {} }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("subagent") || lower.includes("delegate to a helper")) {
     return [
       {

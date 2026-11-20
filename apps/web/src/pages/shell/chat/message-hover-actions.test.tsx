@@ -155,3 +155,27 @@ it("drops the copied confirmation when the message changes before it ends", asyn
   expect(trigger?.getAttribute("aria-label")).toBe("More");
   expect(trigger?.querySelector(".lucide-check")).toBeNull();
 });
+
+it("offers Reply in thread only for a saved message, and only actions it was given", async () => {
+  const replyInThread = vi.fn();
+  act(() =>
+    root.render(
+      <MessageHoverActions message={message} side="start" onReplyInThread={replyInThread} />,
+    ),
+  );
+  expect(document.querySelector('button[aria-label="Reply"]')).toBeNull();
+  expect(document.querySelector('button[aria-label="React"]')).toBeNull();
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Reply in thread"]'));
+  expect(replyInThread).toHaveBeenCalledWith(message);
+
+  act(() =>
+    root.render(
+      <MessageHoverActions
+        message={{ ...message, id: "subagent:run-1" }}
+        side="start"
+        onReplyInThread={replyInThread}
+      />,
+    ),
+  );
+  expect(document.querySelector('button[aria-label="Reply in thread"]')).toBeNull();
+});

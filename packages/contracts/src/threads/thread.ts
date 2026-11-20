@@ -14,6 +14,8 @@ export const ChatAlertSchema = z.object({
   botId: Id,
   threadId: Id,
   groupId: Id.optional(),
+  /** Set when the run was in a topic of the bot's chat; equals threadId. */
+  topicId: Id.optional(),
 });
 export type ChatAlert = z.infer<typeof ChatAlertSchema>;
 
@@ -53,5 +55,7 @@ export const ThreadSnapshotSchema = z.object({
   run: RunSchema.nullable(),
   activeRuns: z.array(RunSchema).optional(),
   computer: ComputerStatusSchema.optional(),
+  /** A topic's snapshot carries the message it replies to, which lives in the bot's chat. */
+  topicRoot: ThreadMessageSchema.optional(),
 });
 export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;

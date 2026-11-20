@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
-import { Gift, Menu, Phone } from "lucide-react";
+import { Gift, Menu, MessagesSquare, Phone } from "lucide-react";
 import { useState } from "react";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { IconTooltip } from "../../../components/IconTooltip";
@@ -19,6 +19,7 @@ export function ChatHeader({
   voiceReady,
   inCall,
   panelOpen,
+  threads,
   onOpenNavigation,
   onTogglePanel,
   onCall,
@@ -32,6 +33,8 @@ export function ChatHeader({
   voiceReady: boolean;
   inCall: boolean;
   panelOpen: boolean;
+  /** Set once the bot chat has a thread: how many open ones are unread, and how to list them. */
+  threads?: { unread: number; onOpen: () => void };
   onOpenNavigation: () => void;
   onTogglePanel: () => void;
   onCall: (bot: Bot) => void;
@@ -81,6 +84,25 @@ export function ChatHeader({
         </span>
       </Button>
       <div className="flex items-center justify-self-end gap-2">
+        {threads ? (
+          <IconTooltip label={t`Threads`}>
+            <Button
+              variant="floating"
+              size="icon-lg"
+              data-testid="threads-button"
+              aria-label={t`Threads`}
+              onClick={threads.onOpen}
+              className="app-no-drag relative"
+            >
+              <MessagesSquare strokeWidth={1.6} className="size-[17px]" />
+              {threads.unread > 0 ? (
+                <span className="absolute -end-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-unread px-1 text-label font-semibold text-background">
+                  {threads.unread}
+                </span>
+              ) : null}
+            </Button>
+          </IconTooltip>
+        ) : null}
         {phoneCallsEnabled && !inGroup && active ? (
           <IconTooltip label={inCall ? t`Open call` : t`Call`}>
             <Button

@@ -74,6 +74,8 @@ import {
   useThreadVoiceCall,
 } from "../../lib/thread/thread-voice";
 import { liveEndRunError } from "../../lib/thread/thread-window";
+import { useTopicActions } from "../../lib/thread/topic-actions";
+import { useBotTopics } from "../../lib/thread/topics";
 import { RunErrorSheet } from "../cards/run-error-sheet";
 import { ThreadComposer } from "../composer/thread-composer";
 import { SelectTextSheet } from "../messages/select-text-sheet";
@@ -88,6 +90,7 @@ import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
 import { useLatestRowActions, useThreadRows } from "./thread-rows";
 import { useThreadRunError } from "./thread-run-error";
+import { TopicRoot } from "./topic-root";
 
 function isActiveStatus(status: string | undefined): boolean {
   return isRunWorking(status) || isRunWaitingOnUser(status);
@@ -130,10 +133,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     name,
     messageId,
     threadId,
+    topicId,
     readOnly: readOnlyParam,
   } = useLocalSearchParams<{
     botId?: string;
     groupId?: string;
+    /** A topic in the bot's chat: the screen shows its replies instead of the chat. */
+    topicId?: string;
     name?: string;
     messageId?: string;
     threadId?: string;
@@ -164,7 +170,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     markedUnreadMessageId,
     markUnreadFrom,
     markReadIfVisible,
-  } = useThreadRead({ botId, groupId, focused, readOnly });
+  } = useThreadRead({ botId, groupId, topicId, focused, readOnly });
   const markCaughtUp = () => setReadBoundary({ visit: readVisit.current.visit, seq: null });
   const artifactTarget: MobileArtifactTarget | undefined = groupId
     ? { groupId }
@@ -199,13 +205,30 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     mentionBots,
   );
   const draftScope = useMemo(
-    () => composerDraftScope(userId, botId, groupId),
-    [userId, botId, groupId],
+    () => composerDraftScope(userId, botId, groupId, topicId),
+    [userId, botId, groupId, topicId],
   );
-  const attachments = useThreadAttachments({ botId, groupId, readOnly, uploadConfig, draftScope });
+  const attachments = useThreadAttachments({
+    botId,
+    groupId,
+    topicId,
+    readOnly,
+    uploadConfig,
+    draftScope,
+  });
+  // A bot chat's topics: the reply lines under its messages, its threads button, and the shown
+  // topic's own state.
+  const botTopics = useBotTopics(inGroup ? undefined : botId);
+  const shownTopic = topicId ? botTopics.topics?.find((topic) => topic.id === topicId) : undefined;
+  const topicActions = useTopicActions({
+    botId: inGroup ? undefined : botId,
+    topicId,
+    topic: shownTopic,
+    byRoot: botTopics.byRoot,
+  });
   const echoed = useMemo(
     () =>
-      snap && (snap.groupId ?? snap.botId) === threadKey
+      snap && (topicId ? snap.threadId : (snap.groupId ?? snap.botId)) === threadKey
         ? new Set(
             snap.messages.flatMap((message) =>
               message.role === "user" && message.seq !== undefined ? [message.seq] : [],
@@ -269,8 +292,14 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // Without a name yet (a notification can leave it out), the title shows a placeholder.
   const titleName = currentBot?.name ?? name ?? inboxBot?.name;
   const displayName = safeDisplayName(titleName, inGroup ? t`Group` : t`Bot`);
-  const composerPrompt = displayName ? t`Message ${ph({ name: displayName })}` : t`Message…`;
-  const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
+  const composerPrompt = topicId
+    ? t`Reply`
+    : displayName
+      ? t`Message ${ph({ name: displayName })}`
+      : t`Message…`;
+  // A topic's thread id is the topic's own.
+  const notificationThreadId =
+    snap?.threadId ?? topicId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
   const currentBotStatus =
     snap && (!showingSaved || error)
@@ -339,6 +368,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     currentBotStatus,
     composingBots,
     onCleared: history.clear,
+    topic: Boolean(topicId),
+    onThreads:
+      botId && !topicId && !readOnly && botTopics.topics?.length
+        ? () => router.push({ pathname: "/topics", params: { botId } })
+        : undefined,
   });
 
   useThreadFocus({
@@ -355,6 +389,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     scroll,
     botId,
     groupId,
+    topicId,
     messageId,
     readOnly,
     foreground,
@@ -376,6 +411,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     scroll,
     botId,
     groupId,
+    topicId,
     visibleMessages,
     anchor: headerClearance.anchor,
     setError,
@@ -385,6 +421,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const composer = useThreadSend({
     botId,
     groupId,
+    topicId,
     readOnly,
     threadKey,
     history,
@@ -392,8 +429,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     feedback,
     attachments,
     mentionBotsRef,
-    activeBotId,
-    activeGroupId,
     isCurrentTarget,
     refresh,
     showLatest,
@@ -452,6 +487,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       setReplyTarget(message);
       setReplyQuote(null);
     },
+    openTopic: topicActions.openTopic,
     quote: setQuoteTarget,
     select: setSelectableText,
     speak,
@@ -472,6 +508,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       void applyMessageJump({
         botId,
         groupId,
+        topicId,
         messageId: reactionView.foldedInto.get(messageId) ?? messageId,
       }).catch(() => undefined);
     },
@@ -499,6 +536,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     rowActions,
     botId,
     groupId,
+    topicId,
     inGroup,
     readOnly,
     onCall,
@@ -511,6 +549,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     readSeq: readBoundary?.visit === readVisit.current.visit ? readBoundary.seq : null,
     markedUnreadMessageId,
     highlightedMessageId: scroll.highlightedMessageId,
+    topicsByRoot: topicId ? undefined : botTopics.byRoot,
+    canOpenTopic: Boolean(botId) && !inGroup && !topicId,
   });
 
   const workingBots =
@@ -546,13 +586,24 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     />
   );
 
-  const loadEarlierControl =
+  const loadEarlier =
     snap?.olderCursor != null ? (
       <LoadEarlierButton
         loading={paging.loadingOlder}
         onPress={() => void paging.loadOlderMessages()}
       />
     ) : null;
+  // A topic opens with the message it replies to, above its replies.
+  const loadEarlierControl =
+    topicId && snap?.topicRoot ? (
+      <TopicRoot
+        root={renderMessageRow(snap.topicRoot, { readOnly: true })}
+        replyCount={shownTopic?.replyCount ?? 0}
+        loadEarlier={loadEarlier}
+      />
+    ) : (
+      loadEarlier
+    );
 
   const failedSendBubbles = feedback.unsentSends.map((attempt) => (
     <FailedSendBubble
@@ -666,7 +717,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               attachmentIds={attachments.activePendingAttachments.map(
                 (attachment) => attachment.id,
               )}
-              botId={botId}
+              // A topic is answered in writing; a call belongs to the bot's chat.
+              botId={topicId ? undefined : botId}
               onCall={onCall}
               sending={attachments.shareImporting}
               styles={styles}

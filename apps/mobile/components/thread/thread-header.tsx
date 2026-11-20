@@ -19,7 +19,8 @@ import { openInvite, threadHeaderRight } from "./header/thread-header-right";
 
 /**
  * The chat's navigation header: its title (which opens the bot's profile), the invite gift (or
- * group settings), the split-view inbox toggle, and Restore for an archived bot.
+ * group settings), the bot chat's threads, the split-view inbox toggle, and Restore for an
+ * archived bot. A topic sets its own header, so this leaves it alone.
  */
 export function useThreadHeader({
   botId,
@@ -33,6 +34,8 @@ export function useThreadHeader({
   currentBotStatus,
   composingBots,
   onCleared,
+  topic = false,
+  onThreads,
 }: {
   botId?: string;
   groupId?: string;
@@ -48,6 +51,10 @@ export function useThreadHeader({
   composingBots: string;
   /** Runs once the server has cleared the conversation, from the bot's profile. */
   onCleared: () => void;
+  /** The screen shows a topic, whose header is its own. */
+  topic?: boolean;
+  /** Opens the bot chat's threads; absent until it has one. */
+  onThreads?: () => void;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -73,16 +80,19 @@ export function useThreadHeader({
   const titleComposing = Boolean(botId) && composingBots.split(",").includes(botId ?? "");
   useLayoutEffect(
     () =>
-      publishChatTitle(route.key, {
-        bot: titleBot,
-        status: currentBotStatus,
-        composing: titleComposing,
-        name: titleName,
-        members: groupMembers,
-        // The title opens the bot's profile in a one-to-one chat, the group's settings in a group.
-        opens: chatTitleRoute({ groupId, botId, name: titleName, readOnly }),
-      }),
+      topic
+        ? undefined
+        : publishChatTitle(route.key, {
+            bot: titleBot,
+            status: currentBotStatus,
+            composing: titleComposing,
+            name: titleName,
+            members: groupMembers,
+            // The title opens the bot's profile in a one-to-one chat, the group's settings in a group.
+            opens: chatTitleRoute({ groupId, botId, name: titleName, readOnly }),
+          }),
     [
+      topic,
       route.key,
       botId,
       groupId,
@@ -95,7 +105,12 @@ export function useThreadHeader({
     ],
   );
 
+  // Read through a ref, so a new callback each render does not set the header again.
+  const openThreads = useRef(onThreads);
+  openThreads.current = onThreads;
+  const hasThreads = Boolean(onThreads);
   useLayoutEffect(() => {
+    if (topic) return;
     navigation.setOptions({
       title: displayName || t`Thread`,
       headerTitleAlign: "center",
@@ -107,12 +122,15 @@ export function useThreadHeader({
         onGroupSettings: () =>
           router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
         onInvite: canInvite && botId ? openInvite : undefined,
+        onThreads: hasThreads ? () => openThreads.current?.() : undefined,
       }),
       ...(readOnly
         ? trailingHeaderOptions(t`Restore`, () => void restoreConversation(), restoring)
         : {}),
     });
   }, [
+    topic,
+    hasThreads,
     readOnly,
     restoring,
     botId,

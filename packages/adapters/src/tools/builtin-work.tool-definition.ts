@@ -241,6 +241,31 @@ export const workTools: ConnectorTool[] = [
     },
   },
   {
+    name: "post_item",
+    description:
+      "Post one message in this chat that opens its own thread, listed as open until it is done. Use it when the user wants things tracked one by one (each incoming report, alert or task), never for ordinary replies. Start the text with a short first line naming the item; it becomes the thread's title. Replies about it happen in its thread.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          minLength: 1,
+          maxLength: 8_000,
+          description:
+            "Markdown. The first line is the title, for example `**#412 Crash on launch**`.",
+        },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "settle_thread",
+    description:
+      "Mark this thread done once what it asked for is finished (the reply is sent, the fix is open, the ticket is filed). The user can reopen it.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
     name: "board_tickets",
     description: "List tickets. Continue with nextCursor when returned.",
     inputSchema: {

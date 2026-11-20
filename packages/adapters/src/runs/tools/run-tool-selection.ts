@@ -100,6 +100,8 @@ export function selectBuiltinToolsForRun(options: {
   /** Page browser tools need a graphical computer (Chrome), not model vision. */
   pageBrowserAllowed?: boolean;
   groupId: string | null;
+  /** The bot's own chat, a thread under one of its messages, or anything else (groups, helpers). */
+  threadKind?: "chat" | "topic" | "other";
   trigger: string;
   semanticMemoryEnabled: boolean;
   /** The configured provider can forget individual facts. */
@@ -190,6 +192,10 @@ export function selectBuiltinToolsForRun(options: {
           "generate_video",
         ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
+      // An item opens a thread in the bot's own chat; only a thread can be settled.
+      ((options.threadKind === "chat" && !options.messagingChannelRun) ||
+        tool.name !== "post_item") &&
+      (options.threadKind === "topic" || tool.name !== "settle_thread") &&
       (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
       (emailClaimOffered || tool.name !== "claim_email_address") &&

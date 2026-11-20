@@ -14,11 +14,11 @@ import { liveSavedChatsScope } from "../inbox/saved-chats";
 import { isIntegrationsScopeCurrent } from "../integrations/integrations-cache";
 import type { ThreadScrollBehavior } from "./scroll/thread-scroll";
 import type { ThreadJumpAnchor } from "./thread-jump";
+import type { ChatTarget } from "./thread-target";
+import { chatTargetInput } from "./thread-target";
 
 /** The page a search jump pinned the chat to, until it rejoins the live thread. */
-export type PinnedThreadWindow = {
-  botId?: string;
-  groupId?: string;
+export type PinnedThreadWindow = ChatTarget & {
   messageId: string;
   threadId: string;
   newerCursor: number | null;
@@ -69,9 +69,9 @@ export function showLatestThread(thread: ThreadWindow) {
 /** Opens the page around a message and pins the chat to it. */
 export async function applyThreadMessageJump(
   jump: ThreadJump,
-  target: { botId?: string; groupId?: string; messageId: string },
+  target: ChatTarget & { messageId: string },
 ) {
-  const threadTarget = target.groupId ? { groupId: target.groupId } : { botId: target.botId! };
+  const threadTarget = chatTargetInput(target);
   const epoch = jump.historyEpoch.current;
   jump.jumpGeneration.current += 1;
   const jumpId = jump.jumpGeneration.current;

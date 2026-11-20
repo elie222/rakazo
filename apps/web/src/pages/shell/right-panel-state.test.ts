@@ -41,6 +41,15 @@ describe("right panel preferences", () => {
     vi.stubGlobal("localStorage", { getItem: () => value });
     expect(readRightPanelState("state")).toEqual({ panel: null });
   });
+  it("reopens an open thread on the Threads list", () => {
+    const entries = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => entries.set(key, value),
+    });
+    writeRightPanelState("state", "thread");
+    expect(readRightPanelState("state")).toEqual({ panel: "threads" });
+  });
   it("keeps working when browser storage is unavailable", () => {
     vi.stubGlobal("localStorage", {
       getItem: () => {

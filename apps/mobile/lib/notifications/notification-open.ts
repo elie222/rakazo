@@ -6,6 +6,16 @@ export type NotificationRoute =
   | {
       pathname: "/group-thread";
       params: { groupId: string; threadId?: string; spaceId?: string; name?: string };
+    }
+  | {
+      pathname: "/topic";
+      params: {
+        botId: string;
+        topicId: string;
+        threadId?: string;
+        spaceId?: string;
+        name?: string;
+      };
     };
 
 export type ThreadSpaceRequest =
@@ -52,6 +62,9 @@ export function notificationOpenTarget(data: unknown): NotificationRoute | null 
   const groupId = notificationField(record, "groupId");
   if (groupId) return { pathname: "/group-thread", params: { groupId, ...shared } };
   const botId = notificationField(record, "botId");
+  // A run in a topic of the bot's chat opens that topic, where its question or reply is.
+  const topicId = notificationField(record, "topicId");
+  if (botId && topicId) return { pathname: "/topic", params: { botId, topicId, ...shared } };
   if (botId) return { pathname: "/thread", params: { botId, ...shared } };
   return null;
 }

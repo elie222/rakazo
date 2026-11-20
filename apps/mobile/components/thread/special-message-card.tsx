@@ -46,7 +46,7 @@ type SpecialMessageCardProps = {
   onHelperToggle?: MessageRowActions["helperToggle"];
   userBubble?: UserBubble;
   /** A background helper's card: the bot chat and card message that Stop names. */
-  stopHelper?: { botId: string; messageId: string };
+  stopHelper?: { botId: string; messageId: string; topicId?: string };
 };
 
 function HelperMessageCard({

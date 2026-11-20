@@ -117,6 +117,7 @@ async function main() {
         RAKAZO_SCREENSHOT_TEAM_SPACE_ID: fixture.teamSpaceId,
         RAKAZO_SCREENSHOT_CONVERSATION_ID: fixture.conversationId,
         RAKAZO_SCREENSHOT_CARDS_BOT_ID: fixture.cardsBotId,
+        RAKAZO_SCREENSHOT_TOPIC_ID: fixture.topicId,
       },
       botId: fixture.botId,
     });

@@ -1,9 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
+import type { Bot, Group, ThreadSnapshot, TopicSummary } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
 import { PagesList } from "../../components/pages/PagesList";
+import type { SpaceQueries } from "../../lib/query/query";
 import type { createSpaceRpc } from "../../lib/query/rpc";
 import { RoutineEditor } from "../routines/RoutineEditor";
 import type { RoutineList } from "../routines/RoutineList";
@@ -11,11 +12,15 @@ import { CreateGroupForm, GroupSettings } from "../space/GroupPanel";
 import { BotSettings } from "./bots/bot-panel";
 import { ResizableSidePanel } from "./resizable-side-panel";
 import type { Panel } from "./right-panel-state";
+import type { ThreadMessageContext } from "./topics/thread-panel";
+import { ThreadPanel } from "./topics/thread-panel";
+import { ThreadsListPanel } from "./topics/threads-list-panel";
 import { firstThreadRoute } from "./use-shell-navigation";
 
-/** The panel beside the chat: a bot, a routine, a group, or an import. */
+/** The panel beside the chat: a bot, a routine, a group, an import, or the bot chat's threads. */
 export function ShellSidePanel({
   rpc,
+  threads,
   panel,
   setPanel,
   active,
@@ -37,6 +42,20 @@ export function ShellSidePanel({
   discardChatAttachments,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
+  /** The open bot chat's threads; undefined in a group. */
+  threads:
+    | {
+        queries: SpaceQueries;
+        topics: readonly TopicSummary[];
+        /** The thread the "thread" panel shows, when it belongs to this chat. */
+        topicId: string | undefined;
+        onOpen: (topicId: string) => void;
+        meId: string | undefined;
+        showToolActivity: boolean;
+        enterToSend: boolean;
+        messageContext: ThreadMessageContext;
+      }
+    | undefined;
   panel: Panel;
   setPanel: (panel: Panel) => void;
   active: Bot | undefined;
@@ -59,7 +78,15 @@ export function ShellSidePanel({
   discardChatAttachments: (threadKey: string) => void;
 }) {
   const { t } = useLingui();
-  const open = Boolean(panel && (active || activeGroup));
+  // A thread opened from another chat, or the list in a group, has nothing to show here.
+  const threadsView =
+    active && threads && (panel === "threads" || (panel === "thread" && threads.topicId))
+      ? { active, threads, topicId: panel === "thread" ? threads.topicId : undefined }
+      : null;
+  const open =
+    panel === "threads" || panel === "thread"
+      ? Boolean(threadsView)
+      : Boolean(panel && (active || activeGroup));
   const botView = panel === "routines" || panel === "pages" || panel === "settings" ? panel : null;
 
   async function createGroup(input: { name: string; botIds: string[] }) {
@@ -74,7 +101,27 @@ export function ShellSidePanel({
 
   return (
     <ResizableSidePanel open={open} panel={panel ?? "closed"}>
-      {open ? (
+      {threadsView?.topicId ? (
+        <ThreadPanel
+          key={threadsView.topicId}
+          rpc={rpc}
+          queries={threadsView.threads.queries}
+          bot={threadsView.active}
+          topicId={threadsView.topicId}
+          topic={threadsView.threads.topics.find((topic) => topic.id === threadsView.topicId)}
+          meId={threadsView.threads.meId}
+          showToolActivity={threadsView.threads.showToolActivity}
+          enterToSend={threadsView.threads.enterToSend}
+          messageContext={threadsView.threads.messageContext}
+          onClose={() => setPanel(null)}
+        />
+      ) : threadsView ? (
+        <ThreadsListPanel
+          topics={threadsView.threads.topics}
+          onOpen={threadsView.threads.onOpen}
+          onClose={() => setPanel(null)}
+        />
+      ) : open ? (
         <div className="rk-scroll h-full w-full overflow-y-auto px-5 py-[17px]">
           {!(botView && active) &&
           panel !== "routine" &&

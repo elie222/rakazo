@@ -27,7 +27,7 @@ type ChatAlertOptions = {
   rpc: Pick<RpcClient, "notifications">;
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
-  openChat: (chat: Pick<ChatAlert, "botId" | "groupId">) => void;
+  openChat: (chat: Pick<ChatAlert, "botId" | "groupId" | "topicId">) => void;
   /** The signed-in person, whose own messages never notify them. */
   meId: string | undefined;
   /** Current groups, so a snooze that lands after a reply was queued is still honored. */
@@ -97,9 +97,12 @@ export function useBrowserNotifications(
   useEffect(() => {
     const show = (alert: ChatAlert) => {
       if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-      const isOpen = alert.groupId
-        ? alert.groupId === activeGroupId.current
-        : !activeGroupId.current && alert.botId === activeBotId.current;
+      // A topic's run is not on the open chat's stream, so its alert always shows.
+      const isOpen = alert.topicId
+        ? false
+        : alert.groupId
+          ? alert.groupId === activeGroupId.current
+          : !activeGroupId.current && alert.botId === activeBotId.current;
       // The open chat's own stream alerts for its replies and failures; only a takeover is missed.
       if (
         isOpen &&

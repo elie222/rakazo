@@ -25,6 +25,7 @@ import {
 } from "../../composer/pick-attachments";
 import { attachmentCountSkipReason } from "../../composer/pick-attachments-filter";
 import { useFileDrop } from "../../composer/use-file-drop";
+import { chatTargetKey } from "../thread-target";
 
 export type PendingAttachment = PickedAttachment & { threadKey: string };
 
@@ -83,19 +84,21 @@ function formatAttachmentSkip(item: { name: string; reason: string }): string {
 export function useThreadAttachments({
   botId,
   groupId,
+  topicId,
   readOnly,
   uploadConfig,
   draftScope,
 }: {
   botId?: string;
   groupId?: string;
+  topicId?: string;
   readOnly: boolean;
   uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
   /** The chat's draft key; unsent attachments stay under it between visits to the chat. */
   draftScope?: ComposerDraftScope;
 }) {
   const { t } = useLingui();
-  const threadKey = groupId ?? botId;
+  const threadKey = chatTargetKey({ botId, groupId, topicId });
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>(() =>
     draftScope ? (retainedDraftAttachments.get(retainedScopeKey(draftScope)) ?? []) : [],
   );
@@ -168,7 +171,7 @@ export function useThreadAttachments({
       skipped: Array<{ name: string; reason: string }>;
     }>,
   ) {
-    const targetKey = groupId ?? botId;
+    const targetKey = threadKey;
     if (!targetKey) return;
     let result: Awaited<ReturnType<typeof picker>>;
     try {
@@ -182,7 +185,7 @@ export function useThreadAttachments({
       setAttachmentNotice(errorText(error, t`Could not attach files`));
       return;
     }
-    if ((groupId ?? botId) !== targetKey) return;
+    if (threadKey !== targetKey) return;
     // Two drops can overlap, so the room left is settled against the draft as it
     // is now, not as it was when this read began.
     const room = Math.max(
@@ -221,7 +224,7 @@ export function useThreadAttachments({
       );
     },
     {
-      enabled: !readOnly && Boolean(groupId ?? botId),
+      enabled: !readOnly && Boolean(threadKey),
       maxBytes: attachmentMaxBytes(uploadConfig),
       maxFiles: attachmentMaxCount(uploadConfig),
     },

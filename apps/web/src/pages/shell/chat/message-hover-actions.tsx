@@ -13,24 +13,36 @@ import {
   PopoverTrigger,
   useCopyText,
 } from "@rakazo/ui-web";
-import { Check, Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
+import {
+  Check,
+  Copy,
+  MessageSquareDot,
+  MessagesSquare,
+  MoreHorizontal,
+  Reply,
+  Smile,
+} from "lucide-react";
 import { useState } from "react";
 import { MessageHoverMetadata } from "../../../components/messages/MessageHoverMetadata";
 
+/** The rail beside a message. An action whose callback is left out is not offered. */
 export function MessageHoverActions({
   message,
   side,
   onReply,
+  onReplyInThread,
   onMarkUnread,
   markedUnread = false,
   onReact,
 }: {
   message: ThreadMessage;
   side: "start" | "end";
-  onReply: (message: ThreadMessage) => void;
-  onMarkUnread: (message: ThreadMessage) => void;
+  onReply?: (message: ThreadMessage) => void;
+  /** Opens the message's thread, starting it on first use. */
+  onReplyInThread?: (message: ThreadMessage) => void;
+  onMarkUnread?: (message: ThreadMessage) => void;
   markedUnread?: boolean;
-  onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
+  onReact?: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
   const [copiedNow, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
@@ -44,6 +56,8 @@ export function MessageHoverActions({
   if (message.id.startsWith("progress:")) return null;
 
   const copied = copiedNow && copiedText === copyableMessageText(message);
+  // Synthetic rows (a live helper, a folded receipt) are not saved messages a thread can reply to.
+  const threadable = onReplyInThread && !message.id.includes(":");
 
   function copyMessage() {
     const text = copyableMessageText(message);
@@ -59,7 +73,7 @@ export function MessageHoverActions({
   return (
     <MessageHoverMetadata pinned={moreOpen || reactionsOpen || copied} side={side}>
       <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
-        {canReactToThreadMessage(message) ? (
+        {onReact && canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
             <PopoverTrigger aria-label={t`React`} className={iconButtonClass}>
               <Smile size={15} strokeWidth={1.7} />
@@ -86,14 +100,26 @@ export function MessageHoverActions({
             </PopoverContent>
           </Popover>
         ) : null}
-        <button
-          type="button"
-          aria-label={t`Reply`}
-          onClick={() => onReply(message)}
-          className={iconButtonClass}
-        >
-          <Reply size={15} strokeWidth={1.7} />
-        </button>
+        {onReply ? (
+          <button
+            type="button"
+            aria-label={t`Reply`}
+            onClick={() => onReply(message)}
+            className={iconButtonClass}
+          >
+            <Reply size={15} strokeWidth={1.7} />
+          </button>
+        ) : null}
+        {threadable ? (
+          <button
+            type="button"
+            aria-label={t`Reply in thread`}
+            onClick={() => onReplyInThread(message)}
+            className={iconButtonClass}
+          >
+            <MessagesSquare size={15} strokeWidth={1.7} />
+          </button>
+        ) : null}
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
           <DropdownMenuTrigger
             aria-label={copied ? t`Copied` : t`More`}
@@ -106,16 +132,18 @@ export function MessageHoverActions({
             )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"} className="w-auto">
-            <DropdownMenuItem
-              onClick={() => {
-                setMoreOpen(false);
-                onReply(message);
-              }}
-            >
-              <Reply size={14} strokeWidth={1.7} />
-              <Trans>Reply</Trans>
-            </DropdownMenuItem>
-            {canMarkMessageUnread(message) && !markedUnread ? (
+            {onReply ? (
+              <DropdownMenuItem
+                onClick={() => {
+                  setMoreOpen(false);
+                  onReply(message);
+                }}
+              >
+                <Reply size={14} strokeWidth={1.7} />
+                <Trans>Reply</Trans>
+              </DropdownMenuItem>
+            ) : null}
+            {onMarkUnread && canMarkMessageUnread(message) && !markedUnread ? (
               <DropdownMenuItem
                 onClick={() => {
                   setMoreOpen(false);

@@ -758,6 +758,19 @@ describe("scoped mobile outbox", () => {
     expect(sends[0]?.[1].artifactIds).toEqual(["artifact-b", "artifact-c"]);
     expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
   });
+  it("sends a topic reply into the topic and keeps its attachments with the bot", async () => {
+    const sendPayload = { ...payload(), originThreadKey: "topic-1", topicTarget: "topic-1" };
+    const attempt = feedback.sendAttempt(sendPayload);
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockResolvedValueOnce({ seq: 3, runId: "run-1", taskId: "task-1" });
+    await deliverSend(sendPayload, attempt, request as unknown as typeof rpc);
+    const [upload, sent] = request.mock.calls;
+    expect(upload?.[1]).toMatchObject({ botId: "bot-1" });
+    expect(upload?.[1]).not.toHaveProperty("topicId");
+    expect(sent?.[0]).toBe("threads/send");
+    expect(sent?.[1]).toMatchObject({ botId: "bot-1", topicId: "topic-1" });
+  });
   it("starts mentioned routines only in the message's own replayable send", async () => {
     const mentions = [
       { kind: "routine" as const, id: "routine-1", name: "Digest" },

@@ -36,6 +36,7 @@ import {
   createRepos,
   createThreadMessageInTransaction,
   eligibleWaitingTextAnswer,
+  findTopic,
   IsolationError,
   loadMessageAuthor,
   lockSpaceGroup,
@@ -63,6 +64,10 @@ export type ThreadTarget =
       kind: "bot";
       botId: string;
       threadId: string;
+      /** Set when the target is a topic in the bot's chat; threadId is then the topic's. */
+      topicId?: string;
+      /** The bot's own chat, which a topic replies into. */
+      mainThreadId: string;
       bot: Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>;
     }
   | {
@@ -375,7 +380,7 @@ export function sendTargetBotIds(
 export async function resolveThreadTarget(
   prisma: PrismaClient,
   actor: Actor,
-  input: { botId?: string; groupId?: string },
+  input: { botId?: string; groupId?: string; topicId?: string },
   options: { includeArchived?: boolean } = {},
 ): Promise<ThreadTarget> {
   const repos = createRepos(prisma);
@@ -383,10 +388,16 @@ export async function resolveThreadTarget(
   if (input.botId) {
     const bot = await repos.getBot(actor, input.botId, options);
     if (!bot.thread) throw new IsolationError();
+    const topic = input.topicId
+      ? await findTopic(prisma, { mainThreadId: bot.thread.id, topicId: input.topicId })
+      : null;
+    if (input.topicId && !topic) throw new IsolationError();
     return {
       kind: "bot",
       botId: bot.id,
-      threadId: bot.thread.id,
+      threadId: topic?.id ?? bot.thread.id,
+      ...(topic ? { topicId: topic.id } : {}),
+      mainThreadId: bot.thread.id,
       bot,
     };
   }

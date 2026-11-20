@@ -8,6 +8,7 @@ import { rpc } from "../api/api";
 import type { MobileMessage } from "../api/mobile-types";
 import { errorText } from "../api/user-error";
 import { dismissThreadNotifications } from "../notifications/live-notifications";
+import { chatTargetInput, chatTargetKey } from "./thread-target";
 
 /**
  * Read state for one open chat: each open or return is a visit, the chat is marked read while it
@@ -16,11 +17,13 @@ import { dismissThreadNotifications } from "../notifications/live-notifications"
 export function useThreadRead({
   botId,
   groupId,
+  topicId,
   focused,
   readOnly,
 }: {
   botId?: string;
   groupId?: string;
+  topicId?: string;
   focused: boolean;
   readOnly: boolean;
 }) {
@@ -38,7 +41,7 @@ export function useThreadRead({
   const [readBoundary, setReadBoundary] = useState<ReadBoundary | null>(null);
   // A chat's markRead calls run one at a time so the request that opened it answers first.
   const [readInOrder] = useState(createChatQueues);
-  const threadKey = groupId ?? botId;
+  const threadKey = chatTargetKey({ botId, groupId, topicId });
   if (readVisit.current.target !== threadKey || (focused && !readVisit.current.focused)) {
     readVisit.current = { target: threadKey, visit: readVisit.current.visit + 1, focused };
     readVisibleTarget.current = null;
@@ -55,13 +58,13 @@ export function useThreadRead({
     markedUnread?.visit === readVisit.current.visit ? markedUnread.messageId : undefined;
   const markUnreadFrom = (message: MobileMessage) => {
     const visit = readVisit.current.visit;
-    const target = groupId ?? botId;
+    const target = threadKey;
     if (!target) return;
     heldUnread.current = visit;
     // Through the chat's read queue, so a read already sent lands first and this one wins.
     void readInOrder(target, () =>
       rpc("threads/markUnread", {
-        ...(groupId ? { groupId } : { botId: botId! }),
+        ...chatTargetInput({ botId, groupId, topicId }),
         messageId: message.id,
       }),
     )
@@ -84,7 +87,7 @@ export function useThreadRead({
       !navigation.isFocused()
     )
       return;
-    const target = groupId ?? botId;
+    const target = chatTargetKey({ botId, groupId, topicId });
     if (!target || readVisibleTarget.current === target) return;
     readVisibleTarget.current = target;
     const visit = readVisit.current.visit;
@@ -98,7 +101,7 @@ export function useThreadRead({
       heldUnread.current !== visit &&
       AppState.currentState === "active" &&
       navigation.isFocused()
-        ? rpc("threads/markRead", groupId ? { groupId } : { botId: botId! })
+        ? rpc("threads/markRead", chatTargetInput({ botId, groupId, topicId }))
         : Promise.resolve(null),
     )
       .then((answer) => {
@@ -116,7 +119,7 @@ export function useThreadRead({
       .catch(() => {
         if (readVisibleTarget.current === target) readVisibleTarget.current = null;
       });
-  }, [botId, groupId, navigation, readInOrder, readOnly]);
+  }, [botId, groupId, topicId, navigation, readInOrder, readOnly]);
 
   return {
     threadKey,

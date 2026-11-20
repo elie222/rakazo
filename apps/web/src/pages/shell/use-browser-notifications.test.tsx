@@ -204,6 +204,13 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toEqual([]);
   });
 
+  it("alerts for a thread in the open bot's chat, which its stream does not carry", async () => {
+    focused = false;
+    await open({ botId: "bot-b" });
+    await send({ kind: "help", threadId: "topic-t", topicId: "topic-t" });
+    expect(shown()).toHaveLength(1);
+  });
+
   it("treats a bot's alert from a group as another chat", async () => {
     await open({ botId: "bot-b" });
     await send({ groupId: "group-g", threadId: "thread-g" });

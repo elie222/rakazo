@@ -35,7 +35,7 @@ type ThreadEvent = {
   payload?: Record<string, unknown>;
 };
 export async function subscribeThread(
-  target: { botId: string } | { groupId: string },
+  target: { botId: string; topicId?: string } | { groupId: string },
   cursor: number,
   onEvent: (event: ThreadEvent) => void,
   signal: AbortSignal,

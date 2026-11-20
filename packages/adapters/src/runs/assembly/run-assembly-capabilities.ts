@@ -699,6 +699,12 @@ export async function selectRunTools(
       graphicalToolsAllowed,
       pageBrowserAllowed,
       groupId: conversationThread.groupId,
+      threadKind:
+        parts.records.thread.botId === bot.id
+          ? "chat"
+          : parts.records.thread.parentMessageId
+            ? "topic"
+            : "other",
       trigger: run.trigger,
       semanticMemoryEnabled,
       semanticMemoryForgets: Boolean(semanticMemory?.forget),

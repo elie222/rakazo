@@ -38,6 +38,7 @@ import { withUserBubble } from "../../lib/messages/user-bubble";
 import { useResolvedAppearance } from "../../lib/native/native";
 import { PageCard } from "../../lib/pages/page-card";
 import { botDisplayName, speakerColorFor } from "../../lib/thread/thread-message-text";
+import { chatTargetInput } from "../../lib/thread/thread-target";
 import { AppConnectCard } from "../cards/AppConnectCard";
 import { AskActions } from "../cards/AskActions";
 import { AskReceiptView } from "../cards/ask-receipt";
@@ -172,7 +173,7 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
           key={`question-${index}`}
           block={first}
           messageId={message.id}
-          target={props.groupId ? { groupId: props.groupId } : { botId: props.botId }}
+          target={chatTargetInput(props)}
           canAnswer={props.canAnswer}
         />
       );
@@ -197,7 +198,11 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
         // A saved running card is a background helper's; a live one belongs to this turn.
         stopHelper={
           first.kind === "subagent" && message.botId && !message.id.startsWith("subagent:")
-            ? { botId: message.botId, messageId: message.id }
+            ? {
+                botId: message.botId,
+                messageId: message.id,
+                ...(props.topicId ? { topicId: props.topicId } : {}),
+              }
             : undefined
         }
       />
@@ -248,6 +253,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   showBotSenderName: boolean;
   bots: MobileBot[];
   groupId?: string;
+  /** Set in a topic, so its cards answer and stop there. */
+  topicId?: string;
   message: MobileMessage;
   members?: MobileSnapshot["members"];
   canAnswer: boolean;

@@ -7,6 +7,7 @@ import type {
   LoginFieldInput,
   MessageReaction,
   ThreadMessage,
+  TopicSummary,
 } from "@rakazo/contracts";
 import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
 import {
@@ -54,6 +55,7 @@ import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { useEventListener } from "../../../lib/use-event-listener";
 import type { ImportSetupTarget } from "../bots/import-setup-card";
 import { isEditableTarget } from "../shell-shortcuts";
+import { TopicFooter } from "../topics/topic-footer";
 import { TimeSeparator, UnreadDivider } from "./chat-context";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
@@ -91,6 +93,9 @@ export const Transcript = memo(function Transcript({
   onOpenBot,
   onAnswer,
   onReply,
+  onReplyInThread,
+  topics,
+  onOpenTopic,
   onMarkUnread,
   markedUnreadMessageId,
   onQuote,
@@ -144,6 +149,13 @@ export const Transcript = memo(function Transcript({
     remember?: false,
   ) => Promise<void>;
   onReply: (message: ThreadMessage) => void;
+  /** A one-to-one bot chat's threads: started from a message, shown under it once replied to. */
+  onReplyInThread?: (message: ThreadMessage) => void;
+  topics?: {
+    byMessage: ReadonlyMap<string, TopicSummary>;
+    bot: { id: string; color: string; avatarSet?: BotAvatarSet };
+  };
+  onOpenTopic?: (topicId: string) => void;
   onMarkUnread: (message: ThreadMessage) => void;
   markedUnreadMessageId?: string;
   onQuote: (message: ThreadMessage, quote: string) => void;
@@ -617,6 +629,7 @@ export const Transcript = memo(function Transcript({
           const message = item.message;
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
           const messageReactions = reactionView.reactions.get(message.id);
+          const topic = topics?.byMessage.get(message.id);
           return (
             <Fragment key={message.id}>
               {separatorIds.has(message.id) ? (
@@ -703,6 +716,7 @@ export const Transcript = memo(function Transcript({
                       rpc={rpc}
                       showToolActivity={showToolActivity}
                       onReply={onReply}
+                      onReplyInThread={onReplyInThread}
                       onMarkUnread={onMarkUnread}
                       onReact={onReact}
                     />
@@ -725,6 +739,11 @@ export const Transcript = memo(function Transcript({
                         {count > 1 ? ` ${count}` : ""}
                       </span>
                     ))}
+                  </div>
+                ) : null}
+                {topic && topics && onOpenTopic ? (
+                  <div className={cn("flex", message.role === "user" && "justify-end")}>
+                    <TopicFooter topic={topic} bot={topics.bot} onOpen={onOpenTopic} />
                   </div>
                 ) : null}
               </div>

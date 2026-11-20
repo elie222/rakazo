@@ -90,8 +90,6 @@ async function chat(messages: object[]) {
         importingShare: { current: false },
       },
       mentionBotsRef: { current: [] },
-      activeBotId: { current: "bot-1" },
-      activeGroupId: { current: undefined },
       isCurrentTarget: () => true,
       refresh: async () => undefined,
       showLatest: () => undefined,

@@ -22,6 +22,8 @@ import { threadRefreshDelayMs } from "./refresh";
 import type { ThreadListScroll } from "./scroll/thread-list-scroll";
 import type { ThreadHistory } from "./thread-history";
 import { useThreadLiveSubscription } from "./thread-live";
+import type { ChatTarget } from "./thread-target";
+import { chatTargetInput, chatTargetKey } from "./thread-target";
 import type { ThreadJump } from "./thread-window";
 import { applyThreadMessageJump, showLatestThread } from "./thread-window";
 
@@ -38,6 +40,7 @@ export function useThreadSync({
   scroll,
   botId,
   groupId,
+  topicId,
   messageId,
   readOnly,
   foreground,
@@ -57,6 +60,8 @@ export function useThreadSync({
   scroll: ThreadListScroll;
   botId?: string;
   groupId?: string;
+  /** A topic in the bot's chat. It has no saved copy: saved chats hold whole conversations. */
+  topicId?: string;
   /** A search hit to open the chat around. */
   messageId?: string;
   readOnly: boolean;
@@ -98,6 +103,7 @@ export function useThreadSync({
 
   /** Shows the chat's saved copy until live data for it arrives; never under a search jump. */
   function showSavedThread(signal: AbortSignal) {
+    if (topicId) return;
     const target = savedChatTarget({ botId, groupId });
     // Another chat's messages must never stay on screen under this chat's name.
     if (snapRef.current && savedChatTarget(snapRef.current) !== target) {
@@ -137,7 +143,7 @@ export function useThreadSync({
     const generation = ++refreshGeneration.current;
     const next = await rpc(
       "threads/get",
-      targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },
+      chatTargetInput({ botId: targetBotId, groupId: targetGroupId, topicId }),
     );
     if (
       origin.sessionGeneration !== currentSessionGeneration() ||
@@ -171,7 +177,7 @@ export function useThreadSync({
     if (result.commit) {
       snapshotOrigin.current = scope;
       pendingSave.current = null;
-      writeSavedThread(scope, savedChatTarget(next), next);
+      if (!topicId) writeSavedThread(scope, savedChatTarget(next), next);
       // A refresh at the cursor already applied keeps a waiting_takeover its events set. The
       // computer screen loads its own status, so the thread's copy is not reconciled here.
       const preserveHistory = expandedHistoryThread.current === next.threadId;
@@ -179,7 +185,7 @@ export function useThreadSync({
       setShowingSaved(false);
     }
     if (isCurrentTarget(targetBotId, targetGroupId)) {
-      onRefreshed(targetGroupId ?? targetBotId);
+      onRefreshed(chatTargetKey({ botId: targetBotId, groupId: targetGroupId, topicId }));
     }
     return result.snapshot ?? undefined;
   }
@@ -193,7 +199,7 @@ export function useThreadSync({
     setExpandedPeerMarkers,
   };
 
-  function applyMessageJump(target: { botId?: string; groupId?: string; messageId: string }) {
+  function applyMessageJump(target: ChatTarget & { messageId: string }) {
     return applyThreadMessageJump(threadJump, target);
   }
 
@@ -204,6 +210,7 @@ export function useThreadSync({
   const liveSubscribed = useThreadLiveSubscription({
     botId,
     groupId,
+    topicId,
     foreground,
     focused,
     readOnly,
@@ -240,6 +247,7 @@ export function useThreadSync({
   useEffect(() => {
     if (
       !snap ||
+      topicId ||
       showingSaved ||
       jumpScrollTarget.current ||
       pinnedAroundRef.current ||
@@ -258,7 +266,7 @@ export function useThreadSync({
       pendingSave.current = null;
     }, 600);
     return () => clearTimeout(timer);
-  }, [snap, showingSaved, botId, groupId]);
+  }, [snap, showingSaved, botId, groupId, topicId]);
 
   // The safety snapshot is a gap detector, not the live path: SSE already carries
   // deltas. Stop the timer while the app is backgrounded; the stream effect resumes
@@ -315,12 +323,10 @@ export function useThreadSync({
       return;
     }
     jumpAnchor.current.begin(messageId);
-    void applyMessageJump(groupId ? { groupId, messageId } : { botId: botId!, messageId }).catch(
-      (err) => {
-        setError(errorText(err, t`Could not open message`));
-      },
-    );
-  }, [botId, groupId, messageId, sessionEpoch]);
+    void applyMessageJump({ botId, groupId, topicId, messageId }).catch((err) => {
+      setError(errorText(err, t`Could not open message`));
+    });
+  }, [botId, groupId, topicId, messageId, sessionEpoch]);
 
   return { isCurrentTarget, refresh, applyMessageJump, showLatest };
 }

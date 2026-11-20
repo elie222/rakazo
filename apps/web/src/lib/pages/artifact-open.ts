@@ -1,6 +1,7 @@
 import { rpc } from "../query/rpc";
 
-export type ArtifactTarget = { botId: string } | { groupId: string };
+/** Whose files a message shows: a bot chat, one of its topics, or a group. */
+export type ArtifactTarget = { botId: string; topicId?: string } | { groupId: string };
 
 export function decodeArtifactBase64(contentBase64: string): Uint8Array {
   const binary = atob(contentBase64);

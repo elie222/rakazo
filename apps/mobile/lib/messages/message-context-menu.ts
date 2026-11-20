@@ -1,5 +1,6 @@
 export const messageMenuSymbols = [
   "reply",
+  "thread",
   "copy",
   "react",
   "quote",
@@ -37,6 +38,8 @@ export function buildMessageContextMenu({
   reactions: readonly string[];
   include: {
     reply?: boolean;
+    /** Reply in the message's topic, in a one-to-one bot chat. */
+    thread?: boolean;
     quote: boolean;
     react: boolean;
     speak: boolean;
@@ -51,6 +54,7 @@ export function buildMessageContextMenu({
   ];
   return [
     ...(include.reply !== false ? [entry("reply", labels.reply)] : []),
+    ...(include.thread ? [entry("thread", labels.thread)] : []),
     ...(include.unread ? [entry("unread", labels.unread)] : []),
     entry("copy", labels.copy),
     ...(include.react

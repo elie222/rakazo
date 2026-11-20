@@ -23,6 +23,7 @@ import {
   threadSendWithRoutinesInput,
   threadTarget,
 } from "./thread-send.js";
+import { TopicListInput, TopicOpenInput, TopicSettleInput, TopicSummarySchema } from "./topics.js";
 
 export const threadsRpc = {
   threads: {
@@ -186,6 +187,12 @@ export const threadsRpc = {
     markUnread: oc
       .input(threadTarget.and(z.object({ messageId: Id.optional() })))
       .output(z.object({ ok: z.literal(true) })),
+    /** The bot chat's topics, newest activity first. */
+    topics: oc.input(TopicListInput).output(z.object({ topics: z.array(TopicSummarySchema) })),
+    /** The topic replying to a message in the bot's chat, started on first open. */
+    openTopic: oc.input(TopicOpenInput).output(z.object({ topicId: Id })),
+    /** Marks a topic done, or open again. */
+    settleTopic: oc.input(TopicSettleInput).output(z.object({ ok: z.literal(true) })),
     /** Hides the chat from the caller's list until `until`; null wakes it now. */
     snooze: oc
       .input(threadTarget.and(z.object({ until: z.iso.datetime({ offset: true }).nullable() })))

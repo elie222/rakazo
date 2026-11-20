@@ -40,6 +40,7 @@ vi.mock("../bots/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("./reply-line", () => ({ ReplyLine: () => null }));
 vi.mock("./time-separator", () => ({ TimeSeparator: () => null }));
 vi.mock("./unread-divider", () => ({ UnreadDivider: () => null }));
+vi.mock("./topic-footer", () => ({ TopicFooter: () => null }));
 // Capture the accessibility actions MessageRow hands its bubble.
 vi.mock("./message-bubble", () => ({
   MessageBubble: ({ actionProps }: { actionProps: MessageActionProps }) => {
@@ -52,7 +53,12 @@ import { MessageRow } from "./message-row";
 
 type RowProps = ComponentProps<typeof MessageRow>;
 
-function messageMenu(role: "bot" | "user", blocks: string[], markedUnread = false) {
+function messageMenu(
+  role: "bot" | "user",
+  blocks: string[],
+  markedUnread = false,
+  extra: { canOpenTopic?: boolean; actions?: object } = {},
+) {
   const text = blocks.map((code) => `\`\`\`\n${code}\n\`\`\``).join("\n\n");
   mocks.markdownCodeBlocks.mockReturnValue(blocks);
   mocks.actionProps = undefined;
@@ -63,7 +69,8 @@ function messageMenu(role: "bot" | "user", blocks: string[], markedUnread = fals
       createdAt: "2026-01-01T00:00:00.000Z",
       blocks: [{ kind: "text", text }],
     },
-    actions: {},
+    actions: extra.actions ?? {},
+    canOpenTopic: extra.canOpenTopic ?? false,
     bubbleBotId: "bot-1",
     showBotSenderName: false,
     bots: [],
@@ -136,4 +143,15 @@ it("hides the completed unread action while preserving code copy", () => {
   const completed = messageMenu("bot", ["example"], true);
   expect(completed.accessibilityActions.some((action) => action.name === "unread")).toBe(false);
   expect(completed.accessibilityActions).toContainEqual({ name: "copyCode", label: "Copy code" });
+});
+
+it("offers Reply in Thread only where the chat allows topics, and opens the message's topic", () => {
+  expect(
+    messageMenu("bot", []).accessibilityActions.some((action) => action.name === "thread"),
+  ).toBe(false);
+  const openTopic = vi.fn();
+  const menu = messageMenu("bot", [], false, { canOpenTopic: true, actions: { openTopic } });
+  expect(menu.accessibilityActions).toContainEqual({ name: "thread", label: "Reply in Thread" });
+  menu.run("thread");
+  expect(openTopic).toHaveBeenCalledWith(expect.objectContaining({ id: "message-1" }));
 });

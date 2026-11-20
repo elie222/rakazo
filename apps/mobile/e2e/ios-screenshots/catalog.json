@@ -24,6 +24,12 @@
     "screens": ["thread", "group-thread", "artifact", "invite"]
   },
   {
+    "id": "topics",
+    "title": "Threads",
+    "flow": "flows/topics.yaml",
+    "screens": ["topics", "topic"]
+  },
+  {
     "id": "thread-errors",
     "title": "Thread error recovery",
     "flow": "flows/thread-errors.yaml",

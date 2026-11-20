@@ -5,6 +5,8 @@ export type Panel =
   | "routine"
   | "create-group"
   | "group-settings"
+  | "threads"
+  | "thread"
   | null;
 export type RightPanelState = { panel: Panel; routineId?: string };
 
@@ -16,6 +18,7 @@ const durablePanels: readonly (string | null)[] = [
   "settings",
   "routine",
   "group-settings",
+  "threads",
   null,
 ];
 
@@ -65,10 +68,12 @@ function restoredPanel(panel: string | null): Panel {
 export function writeRightPanelState(key: string, panel: Panel, routineId?: string) {
   // Keep the last durable preference while create-group is open.
   if (panel === "create-group") return;
+  // An open thread is not remembered; its chat reopens on the Threads list.
+  const saved = panel === "thread" ? "threads" : panel;
   try {
     localStorage.setItem(
       key,
-      JSON.stringify({ panel, ...(panel === "routine" && routineId ? { routineId } : {}) }),
+      JSON.stringify({ panel: saved, ...(saved === "routine" && routineId ? { routineId } : {}) }),
     );
   } catch {
     // Restricted storage must not prevent opening or closing the panel.
