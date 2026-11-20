@@ -238,7 +238,7 @@ export function SkillsDialog({
           !catalog.data?.unavailableRegistries.length &&
           query.trim() !== "" &&
           packs.length === 0 ? (
-            <p className="text-muted-foreground/80">
+            <p role="status" className="text-muted-foreground/80">
               <Trans>No skills match your search.</Trans>
             </p>
           ) : null}

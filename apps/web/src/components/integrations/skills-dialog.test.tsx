@@ -154,6 +154,7 @@ describe("SkillsDialog browse search", () => {
     type("zzzz");
 
     await vi.waitFor(() => expect(container.textContent).toContain(noMatchLine));
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(noMatchLine);
     expect(container.querySelectorAll('[data-testid="skill-packs"] > *')).toHaveLength(0);
   });
 
