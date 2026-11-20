@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { AppBootstrap, Bot, Group } from "@rakazo/contracts";
+import type { AppBootstrap, Bot, Group, Me } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { ComponentType } from "react";
 import { act, lazy, StrictMode, Suspense, useLayoutEffect, useRef, useState } from "react";
@@ -57,6 +57,7 @@ vi.mock("../../../lib/query/user-error", () => ({ errorText: () => "" }));
 let server: Record<string, { bots: string[]; groups: string[] }>;
 let root: Root;
 let shell: {
+  me: Me | null | undefined;
   signals: RosterSignals;
   refreshBots: () => Promise<void>;
   navigate: NavigateFunction;
@@ -98,6 +99,9 @@ function rpcOf(spaceId: string) {
         return { current: { bots, groups, botSections }, spaces: [] };
       },
     },
+    bots: { listArchived: async () => [] },
+    groups: { listArchived: async () => [] },
+    me: async () => bootstrapOf(spaceId).me,
   } as unknown as ReturnType<typeof createSpaceRpc>;
 }
 
@@ -151,7 +155,13 @@ function SpaceShell() {
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;
   }, [openSpaceChat]);
-  shell = { signals, refreshBots: roster.refreshBots, navigate, openSpaceChat };
+  shell = {
+    me: roster.bootstrapMe,
+    signals,
+    refreshBots: roster.refreshBots,
+    navigate,
+    openSpaceChat,
+  };
   return null;
 }
 
@@ -692,4 +702,13 @@ describe("a link to a group chat in another space", () => {
       expect(window.location.pathname).toBe("/app/home");
     },
   );
+});
+
+describe("a first load that fails", () => {
+  it("loads the account with the roster, so what it shows in Settings comes back", async () => {
+    state.take.mockRejectedValueOnce(new Error("offline"));
+    await open("/app/home");
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(shell.me).toEqual(bootstrapOf("personal").me);
+  });
 });

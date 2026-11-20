@@ -73,6 +73,13 @@ export function useSpaceRoster({
   // A failed first load falls back to the shell, whose re-reads and footer can still recover.
   const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null | undefined>(seed?.me);
+  // Set when the first load failed without a seed: roster re-reads then fetch the account too,
+  // or what it decides (Labs, Billing, ...) would stay hidden until a reload.
+  const meMissingRef = useRef(false);
+  const accountLoadFailed = useCallback(() => {
+    meMissingRef.current = true;
+    setBootstrapMe(null);
+  }, []);
   const callsEnabledRef = useRef(false);
   useEffect(() => {
     callsEnabledRef.current = bootstrapMe?.phoneCallsEnabled === true;
@@ -101,11 +108,16 @@ export function useSpaceRoster({
       const botOrderEpoch = botOrderEpochRef.current;
       const preserveBotOrder = savingBotOrderRef.current || pendingBotOrderRef.current !== null;
       const archivedRequest = includeArchived ? ++archivedBotsRefreshEpoch.current : null;
-      const [navigation, archived, archivedGroupList] = await Promise.all([
+      const [navigation, archived, archivedGroupList, me] = await Promise.all([
         rpc.spaces.list(),
         includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
         includeArchived ? rpc.groups.listArchived() : Promise.resolve(null),
+        meMissingRef.current ? rpc.me() : Promise.resolve(null),
       ]);
+      if (me && meMissingRef.current) {
+        meMissingRef.current = false;
+        setBootstrapMe((previous) => previous ?? me);
+      }
       const { bots: list, botSections: sections, groups: groupList } = navigation.current;
       markOnce("rk:renderer:bots-response");
       const botsFresh = request === botsRefreshEpoch.current;
@@ -250,6 +262,7 @@ export function useSpaceRoster({
     setInitialLoadFailed,
     bootstrapMe,
     setBootstrapMe,
+    accountLoadFailed,
     callsEnabledRef,
     botsRefreshApplied,
     switchingSpace,
@@ -315,6 +328,7 @@ export function useSpaceBootstrap({
     setInitialLoadFailed,
     bootstrapMe,
     setBootstrapMe,
+    accountLoadFailed,
     callsEnabledRef,
     botsRefreshApplied,
     switchingSpace,
@@ -440,7 +454,7 @@ export function useSpaceBootstrap({
       })
       .catch(() => {
         if (cancelled) return;
-        if (!seed) setBootstrapMe(null);
+        if (!seed) accountLoadFailed();
         return refreshBots(true).catch(() => {
           if (!cancelled) setInitialLoadFailed(true);
         });
