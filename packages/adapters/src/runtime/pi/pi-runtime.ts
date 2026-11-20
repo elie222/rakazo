@@ -112,11 +112,11 @@ import {
   describeToolActivity,
   redactAskUserDetailInMessage,
   releaseToolCallBudget,
-  rememberStepStatus,
   toAgentTools,
   toolCallBudgetExceededMessage,
   toolCallBudgetFor,
 } from "./tools/pi-runtime-tools.js";
+import { rememberStepStatus } from "./tools/step-status.js";
 import { withPiTelemetry } from "./usage/pi-telemetry.js";
 import { observedPiStream } from "./usage/pi-usage.js";
 

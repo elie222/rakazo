@@ -2,7 +2,7 @@ import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { effectiveModelRole } from "../../models/model-roles.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
-import { resolveModelKey } from "../turn/run-model.js";
+import { resolveConnectedModelKey } from "../turn/run-model.js";
 import { createStatusLineWriter } from "./status-lines.js";
 
 vi.mock("../../models/model-roles.js", () => ({
@@ -12,14 +12,11 @@ vi.mock("../../models/model-roles.js", () => ({
     primarySource: "member",
   })),
 }));
-vi.mock("../../models/model-selection.js", () => ({
-  findConnectedModelCredential: vi.fn(async () => null),
-}));
 vi.mock("../turn/run-model.js", () => ({
-  resolveModelKey: vi.fn(async (...args: unknown[]) => {
+  resolveConnectedModelKey: vi.fn(async (...args: unknown[]) => {
     // Resolving a key registers its secret values for redaction, as the real one does.
-    (args[6] as (values: string[]) => void)(["sk-resolved-secret"]);
-    return { apiKey: "test-key" };
+    (args[4] as (values: string[]) => void)(["sk-resolved-secret"]);
+    return { credential: null, resolved: { apiKey: "test-key" } };
   }),
 }));
 vi.mock("@rakazo/db", () => ({ recordUsage: vi.fn(async () => undefined) }));
@@ -136,7 +133,7 @@ describe("createStatusLineWriter", () => {
 
   it("tries a model's key again after a failed lookup", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.mocked(resolveModelKey).mockRejectedValueOnce(new Error("database hiccup"));
+    vi.mocked(resolveConnectedModelKey).mockRejectedValueOnce(new Error("database hiccup"));
     const { deps: d, models } = deps(() => "Checking availability");
     const writer = await createStatusLineWriter(d, scope, []);
     const signal = new AbortController().signal;
@@ -156,7 +153,7 @@ describe("createStatusLineWriter", () => {
       return limit.signal;
     });
     try {
-      vi.mocked(resolveModelKey).mockImplementationOnce(() => new Promise(() => {}));
+      vi.mocked(resolveConnectedModelKey).mockImplementationOnce(() => new Promise(() => {}));
       const { deps: d, models } = deps(() => "Checking availability");
       const writer = await createStatusLineWriter(d, scope, []);
       const signal = new AbortController().signal;
@@ -174,5 +171,22 @@ describe("createStatusLineWriter", () => {
     } finally {
       timeout.mockRestore();
     }
+  });
+
+  it("resolves each status model's key with the checks every role model gets", async () => {
+    const { deps: d } = deps(() => "Checking availability");
+    const writer = await createStatusLineWriter(d, scope, []);
+    await writer?.step("Is it in stock?", "Running: curl …", new AbortController().signal);
+    // A stored secret is required, so a pinned connection that is gone fails over to the
+    // next model instead of running on the deployment's key.
+    expect(resolveConnectedModelKey).toHaveBeenCalledWith(
+      d,
+      { userId: "user-1", spaceId: "space-1" },
+      "anthropic",
+      "small-a",
+      expect.any(Function),
+      true,
+      undefined,
+    );
   });
 });

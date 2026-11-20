@@ -7,12 +7,8 @@ import {
 } from "../../../runs/assembly/run-replies.prompt.js";
 import { isOpeningAcknowledgement } from "../../../runs/lifecycle/run-progress.js";
 import type { ToolHost } from "./pi-runtime-tools.js";
-import {
-  describeToolActivity,
-  rememberStepStatus,
-  stepStatusOf,
-  toAgentTools,
-} from "./pi-runtime-tools.js";
+import { describeToolActivity, toAgentTools } from "./pi-runtime-tools.js";
+import { rememberStepStatus, stepStatusOf } from "./step-status.js";
 
 /** Tools this runtime offered the `live_status` field to. */
 const narrated = new Set(["shell", "use_tool", "create_space"]);

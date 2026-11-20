@@ -1,12 +1,13 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import type { ModelRoleChoice } from "@rakazo/contracts";
+import { modelRoleConnectionId } from "@rakazo/contracts";
 import { deadlineSignal, redactSecrets, withAbort } from "@rakazo/core";
 import { recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { effectiveModelRole } from "../../models/model-roles.js";
-import { findConnectedModelCredential } from "../../models/model-selection.js";
+import { isRuntimeFailureText } from "../../runtime/runtime-failure-text.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
-import { resolveModelKey } from "../turn/run-model.js";
+import { resolveConnectedModelKey } from "../turn/run-model.js";
 import {
   openingStatusPrompt,
   STATUS_LINE_INSTRUCTIONS,
@@ -56,28 +57,25 @@ export async function createStatusLineWriter(
     // primary for this role.
     const choices = primary ? [primary, ...backups] : [...backups];
     if (!choices.length) return undefined;
-    const keys = new Map<ModelRoleChoice, ReturnType<typeof resolveModelKey>>();
+    const keys = new Map<
+      ModelRoleChoice,
+      Promise<Awaited<ReturnType<typeof resolveConnectedModelKey>>["resolved"]>
+    >();
     const keyFor = (choice: ModelRoleChoice) => {
       let key = keys.get(choice);
       if (!key) {
-        key = findConnectedModelCredential(
-          deps.prisma,
-          deps.secretStore,
+        // The same checks as any other role model: an allowed provider, a valid choice, and
+        // a pinned connection that still exists. A missing one fails over to the next model
+        // instead of running on the deployment's key.
+        key = resolveConnectedModelKey(
+          deps,
           { userId: scope.userId, spaceId: scope.spaceId },
           choice.provider,
           choice.modelId,
-          { credentialId: choice.credentialId },
-        ).then((credential) =>
-          resolveModelKey(
-            deps,
-            scope.userId,
-            scope.spaceId,
-            credential,
-            choice.provider,
-            choice.modelId,
-            (values) => secrets.push(...values),
-          ),
-        );
+          (values) => secrets.push(...values),
+          true,
+          modelRoleConnectionId(choice),
+        ).then(({ resolved }) => resolved);
         keys.set(choice, key);
         // A failed lookup is not kept: the next status tries the model again.
         key.catch(() => {
@@ -174,9 +172,10 @@ export async function createStatusLineWriter(
           },
         )) {
           if (event.type === "usage" && !event.accounted) await onUsage(event);
-          if (event.type === "text" && isModelFailureText(event.text)) problem = event.text.trim();
+          if (event.type === "text" && isRuntimeFailureText(event.text))
+            problem = event.text.trim();
           if (event.type === "done" && event.text) {
-            if (isModelFailureText(event.text)) problem = event.text.trim();
+            if (isRuntimeFailureText(event.text)) problem = event.text.trim();
             else text = event.text;
           }
         }
@@ -239,11 +238,6 @@ export async function createStatusLineWriter(
 function redactedError(error: unknown, secrets: string[]) {
   const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   return redactSecrets(text, secrets).slice(0, 200);
-}
-
-/** Text a runtime writes in place of an answer when the model call failed. */
-function isModelFailureText(text: string) {
-  return /^(?:I hit a problem:|Unknown model )/i.test(text.trim());
 }
 
 /**
