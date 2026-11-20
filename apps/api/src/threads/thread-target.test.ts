@@ -1,6 +1,11 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
-import { callClientNonce } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  ClientError,
+  callClientNonce,
+  MODEL_REQUIRED_SEND_ERROR,
+} from "@rakazo/core";
 import type * as MessageQuoteModule from "@rakazo/core/message-quote";
 import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
@@ -2455,7 +2460,14 @@ describe("sendThreadMessage", () => {
               },
             ].filter((run) => !where.botId?.in || where.botId.in.includes(run.botId)),
           ),
-          findFirst: vi.fn().mockResolvedValue({ botId: "bot-a", userId: "user-1" }),
+          findFirst: vi.fn().mockResolvedValue({
+            id: "run-waiting",
+            taskId: "task-1",
+            botId: "bot-a",
+            status: "waiting_input",
+            trigger: "user",
+            userId: "user-1",
+          }),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
           create: vi.fn().mockResolvedValue({
@@ -2601,7 +2613,14 @@ describe("sendThreadMessage", () => {
               updatedAt: new Date("2026-01-01T00:00:00Z"),
             },
           ]),
-          findFirst: vi.fn().mockResolvedValue({ botId: "bot-a", userId: "user-1" }),
+          findFirst: vi.fn().mockResolvedValue({
+            id: "run-waiting",
+            taskId: "task-1",
+            botId: "bot-a",
+            status: "waiting_input",
+            trigger: "user",
+            userId: "user-1",
+          }),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         },
@@ -2747,6 +2766,18 @@ describe("sendThreadMessage", () => {
                     },
                   ],
             ),
+            findFirst: vi.fn().mockResolvedValue(
+              reason === "stale-with-newer-question"
+                ? null
+                : {
+                    id: "run-1",
+                    taskId: "task-1",
+                    botId: "bot-a",
+                    status: "waiting_input",
+                    trigger: "user",
+                    userId: "user-owner",
+                  },
+            ),
             updateMany: vi.fn(),
             create: vi.fn(),
           },
@@ -2830,6 +2861,275 @@ describe("sendThreadMessage", () => {
       ),
     ).toEqual(["bot-a"]);
     expect(new QuestionAlreadyAnsweredError().kind).toBe("CONFLICT");
+  });
+
+  it.each(["bot", "group"] as const)(
+    "resolves a background helper's option card on its originating chat under the lock (%s)",
+    async (kind) => {
+      const helperAsk = {
+        id: "ask-helper",
+        role: "bot",
+        botId: "bot-a",
+        runId: "run-helper",
+        blocks: [
+          // Unrecognized legacy sibling block must not hide the pending question (S15).
+          { kind: "legacy_notice", legacyField: 1 },
+          {
+            kind: "ask",
+            text: "Which city should the helper use?",
+            status: "pending",
+            actions: [
+              { id: "choice-1", label: "Berlin" },
+              { id: "choice-2", label: "Seoul" },
+            ],
+          },
+        ],
+      };
+      const tx = {
+        space: { findUnique: vi.fn(async () => null) },
+        externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+        user: { findMany: vi.fn().mockResolvedValue([]) },
+        spaceMember: { count: vi.fn().mockResolvedValue(1) },
+        $executeRaw: vi.fn(async () => 0),
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-origin" }]),
+        thread: {
+          update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
+            data.nextMessageSeq ? { nextMessageSeq: 4 } : { nextEventSeq: 5 },
+          ),
+        },
+        message: {
+          create: vi.fn().mockResolvedValue({
+            id: "msg-helper-answer",
+            threadId: "thread-origin",
+            seq: 3,
+            role: "user",
+            blocks: [{ kind: "text", text: "Reykjavik instead" }],
+            botId: null,
+            replyToMessageId: "ask-helper",
+            runId: null,
+            createdAt: new Date(),
+          }),
+          findMany: vi.fn().mockResolvedValue([helperAsk]),
+          findFirst: vi.fn().mockResolvedValue(helperAsk),
+          update: vi.fn(),
+        },
+        run: {
+          // Helper run lives on another thread, so activeRuns on thread-origin is empty.
+          findMany: vi.fn().mockResolvedValue([]),
+          findFirst: vi.fn().mockResolvedValue({
+            id: "run-helper",
+            taskId: "task-helper",
+            botId: "bot-a",
+            status: "waiting_input",
+            trigger: BACKGROUND_HELPER_TRIGGER,
+            userId: "user-1",
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+        },
+        attempt: { updateMany: vi.fn() },
+        secret: { deleteMany: vi.fn() },
+        steeringMessage: { create: vi.fn() },
+        event: { create: vi.fn().mockResolvedValue({ seq: 5, threadId: "thread-origin" }) },
+        task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        chatGroup: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "group-1",
+            members: [
+              { bot: { id: "bot-a", name: "Alpha", color: null } },
+              { bot: { id: "bot-b", name: "Beta", color: null } },
+            ],
+          }),
+          update: vi.fn().mockResolvedValue({ id: "group-1" }),
+        },
+      };
+      const prisma = {
+        message: { findUnique: vi.fn().mockResolvedValue(null) },
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      const target = (
+        kind === "bot"
+          ? { kind: "bot", botId: "bot-a", threadId: "thread-origin", bot: { computer: null } }
+          : {
+              kind: "group",
+              groupId: "group-1",
+              groupName: "Group",
+              threadId: "thread-origin",
+              members: [],
+              memberBotIds: ["bot-a", "bot-b"],
+            }
+      ) as ThreadTarget;
+      const enqueue = vi.fn().mockResolvedValue(undefined);
+
+      await expect(
+        sendThreadMessage(
+          {
+            prisma,
+            sandbox: {} as never,
+            events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+            jobs: { enqueue } as never,
+          },
+          { spaceId: "workspace-1", userId: "user-1" } as Actor,
+          target,
+          {
+            text: "Reykjavik instead",
+            replyToMessageId: "ask-helper",
+            answersQuestion: true,
+            clientNonce: `nonce-helper-${kind}`,
+          },
+        ),
+      ).resolves.toMatchObject({
+        runId: "run-helper",
+        taskId: "task-helper",
+        runIds: ["run-helper"],
+      });
+      expect(tx.run.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: "run-helper",
+            OR: [
+              { threadId: "thread-origin" },
+              {
+                trigger: BACKGROUND_HELPER_TRIGGER,
+                sourceMessage: {
+                  threadId: "thread-origin",
+                  thread: { spaceId: "workspace-1" },
+                },
+              },
+            ],
+          }),
+        }),
+      );
+      expect(enqueue).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ name: "run.continue", payload: { runId: "run-helper" } }),
+      );
+    },
+  );
+
+  it("replays a saved strict-answer receipt even when noModel is true, and refuses fresh ones with ClientError", async () => {
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const savedPrisma = {
+      message: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "msg-saved",
+          seq: 7,
+          runId: "run-saved",
+          sourceRuns: [],
+        }),
+      },
+      event: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({ payload: { runIds: ["run-saved"] } })
+          .mockResolvedValueOnce({ seq: 9 }),
+      },
+      run: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "run-saved", taskId: "task-saved", status: "queued" }]),
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ id: "run-saved", taskId: "task-saved", status: "queued" }),
+      },
+      steeringMessage: { findFirst: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(),
+    } as unknown as PrismaClient;
+    const target = {
+      kind: "bot",
+      botId: "bot-a",
+      threadId: "thread-1",
+      bot: { computer: null },
+    } as ThreadTarget;
+
+    await expect(
+      sendThreadMessage(
+        {
+          prisma: savedPrisma,
+          sandbox: {} as never,
+          events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+          jobs: { enqueue } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        target,
+        {
+          text: "Kyoto",
+          replyToMessageId: "ask-1",
+          answersQuestion: true,
+          clientNonce: "nonce-retry",
+          noModel: true,
+        },
+      ),
+    ).resolves.toMatchObject({
+      runId: "run-saved",
+      taskId: "task-saved",
+      seq: 7,
+      runIds: ["run-saved"],
+    });
+    expect(savedPrisma.$transaction).not.toHaveBeenCalled();
+
+    const freshPrisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(),
+    } as unknown as PrismaClient;
+    await expect(
+      sendThreadMessage(
+        {
+          prisma: freshPrisma,
+          sandbox: {} as never,
+          events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+          jobs: { enqueue } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        target,
+        {
+          text: "Kyoto",
+          replyToMessageId: "ask-1",
+          answersQuestion: true,
+          clientNonce: "nonce-fresh",
+          noModel: true,
+        },
+      ),
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof ClientError &&
+        error.kind === "BAD_REQUEST" &&
+        error.message === MODEL_REQUIRED_SEND_ERROR,
+    );
+    expect(freshPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses whitespace-only strict answers before creating a message", async () => {
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(),
+    } as unknown as PrismaClient;
+    await expect(
+      sendThreadMessage(
+        {
+          prisma,
+          sandbox: {} as never,
+          events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+          jobs: { enqueue: vi.fn() } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        {
+          kind: "bot",
+          botId: "bot-a",
+          threadId: "thread-1",
+          bot: { computer: null },
+        } as ThreadTarget,
+        {
+          text: "   ",
+          artifactIds: ["artifact-1"],
+          replyToMessageId: "ask-1",
+          answersQuestion: true,
+          clientNonce: "nonce-blank",
+        },
+      ),
+    ).rejects.toSatisfy(
+      (error: unknown) => error instanceof ClientError && error.kind === "BAD_REQUEST",
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it.each(["bot", "group"] as const)(

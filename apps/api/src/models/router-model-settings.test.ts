@@ -20,6 +20,7 @@ describe("model setup gate", () => {
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
     savedDeploymentModel?: boolean;
+    savedStrictReceipt?: boolean;
     funding?: Pick<BillingStatus, "creditPurchasesEnabled" | "funding" | "balanceUsd">;
   }) {
     const prisma = {
@@ -39,6 +40,31 @@ describe("model setup gate", () => {
           .mockResolvedValue([{ modelProvider: null, modelId: null, thinkingLevel: null }]),
       },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
+      taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
+      message: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue(
+            options.savedStrictReceipt
+              ? { id: "msg-saved", seq: 7, runId: "run-saved", sourceRuns: [] }
+              : null,
+          ),
+      },
+      event: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({ payload: { runIds: ["run-saved"] } })
+          .mockResolvedValueOnce({ seq: 9 }),
+      },
+      run: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ id: "run-saved", taskId: "task-saved", status: "queued" }]),
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ id: "run-saved", taskId: "task-saved", status: "queued" }),
+      },
+      steeringMessage: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: {
         findUnique: vi
           .fn()
@@ -53,6 +79,8 @@ describe("model setup gate", () => {
     } as unknown as PrismaClient;
     const deps = {
       prisma,
+      events: { notify: vi.fn().mockResolvedValue(undefined) },
+      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
       billing: options.funding && { status: vi.fn().mockResolvedValue(options.funding) },
       env: {
         agentRuntime: options.agentRuntime,
@@ -172,6 +200,43 @@ describe("model setup gate", () => {
     const send = await call(handler, actor, "threads/send", { botId: "bot-1", text: "hello" });
     expect(send.status).toBe(400);
     await expect(send.json()).resolves.toMatchObject({
+      json: { message: MODEL_REQUIRED_SEND_ERROR },
+    });
+  });
+
+  it("lets strict card answers replay a saved receipt before model admission and refuses fresh ones", async () => {
+    const retry = modelGateDeps({
+      agentRuntime: "pi",
+      deploymentModelConfigured: true,
+      savedStrictReceipt: true,
+      funding: { creditPurchasesEnabled: true, funding: "byok", balanceUsd: 0 },
+    });
+    const replayed = await call(retry.handler, retry.actor, "threads/send", {
+      botId: "bot-1",
+      text: "Kyoto",
+      replyToMessageId: "ask-1",
+      answersQuestion: true,
+      clientNonce: "nonce-saved",
+    });
+    expect(replayed.status).toBe(200);
+    await expect(replayed.json()).resolves.toMatchObject({
+      json: { runId: "run-saved", taskId: "task-saved", seq: 7 },
+    });
+
+    const fresh = modelGateDeps({
+      agentRuntime: "pi",
+      deploymentModelConfigured: true,
+      funding: { creditPurchasesEnabled: true, funding: "byok", balanceUsd: 0 },
+    });
+    const refused = await call(fresh.handler, fresh.actor, "threads/send", {
+      botId: "bot-1",
+      text: "Kyoto",
+      replyToMessageId: "ask-1",
+      answersQuestion: true,
+      clientNonce: "nonce-fresh",
+    });
+    expect(refused.status).toBe(400);
+    await expect(refused.json()).resolves.toMatchObject({
       json: { message: MODEL_REQUIRED_SEND_ERROR },
     });
   });

@@ -152,7 +152,9 @@ export function threadsRoutes(ctx: RouterContext) {
     const noModel =
       setup.needsModel &&
       !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
-    if (noModel && (input.answersQuestion || !isStopMessage(input))) {
+    // Strict card answers check receipt replay before model admission so a retry after a lost
+    // response still returns its receipt if the model later became unavailable.
+    if (noModel && !input.answersQuestion && !isStopMessage(input)) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }
     if (target.kind === "bot") {

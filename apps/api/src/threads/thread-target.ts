@@ -45,6 +45,7 @@ import {
   runHoldsChat,
   SpaceDeletionInProgressError,
   spaceTakesWork,
+  storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   withTransactionRetry,
@@ -66,6 +67,17 @@ export class QuestionAlreadyAnsweredError extends ClientError {
     super("CONFLICT", "This question was already answered", QUESTION_ALREADY_ANSWERED_ERROR);
     this.name = "QuestionAlreadyAnsweredError";
   }
+}
+
+/**
+ * Parses stored blocks entry by entry so an unrecognized sibling block from another release
+ * cannot hide a valid pending question or reply preview on the same row.
+ */
+function parseMessageBlocks(message: { id: string; blocks: unknown }): MessageBlock[] {
+  return storedMessageBlocks(message).flatMap((entry) => {
+    const parsed = MessageBlockSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 export type ThreadTarget =
@@ -547,8 +559,17 @@ export async function sendThreadMessage(
   if (requestedReplyQuote && !input.replyToMessageId) {
     throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
   }
-  if (input.answersQuestion && !input.replyToMessageId) {
-    throw new ClientError("BAD_REQUEST", "answersQuestion requires replyToMessageId.");
+  if (input.answersQuestion) {
+    if (!input.replyToMessageId) {
+      throw new ClientError("BAD_REQUEST", "answersQuestion requires replyToMessageId.");
+    }
+    if (!input.text?.trim()) {
+      throw new ClientError("BAD_REQUEST", "answersQuestion requires nonblank text.");
+    }
+    // Receipt replay already ran above; only a fresh answer needs a runnable model.
+    if (input.noModel) {
+      throw new ClientError("BAD_REQUEST", MODEL_REQUIRED_SEND_ERROR);
+    }
   }
 
   const commit = () =>
@@ -582,12 +603,12 @@ export async function sendThreadMessage(
         } else {
           replyToMessageId = input.replyToMessageId;
           if (reply.role === "bot" && reply.botId) repliedBotId = reply.botId;
-          const parsed = MessageBlockSchema.array().safeParse(reply.blocks);
+          const replyBlocks = parseMessageBlocks(reply);
           replyPreview = null;
-          if (parsed.success) {
+          if (replyBlocks.length > 0) {
             if (
               reply.role === "bot" &&
-              parsed.data.some(
+              replyBlocks.some(
                 (block) =>
                   block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
               )
@@ -595,7 +616,7 @@ export async function sendThreadMessage(
               repliedQuestionRunId = reply.runId ?? undefined;
             }
             replyPreview = messageReplyPreview(
-              parsed.data,
+              replyBlocks,
               reply.role as ReplyPreview["role"],
               reply.botId ?? undefined,
               await loadMessageAuthor(tx, reply.authorUserId),
@@ -612,10 +633,10 @@ export async function sendThreadMessage(
           // Persist only text derived from the authoritative parent. A
           // mismatch or a derivation failure still sends a plain reply so
           // quote verification cannot lose a message.
-          if (requestedReplyQuote && parsed.success) {
+          if (requestedReplyQuote && replyBlocks.length > 0) {
             try {
               replyQuote = deriveMessageQuote(
-                parsed.data,
+                replyBlocks,
                 requestedReplyQuote,
                 reply.role === "user" ? "plain-text" : "markdown",
               );
@@ -645,33 +666,62 @@ export async function sendThreadMessage(
             run.status === "waiting_input" &&
             run.userId === actor.userId,
         )?.id;
-      const loadStrictQuestionRun = async <
-        R extends { id: string; status: string; userId: string },
-      >(
-        runs: readonly R[],
-      ): Promise<R> => {
-        if (!replyToMessageId) throw new QuestionAlreadyAnsweredError();
+      const loadStrictQuestionRun = async (allowedBotIds: readonly string[]) => {
+        if (!replyToMessageId || allowedBotIds.length === 0) {
+          throw new QuestionAlreadyAnsweredError();
+        }
         // Re-read under the thread lock so a concurrent answer or another member's card
         // is refused rather than falling back to a newer question.
         const card = await tx.message.findFirst({
           where: { id: replyToMessageId, threadId: target.threadId, role: "bot" },
-          select: { id: true, runId: true, blocks: true },
+          select: { id: true, botId: true, runId: true, blocks: true },
         });
-        const parsed = card ? MessageBlockSchema.array().safeParse(card.blocks) : undefined;
         const pendingQuestion =
-          parsed?.success &&
-          parsed.data.some(
+          card &&
+          parseMessageBlocks(card).some(
             (block) =>
               block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
           );
         if (!card?.runId || !pendingQuestion) throw new QuestionAlreadyAnsweredError();
-        const run = runs.find(
-          (candidate) =>
-            candidate.id === card.runId &&
-            candidate.status === "waiting_input" &&
-            candidate.userId === actor.userId,
-        );
-        if (!run) throw new QuestionAlreadyAnsweredError();
+        // Match threads.answer: a background helper posts its card in the originating chat
+        // while its run row belongs to the helper's own thread.
+        const run = await tx.run.findFirst({
+          where: {
+            id: card.runId,
+            spaceId: actor.spaceId,
+            botId: { in: [...allowedBotIds] },
+            OR: [
+              { threadId: target.threadId },
+              {
+                trigger: BACKGROUND_HELPER_TRIGGER,
+                sourceMessage: {
+                  threadId: target.threadId,
+                  thread: { spaceId: actor.spaceId },
+                },
+              },
+            ],
+            status: "waiting_input",
+          },
+          select: {
+            id: true,
+            taskId: true,
+            botId: true,
+            status: true,
+            trigger: true,
+            userId: true,
+          },
+        });
+        if (!run || run.userId !== actor.userId) throw new QuestionAlreadyAnsweredError();
+        // Verify exact-card eligibility before creating the user message row.
+        const eligible = await eligibleWaitingTextAnswer(tx, {
+          spaceId: actor.spaceId,
+          threadId: target.threadId,
+          runId: run.id,
+          answeredByUserId: actor.userId,
+          answer: input.text ?? "",
+          messageId: replyToMessageId,
+        });
+        if (!eligible) throw new QuestionAlreadyAnsweredError();
         return run;
       };
 
@@ -718,11 +768,8 @@ export async function sendThreadMessage(
           });
         }
         const strictRun = input.answersQuestion
-          ? await loadStrictQuestionRun(activeRuns)
+          ? await loadStrictQuestionRun([target.botId])
           : undefined;
-        if (strictRun && input.noModel) {
-          throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
-        }
         const blocks = buildUserMessageBlocks(
           input.text,
           sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
@@ -744,7 +791,13 @@ export async function sendThreadMessage(
         if (input.noModel && !stopping) {
           throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
-        const answered: typeof activeRuns = [];
+        const answered: Array<{
+          id: string;
+          taskId: string;
+          status: string;
+          userId: string;
+          trigger?: string | null;
+        }> = [];
         if (strictRun) {
           if (
             !(await answerWaitingRunWithTextInTransaction(tx, {
@@ -974,10 +1027,9 @@ export async function sendThreadMessage(
           });
         }
       }
-      const strictRun = input.answersQuestion ? await loadStrictQuestionRun(activeRuns) : undefined;
-      if (strictRun && input.noModel) {
-        throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
-      }
+      const strictRun = input.answersQuestion
+        ? await loadStrictQuestionRun(targetBotIds)
+        : undefined;
       const blocks = buildUserMessageBlocks(
         input.text,
         sendAttachmentBlocks(attachmentBlocks, artifacts, input.imageHandling),
@@ -1044,7 +1096,17 @@ export async function sendThreadMessage(
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const rank = (candidate: (typeof activeRuns)[number]) =>
         steersMessageFrom(candidate, actor) ? 2 : steersUserMessage(candidate) ? 1 : 0;
-      const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
+      const answeredByBotId = new Map<
+        string,
+        Array<{
+          id: string;
+          taskId: string;
+          botId: string;
+          status: string;
+          userId: string;
+          trigger?: string | null;
+        }>
+      >();
       if (strictRun) {
         const answered = await answerWaitingRunWithTextInTransaction(tx, {
           ...composerAnswerInput(message),
