@@ -18,6 +18,9 @@ On web and desktop, select the bot or group name at the top of the chat to open 
   the pages, select its **Pages** heading to see the full list.
 - In a group chat, look for **Pages** in **Group settings**.
 
+On mobile, tap the bot or group name at the top of the chat. Select **Pages** in **Profile**
+for a bot chat or in **Group settings** for a group chat.
+
 Use the menu beside a page to rename, pin or delete it.
 
 ## Share a page
