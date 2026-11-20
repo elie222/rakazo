@@ -560,6 +560,15 @@ export default function ModelConnection() {
   const catalogConnectionControls =
     !isOpenAiCompatible && selected ? (
       <>
+        {subscriptionSignIn && signInSetup ? (
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL(signInSetup.url)}
+            style={{ marginTop: 12 }}
+          >
+            <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
+          </Pressable>
+        ) : null}
         {subscriptionSignIn ? (
           oauth ? (
             <View style={styles.oauthCard}>
@@ -595,14 +604,6 @@ export default function ModelConnection() {
                 </>
               ) : (
                 <>
-                  {signInSetup ? (
-                    <Pressable
-                      accessibilityRole="link"
-                      onPress={() => void Linking.openURL(signInSetup.url)}
-                    >
-                      <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
-                    </Pressable>
-                  ) : null}
                   <Text style={styles.secondary}>
                     {signInSetup
                       ? t`2. Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`
@@ -611,7 +612,7 @@ export default function ModelConnection() {
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
                     fill
-                    label={codeCopied ? t`Code copied, open again` : t`Copy code and open`}
+                    label={codeCopied ? t`Copied, open again` : t`Copy code and open`}
                     onPress={() => {
                       copyOAuthCode(oauth.userCode);
                       void openSignInPage(oauth.verificationUri);
@@ -619,17 +620,10 @@ export default function ModelConnection() {
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
-                    {t`Waiting for sign-in — the code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
+                    {t`Waiting for you to sign in. The code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
                   </Text>
                 </>
               )}
-              <NativeActionButton
-                fill
-                label={t`Cancel`}
-                onPress={() => cancelOAuth()}
-                prominence="secondary"
-                style={{ marginTop: 12 }}
-              />
             </View>
           ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
             <NativeActionButton
