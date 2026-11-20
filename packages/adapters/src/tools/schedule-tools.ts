@@ -184,12 +184,18 @@ export function resolveScheduleTiming(
         return { ok: false, error: "delaySeconds must be a non-negative number." };
       }
       nextRunAt = new Date(Date.now() + delaySeconds * 1_000);
+      if (Number.isNaN(nextRunAt.getTime())) {
+        return { ok: false, error: "delaySeconds is too far in the future." };
+      }
     } else if (isScheduleValueProvided(input.delayMinutes)) {
       const delayMinutes = Number(input.delayMinutes);
       if (!Number.isFinite(delayMinutes) || delayMinutes < 0) {
         return { ok: false, error: "delayMinutes must be a non-negative number." };
       }
       nextRunAt = new Date(Date.now() + delayMinutes * 60_000);
+      if (Number.isNaN(nextRunAt.getTime())) {
+        return { ok: false, error: "delayMinutes is too far in the future." };
+      }
     } else {
       const parsed = zonedDateTime(String(input.runAt), timezone);
       if (!parsed) return { ok: false, error: "runAt must be a valid ISO datetime." };

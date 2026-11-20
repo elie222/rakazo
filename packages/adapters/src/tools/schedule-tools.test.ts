@@ -87,6 +87,17 @@ describe("resolveScheduleTiming", () => {
     expect(result.nextRunAt.getTime()).toBeLessThanOrEqual(Date.now() + 31_000);
   });
 
+  it("rejects one-shot delays too far out to be a date", () => {
+    expect(resolveScheduleTiming({ delayMinutes: 1e15 })).toEqual({
+      ok: false,
+      error: "delayMinutes is too far in the future.",
+    });
+    expect(resolveScheduleTiming({ delaySeconds: 1e14 })).toEqual({
+      ok: false,
+      error: "delaySeconds is too far in the future.",
+    });
+  });
+
   it("rejects one-shot schedules in the past", () => {
     expect(resolveScheduleTiming({ runAt: new Date(Date.now() - 60_000).toISOString() })).toEqual({
       ok: false,
