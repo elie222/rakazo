@@ -11,7 +11,8 @@ export function nativeCalendarDeviceKey() {
     typeof expo.uuidv4 !== "function"
   )
     return undefined;
-  return (deviceKey ??= expo.uuidv4());
+  deviceKey ??= expo.uuidv4();
+  return deviceKey;
 }
 
 export function foregroundCalendarDeviceKey() {
