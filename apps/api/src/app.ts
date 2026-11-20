@@ -81,6 +81,7 @@ import {
   SpaceMemoryProviderResolver,
   StripeBillingProvider,
   stripeBillingConfigFromEnv,
+  T3CODE_LINK_SCHEMES,
   UserDeviceHub,
   UserDevices,
   userDeviceForwardSecret,
@@ -1238,7 +1239,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   if (meetingProvider) mountMeetingWebhook(app, meetings);
   meetingMedia?.mount(app);
   if (meetingCalendar) mountMeetingCalendarHttp(app, meetingCalendar, sessionActor);
-  mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
+  mountWebhookHttpRoutes(app, {
+    prisma,
+    secrets,
+    events,
+    jobs,
+    notifications,
+    linkSchemes: ["https", ...T3CODE_LINK_SCHEMES],
+  });
   if (env.inboundEmail) {
     mountEmailInboundRoute(app, {
       prisma,

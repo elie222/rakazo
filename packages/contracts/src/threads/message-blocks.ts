@@ -80,6 +80,15 @@ export const AskReceipt = z.object({
 });
 export type AskReceipt = z.infer<typeof AskReceipt>;
 
+export const MAX_LINK_BUTTONS = 4;
+
+/** A button that opens its URL. The server checks the scheme before it stores one. */
+export const LinkButton = z.object({
+  label: z.string().trim().min(1),
+  url: z.string(),
+});
+export type LinkButton = z.infer<typeof LinkButton>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -215,6 +224,12 @@ export const MessageBlock = z.discriminatedUnion("kind", [
    * block is the bot's full prompt, so chats, previews and search leave the message out.
    */
   z.object({ kind: z.literal("delivery") }),
+  /**
+   * Words an outside service posted through the bot's webhook. They sit in `markdown`, not
+   * `text`, because nothing that builds the model's context or search reads this field: the bot
+   * did not write them, and they must never pass for its own reply.
+   */
+  z.object({ kind: z.literal("post"), markdown: z.string() }),
   z.object({
     kind: z.literal("progress"),
     text: z.string(),
@@ -376,6 +391,11 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     fromLabel: z.string(),
     text: z.string(),
     hop: z.number().int().nonnegative().optional(),
+  }),
+  /** Link buttons under a bot's post; each opens its URL. */
+  z.object({
+    kind: z.literal("buttons"),
+    buttons: z.array(LinkButton).min(1).max(MAX_LINK_BUTTONS),
   }),
   z.object({
     /** Shown in the sending bot's own chat, so the user can see what it sent. */

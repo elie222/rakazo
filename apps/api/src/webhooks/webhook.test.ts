@@ -111,8 +111,9 @@ function createDeps(
     secrets: {
       load: async (ciphertext: string) => (overrides.load ?? (() => SECRET))(ciphertext),
     } as unknown as WebhookDeps["secrets"],
-    events: { sendUserMessage },
+    events: { sendUserMessage, notify: vi.fn(async () => undefined) },
     jobs: { enqueue } as unknown as WebhookDeps["jobs"],
+    linkSchemes: ["https", "app"],
     sendUserMessage,
     enqueue,
     findRoutines,
@@ -456,6 +457,32 @@ describe("inbound webhook HTTP route", () => {
         where: expect.objectContaining({ active: true, webhookEnabled: true }),
       }),
     );
+  });
+
+  it("delivers another service's own `post` payload to routines", async () => {
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
+    const res = await mount(deps).request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+      body: JSON.stringify({ post: { id: "post-1", text: "Hello", current: {} } }),
+    });
+    expect(res.status).toBe(200);
+    expect(deps.sendUserMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["a button URL with another scheme", [{ label: "Run", url: "javascript:alert(1)" }]],
+    ["more than four buttons", Array(5).fill({ label: "Open", url: "https://example.test" })],
+  ])("refuses a post with %s and starts nothing", async (_case, buttons) => {
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
+    const res = await mount(deps).request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+      body: JSON.stringify({ post: { text: "Done", buttons } }),
+    });
+    expect(res.status).toBe(400);
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+    expect(deps.findRoutines).not.toHaveBeenCalled();
   });
 
   it("accepts a plain text payload as untrusted delivery data", async () => {

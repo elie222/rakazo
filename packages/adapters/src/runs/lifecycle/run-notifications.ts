@@ -196,6 +196,40 @@ export async function notifyMemberMessage(
   });
 }
 
+/** A message a bot posted without a run, such as a webhook post: heard as its reply would be. */
+export async function notifyBotPost(
+  deps: ChatNoticeDeps,
+  input: { spaceId: string; botId: string; threadId: string; text: string },
+) {
+  if (!deps.notifications && !deps.events.publishChatAlert) return;
+  const bot = await deps.prisma.bot.findFirst({
+    where: { id: input.botId, spaceId: input.spaceId },
+    select: {
+      id: true,
+      name: true,
+      color: true,
+      avatarSet: true,
+      notifyOnFinish: true,
+      notifyOnReply: true,
+    },
+  });
+  const body = completionNotificationPreview(input.text);
+  if (!bot?.notifyOnFinish || !bot.notifyOnReply || !body) return;
+  await deliverChatNotice(deps, {
+    spaceId: input.spaceId,
+    recipients: await spaceMemberIds(deps.prisma, input.spaceId),
+    message: {
+      kind: "completion",
+      title: displayName(bot.name, "Bot"),
+      body,
+      botId: bot.id,
+      threadId: input.threadId,
+    },
+    groupId: null,
+    bot,
+  });
+}
+
 /** Everyone in the Space. Leaving it ends their notifications from it. */
 async function spaceMemberIds(prisma: PrismaClient, spaceId: string): Promise<string[]> {
   const members = await prisma.spaceMember.findMany({
@@ -205,9 +239,13 @@ async function spaceMemberIds(prisma: PrismaClient, spaceId: string): Promise<st
   return members.map((member) => member.userId);
 }
 
+type ChatNoticeDeps = Pick<ExecutorDeps, "prisma" | "notifications"> & {
+  events: Pick<ThreadEvents, "publishChatAlert">;
+};
+
 /** Alerts open apps and pushes to each recipient's devices, with their own unread count. */
 async function deliverChatNotice(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "notifications">,
+  deps: ChatNoticeDeps,
   input: {
     spaceId: string;
     recipients: string[];

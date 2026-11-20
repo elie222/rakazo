@@ -101,6 +101,7 @@ vi.mock("@rakazo/chat-ui/native", () => ({
   MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   withBlockMentions: <T,>(blocks: T) => blocks,
+  useNativeLinkConfirm: () => vi.fn(),
 }));
 
 vi.mock("../messages/message-caption", () => ({
@@ -400,6 +401,19 @@ describe("thread cards", () => {
     expect(Linking.openURL).toHaveBeenCalledWith("https://example.test/task");
     act(() => link!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
     expect(onLongPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a link button's URL under the post's text", () => {
+    renderBlocks([
+      { kind: "post", markdown: "Deploy finished" },
+      { kind: "buttons", buttons: [{ label: "Open in T3", url: "t3code://threads/env/thread" }] },
+    ]);
+    expect(container.textContent).toContain("Deploy finished");
+    const button = [...container.querySelectorAll("button")].find(
+      (element) => element.textContent === "Open in T3",
+    );
+    act(() => button!.click());
+    expect(Linking.openURL).toHaveBeenCalledWith("t3code://threads/env/thread");
   });
 
   it("opens helpers independently and keeps each header in view through the toggle callback", () => {

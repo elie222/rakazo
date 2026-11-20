@@ -292,3 +292,27 @@ test("a webhook delivery stays out of the chat, like a scheduled run", async ({
   await expect(transcript.getByTestId("message-user-bubble")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "routine-webhook-delivery");
 });
+
+test("a webhook post shows in the chat with its link buttons, without a routine", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `webhook-post-${stamp}@rakazo.test`, "password12", "Poster");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  const hook = await rpc<{ secret: string; path: string }>(page, "bots/rotateWebhookSecret", {
+    botId,
+  });
+  const url = "t3code://threads/env-1/thread-1";
+  const posted = await page.request.post(hook.path, {
+    headers: { authorization: `Bearer ${hook.secret}` },
+    data: { post: { text: "Deploy **finished**", buttons: [{ label: "Open in T3", url }] } },
+  });
+  expect(posted.ok()).toBe(true);
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  const transcript = page.getByTestId("transcript");
+  await expect(transcript.getByText("finished", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(transcript.getByRole("link", { name: "Open in T3" })).toHaveAttribute("href", url);
+  await captureScreenshot(page, testInfo, "webhook-post-buttons");
+});

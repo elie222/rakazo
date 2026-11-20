@@ -189,6 +189,17 @@ export function channelMessageSender(blocks: MessageBlock[]): string | undefined
     : undefined;
 }
 
+/** For drawing only: a webhook post shows as the bot's text. Model context never reads this. */
+export function withPostText<T extends { blocks: MessageBlock[] }>(message: T): T {
+  if (!message.blocks.some((block) => block.kind === "post")) return message;
+  return {
+    ...message,
+    blocks: message.blocks.map((block) =>
+      block.kind === "post" ? { kind: "text" as const, text: block.markdown } : block,
+    ),
+  };
+}
+
 /**
  * A message's text for a reply line before the server's preview arrives. Channel
  * messages show their text alone, matching the server-owned preview.
@@ -201,6 +212,7 @@ export function previewMessageText(
   const text = message.blocks
     .map((block) => {
       if (block.kind === "channel_message") return block.text;
+      if (block.kind === "post") return plainTextFromMarkdown(block.markdown);
       if (block.kind === "text") {
         // Bot text is Markdown; user text is already plain.
         return message.role === "bot" ? plainTextFromMarkdown(block.text) : block.text;

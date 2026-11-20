@@ -96,6 +96,9 @@ export function previewFromBlocks(blocks: unknown): string {
   // A delivery's text is the bot's prompt, hidden in chat.
   if (isDeliveryMessage(rows)) return "";
   for (const block of rows) {
+    if (block?.kind === "post" && typeof block.markdown === "string") {
+      return plainTextFromMarkdown(block.markdown);
+    }
     if (
       block &&
       typeof block === "object" &&

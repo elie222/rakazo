@@ -1,4 +1,4 @@
-import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
+import type { JobPublisher, NotificationProvider, SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { InboundSource } from "@rakazo/adapters";
 import {
@@ -9,7 +9,7 @@ import {
 } from "@rakazo/adapters";
 import type { MessageBlock } from "@rakazo/contracts";
 import { inboundRoutineBlock } from "@rakazo/core";
-import type { PrismaClient, SendUserMessageInput } from "@rakazo/db";
+import type { PrismaClient, SendUserMessageInput, ThreadEvents } from "@rakazo/db";
 import { accountDeactivated, SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Context } from "hono";
 
@@ -38,8 +38,11 @@ export type WebhookEvents = {
 export type WebhookDeps = {
   prisma: PrismaClient;
   secrets: SecretStore;
-  events: WebhookEvents;
+  events: WebhookEvents & Pick<ThreadEvents, "notify" | "publishChatAlert">;
   jobs: Pick<JobPublisher, "enqueue">;
+  notifications?: NotificationProvider;
+  /** URL schemes a posted link button may use. */
+  linkSchemes: readonly string[];
 };
 
 export type WebhookTarget = {

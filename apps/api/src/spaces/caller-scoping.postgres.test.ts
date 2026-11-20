@@ -213,6 +213,7 @@ describePostgres("caller and tenant scoping (PostgreSQL)", () => {
       secrets: { load: async () => WEBHOOK_TOKEN } as unknown as SecretStore,
       events: { sendUserMessage } as unknown as WebhookDeps["events"],
       jobs: { enqueue: vi.fn() },
+      linkSchemes: [],
     });
 
     const response = await app.request(`/api/v1/bots/${target.id}/webhook`, {

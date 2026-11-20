@@ -11,6 +11,7 @@ import {
   messagingProviderLabel,
   resolveAskChoice,
   selectedAskActionLabel,
+  withPostText,
 } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ComponentProps } from "react";
@@ -62,6 +63,7 @@ import { MessageMentions } from "../messages/bot-mention";
 import { MessageCaption } from "../messages/message-caption";
 import { AgentEventLabel } from "./agent-event-label";
 import { AskBlock } from "./ask-block";
+import { LinkButtons } from "./link-buttons";
 import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";
 import { PeerReceiptLine } from "./peer-receipt-line";
@@ -93,10 +95,13 @@ export type MessageActionProps = Pick<
 
 export const MessageBubble = memo(function MessageBubble({
   mentions,
-  ...props
+  message: shown,
+  ...rest
 }: ComponentProps<typeof MessageBubbleContent> & {
   mentions?: readonly ChildBotBlock[];
 }) {
+  const message = useMemo(() => withPostText(shown), [shown]);
+  const props = { ...rest, message };
   const { members, onOpenBot } = props;
   const userMentions = useMemo(
     () =>
@@ -797,6 +802,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     (block): block is Extract<MessageBlock, { kind: "import_setup" }> =>
       block.kind === "import_setup",
   );
+  const linkButtons = message.blocks.flatMap((block) =>
+    block.kind === "buttons" ? block.buttons : [],
+  );
   return (
     <View style={{ gap: 8, width: "100%" }}>
       {segments.map((segment, index) => (
@@ -855,6 +863,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
           onAccessibilityAction={actionProps.onAccessibilityAction}
         />
       ))}
+      {linkButtons.length > 0 ? <LinkButtons buttons={linkButtons} /> : null}
     </View>
   );
 });

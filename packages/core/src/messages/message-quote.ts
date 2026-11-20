@@ -193,7 +193,10 @@ function replyBlockText(block: MessageBlock): string {
     case "image":
     case "file":
       return block.name || blocksToAgentHistoryText([block]);
+    // A reply's quote reaches the model, and a post's words are an outside service's.
     case "delivery":
+    case "post":
+    case "buttons":
       return "";
   }
 }

@@ -21,7 +21,8 @@ export function messageHasInlineControls(blocks: readonly MessageBlock[]): boole
       block.kind === "app_connect" ||
       block.kind === "mcp_approval" ||
       block.kind === "tool_question" ||
-      block.kind === "import_setup",
+      block.kind === "import_setup" ||
+      block.kind === "buttons",
   );
 }
 
@@ -36,7 +37,8 @@ function isCardBlock(block: MessageBlock): boolean {
     block.kind === "app_connect" ||
     block.kind === "choice" ||
     block.kind === "computer" ||
-    block.kind === "import_setup"
+    block.kind === "import_setup" ||
+    block.kind === "buttons"
   );
 }
 

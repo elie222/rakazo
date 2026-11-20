@@ -104,7 +104,9 @@ export function browserNotificationMessage(
       .map((block) =>
         block && typeof block === "object" && "text" in block && typeof block.text === "string"
           ? plainTextFromMarkdown(block.text)
-          : "",
+          : block?.kind === "post" && typeof block.markdown === "string"
+            ? plainTextFromMarkdown(block.markdown)
+            : "",
       )
       .filter(Boolean)
       .join("\n")
