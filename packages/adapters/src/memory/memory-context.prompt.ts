@@ -1,6 +1,6 @@
 import type { MemoryPromptBudget, MemoryPromptDocumentUse } from "@rakazo/contracts";
-import { BOT_MEMORY_MAX_BYTES, MEMORY_INDEX_PATH } from "@rakazo/contracts";
-import { byteLength, truncateUtf8 } from "@rakazo/core";
+import { MEMORY_INDEX_PATH, MEMORY_NOTE_TOKEN_CAP, MEMORY_TOKEN_CAPS } from "@rakazo/contracts";
+import { byteLength, memoryTokenCount, truncateUtf8 } from "@rakazo/core";
 
 /** How much durable memory a prompt carries before the rest is left out. */
 export const AGENT_MEMORY_MAX_BYTES = 32 * 1024;
@@ -29,6 +29,8 @@ export function buildAgentMemoryPrompt(
   const plan: MemoryPromptBudget = {
     limitBytes: maxBytes,
     usedBytes: 0,
+    limitTokens: MEMORY_TOKEN_CAPS.bot,
+    usedTokens: 0,
     documents: [],
     omitted: [],
   };
@@ -59,10 +61,8 @@ export function buildAgentMemoryPrompt(
       continue;
     }
     // The bot sees how full its memory is, so it tidies before a save is refused.
-    const usage =
-      document.scope === "bot" && document.path === MEMORY_INDEX_PATH
-        ? `, ${byteLength(document.content)} of ${BOT_MEMORY_MAX_BYTES} bytes`
-        : "";
+    const cap = documentTokenCap(document);
+    const usage = cap === null ? "" : `, ${memoryTokenCount(document.content)} of ${cap} tokens`;
     const heading = `${sections.length === 0 ? "" : "\n\n"}## ${SCOPE_LABELS[document.scope]}: ${document.path} (revision ${document.revision}${usage})\n`;
     const headingBytes = byteLength(heading);
     if (headingBytes > remainingBytes) {
@@ -86,6 +86,8 @@ export function buildAgentMemoryPrompt(
       revision: document.revision,
       totalBytes: byteLength(document.content),
       includedBytes: byteLength(content),
+      totalTokens: memoryTokenCount(document.content),
+      includedTokens: memoryTokenCount(content),
       truncated: content !== document.content,
     });
     // Nothing starts after a split document: a partial one is the last thing
@@ -95,7 +97,17 @@ export function buildAgentMemoryPrompt(
 
   const text = `${PREAMBLE}${sections.join("")}${CLOSING}`;
   plan.usedBytes = byteLength(text);
+  plan.usedTokens = plan.documents
+    .filter((document) => document.scope === "bot" && document.path === MEMORY_INDEX_PATH)
+    .reduce((sum, document) => sum + document.includedTokens, 0);
   return { text, plan };
+}
+
+/** The layer cap a document reports against; notes have their own. */
+function documentTokenCap(document: MemoryPromptDocument): number | null {
+  if (document.scope === "user") return MEMORY_TOKEN_CAPS.shared;
+  if (document.path === MEMORY_INDEX_PATH) return MEMORY_TOKEN_CAPS.bot;
+  return MEMORY_NOTE_TOKEN_CAP;
 }
 
 function leaveOut(document: MemoryPromptDocument): MemoryPromptDocumentUse {
@@ -105,6 +117,8 @@ function leaveOut(document: MemoryPromptDocument): MemoryPromptDocumentUse {
     revision: document.revision,
     totalBytes: byteLength(document.content),
     includedBytes: 0,
+    totalTokens: memoryTokenCount(document.content),
+    includedTokens: 0,
     truncated: false,
   };
 }

@@ -1,6 +1,7 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { meetingTranscriptTool } from "../meetings/meeting-chat.tool-definition.js";
+import { memoryDocumentError } from "../memory/memory-tools.js";
 import { computerTools } from "./builtin-computer.tool-definition.js";
 import { conversationTools } from "./builtin-conversation.tool-definition.js";
 import { fleetTools } from "./builtin-fleet.tool-definition.js";
@@ -127,15 +128,9 @@ export const agentConnectionTools: ConnectorTool[] = [
   },
 ];
 
-/** Shared documents are read by every bot, so a single save stays bounded. */
-export const MAX_SHARED_MEMORY_CHARS = 4_000;
-
+/** Shared documents are read by every bot, so a single save stays within the shared layer's cap. */
 export function sharedMemorySaveError(args: Record<string, unknown>): string | undefined {
   const path = String(args.path ?? "").trim();
   if (!path) return "path is required";
-  const content = String(args.content ?? "");
-  if (content.length > MAX_SHARED_MEMORY_CHARS) {
-    return `content exceeds ${MAX_SHARED_MEMORY_CHARS} characters`;
-  }
-  return undefined;
+  return memoryDocumentError("user", path, String(args.content ?? ""));
 }

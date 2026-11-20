@@ -3,11 +3,12 @@ import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   buildAgentMemoryPrompt,
   isScratchpadStatus,
+  listMemoryDreams,
   listScratchpadItems,
   mapScratchpadItem,
+  memoryDocumentError,
   memoryProviderDescriptors,
   readAgentMemory,
-  listMemoryDreams,
   startManualMemoryDream,
 } from "@rakazo/adapters";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
@@ -85,6 +86,12 @@ export function memoryRoutes(ctx: RouterContext) {
           },
         });
         if (!doc) throw new IsolationError();
+        const invalid = memoryDocumentError(
+          doc.scope === "user" ? "user" : "bot",
+          doc.path,
+          input.content,
+        );
+        if (invalid) throw new ClientError("BAD_REQUEST", invalid);
         const updated = await deps.memory
           .commit(
             {

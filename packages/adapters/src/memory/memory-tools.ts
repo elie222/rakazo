@@ -1,6 +1,11 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
-import { byteLength } from "@rakazo/core";
+import {
+  MEMORY_INDEX_PATH,
+  MEMORY_LINE_TOKEN_CAP,
+  MEMORY_NOTE_TOKEN_CAP,
+  MEMORY_TOKEN_CAPS,
+} from "@rakazo/contracts";
+import { memoryTokenCount } from "@rakazo/core";
 
 const SEMANTIC_MEMORY_TOOL_NAMES = new Set([
   "recall_memory",
@@ -49,9 +54,21 @@ export function editMemory(
   existing: string,
   fact: string,
   oldText = "",
-  maxBytes = BOT_MEMORY_MAX_BYTES,
+  maxTokens: number = MEMORY_TOKEN_CAPS.bot,
 ): MemoryEdit {
   const target = oldText.trim().replace(/\r\n/g, "\n");
+  if (fact.includes("\n") || fact.includes("\r")) {
+    return {
+      error: "One fact per line. Save each fact separately.",
+      entries: entriesOf(existing),
+    };
+  }
+  if (memoryTokenCount(fact.trim()) > MEMORY_LINE_TOKEN_CAP) {
+    return {
+      error: `One line holds at most ${MEMORY_LINE_TOKEN_CAP} tokens. Shorten the fact, or split it into separate saves.`,
+      entries: entriesOf(existing),
+    };
+  }
   let content = existing;
   if (!target) {
     content = appendMemoryFact(existing, fact);
@@ -80,14 +97,40 @@ export function editMemory(
       ? `${current.slice(0, start)}${next}${current.slice(end)}`
       : `${current.slice(0, start)}${current.slice(lineEnd === -1 ? end : end + 1)}`;
   }
-  const bytes = byteLength(content);
-  if (bytes > maxBytes && bytes > byteLength(existing)) {
+  const tokens = memoryTokenCount(content);
+  if (tokens > maxTokens && tokens > memoryTokenCount(existing)) {
     return {
-      error: `Memory is full (${maxBytes} bytes). Make room by merging, shortening or removing entries with old_text, then save again.`,
+      error: `Memory is full (${tokens} of ${maxTokens} tokens). Make room by merging, shortening or removing entries with old_text, then save again.`,
       entries: entriesOf(existing),
     };
   }
   return { content };
+}
+
+/**
+ * Whether a document may hold this content: one fact per line, within its layer's token cap.
+ * Every writer (memory tool, shared save, Memory page, account import) asks this one function.
+ */
+export function memoryDocumentError(
+  scope: "bot" | "user",
+  path: string,
+  content: string,
+): string | undefined {
+  const longLine = entriesOf(content).find(
+    (line) => memoryTokenCount(line) > MEMORY_LINE_TOKEN_CAP,
+  );
+  if (longLine) {
+    return `One line holds at most ${MEMORY_LINE_TOKEN_CAP} tokens. Shorten it, or split it into separate entries.`;
+  }
+  const cap =
+    scope === "user"
+      ? MEMORY_TOKEN_CAPS.shared
+      : path === MEMORY_INDEX_PATH
+        ? MEMORY_TOKEN_CAPS.bot
+        : MEMORY_NOTE_TOKEN_CAP;
+  const tokens = memoryTokenCount(content);
+  if (tokens > cap) return `Memory is full (${tokens} of ${cap} tokens).`;
+  return undefined;
 }
 
 function entriesOf(content: string): string[] {

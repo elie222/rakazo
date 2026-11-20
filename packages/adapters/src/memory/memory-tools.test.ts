@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { RunContext } from "../runs/assembly/run-context.js";
 import type { ToolCall } from "../runs/tools/run-tool-gate.js";
 import { memoryTools } from "../runs/tools/run-tools-memory.js";
-import { appendMemoryFact, editMemory, selectMemoryTools } from "./memory-tools.js";
+import {
+  appendMemoryFact,
+  editMemory,
+  memoryDocumentError,
+  selectMemoryTools,
+} from "./memory-tools.js";
 
 function tool(name: string): ConnectorTool {
   return { name, description: name, inputSchema: { type: "object", properties: {} } };
@@ -196,6 +201,29 @@ describe("multiline memory facts", () => {
   });
 });
 
+describe("memoryDocumentError", () => {
+  it("caps shared notes at 400 tokens and bot notes at 1,200", () => {
+    expect(memoryDocumentError("user", "team.md", "你\n".repeat(320))).toBeUndefined();
+    expect(memoryDocumentError("user", "team.md", "你\n".repeat(321))).toBe(
+      "Memory is full (402 of 400 tokens).",
+    );
+    expect(memoryDocumentError("bot", "MEMORY.md", "你\n".repeat(960))).toBeUndefined();
+    expect(memoryDocumentError("bot", "MEMORY.md", "你\n".repeat(961))).toBe(
+      "Memory is full (1202 of 1200 tokens).",
+    );
+    expect(memoryDocumentError("bot", "health/allergies.md", "xx\n".repeat(2_666))).toBeUndefined();
+    expect(memoryDocumentError("bot", "health/allergies.md", "xx\n".repeat(2_667))).toBe(
+      "Memory is full (2001 of 2000 tokens).",
+    );
+  });
+
+  it("refuses a line over 150 tokens", () => {
+    expect(memoryDocumentError("bot", "MEMORY.md", "x".repeat(601))).toBe(
+      "One line holds at most 150 tokens. Shorten it, or split it into separate entries.",
+    );
+  });
+});
+
 describe("editMemory", () => {
   const memory = "# Memory\n- Lives in London.\n- Prefers short replies.\n";
 
@@ -234,15 +262,29 @@ describe("editMemory", () => {
   });
 
   it("refuses a save that grows memory past the cap and returns the entries", () => {
-    const full = `${"a".repeat(30)}\n`;
-    expect(editMemory(full, "b".repeat(10), "", 32)).toEqual({
+    const full = `${"a".repeat(4)}\n`;
+    expect(editMemory(full, "b".repeat(20), "", 4)).toEqual({
       error: expect.stringContaining("Memory is full"),
-      entries: ["a".repeat(30)],
+      entries: ["aaaa"],
     });
   });
 
   it("lets a save that shrinks oversized memory through", () => {
     const oversized = `${"a".repeat(40)}\n${"b".repeat(40)}\n`;
-    expect(editMemory(oversized, "", "bbb", 32)).toEqual({ content: `${"a".repeat(40)}\n` });
+    expect(editMemory(oversized, "", "bbb", 12)).toEqual({ content: `${"a".repeat(40)}\n` });
+  });
+
+  it("refuses a multi-line fact", () => {
+    expect(editMemory(memory, "One.\nTwo.")).toEqual({
+      error: "One fact per line. Save each fact separately.",
+      entries: ["# Memory", "- Lives in London.", "- Prefers short replies."],
+    });
+  });
+
+  it("refuses a fact longer than one line's token cap", () => {
+    expect(editMemory(memory, "b".repeat(601))).toEqual({
+      error: expect.stringContaining("at most 150 tokens"),
+      entries: ["# Memory", "- Lives in London.", "- Prefers short replies."],
+    });
   });
 });

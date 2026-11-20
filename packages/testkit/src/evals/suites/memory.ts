@@ -1,13 +1,13 @@
-import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
+import { MEMORY_TOKEN_CAPS } from "@rakazo/contracts";
+import { memoryTokenCount } from "@rakazo/core";
 import type { Criterion, EvalCase, Evidence } from "../cases.js";
 import type { JudgeInput } from "../judge.js";
 
 export const MEMORY_FIXTURE_VERSION = "memory-v1";
 const MAX_ENTRY_CHARS = 200;
-const CONCISE_MAX_BYTES = 1024;
+const CONCISE_MAX_TOKENS = 256;
 
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
-const bytes = (text: string) => Buffer.byteLength(text);
 const entries = (memory: string) =>
   memory
     .split("\n")
@@ -18,7 +18,7 @@ const saves = (e: Evidence, step?: number) =>
 const saved = (e: Evidence, step: number, pattern: RegExp) =>
   saves(e, step).some((c) => pattern.test(String(c.args.content ?? "")));
 const withinCap = (e: Evidence) =>
-  check("memory-within-cap", bytes(e.memory) <= BOT_MEMORY_MAX_BYTES);
+  check("memory-within-cap", memoryTokenCount(e.memory) <= MEMORY_TOKEN_CAPS.bot);
 const entriesShort = (e: Evidence) =>
   check(
     "entries-short",
@@ -233,7 +233,7 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
     ],
     grade: (e) => [
       check("facts-saved", saves(e).length > 0),
-      check("memory-small", bytes(e.memory) <= CONCISE_MAX_BYTES),
+      check("memory-small", memoryTokenCount(e.memory) <= CONCISE_MAX_TOKENS),
       entriesShort(e),
     ],
     judge: (e) => judgeInput("concise", e.memory),

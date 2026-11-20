@@ -1,4 +1,4 @@
-import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
+import { MEMORY_LINE_TOKEN_CAP, MEMORY_TOKEN_CAPS } from "@rakazo/contracts";
 import { escapePromptData } from "@rakazo/core";
 
 /** A user message the dream consolidates, as its sequence and the text the user wrote. */
@@ -25,7 +25,6 @@ export function memoryDreamPrompt(input: {
   sharedMemory: readonly DreamMemoryDocument[];
   messages: readonly DreamMessage[];
 }): string {
-  const entryLimit = Math.floor(BOT_MEMORY_MAX_BYTES / 4);
   const shared = input.sharedMemory
     .map(
       (document) =>
@@ -44,7 +43,7 @@ export function memoryDreamPrompt(input: {
     "Rewrite the notes so they stay short and accurate:",
     `- Keep only facts the user stated in these messages; never infer, never add outside knowledge.`,
     `- Keep one fact per line, merge duplicates, and remove notes the user contradicted.`,
-    `- Keep at most ${entryLimit} one-line entries in the bot's own notes (${BOT_MEMORY_MAX_BYTES} bytes).`,
+    `- Keep the bot's own notes within ${MEMORY_TOKEN_CAPS.bot} tokens, each line at most ${MEMORY_LINE_TOKEN_CAP} tokens.`,
     input.includeOwn
       ? "- Use the `remember` tool for the bot's own notes. To replace one entry, pass the entry's text as `old_text`; to add one, omit `old_text`."
       : "- The bot's own notes are turned off; do not write them.",

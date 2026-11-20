@@ -20,7 +20,6 @@ import type * as ComputerLifecycleModule from "../../computers/computer-lifecycl
 import type { HostComputerRequest } from "../../computers/host/host-computer-protocol.js";
 import type { UserDeviceGateway } from "../../computers/host/user-device-protocol.js";
 import { FakeWebProvider } from "../../providers/web/fake/fake-web.js";
-import { MAX_SHARED_MEMORY_CHARS } from "../../tools/builtin.tool-definition.js";
 import type * as FleetToolsModule from "../../tools/fleet-tools.js";
 import {
   CATALOG_EXECUTE,
@@ -906,7 +905,7 @@ describe("connector read-only metadata and approval enforcement", () => {
   it("rejects shared memory content over the size limit", async () => {
     const args = {
       path: "MEMORY.md",
-      content: "x".repeat(MAX_SHARED_MEMORY_CHARS + 1),
+      content: "xxxx\n".repeat(400),
     };
     const f = fixture({ name: "save_shared_memory", builtin: true });
     f.setCalls([{ args, executionId: "call-1" }]);
@@ -914,7 +913,7 @@ describe("connector read-only metadata and approval enforcement", () => {
     expect(f.commit).not.toHaveBeenCalled();
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
     expect(f.results.at(-1)).toEqual({
-      error: `content exceeds ${MAX_SHARED_MEMORY_CHARS} characters`,
+      error: "Memory is full (500 of 400 tokens).",
     });
   });
 

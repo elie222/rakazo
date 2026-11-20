@@ -114,6 +114,7 @@ export {
   startManualMemoryDream,
 } from "./memory/memory-dreams.js";
 export * from "./memory/memory-provider-factory.js";
+export { memoryDocumentError } from "./memory/memory-tools.js";
 export * from "./messaging/bot-messages.js";
 export * from "./messaging/chat-sdk-surface.js";
 export * from "./messaging/installed-messaging-surface.js";

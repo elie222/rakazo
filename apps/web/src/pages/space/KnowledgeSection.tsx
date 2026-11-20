@@ -1,7 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
-import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
+import {
+  isDeletableMemoryDocument,
+  isEmptyBotMemory,
+  MEMORY_INDEX_PATH,
+  MEMORY_TOKEN_CAPS,
+} from "@rakazo/contracts";
+import { memoryTokenCount } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Badge, Button, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
@@ -95,6 +101,11 @@ export function MemoryDocumentList({
     budgetOptions ?? { queryKey: ["memory-budget", "none"], queryFn: skipToken },
   );
   const budget = budgetInput && budgetQuery.data ? budgetQuery.data : null;
+  const usedTokens =
+    input.scope === "user"
+      ? docs.reduce((sum, doc) => sum + memoryTokenCount(doc.content), 0)
+      : memoryTokenCount(docs.find((doc) => doc.path === MEMORY_INDEX_PATH)?.content ?? "");
+  const tokenCap = input.scope === "user" ? MEMORY_TOKEN_CAPS.shared : MEMORY_TOKEN_CAPS.bot;
   const bytesLeftOut = budget
     ? budget.omitted.reduce((sum, entry) => sum + entry.totalBytes, 0) +
       budget.documents.reduce((sum, entry) => sum + entry.totalBytes - entry.includedBytes, 0)
@@ -203,6 +214,11 @@ export function MemoryDocumentList({
       ) : null}
       <div data-testid={testId} className={compact ? "rounded-xl bg-muted/50 p-4" : undefined}>
         {error ? <div className="pb-2 text-body-sm text-destructive">{error}</div> : null}
+        {docs.length > 0 ? (
+          <p className="pb-2 text-body-sm text-muted-foreground" data-testid="memory-token-note">
+            {t`Using ${usedTokens} of ${tokenCap} tokens.`}
+          </p>
+        ) : null}
         {kb > 0 ? (
           <p className="pb-2 text-body-sm text-muted-foreground" data-testid="memory-budget-note">
             {t`About ${kb} KB of memory no longer reaches the bot.`}

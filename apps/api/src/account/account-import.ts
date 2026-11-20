@@ -10,6 +10,7 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import {
   carriedBotModelPin,
   carriedRoutineModelPin,
+  memoryDocumentError,
   normalizeWorkspacePath,
   resolveBotWorkspacePath,
 } from "@rakazo/adapters";
@@ -726,6 +727,15 @@ class AccountImporter implements ArchiveSink {
         if (record.rootArtifactId) space.mapped(record.rootArtifactId);
         return;
       case "memory_document": {
+        const invalid = memoryDocumentError(
+          record.scope === "user" ? "user" : "bot",
+          record.path,
+          record.content,
+        );
+        if (invalid) {
+          getLogger().warn("account.import.memory_document_skipped", { reason: invalid });
+          return;
+        }
         const botId = record.botId === null ? null : space.mapped(record.botId);
         const existing = await prisma.memoryDocument.findFirst({
           where: { spaceId, scope: record.scope, botId, path: record.path },

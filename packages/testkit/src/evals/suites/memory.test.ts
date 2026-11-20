@@ -1,4 +1,5 @@
-import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
+import { MEMORY_TOKEN_CAPS } from "@rakazo/contracts";
+import { memoryTokenCount } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "../cases.js";
 import { EMPTY_SETTINGS } from "../cases.js";
@@ -116,12 +117,13 @@ describe("memory outcome grading", () => {
   });
 
   it("requires the new fact within the cap when memory starts full", () => {
-    const seedBytes = Buffer.byteLength(FULL_MEMORY_SEED);
-    // Close enough to the cap that any appended fact is refused.
-    expect(seedBytes).toBeLessThanOrEqual(BOT_MEMORY_MAX_BYTES);
-    expect(seedBytes).toBeGreaterThan(BOT_MEMORY_MAX_BYTES - 12);
-    expect(failed("full", evidence(FULL_MEMORY_SEED))).toEqual(["new-fact-saved"]);
-    expect(failed("full", evidence(`${FULL_MEMORY_SEED}Office door code: 5829\n`))).toEqual([
+    // Pad the seed to just under the cap, one short fact per line.
+    const nearCapSeed = `${FULL_MEMORY_SEED}${"xxxx\n".repeat(140)}`;
+    const seedTokens = memoryTokenCount(nearCapSeed);
+    expect(seedTokens).toBeLessThanOrEqual(MEMORY_TOKEN_CAPS.bot);
+    expect(seedTokens).toBeGreaterThan(MEMORY_TOKEN_CAPS.bot - 6);
+    expect(failed("full", evidence(nearCapSeed))).toEqual(["new-fact-saved"]);
+    expect(failed("full", evidence(`${nearCapSeed}Office door code: 5829\n`))).toEqual([
       "memory-within-cap",
     ]);
     expect(failed("full", evidence("# Assistant\n\nOffice door code: 5829\n"))).toEqual([]);
