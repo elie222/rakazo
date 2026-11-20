@@ -46,7 +46,7 @@ import {
   VAULT_ITEM_LIMIT,
   vaultLoginKey,
 } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
+import { ClientError, mapConcurrent } from "@rakazo/core";
 import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
@@ -379,6 +379,12 @@ const commandRowFields = {
   ciphertext: true,
 } as const;
 
+/**
+ * How many vault values a run unlocks at once. A value kept in a remote secret store is a network
+ * read, and a full vault would otherwise wait on each in turn.
+ */
+const VAULT_UNLOCK_CONCURRENCY = 8;
+
 /** Each command variable of these rows, decrypted once; one that can't be read has no value. */
 async function readCommandVariables(
   prisma: PrismaClient,
@@ -386,21 +392,29 @@ async function readCommandVariables(
   rows: (Parameters<typeof openVaultValue>[2] & { name: string; auth: unknown })[],
   keyOutage: "throw" | "unset",
 ) {
-  const variables: { item: VaultItemUse; variable: string; value?: string }[] = [];
-  for (const row of rows) {
-    if (!isCommandCredential(row.auth)) continue;
+  const commands = rows.flatMap((row) => {
+    if (!isCommandCredential(row.auth)) return [];
     const variable = commandVariableName(row.name);
-    if (commandVariableProblem(variable)) continue;
-    const item = { id: row.id, name: row.name, spaceId: row.spaceId, kind: "command" };
-    try {
-      variables.push({ item, variable, value: await openForRedaction(prisma, secretStore, row) });
-    } catch (error) {
-      if (error instanceof VaultKeyUnavailableError && keyOutage === "throw") throw error;
-      // One unreadable value must not stop every shell command; the variable is left unset.
-      variables.push({ item, variable });
-    }
-  }
-  return variables;
+    if (commandVariableProblem(variable)) return [];
+    return [{ row, variable }];
+  });
+  return mapConcurrent(
+    commands,
+    VAULT_UNLOCK_CONCURRENCY,
+    async ({
+      row,
+      variable,
+    }): Promise<{ item: VaultItemUse; variable: string; value?: string }> => {
+      const item = { id: row.id, name: row.name, spaceId: row.spaceId, kind: "command" };
+      try {
+        return { item, variable, value: await openForRedaction(prisma, secretStore, row) };
+      } catch (error) {
+        if (error instanceof VaultKeyUnavailableError && keyOutage === "throw") throw error;
+        // One unreadable value must not stop every shell command; the variable is left unset.
+        return { item, variable };
+      }
+    },
+  );
 }
 
 /** What a command gets: its variables, and the items they came from, without their values. */
@@ -1238,8 +1252,11 @@ export async function listBotSecrets(
     select: { ...metadata, ...labels, ...vaultRow, alsoOn: true },
     orderBy: { name: "asc" },
   });
-  return Promise.all(
-    rows.map(async ({ id, userId, spaceId, ciphertext, title, note, alsoOn, ...row }) => {
+  // Each preview may be a remote store read: a full Vault reads a few at a time.
+  return mapConcurrent(
+    rows,
+    VAULT_UNLOCK_CONCURRENCY,
+    async ({ id, userId, spaceId, ciphertext, title, note, alsoOn, ...row }) => {
       const preview = await itemPreview(prisma, secretStore, {
         id,
         userId,
@@ -1259,7 +1276,7 @@ export async function listBotSecrets(
             ? { contact: preview.contact }
             : {}),
       };
-    }),
+    },
   );
 }
 
@@ -1379,8 +1396,15 @@ export async function listVaultItems(
       select: { credentialId: true, botId: true },
     }),
   ]);
-  return Promise.all(
-    rows.map(async ({ id, userId, spaceId, ciphertext, ...row }) => {
+  const limitedIds = new Set(limited.map((entry) => entry.credentialId));
+  const botsOf = new Map<string, string[]>();
+  for (const { credentialId, botId } of chosen)
+    botsOf.set(credentialId, [...(botsOf.get(credentialId) ?? []), botId]);
+  // Each preview may be a remote store read: a full Vault reads a few at a time.
+  return mapConcurrent(
+    rows,
+    VAULT_UNLOCK_CONCURRENCY,
+    async ({ id, userId, spaceId, ciphertext, ...row }) => {
       const preview = withPreview
         ? await itemPreview(prisma, secretStore, {
             id,
@@ -1391,12 +1415,10 @@ export async function listVaultItems(
           })
         : undefined;
       // A choice exists only while the item is limited: one left behind by an earlier save is none.
-      const allBots = !limited.some((entry) => entry.credentialId === id);
-      const botIds = allBots
-        ? []
-        : chosen.flatMap((entry) => (entry.credentialId === id ? [entry.botId] : []));
+      const allBots = !limitedIds.has(id);
+      const botIds = allBots ? [] : (botsOf.get(id) ?? []);
       return { ...row, allBots, botIds, title: vaultItemTitle(row, preview), preview };
-    }),
+    },
   );
 }
 
@@ -1961,49 +1983,51 @@ export async function loadLoginPasswordRedactions(
     },
     select: { ...vaultRow, name: true, origin: true, auth: true },
   });
-  const forms = new Set<string>();
-  for (const row of rows) {
+  const perRow = await mapConcurrent(rows, VAULT_UNLOCK_CONCURRENCY, async (row) => {
     const type = BotSecretAuth.safeParse(row.auth).data?.type;
     if (type === "card") {
       try {
         const card = decodeCardSecret(await openForRedaction(prisma, secretStore, row));
-        for (const form of cardRedactionForms(card.number)) forms.add(form);
+        return cardRedactionForms(card.number);
       } catch (error) {
         if (error instanceof VaultKeyUnavailableError) throw error;
         getLogger().warn("saved card could not be loaded for redaction", { cardId: row.id });
+        return [];
       }
-      continue;
     }
     if (type === "bearer" || type === "header" || type === "basic") {
       try {
         const plaintext = await openForRedaction(prisma, secretStore, row);
         // A short value would mangle unrelated text in every run; the run that sends it hides it.
-        if (plaintext.length < MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN) continue;
+        if (plaintext.length < MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN) return [];
         const auth = BotSecretAuth.parse(row.auth);
-        for (const form of apiKeyRedactionForms({ ...row, auth }, plaintext)) forms.add(form);
+        return apiKeyRedactionForms({ ...row, auth }, plaintext);
       } catch (error) {
         if (error instanceof VaultKeyUnavailableError) throw error;
         getLogger().warn("saved API key could not be loaded for redaction", { keyId: row.id });
+        return [];
       }
-      continue;
     }
-    if (type !== "login") continue;
+    if (type !== "login") return [];
     try {
       const { fields, otp } = decodeLoginSecret(await openForRedaction(prisma, secretStore, row));
-      for (const form of otp ? authenticatorKeyRedactionForms(otp) : []) forms.add(form);
+      const forms = otp ? [...authenticatorKeyRedactionForms(otp)] : [];
       for (const field of fields) {
         // Every run would mangle each occurrence of a short value; the filling run still hides it.
         if (!field.hidden || field.value.length < MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN) continue;
-        for (const form of passwordRedactionForms(field.value)) forms.add(form);
+        forms.push(...passwordRedactionForms(field.value));
       }
+      return forms;
     } catch (error) {
       if (error instanceof VaultKeyUnavailableError) throw error;
       // Like an unreadable command variable, it must not stop every computer tool. The id only:
       // an operator can see which login is no longer hidden. Not under a "secret" key, which
       // the logger scrubs.
       getLogger().warn("saved login could not be loaded for redaction", { loginId: row.id });
+      return [];
     }
-  }
+  });
+  const forms = new Set(perRow.flat());
   return [...forms];
 }
 

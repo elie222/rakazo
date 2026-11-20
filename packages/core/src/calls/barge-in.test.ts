@@ -32,10 +32,56 @@ describe("call barge-in", () => {
     expect(isInterimCallBargeIn("stop")).toBe(false);
   });
 
+  it.each(["等一下我想问另一个问题", "ちょっと質問があるんですけど", "ขอถามอีกเรื่องหนึ่งได้ไหม"])(
+    "lets the unspaced sentence %j cut a reply short",
+    (text) => {
+      expect(isCallBargeIn(text)).toBe(true);
+      expect(isInterimCallBargeIn(text)).toBe(true);
+    },
+  );
+
+  it.each(["等一下", "停", "หยุด", "不是", "いいえ", "ไม่"])(
+    "lets the unspaced interruption %j cut a reply short",
+    (text) => {
+      expect(isCallBargeIn(text)).toBe(true);
+    },
+  );
+
+  it.each(["嗯", "好的", "对", "はい", "うん", "そうですね", "ครับ", "谢谢"])(
+    "keeps playing through the unspaced backchannel %j",
+    (text) => {
+      expect(isCallBargeIn(text)).toBe(false);
+      expect(isInterimCallBargeIn(text)).toBe(false);
+    },
+  );
+
+  it("keeps playing through English backchannels", () => {
+    for (const text of ["okay", "uh", "mm", "yeah"]) expect(isCallBargeIn(text)).toBe(false);
+  });
+
+  it("still tells sentences from backchannels without Intl.Segmenter", () => {
+    vi.stubGlobal("Intl", { ...Intl, Segmenter: undefined });
+    try {
+      expect(isCallBargeIn("等一下我想问另一个问题")).toBe(true);
+      expect(isCallBargeIn("ขอถามอีกเรื่องหนึ่งได้ไหม")).toBe(true);
+      expect(isCallBargeIn("好的")).toBe(false);
+      expect(isCallBargeIn("谢谢")).toBe(false);
+      expect(isCallBargeIn("wait, what about the deploy")).toBe(true);
+      expect(isCallBargeIn("yeah")).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("ignores the reply leaking back at the playback threshold", () => {
     spokenMemory.remember(SPOKEN);
     expect(isCallBargeIn("I am here what about that")).toBe(false);
     expect(isInterimCallBargeIn("I am here and hearing")).toBe(false);
+  });
+
+  it("ignores an unspaced reply leaking back", () => {
+    spokenMemory.remember("我在这里可以听到你说话");
+    expect(isCallBargeIn("我在这里可以听到你")).toBe(false);
   });
 
   it("ignores an empty transcript", () => {

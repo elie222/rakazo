@@ -370,6 +370,13 @@ describe("OIDC environment", () => {
       "AUTH_BREACHED_PASSWORD_CHECK_ENABLED must be true or false",
     );
   });
+  it("refuses an Auto Review confidence floor it can't read at startup", () => {
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "90" })).toThrow(
+      "RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE must be a number from 0 to 1",
+    );
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0.9" })).not.toThrow();
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "" })).not.toThrow();
+  });
   it("refuses a SIGNUPS_ENABLED value it can't read", () => {
     for (const value of ["false", "FALSE", " true ", "0", "1", ""]) {
       expect(loadEnv({ ...base, SIGNUPS_ENABLED: value }).signupsEnabled).toBe(value);

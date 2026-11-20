@@ -308,6 +308,8 @@ export interface SandboxKindCapabilities {
   storedHomeIsBackup: boolean;
   /** The provider can read the disk of a stopped sandbox without starting it. */
   readStoppedFiles?: boolean;
+  /** Largest file one transfer can carry, when the provider's transport is tighter than the server's limit. */
+  maxFileBytes?: number;
   /** The provider confirms machine size for size-based allowance accounting. */
   sizedUsage?: boolean;
 }

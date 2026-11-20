@@ -83,6 +83,14 @@ function versionedHomeStore(home: AgentHomeStore, kind: string) {
   return home;
 }
 
+/** The server's file limit, lowered to what the computer's own transport can carry. */
+function transferMaxBytes(deps: RouterContext["deps"], kind: string) {
+  return Math.min(
+    attachmentMaxBytes(deps.env),
+    sandboxKindCapabilities(kind).maxFileBytes ?? Number.POSITIVE_INFINITY,
+  );
+}
+
 export function computerRoutes(ctx: RouterContext) {
   const { deps, repos, taughtSkills, authed } = ctx;
   return {
@@ -561,13 +569,13 @@ export function computerRoutes(ctx: RouterContext) {
             await wakeableComputerRef(deps.prisma, computer),
             storedPath,
             computerContext(context.actor, bot.id, "download"),
-            { maxBytes: attachmentMaxBytes(deps.env) },
+            { maxBytes: transferMaxBytes(deps, computer.kind) },
           )
           .catch((error: unknown) => {
             if (error instanceof SandboxFileTooLargeError) {
               throw new ClientError(
                 "BAD_REQUEST",
-                `File exceeds the ${attachmentSizeLabel(attachmentMaxBytes(deps.env))} download limit.`,
+                `File exceeds the ${attachmentSizeLabel(error.maxBytes)} download limit.`,
               );
             }
             throw error;
@@ -587,7 +595,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (!holdsComputerControl(computer, bot.id, context.actor)) {
           throw new ORPCError("FORBIDDEN", { message: "Take control first." });
         }
-        const maxBytes = attachmentMaxBytes(deps.env);
+        const maxBytes = transferMaxBytes(deps, computer.kind);
         if (input.contentBase64.length > Math.ceil(maxBytes / 3) * 4) {
           throw new ORPCError("BAD_REQUEST", {
             message: `File exceeds the ${attachmentSizeLabel(maxBytes)} upload limit.`,
