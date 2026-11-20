@@ -2,6 +2,9 @@
 const UNSPACED =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 
+/** Keep Latin words, digits, and their combining accents together in mixed-script text. */
+const FALLBACK_WORDS = /[\p{Script=Latin}\p{Nd}][\p{Script=Latin}\p{Nd}\p{M}]*|./gu;
+
 let segmenter: { ctor: unknown; instance: Intl.Segmenter } | null = null;
 
 /** Hermes (mobile) and older engines may not ship `Intl.Segmenter`. */
@@ -28,7 +31,7 @@ function tokens(text: string): { words: string[]; fallback: boolean } {
       }
     } else {
       fallback = true;
-      words.push(...Array.from(token));
+      words.push(...(token.match(FALLBACK_WORDS) ?? []));
     }
   }
   return { words, fallback };
