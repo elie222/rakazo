@@ -2336,6 +2336,39 @@ describe("graphical computer spec", () => {
       "1",
     ]);
   });
+
+  it("maps DOM key names to X11 keysyms for xdotool", () => {
+    expect(xdotoolCommand({ kind: "key", key: "PageDown" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "Page_Down",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "ArrowDown" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "Down",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "ArrowLeft", modifiers: ["ctrl"] })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "ctrl+Left",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "a" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "a",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "F5" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "F5",
+    ]);
+  });
 });
 
 describe("computer resource limits", () => {
