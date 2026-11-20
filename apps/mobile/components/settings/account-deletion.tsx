@@ -47,7 +47,7 @@ export function useAccountDeletion({
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const reading = useRef(false);
+  const busy = useRef(false);
   const disabled =
     pending ||
     (security?.hasPassword ? !password : !ssoReauthenticated && (!codeSent || !password.trim()));
@@ -58,6 +58,9 @@ export function useAccountDeletion({
   }
 
   async function run(action: () => Promise<void>) {
+    // One operation at a time, even before the render that shows `pending`.
+    if (busy.current) return;
+    busy.current = true;
     setPending(true);
     setError(null);
     try {
@@ -65,6 +68,7 @@ export function useAccountDeletion({
     } catch (err) {
       setError(errorText(err, t`Could not continue`));
     } finally {
+      busy.current = false;
       setPending(false);
     }
   }
@@ -78,9 +82,8 @@ export function useAccountDeletion({
   }
 
   async function request() {
-    // The ref also covers a second call made before the render that shows `pending`.
-    if (pending || reading.current) return;
-    reading.current = true;
+    if (pending || busy.current) return;
+    busy.current = true;
     setPending(true);
     setError(null);
     try {
@@ -97,7 +100,7 @@ export function useAccountDeletion({
       setError(errorText(err, t`Could not continue`));
       return;
     } finally {
-      reading.current = false;
+      busy.current = false;
       setPending(false);
     }
 
@@ -115,7 +118,8 @@ export function useAccountDeletion({
   }
 
   async function submit(value: string, hasPassword = security?.hasPassword === true) {
-    if ((!value && !ssoReauthenticated) || pending) return;
+    if ((!value && !ssoReauthenticated) || pending || busy.current) return;
+    busy.current = true;
     setPending(true);
     setError(null);
     try {
@@ -143,6 +147,7 @@ export function useAccountDeletion({
     } catch (err) {
       setError(errorText(err, t`Could not delete account`));
     } finally {
+      busy.current = false;
       setPending(false);
     }
   }

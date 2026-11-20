@@ -357,6 +357,39 @@ describe("account deletion security read", () => {
     expect(deletion.pending).toBe(false);
   });
 
+  it("keeps pending for a sign-in action that a request raced before the render", async () => {
+    const signIn = deferred<void>();
+    const action = vi.fn(() => signIn.promise);
+    act(() => {
+      void deletion.run(action);
+      void deletion.request();
+    });
+    expect(action).toHaveBeenCalledOnce();
+    expect(fetchAccountSecurity).not.toHaveBeenCalled();
+    expect(deletion.pending).toBe(true);
+    await act(async () => {
+      signIn.resolve();
+      await flush();
+    });
+    expect(deletion.pending).toBe(false);
+  });
+
+  it("does not start a sign-in action while the read is running", async () => {
+    const read = deferred<AccountSecurity>();
+    vi.mocked(fetchAccountSecurity).mockReturnValue(read.promise);
+    const action = vi.fn(async () => {});
+    act(() => {
+      void deletion.request();
+      void deletion.run(action);
+    });
+    expect(action).not.toHaveBeenCalled();
+    await act(async () => {
+      read.resolve(passwordless);
+      await flush();
+    });
+    expect(deletion.pending).toBe(false);
+  });
+
   it("clears pending and shows the error when the read fails, then allows a retry", async () => {
     vi.mocked(fetchAccountSecurity).mockRejectedValueOnce(new Error("offline"));
     await act(() => deletion.request());
