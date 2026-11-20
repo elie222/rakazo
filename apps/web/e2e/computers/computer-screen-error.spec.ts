@@ -3,7 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
-  openBotPanel,
+  openBotComputer,
   rpc,
   signup,
 } from "../helpers/helpers";
@@ -50,13 +50,18 @@ test(
       }),
     );
 
-    await openBotPanel(page);
+    await openBotComputer(page);
     const preview = page.getByTestId("computer-preview");
     await expect(preview.getByRole("alert")).toContainText("temporarily busy");
+    // The tab bar flags the failure from any other tab of the panel.
+    await expect(page.getByTestId("computer-attention")).toBeVisible();
     await expect(preview.getByTestId("computer-preview-open")).toHaveCount(0);
     await captureScreenshot(page, testInfo, "computer-screen-connection-error");
 
     await expect(preview.getByRole("alert")).toContainText("Screen not connected");
+    await page.getByTestId("bot-tab-details").click();
+    await expect(page.getByTestId("computer-attention")).toBeVisible();
+    await page.getByTestId("bot-tab-computer").click();
     await preview.getByRole("button", { name: "Recover computer", exact: true }).click();
     await expect(page.getByRole("alertdialog")).toContainText("Recover computer?");
     await captureScreenshot(page, testInfo, "computer-screen-recover-confirm");
@@ -104,7 +109,7 @@ test(
         body: JSON.stringify({ json: { url: null } }),
       });
     });
-    await openBotPanel(page);
+    await openBotComputer(page);
     const preview = page.getByTestId("computer-preview");
     await expect(preview.getByRole("alert")).toContainText("Screen not connected");
     await expect(preview.getByRole("button", { name: "Retry screen" })).toBeVisible();
@@ -151,7 +156,7 @@ test("a healthy running computer is not diagnosed while its screen URL loads", a
       body: JSON.stringify({ json: { url: screenUrl } }),
     });
   });
-  await openBotPanel(page);
+  await openBotComputer(page);
   await reading;
   const preview = page.getByTestId("computer-preview");
   await expect(preview.getByRole("alert")).toHaveCount(0);
@@ -193,7 +198,7 @@ test("a takeover failure does not diagnose a screen connection failure", async (
       }),
     }),
   );
-  await openBotPanel(page);
+  await openBotComputer(page);
   const preview = page.getByTestId("computer-preview");
   await expect(preview.locator("iframe")).toBeVisible();
   await preview.hover();
@@ -265,7 +270,7 @@ test("a framed screen that drops after connecting loads again by itself through 
     }),
   );
 
-  await openBotPanel(page);
+  await openBotComputer(page);
   const preview = page.getByTestId("computer-preview");
   await expect(preview.locator("iframe")).toHaveAttribute("src", /1\.drop-test\/vnc\.html/);
   await expect.poll(() => loads).toBe(2);

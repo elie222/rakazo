@@ -12,6 +12,7 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
 
+  await settings.getByTestId("bot-tab-settings").click();
   await settings.getByTestId("avatar-studio-trigger").click();
   const studio = page.getByTestId("avatar-studio");
   await expect(studio).toBeVisible();
@@ -56,6 +57,7 @@ test("bot settings open Avatar Studio on the Bot tab", async ({ page }, testInfo
   await studio.getByRole("button", { name: "Done", exact: true }).click();
   await page.reload();
   await openBotPanel(page);
+  await page.getByTestId("bot-settings").getByTestId("bot-tab-settings").click();
   await page.getByTestId("bot-settings").getByTestId("avatar-studio-trigger").click();
   await expect(
     page.getByTestId("avatar-studio").getByRole("tab", { name: "Rakazo", exact: true }),
