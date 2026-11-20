@@ -138,3 +138,22 @@ it("announces Calling without showing a clock before connection", () => {
   expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe("Calling…");
   expect(container.textContent).not.toMatch(/\d{2}:\d{2}/);
 });
+
+it("consumes call Escape before underlying document handlers", async () => {
+  viewport(375);
+  render({});
+  await flushFocus();
+  const underlyingClose = vi.fn();
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && !event.defaultPrevented) underlyingClose();
+  };
+  document.addEventListener("keydown", onKey);
+  act(() => {
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  document.removeEventListener("keydown", onKey);
+  expect(endCall).toHaveBeenCalledOnce();
+  expect(underlyingClose).not.toHaveBeenCalled();
+});
