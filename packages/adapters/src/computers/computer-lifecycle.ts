@@ -188,6 +188,20 @@ export class ComputerRecoveryRequiredError extends Error {
 /** The computer's Space is being deleted, so it takes no maintenance until that ends. */
 export class ComputerSpaceDeletingError extends ComputerBusyError {}
 
+/** How long a run waits for its bot's computer while other work holds it. */
+export const RUN_COMPUTER_WAIT_MS = 2 * 60_000;
+
+/**
+ * The bot's computer stayed busy for the whole wait. Only the tool call that needed it fails;
+ * the run goes on, and its next computer tool waits again.
+ */
+export class ComputerWaitTimedOutError extends Error {
+  constructor() {
+    super("The computer is still busy with earlier work. Try again in a moment.");
+    this.name = "ComputerWaitTimedOutError";
+  }
+}
+
 export { toComputerRef } from "./screens/computer-support.js";
 
 /**
@@ -1068,7 +1082,10 @@ async function validateAcquiredComputerLease(
   throw new ComputerBusyError();
 }
 
-/** Wait only for this bot's computer; model and connector work never acquires this lease. */
+/**
+ * Wait only for this bot's computer; model and connector work never acquires this lease. The wait
+ * is bounded, so a computer held by another run or a home save cannot stall a run forever.
+ */
 export async function waitForRunComputerLease(
   prisma: PrismaClient,
   input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
@@ -1094,9 +1111,11 @@ export async function waitForRunComputerLease(
     },
     {
       intervalMs: (attempt) => Math.min(250 * 2 ** Math.min(attempt - 1, 5), 5_000),
-      timeoutMs: Number.POSITIVE_INFINITY,
+      timeoutMs: RUN_COMPUTER_WAIT_MS,
       signal,
-      waitingFor: "the bot's computer",
+      onTimeout: () => {
+        throw new ComputerWaitTimedOutError();
+      },
     },
   );
   if (outcome && "changed" in outcome)
