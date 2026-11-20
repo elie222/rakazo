@@ -9,7 +9,6 @@ import {
 } from "@rakazo/contracts";
 import {
   cronFromPreset,
-  formatCron,
   isOneShotRoutineCron,
   isOneShotRoutineCrons,
   nextCronDate,
@@ -39,6 +38,12 @@ import {
 } from "../routines/routine-triggers.prompt.js";
 import { validateRoutineWatch } from "../routines/routine-watch.js";
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
+import {
+  describeRoutineTiming,
+  routineAfterView,
+  routineChanges,
+  routineViewOf,
+} from "./schedule-update-view.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
@@ -262,21 +267,6 @@ export function resolveScheduleTiming(
 function nowIn(timezone: string): string {
   const now = new Date();
   return `It is now ${localDateTime(now, timezone) ?? now.toISOString()} in ${timezone}.`;
-}
-
-/** The stored timing as the bot should report it: in the routine's timezone, with the next run. */
-export function describeRoutineTiming(row: {
-  crons: string[];
-  timezone: string;
-  nextRunAt: Date | null;
-}) {
-  return {
-    timezone: row.timezone,
-    ...(row.crons.length ? { schedule: row.crons.map((cron) => formatCron(cron)).join("; ") } : {}),
-    nextRun: row.nextRunAt
-      ? (localDateTime(row.nextRunAt, row.timezone) ?? row.nextRunAt.toISOString())
-      : null,
-  };
 }
 
 function validateRepeatingCron(cron: string): string | null {
@@ -986,10 +976,142 @@ function carriedRunAtForTimezone(
 const WATCH_RETIME_ERROR =
   "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.";
 
+/** The values a schedule_update writes, resolved and validated before anything is written. */
+export type ScheduleUpdatePlan = {
+  /** The new name when one was sent, already trimmed. */
+  name: string | undefined;
+  /** The new prompt when one was sent, already trimmed. */
+  prompt: string | undefined;
+  /** The in-chat setting the write stores; undefined leaves it as it reads. */
+  inChat: boolean | undefined;
+  active: boolean;
+  timezone: string;
+  crons: string[];
+  nextRunAt: Date | null;
+  timingChanged: boolean;
+};
+
+/** The routine fields a plan reads; the stored row carries more, this is what it changes. */
+type PlanRoutineRow = {
+  name: string;
+  prompt: string;
+  inChat: boolean;
+  active: boolean;
+  timezone: string;
+  crons: string[];
+  nextRunAt: Date | null;
+  watch: unknown;
+};
+
 /**
- * Edit one of this bot's routines in place: name, prompt, whether it runs in its chat, timing
- * (with startAt), or active.
+ * Resolve what a schedule_update would change, without writing: the same validation and
+ * timing resolution the write runs, so a report or approval card shows exactly the change
+ * the handler will save. `existing` is the scoped routine row the change applies to; the
+ * plan reads `input.on` only to tell an events-only edit from nothing to update — the events
+ * themselves resolve in the handler, against the database. `inChat` is the delta the write
+ * stores: undefined leaves it.
+ */
+export function planScheduleUpdate(
+  existing: PlanRoutineRow,
+  input: {
+    name?: string;
+    prompt?: string;
+    inChat?: boolean;
+    active?: boolean;
+    timezone?: string;
+    schedule: Record<string, unknown>;
+    /** Replaces the routine's events; an empty object removes them. */
+    on?: unknown;
+  },
+): { ok: true; plan: ScheduleUpdatePlan } | { ok: false; error: string } {
+  const name = input.name?.trim();
+  const prompt = input.prompt?.trim();
+  if (input.name !== undefined && !name) return { ok: false, error: "name cannot be empty." };
+  if (input.prompt !== undefined && !prompt) return { ok: false, error: "prompt cannot be empty." };
+
+  let timezone = existing.timezone;
+  if (input.timezone !== undefined) {
+    const parsed = TimeZoneSchema.safeParse(input.timezone);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues.map((issue) => issue.message).join("; ") };
+    }
+    timezone = parsed.data;
+  }
+  const hasTiming = SCHEDULE_TIMING_FIELDS.some((field) =>
+    isScheduleValueProvided(input.schedule[field]),
+  );
+  const retime =
+    hasTiming || isScheduleValueProvided(input.schedule.startAt) || timezone !== existing.timezone;
+  const inChat = input.inChat === existing.inChat ? undefined : input.inChat;
+  if (
+    !retime &&
+    name === undefined &&
+    prompt === undefined &&
+    inChat === undefined &&
+    input.active === undefined &&
+    input.on === undefined
+  ) {
+    return { ok: false, error: "Nothing to update." };
+  }
+  if (retime && existing.watch != null) {
+    return { ok: false, error: WATCH_RETIME_ERROR };
+  }
+  if (inChat && existing.watch != null) {
+    return { ok: false, error: "A schedule that watches for changes runs alongside its chat." };
+  }
+
+  const active = input.active ?? existing.active;
+  let crons = existing.crons;
+  let nextRunAt = existing.nextRunAt;
+  let carried: Date | null = null;
+  const oneShot = isOneShotRoutineCrons(existing.crons);
+  if (retime) {
+    let timing = input.schedule;
+    if (!hasTiming) {
+      // startAt or a new timezone alone keeps the current repeat.
+      if (existing.crons.length !== 1 || oneShot) {
+        return {
+          ok: false,
+          error: oneShot
+            ? "Give runAt to move a one-time schedule."
+            : "Give cron or every/unit along with startAt or timezone.",
+        };
+      }
+      const cron = existing.crons[0] ?? "";
+      timing = { ...input.schedule, cron };
+      const due = existing.nextRunAt;
+      if (!isScheduleValueProvided(input.schedule.startAt) && due && due.getTime() > Date.now()) {
+        const moved = carriedRunAtForTimezone(cron, due, existing.timezone, timezone);
+        carried = moved.carried;
+        if (moved.startAt) timing = { ...timing, startAt: moved.startAt };
+      }
+    }
+    const resolved = resolveScheduleTiming(timing, timezone);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    crons = [resolved.cron];
+    nextRunAt = carried ?? resolved.nextRunAt;
+  } else if (active && !(existing.active && existing.nextRunAt)) {
+    // Resuming: a watch checks right away, a repeat picks its next occurrence from now.
+    if (existing.watch != null) nextRunAt = new Date(Date.now() + 2_000);
+    else if (oneShot) {
+      if (!existing.nextRunAt || existing.nextRunAt.getTime() <= Date.now()) {
+        return { ok: false, error: "This one-time schedule has no time left; give a new runAt." };
+      }
+    } else nextRunAt = nextCronDateAcross(crons, new Date(), timezone);
+  }
+  if (!active) nextRunAt = null;
+  const timingChanged =
+    retime || active !== existing.active || nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
+  return {
+    ok: true,
+    plan: { name, prompt, inChat, active, timezone, crons, nextRunAt, timingChanged },
+  };
+}
+
+/**
+ * Edit one of this bot's routines in place: name, prompt, timing (with startAt), or active.
  * Scoped like cancel, so another bot's or another thread's routine reads as not found.
+ * The result reports each changed field as before → after; unchanged fields are not echoed.
  */
 export async function updateScheduleFromTool(
   deps: ScheduleToolDeps,
@@ -1010,6 +1132,12 @@ export async function updateScheduleFromTool(
     schedule: Record<string, unknown>;
     /** Replaces the routine's events; an empty object removes them. */
     on?: unknown;
+    /**
+     * The name and prompt an approval was shown against, each only when the call edits that
+     * field. A row that moved since then conflicts instead of being overwritten, like an
+     * instruction change.
+     */
+    expected?: { name?: string; prompt?: string };
   },
 ) {
   const routineId = input.routineId.trim();
@@ -1038,76 +1166,19 @@ export async function updateScheduleFromTool(
       : { error: "Schedule not found." };
   }
 
-  let timezone = existing.timezone;
-  if (input.timezone !== undefined) {
-    const parsed = TimeZoneSchema.safeParse(input.timezone);
-    if (!parsed.success) {
-      return { error: parsed.error.issues.map((issue) => issue.message).join("; ") };
-    }
-    timezone = parsed.data;
+  // An approval saw the row as it reads here; a field this call writes that moved since
+  // conflicts rather than being overwritten, so the saved change is never different from the
+  // one that was shown.
+  if (input.expected?.name !== undefined && input.expected.name !== existing.name) {
+    return { error: "The schedule changed while saving. Call schedule_list and try again." };
   }
-  const hasTiming = SCHEDULE_TIMING_FIELDS.some((field) =>
-    isScheduleValueProvided(input.schedule[field]),
-  );
-  const retime =
-    hasTiming || isScheduleValueProvided(input.schedule.startAt) || timezone !== existing.timezone;
-  const inChat = input.inChat === existing.inChat ? undefined : input.inChat;
-  if (
-    !retime &&
-    name === undefined &&
-    prompt === undefined &&
-    inChat === undefined &&
-    input.active === undefined &&
-    input.on === undefined
-  ) {
-    return { error: "Nothing to update." };
-  }
-  if (retime && existing.watch != null) {
-    return { error: WATCH_RETIME_ERROR };
-  }
-  if (inChat && existing.watch != null) {
-    return { error: "A schedule that watches for changes runs alongside its chat." };
+  if (input.expected?.prompt !== undefined && input.expected.prompt !== existing.prompt) {
+    return { error: "The schedule changed while saving. Call schedule_list and try again." };
   }
 
-  const active = input.active ?? existing.active;
-  let crons = existing.crons;
-  let nextRunAt = existing.nextRunAt;
-  let carried: Date | null = null;
-  const oneShot = isOneShotRoutineCrons(existing.crons);
-  if (retime) {
-    let timing = input.schedule;
-    if (!hasTiming) {
-      // startAt or a new timezone alone keeps the current repeat.
-      if (existing.crons.length !== 1 || oneShot) {
-        return {
-          error: oneShot
-            ? "Give runAt to move a one-time schedule."
-            : "Give cron or every/unit along with startAt or timezone.",
-        };
-      }
-      const cron = existing.crons[0] ?? "";
-      timing = { ...input.schedule, cron };
-      const due = existing.nextRunAt;
-      if (!isScheduleValueProvided(input.schedule.startAt) && due && due.getTime() > Date.now()) {
-        const moved = carriedRunAtForTimezone(cron, due, existing.timezone, timezone);
-        carried = moved.carried;
-        if (moved.startAt) timing = { ...timing, startAt: moved.startAt };
-      }
-    }
-    const resolved = resolveScheduleTiming(timing, timezone);
-    if (!resolved.ok) return { error: resolved.error };
-    crons = [resolved.cron];
-    nextRunAt = carried ?? resolved.nextRunAt;
-  } else if (active && !(existing.active && existing.nextRunAt)) {
-    // Resuming: a watch checks right away, a repeat picks its next occurrence from now.
-    if (existing.watch != null) nextRunAt = new Date(Date.now() + 2_000);
-    else if (oneShot) {
-      if (!existing.nextRunAt || existing.nextRunAt.getTime() <= Date.now()) {
-        return { error: "This one-time schedule has no time left; give a new runAt." };
-      }
-    } else nextRunAt = nextCronDateAcross(crons, new Date(), timezone);
-  }
-  if (!active) nextRunAt = null;
+  const planned = planScheduleUpdate(existing, input);
+  if (!planned.ok) return { error: planned.error };
+  const { plan } = planned;
 
   let events: RoutineEvents = {
     webhookEnabled: existing.webhookEnabled,
@@ -1121,14 +1192,14 @@ export async function updateScheduleFromTool(
       botId: input.botId,
       userId: input.userId,
       on: input.on,
-      oneShot: isOneShotRoutineCrons(crons),
+      oneShot: isOneShotRoutineCrons(plan.crons),
     });
     if ("error" in resolved) return { error: resolved.error };
     events = resolved.events;
-  } else if (isOneShotRoutineCrons(crons) && hasRoutineEvents(events)) {
+  } else if (isOneShotRoutineCrons(plan.crons) && hasRoutineEvents(events)) {
     return { error: "A one-time schedule takes no events; remove them with on {} first." };
   }
-  if (crons.length === 0 && existing.watch == null && !hasRoutineEvents(events)) {
+  if (plan.crons.length === 0 && existing.watch == null && !hasRoutineEvents(events)) {
     return { error: "A routine needs a schedule or an event. Cancel it instead." };
   }
   // Editing hands the routine to the editor, and events only start the bot creator's routines,
@@ -1151,21 +1222,22 @@ export async function updateScheduleFromTool(
     );
     if (keyError) return { error: keyError };
   }
-  const timingChanged =
-    retime || active !== existing.active || nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
 
   // The scope is part of the write, so the routine cannot change hands between the read and it.
   // A name or prompt edit writes only those fields, so a run claimed meanwhile keeps its advance;
-  // a timing edit applies only if no run advanced the routine since the read.
+  // a timing edit applies only if no run advanced the routine since the read. An approval's
+  // before-values pin the row too, so a concurrent rename conflicts instead of being overwritten.
   const { count } = await deps.prisma.routine.updateMany({
     where: {
       ...scope,
       userId: existing.userId,
       id: existing.id,
       bot: { archivedAt: null },
-      ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
+      ...(plan.timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
       // A watch added since the read keeps its routine alongside the chat.
-      ...(inChat ? { watch: { equals: Prisma.DbNull } } : {}),
+      ...(plan.inChat ? { watch: { equals: Prisma.DbNull } } : {}),
+      ...(input.expected?.name !== undefined ? { name: input.expected.name } : {}),
+      ...(input.expected?.prompt !== undefined ? { prompt: input.expected.prompt } : {}),
     },
     data: {
       // A routine runs with its owner's accounts, so whoever edits it takes it over, and a watch
@@ -1173,24 +1245,33 @@ export async function updateScheduleFromTool(
       ...(existing.userId === input.userId
         ? {}
         : { userId: input.userId, watchState: Prisma.DbNull }),
-      ...(name === undefined ? {} : { name }),
-      ...(prompt === undefined ? {} : { prompt }),
-      ...(inChat === undefined ? {} : { inChat }),
-      ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
+      ...(plan.name === undefined ? {} : { name: plan.name }),
+      ...(plan.prompt === undefined ? {} : { prompt: plan.prompt }),
+      ...(plan.inChat === undefined ? {} : { inChat: plan.inChat }),
+      ...(plan.timingChanged
+        ? {
+            crons: plan.crons,
+            timezone: plan.timezone,
+            active: plan.active,
+            nextRunAt: plan.nextRunAt,
+          }
+        : {}),
       ...(eventsChanged ? events : {}),
     },
   });
   if (count === 0) {
     return {
-      error: timingChanged
-        ? "The schedule changed while saving. Call schedule_list and try again."
-        : "Schedule not found.",
+      error:
+        plan.timingChanged || input.expected
+          ? "The schedule changed while saving. Call schedule_list and try again."
+          : "Schedule not found.",
     };
   }
   await deps.events.publishSpaceChange?.(input.spaceId, "routines");
 
-  if (timingChanged) {
-    if (active && nextRunAt) await deps.jobs.enqueue(routineWakeupJob(existing.id, nextRunAt));
+  if (plan.timingChanged) {
+    if (plan.active && plan.nextRunAt)
+      await deps.jobs.enqueue(routineWakeupJob(existing.id, plan.nextRunAt));
     else if (existing.active) await deps.jobs.cancel(routineJobKey(existing.id));
   }
   if (existing.userId !== input.userId) {
@@ -1207,17 +1288,24 @@ export async function updateScheduleFromTool(
       threadId: existing.threadId ?? input.threadId,
       botId: input.botId,
       type: "routine.updated",
-      payload: { routineId: existing.id, active },
+      payload: { routineId: existing.id, active: plan.active },
     });
   } catch {
     // The change is saved even if the thread signal fails.
   }
   const saved = {
     ...existing,
-    ...(name === undefined ? {} : { name }),
-    ...(prompt === undefined ? {} : { prompt }),
-    ...(inChat === undefined ? {} : { inChat }),
-    ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
+    ...(plan.name === undefined ? {} : { name: plan.name }),
+    ...(plan.prompt === undefined ? {} : { prompt: plan.prompt }),
+    ...(plan.inChat === undefined ? {} : { inChat: plan.inChat }),
+    ...(plan.timingChanged
+      ? {
+          crons: plan.crons,
+          timezone: plan.timezone,
+          active: plan.active,
+          nextRunAt: plan.nextRunAt,
+        }
+      : {}),
     ...(eventsChanged ? events : {}),
   };
   if (routineEdited(existing, saved)) {
@@ -1230,68 +1318,29 @@ export async function updateScheduleFromTool(
     });
   }
 
-  const timing = describeRoutineTiming({ crons, timezone, nextRunAt });
+  const timing = describeRoutineTiming({
+    crons: plan.crons,
+    timezone: plan.timezone,
+    nextRunAt: plan.nextRunAt,
+  });
+  const changes = routineChanges(
+    routineViewOf(existing),
+    routineAfterView(existing, plan, routineEventsView(events)),
+  );
   return {
     ok: true as const,
     routineId: existing.id,
-    name: name ?? existing.name,
-    active,
-    crons,
-    nextRunAt: nextRunAt?.toISOString() ?? null,
-    oneShot: isOneShotRoutineCrons(crons),
+    name: plan.name ?? existing.name,
+    active: plan.active,
+    crons: plan.crons,
+    nextRunAt: plan.nextRunAt?.toISOString() ?? null,
+    oneShot: isOneShotRoutineCrons(plan.crons),
     ...timing,
     ...(eventsChanged || input.on !== undefined ? eventsResult(events) : {}),
-    // An unchanged prompt is not echoed; an edited one appears only in `changes`, before and after.
-    changes: routineChanges(
-      {
-        name: existing.name,
-        prompt: existing.prompt,
-        inChat: existing.inChat,
-        active: existing.active,
-        ...describeRoutineTiming(existing),
-        on: routineEventsView(existing),
-      },
-      {
-        name: name ?? existing.name,
-        prompt: prompt ?? existing.prompt,
-        inChat: inChat ?? existing.inChat,
-        active,
-        ...timing,
-        on: routineEventsView(events),
-      },
-    ),
+    // An unchanged prompt is not echoed; an edited one appears only in `changes`, before and
+    // after — the single copy a report needs, so a rewrite does not multiply in the context.
+    changes,
   };
-}
-
-type RoutineView = {
-  name: string;
-  prompt: string;
-  inChat: boolean;
-  active: boolean;
-  timezone: string;
-  schedule?: string;
-  nextRun: string | null;
-  on: ReturnType<typeof routineEventsView>;
-};
-
-/** Before and after for each field an update changed; a field that kept its value is left out. */
-function routineChanges(before: RoutineView, after: RoutineView) {
-  const changes: Record<string, { before: unknown; after: unknown }> = {};
-  for (const key of [
-    "name",
-    "prompt",
-    "inChat",
-    "active",
-    "timezone",
-    "schedule",
-    "nextRun",
-    "on",
-  ] as const) {
-    if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
-      changes[key] = { before: before[key] ?? null, after: after[key] ?? null };
-    }
-  }
-  return changes;
 }
 
 /** Cancel a bot routine, optionally restricted to the current group thread. */
