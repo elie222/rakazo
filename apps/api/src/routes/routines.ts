@@ -372,14 +372,15 @@ export function routinesRoutes(ctx: RouterContext) {
           : undefined;
         const findExisting = (db: Pick<PrismaClient, "run"> = deps.prisma) =>
           findRoutineTestRun(db, context.actor, input.routineId, nonce);
-        const existing = await findExisting();
-        if (existing) return { runId: existing.id };
+        // Access is checked first, so a retry can't return a run for a bot the caller lost.
         const target = await routineRunNowTarget(
           deps.prisma,
           repos,
           context.actor,
           input.routineId,
         );
+        const existing = await findExisting();
+        if (existing) return { runId: existing.id };
         const skillRecords = await agentSkills.listWithContent(context.actor);
         const prompt = expandSkillReferencesInPrompt(target.routine.prompt, skillRecords);
         let run: { id: string };
