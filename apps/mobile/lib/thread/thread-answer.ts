@@ -1,5 +1,6 @@
 import type { LoginFieldInput, RpcInput } from "@rakazo/contracts";
 import { newClientId } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import type { MobileMessage } from "../api/mobile-types";
 import { hapticSuccess } from "../native/haptics";
 
@@ -91,6 +92,6 @@ export async function typeAnswerThreadMessage(
   // The answer is saved once the server accepts it; a failed refresh only delays the card.
   if (isCurrentTarget(botId, groupId)) {
     if (isFocused()) hapticSuccess();
-    await refresh().catch(() => undefined);
+    await bestEffort("refresh thread after typed card answer", refresh());
   }
 }
