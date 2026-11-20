@@ -71,6 +71,11 @@ describe("speakable", () => {
     expect(speakable("**Done** ✅ — [x] shipped the _thing_")).toBe("Done — shipped the thing");
   });
 
+  it("keeps double-asterisk operators while still dropping bold", () => {
+    expect(speakable("Compute 2 ** 3 ** 4 now")).toBe("Compute 2 ** 3 ** 4 now");
+    expect(speakable("**bold** words")).toBe("bold words");
+  });
+
   it("keeps underscores inside identifiers and asterisks in arithmetic", () => {
     expect(speakable("Open user_profile_page.tsx and set max_retry_count to 3")).toBe(
       "Open user_profile_page.tsx and set max_retry_count to 3",
