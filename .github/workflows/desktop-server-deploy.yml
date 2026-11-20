@@ -67,10 +67,15 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
+      # The run's own commit, main's tip when it started, rather than a ref from another job, so
+      # code from anywhere but main never runs with main's cache.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
+      - name: Require the commit the gate passed
+        env:
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SHA"
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -113,7 +118,6 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
           sparse-checkout: scripts/fork
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
