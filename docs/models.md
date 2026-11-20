@@ -10,8 +10,10 @@ Open **Settings → Models**. Under **Add provider**, pick a provider and connec
 - **Sign in with ChatGPT** to use an eligible plan's Codex allowance.
 - **Connect API key** for OpenAI, Anthropic, Google, OpenRouter and many others.
 - **OpenAI-compatible server URL** for a model you host yourself, such as Ollama or vLLM on your own
-  machine. Paste the address, choose **Find models**, and pick one. Under **Advanced** you can set
-  its context limit, whether it supports images, and its reasoning effort.
+  machine. Paste the address and its models are found automatically; choose one. If none are found,
+  choose **Try again**. Under **Advanced** you can set the protocol and custom headers. After you
+  connect, open the model under the provider to set its **Context limit**, **Supports images** and
+  **Supports thinking**.
 
 For project-scoped connections, enter the **Project ID** and **Region** alongside the API key.
 Use the region where your model is available; the form starts with `global`. These settings
