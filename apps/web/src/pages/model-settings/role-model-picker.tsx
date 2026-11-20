@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { canonicalPiProviderId } from "@rakazo/contracts";
 import { modelCatalogSearchText, newestModelsFirst } from "@rakazo/core";
 import {
   Command,
@@ -95,12 +96,13 @@ export function RoleModelPicker({
   ];
   // The model in use is the row with the same connection or credit offering; no connection
   // matches only a row with none, so an included model never marks someone's own connection.
+  // Provider ids compare canonically, so a choice saved under a provider's older id still matches.
   const currentValue = current
     ? values.find((value) =>
         options.some(
           (option) =>
             optionValue(option) === value &&
-            option.provider === current.provider &&
+            canonicalPiProviderId(option.provider) === canonicalPiProviderId(current.provider) &&
             option.id === current.modelId &&
             option.credentialId === current.credentialId &&
             option.creditOfferingId === current.creditOfferingId,

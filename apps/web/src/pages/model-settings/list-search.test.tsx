@@ -246,3 +246,31 @@ it("does not mark or pick a connection of your own when the included model is in
   );
   expect(onPick).toHaveBeenCalledWith(null);
 });
+
+it("checks a model saved under a provider's older id", async () => {
+  const onPick = vi.fn();
+  await act(async () =>
+    root.render(
+      <RoleModelPicker
+        trigger={<button type="button">Choose</button>}
+        label="Choose"
+        options={[
+          { id: "first", label: "First", provider: "azure", providerName: "Azure", billing: "" },
+          { id: "saved", label: "Saved", provider: "azure", providerName: "Azure", billing: "" },
+        ]}
+        providers={[]}
+        current={{ provider: "azure-openai-responses", modelId: "saved" }}
+        onPick={onPick}
+        onConnect={() => {}}
+      />,
+    ),
+  );
+  await click("Choose");
+  expect(rowState()).toEqual([["Saved", "true", "true"]]);
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>("[cmdk-root]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: "saved" }));
+});
