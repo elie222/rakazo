@@ -61,6 +61,7 @@ import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 import { isMermaidFence, mermaidSvgImage } from "./mermaid";
 import { useMermaidSvg } from "./mermaid.web";
 import { PAGE_ICON } from "./page-icon";
+import type { StreamingRevealState } from "./streaming-reveal";
 import {
   commitStreamingReveal,
   createStreamingRevealPlugin,
@@ -798,13 +799,22 @@ function renderFinishedMarkdown(source: string) {
 const MarkdownBlock = memo(function MarkdownBlock({
   source,
   streaming,
-  revealPlugin,
+  blockKey,
+  blockStart,
+  reveal,
 }: {
   source: string;
   streaming: boolean;
-  revealPlugin: RehypePlugin | undefined;
+  blockKey: string;
+  blockStart: number;
+  reveal: StreamingRevealState;
 }) {
   const parsed = streaming ? closeUnterminatedFence(source) : source;
+  const revealPlugin = useMemo(
+    () =>
+      streaming ? createStreamingRevealPlugin(reveal, blockKey, source, blockStart) : undefined,
+    [streaming, reveal, blockKey, source, blockStart],
+  );
   const rehype = useMemo(
     () => (streaming && revealPlugin ? [...rehypePlugins, revealPlugin] : rehypePlugins),
     [streaming, revealPlugin],
@@ -889,16 +899,29 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   const revealStateRef = useRef<ReturnType<typeof createStreamingRevealState> | null>(null);
   revealStateRef.current ??= createStreamingRevealState();
   const reveal = revealStateRef.current;
-  const revealSourceRef = useRef("");
-  const revealPlugin = useMemo(() => createStreamingRevealPlugin(reveal), [reveal]);
+  // The effect captures the pass of the render it belongs to, so a later abandoned pass cannot
+  // claim progress that never reached the screen.
+  reveal.pass += 1;
+  const revealPass = reveal.pass;
+  reveal.passClock = Number.NEGATIVE_INFINITY;
+  const revealSourceRef = useRef<string | undefined>(undefined);
   // A re-render with the same text keeps the last verdict: its transitions may still be running,
   // and judging it again would call the whole text settled.
   if (children !== revealSourceRef.current) {
-    reveal.incremental = streaming && isIncrementalRevealSource(revealSourceRef.current, children);
+    reveal.incremental =
+      revealSourceRef.current !== undefined &&
+      reveal.wasStreaming &&
+      streaming &&
+      isIncrementalRevealSource(revealSourceRef.current, children);
   }
   useEffect(() => {
-    commitStreamingReveal(reveal);
+    commitStreamingReveal(
+      reveal,
+      revealPass,
+      blocks ? blocks.map((block) => block.key) : ["root-0"],
+    );
     revealSourceRef.current = children;
+    reveal.wasStreaming = streaming;
   });
 
   const inlineChips = useMemo(() => ({ renderMention, onOpenPage }), [renderMention, onOpenPage]);
@@ -917,8 +940,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                     {index > 0 ? "\n" : null}
                     <MarkdownBlock
                       source={block.source}
-                      streaming={streaming && index === blocks.length - 1}
-                      revealPlugin={revealPlugin}
+                      streaming={streaming}
+                      blockKey={block.key}
+                      blockStart={block.start}
+                      reveal={reveal}
                     />
                   </Fragment>
                 ))
@@ -926,7 +951,9 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                 <MarkdownBlock
                   source={children}
                   streaming={streaming}
-                  revealPlugin={revealPlugin}
+                  blockKey="root-0"
+                  blockStart={0}
+                  reveal={reveal}
                 />
               )}
             </PlainTextOnFailure>
