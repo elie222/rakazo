@@ -24,6 +24,13 @@ export function useMobileSidebar() {
   };
   useEffect(closeMobileSidebar, []);
   useEventListener(desktop, "change", closeMobileSidebar);
+  // Bubbling, so a control inside the drawer that handles Escape first (and prevents the default)
+  // keeps it open; the drawer makes the rest of the page inert, so nothing else needs the key.
+  useEventListener(document, "keydown", (event) => {
+    if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
+    if (!mobileSidebarOpen || isDesktop()) return;
+    setMobileSidebarOpen(false);
+  });
 
   const swipeHandlers = {
     onTouchStartCapture: (event: TouchEvent) => {
