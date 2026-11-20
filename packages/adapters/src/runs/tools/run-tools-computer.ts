@@ -250,7 +250,10 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   // A refused step reports no address, which leaves the last one the run saw.
   const raw = ctx.providers.browser;
   const seen = <T extends { url?: string }>(result: T) => {
-    if (result.url) ctx.state.pageUrl = result.url;
+    if (result.url) {
+      ctx.state.pageUrl = result.url;
+      ctx.state.pageUrlUncertain = false;
+    }
     return result;
   };
   const pageUrlTrackingBrowser: BrowserProvider = {
