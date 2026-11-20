@@ -19,9 +19,11 @@ export function useComposerModelShortcuts({
     setShownBot(botId);
     setOpenFor(null);
   }
+  // Set while the picker is shown and usable; a picker that goes away forgets an open list.
   const thinkingStep = useRef<(() => boolean) | null>(null);
-  const onThinkingStepChange = useCallback((step: (() => boolean) | null) => {
+  const onKeysChange = useCallback((step: (() => boolean) | null) => {
     thinkingStep.current = step;
+    if (!step) setOpenFor(null);
   }, []);
   const open = enabled && botId !== undefined && openFor === botId;
   return {
@@ -30,12 +32,12 @@ export function useComposerModelShortcuts({
     pickerProps: {
       open,
       onOpenChange: (next: boolean) => setOpenFor(next && botId ? botId : null),
-      onThinkingStepChange,
+      onKeysChange,
     },
     /** Runs a chord, answering whether it applied. */
     run(shortcut: "model-picker" | "thinking-level") {
-      if (!enabled || !botId) return false;
-      if (shortcut === "thinking-level") return thinkingStep.current?.() ?? false;
+      if (!enabled || !botId || !thinkingStep.current) return false;
+      if (shortcut === "thinking-level") return thinkingStep.current();
       setOpenFor(open ? null : botId);
       return true;
     },

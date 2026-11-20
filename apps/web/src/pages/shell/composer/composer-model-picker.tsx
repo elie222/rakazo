@@ -21,7 +21,7 @@ export function ComposerModelPicker({
   onConnect,
   open,
   onOpenChange,
-  onThinkingStepChange,
+  onKeysChange,
 }: {
   bot: Bot;
   disabled?: boolean;
@@ -31,7 +31,11 @@ export function ComposerModelPicker({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /** Receives what moves to the next thinking level, or null while there is none to move to. */
-  onThinkingStepChange?: (step: (() => boolean) | null) => void;
+  /**
+   * Receives what steps to the next thinking level once the button is shown and usable, and null
+   * when it stops being either, so the keys act only on a picker that is really there.
+   */
+  onKeysChange?: (stepThinking: (() => boolean) | null) => void;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -55,10 +59,12 @@ export function ComposerModelPicker({
 
   // The shell's key press calls the latest step, which reads this render's levels.
   const thinkingStep = useRef<(() => boolean) | null>(null);
+  const ready = Boolean(credentials && catalog && me) && !disabled;
   useEffect(() => {
-    onThinkingStepChange?.(() => thinkingStep.current?.() ?? false);
-    return () => onThinkingStepChange?.(null);
-  }, [onThinkingStepChange]);
+    if (!ready) return;
+    onKeysChange?.(() => thinkingStep.current?.() ?? false);
+    return () => onKeysChange?.(null);
+  }, [onKeysChange, ready]);
 
   if (!credentials || !catalog || !me) {
     thinkingStep.current = null;

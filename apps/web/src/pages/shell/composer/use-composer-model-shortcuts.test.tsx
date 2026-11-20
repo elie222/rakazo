@@ -28,8 +28,11 @@ describe("useComposerModelShortcuts", () => {
     vi.unstubAllGlobals();
   });
 
+  const ready = () => act(() => latest.pickerProps.onKeysChange(() => false));
+
   it("toggles the list and closes it for good when the chat changes", () => {
     render({ botId: "a", enabled: true });
+    ready();
     act(() => expect(latest.run("model-picker")).toBe(true));
     expect(latest.open).toBe(true);
     act(() => expect(latest.run("model-picker")).toBe(true));
@@ -42,8 +45,23 @@ describe("useComposerModelShortcuts", () => {
     expect(latest.open).toBe(false);
   });
 
+  it("does nothing until the picker is shown, and forgets an open list when it goes away", () => {
+    render({ botId: "a", enabled: true });
+    act(() => expect(latest.run("model-picker")).toBe(false));
+    ready();
+    expect(latest.open).toBe(false);
+    act(() => latest.run("model-picker"));
+    expect(latest.open).toBe(true);
+    // A locked recording hides the picker; showing it again must not reopen the list.
+    act(() => latest.pickerProps.onKeysChange(null));
+    expect(latest.open).toBe(false);
+    ready();
+    expect(latest.open).toBe(false);
+  });
+
   it("leaves the keys alone while the button cannot be used, and remembers nothing for later", () => {
     render({ botId: "a", enabled: false });
+    ready();
     act(() => expect(latest.run("model-picker")).toBe(false));
     expect(latest.run("thinking-level")).toBe(false);
     render({ botId: "a", enabled: true });
@@ -56,7 +74,7 @@ describe("useComposerModelShortcuts", () => {
     render({ botId: "a", enabled: true });
     expect(latest.run("thinking-level")).toBe(false);
     const step = vi.fn(() => true);
-    latest.pickerProps.onThinkingStepChange(step);
+    latest.pickerProps.onKeysChange(step);
     expect(latest.run("thinking-level")).toBe(true);
     expect(step).toHaveBeenCalledOnce();
   });

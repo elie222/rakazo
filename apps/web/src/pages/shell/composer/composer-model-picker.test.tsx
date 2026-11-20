@@ -154,7 +154,7 @@ describe("ComposerModelPicker", () => {
               bot={current}
               onSaved={vi.fn()}
               onConnect={vi.fn()}
-              onThinkingStepChange={register}
+              onKeysChange={register}
             />
           </QueryClientProvider>,
         ),
@@ -185,7 +185,7 @@ describe("ComposerModelPicker", () => {
             bot={{ ...bot, modelProvider: "acme", modelId: "smart" } as Bot}
             onSaved={vi.fn()}
             onConnect={vi.fn()}
-            onThinkingStepChange={(next) => {
+            onKeysChange={(next) => {
               registered.step = next;
             }}
           />
@@ -210,7 +210,7 @@ describe("ComposerModelPicker", () => {
             bot={{ ...bot, modelProvider: "acme", modelId: "steady" } as Bot}
             onSaved={vi.fn()}
             onConnect={vi.fn()}
-            onThinkingStepChange={(next) => {
+            onKeysChange={(next) => {
               registered.step = next;
             }}
           />
