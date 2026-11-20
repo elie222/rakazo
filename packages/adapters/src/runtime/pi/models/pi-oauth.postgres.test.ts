@@ -469,6 +469,9 @@ describePostgres("model sign-in across API processes (PostgreSQL contract)", () 
       error: "Sign-in was interrupted. Start sign-in again.",
       provider: "openai-codex",
     });
+    expect(drained.ended).toEqual([
+      expect.objectContaining({ provider: "openai-codex", reason: "interrupted" }),
+    ]);
 
     // Gone without a word: its lease is no longer renewed and lapses.
     const crashed = await apiProcess();
@@ -489,7 +492,10 @@ describePostgres("model sign-in across API processes (PostgreSQL contract)", () 
       error: "Sign-in was interrupted. Start sign-in again.",
       provider: "xai",
     });
+    // The process that read it reports it, once.
+    expect(b.ended).toEqual([expect.objectContaining({ provider: "xai", reason: "interrupted" })]);
     await crashed.logins.abortAll();
+    expect(crashed.ended).toEqual([]);
   });
 
   it("reports a pasted code exchanged elsewhere to the process that started the sign-in", async () => {

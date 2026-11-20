@@ -190,7 +190,7 @@ export function ModelSettingsOverlay({
   }
 
   function closeConnection() {
-    cancelOAuthAttempt();
+    cancelOAuthAttempt("left");
     intentRef.current = null;
     setConnectionAt(null);
   }

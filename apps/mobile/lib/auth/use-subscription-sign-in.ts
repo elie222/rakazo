@@ -1,5 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
-import type { AnalyticsModelSignInStep, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import type {
+  AnalyticsModelSignInStep,
+  ModelOAuthBegin,
+  ModelSignInCancelReason,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import { clampCatalogThinkingLevel } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import type { RefObject } from "react";
@@ -99,19 +104,23 @@ export function useSubscriptionSignIn({
     [reportSignInStep],
   );
 
-  const cancelOAuth = useCallback(() => {
-    const loginId = oauthLoginIdRef.current;
-    oauthLoginIdRef.current = null;
-    cancelModelOAuthAttempt(oauthAbortRef, () => {
-      setOauth(null);
-      setOauthPending(false);
-    });
-    if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
-  }, [rpc]);
+  /** Stops the sign-in in progress; `reason` says why for measurement only. */
+  const cancelOAuth = useCallback(
+    (reason: ModelSignInCancelReason = "cancelled") => {
+      const loginId = oauthLoginIdRef.current;
+      oauthLoginIdRef.current = null;
+      cancelModelOAuthAttempt(oauthAbortRef, () => {
+        setOauth(null);
+        setOauthPending(false);
+      });
+      if (loginId) void rpc("models/cancelOAuth", { loginId, reason }).catch(() => undefined);
+    },
+    [rpc],
+  );
 
-  /** Cancels a sign-in in progress and the pending reset of the Copied label. */
-  const cancelSignIn = useCallback(() => {
-    cancelOAuth();
+  /** Stops a sign-in the person left and the pending reset of the Copied label. */
+  const leaveSignIn = useCallback(() => {
+    cancelOAuth("left");
     if (codeCopiedTimerRef.current) clearTimeout(codeCopiedTimerRef.current);
   }, [cancelOAuth]);
 
@@ -230,7 +239,7 @@ export function useSubscriptionSignIn({
     codeCopied,
     copyOAuthCode,
     cancelOAuth,
-    cancelSignIn,
+    leaveSignIn,
     openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,

@@ -1,6 +1,7 @@
 import type {
   AnalyticsModelSignInStep,
   ModelOAuthBegin,
+  ModelSignInCancelReason,
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
@@ -74,7 +75,8 @@ export function useModelOAuthSignIn(options: {
     oauthCaptureRef.current = null;
   }
 
-  function cancelOAuthAttempt(resetState = true) {
+  /** Stops the sign-in in progress; `reason` says why for measurement only. */
+  function cancelOAuthAttempt(reason: ModelSignInCancelReason = "cancelled", resetState = true) {
     releaseOAuthCapture();
     oauthCodeSubmittingRef.current = false;
     const loginId = oauthLoginIdRef.current;
@@ -85,7 +87,7 @@ export function useModelOAuthSignIn(options: {
         setOauthPending(false);
       }
     });
-    if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+    if (loginId) void rpc.models.cancelOAuth({ loginId, reason }).catch(() => undefined);
   }
 
   async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
@@ -231,7 +233,7 @@ export function useModelOAuthSignIn(options: {
     }
   }
 
-  useEffect(() => () => cancelOAuthAttempt(false), []);
+  useEffect(() => () => cancelOAuthAttempt("left", false), []);
 
   return {
     oauth,

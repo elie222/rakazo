@@ -108,3 +108,28 @@ it("shows a device code before its page opens, leaving the opening to the person
     [{ loginId: "login", step: "code_copied" }],
   ]);
 });
+
+it("tells the server why a sign-in stopped: Cancel, a newer choice, or leaving", async () => {
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+  act(() => latest.cancelOAuthAttempt());
+  expect(latest.oauth).toBeNull();
+
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+  act(() => latest.cancelOAuthAttempt("replaced"));
+
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+  act(() => root.unmount());
+  root = createRoot(container);
+
+  expect(models.cancelOAuth.mock.calls).toEqual([
+    [{ loginId: "login", reason: "cancelled" }],
+    [{ loginId: "login", reason: "replaced" }],
+    [{ loginId: "login", reason: "left" }],
+  ]);
+});
