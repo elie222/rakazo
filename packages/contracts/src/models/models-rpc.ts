@@ -112,7 +112,6 @@ export const modelsRpc = {
       ),
     finishOAuth: oc.input(z.object({ loginId: z.string() })).output(ModelCredentialSchema),
     cancelOAuth: oc
-      // Older apps send no reason; theirs counts as cancelled.
       .input(z.object({ loginId: z.string(), reason: ModelSignInCancelReason.optional() }))
       .output(z.object({ ok: z.literal(true) })),
     setDefault: oc

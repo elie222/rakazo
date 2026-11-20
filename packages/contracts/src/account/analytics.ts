@@ -76,19 +76,18 @@ export const AnalyticsModelSignInStep = z.enum(["page_opened", "code_copied"]);
 export const AnalyticsModelSignInEndReason = z.enum([
   // The provider said the code ran out.
   "expired",
-  // The person chose Cancel. Also what an older app's cancel reports, since it sends no reason.
+  // The person chose Cancel, or an older app that sends no reason stopped it.
   "cancelled",
-  // A newer try took its place: the person started again, or picked another provider,
-  // sign-in method or model.
+  // A newer try, or another provider, method or model, took its place.
   "replaced",
-  // The person left the screen or closed it without choosing.
+  // The person left the screen or closed it.
   "left",
   "provider_refused",
   // The wait for the person ran out.
   "timed_out",
   // The provider accepted the sign-in, and saving the connection failed.
   "save_failed",
-  // The server stopped while it held the sign-in, or the app gave up on an error of its own.
+  // Its server stopped, or the app gave up on its own error.
   "interrupted",
 ]);
 /** The reasons an app gives when it stops a sign-in itself. */
