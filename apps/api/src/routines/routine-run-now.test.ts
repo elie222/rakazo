@@ -2,7 +2,7 @@ import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterContext } from "../routes/context.js";
-import { routineRunNowTarget } from "./routines.js";
+import { findRoutineTestRun, routineRunNowTarget, routineTestRunNonce } from "./routines.js";
 
 const actor = { spaceId: "space-1", userId: "user-1", email: "a@example.test" } as Actor;
 
@@ -46,5 +46,32 @@ describe("routineRunNowTarget", () => {
       threadId: "bot-thread",
     });
     expect(prisma.thread.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("findRoutineTestRun", () => {
+  it("finds the original run by nonce wherever it went, scoped to the caller and routine", async () => {
+    const findFirst = vi.fn(async () => ({ id: "run-1" }));
+    const db = { run: { findFirst } } as unknown as Pick<PrismaClient, "run">;
+    const nonce = routineTestRunNonce(actor, "n1");
+    await expect(findRoutineTestRun(db, actor, "routine-1", nonce)).resolves.toEqual({
+      id: "run-1",
+    });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        spaceId: "space-1",
+        userId: "user-1",
+        routineId: "routine-1",
+        clientNonce: nonce,
+      },
+      select: { id: true },
+    });
+  });
+
+  it("looks nothing up without a nonce", async () => {
+    const findFirst = vi.fn();
+    const db = { run: { findFirst } } as unknown as Pick<PrismaClient, "run">;
+    await expect(findRoutineTestRun(db, actor, "routine-1", undefined)).resolves.toBeNull();
+    expect(findFirst).not.toHaveBeenCalled();
   });
 });

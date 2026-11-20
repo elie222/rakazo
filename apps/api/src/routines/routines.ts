@@ -208,6 +208,29 @@ export function routineTestRunNonce(actor: Actor, clientNonce: string): string {
   return `routine-run:${actor.userId}:${clientNonce}`;
 }
 
+/**
+ * The run a nonce already created. The database keeps a nonce unique across the Space, so the
+ * lookup is never narrowed to a thread: a retry must find the original run even after its group
+ * was archived and the target moved to the bot's chat.
+ */
+export async function findRoutineTestRun(
+  db: Pick<PrismaClient, "run">,
+  actor: Actor,
+  routineId: string,
+  nonce: string | undefined,
+) {
+  if (!nonce) return null;
+  return db.run.findFirst({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      routineId,
+      clientNonce: nonce,
+    },
+    select: { id: true },
+  });
+}
+
 /** Task + run commit together; a run already saved under the nonce fails the insert. */
 export async function createRoutineTestRun(
   tx: Prisma.TransactionClient,
