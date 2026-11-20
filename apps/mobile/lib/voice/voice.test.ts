@@ -8,7 +8,7 @@ import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { allowPromptedAiConsent, captureApiRequestContext, currentApiBase, rpc } from "../api/api";
 import { promptAiConsent } from "../settings/ai-consent";
-import { DEVICE_VOICE_KEY } from "./device-voice";
+import { DEVICE_VOICE_KEY, saveDeviceVoiceEnabled } from "./device-voice";
 import {
   activateVoiceAudio,
   createSpeechOwner,
@@ -368,6 +368,40 @@ describe("hosted voice playback controls", () => {
 
     vi.mocked(rpc).mockResolvedValue({ ready: false, utterances: [] } as never);
     await expect(queueSpeech("Hello.", { owner })).resolves.toBe(false);
+  });
+
+  it("speaks a call's later text on this device once it is chosen mid-call", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: { body?: unknown }) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string };
+        requested.push(body.text ?? "");
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }),
+    );
+    vi.mocked(rpc).mockImplementation(async (_proc, input) => {
+      return { ready: true, utterances: [(input as { text: string }).text] } as never;
+    });
+    const spokenOnDevice: string[] = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      spokenOnDevice.push(text);
+      options?.onDone?.();
+    });
+    const owner = createSpeechOwner();
+
+    const first = queueSpeech("Booked.", { botId: "bot-1", owner });
+    await vi.waitFor(() => expect(ControllableAudio.instances[0]?.paused).toBe(false));
+    ControllableAudio.instances[0]?.onended?.();
+    await expect(first).resolves.toBe(true);
+
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+      key === DEVICE_VOICE_KEY ? "1" : null,
+    );
+    await saveDeviceVoiceEnabled(true);
+    await expect(queueSpeech("The hotel is close.", { botId: "bot-1", owner })).resolves.toBe(true);
+    expect(spokenOnDevice).toEqual(["The hotel is close."]);
+    expect(requested).toEqual(["Booked."]);
   });
 
   it("reports idle with no control before anything is speaking", () => {

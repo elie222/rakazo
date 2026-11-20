@@ -14,6 +14,7 @@ import {
   registerOpenAiCompatibleRuntime,
 } from "../models/pi-openai-compatible-provider.js";
 import { PiAgentRuntime } from "../pi-runtime.js";
+import type { ReportedUsageFields } from "./pi-usage.js";
 import { normalizePiUsage, observedPiStream, usageReportingFetch } from "./pi-usage.js";
 
 const model: Model<Api> = {
@@ -1101,6 +1102,106 @@ describe("Pi usage accounting", () => {
       costUsd: null,
     });
   });
+  it("prices a prompt that includes cache reads when the provider itemizes none", async () => {
+    const { events } = await run({
+      prompt_tokens: 1000,
+      completion_tokens: 20,
+      total_tokens: 1020,
+    });
+    expect(events[0]).toMatchObject({
+      inputTokens: 1000,
+      outputTokens: 20,
+      cacheReadTokens: null,
+      costSource: "pi-catalog-estimate",
+    });
+    expect(events[0]?.type === "usage" ? events[0].costUsd : null).toBeCloseTo(0.00104, 12);
+  });
+  it("keeps the cost unknown when an unreported cache read is billed outside the input count", async () => {
+    const reported: ReportedUsageFields = new Set();
+    const fetcher = usageReportingFetch(
+      async () =>
+        new Response(
+          `data: ${JSON.stringify({
+            type: "message_start",
+            message: { id: "msg_fixture", usage: { input_tokens: 1000, output_tokens: 20 } },
+          })}\n\n`,
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+      reported,
+    );
+    await (await fetcher("https://model.example.test")).text();
+    expect(
+      normalizePiUsage(
+        {
+          input: 1000,
+          output: 20,
+          cacheRead: 0,
+          cacheWrite: 0,
+          cost: { input: 0.001, output: 0.00004, cacheRead: 0, cacheWrite: 0, total: 0.00104 },
+        },
+        model,
+        reported,
+      ),
+    ).toMatchObject({ inputTokens: 1000, cacheReadTokens: null, costUsd: null });
+  });
+  it.each([
+    ["google-generative-ai", 1200, 0.0010125],
+    ["google-vertex", 1200, 0.0010125],
+    ["google-generative-ai", 0, null],
+  ] as const)(
+    "prices a %s call by its prompt count unless it reported no usage (input %i)",
+    async (api, input, costUsd) => {
+      const googleModel: Model<Api> = {
+        ...model,
+        provider: "google",
+        id: "gemini-fixture",
+        api,
+        cost: { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0 },
+      };
+      const output = input ? 30 : 0;
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "Done" }],
+        api,
+        provider: googleModel.provider,
+        model: googleModel.id,
+        // Pi's Google usage: the whole prompt as input, cache reads zero unless reported.
+        usage: {
+          input,
+          output,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: input + output,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: costUsd ?? 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: 1,
+      };
+      const models = {
+        streamSimple: () => ({
+          async *[Symbol.asyncIterator]() {
+            yield { type: "done" as const, reason: "stop" as const, message };
+          },
+          result: async () => message,
+        }),
+      } as unknown as Parameters<typeof observedPiStream>[0];
+      const events: AgentRuntimeEvent[] = [];
+      const stream = await observedPiStream(
+        models,
+        googleModel,
+        { messages: [] },
+        undefined,
+        (event) => events.push(event),
+      );
+      for await (const _event of stream) {
+      }
+      expect(events[0]).toMatchObject({
+        cacheReadTokens: null,
+        costUsd,
+        costSource: costUsd === null ? null : "pi-catalog-estimate",
+      });
+    },
+  );
   it.each(["prompt_cache_hit_tokens", "cached_tokens"])(
     "recognizes cache-read alias %s with fully cached input",
     async (alias) => {

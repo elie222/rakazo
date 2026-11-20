@@ -49,7 +49,6 @@ jobs:
       pr: ${{ steps.pr.outputs.pr }}
       prompt: ${{ steps.pr.outputs.prompt }}
       preview_url: ${{ steps.pr.outputs.preview_url }}
-      main_preview_url: ${{ steps.pr.outputs.main_preview_url }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -94,10 +93,9 @@ jobs:
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/issues/$pr/comments?per_page=100" > "$dir/comments.json"
           python3 .github/scripts/pr-screenshots.py evidence "$dir/comments.json" "$HEAD_SHA" > "$dir/evidence.txt"
           preview_url="https://${APP_PREFIX:-rakazo-pr}-$pr.fly.dev"
-          main_preview_url="https://${APP_PREFIX:-rakazo-pr}-main.fly.dev"
           gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" |
-            jq --arg url "$preview_url" --arg main "$main_preview_url" --rawfile evidence "$dir/evidence.txt" --rawfile files "$dir/files.txt" \
-              '{title, head_sha: .head.sha, body: (.body // ""), changed_files: ($files | split("\n") | map(select(. != ""))), preview_url: $url, main_preview_url: $main, existing_e2e_screenshots: $evidence}' \
+            jq --arg url "$preview_url" --rawfile evidence "$dir/evidence.txt" --rawfile files "$dir/files.txt" \
+              '{title, head_sha: .head.sha, body: (.body // ""), changed_files: ($files | split("\n") | map(select(. != ""))), preview_url: $url, existing_e2e_screenshots: $evidence}' \
               > "$dir/pr.json"
           gh pr diff "$pr" --repo "$GITHUB_REPOSITORY" > "$dir/full.diff" 2>/dev/null || echo "(diff unavailable)" > "$dir/full.diff"
           delimiter="PROMPT_$(openssl rand -hex 16)"
@@ -108,7 +106,6 @@ jobs:
             echo "$delimiter"
             echo "pr=$pr"
             echo "preview_url=$preview_url"
-            echo "main_preview_url=$main_preview_url"
           } >> "$GITHUB_OUTPUT"
 
   # Shows the change on the pull request without its author taking screenshots. The agent only
@@ -153,7 +150,6 @@ jobs:
         if: steps.current.outputs.current == 'true'
         env:
           PREVIEW_URL: ${{ needs.screenshot-context.outputs.preview_url }}
-          MAIN_PREVIEW_URL: ${{ needs.screenshot-context.outputs.main_preview_url }}
           PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
         run: |
           set -euo pipefail
@@ -167,7 +163,7 @@ jobs:
             "$node" /opt/pr-screenshots-mcp/node_modules/playwright/cli.js install chromium
           sudo install -d -o pr-screenshots -g pr-screenshots -m 755 /srv/pr-screenshots
           gallery_origin=$(python3 -c 'import os, urllib.parse; u = urllib.parse.urlsplit(os.environ["PUBLIC_BASE_URL"]); print(f"{u.scheme}://{u.netloc}" if u.scheme == "https" and u.netloc else "")')
-          origins="$PREVIEW_URL;$MAIN_PREVIEW_URL;https://github.com;https://private-user-images.githubusercontent.com;https://user-images.githubusercontent.com"
+          origins="$PREVIEW_URL;https://github.com;https://private-user-images.githubusercontent.com;https://user-images.githubusercontent.com"
           [[ -z $gallery_origin ]] || origins="$origins;$gallery_origin"
           jq -n --arg node "$node" --arg origin "$origins" '{mcpServers: {playwright: {
             command: "sudo",

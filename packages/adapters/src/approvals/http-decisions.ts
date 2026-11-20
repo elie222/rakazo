@@ -45,11 +45,17 @@ export class HttpDecisionProvider implements DecisionProvider {
     private readonly options: DecisionProviderOptions,
   ) {
     if (!options.apiKey.trim()) throw new DecisionProviderError("authentication");
+    // Only OpenRouter can restrict routing; a host that cannot is never sent the request.
+    if (options.zeroDataRetention && provider !== "openrouter")
+      throw new DecisionProviderError("invalid");
   }
 
   async decide(request: DecisionRequest, context: AdapterContext): Promise<DecisionResult> {
     context.signal.throwIfAborted();
-    const body = JSON.stringify(request);
+    // OpenRouter refuses the call when no endpoint for the model retains nothing.
+    const body = JSON.stringify(
+      this.options.zeroDataRetention ? { ...request, provider: { zdr: true } } : request,
+    );
     const callId = randomUUID();
     const pricing = decisionModel(this.provider, request.model);
     // Byte count plus a generous protocol allowance bounds tokenizer expansion.

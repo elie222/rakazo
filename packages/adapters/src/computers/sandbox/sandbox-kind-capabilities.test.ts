@@ -21,6 +21,7 @@ type Row = [
   serverOwnsStoredTeamHome: boolean,
   storedHomeIsBackup: boolean,
   readStoppedFiles?: true,
+  sizedUsage?: true,
 ];
 
 // What the per-kind id lists in shared code answered before providers declared these themselves,
@@ -32,9 +33,9 @@ const EXPECTED: Record<KnownSandboxKind, Row> = {
   novita: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   daytona: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   createos: [false, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  boat: [true, true, false, false, LARGE_SCREEN, "never", true, false, true],
+  boat: [true, true, false, false, LARGE_SCREEN, "never", true, false, true, true],
   boxd: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  instabox: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
+  instabox: [true, true, false, false, DEFAULT_SCREEN, "never", true, false, undefined, true],
   railway: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   kubernetes: [true, true, false, false, DEFAULT_SCREEN, "optional", true, false],
   incus: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
@@ -55,6 +56,7 @@ function capabilities([
   serverOwnsStoredTeamHome,
   storedHomeIsBackup,
   readStoppedFiles,
+  sizedUsage,
 ]: Row): SandboxKindCapabilities {
   return {
     terminal,
@@ -66,6 +68,7 @@ function capabilities([
     serverOwnsStoredTeamHome,
     storedHomeIsBackup,
     ...(readStoppedFiles ? { readStoppedFiles } : {}),
+    ...(sizedUsage ? { sizedUsage } : {}),
   };
 }
 

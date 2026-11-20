@@ -23,7 +23,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Platform, ScrollView, StyleSheet, View } from "react-native";
+import { I18nManager, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardAvoidingView, KeyboardProvider } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -75,9 +75,8 @@ import { InboxBesideContext } from "../lib/layout/side-insets";
 import {
   chooseInboxWidth,
   closesSplitPane,
-  inboxPaneWidth,
+  inboxPaneWidthDuringDrag,
   loadInboxWidth,
-  setInboxHidden,
   useSplitView,
 } from "../lib/layout/split-view";
 import { loadLinkFavicon } from "../lib/messages/link-favicons";
@@ -146,15 +145,10 @@ function SplitFrame({ children }: { children: ReactNode }) {
   }, [routeKey]);
   const { split, inboxShown, inboxWidth, foldGap, foldActive, windowWidth } = useSplitView();
   const tokens = useMobileTokens();
-  const home = pathname === "/";
-  useEffect(() => {
-    if (home) setInboxHidden(false);
-  }, [home]);
   // iOS presents settings as a sheet over the window; Android pushes them as a page, which
   // takes the whole window rather than sitting beside the chat list.
   const settingsPage = Platform.OS !== "ios" && segments[0] === "(settings)";
-  const showsInbox =
-    split && (home || inboxShown) && !FULL_WINDOW_ROUTES.has(pathname) && !settingsPage;
+  const showsInbox = split && inboxShown && !FULL_WINDOW_ROUTES.has(pathname) && !settingsPage;
   // Dragging resizes the list natively; the width is kept when the finger lifts.
   const paneWidth = useSharedValue(inboxWidth);
   const dragStart = useRef(inboxWidth);
@@ -169,7 +163,12 @@ function SplitFrame({ children }: { children: ReactNode }) {
       dragStart.current = paneWidth.value;
     })
     .onUpdate((event) => {
-      paneWidth.value = inboxPaneWidth(windowWidth, dragStart.current + event.translationX);
+      paneWidth.value = inboxPaneWidthDuringDrag(
+        windowWidth,
+        dragStart.current,
+        event.translationX,
+        I18nManager.isRTL,
+      );
     })
     .onEnd((_event, success) => {
       if (success) chooseInboxWidth(paneWidth.value);
@@ -179,12 +178,7 @@ function SplitFrame({ children }: { children: ReactNode }) {
   return (
     <View style={{ flex: 1, flexDirection: "row" }}>
       {showsInbox ? (
-        <Animated.View
-          style={[
-            paneStyle,
-            { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: tokens.border },
-          ]}
-        >
+        <Animated.View style={paneStyle}>
           <InboxPane
             onSelectSpace={(spaceId) => {
               if (closesSplitPane(pathname, paneSpace.current, spaceId)) {
@@ -200,7 +194,8 @@ function SplitFrame({ children }: { children: ReactNode }) {
       </View>
       {showsInbox && !foldActive ? (
         <GestureDetector gesture={resize}>
-          {/* Drawn last and wider than the line, over both panes, so it is easy to grab. */}
+          {/* The divider line resizes the list: drawn last, with a grab area wider than the line
+              over both panes, so it is easy to grab without a handle on show. */}
           <Animated.View
             accessible={false}
             collapsable={false}
@@ -211,20 +206,13 @@ function SplitFrame({ children }: { children: ReactNode }) {
                 bottom: 0,
                 width: DIVIDER_GRAB_WIDTH,
                 alignItems: "center",
-                justifyContent: "center",
                 backgroundColor: "transparent",
               },
               handleStyle,
             ]}
           >
             <View
-              style={{
-                width: 5,
-                height: 40,
-                borderRadius: 3,
-                backgroundColor: tokens.mutedForeground,
-                opacity: 0.6,
-              }}
+              style={{ flex: 1, width: StyleSheet.hairlineWidth, backgroundColor: tokens.border }}
             />
           </Animated.View>
         </GestureDetector>
@@ -297,6 +285,7 @@ function LayoutContent() {
   // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
   const { split, inboxHidden, foldActive } = useSplitView();
   const canInvite = Boolean(useReferral());
+  const router = useRouter();
   const chatAnimation = split ? "none" : undefined;
   const [ready, setReady] = useState(false);
   useNavigatorMounted(ready);
@@ -593,7 +582,12 @@ function LayoutContent() {
                         options={({ route }) => ({
                           title: t`Group`,
                           animation: chatAnimation,
-                          ...chatRouteHeader(route, { split, inboxHidden, foldActive }, canInvite),
+                          ...chatRouteHeader(
+                            route,
+                            { split, inboxHidden, foldActive },
+                            router,
+                            canInvite,
+                          ),
                         })}
                       />
                       <Stack.Screen
@@ -629,7 +623,12 @@ function LayoutContent() {
                         options={({ route }) => ({
                           title: t`Thread`,
                           animation: chatAnimation,
-                          ...chatRouteHeader(route, { split, inboxHidden, foldActive }, canInvite),
+                          ...chatRouteHeader(
+                            route,
+                            { split, inboxHidden, foldActive },
+                            router,
+                            canInvite,
+                          ),
                         })}
                       />
                       <Stack.Screen name="routines" options={glassHeaderOptions(t`Routines`)} />

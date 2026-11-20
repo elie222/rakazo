@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type { BackgroundJobHandlers } from "@rakazo/adapter-kit";
-import { messagingSendJob, messagingSendJobKey } from "@rakazo/adapter-kit";
+import type { BackgroundJobHandlers, JobTransaction } from "@rakazo/adapter-kit";
+import {
+  messagingInboundSettleJob,
+  messagingSendJob,
+  messagingSendJobKey,
+} from "@rakazo/adapter-kit";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
@@ -30,6 +34,7 @@ function handlers(): BackgroundJobHandlers {
     "memory.retain-turn": vi.fn(async () => undefined),
     "memory.purge-history": vi.fn(async () => undefined),
     "messaging.send": vi.fn(async () => undefined),
+    "messaging.inbound_settle": vi.fn(async () => undefined),
     "messaging.reply": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
@@ -50,6 +55,7 @@ function handlers(): BackgroundJobHandlers {
 }
 
 const LAST_ATTEMPT = { number: 1, max: 1 };
+const WHERE = { spaceId: "space-1", botId: "bot-1", receivedAt: 0 };
 
 describe("InMemoryJobQueue", () => {
   afterEach(() => vi.useRealTimers());
@@ -96,6 +102,169 @@ describe("InMemoryJobQueue", () => {
     await queue.enqueue({ name: "run.continue", payload: { runId: "run-2" } });
     await queue.awaitIdle();
     expect(target["run.continue"]).toHaveBeenCalledTimes(2);
+    await queue.close();
+  });
+
+  it("says when the last unfinished job of a named queue is due", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    const running = deferred();
+    target["messaging.inbound_settle"] = vi.fn(() => running.promise);
+    await queue.start(target);
+    const settle = (handle: string, identityId: string, dueAt: Date) =>
+      messagingInboundSettleJob(
+        { provider: "chat", handle, identityId, ...WHERE, text: "", attachments: [] },
+        dueAt,
+      );
+    const none = { until: null, own: false };
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual(none);
+
+    const later = new Date(Date.now() + 60_000);
+    const first = settle("message-1", "identity-1", new Date(Date.now() + 1_000));
+    await queue.enqueue(first);
+    await queue.enqueue(settle("message-2", "identity-1", later));
+    await queue.enqueue(settle("message-3", "identity-2", new Date(Date.now() + 120_000)));
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual({
+      until: later,
+      own: false,
+    });
+    // With a job's key, the answer also says whether that job is queued.
+    expect(await queue.pendingUntil("messaging.inbound:identity-1", first.replaceKey)).toEqual({
+      until: null,
+      own: true,
+    });
+
+    // A running job is still unfinished, and due now.
+    await queue.cancel(settle("message-2", "identity-1", later).replaceKey!);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(target["messaging.inbound_settle"]).toHaveBeenCalledOnce();
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual({
+      until: new Date(Date.now()),
+      own: false,
+    });
+
+    running.resolve();
+    await queue.awaitIdle();
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual(none);
+    await queue.close();
+  });
+
+  it("holds no named queue back with a job ended in a transaction", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    await queue.start(handlers());
+    const job = messagingInboundSettleJob(
+      {
+        provider: "chat",
+        handle: "message-1",
+        identityId: "identity-1",
+        ...WHERE,
+        text: "",
+        attachments: [],
+      },
+      new Date(Date.now() + 60 * 60_000),
+    );
+    await queue.enqueue(job);
+    // Not transactional, so the job stays queued, but the message it backed up has settled.
+    await queue.cancelIn({} as JobTransaction, job.replaceKey!);
+    expect(await queue.pendingUntil("messaging.inbound:identity-1")).toEqual({
+      until: null,
+      own: false,
+    });
+    // Written again under its key, it counts again.
+    await queue.enqueue(job);
+    expect((await queue.pendingUntil("messaging.inbound:identity-1")).until).toEqual(
+      job.availableAt,
+    );
+    await queue.close();
+  });
+
+  it("makes the followers at the head of a named queue due now, in their order", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    await queue.start(target);
+    const hour = 60 * 60_000;
+    const settle = (handle: string, dueIn: number, follower: boolean) =>
+      messagingInboundSettleJob(
+        {
+          provider: "chat",
+          handle,
+          identityId: "identity-1",
+          spaceId: "space-1",
+          botId: "bot-1",
+          receivedAt: 0,
+          text: "",
+          attachments: [],
+          ...(follower ? { follower: true } : {}),
+        },
+        new Date(Date.now() + dueIn),
+      );
+    const settling = settle("settling", hour, false);
+    await queue.enqueue(settling);
+    await queue.enqueue(settle("first", hour + 1, true));
+    await queue.enqueue(settle("second", hour + 2, true));
+    await queue.enqueue(settle("downloading", 2 * hour, false));
+    await queue.enqueue(settle("behind", 2 * hour + 1, true));
+
+    await queue.releaseFollowersIn(
+      { $executeRawUnsafe: vi.fn() },
+      "messaging.inbound:identity-1",
+      settling.replaceKey,
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    const settled = () =>
+      vi
+        .mocked(target["messaging.inbound_settle"])
+        .mock.calls.map(([payload]) => (payload as { handle: string }).handle);
+    expect(settled()).toEqual(["first", "second"]);
+    // The one still downloading elsewhere holds the follower behind it.
+    await vi.advanceTimersByTimeAsync(hour);
+    expect(settled()).toEqual(["first", "second", "settling"]);
+    await queue.close();
+  });
+
+  it("releases the followers from inside the running job they waited for", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    const settle = (handle: string, dueIn: number, follower: boolean) =>
+      messagingInboundSettleJob(
+        {
+          provider: "chat",
+          handle,
+          identityId: "identity-1",
+          spaceId: "space-1",
+          botId: "bot-1",
+          receivedAt: 0,
+          text: "",
+          attachments: [],
+          ...(follower ? { follower: true } : {}),
+        },
+        new Date(Date.now() + dueIn),
+      );
+    const settling = settle("settling", 1_000, false);
+    target["messaging.inbound_settle"] = vi.fn(async ({ handle }) => {
+      if (handle === "settling") {
+        await queue.releaseFollowersIn(
+          { $executeRawUnsafe: vi.fn() },
+          "messaging.inbound:identity-1",
+          settling.replaceKey,
+        );
+      }
+    });
+    await queue.start(target);
+    await queue.enqueue(settling);
+    await queue.enqueue(settle("behind", 60 * 60_000, true));
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(
+      vi
+        .mocked(target["messaging.inbound_settle"])
+        .mock.calls.map(([payload]) => (payload as { handle: string }).handle),
+    ).toEqual(["settling", "behind"]);
     await queue.close();
   });
 

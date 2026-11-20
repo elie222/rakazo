@@ -14,6 +14,7 @@ import {
   openAiCompatibleVoiceServer,
   resolveVoiceKey,
   serializeOpenAiCompatibleVoiceSecret,
+  VoiceProviderUnavailableError,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
 import type { Actor, SettingsScope, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
@@ -38,6 +39,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
+import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
@@ -283,6 +285,15 @@ export async function withVoiceConnection<T>(
   try {
     return await run();
   } catch (error) {
+    const outage = voiceOutage(error);
+    if (outage) {
+      getLogger().warn("voice provider unavailable", {
+        provider,
+        reason: outage.cause instanceof Error ? outage.cause.name : "server error",
+      });
+      markExpectedFailure();
+      throw outage;
+    }
     if (!linked) throw error;
     const name = voiceCatalogEntry(provider)?.name ?? provider;
     if (error instanceof VoiceAccountError) {
@@ -303,6 +314,14 @@ export async function withVoiceConnection<T>(
       `Couldn't use the ${name} connection from Models. Try again.`,
     );
   }
+}
+
+/** A provider outage or a request it left unanswered past its deadline, as one error to wait out. */
+function voiceOutage(error: unknown): VoiceProviderUnavailableError | undefined {
+  if (error instanceof VoiceProviderUnavailableError) return error;
+  if (error instanceof Error && error.name === "TimeoutError")
+    return new VoiceProviderUnavailableError(undefined, { cause: error });
+  return undefined;
 }
 
 /** The connection and the bearer its provider takes, read from a model connection if linked. */

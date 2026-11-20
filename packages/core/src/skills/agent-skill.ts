@@ -364,6 +364,36 @@ function restAlreadyIncludesSkillContent(rest: string, content: string): boolean
   );
 }
 
+function stripRoutineSkillMention(prompt: string, name: string): string {
+  const token = `@${escapeRegExp(name)}${ROUTINE_SKILL_END}`;
+  // Adjacent repeats share a separator. Clean that seam only once.
+  const mention = new RegExp(`(^|${ROUTINE_SKILL_LEAD})${token}(?:[ \\t]+${token})*`, "gi");
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const match of prompt.matchAll(mention)) {
+    const start = match.index + (match[1]?.length ?? 0);
+    const end = match.index + match[0].length;
+    let left = start;
+    let right = end;
+    while (left > cursor && /[ \t]/.test(prompt.charAt(left - 1))) left--;
+    while (/[ \t]/.test(prompt.charAt(right))) right++;
+
+    const before = prompt.slice(left, start);
+    const after = prompt.slice(end, right);
+    const hasLeftText = left > 0 && !/[\r\n]/.test(prompt.charAt(left - 1));
+    const hasRightText = right < prompt.length && !/[\r\n]/.test(prompt.charAt(right));
+    let separator = "";
+    if (hasRightText) {
+      // At the start of a line, the spaces before the mention are indentation.
+      separator = hasLeftText ? (before && after ? " " : before || after) : before;
+    }
+    parts.push(prompt.slice(cursor, left), separator);
+    cursor = right;
+  }
+  parts.push(prompt.slice(cursor));
+  return parts.join("");
+}
+
 /** Expand forced `/Name` or routine `@Name` mentions into full skill bodies for the task prompt. */
 export function expandSkillReferencesInPrompt(
   prompt: string,
@@ -394,14 +424,10 @@ export function expandSkillReferencesInPrompt(
     if (!skill) continue;
     blocks.push(formatForcedSkillPrompt(skill.name, skill.content));
     // Strip the @mention token so the agent is not confused by a dangling pointer.
-    remaining = remaining.replace(
-      new RegExp(`(^|${ROUTINE_SKILL_LEAD})@${escapeRegExp(mention)}${ROUTINE_SKILL_END}`, "gi"),
-      "$1",
-    );
+    remaining = stripRoutineSkillMention(remaining, mention);
   }
   if (blocks.length === 0) return prompt;
-  const rest = remaining.replace(/[ \t]{2,}/g, " ").trim();
-  return [...blocks, rest].filter(Boolean).join("\n\n");
+  return [...blocks, remaining].filter((part) => part.trim()).join("\n\n");
 }
 
 /**

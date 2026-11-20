@@ -500,6 +500,68 @@ describe("parseSendblueStatuses", () => {
   });
 });
 
+describe("WhatsApp file sizes", () => {
+  const whatsapp = (env: MessagingEnvironmentValues = fullEnv) =>
+    messagingPlatformsFromEnv(env).find((platform) => platform.provider === "whatsapp")!;
+
+  it("reads the size WhatsApp reports for a file from its media lookup", async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ url: "https://lookaside.example.test/m", file_size: 2048, id: "media-1" }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const signal = new AbortController().signal;
+      await expect(
+        whatsapp().attachmentSize!({ type: "file", fetchMetadata: { mediaId: "media-1" } }, signal),
+      ).resolves.toBe(2048);
+      const [url, init] = fetch.mock.calls[0]!;
+      expect(url).toMatch(/^https:\/\/graph\.facebook\.com\/v[\d.]+\/media-1$/);
+      expect(init).toEqual({ headers: { authorization: "Bearer wa-token" }, signal });
+
+      // A file with no media id (a shared location) has nothing to look up.
+      await expect(whatsapp().attachmentSize!({ type: "file" }, signal)).resolves.toBeUndefined();
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("looks the file up at a configured API URL", async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ file_size: 5 }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const signal = new AbortController().signal;
+      await whatsapp({ ...fullEnv, whatsappApiUrl: "https://graph.example.test" }).attachmentSize!(
+        { type: "file", fetchMetadata: { mediaId: "m/1" } },
+        signal,
+      );
+      const url = fetch.mock.calls[0]![0];
+      expect(url.startsWith("https://graph.example.test/v")).toBe(true);
+      expect(url.endsWith("/m%2F1")).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("leaves the size unknown when the lookup reports none, and fails when it fails", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "media-1" }))
+      .mockResolvedValueOnce(new Response("gone", { status: 404 }));
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const attachment = { type: "file" as const, fetchMetadata: { mediaId: "media-1" } };
+      const signal = new AbortController().signal;
+      await expect(whatsapp().attachmentSize!(attachment, signal)).resolves.toBeUndefined();
+      await expect(whatsapp().attachmentSize!(attachment, signal)).rejects.toThrow("404");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("parseWhatsAppStatuses", () => {
   // Shape of Meta's `statuses` webhook (Cloud API), including a 24-hour-window failure.
   const webhook = {

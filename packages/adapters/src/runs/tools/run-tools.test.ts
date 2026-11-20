@@ -28,6 +28,8 @@ vi.mock("./run-tool-gate.js", async (importOriginal) => ({
       claimOrReturn: async () => undefined,
     },
   })),
+}));
+vi.mock("./run-tool-audit.js", () => ({
   auditToolCall: vi.fn(async (_ctx: unknown, tool: string, outcome: string, metadata: unknown) => {
     audited.push({ tool, outcome, metadata });
   }),

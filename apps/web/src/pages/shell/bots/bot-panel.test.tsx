@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../lib/query/rpc", () => {
   const rpc = {
+    // No earlier versions of the computer's files to restore.
+    computer: { homeVersions: vi.fn(async () => []) },
     bots: {
       get: vi.fn(),
       update: vi.fn(),

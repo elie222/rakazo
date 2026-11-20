@@ -19,6 +19,53 @@ describe("search helpers", () => {
     ]);
   });
 
+  it("drops paired bold markers and deduplicates the resulting link", () => {
+    const url = "https://example.com/docs";
+    expect(extractLinksFromText(`See **${url}**. Also see ${url}.`)).toEqual([url]);
+  });
+
+  it.each([".", ",", ";", ":", "!", "?"])(
+    "keeps trailing %s inside a bold link and trims surrounding punctuation",
+    (punctuation) => {
+      const url = "https://example.com/report";
+      expect(
+        extractLinksFromText(`See **${url}${punctuation}**. Also see ${url}${punctuation}.`),
+      ).toEqual([`${url}${punctuation}`, url]);
+    },
+  );
+
+  it("keeps stars and balanced parentheses in a bold link", () => {
+    const url = "https://example.com/a_(b)/*.md?pattern=*";
+    expect(extractLinksFromText(`(**${url}**).`)).toEqual([url]);
+  });
+
+  it("keeps stars in links without a matching bold opener", () => {
+    expect(
+      extractLinksFromText(
+        String.raw`https://example.com/docs** https://example.com/*.md \**https://example.com/raw**`,
+      ),
+    ).toEqual([
+      "https://example.com/docs**",
+      "https://example.com/*.md",
+      "https://example.com/raw**",
+    ]);
+  });
+
+  it("keeps literal stars when escaped or directly wrapped in code delimiters", () => {
+    expect(extractLinksFromText(String.raw`**https://example.com/raw\**`)).toEqual([
+      String.raw`https://example.com/raw\**`,
+    ]);
+    expect(extractLinksFromText("`**https://example.com/raw**`")).toEqual([
+      "https://example.com/raw**",
+    ]);
+  });
+
+  it("ignores a bare scheme inside bold markers", () => {
+    expect(extractLinksFromText("**https://** https://example.com/docs")).toEqual([
+      "https://example.com/docs",
+    ]);
+  });
+
   it.each(["`", "``", "```"])("excludes %s code delimiters and deduplicates links", (delimiter) => {
     const url = "https://example.com/docs";
     expect(extractLinksFromText(`${url} ${delimiter}${url}${delimiter}`)).toEqual([url]);

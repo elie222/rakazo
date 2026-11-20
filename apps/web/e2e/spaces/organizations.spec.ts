@@ -155,17 +155,14 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await captureScreenshot(page, testInfo, "org-menu-two-orgs");
   await closeAvatarMenu(page);
 
-  // Work has no bot yet, so its first visit finishes onboarding there.
-  await switchFromAvatarMenu(page, "Work", work.defaultSpaceId);
-  const workChat = new URL(page.url()).pathname;
-  await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
-
-  // A link to a chat in another organization opens it there.
-  await page.goto(workChat);
+  // Work starts empty: the account already has chats, so no Chief is made there.
+  menu = await openOrganizationMenu(page);
+  await menu.getByRole("button", { name: "Work", exact: true }).click();
   await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
-  await expect(page).toHaveURL((url) => url.pathname === workChat);
+  await expect(
+    page.locator("main").getByRole("button", { name: "New bot", exact: true }),
+  ).toBeVisible();
 
-  // So does a link to a group chat there.
   const inWork = async <T>(procedure: string, json: unknown) => {
     const response = await page.request.post(`/rpc/${procedure}`, {
       headers: { "x-rakazo-space-id": work.defaultSpaceId },
@@ -178,9 +175,25 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     name: "Scout",
     computerMode: "team",
   });
+  const helper = await inWork<{ id: string }>("bots/create", {
+    name: "Helper",
+    computerMode: "team",
+  });
+  const workChat = `/app/${scout.id}`;
+  // Open Scout first, so the roster settling on the new bots cannot pass for the switch away.
+  await page.goto(workChat);
+  await expect(page.getByPlaceholder("Message Scout")).toBeVisible();
+  await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
+
+  // A link to a chat in another organization opens it there.
+  await page.goto(workChat);
+  await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
+  await expect(page).toHaveURL((url) => url.pathname === workChat);
+
+  // So does a link to a group chat there.
   const standup = await inWork<{ id: string }>("groups/create", {
     name: "Standup",
-    botIds: [workChat.split("/")[2], scout.id],
+    botIds: [scout.id, helper.id],
   });
   await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
   await page.goto(`/app/g/${standup.id}`);

@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { deferred } from "@rakazo/core/test-async";
-import { captureScreenshot, chooseOption, completeOnboarding, signup } from "../helpers/helpers";
+import { captureScreenshot, completeOnboarding, signup } from "../helpers/helpers";
 
 test.afterEach(async ({ page }) => {
   // Polling can leave a route.fetch response in use when the assertions finish.
@@ -46,7 +45,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
           identities: [
             {
               id: "mi-1",
-              provider: "sendblue",
+              provider: "whatsapp",
               address: "+15551230001",
               botId: "bot-1",
               botName: "Chief",
@@ -55,7 +54,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
               id: "mi-2",
               provider: "telegram-work",
               address: "424242",
-              botId: "bot-2",
+              botId: "bot-archived",
               botName: "Lead",
             },
           ],
@@ -96,6 +95,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
         json: [
           {
             id: "cn1",
+            botId: "bot-1",
             peerBotName: "Assistant",
             peerOwnerLabel: "Dana",
             status: "pending",
@@ -189,42 +189,40 @@ test("messaging settings show linked chat apps, channels, connections, and team 
 
   const messagingSettings = page.getByTestId("messaging-settings");
   await expect(messagingSettings).toBeVisible();
-  await expect(messagingSettings.getByRole("button", { name: "Connect a chat app" })).toBeEnabled();
+  // One row per chat app: connected ones say which account and bot, the rest offer Connect.
   await expect(messagingSettings.getByText("Example workspace", { exact: false })).toBeVisible();
+  await expect(messagingSettings.getByText("+15551230001, Chief")).toBeVisible();
+  await expect(messagingSettings.getByText("424242, Lead")).toBeVisible();
+  // Each request says what it asks: a group the bot was added to, or another person's bot.
+  await expect(messagingSettings.getByText("Chief was invited to Family")).toBeVisible();
+  await expect(messagingSettings.getByText("iMessage group")).toBeVisible();
+  await expect(
+    messagingSettings.getByText("Dana's Assistant wants to connect to Chief"),
+  ).toBeVisible();
+  await expect(messagingSettings.getByRole("button", { name: "Allow" })).toHaveCount(2);
+  await expect(messagingSettings.getByRole("button", { name: "Connect Feishu" })).toBeEnabled();
+  await expect(messagingSettings.getByRole("button", { name: "Connect WhatsApp" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "messaging-slack-workspace");
-  const codeReady = deferred();
-  try {
-    await page.route("**/rpc/messaging/link/start", async (route) => {
-      await codeReady.promise;
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({
-          json: { code: "STALE-CODE", expiresAt: new Date(Date.now() + 600_000).toISOString() },
-        }),
-      });
-    });
-    await messagingSettings.getByRole("button", { name: "Connect a chat app" }).click();
-    const issuing = page.waitForRequest("**/rpc/messaging/link/start");
-    await page.getByRole("menuitem", { name: "iMessage", exact: true }).click();
-    await issuing;
-    const botPicker = messagingSettings.getByLabel("Bot", { exact: true });
-    await chooseOption(botPicker, "Lead");
-  } finally {
-    // Always release the route before afterEach waits for pending handlers.
-    codeReady.resolve();
-  }
-  await expect(messagingSettings.getByRole("button", { name: "Connect a chat app" })).toBeEnabled();
-  await expect(page.getByTestId("messaging-link-code")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "messaging-link-selection-changed");
-  await page.unroute("**/rpc/messaging/link/start");
-  await page.route("**/rpc/messaging/link/start", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        json: { code: "ABCD-2345", expiresAt: new Date(Date.now() + 600_000).toISOString() },
-      }),
-    }),
-  );
+  // A connected row keeps its actions in one menu.
+  await messagingSettings.getByRole("button", { name: "Options for WhatsApp" }).click();
+  await expect(page.getByRole("menuitem", { name: "Unlink", exact: true })).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("menuitem", { name: "Change bot", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("menuitem", { name: "Lead", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "messaging-connected-menu");
+  // The first Escape closes only the bot list, the second the menu.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menuitem", { name: "Unlink", exact: true })).toHaveCount(0);
+  // With several bots, Connect asks which one the chat app talks to.
+  await messagingSettings.getByRole("button", { name: "Connect iMessage" }).click();
+  await expect(page.getByRole("menuitem", { name: "Lead", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "messaging-connect-bot-menu");
+  await page.getByRole("menuitem", { name: "Lead", exact: true }).click();
+  await expect(page.getByTestId("messaging-link-code")).toContainText("ABCD-2345");
+  await expect(page.getByTestId("messaging-link-code")).toContainText("+15550001111");
+  await captureScreenshot(page, testInfo, "messaging-link-code");
 
   await expect(messagingSettings.getByRole("heading", { name: "Conversations" })).toBeVisible();
   await expect(messagingSettings.getByText("#launch")).toBeVisible();
@@ -244,13 +242,14 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await expect(messagingSettings).toBeVisible();
   await expect(messagingSettings.getByText("+15551230001, Chief")).toBeVisible();
   await expect(messagingSettings.getByText("424242, Lead")).toBeVisible();
-  await expect(messagingSettings.getByText("Family")).toBeVisible();
-  await expect(messagingSettings.getByText("Dana's Assistant")).toBeVisible();
-  // Scoped to the panel: the settings nav has its own 승인 (Approvals).
-  await expect(messagingSettings.getByRole("button", { name: "승인" })).toHaveCount(2);
+  await expect(messagingSettings.getByText("Chief was invited to Family")).toBeVisible();
+  await expect(
+    messagingSettings.getByText("Dana's Assistant wants to connect to Chief"),
+  ).toBeVisible();
+  await expect(messagingSettings.getByRole("button", { name: "허용" })).toHaveCount(2);
 
-  await messagingSettings.getByRole("button", { name: "채팅 앱 연결" }).click();
-  await page.getByRole("menuitem", { name: "iMessage", exact: true }).click();
+  await messagingSettings.getByRole("button", { name: /iMessage/ }).click();
+  await page.getByRole("menuitem", { name: "Lead", exact: true }).click();
   await expect(page.getByTestId("messaging-link-code")).toContainText("ABCD-2345");
   await expect(page.getByTestId("messaging-link-code")).toContainText("+15550001111");
   await captureScreenshot(page, testInfo, "messaging-settings-ko");
@@ -304,8 +303,8 @@ test("Slack setup has one Connect action that opens workspace authorization", as
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByTestId("settings-nav-messaging").click();
   const settings = page.getByTestId("messaging-settings");
-  await expect(settings.getByText("Chat with your bot from Slack.")).toBeVisible();
-  const connect = settings.getByRole("button", { name: "Connect", exact: true });
+  await expect(settings.getByText("Slack", { exact: true })).toBeVisible();
+  const connect = settings.getByRole("button", { name: "Connect Slack", exact: true });
   await expect(connect).toBeEnabled();
   await expect(
     settings.getByRole("button", { name: "Connect a chat app", exact: true }),
