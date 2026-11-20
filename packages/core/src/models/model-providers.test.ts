@@ -519,6 +519,19 @@ describe("groupModelChoices order", () => {
     ]);
   });
 
+  it("preserves catalog order when the credential declares it", () => {
+    const catalog = [entry("glm-4.5"), entry("glm-5"), entry("glm-4.6")];
+    const connected = connectedModelChoices(
+      [{ provider: "zai", label: "Local", modelId: "glm-5", preserveModelOrder: true }],
+      catalog,
+    );
+    expect(groupModelChoices(connected, "")[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "glm-4.5",
+      "glm-5",
+      "glm-4.6",
+    ]);
+  });
+
   it("keeps a compatible endpoint's models in the order they were enabled", () => {
     const connected = connectedModelChoices(
       [

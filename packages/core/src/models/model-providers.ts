@@ -241,10 +241,14 @@ function freeFormChoice(credential: CredentialModelRef, modelId: string): Connec
   };
 }
 
-function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedModelChoice[] {
+function catalogChoices(
+  providerModels: readonly CatalogModelRef[],
+  preserveModelOrder?: boolean,
+): ConnectedModelChoice[] {
   return providerModels.map((entry) => {
     const modelId = resolveSelectableModelId(providerModels, entry.provider, entry.id);
     return {
+      ...(preserveModelOrder ? { preserveModelOrder: true } : {}),
       key: modelOptionKey(entry.provider, modelId),
       provider: entry.provider,
       modelId,
@@ -358,7 +362,7 @@ export function connectedModelChoices(
           })
         : raw && !resolvedInCatalog
           ? [freeFormChoice(credential, resolved || raw)]
-          : catalogChoices(providerModels);
+          : catalogChoices(providerModels, credential.preserveModelOrder);
     choices.push(...next);
   }
   choices.push(...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)));
