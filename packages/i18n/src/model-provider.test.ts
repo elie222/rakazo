@@ -196,3 +196,37 @@ it("keeps custom connection labels for enabled catalog models", () => {
     "Example subscription (Work)",
   );
 });
+
+it("leaves managed choices neutral while naming the member's own subscription", () => {
+  const entry = {
+    provider: "example",
+    providerName: "Example",
+    subscriptionName: "Example subscription",
+    auth: "both" as const,
+    id: "funded",
+    label: "Funded model",
+    billing: "",
+    managed: true,
+  };
+  const credential = {
+    id: "personal",
+    provider: "example",
+    label: "Personal",
+    authKind: "oauth",
+    enabledModelIds: ["own"],
+  };
+  const choices = connectedModelChoices([credential], [entry]);
+  expect(choices.find((choice) => choice.modelId === "funded")).toMatchObject({
+    providerLabel: "Example",
+    label: "Funded model (Example)",
+  });
+  expect(choices.find((choice) => choice.modelId === "own")).toMatchObject({
+    providerLabel: "Example subscription (Personal)",
+  });
+  const overlapping = connectedModelChoices(
+    [{ ...credential, enabledModelIds: ["funded"] }],
+    [entry],
+  );
+  expect(overlapping).toHaveLength(1);
+  expect(overlapping[0]?.providerLabel).toBe("Example subscription (Personal)");
+});

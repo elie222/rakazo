@@ -365,26 +365,30 @@ export function connectedModelChoices(
           : catalogChoices(providerModels);
     choices.push(...next);
   }
-  choices.push(...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)));
-  return choices
-    .filter((choice) => {
-      if (seen.has(choice.key)) return false;
-      seen.add(choice.key);
-      return true;
-    })
-    .map((choice) => {
-      const models = modelsByProvider.get(canonicalPiProviderId(choice.provider)) ?? [];
-      const exact = models.find((entry) => entry.id === choice.modelId);
-      const entry = exact ?? models[0];
-      if (!entry?.subscriptionName) return choice;
-      const serving = connectionForModelChoice(credentials, choice);
-      const { connectionName: providerLabel } = modelConnectionNames(entry, serving);
-      return {
-        ...choice,
-        providerLabel,
-        label: withConnectionName(choice.modelLabel ?? choice.modelId, providerLabel),
-      };
-    });
+  const unique = (choice: ConnectedModelChoice) => {
+    if (seen.has(choice.key)) return false;
+    seen.add(choice.key);
+    return true;
+  };
+  const connected = choices.filter(unique).map((choice) => {
+    const models = modelsByProvider.get(canonicalPiProviderId(choice.provider)) ?? [];
+    const exact = models.find((entry) => entry.id === choice.modelId);
+    const entry = exact ?? models[0];
+    if (!entry?.subscriptionName) return choice;
+    const serving = connectionForModelChoice(credentials, choice);
+    const { connectionName: providerLabel } = modelConnectionNames(entry, serving);
+    return {
+      ...choice,
+      providerLabel,
+      label: withConnectionName(choice.modelLabel ?? choice.modelId, providerLabel),
+    };
+  });
+  return [
+    ...connected,
+    ...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)).filter(
+      unique,
+    ),
+  ];
 }
 
 export type ChatModelChoice = {
