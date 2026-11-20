@@ -9,6 +9,9 @@ const MIN_WIDTH = 320;
 const DEFAULT_WIDTH = 384;
 const ABSOLUTE_MAX = 1000;
 const MIN_CHAT_WIDTH = 320;
+const MD_BREAKPOINT = 768;
+const MOBILE_PANEL_MAX_WIDTH = 384; // Matches max-w-[384px] below.
+const MAX_VISIBLE_CHAT_WIDTH = 48;
 
 function maximumWidth(reservedLeadingPx: number, viewportWidth = window.innerWidth) {
   return Math.max(
@@ -35,7 +38,7 @@ export function ResizableSidePanel({
 }: {
   open: boolean;
   panel: string;
-  /** Tells the shell when the panel is open over the chat, so it can take the chat out of the tab order. */
+  /** Tells the shell when the open panel covers nearly all of the chat, so it can make the chat inert. */
   onCoversChat?: (covers: boolean) => void;
   children: ReactNode;
 }) {
@@ -60,7 +63,10 @@ export function ResizableSidePanel({
     setViewportWidth(window.innerWidth);
   }, []);
 
-  const covering = open && overlay;
+  const belowMd = viewportWidth < MD_BREAKPOINT;
+  const chatWidth = belowMd ? viewportWidth : viewportWidth - reservedLeadingPx;
+  const panelWidth = belowMd ? Math.min(viewportWidth, MOBILE_PANEL_MAX_WIDTH) : width;
+  const covering = open && overlay && chatWidth - panelWidth < MAX_VISIBLE_CHAT_WIDTH;
   useEffect(() => {
     onCoversChat?.(covering);
     return () => onCoversChat?.(false);
