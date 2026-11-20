@@ -189,6 +189,7 @@ describe("remote computer access", () => {
     expect(JSON.parse(String(requests[0]!.init.body))).toEqual({
       name: "Test Mac",
       platform: "darwin",
+      token: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(clients).toMatchObject([{ origin, token: "device-token", closed: false }]);
     expect(access.state(origin)).toEqual({ deviceId: "device-1", allowed: false });
@@ -524,7 +525,6 @@ describe("remote computer access", () => {
           : Response.json({ deviceId: "device-1", token: "device-token" });
       });
       const { access, clients } = setup({ fetch });
-      // A saved pairing would reconnect on its own, so each failure gets a server of its own.
       await access.select(`https://retry-${failure}.example.com`);
       await access.pair();
       await access.pair();
@@ -533,6 +533,26 @@ describe("remote computer access", () => {
       await access.pair();
       expect(clients).toHaveLength(1);
     }
+  });
+
+  it("reuses a random credential after a lost pairing response", async () => {
+    const tokens: string[] = [];
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
+      const { token } = JSON.parse(init!.body as string);
+      tokens.push(token);
+      if (tokens.length < 3) throw new Error("response lost");
+      return Response.json({ deviceId: "device-1", token });
+    });
+    const { access, clients } = setup({ fetch });
+    await access.select(other);
+    await access.pair();
+    await access.pair();
+    await access.pair();
+    expect(tokens.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(tokens).size).toBe(1);
+    expect(tokens[0]).toMatch(/^[a-f0-9]{64}$/);
+    expect(clients).toHaveLength(1);
   });
 
   it("never pairs without secure storage", async () => {

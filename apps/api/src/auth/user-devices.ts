@@ -18,7 +18,7 @@ import {
   userDevicePairRequest,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { recordSecurityEvent, runAsSystem } from "@rakazo/db";
+import { isUniqueViolation, recordSecurityEvent, runAsSystem } from "@rakazo/db";
 import type { Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
 import { lockOwner } from "../spaces/name-claims.js";
@@ -143,32 +143,49 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
     if (body === null) return c.json({ error: "Request too large" }, 413);
     const input = userDevicePairRequest.safeParse(parseJson(body));
     if (!input.success) return c.json({ error: "Invalid device" }, 400);
-    const token = createUserDeviceToken();
+    const token = input.data.token ?? createUserDeviceToken();
+    const tokenHash = hashUserDeviceToken(token);
     const device = await runAsSystem("pair a user device", () =>
-      prisma.$transaction(async (tx) => {
-        // Hold the account's pairing lock across the count and the insert, so pairings
-        // that race cannot each see the limit as still open.
-        await lockOwner(tx, userId, "user-devices");
-        const active = await tx.userDevice.count({ where: { userId, revokedAt: null } });
-        if (active >= USER_DEVICE_LIMIT) return null;
-        return tx.userDevice.create({
-          data: {
-            userId,
-            name: input.data.name,
-            platform: input.data.platform,
-            tokenHash: hashUserDeviceToken(token),
-            sessionId,
-          },
-          select: { id: true },
-        });
-      }),
+      prisma
+        .$transaction(async (tx) => {
+          // Hold the account's pairing lock across the count and the insert, so pairings
+          // that race cannot each see the limit as still open.
+          await lockOwner(tx, userId, "user-devices");
+          const existing = await tx.userDevice.findUnique({ where: { tokenHash } });
+          if (existing) {
+            if (
+              existing.userId !== userId ||
+              existing.sessionId !== sessionId ||
+              existing.revokedAt !== null
+            )
+              return null;
+            return { id: existing.id, reused: true };
+          }
+          const active = await tx.userDevice.count({ where: { userId, revokedAt: null } });
+          if (active >= USER_DEVICE_LIMIT) return null;
+          return tx.userDevice.create({
+            data: {
+              userId,
+              name: input.data.name,
+              platform: input.data.platform,
+              tokenHash,
+              sessionId,
+            },
+            select: { id: true },
+          });
+        })
+        .catch((error: unknown) => {
+          if (isUniqueViolation(error)) return null;
+          throw error;
+        }),
     );
     if (!device) return c.json({ error: "Remove a computer before adding another" }, 409);
-    await recordSecurityEvent({
-      type: "device.paired",
-      userId,
-      metadata: { deviceId: device.id, platform: input.data.platform },
-    });
+    if (!("reused" in device))
+      await recordSecurityEvent({
+        type: "device.paired",
+        userId,
+        metadata: { deviceId: device.id, platform: input.data.platform },
+      });
     return c.json({ deviceId: device.id, userId, token } satisfies UserDevicePairResponse, 201);
   });
 

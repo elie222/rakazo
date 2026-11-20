@@ -199,6 +199,41 @@ afterEach(async () => {
 });
 
 describe("device pairing", () => {
+  it("recovers a lost response without adding devices or repeating security events", async () => {
+    const { pair, rows, events } = setup();
+    const body = { name: "Laptop", platform: "darwin", token: "a".repeat(64) };
+    const first = await pair("user-1", { body });
+    const result = await first.json();
+    for (let index = 1; index < 10; index += 1) await pair("user-1");
+    const retried = await pair("user-1", { body });
+    expect(retried.status).toBe(201);
+    expect(await retried.json()).toEqual(result);
+    expect(rows).toHaveLength(10);
+    expect(events.filter((event) => event.type === "device.paired")).toHaveLength(10);
+    expect(rows[0]?.tokenHash).toBe(hashUserDeviceToken(body.token));
+  });
+
+  it("never reuses a pairing across accounts, sessions, or revocation", async () => {
+    const { pair, rows } = setup();
+    const body = { name: "Laptop", platform: "darwin", token: "b".repeat(64) };
+    expect((await pair("user-1", { body, session: "desktop" })).status).toBe(201);
+    expect((await pair("user-2", { body, session: "desktop" })).status).toBe(409);
+    expect((await pair("user-1", { body, session: "other" })).status).toBe(409);
+    rows[0]!.revokedAt = new Date();
+    expect((await pair("user-1", { body, session: "desktop" })).status).toBe(409);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("rejects malformed retry credentials", async () => {
+    const { pair, rows } = setup();
+    for (const token of ["", "short", "g".repeat(64), "a".repeat(65)]) {
+      expect(
+        (await pair("user-1", { body: { name: "Laptop", platform: "darwin", token } })).status,
+      ).toBe(400);
+    }
+    expect(rows).toEqual([]);
+  });
+
   it("requires a session and a JSON body, and refuses a foreign origin", async () => {
     const { pair, app } = setup();
     expect((await pair(null)).status).toBe(401);

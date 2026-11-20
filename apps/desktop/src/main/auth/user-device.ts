@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
@@ -26,7 +26,6 @@ export interface DeviceTokenCipher {
 
 const MAX_DEVICE_FILE_BYTES = 8 * 1024;
 const MAX_TOKEN_LENGTH = 1024;
-/** Answers meaning this server will not pair this computer (an older server, a limit, a request it rejects). */
 const PAIRING_REFUSALS = new Set([400, 403, 404, 409, 413, 415, 422]);
 
 export interface PairedDevice {
@@ -171,6 +170,7 @@ export function createUserDeviceAccess(deps: {
   const unavailable = new Set<string>();
   const prompts = new Map<string, Promise<boolean>>();
   const pairings = new Map<string, Promise<void>>();
+  const pairingTokens = new Map<string, string>();
   /** Saved tokens not yet tied to a sign-in this launch; pairings from before that was recorded. */
   const untied = new Map<string, string>();
   const tying = new Map<string, { again: boolean }>();
@@ -343,19 +343,28 @@ export function createUserDeviceAccess(deps: {
       return;
     }
     let device: PairedDevice;
+    let token = pairingTokens.get(origin);
+    if (!token) {
+      token = randomBytes(32).toString("hex");
+      pairingTokens.set(origin, token);
+    }
     try {
       const response = await deps.fetch(new URL(USER_DEVICE_PAIR_PATH, origin).href, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(await deps.device()),
+        body: JSON.stringify({ ...(await deps.device()), token }),
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
       });
       if (!response.ok) {
         await response.body?.cancel();
         // Signed out, a busy server or a deploy in progress: the next page load tries again.
-        if (PAIRING_REFUSALS.has(response.status)) unavailable.add(origin);
+        if (PAIRING_REFUSALS.has(response.status)) {
+          unavailable.add(origin);
+          pairingTokens.delete(origin);
+        }
+        if (response.status === 401) pairingTokens.delete(origin);
         return;
       }
       const body = (await response.json()) as Partial<
@@ -367,6 +376,7 @@ export function createUserDeviceAccess(deps: {
         body.token.length > MAX_TOKEN_LENGTH ||
         typeof body.deviceId !== "string"
       ) {
+        pairingTokens.delete(origin);
         unavailable.add(origin);
         return;
       }
@@ -380,9 +390,11 @@ export function createUserDeviceAccess(deps: {
     } catch {
       // A token that cannot be kept must not stay valid on the server.
       await revokeToken(origin, device.token);
+      pairingTokens.delete(origin);
       unavailable.add(origin);
       return;
     }
+    pairingTokens.delete(origin);
     paired.set(origin, { deviceId: device.deviceId, userId: device.userId });
     if (current === origin) start(origin, device.token);
   }
