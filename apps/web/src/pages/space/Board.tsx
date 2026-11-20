@@ -235,6 +235,13 @@ function useTicketChange() {
   });
 }
 
+type TextDraft = { base: string; value: string };
+
+function editText(draft: TextDraft | null, saved: string, value: string): TextDraft | null {
+  const base = draft?.base ?? saved;
+  return value === base || value === saved ? null : { base, value };
+}
+
 function TicketDialog({
   ticket,
   changing,
@@ -252,16 +259,18 @@ function TicketDialog({
   const formId = useId();
   const statuses = useTicketStatusLabels();
   const priorities = useTicketPriorityLabels();
-  const [titleDraft, setTitle] = useState<string | null>(null);
-  const [descriptionDraft, setDescription] = useState<string | null>(null);
+  const [titleDraft, setTitle] = useState<TextDraft | null>(null);
+  const [descriptionDraft, setDescription] = useState<TextDraft | null>(null);
   const [newOwner, setOwner] = useState(bots[0]?.id ?? "");
   const [newPriority, setPriority] = useState<TicketPriority>("normal");
-  const title = titleDraft ?? ticket?.title ?? "";
-  const description = descriptionDraft ?? ticket?.description ?? "";
+  const savedTitle = ticket?.title ?? "";
+  const savedDescription = ticket?.description ?? "";
+  const title = titleDraft?.value ?? savedTitle;
+  const description = descriptionDraft?.value ?? savedDescription;
   const owner = ticket ? ticket.assigneeBotId : newOwner;
   const priority = ticket?.priority ?? newPriority;
-  const titleChanged = title !== ticket?.title;
-  const descriptionChanged = description !== (ticket?.description ?? "");
+  const titleChanged = title !== savedTitle;
+  const descriptionChanged = description !== savedDescription;
   const textChanged = titleChanged || descriptionChanged;
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -352,7 +361,10 @@ function TicketDialog({
               <Input
                 id={`${formId}-title`}
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setTitle((draft) => editText(draft, savedTitle, value));
+                }}
                 maxLength={TICKET_TITLE_MAX_LENGTH}
                 disabled={saving.pending}
                 required
@@ -366,7 +378,10 @@ function TicketDialog({
                 id={`${formId}-description`}
                 data-testid="ticket-description"
                 value={description}
-                onChange={(event) => setDescription(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setDescription((draft) => editText(draft, savedDescription, value));
+                }}
                 maxLength={TICKET_DESCRIPTION_MAX_LENGTH}
                 disabled={saving.pending}
               />

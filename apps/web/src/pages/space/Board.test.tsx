@@ -317,18 +317,35 @@ it("saves only edits and refreshes comments for the open ticket", async () => {
       ).click(),
     );
     await settle();
+    const description = page.container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="ticket-description"]',
+    )!;
+    async function editDescription(value: string) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          description,
+          value,
+        );
+        description.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    await editDescription("Draft details");
     const calls = api.tickets.comments.mock.calls.length;
     await act(async () => live.event("ticket-2"));
     expect(api.tickets.comments).toHaveBeenCalledTimes(calls);
     api.tickets.comments.mockResolvedValue([{ id: "comment-2", body: "Bot progress" }]);
     api.tickets.list.mockResolvedValue({
-      tickets: [ticket("Ship", "ticket-1", "doing", "RAK-1", "bot-2", "Details")],
+      tickets: [ticket("Ship", "ticket-1", "doing", "RAK-1", "bot-2", "Bot updated the details")],
     });
     await act(async () => live.event("ticket-1"));
     await settle();
     expect(page.container.querySelector('[data-testid="ticket-comments"]')?.textContent).toContain(
       "Bot progress",
     );
+    expect(description.value).toBe("Draft details");
+    await editDescription("Details");
+    expect(description.value).toBe("Bot updated the details");
+
     const input = page.container.querySelector<HTMLInputElement>('input[id$="-title"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
