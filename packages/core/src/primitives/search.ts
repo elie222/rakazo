@@ -1,9 +1,14 @@
 import type { SearchHit } from "@rakazo/contracts";
 import { textBoundary, truncatePlainText } from "../messages/markdown-plain.js";
 
-const URL_PATTERN = /https?:\/\/[^\s<>"'`\]][^\s<>"'`]*/gi;
+// A bare link never contains CJK or typographic punctuation, or the quotes and guillemets that wrap
+// one. Ideographs, kana and hangul stay in the link: Wikipedia paths use them. A right single quote
+// stays too, since it is an apostrophe in paths such as O’Connor; linkUrl drops it when it closes a
+// left single quote before the link.
+const URL_PATTERN =
+  /https?:\/\/[^\s<>"'`\]、。〈-】（）！，：；？‘“”«»][^\s<>"'`、。〈-】（）！，：；？‘“”«»]*/gi;
 
-const URL_START = /https?:\/\/[^\s<>"'`\]]/gi;
+const URL_START = /https?:\/\/[^\s<>"'`\]、。〈-】（）！，：；？‘“”«»]/gi;
 
 const TRAILING_LINK_PUNCTUATION = /[.,;:!?]+$/;
 
@@ -20,7 +25,8 @@ function linkEnd(text: string, start: number, limit: number): number {
 }
 
 function linkUrl(text: string, start: number, end: number): string | null {
-  const url = text.slice(start, end).replace(TRAILING_LINK_PUNCTUATION, "");
+  let url = text.slice(start, end).replace(TRAILING_LINK_PUNCTUATION, "");
+  if (text[start - 1] === "‘" && url.endsWith("’")) url = url.slice(0, -1);
   const beforeOpener = text[start - 3];
   const hasBoldWrapper =
     url.endsWith("**") &&
