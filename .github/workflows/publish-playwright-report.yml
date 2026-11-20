@@ -170,7 +170,7 @@ jobs:
             changed_files_file="$(mktemp)"
             gh api --paginate \
               "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
-              --jq '.[] | {filename, patch}' > "$changed_files_file"
+              --jq '.[] | {filename, changes, patch}' > "$changed_files_file"
             body="$(
               PLAYWRIGHT_GALLERY_URL="$gallery_url" \
               PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \

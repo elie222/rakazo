@@ -51,13 +51,15 @@ process.stdout.write(
 );
 
 function parseChangedFile(value: unknown): PrChangedFile {
-  const file = value as { filename?: unknown; patch?: unknown } | null;
+  const file = value as { changes?: unknown; filename?: unknown; patch?: unknown } | null;
   if (typeof file?.filename !== "string") {
     throw new Error("Each changed file needs a filename");
   }
-  return typeof file.patch === "string"
-    ? { filename: file.filename, patch: file.patch }
-    : { filename: file.filename };
+  return {
+    filename: file.filename,
+    ...(typeof file.changes === "number" ? { changes: file.changes } : {}),
+    ...(typeof file.patch === "string" ? { patch: file.patch } : {}),
+  };
 }
 
 function getRequiredEnvironmentVariable(name: string): string {

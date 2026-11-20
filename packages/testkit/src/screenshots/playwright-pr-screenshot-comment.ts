@@ -18,20 +18,22 @@ export type PlaywrightPrFeatureFrameSelection = {
   omittedCount: number;
 };
 
-export type PrChangedFile = { filename: string; patch?: string };
+export type PrChangedFile = { changes?: number; filename: string; patch?: string };
 
 const SPEC_FILE_PATTERN = /^(.*)\.spec\.[cm]?[jt]sx?$/i;
 const STRING_LITERAL = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
 const CAPTURE_NAME = /^[a-z0-9][a-z0-9._-]*$/i;
+const NAME_PART = /^[a-z0-9._-]{2,}$/i;
 
-type CaptureNames = { exact: Set<string>; prefixes: string[] };
+type TemplateName = { prefix: string; suffix: string };
+type CaptureNames = { exact: Set<string>; templates: TemplateName[] };
 
 // A checkpoint belongs to this PR only when the PR adds or edits the line naming it, as in
-// captureScreenshot(page, testInfo, "billing-account-menu"). Template names match by their
-// literal prefix.
+// captureScreenshot(page, testInfo, "billing-account-menu"). A template name matches by the
+// literal text before its first and after its last placeholder.
 function captureNamesFromPatch(patch: string): CaptureNames {
   const exact = new Set<string>();
-  const prefixes = new Set<string>();
+  const templates: TemplateName[] = [];
   for (const line of patch.split("\n")) {
     if (!line.startsWith("+") || line.startsWith("+++")) continue;
     for (const [, quote, value = ""] of line.matchAll(STRING_LITERAL)) {
@@ -41,16 +43,30 @@ function captureNamesFromPatch(patch: string): CaptureNames {
         if (CAPTURE_NAME.test(name)) exact.add(name.toLowerCase());
         continue;
       }
-      const prefix = value.slice(0, templateStart);
-      if (prefix.length >= 2 && CAPTURE_NAME.test(prefix)) prefixes.add(prefix.toLowerCase());
+      const prefix = value.slice(0, templateStart).toLowerCase();
+      const suffix = value
+        .slice(value.lastIndexOf("}") + 1)
+        .replace(/\.png$/i, "")
+        .toLowerCase();
+      const usable = (part: string) => NAME_PART.test(part);
+      if (
+        (usable(prefix) || usable(suffix)) &&
+        (!prefix || usable(prefix)) &&
+        (!suffix || usable(suffix))
+      ) {
+        templates.push({ prefix, suffix });
+      }
     }
   }
-  return { exact, prefixes: [...prefixes] };
+  return { exact, templates };
 }
 
 function screenshotNamedByChange(source: string, names: CaptureNames): boolean {
   const name = (source.split(/[\\/]/).at(-1) ?? source).replace(/\.png$/i, "").toLowerCase();
-  return names.exact.has(name) || names.prefixes.some((prefix) => name.startsWith(prefix));
+  return (
+    names.exact.has(name) ||
+    names.templates.some(({ prefix, suffix }) => name.startsWith(prefix) && name.endsWith(suffix))
+  );
 }
 
 export function specStemsFromChangedPaths(changedPaths: readonly string[]): string[] {
@@ -81,10 +97,17 @@ export function selectPlaywrightPrFeatureFrames(input: {
 }): PlaywrightPrFeatureFrameSelection {
   const limit = input.limit ?? PLAYWRIGHT_PR_FEATURE_FRAME_LIMIT;
   // GitHub leaves out the patch of a very large diff; then every checkpoint of that spec counts.
+  // A rename with no edits has no patch either, and names nothing.
   const specs = input.changedFiles.flatMap((file) => {
     const stem = specStemsFromChangedPaths([file.filename])[0];
     return stem
-      ? [{ names: file.patch ? captureNamesFromPatch(file.patch) : undefined, stem }]
+      ? [
+          {
+            names:
+              file.patch || !file.changes ? captureNamesFromPatch(file.patch ?? "") : undefined,
+            stem,
+          },
+        ]
       : [];
   });
   // The main baseline can trail main by hours, so checkpoints other merged PRs added look new

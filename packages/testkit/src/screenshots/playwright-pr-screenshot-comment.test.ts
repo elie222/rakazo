@@ -232,9 +232,43 @@ describe("selectPlaywrightPrFeatureFrames", () => {
     expect(selection.frames.map((frame) => frame.title)).toEqual(["instruction update diff"]);
   });
 
+  it("matches template names by the text around their placeholders", () => {
+    const selection = selectPlaywrightPrFeatureFrames({
+      changedFiles: [
+        {
+          filename: "apps/web/e2e/tool-activity-shell.spec.ts",
+          patch: [
+            `+  await captureScreenshot(page, testInfo, \`\${surface}-header-discovery-reset\`);`,
+            `+  await captureScreenshot(page, testInfo, \`\${state.name}-\${viewport.name}\`);`,
+          ].join("\n"),
+        },
+      ],
+      screenshots: [
+        screenshot({
+          source: "tool-activity-shell-x/sidebar-header-discovery-reset.png",
+          title: "sidebar header discovery reset",
+        }),
+        screenshot({ source: "tool-activity-shell-x/live-desktop.png", title: "live desktop" }),
+      ],
+    });
+
+    expect(selection.frames.map((frame) => frame.title)).toEqual([
+      "sidebar header discovery reset",
+    ]);
+  });
+
+  it("names nothing for a spec renamed without edits", () => {
+    const selection = selectPlaywrightPrFeatureFrames({
+      changedFiles: [{ changes: 0, filename: "apps/web/e2e/tool-activity-shell.spec.ts" }],
+      screenshots: [screenshot({ source: "tool-activity-shell-x/live.png", title: "shell live" })],
+    });
+
+    expect(selection.frames).toEqual([]);
+  });
+
   it("keeps every checkpoint of a spec whose patch GitHub left out", () => {
     const selection = selectPlaywrightPrFeatureFrames({
-      changedFiles: [{ filename: "apps/web/e2e/tool-activity-shell.spec.ts" }],
+      changedFiles: [{ changes: 4200, filename: "apps/web/e2e/tool-activity-shell.spec.ts" }],
       screenshots: [screenshot({ source: "tool-activity-shell-x/live.png", title: "shell live" })],
     });
 
