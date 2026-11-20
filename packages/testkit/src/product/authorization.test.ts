@@ -355,6 +355,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["botMarketplace/admin/create", { listing: { name: "Nope" } }],
       ["botMarketplace/admin/update", { slug: "missing-bot" }],
       ["botMarketplace/admin/setStatus", { slug: "missing-bot", status: "unpublished" }],
+      ["botMarketplace/admin/sources"],
+      ["botMarketplace/admin/fromBot", { botId: "missing-bot" }],
       ["groups/create", { name: "Nope", botIds: ["missing-a", "missing-b"] }],
       ["groups/list"],
       ["groups/get", { groupId: "missing-group" }],

@@ -16,10 +16,13 @@ import {
   MarketplaceBotAdminUpdateInput,
   MarketplaceBotCatalogInput,
   MarketplaceBotCatalogSchema,
+  MarketplaceBotFromBotInput,
+  MarketplaceBotFromBotSchema,
   MarketplaceBotGetInput,
   MarketplaceBotInstallInput,
   MarketplaceBotInstallOutput,
   MarketplaceBotListingSchema,
+  MarketplaceBotSourceSchema,
 } from "../bot-marketplace.js";
 import { botsRpc } from "../bots/bots-rpc.js";
 import { serverRpc } from "../clients/server-rpc.js";
@@ -62,6 +65,10 @@ export const appContract = {
       create: oc.input(MarketplaceBotAdminCreateInput).output(MarketplaceBotAdminRowSchema),
       update: oc.input(MarketplaceBotAdminUpdateInput).output(MarketplaceBotAdminRowSchema),
       setStatus: oc.input(MarketplaceBotAdminSetStatusInput).output(MarketplaceBotAdminRowSchema),
+      /** The bots in the admin's Space a listing can be built from. */
+      sources: oc.input(z.strictObject({})).output(z.array(MarketplaceBotSourceSchema)),
+      /** What a listing copies from one of those bots. */
+      fromBot: oc.input(MarketplaceBotFromBotInput).output(MarketplaceBotFromBotSchema),
     },
   },
 };

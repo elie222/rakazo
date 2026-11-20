@@ -143,6 +143,32 @@ export const MarketplaceBotAdminSetStatusInput = z.strictObject({
   status: z.enum(["published", "unpublished"]),
 });
 
+/** A bot an admin can build a listing from, in the Space they are working in. */
+export const MarketplaceBotSourceSchema = z.object({
+  botId: z.string(),
+  name: z.string(),
+  spaceName: z.string(),
+  /** Skills its routines use. */
+  skills: z.number().int(),
+  routines: z.number().int(),
+});
+export type MarketplaceBotSource = z.infer<typeof MarketplaceBotSourceSchema>;
+
+export const MarketplaceBotFromBotInput = z.strictObject({ botId: z.string().min(1) });
+
+/**
+ * What a listing copies from a bot: its instructions, the skills its routines use and its
+ * routines, never its memory, history, keys or model. Market fields come from the operator.
+ */
+export const MarketplaceBotFromBotSchema = BotTemplateSchema.pick({
+  name: true,
+  description: true,
+  instructions: true,
+  skills: true,
+  routines: true,
+});
+export type MarketplaceBotFromBot = z.infer<typeof MarketplaceBotFromBotSchema>;
+
 /** Import keys a marketplace bot is recorded under; agent imports cannot use them. */
 export const BOT_MARKETPLACE_IMPORT_KEY_PREFIX = "marketplace:";
 

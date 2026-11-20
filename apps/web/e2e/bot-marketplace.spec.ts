@@ -1,8 +1,11 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { Bot, Routine } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, rpc, signup } from "./helpers/helpers";
 
 const ADMIN_EMAIL = "admin@rakazo.test";
+
+const routine = { name: "Morning briefing", prompt: "Summarise my day", crons: ["0 8 * * 1-5"] };
 
 const listing = {
   id: "morning-briefing",
@@ -14,7 +17,7 @@ const listing = {
     "A scannable briefing every weekday morning: your calendar, the emails waiting on you, and the topics you follow. Nothing is sent or changed without your confirmation.",
   instructions: "Summarise the day; never send without confirmation.",
   skills: [],
-  routines: [{ name: "Morning briefing", prompt: "Summarise my day", crons: ["0 8 * * 1-5"] }],
+  routines: [routine],
   apps: ["gmail"],
   author: { name: "Rakazo Team" },
   license: "Apache-2.0",
@@ -24,6 +27,19 @@ const listing = {
   intro: "I brief you every weekday morning. Nothing is sent without your confirmation.",
   firstQuestion: "Which city should I watch the weather for?",
 };
+
+/** Fills the listing form the way ops would, one labeled field at a time. */
+async function fillListing(page: Page) {
+  const field = (label: string) => page.getByLabel(label).first();
+  await field("One-line intro").fill(listing.tagline);
+  await field("What it does for users").fill(listing.outcomes.join("\n"));
+  await page.getByText("Example and opening line", { exact: true }).click();
+  await field("Example output").fill(listing.sample);
+  await field("First message after install").fill(listing.intro);
+  await field("First question").fill(listing.firstQuestion);
+  await page.getByText("Copied with the template", { exact: true }).click();
+  await field("Apps").fill(listing.apps.join(", "));
+}
 
 /** Open signups get a session at once; the emailed link marks the address verified. */
 async function verifyEmail(page: import("@playwright/test").Page, email: string) {
@@ -64,17 +80,31 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
   await expect(panel.getByText("No bots here yet.", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "01-ops-console-empty");
 
+  // The listing is built from one of the admin's own bots.
+  const source = await rpc<Bot>(page, "bots/create", {
+    name: listing.name,
+    description: listing.description,
+    instructions: listing.instructions,
+  });
+  await rpc(page, "routines/create", { botId: source.id, ...routine });
+
   await panel.getByRole("button", { name: "New bot", exact: true }).click();
-  const editor = page.getByRole("dialog");
-  await editor.getByTestId("bot-listing-json").fill(JSON.stringify(listing, null, 2));
-  await captureScreenshot(page, testInfo, "02-ops-editor-json");
-  await editor.getByRole("button", { name: "Preview", exact: true }).click();
-  const preview = editor.getByTestId("bot-marketplace-detail");
-  await expect(preview.getByRole("heading", { name: "Morning briefing" })).toBeVisible();
-  await expect(preview.getByText("Demo data, not your real content.")).toBeVisible();
-  await captureScreenshot(page, testInfo, "03-ops-editor-preview");
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(editor).toHaveCount(0);
+  await expect(page).toHaveURL(/\/admin\/bots\/new$/);
+  await page.getByRole("button", { name: "Choose a bot", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: new RegExp(listing.name) })
+    .click();
+  await expect(page.getByLabel("Display name")).toHaveValue(listing.name);
+  await fillListing(page);
+  await captureScreenshot(page, testInfo, "02-ops-listing-form");
+  await page.getByRole("button", { name: "Preview listing" }).click();
+  const preview = page.getByTestId("bot-listing-preview");
+  await expect(preview.getByRole("heading", { name: "Morning briefing", level: 2 })).toBeVisible();
+  await expect(preview.getByText("Demo data", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "03-ops-listing-preview");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/bots$/);
   const row = panel.getByRole("listitem").filter({ hasText: "Morning briefing" });
   await expect(row.getByText("Draft", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "04-ops-draft-row");
@@ -178,11 +208,9 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
   // ── Ops: edit bumps the version; unpublishing hides it without touching installs ──
   await page.goto("/admin/bots");
   await row.getByRole("button", { name: "Edit", exact: true }).click();
-  await editor
-    .getByTestId("bot-listing-json")
-    .fill(JSON.stringify({ ...listing, tagline: "A sharper morning overview." }, null, 2));
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(editor).toHaveCount(0);
+  await page.getByLabel("One-line intro").fill("A sharper morning overview.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/bots$/);
   await expect(row.getByText(/v2/)).toBeVisible();
   await captureScreenshot(page, testInfo, "12-ops-version-bump");
   await expect(

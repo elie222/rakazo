@@ -13,16 +13,25 @@ const api = vi.hoisted(() => ({
   update: vi.fn(),
   setStatus: vi.fn(),
   toastError: vi.fn(),
+  navigate: vi.fn(),
 }));
 
-vi.mock("../lib/query/rpc", () => ({
-  rpc: {
-    botMarketplace: {
-      admin: { create: api.create, update: api.update, setStatus: api.setStatus },
-    },
-  },
-}));
+const rpcClient = () => ({
+  botMarketplace: { admin: { update: api.update, setStatus: api.setStatus } },
+});
 vi.mock("../lib/query/query", () => ({
+  useSave: ({
+    save,
+    onFailed,
+  }: {
+    save: (input: never, client: unknown) => Promise<unknown>;
+    onFailed?: (error: Error) => void;
+  }) => ({
+    run: (input: never) => void save(input, rpcClient()).catch((error: Error) => onFailed?.(error)),
+    pending: false,
+    input: undefined,
+    error: null,
+  }),
   useSpaceQueries: () => ({
     botMarketplace: {
       admin: {
@@ -41,11 +50,7 @@ vi.mock("../lib/query/user-error", () => ({
   errorText: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
 }));
-vi.mock("../components/bot-marketplace/bot-marketplace-detail", () => ({
-  BotMarketplaceDetail: ({ listing }: { listing: { name: string } }) => (
-    <div data-testid="bot-preview">{listing.name}</div>
-  ),
-}));
+vi.mock("react-router-dom", () => ({ useNavigate: () => api.navigate }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -64,18 +69,10 @@ vi.mock("@rakazo/ui-web", () => {
     }: ComponentProps<"button"> & { variant?: string; size?: string }) => (
       <button type="button" {...props} />
     ),
-    Dialog: ({ open, children }: { open: boolean; children?: ReactNode }) =>
-      open ? <div role="dialog">{children}</div> : null,
-    DialogClose: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-    DialogContent: Pass,
-    DialogHeader: Pass,
-    DialogTitle: Pass,
-    Input: (props: ComponentProps<"input">) => <input {...props} />,
     Spinner: () => <span role="status" />,
     Tabs: Pass,
     TabsList: Pass,
     TabsTrigger: Pass,
-    Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
     toast: { error: api.toastError },
   };
 });
@@ -122,6 +119,7 @@ beforeEach(async () => {
   api.update.mockReset().mockResolvedValue(row);
   api.setStatus.mockReset().mockResolvedValue({ ...row, status: "published" });
   api.toastError.mockReset();
+  api.navigate.mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -158,14 +156,6 @@ async function click(node: HTMLElement) {
   });
 }
 
-function setJson(value: string) {
-  const textarea = container.querySelector<HTMLTextAreaElement>('[data-testid="bot-listing-json"]');
-  if (!textarea) throw new Error("Missing editor");
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-  setter?.call(textarea, value);
-  textarea.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
 it("lists catalog rows and publishes from the row", async () => {
   expect(api.list).toHaveBeenCalledWith({});
   const item = container.querySelector('[data-testid="admin-bots"] li');
@@ -184,33 +174,9 @@ it("toggles featured without touching the listing", async () => {
   expect(api.update).toHaveBeenCalledWith({ slug: "morning-briefing", featured: true });
 });
 
-it("validates the listing JSON before saving a new bot", async () => {
+it("opens the listing page for a new bot and for a row", async () => {
   await click(button("New bot"));
-  const dialog = container.querySelector('[role="dialog"]')!;
-  expect(dialog).toBeTruthy();
-
-  await act(async () => setJson("{"));
-  expect(dialog.querySelector('[role="alert"]')).toBeTruthy();
-  expect(button("Save", dialog).disabled).toBe(true);
-
-  await act(async () => setJson(JSON.stringify(listing)));
-  expect(dialog.querySelector('[role="alert"]')).toBeNull();
-  await click(button("Preview", dialog));
-  expect(dialog.querySelector('[data-testid="bot-preview"]')?.textContent).toContain(
-    "Morning briefing",
-  );
-  await click(button("Save", dialog));
-  expect(api.create).toHaveBeenCalledWith({ listing: expect.objectContaining({ id: listing.id }) });
-});
-
-it("saves an existing row under its slug", async () => {
+  expect(api.navigate).toHaveBeenLastCalledWith("/admin/bots/new");
   await click(button("Edit"));
-  const dialog = container.querySelector('[role="dialog"]')!;
-  await act(async () => setJson(JSON.stringify({ ...listing, tagline: "A new promise." })));
-  await click(button("Save", dialog));
-  expect(api.update).toHaveBeenCalledWith({
-    slug: "morning-briefing",
-    listing: expect.objectContaining({ tagline: "A new promise." }),
-    sortOrder: 0,
-  });
+  expect(api.navigate).toHaveBeenLastCalledWith("/admin/bots/morning-briefing");
 });
