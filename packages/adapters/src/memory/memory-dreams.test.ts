@@ -79,6 +79,8 @@ function dreamPrisma(
         status: "queued",
         summary: null,
         changedPaths: [],
+        added: [],
+        archived: [],
         errorKind: null,
         startedAt: null,
         finishedAt: null,
@@ -87,6 +89,7 @@ function dreamPrisma(
     },
     memoryRevision: {
       findMany: vi.fn(async () => []) as ReturnType<typeof vi.fn>,
+      findFirst: vi.fn(async () => null) as ReturnType<typeof vi.fn>,
     },
     thread: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => {
@@ -109,7 +112,7 @@ function dreamPrisma(
       findMany: Mock;
       findUniqueOrThrow: Mock;
     };
-    memoryRevision: { findMany: Mock };
+    memoryRevision: { findMany: Mock; findFirst: Mock };
     thread: { deleteMany: Mock };
     run: { findUnique: Mock; findFirst: Mock };
     $transaction: Mock;
@@ -118,14 +121,15 @@ function dreamPrisma(
   return { prisma: prisma as unknown as PrismaClient, tx, raw: prisma as unknown as Raw };
 }
 
-const userMessage = (seq: number, text: string) => ({
+const userMessage = (seq: number, text: string, agoMs = 6 * 60_000) => ({
   id: `message-${seq}`,
   seq,
+  createdAt: new Date(NOW.getTime() - agoMs),
   blocks: [{ kind: "text", text }],
 });
 
 describe("reconcileMemoryDreams", () => {
-  it("starts a dream at night with new user messages and backs it up", async () => {
+  it("starts a dream once the user has been quiet and backs it up", async () => {
     const jobs = jobPublisher();
     const { prisma, tx } = dreamPrisma({ messages: [userMessage(5, "I moved to Lisbon.")] });
     await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
@@ -157,15 +161,22 @@ describe("reconcileMemoryDreams", () => {
     );
   });
 
-  it("skips the daytime", async () => {
+  it("waits while the conversation is still active", async () => {
     const jobs = jobPublisher();
-    const { prisma, tx } = dreamPrisma({ messages: [userMessage(5, "hello")] });
-    await reconcileMemoryDreams({
-      prisma,
-      jobs,
-      now: () => new Date("2026-02-02T12:00:00.000Z"),
+    const { prisma, tx } = dreamPrisma({
+      messages: [userMessage(5, "hello", 60_000)],
     });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
     expect(tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it("runs at once when eight user messages are waiting", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma({
+      messages: Array.from({ length: 8 }, (_, index) => userMessage(index + 1, `fact ${index}`)),
+    });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    expect(tx.run.create).toHaveBeenCalledOnce();
   });
 
   it("skips a bot with no new user messages", async () => {
@@ -203,10 +214,22 @@ describe("recordMemoryDream", () => {
   it("records the summary and the documents the run changed", async () => {
     const { prisma, raw } = dreamPrisma({ existingDream: { id: "dream-1", status: "queued" } });
     raw.memoryRevision.findMany.mockResolvedValueOnce([
-      { document: { path: "MEMORY.md" } },
-      { document: { path: "MEMORY.md" } },
-      { document: { path: "team.md" } },
+      {
+        documentId: "doc-1",
+        revision: 2,
+        content: "Moved to Lisbon.\nLikes tea.",
+        document: { path: "MEMORY.md" },
+      },
+      {
+        documentId: "doc-2",
+        revision: 1,
+        content: "Standup at nine.",
+        document: { path: "team.md" },
+      },
     ]);
+    raw.memoryRevision.findFirst
+      .mockResolvedValueOnce({ content: "Moved to Lisbon.\nOld note." })
+      .mockResolvedValueOnce(null);
     await recordMemoryDream(
       prisma,
       { id: "run-1", startedAt: new Date("2026-02-02T23:30:00.000Z") },
@@ -218,6 +241,8 @@ describe("recordMemoryDream", () => {
         status: "completed",
         summary: "Moved to Lisbon.",
         changedPaths: ["MEMORY.md", "team.md"],
+        added: ["Likes tea.", "Standup at nine."],
+        archived: ["Old note."],
       }),
     });
   });

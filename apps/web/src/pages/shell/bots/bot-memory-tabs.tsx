@@ -144,7 +144,19 @@ export function DreamsList({ botId, memoryOff }: { botId: string; memoryOff: boo
                   {dream.summary}
                 </p>
               ) : null}
-              {dream.changedPaths.length > 0 ? (
+              {dream.added.map((line) => (
+                <p key={`a-${line}`} className="mt-1 break-words text-body-sm text-success">
+                  + {line}
+                </p>
+              ))}
+              {dream.archived.map((line) => (
+                <p key={`r-${line}`} className="mt-1 break-words text-body-sm text-destructive">
+                  − {line}
+                </p>
+              ))}
+              {dream.added.length === 0 &&
+              dream.archived.length === 0 &&
+              dream.changedPaths.length > 0 ? (
                 <p className="mt-1 break-words text-body-sm text-muted-foreground">
                   <Trans>Changed: {dream.changedPaths.join(", ")}</Trans>
                 </p>

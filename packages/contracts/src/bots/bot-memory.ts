@@ -35,6 +35,10 @@ export const MemoryDreamSchema = z.object({
   status: MemoryDreamStatusSchema,
   summary: z.string().nullable(),
   changedPaths: z.array(z.string()),
+  /** Lines the run added to the notes, one fact per line. */
+  added: z.array(z.string()).default([]),
+  /** Lines the run removed from the notes. */
+  archived: z.array(z.string()).default([]),
   errorKind: z.string().nullable(),
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),

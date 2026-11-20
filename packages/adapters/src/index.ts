@@ -103,8 +103,9 @@ export { purgeClearedConversationMemory } from "./memory/conversation-memory-cle
 export { readAgentMemory } from "./memory/memory-context.js";
 export { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory/memory-context.prompt.js";
 export {
+  DREAM_BATCH_MESSAGES,
+  DREAM_IDLE_MS,
   listMemoryDreams,
-  MEMORY_DREAM_COOLDOWN_MS,
   MEMORY_DREAM_TIMEOUT_MS,
   pruneMemoryDreams,
   reconcileMemoryDreams,

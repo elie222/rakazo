@@ -139,12 +139,12 @@ bot 在会话里自改并带 Undo。无新增后端工作。
 - 由 worker 的 reconciler housekeeping 每 30 秒评估一次（与其它清理共享领导权；候选查询
   走索引，不产生 run 排队），启动后的恢复交给 Graphile 备份 job（run-at = 整理超时 +
   余量）。
-- 候选条件（全部满足才启动）：
+- 触发（与 Codync 对齐的"夜间 / 空闲"语义）：
   1. bot 的 `useOwnMemory` 或 `useSharedMemory` 至少一个为开；
-  2. 按 **bot 属主的本地时区**（`User.timezone`，缺失回退部署时区）处于 22:00–06:00；
-  3. 该 bot 没有 `ACTIVE_RUN_STATUSES` 的 run（空闲）；
-  4. bot 主 thread 有 `role = "user"` 且 `seq > 上次 completed 梦境的 sourceSeq` 的消息；
-  5. 距上次 completed 梦境 ≥ 12 小时（每天至多一次）。
+  2. 该 bot 没有 `ACTIVE_RUN_STATUSES` 的 run（空闲）；
+  3. bot 主 thread 有 `role = "user"` 且 `seq > 上次 completed 梦境的 sourceSeq` 的消息；
+  4. 距该线程最后一条用户消息 ≥ 5 分钟（空闲），**或**积压 ≥ 8 条用户消息（立即整理）。
+- 两次整理之间至少 5 分钟；夜晚不再单独触发（空闲已覆盖，没有新消息时也无事可做）。
 - 幂等：job key 为 `memory-dream:<botId>:<YYYY-MM-DD>`；已有当天记录则跳过。
 - 直接启动 + 备份：同一事务写 `MemoryDream(status = "queued")` 与备份 job（run-at = 整理 run
   的超时 + 余量）；提交后直接启动整理 run；成功删除备份 job，失败把 run-at 提前。进程崩溃
@@ -283,14 +283,14 @@ bot 在会话里自改并带 Undo。无新增后端工作。
 
 **功能**
 
-- [ ] 只在属主本地 22:00–06:00 启动；白天触发被跳过且原因为 `not-night`。
+- [ ] 最后一条用户消息满 5 分钟后启动；此前跳过（`waiting`）。
+- [ ] 积压 8 条用户消息时立即启动，不等空闲。
 - [ ] bot 有活动 run 时跳过（`busy`），不排队等待。
-- [ ] 没有新的用户消息时跳过（`no-new-messages`）。
-- [ ] 每天至多一次（`too-soon` / `already-dreamed`）。
+- [ ] 没有新的用户消息时跳过（`no-new-messages`）；两次整理间隔 ≥5 分钟（`too-soon`）。
 - [ ] 两个记忆库都关时跳过（`off`）。
 - [ ] 整理只读取 `role = "user"` 的消息；bot 回复、工具结果、外部内容不进入输入。
-- [ ] 完成后 `MemoryDream` 记录包含摘要、改动路径与 `sourceSeq`；重放同一 run 不产生第二
-  条记录。
+- [ ] 完成后 `MemoryDream` 记录包含摘要、改动路径、**新增 / 移除的笔记行**与 `sourceSeq`；
+  重放同一 run 不产生第二条记录。
 - [ ] 整理 run 静默：任何聊天都不出现新消息。
 
 **边界与安全**
@@ -303,7 +303,7 @@ bot 在会话里自改并带 Undo。无新增后端工作。
 
 **UI**
 
-- [ ] Memory 页第三个子页显示记录（时间、摘要、改动路径、状态）与空状态。
+- [ ] Memory 页第三个子页显示记录（时间、摘要、+ 新增行 / − 移除行、状态）与空状态。
 - [ ] 两个记忆库关闭时显示"记忆已关闭，梦境暂停"。
 - [ ] 列表项可访问名称完整，不显示原始 id；web 与移动端一致。
 - [ ] **Dream now** 在空闲且距上次整理 ≥10 分钟时启动；忙碌、进行中或过近时返回 CONFLICT

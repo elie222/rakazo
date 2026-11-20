@@ -13,8 +13,10 @@ import { getLogger } from "@rakazo/logging";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { memoryDreamPrompt } from "./memory-dream.prompt.js";
 
-/** One consolidation per bot per night, and a day's wait after one starts. */
-export const MEMORY_DREAM_COOLDOWN_MS = 12 * 60 * 60_000;
+/** A bot consolidates once it has been quiet this long after the user's last turn. */
+export const DREAM_IDLE_MS = 5 * 60_000;
+/** Pending user messages that start a run without waiting for the quiet. */
+export const DREAM_BATCH_MESSAGES = 8;
 /** A person may ask for a dream this soon after one started; the run itself still takes minutes. */
 export const MANUAL_DREAM_MIN_INTERVAL_MS = 10 * 60_000;
 /** A dream run this old is treated as lost, and its backup job starts it again. */
@@ -26,14 +28,14 @@ const MEMORY_DREAM_MESSAGE_LIMIT = 200;
 const MEMORY_DREAM_MESSAGE_BYTES = 32_000;
 /** Dreams kept per bot; older ones, with the hidden threads they ran in, are deleted. */
 const MEMORY_DREAM_RETENTION = 100;
-const NIGHT_START_HOUR = 22;
-const NIGHT_END_HOUR = 6;
+/** Lines one dream shows per side; the record is a log, not a copy. */
+const MEMORY_DREAM_LINE_LIMIT = 50;
 
 export type MemoryDreamSkipReason =
   | "off"
-  | "not-night"
   | "busy"
   | "no-new-messages"
+  | "waiting"
   | "too-soon"
   | "already-dreamed";
 
@@ -43,23 +45,28 @@ type DreamDeps = {
   now?: () => Date;
 };
 
-function localHour(now: Date, timeZone: string | null | undefined): number {
-  try {
-    const hour = Number(
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: timeZone || "UTC",
-        hour: "numeric",
-        hour12: false,
-      }).format(now),
-    );
-    return Number.isInteger(hour) ? hour % 24 : 0;
-  } catch {
-    return now.getUTCHours();
-  }
+/** Meaningful note lines: no blanks, and surrounding space is not part of the fact. */
+function noteLines(content: string): string[] {
+  return content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
-function isNight(hour: number): boolean {
-  return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
+/** What one write added and removed, as a multiset of lines. */
+function lineDiff(before: string, after: string): { added: string[]; archived: string[] } {
+  const remaining = new Map<string, number>();
+  for (const line of noteLines(before)) remaining.set(line, (remaining.get(line) ?? 0) + 1);
+  const added: string[] = [];
+  for (const line of noteLines(after)) {
+    const count = remaining.get(line) ?? 0;
+    if (count > 0) remaining.set(line, count - 1);
+    else added.push(line);
+  }
+  const archived: string[] = [];
+  for (const [line, count] of remaining)
+    for (let index = 0; index < count; index += 1) archived.push(line);
+  return { added, archived };
 }
 
 /** The user's own words since the last dream, bounded to what one consolidation reads. */
@@ -67,7 +74,7 @@ async function recentUserMessages(
   prisma: PrismaClient,
   threadId: string,
   sinceSeq: number | null,
-): Promise<{ id: string; seq: number; text: string }[]> {
+): Promise<{ id: string; seq: number; createdAt: Date; text: string }[]> {
   const rows = await prisma.message.findMany({
     where: {
       threadId,
@@ -76,11 +83,12 @@ async function recentUserMessages(
     },
     orderBy: { seq: "asc" },
     take: MEMORY_DREAM_MESSAGE_LIMIT,
-    select: { id: true, seq: true, blocks: true },
+    select: { id: true, seq: true, blocks: true, createdAt: true },
   });
   const messages = rows.map((row) => ({
     id: row.id,
     seq: row.seq,
+    createdAt: row.createdAt,
     text: blocksToAgentHistoryText(storedMessageBlocks(row)),
   }));
   let used = 0;
@@ -213,19 +221,18 @@ async function startMemoryDream(
 }
 
 /**
- * One scheduler pass: bots whose owner's local night is on and that are idle with something new
- * to consolidate. Skips are logged by reason, never with message content.
+ * One scheduler pass: bots with something new to consolidate once they have been quiet for a
+ * while, or at once when enough user messages are waiting. Skips are logged by reason, never
+ * with message content.
  */
 export async function reconcileMemoryDreams(deps: DreamDeps): Promise<void> {
   const now = deps.now?.() ?? new Date();
-  const cooldownStart = new Date(now.getTime() - MEMORY_DREAM_COOLDOWN_MS);
   const bots = await deps.prisma.bot.findMany({
     where: {
       archivedAt: null,
       OR: [{ useOwnMemory: true }, { useSharedMemory: true }],
       thread: { isNot: null },
       runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } },
-      memoryDreams: { none: { createdAt: { gte: cooldownStart } } },
     },
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: MEMORY_DREAM_BATCH,
@@ -239,12 +246,6 @@ export async function reconcileMemoryDreams(deps: DreamDeps): Promise<void> {
       thread: { select: { id: true } },
     },
   });
-  if (!bots.length) return;
-  const users = await deps.prisma.user.findMany({
-    where: { id: { in: [...new Set(bots.map((bot) => bot.userId))] } },
-    select: { id: true, timezone: true },
-  });
-  const timeZones = new Map(users.map((user) => [user.id, user.timezone]));
   for (const bot of bots) {
     const threadId = bot.thread?.id;
     if (!threadId) continue;
@@ -252,10 +253,6 @@ export async function reconcileMemoryDreams(deps: DreamDeps): Promise<void> {
       getLogger().debug("memory.dream.skipped", { "bot.id": bot.id, reason });
     if (!bot.useOwnMemory && !bot.useSharedMemory) {
       skip("off");
-      continue;
-    }
-    if (!isNight(localHour(now, timeZones.get(bot.userId)))) {
-      skip("not-night");
       continue;
     }
     const last = await deps.prisma.memoryDream.findFirst({
@@ -266,6 +263,12 @@ export async function reconcileMemoryDreams(deps: DreamDeps): Promise<void> {
     const messages = await recentUserMessages(deps.prisma, threadId, last?.sourceSeq ?? null);
     if (!messages.length) {
       skip("no-new-messages");
+      continue;
+    }
+    const lastMessageAt = messages[messages.length - 1]!.createdAt;
+    const quiet = now.getTime() - lastMessageAt.getTime() >= DREAM_IDLE_MS;
+    if (!quiet && messages.length < DREAM_BATCH_MESSAGES) {
+      skip("waiting");
       continue;
     }
     const source = messages[messages.length - 1]!;
@@ -280,7 +283,7 @@ export async function reconcileMemoryDreams(deps: DreamDeps): Promise<void> {
       sinceSeq: last?.sourceSeq ?? null,
       sourceMessageId: source.id,
       sourceSeq: source.seq,
-      cooldownMs: MEMORY_DREAM_COOLDOWN_MS,
+      cooldownMs: DREAM_IDLE_MS,
       now,
     });
     if (result === "too-soon") skip("too-soon");
@@ -301,10 +304,26 @@ export async function recordMemoryDream(
   if (!dream || dream.status !== "queued") return;
   const revisions = await prisma.memoryRevision.findMany({
     where: { sourceRunId: run.id },
-    distinct: ["documentId"],
-    select: { document: { select: { path: true } } },
+    select: {
+      documentId: true,
+      revision: true,
+      content: true,
+      document: { select: { path: true } },
+    },
   });
   const changedPaths = [...new Set(revisions.map((revision) => revision.document.path))];
+  const added: string[] = [];
+  const archived: string[] = [];
+  for (const revision of revisions) {
+    const previous = await prisma.memoryRevision.findFirst({
+      where: { documentId: revision.documentId, revision: { lt: revision.revision } },
+      orderBy: { revision: "desc" },
+      select: { content: true },
+    });
+    const diff = lineDiff(previous?.content ?? "", revision.content);
+    added.push(...diff.added);
+    archived.push(...diff.archived);
+  }
   const summary = outcome.summary?.trim();
   await prisma.memoryDream.update({
     where: { id: dream.id },
@@ -312,6 +331,8 @@ export async function recordMemoryDream(
       status: outcome.status,
       summary: summary ? summary.slice(0, 2_000) : null,
       changedPaths,
+      added: [...new Set(added)].slice(0, MEMORY_DREAM_LINE_LIMIT),
+      archived: [...new Set(archived)].slice(0, MEMORY_DREAM_LINE_LIMIT),
       errorKind: outcome.errorKind ?? null,
       startedAt: run.startedAt ?? null,
       finishedAt: new Date(),
@@ -394,6 +415,8 @@ export async function listMemoryDreams(
       status: true,
       summary: true,
       changedPaths: true,
+      added: true,
+      archived: true,
       errorKind: true,
       startedAt: true,
       finishedAt: true,
@@ -408,6 +431,8 @@ function toMemoryDream(row: {
   status: string;
   summary: string | null;
   changedPaths: string[];
+  added: string[];
+  archived: string[];
   errorKind: string | null;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -419,6 +444,8 @@ function toMemoryDream(row: {
       row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : "queued",
     summary: row.summary,
     changedPaths: row.changedPaths,
+    added: row.added,
+    archived: row.archived,
     errorKind: row.errorKind,
     startedAt: row.startedAt?.toISOString() ?? null,
     finishedAt: row.finishedAt?.toISOString() ?? null,
@@ -488,6 +515,8 @@ export async function startManualMemoryDream(
       status: true,
       summary: true,
       changedPaths: true,
+      added: true,
+      archived: true,
       errorKind: true,
       startedAt: true,
       finishedAt: true,

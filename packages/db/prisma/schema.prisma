@@ -1847,6 +1847,9 @@ model MemoryDream {
   status       String    @default("queued")
   summary      String?
   changedPaths String[]  @default([])
+  /// Lines the run added and removed from the notes, one fact per line.
+  added        String[]  @default([])
+  archived     String[]  @default([])
   /// The user-message sequence this dream covered, so the next one starts after it.
   sourceSeq    Int?
   errorKind    String?

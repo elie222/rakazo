@@ -56,6 +56,8 @@ const dream = (overrides: Partial<MemoryDream> = {}): MemoryDream => ({
   status: "completed",
   summary: "Moved to Lisbon.",
   changedPaths: ["MEMORY.md"],
+  added: ["Likes tea."],
+  archived: ["Old note."],
   errorKind: null,
   startedAt: "2026-02-02T23:30:00.000Z",
   finishedAt: "2026-02-02T23:31:00.000Z",
@@ -86,7 +88,8 @@ describe("DreamsList", () => {
     expect(container.textContent).toContain("Moved to Lisbon.");
     expect(container.textContent).toContain("Done");
     expect(container.textContent).toContain("Stopped at the spending limit");
-    expect(container.textContent).toContain("Changed: MEMORY.md");
+    expect(container.textContent).toContain("+ Likes tea.");
+    expect(container.textContent).toContain("− Old note.");
     // No raw ids reach the screen.
     expect(container.innerHTML).not.toContain("dream-1");
   });

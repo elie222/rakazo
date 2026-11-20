@@ -22,9 +22,10 @@ you can edit or delete them.
 every bot in the space shares. Each bank has a switch; turned off, the bot neither reads nor writes
 it, and the other bank keeps working.
 
-**Dreams** are the bot's nightly consolidation: while you are away, it rewrites its notes from
-your own words. The **Dreams** tab lists each one — when it ran, what it changed and why it stopped
-if it could not finish. Dreams run only while at least one bank is on.
+**Dreams** consolidate the bot's memory from your own words: once the chat has been quiet for five
+minutes, or at once when eight of your messages are waiting. The **Dreams** tab lists each run —
+when it ran, the lines it added (`+`) and removed (`−`), and why it stopped if it could not finish.
+Dreams run only while at least one bank is on.
 
 ## Shared memory
 
