@@ -50,6 +50,7 @@ import {
   settleRetainedConversation,
 } from "../../memory/conversation-memory.js";
 import { retryConversationMemoryPurge } from "../../memory/conversation-memory-cleanup.js";
+import { settleMemoryDream } from "../../memory/memory-dreams.js";
 import type { MemoryProviderResolver } from "../../memory/memory-provider-factory.js";
 import type { MessagingDelivery } from "../../messaging/messaging-delivery.js";
 import type { TeamChat } from "../../messaging/team-chat/team-chat.js";
@@ -145,6 +146,11 @@ export function createBackgroundJobHandlers(deps: {
         select: { run: { select: OWNER } },
       })
     )?.run ?? null;
+  const dream = async ({ dreamId }: { dreamId: string }) =>
+    deps.prisma.memoryDream.findUnique({
+      where: { id: dreamId },
+      select: OWNER,
+    });
   const updatedComputer = async ({ updateId }: { updateId: string }) =>
     (
       await deps.prisma.computerUpdate.findUnique({
@@ -397,5 +403,9 @@ export function createBackgroundJobHandlers(deps: {
         }
       },
     ),
+    // Starts a nightly dream whose run never began, or settles one whose run already ended.
+    "memory.dream": asOwner(dream, async ({ dreamId }) => {
+      await settleMemoryDream({ prisma: deps.prisma, jobs: deps.jobs }, dreamId);
+    }),
   };
 }

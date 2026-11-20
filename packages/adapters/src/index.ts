@@ -102,6 +102,15 @@ export * from "./meetings/meeting-service.js";
 export { purgeClearedConversationMemory } from "./memory/conversation-memory-cleanup.js";
 export { readAgentMemory } from "./memory/memory-context.js";
 export { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory/memory-context.prompt.js";
+export {
+  listMemoryDreams,
+  MEMORY_DREAM_COOLDOWN_MS,
+  MEMORY_DREAM_TIMEOUT_MS,
+  pruneMemoryDreams,
+  reconcileMemoryDreams,
+  recordMemoryDream,
+  settleMemoryDream,
+} from "./memory/memory-dreams.js";
 export * from "./memory/memory-provider-factory.js";
 export * from "./messaging/bot-messages.js";
 export * from "./messaging/chat-sdk-surface.js";

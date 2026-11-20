@@ -40,6 +40,7 @@ const payloadSchemas = {
     generations: z.array(z.number().int().min(0)).min(1),
     connectionIdentity: z.string().min(1),
   }),
+  "memory.dream": z.object({ dreamId: z.string().min(1) }),
   "memory.retain-turn": z.object({
     runId: z.string().min(1),
     messageIds: z.array(z.string().min(1)).optional(),

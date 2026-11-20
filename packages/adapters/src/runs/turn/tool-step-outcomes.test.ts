@@ -243,6 +243,7 @@ describe("tool step outcomes", () => {
       tickets: false,
       helper: false,
       helper_result: false,
+      memory_dream: false,
     };
     expect(Object.keys(expected).sort()).toEqual([...RUN_TRIGGERS].sort());
     for (const trigger of RUN_TRIGGERS)

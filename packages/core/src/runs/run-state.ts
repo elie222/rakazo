@@ -33,6 +33,7 @@ const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set([
   "tickets",
   "bot_message",
   "helper",
+  "memory_dream",
 ]);
 
 /**
@@ -41,7 +42,7 @@ const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set([
  * their steps/text. Ticket work reports through board comments and its status.
  * Existing ask and approval cards can still request user input.
  */
-export const BACKGROUND_RUN_TRIGGERS = ["tickets"] as const;
+export const BACKGROUND_RUN_TRIGGERS = ["tickets", "memory_dream"] as const;
 const BACKGROUND_RUN_TRIGGER_SET = new Set<string>(BACKGROUND_RUN_TRIGGERS);
 
 export function isBackgroundRunTrigger(trigger: string | null | undefined): boolean {
@@ -108,6 +109,8 @@ export function isTerminal(status: string): boolean {
  */
 export const BACKGROUND_HELPER_TRIGGER = "helper";
 export const HELPER_RESULT_TRIGGER = "helper_result";
+/** A nightly consolidation of the bot's memory; it never speaks in the chat. */
+export const MEMORY_DREAM_TRIGGER = "memory_dream";
 /** The result a stopped background helper's card settles with, beside status "failed". */
 export const STOPPED_HELPER_RESULT = "stopped";
 

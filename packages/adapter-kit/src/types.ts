@@ -1003,6 +1003,8 @@ export interface BackgroundJobPayloads {
     generations: number[];
     connectionIdentity: string;
   };
+  /** Wake the dream run a nightly memory consolidation recorded, or settle one it left behind. */
+  "memory.dream": { dreamId: string };
   /**
    * `messageIds`: what the person sent while the run worked, which the run also answered.
    * `pending`: cleanup captured before submission. `unconfirmed` keeps checking through the

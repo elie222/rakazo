@@ -1,8 +1,8 @@
 # Agent 详细设置：设计与执行计划
 
 状态：名称 / 头像、专属工作区、本机电脑指派、每 bot 审批模式、并行后台工作、Memory 页两
-个记忆库（关于你 / 这个 Bot）已交付；**梦境（夜间 / 空闲批量整理）待实现**。本文档同时是
-实现记录、剩余工作的执行计划，以及每一项的验收清单。
+个记忆库（关于你 / 这个 Bot）、梦境的存储与夜间调度（D1、D2）已交付；**梦境的 RPC 与
+UI（D3）待实现**。本文档同时是实现记录、剩余工作的执行计划，以及每一项的验收清单。
 
 范围：`Bot` 设置面板的六项能力（头像、名称、电脑、工作区、权限、并行工作）与 Memory 页的
 三个子页（关于你、这个 Bot、梦境）。
@@ -11,24 +11,24 @@
 
 ## 1. 已交付清单
 
-| 能力 | 交付内容 | 提交 |
-| --- | --- | --- |
-| 专属工作区 | `Bot.workspacePath`、路径解析 base、上传白名单、运行期 cwd、web / 移动端输入、账号导出导入 | `0066f0faa` |
+| 能力         | 交付内容                                                                                                                               | 提交        |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 专属工作区   | `Bot.workspacePath`、路径解析 base、上传白名单、运行期 cwd、web / 移动端输入、账号导出导入                                             | `0066f0faa` |
 | 本机电脑指派 | `Bot.hostDeviceId`（外键 → `user_devices`，`ON DELETE SET NULL`）、`computers.devices` RPC、运行期显式设备路由、web 选择行、移动端只读 | `854f6f3ea` |
-| 审批模式覆盖 | `Bot.approvalMode`（`ask` / `auto` / `never`，null = 跟随 Space）、唯一判定点读取、Auto 无模型退化 ask、web / 移动端选择器 | `6507ac184` |
-| 并行后台工作 | `Bot.maxConcurrentHelpers`（默认 3，1–8）、bot 行锁内计数、超出拒绝而非排队、web / 移动端数字输入 | `f1be74164` |
-| Memory 两库 | `Bot.useOwnMemory` / `Bot.useSharedMemory`（默认开）、prompt 裁剪、工具拒绝、预算按实际内容、web 子页、移动端开关 | `7f3ee6c67` |
-| 文案修正 | 描述字段标签改为 **Description**，跨 bot 用途移到说明行 | `6128228f8` |
+| 审批模式覆盖 | `Bot.approvalMode`（`ask` / `auto` / `never`，null = 跟随 Space）、唯一判定点读取、Auto 无模型退化 ask、web / 移动端选择器             | `6507ac184` |
+| 并行后台工作 | `Bot.maxConcurrentHelpers`（默认 3，1–8）、bot 行锁内计数、超出拒绝而非排队、web / 移动端数字输入                                      | `f1be74164` |
+| Memory 两库  | `Bot.useOwnMemory` / `Bot.useSharedMemory`（默认开）、prompt 裁剪、工具拒绝、预算按实际内容、web 子页、移动端开关                      | `7f3ee6c67` |
+| 文案修正     | 描述字段标签改为 **Description**，跨 bot 用途移到说明行                                                                                | `6128228f8` |
 
 ### 1.1 迁移（全部为 additive，滚动发布安全）
 
-| 迁移 | 内容 |
-| --- | --- |
-| `20261230130600_bot_workspace_path` | `bots.workspacePath TEXT` |
-| `20261230130700_bot_host_device` | `bots.hostDeviceId TEXT` + 索引 + 外键 |
-| `20261230130800_bot_approval_mode` | `bots.approvalMode TEXT` |
-| `20261230130900_bot_max_concurrent_helpers` | `bots.maxConcurrentHelpers INTEGER` |
-| `20261230131000_bot_memory_toggles` | `bots.useOwnMemory`、`bots.useSharedMemory`（`BOOLEAN NOT NULL DEFAULT true`） |
+| 迁移                                        | 内容                                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------------ |
+| `20261230130600_bot_workspace_path`         | `bots.workspacePath TEXT`                                                      |
+| `20261230130700_bot_host_device`            | `bots.hostDeviceId TEXT` + 索引 + 外键                                         |
+| `20261230130800_bot_approval_mode`          | `bots.approvalMode TEXT`                                                       |
+| `20261230130900_bot_max_concurrent_helpers` | `bots.maxConcurrentHelpers INTEGER`                                            |
+| `20261230131000_bot_memory_toggles`         | `bots.useOwnMemory`、`bots.useSharedMemory`（`BOOLEAN NOT NULL DEFAULT true`） |
 
 无 drop、无重命名，不需要 `-- deferred` 迁移。
 
@@ -136,8 +136,9 @@ bot 在会话里自改并带 Undo。无新增后端工作。
 
 #### 3.7.1 触发与调度
 
-- 一个独立的定时任务（Graphile 命名 job，周期 15 分钟；它是定时器，不是主路径，也不为任何
-  run 排队）。
+- 由 worker 的 reconciler housekeeping 每 30 秒评估一次（与其它清理共享领导权；候选查询
+  走索引，不产生 run 排队），启动后的恢复交给 Graphile 备份 job（run-at = 整理超时 +
+  余量）。
 - 候选条件（全部满足才启动）：
   1. bot 的 `useOwnMemory` 或 `useSharedMemory` 至少一个为开；
   2. 按 **bot 属主的本地时区**（`User.timezone`，缺失回退部署时区）处于 22:00–06:00；
@@ -172,19 +173,19 @@ bot 在会话里自改并带 Undo。无新增后端工作。
 
 `MemoryDream`：
 
-| 列 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | cuid | |
-| `spaceId` | FK Space | 级联删除 |
-| `botId` | FK Bot | 级联删除 |
-| `threadId` | FK Thread? | 隐藏 thread，随 bot 级联 |
-| `runId` | FK Run? @unique | 整理 run；唯一约束做幂等 |
-| `status` | `queued` / `completed` / `failed` | |
-| `summary` | String? | 一句话摘要（展示用） |
-| `changedPaths` | String[] | 改动的记忆文档路径 |
-| `sourceSeq` | Int? | 已整理到的用户消息序号（watermark） |
-| `errorKind` | String? | 失败类别（如 `spending`） |
-| `startedAt` / `finishedAt` / `createdAt` | DateTime | |
+| 列                                       | 类型                              | 说明                                |
+| ---------------------------------------- | --------------------------------- | ----------------------------------- |
+| `id`                                     | cuid                              |                                     |
+| `spaceId`                                | FK Space                          | 级联删除                            |
+| `botId`                                  | FK Bot                            | 级联删除                            |
+| `threadId`                               | FK Thread?                        | 隐藏 thread，随 bot 级联            |
+| `runId`                                  | FK Run? @unique                   | 整理 run；唯一约束做幂等            |
+| `status`                                 | `queued` / `completed` / `failed` |                                     |
+| `summary`                                | String?                           | 一句话摘要（展示用）                |
+| `changedPaths`                           | String[]                          | 改动的记忆文档路径                  |
+| `sourceSeq`                              | Int?                              | 已整理到的用户消息序号（watermark） |
+| `errorKind`                              | String?                           | 失败类别（如 `spending`）           |
+| `startedAt` / `finishedAt` / `createdAt` | DateTime                          |                                     |
 
 索引：`[botId, status, createdAt]`。迁移为新增表，additive。
 
@@ -203,24 +204,24 @@ bot 在会话里自改并带 Undo。无新增后端工作。
 
 ### 4.1 已完成
 
-| 阶段 | 内容 | 状态 |
-| --- | --- | --- |
-| P1 | 专属工作区（契约、迁移、解析、双端 UI、导出导入） | 完成 `0066f0faa` |
-| P2 | 本机电脑指派（外键、RPC、运行期钉住、双端 UI） | 完成 `854f6f3ea` |
-| P3 | 审批模式覆盖（判定点、双端选择器、导出导入） | 完成 `6507ac184` |
-| P4 | 并行后台工作（默认 3、范围 1–8、双端输入） | 完成 `f1be74164` |
-| M1 | Memory 两库 + 开关（prompt 裁剪、工具拒绝、预算） | 完成 `7f3ee6c67` |
-| M2 | 描述字段文案修正 | 完成 `6128228f8` |
+| 阶段 | 内容                                              | 状态             |
+| ---- | ------------------------------------------------- | ---------------- |
+| P1   | 专属工作区（契约、迁移、解析、双端 UI、导出导入） | 完成 `0066f0faa` |
+| P2   | 本机电脑指派（外键、RPC、运行期钉住、双端 UI）    | 完成 `854f6f3ea` |
+| P3   | 审批模式覆盖（判定点、双端选择器、导出导入）      | 完成 `6507ac184` |
+| P4   | 并行后台工作（默认 3、范围 1–8、双端输入）        | 完成 `f1be74164` |
+| M1   | Memory 两库 + 开关（prompt 裁剪、工具拒绝、预算） | 完成 `7f3ee6c67` |
+| M2   | 描述字段文案修正                                  | 完成 `6128228f8` |
 
 ### 4.2 剩余：梦境
 
 拆三个 PR，按依赖串行；每个 PR 自带测试与文档，可独立回滚。
 
-| PR | 内容 | 依赖 | 预估 | 完成定义（DoD） |
-| --- | --- | --- | --- | --- |
-| D1 存储与调度 | `RUN_TRIGGERS` 新触发值、`MemoryDream` 表与迁移、夜间 / 空闲候选查询、job key 幂等、直接启动 + 备份 job、跳过原因的日志与埋点 | 无 | 1 天 | 迁移可应用；调度单测（假时钟）覆盖全部跳过原因；无 run 排队；日志无消息内容 |
-| D2 整理 run | 隐藏 thread 与受限工具集、prompt（仅用户原话 + 当前记忆）、审批与花费语义、结束写记录（runId 幂等）、失败分类 | D1 | 1.5 天 | 单测覆盖：只读用户消息、Block 拒绝、超限失败、重放幂等；不向聊天发消息；成本归属正确 |
-| D3 RPC 与 UI | `memory.dreams` 契约与路由、Dreams 子页（web + 移动端）、空状态与暂停说明、保留清理 | D1、D2 | 1 天 | 列表与空状态测试；可访问名称；无原始 id；两端截图 |
+| PR            | 内容                                                                                                                          | 依赖   | 预估   | 完成定义（DoD）                                                       |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | --------------------------------------------------------------------- |
+| D1 存储与调度 | `RUN_TRIGGERS` 新触发值、`MemoryDream` 表与迁移、夜间 / 空闲候选查询、job key 幂等、直接启动 + 备份 job、跳过原因的日志与埋点 | 无     | 1 天   | 完成：`reconcileMemoryDreams` + 12 条单测（假时钟）                   |
+| D2 整理 run   | 隐藏 thread 与受限工具集、prompt（仅用户原话 + 当前记忆）、审批与花费语义、结束写记录（runId 幂等）、失败分类                 | D1     | 1.5 天 | 完成：梦境内 `never` 语义、只提供记忆写入、完成 / 失败 / 备份三条路径 |
+| D3 RPC 与 UI  | `memory.dreams` 契约与路由、Dreams 子页（web + 移动端）、空状态与暂停说明、保留清理                                           | D1、D2 | 1 天   | 列表与空状态测试；可访问名称；无原始 id；两端截图                     |
 
 并行化：D1 完成后，D2 与 D3 的契约 / 组件壳可并行（D3 的联调依赖 D2 完成）。
 
@@ -306,14 +307,14 @@ bot 在会话里自改并带 Undo。无新增后端工作。
 
 ### 5.4 测试矩阵
 
-| 层 | 覆盖 | 要求 |
-| --- | --- | --- |
-| 契约 | 字段默认值、范围 / 路径校验、旧服务端缺省 | `packages/contracts/src/bots/*.test.ts` |
+| 层     | 覆盖                                                                      | 要求                                                                                                      |
+| ------ | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 契约   | 字段默认值、范围 / 路径校验、旧服务端缺省                                 | `packages/contracts/src/bots/*.test.ts`                                                                   |
 | 适配器 | 路径解析、设备钉住、审批判定、prompt 裁剪、工具拒绝、dream 调度与受限工具 | 单测 + `vi.useFakeTimers`；异步用 `deferred` / `flush` / `vi.waitFor`，不用零定时器 promise 或 sleep 循环 |
-| API | 保存校验、序列化、预算、dreams RPC | 路由单测；postgres 测试在 CI |
-| Web | Memory 子页、设备行、审批行、并行输入、Dreams 列表 | 组件测试（受控组件需模拟父级确认） |
-| 移动 | 设置开关、输入行、只读项、共享顺序 | `apps/mobile/lib/**` 测试 |
-| E2E | bot 设置全流程 + Memory 子页截图 | 交给 CI（不做本机桌面 e2e） |
+| API    | 保存校验、序列化、预算、dreams RPC                                        | 路由单测；postgres 测试在 CI                                                                              |
+| Web    | Memory 子页、设备行、审批行、并行输入、Dreams 列表                        | 组件测试（受控组件需模拟父级确认）                                                                        |
+| 移动   | 设置开关、输入行、只读项、共享顺序                                        | `apps/mobile/lib/**` 测试                                                                                 |
+| E2E    | bot 设置全流程 + Memory 子页截图                                          | 交给 CI（不做本机桌面 e2e）                                                                               |
 
 ### 5.5 发布与回滚
 

@@ -5,6 +5,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   displayName,
   isTerminal,
+  MEMORY_DREAM_TRIGGER,
   nextFence,
   redactSecrets,
   truncatePlainText,
@@ -21,6 +22,7 @@ import {
   releaseComputerExecutionLease,
 } from "../../computers/computer-lifecycle.js";
 import { withComputerScreenAvailability } from "../../computers/screens/computer-screens.js";
+import { recordMemoryDream } from "../../memory/memory-dreams.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
 import {
   routineClaimWaitsForConversation,
@@ -129,6 +131,13 @@ export async function failRunBeforeTurn(
     await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((error) =>
       getLogger().error("background helper failure return", error),
     );
+  } else if (run.trigger === MEMORY_DREAM_TRIGGER) {
+    // A dream fails silently; its record says why and the Memory page shows it.
+    await recordMemoryDream(deps.prisma, run, {
+      status: "failed",
+      summary: message,
+      errorKind: "run-failed",
+    }).catch((error) => getLogger().error("memory dream record", error));
   } else if (!failed.continuationRunId) {
     await notifyRun(deps, run, {
       kind: "failure",

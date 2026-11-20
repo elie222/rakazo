@@ -691,6 +691,7 @@ model Space {
   connections                 Connection[]
   capabilities                CapabilityInstall[]
   memoryDocuments             MemoryDocument[]
+  memoryDreams                MemoryDream[]
   agentHomes                  AgentHome[]
   browserProfiles             BrowserProfile[]
   artifacts                   Artifact[]
@@ -1060,6 +1061,7 @@ model Bot {
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]
   memoryDocuments   MemoryDocument[]
+  memoryDreams      MemoryDream[]
   agentHome         AgentHome?
   browserProfile    BrowserProfile?
   artifacts         Artifact[]
@@ -1184,6 +1186,7 @@ model Thread {
   tasks                       Task[]
   runs                        Run[]
   routines                    Routine[]
+  memoryDreams                MemoryDream[]
 
   @@index([spaceId])
   @@index([spaceId, userId])
@@ -1322,6 +1325,7 @@ model Run {
   sourceMessage        Message?          @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
   routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  memoryDream          MemoryDream?
   // The failed routine run this run retries. Unique, so a run is retried at most once.
   retryOfRunId         String?           @unique
   // Durable retry schedule; null means runnable immediately when queued.
@@ -1826,6 +1830,33 @@ model MemoryRevision {
 
   @@unique([documentId, revision])
   @@map("memory_revisions")
+}
+
+model MemoryDream {
+  id           String    @id @default(cuid())
+  spaceId      String
+  space        Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId        String
+  bot          Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  threadId     String?
+  thread       Thread?   @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  /// The run a dream consumed; unique so a replay cannot record a second dream.
+  runId        String?   @unique
+  run          Run?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+  /// "queued", "completed" or "failed".
+  status       String    @default("queued")
+  summary      String?
+  changedPaths String[]  @default([])
+  /// The user-message sequence this dream covered, so the next one starts after it.
+  sourceSeq    Int?
+  errorKind    String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([botId, status, createdAt])
+  @@index([spaceId])
+  @@map("memory_dreams")
 }
 
 model AgentHome {

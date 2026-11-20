@@ -101,7 +101,7 @@ export const memoryTools: ToolHandlers = {
   async remember(ctx, call) {
     const { deps, runId, bot, thread, context } = ctx;
     const { args } = call;
-    if (!bot.useOwnMemory) {
+    if (bot.useOwnMemory === false) {
       return call.finish({ error: "This bot's own memory is turned off in its settings." });
     }
     // One document per bot keeps the size cap meaningful.
@@ -140,7 +140,7 @@ export const memoryTools: ToolHandlers = {
   async save_shared_memory(ctx, call) {
     const { deps, runId, thread, context } = ctx;
     const { args } = call;
-    if (!ctx.bot.useSharedMemory) {
+    if (ctx.bot.useSharedMemory === false) {
       return call.finish({ error: "Shared memory is turned off for this bot in its settings." });
     }
     const invalid = sharedMemorySaveError(args);

@@ -34,6 +34,7 @@ import { IntegrationProviderSettings } from "../../integrations/integration-prov
 import { McpConnector, mcpStdioOptionsFromEnv } from "../../mcp/mcp-connector.js";
 import { McpOAuthBroker } from "../../mcp/mcp-oauth.js";
 import { reconcileMediaVideos } from "../../media/media-video-poll.js";
+import { pruneMemoryDreams, reconcileMemoryDreams } from "../../memory/memory-dreams.js";
 import { createMessagingContextLoader } from "../../messaging/messaging-context.js";
 import { MessagingDelivery } from "../../messaging/messaging-delivery.js";
 import { TeamChat } from "../../messaging/team-chat/team-chat.js";
@@ -418,5 +419,9 @@ export function createRunReconciler(
     reconcileChatHistoryRetention:
       chatHistoryDays === null ? undefined : createChatHistoryPruner(prisma, chatHistoryDays),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+    reconcileMemoryDreams: async () => {
+      await reconcileMemoryDreams({ prisma, jobs });
+      await pruneMemoryDreams(prisma);
+    },
   });
 }

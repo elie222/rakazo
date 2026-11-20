@@ -8,6 +8,7 @@ import {
   containsSecret,
   displayName,
   isBackgroundRunTrigger,
+  MEMORY_DREAM_TRIGGER,
   redactSecrets,
   withoutLastToolStepNotes,
 } from "@rakazo/core";
@@ -17,6 +18,7 @@ import {
   answeredSteeringMessageIds,
   retainsConversationTurn,
 } from "../../memory/conversation-memory.js";
+import { recordMemoryDream } from "../../memory/memory-dreams.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
 import { clearRoutineBackoff } from "../../routines/routine-backoff.js";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
@@ -180,6 +182,11 @@ export async function completeRun(ctx: RunContext) {
   if (run.trigger === BACKGROUND_HELPER_TRIGGER) {
     await returnHelperOutcome(deps, run, { status: "completed", text }).catch((error) =>
       getLogger().error("background helper result return", error),
+    );
+  }
+  if (run.trigger === MEMORY_DREAM_TRIGGER) {
+    await recordMemoryDream(deps.prisma, run, { status: "completed", summary: text }).catch(
+      (error) => getLogger().error("memory dream record", error),
     );
   }
   const notifyBody = completionNotificationPreview(text);

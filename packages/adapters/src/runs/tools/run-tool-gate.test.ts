@@ -149,4 +149,12 @@ describe("gateToolCall: a login that asks first", () => {
       result: { error: expect.stringContaining("is blocked in this space") },
     });
   });
+
+  it("never waits on a card in a dream run", async () => {
+    plans.length = 0;
+    await gate({ trigger: "memory_dream", botMode: "ask" });
+    // A dream runs with no one to answer a card, so the mode reads as Never ask even when the
+    // bot's own setting would ask. Its offers are only memory writes, which never ask anyway.
+    expect(plans).toEqual(["allow"]);
+  });
 });

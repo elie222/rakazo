@@ -55,6 +55,7 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
     "approval.expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
+    "memory.dream": vi.fn(async () => undefined),
     "memory.retain-turn": vi.fn(async () => undefined),
     "memory.purge-history": vi.fn(async () => undefined),
     "messaging.send": vi.fn(async () => undefined),

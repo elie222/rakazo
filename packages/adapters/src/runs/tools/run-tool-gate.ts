@@ -16,6 +16,7 @@ import {
   displayName,
   HELPER_RESULT_TRIGGER,
   humanizeToolName,
+  MEMORY_DREAM_TRIGGER,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
   planActionGate,
@@ -338,12 +339,16 @@ export async function gateToolCall(
       : ignoresAllowRules && resolvedRules.source === "always_allow"
         ? { ...resolvedRules, source: "default" as const }
         : resolvedRules;
+  // A dream is a system consolidation nobody watches: it never waits on a card. Its tool set is
+  // only the memory writes, and Block rules still refuse them.
   // A bot's own mode wins over the owner's Space mode; an unset or unrecognized value follows it.
   const storedMode = ctx.bot.approvalMode;
   const mode =
-    storedMode === "ask" || storedMode === "auto" || storedMode === "never"
-      ? storedMode
-      : approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
+    run.trigger === MEMORY_DREAM_TRIGGER
+      ? "never"
+      : storedMode === "ask" || storedMode === "auto" || storedMode === "never"
+        ? storedMode
+        : approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   const reviewable = mode === "auto" && !mandatoryInAnyRun;
   const injectedReview = reviewable ? deps.autoReview : undefined;
   const reviewSettings = !reviewable || injectedReview ? null : await ctx.trust.loadApprovalModel();
