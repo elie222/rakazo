@@ -123,11 +123,13 @@ describe.skipIf(!url)("phone calendar execution", () => {
         { timeout: 8_000 },
       );
       const target = { id: pending!.id, runId: record.id, threadId };
-      const raw = await db.pool.query(
-        "SELECT operation FROM native_calendar_requests WHERE id = $1",
-        [target.id],
+      const [raw] = await inTenant(
+        () =>
+          db.prisma.$queryRaw<Array<{ operation: unknown }>>`
+          SELECT operation FROM native_calendar_requests WHERE id = ${target.id}`,
       );
-      expect(JSON.stringify(raw.rows[0])).not.toContain("Example event");
+      expect(raw?.operation).toBeTruthy();
+      expect(JSON.stringify(raw?.operation)).not.toContain("Example event");
       expect(await inTenant(() => pendingNativeCalendar(db.prisma, otherPhone, botId))).toEqual([]);
       expect(await inTenant(() => claimNativeCalendar(db.prisma, otherPhone, target))).toBeNull();
       const copy = { ...origin, deviceDigest: "not-the-device-key" };
