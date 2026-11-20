@@ -12,6 +12,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type {
   AgentRuntimeEvent,
   AgentUsage,
+  ModelBilling,
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
@@ -346,6 +347,7 @@ export function observedPiStream(
     agentId?: string;
     userId?: string;
     runId?: string;
+    billing?: ModelBilling;
   } = {
     operationKind: "answer",
   },
@@ -374,6 +376,7 @@ export function observedPiStream(
       callId,
       agentId: attribution.agentId,
       operationKind,
+      billing: attribution.billing,
     };
     try {
       await hooks?.recordUsage?.(event);

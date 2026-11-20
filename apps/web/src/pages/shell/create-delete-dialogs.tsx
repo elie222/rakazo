@@ -120,7 +120,11 @@ export function NewSpaceDialog({
               </div>
             ))}
           </div>
-          {error ? <p className="text-body text-destructive">{error}</p> : null}
+          {error ? (
+            <p role="alert" className="text-body text-destructive">
+              {error}
+            </p>
+          ) : null}
           <DialogFooter>
             <Button disabled={saving} onClick={finish}>
               {saving ? <Trans>Saving…</Trans> : <Trans>Continue</Trans>}
@@ -162,7 +166,11 @@ export function NewSpaceDialog({
             className="mt-2"
           />
         </label>
-        {error ? <p className="text-body text-destructive">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="text-body text-destructive">
+            {error}
+          </p>
+        ) : null}
         <DialogFooter>
           <Button variant="outline" disabled={saving} onClick={onCancel}>
             <Trans>Cancel</Trans>
@@ -223,7 +231,11 @@ export function NewBotSectionDialog({
               className="mt-2"
             />
           </label>
-          {error ? <p className="text-body text-destructive">{error}</p> : null}
+          {error ? (
+            <p role="alert" className="text-body text-destructive">
+              {error}
+            </p>
+          ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
               <Trans>Cancel</Trans>
@@ -283,7 +295,11 @@ export function RenameBotSectionDialog({
               autoFocus
             />
           </label>
-          {error ? <p className="text-body text-destructive">{error}</p> : null}
+          {error ? (
+            <p role="alert" className="text-body text-destructive">
+              {error}
+            </p>
+          ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>
               <Trans>Cancel</Trans>

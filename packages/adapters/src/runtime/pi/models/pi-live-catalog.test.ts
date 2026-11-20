@@ -47,6 +47,20 @@ describe("live catalog merge and execution", () => {
     expect(liveModelCatalogEnabled({})).toBe(true);
     expect(liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: " off " })).toBe(false);
   });
+
+  it.each(["off", "OFF", "false", "False", "0", "no", "NO"])("reads %s as off", (value) => {
+    expect(liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: value })).toBe(false);
+  });
+
+  it.each(["on", "ON", "true", "1", "yes", "Yes", "", "  "])("reads %j as on", (value) => {
+    expect(liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: value })).toBe(true);
+  });
+
+  it.each(["disabled", "of", "2", "nope"])("refuses %s, naming the variable", (value) => {
+    expect(() => liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: value })).toThrow(
+      /RAKAZO_LIVE_MODEL_CATALOG/,
+    );
+  });
   it("skips credential reads and both provider transports when probing is off", async () => {
     vi.stubEnv("RAKAZO_LIVE_MODEL_CATALOG", "off");
     const probe = vi.fn();

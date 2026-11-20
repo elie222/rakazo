@@ -45,9 +45,10 @@ async function startServer(asUser?: { uid: number; gid: number }) {
     server.kill("SIGKILL");
     rmSync(root, { recursive: true, force: true });
   });
-  for (let i = 0; i < 100 && !existsSync(socket); i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
+  await vi.waitFor(() => expect(existsSync(socket)).toBe(true), {
+    timeout: 10_000,
+    interval: 20,
+  });
   return { root, socket, state, server };
 }
 
@@ -107,10 +108,10 @@ describe("terminal server", () => {
     expect(readdirSync(state)).toHaveLength(2);
     // Stopping the terminal signals every session; each removes its identity files.
     spawnSync("pkill", ["-TERM", "-f", socket]);
-    for (let i = 0; i < 100 && readdirSync(state).length > 0; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    expect(readdirSync(state)).toEqual([]);
+    await vi.waitFor(() => expect(readdirSync(state)).toEqual([]), {
+      timeout: 10_000,
+      interval: 20,
+    });
   });
 });
 
