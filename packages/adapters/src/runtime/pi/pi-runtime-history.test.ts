@@ -6,21 +6,24 @@ const captured = vi.hoisted(() => ({
   prompt: undefined as string | undefined,
   options: undefined as
     | {
-        prepareNextTurnWithContext?: () => Promise<
-          { messages?: Array<Record<string, unknown>> } | undefined
-        >;
+        prepareNextTurnWithContext?: (turn: {
+          context: { messages: unknown[] };
+        }) => Promise<{ messages?: Array<Record<string, unknown>> } | undefined>;
       }
     | undefined,
 }));
+
+// The runtime reads the turn context, so callers must pass one.
+const nextTurn = () => captured.options!.prepareNextTurnWithContext!({ context: { messages: [] } });
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
     state = { errorMessage: undefined, messages: [] };
     constructor(options: {
       initialState: { messages: Array<Record<string, unknown>> };
-      prepareNextTurnWithContext?: () => Promise<
-        { messages?: Array<Record<string, unknown>> } | undefined
-      >;
+      prepareNextTurnWithContext?: (turn: {
+        context: { messages: unknown[] };
+      }) => Promise<{ messages?: Array<Record<string, unknown>> } | undefined>;
     }) {
       captured.initialMessages = options.initialState.messages;
       captured.options = options;
@@ -314,8 +317,8 @@ describe("Pi history replay", () => {
       "[User]: Check A.\n\nAdditional user context:\n[User]: Also check B.\nA message arrived from another member of this chat while you were working:\n\n(User): Skip it.",
     );
     const steered = [
-      ...((await captured.options!.prepareNextTurnWithContext!())?.messages ?? []),
-      ...((await captured.options!.prepareNextTurnWithContext!())?.messages ?? []),
+      ...((await nextTurn())?.messages ?? []),
+      ...((await nextTurn())?.messages ?? []),
     ];
     expect(steered.map((message) => message.content)).toEqual([
       expect.stringContaining("[User]: And C."),
@@ -334,7 +337,7 @@ describe("Pi history replay", () => {
       claimSteering: async () => claims.shift() ?? [],
     });
     expect(captured.prompt).toBe("Check A.\n\nAdditional user context:\nAlso check B.");
-    const steered = (await captured.options!.prepareNextTurnWithContext!())?.messages ?? [];
+    const steered = (await nextTurn())?.messages ?? [];
     expect(String(steered[0]!.content)).toContain("And C.");
     expect(String(steered[0]!.content)).not.toContain("[User]");
   });
