@@ -363,3 +363,24 @@ it("uses stable matching references for table rows and colliding final filter la
     await panel.unmount();
   }
 });
+
+it("keeps a known provider name when the recorded model is no longer listed", async () => {
+  const panel = await renderPanel([
+    { provider: "alpha", id: "current", label: "Current model", providerName: "Alpha AI" },
+  ]);
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      modelOptions: [{ provider: "alpha", model: "retired-opaque-id" }],
+      models: [{ provider: "alpha", model: "retired-opaque-id", ...point(1, 10, 0.001) }],
+    }));
+    await panel.pick("7 days");
+    expect(panel.container.querySelector("tbody tr td")?.textContent).toBe(
+      "Unlisted modelAlpha AI",
+    );
+    expect(panel.container.textContent).not.toContain("retired-opaque-id");
+    expect(await panel.options("Model")).toEqual(["All models", "Unlisted model"]);
+  } finally {
+    await panel.unmount();
+  }
+});

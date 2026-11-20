@@ -63,7 +63,12 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           : catalogQuery.isPending
             ? t`Loading model name…`
             : t`Unlisted model`),
-      providerLabel: entry?.providerName,
+      providerLabel:
+        entry?.providerName ??
+        catalog.find(
+          (e) =>
+            canonicalPiProviderId(e.provider) === canonicalPiProviderId(provider) && e.providerName,
+        )?.providerName,
     };
   };
 
