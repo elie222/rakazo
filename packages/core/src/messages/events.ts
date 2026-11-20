@@ -7,6 +7,7 @@ import type {
 } from "@rakazo/contracts";
 import { preserveIdentitySource } from "../bots/identity-source.js";
 import { cloudAgentBlockFromPayload } from "../integrations/cloud-agent.js";
+import { sliceWellFormed } from "../primitives/utf8.js";
 import { modelFallbackFailure, parseModelFallbackFailure } from "../runs/run-error.js";
 import { payloadAuthor } from "./message-replies.js";
 
@@ -304,7 +305,7 @@ export function runFailureError(event: {
 // text while the UI shows a bounded first line.
 function clampRunFailure(message: string): string {
   return message.length > RUN_FAILURE_ERROR_MAX
-    ? `${message.slice(0, RUN_FAILURE_ERROR_MAX)}…`
+    ? `${sliceWellFormed(message, RUN_FAILURE_ERROR_MAX)}…`
     : message;
 }
 

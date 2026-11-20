@@ -10,7 +10,12 @@ import {
   MeetingCalendarScheduleRejected,
   RetryJobLaterError,
 } from "@rakazo/adapter-kit";
-import { cancelResponseBody, parseRetryAfter, readBoundedJsonResponse } from "@rakazo/core";
+import {
+  cancelResponseBody,
+  parseRetryAfter,
+  readBoundedJsonResponse,
+  sliceWellFormed,
+} from "@rakazo/core";
 import { z } from "zod";
 import { buildRecallBotConfig } from "./recall-meeting.js";
 
@@ -93,7 +98,7 @@ function toEvent(row: z.output<typeof eventSchema>): MeetingCalendarEvent {
     id: row.id,
     calendarId: row.calendar_id,
     seriesId: row.raw?.recurringEventId ?? null,
-    title: row.raw?.summary?.trim().slice(0, 300) ?? "",
+    title: sliceWellFormed(row.raw?.summary?.trim() ?? "", 300),
     startsAt: row.start_time,
     endsAt: row.end_time,
     meetingUrl: row.meeting_url ?? null,
