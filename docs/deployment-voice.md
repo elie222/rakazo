@@ -67,9 +67,6 @@ Endpoint/private-network restrictions remain in force. Keep server keys
 out of account settings, client configuration, repository files and logs. Use a dedicated speech
 service key, separate from reasoning credentials. No provider purchase or key retrieval is automated.
 
-See the [adapter pricing and calibration notes](../packages/adapters/src/providers/voice/xai/HOSTED.md)
-for a concrete existing-provider configuration and official research sources.
-
 All operator-funded speech checks the member's recorded consent for the actual operation's
 recipient and current disclosure version in that Space before dispatch or allowance admission.
 Web, Electron and mobile ask through their voice disclosure. Automatic messaging voice-note
@@ -114,10 +111,6 @@ Repeated identical confirmation is idempotent; a changed cost, source or referen
 source exports in the operator's private financial system. No invoice API/reconciliation worker
 is installed here: the operator must schedule or perform this evidence import. Alert on old
 pending/unresolved rows; they intentionally reduce available allowance until resolved.
-
-No production configuration, purchases, paid calibration, browser E2E, or deployment is part of
-this change. Offline API, adapter, call-session and PostgreSQL concurrency/recovery tests cover
-the implementation. Enable hosted traffic only after checking the provider key and measuring the calibration cases below.
 
 A completed request whose settlement write fails still returns its audio or transcript. The error
 log identifies `speechCostId`, provider, operation and provider request ID (when available), so an
