@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { Bot, VoiceCredential } from "@rakazo/contracts";
+import type { Bot, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -50,6 +50,7 @@ let client: QueryClient;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.restoreAllMocks();
+  vi.clearAllMocks();
   bot = { id: "bot-1", spaceId: "space-1", name: "Ada", voiceProvider: null, voiceId: null } as Bot;
   credentials = [
     { id: "connection-a", provider: "speech-a", voiceId: "calm", isDefault: true },
@@ -73,6 +74,19 @@ beforeEach(() => {
         ]
       : [{ id: "calm", label: "Calm" }],
   );
+  vi.mocked(rpc.voice.status).mockImplementation(async () => {
+    const connection = bot.voiceProvider
+      ? credentials.find((entry) => entry.provider === bot.voiceProvider)
+      : credentials.find((entry) => entry.isDefault);
+    const voiceId = bot.voiceId || connection?.voiceId || "";
+    return {
+      configured: Boolean(connection),
+      ready: Boolean(connection && voiceId),
+      transcribe: false,
+      provider: connection?.provider ?? null,
+      voiceId,
+    };
+  });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -97,19 +111,29 @@ async function render() {
   );
   await act(flush);
   await act(async () => {
-    await vi.waitFor(() =>
-      expect(container.querySelector<HTMLButtonElement>('[id$="-voice"]')?.disabled).toBe(false),
-    );
+    await vi.waitFor(() => expect(client.isFetching()).toBe(0));
   });
+  await act(flush);
 }
 
 async function choose(suffix: string, label: string) {
-  const picker = container.querySelector<HTMLButtonElement>(`[role="combobox"][id$="-${suffix}"]`)!;
+  const selector = `[role="combobox"][id$="-${suffix}"]`;
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(container.querySelector<HTMLButtonElement>(selector)?.disabled).toBe(false),
+    );
+  });
+  const picker = container.querySelector<HTMLButtonElement>(selector)!;
   await act(async () => picker.click());
-  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (entry) => entry.textContent === label,
-  );
-  expect(option).toBeDefined();
+  let option: HTMLElement | undefined;
+  await act(async () => {
+    await vi.waitFor(() => {
+      option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (entry) => entry.textContent === label,
+      );
+      expect(option).toBeDefined();
+    });
+  });
   await act(async () => option!.click());
   await act(flush);
 }
@@ -275,8 +299,95 @@ it("waits for provider names instead of labeling connected choices unavailable",
   });
 });
 
-it("omits unavailable voice controls until a connection exists", async () => {
+it("previews ready included speech without offering unsupported edits", async () => {
   credentials = [];
+  vi.mocked(rpc.voice.status).mockResolvedValue({
+    configured: true,
+    ready: true,
+    transcribe: false,
+    provider: "speech-a",
+    voiceId: "calm",
+  });
+  const speak = vi.spyOn(Speaker.prototype, "speak").mockResolvedValue(undefined);
+  vi.spyOn(Speaker.prototype, "unlock").mockImplementation(() => undefined);
+  await render();
+
+  expect(rpc.voice.status).toHaveBeenCalledWith({ botId: "bot-1" }, expect.anything());
+  expect(rpc.voice.voices).toHaveBeenCalledWith({}, expect.anything());
+  expect(container.textContent).toContain("Default (Speech A)");
+  await act(async () => {
+    await vi.waitFor(() => expect(container.textContent).toContain("Default (Calm)"));
+  });
+  expect(container.querySelector('[role="combobox"]')).toBeNull();
+  expect(container.textContent).not.toContain("speech-a");
+  expect(container.textContent).not.toContain("calm");
+  const sample = container.querySelector<HTMLButtonElement>('[aria-label="Hear a sample"]')!;
+  expect(sample.disabled).toBe(false);
+  await act(async () => sample.click());
+  expect(speak).toHaveBeenCalledWith(expect.any(String), {
+    botId: "bot-1",
+    spaceId: "space-1",
+    messageId: expect.any(String),
+  });
+  expect(rpc.bots.update).not.toHaveBeenCalled();
+});
+
+it("can leave included speech for an owned connection and pin its custom voice", async () => {
+  credentials = credentials.filter((entry) => !entry.isDefault);
+  vi.mocked(rpc.voice.status).mockImplementation(async () => ({
+    configured: true,
+    ready: true,
+    transcribe: false,
+    provider: bot.voiceProvider || "speech-a",
+    voiceId: bot.voiceId || (bot.voiceProvider ? "bright" : "calm"),
+  }));
+  await render();
+
+  expect(container.querySelector('[id$="-provider"]')?.textContent).toBe("Default (Speech A)");
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(container.querySelector('[id$="-voice"]')?.textContent).toBe("Default (Calm)"),
+    );
+  });
+  expect(container.querySelector('[role="combobox"][id$="-voice"]')).toBeNull();
+  await choose("provider", "Speech B");
+  expect(bot.voiceProvider).toBe("speech-b");
+  expect(rpc.voice.voices).toHaveBeenCalledWith({ provider: "speech-b" }, expect.anything());
+  await choose("voice", "Warm");
+  expect(bot.voiceProvider).toBe("speech-b");
+  expect(bot.voiceId).toBe("warm");
+});
+
+it("does not use included speech for a disconnected saved provider", async () => {
+  bot = { ...bot, voiceProvider: "speech-b", voiceId: "warm" };
+  credentials = [];
+  vi.mocked(rpc.voice.status).mockResolvedValue({
+    configured: false,
+    ready: false,
+    transcribe: false,
+    provider: null,
+    voiceId: "",
+  });
+  await render();
+
+  expect(container.querySelector('[id$="-provider"]')?.textContent).toBe("Speech B");
+  expect(container.querySelector('[aria-label="Hear a sample"]')?.hasAttribute("disabled")).toBe(
+    true,
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Reconnect this provider in Settings → Voice.",
+  );
+  expect(rpc.voice.voices).not.toHaveBeenCalled();
+  await choose("provider", "Default");
+  expect(bot.voiceProvider).toBeNull();
+  expect(bot.voiceId).toBeNull();
+  expect(container.textContent).toBe("");
+});
+
+it("waits for included speech readiness before offering a sample", async () => {
+  credentials = [];
+  const pending = deferred<VoiceStatus>();
+  vi.mocked(rpc.voice.status).mockReturnValueOnce(pending.promise);
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
@@ -284,14 +395,43 @@ it("omits unavailable voice controls until a connection exists", async () => {
       </QueryClientProvider>,
     ),
   );
+  await act(flush);
+  expect(container.querySelector("button")).toBeNull();
+  expect(rpc.voice.voices).not.toHaveBeenCalled();
+  await act(async () =>
+    pending.resolve({
+      configured: true,
+      ready: true,
+      transcribe: false,
+      provider: "speech-a",
+      voiceId: "calm",
+    }),
+  );
   await act(async () => {
     await vi.waitFor(() =>
       expect(
-        client.getQueryState(spaceQueries(null, "space-1").voice.credentials.queryKey())?.status,
-      ).toBe("success"),
+        container.querySelector<HTMLButtonElement>('[aria-label="Hear a sample"]')?.disabled,
+      ).toBe(false),
     );
   });
-  await act(flush);
-  expect(container.textContent).toBe("");
-  expect(container.querySelector("button")).toBeNull();
+  expect(container.textContent).toContain("Default (Calm)");
 });
+
+it.each([false, true])(
+  "keeps speech without a ready voice quiet (configured: %s)",
+  async (configured) => {
+    credentials = [];
+    vi.mocked(rpc.voice.status).mockResolvedValue({
+      configured,
+      ready: false,
+      transcribe: false,
+      provider: configured ? "speech-a" : null,
+      voiceId: "",
+    });
+    await render();
+    expect(container.textContent).toBe("");
+    expect(container.querySelector("button")).toBeNull();
+    expect(rpc.voice.status).toHaveBeenCalledWith({ botId: "bot-1" }, expect.anything());
+    expect(rpc.voice.voices).not.toHaveBeenCalled();
+  },
+);

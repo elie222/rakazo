@@ -283,6 +283,87 @@ describe("mobile speech", () => {
     },
   );
 
+  it.each([true, false])(
+    "previews the saved bot on its pinned hosted recipient with Device selected (allowed: %s)",
+    async (allowed) => {
+      vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+      const requestContext = {
+        apiBase: "https://sample.example",
+        headers: { authorization: "Bearer sample-token", "x-rakazo-space-id": "sample-space" },
+      };
+      const recipient = {
+        key: "included",
+        name: "Included speech",
+        use: "voice",
+        detail: "",
+        allowed: false,
+      };
+      vi.mocked(promptAiConsent).mockResolvedValue(allowed);
+      vi.mocked(rpc).mockImplementation(
+        async (proc) =>
+          (proc === "aiConsent/status"
+            ? { scope: "account-space", version: "2026-09-14", recipients: [recipient] }
+            : { ready: true, utterances: ["Sample"] }) as never,
+      );
+      vi.mocked(captureApiRequestContext).mockClear();
+      const sample = speakText("Sample", {
+        botId: "bot-1",
+        hostedPreview: true,
+        requestContext,
+      });
+      if (allowed) {
+        await expect(sample).resolves.toBe(true);
+        expect(allowPromptedAiConsent).toHaveBeenCalledWith(
+          expect.objectContaining({ botId: "bot-1", keys: ["included"] }),
+          requestContext,
+        );
+        expect(rpc).toHaveBeenCalledWith(
+          "voice/prepare",
+          {
+            text: "Sample",
+            botId: "bot-1",
+            provider: undefined,
+            voiceId: undefined,
+            scope: undefined,
+          },
+          { requestContext },
+        );
+        const [url, init] = vi.mocked(fetch).mock.calls[0] ?? [];
+        expect(url).toBe("https://sample.example/api/voice/speak");
+        expect(init?.headers).toMatchObject(requestContext.headers);
+        expect(JSON.parse(String(init?.body))).toEqual({ text: "Sample", botId: "bot-1" });
+      } else {
+        await expect(sample).rejects.toBeDefined();
+        expect(vi.mocked(rpc).mock.calls.some(([proc]) => proc === "voice/prepare")).toBe(false);
+        expect(fetch).not.toHaveBeenCalled();
+      }
+      expect(rpc).toHaveBeenCalledWith(
+        "aiConsent/status",
+        { uses: ["voice"], botId: "bot-1" },
+        { requestContext },
+      );
+      expect(captureApiRequestContext).not.toHaveBeenCalled();
+      expect(Speech.speak).not.toHaveBeenCalled();
+      expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["unconfigured", "unreachable"])(
+    "does not replace an unavailable hosted preview with local speech (%s)",
+    async (failure) => {
+      vi.mocked(rpc).mockImplementation(async (proc) => {
+        if (proc === "aiConsent/status") return { version: "2026-09-14", recipients: [] } as never;
+        if (failure === "unreachable") throw new TypeError("Network request failed");
+        return { ready: false, utterances: [] } as never;
+      });
+      const sample = speakText("Sample", { botId: "bot-1", hostedPreview: true });
+      if (failure === "unreachable") await expect(sample).rejects.toThrow("Network request failed");
+      else await expect(sample).resolves.toBe(false);
+      expect(Speech.speak).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
   it("plays WAV from a server that renders speech itself and MP3 otherwise", () => {
     const wav = new TextEncoder().encode("RIFF\0\0\0\0WAVEfmt ");
     expect(speechClipType(wav)).toEqual({ mimeType: "audio/wav", extension: "wav" });

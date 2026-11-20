@@ -49,6 +49,8 @@ type SpeechOptions = {
   scope?: SettingsScope;
   voiceId?: string;
   provider?: string;
+  /** Preview saved hosted settings even when this phone prefers Device voice; never fall back locally. */
+  hostedPreview?: boolean;
   botId?: string;
   messageId?: string;
   speaker?: PlaybackSpeaker;
@@ -323,8 +325,9 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
   try {
     let devicePreference: boolean | undefined;
     try {
-      // An explicit provider is a requested hosted sample, not automatic reply playback.
-      devicePreference = opts.provider ? false : await loadDeviceVoicePreference();
+      // Hosted previews bypass Device without overriding the server's saved bot/default selection.
+      devicePreference =
+        opts.hostedPreview || opts.provider ? false : await loadDeviceVoicePreference();
     } catch {
       // A read failure must not be treated as "off": that would send reply text
       // through hosted voice after the user opted for on-device only.
@@ -472,6 +475,7 @@ export async function queueSpeech(text: string, opts: SpeechOptions = {}): Promi
     queued.options.owner !== opts.owner ||
     queued.options.botId !== opts.botId ||
     queued.options.provider !== opts.provider ||
+    queued.options.hostedPreview !== opts.hostedPreview ||
     queued.options.voiceId !== opts.voiceId ||
     queued.options.scope !== opts.scope ||
     queued.options.callId !== opts.callId ||
@@ -510,9 +514,10 @@ function openQueuedSpeech(opts: SpeechOptions): QueuedSpeech {
   announcedSpeaker =
     opts.botId && opts.speaker ? { botId: opts.botId, speaker: opts.speaker } : undefined;
   // Device-only speech never captures a hosted context, even when its preference cannot be read.
-  const preference = opts.provider
-    ? Promise.resolve(false)
-    : loadDeviceVoicePreference().catch(() => true);
+  const preference =
+    opts.hostedPreview || opts.provider
+      ? Promise.resolve(false)
+      : loadDeviceVoicePreference().catch(() => true);
   let context: Promise<ApiRequestContext> | undefined;
   const requestContext = () =>
     (context ??= opts.requestContext

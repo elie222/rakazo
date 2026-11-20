@@ -22,6 +22,7 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
   });
   const credentials = useQuery(queries.voice.credentials.queryOptions());
   const catalog = useQuery(queries.voice.catalog.queryOptions());
+  const status = useQuery(queries.voice.status.queryOptions({ input: { botId: bot.id } }));
   const current = botQuery.data ?? bot;
   const selectedProvider = current.voiceProvider ?? "";
   const providers = botVoiceProviderChoices({
@@ -31,11 +32,18 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
     catalog: catalog.data,
   });
   const connection = providers.connection;
+  const inheritedSpeech = Boolean(
+    !selectedProvider &&
+      !connection &&
+      status.data?.ready &&
+      status.data.provider &&
+      status.data.voiceId,
+  );
   const voices = useQuery({
     ...queries.voice.voices.queryOptions({
       input: connection ? { provider: connection.provider } : {},
     }),
-    enabled: Boolean(connection),
+    enabled: Boolean(connection || inheritedSpeech),
   });
   const save = useSave<BotVoiceSelection, Bot>({
     save: (choice, rpc) => rpc.bots.update({ botId: bot.id, ...choice }),
@@ -58,28 +66,38 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
   );
   const call = useCallSession();
   const playing = playback.messageId === previewId && playback.status !== "idle";
-  const defaultProviderLabel = providers.defaultLabel
-    ? t`Default (${providers.defaultLabel})`
+  const defaultProviderName =
+    providers.defaultLabel ??
+    (inheritedSpeech
+      ? catalog.data?.find((entry) => entry.id === status.data?.provider)?.name
+      : undefined);
+  const defaultProviderLabel = defaultProviderName
+    ? t`Default (${defaultProviderName})`
     : t`Default`;
   const voiceChoices = botVoiceChoices({
     unavailableLabel: t`Unavailable`,
     voices: voices.data,
     voiceId: current.voiceId,
-    defaultVoiceId: connection?.voiceId,
+    defaultVoiceId: connection?.voiceId ?? (inheritedSpeech ? status.data?.voiceId : undefined),
   });
   const defaultVoiceLabel = voiceChoices.defaultLabel
     ? t`Default (${voiceChoices.defaultLabel})`
     : t`Default`;
   const failure =
-    save.error ?? credentials.error ?? catalog.error ?? voices.error ?? botQuery.error;
-  const canPreview = Boolean(connection && (current.voiceId || connection.voiceId));
+    save.error ??
+    credentials.error ??
+    catalog.error ??
+    status.error ??
+    voices.error ??
+    botQuery.error;
+  const canPreview = Boolean(status.data?.ready && (connection || inheritedSpeech));
 
   function stopPreview() {
     if (speaker.state.messageId === previewId) speaker.stop();
   }
 
-  if (catalog.isPending) return null;
-  if (credentials.data && providers.options.length === 0) return null;
+  if (catalog.isPending || credentials.isPending) return null;
+  if (providers.options.length === 0 && !inheritedSpeech) return null;
 
   return (
     <FieldGroup className="gap-0" data-testid="bot-voice-settings">
@@ -87,53 +105,70 @@ export function BotVoiceSettings({ bot }: { bot: Bot }) {
         <FieldLabel htmlFor={`${ids}-provider`}>
           <Trans>Voice provider</Trans>
         </FieldLabel>
-        <OptionSelect
-          id={`${ids}-provider`}
-          className="w-fit max-w-2/3"
-          value={selectedProvider}
-          disabled={save.pending || credentials.isPending}
-          options={[{ value: "", label: defaultProviderLabel }, ...providers.options]}
-          onValueChange={(provider) => {
-            stopPreview();
-            save.run(
-              botVoiceSelection({
-                provider: provider || null,
-                currentProvider: current.voiceProvider,
-                ...(provider ? {} : { voiceId: null }),
-              }),
-            );
-          }}
-        />
+        {providers.options.length ? (
+          <OptionSelect
+            id={`${ids}-provider`}
+            className="w-fit max-w-2/3"
+            value={selectedProvider}
+            disabled={save.pending}
+            options={[{ value: "", label: defaultProviderLabel }, ...providers.options]}
+            onValueChange={(provider) => {
+              stopPreview();
+              save.run(
+                botVoiceSelection({
+                  provider: provider || null,
+                  currentProvider: current.voiceProvider,
+                  ...(provider ? {} : { voiceId: null }),
+                }),
+              );
+            }}
+          />
+        ) : (
+          <span
+            id={`${ids}-provider`}
+            className="max-w-2/3 truncate text-body text-muted-foreground"
+          >
+            {defaultProviderLabel}
+          </span>
+        )}
       </Field>
       <Field orientation="horizontal" className="min-h-12 justify-between">
         <FieldLabel htmlFor={`${ids}-voice`}>
           <Trans>Voice</Trans>
         </FieldLabel>
         <div className="flex min-w-0 max-w-2/3 items-center gap-1">
-          <OptionSelect
-            id={`${ids}-voice`}
-            className="min-w-0 flex-1"
-            value={current.voiceId ?? ""}
-            disabled={save.pending || !connection || voices.isPending}
-            options={[{ value: "", label: defaultVoiceLabel }, ...voiceChoices.options]}
-            onValueChange={(voiceId) => {
-              stopPreview();
-              save.run(
-                botVoiceSelection({
-                  currentProvider: current.voiceProvider,
-                  defaultProvider: connection?.provider,
-                  voiceId: voiceId || null,
-                }),
-              );
-            }}
-          />
+          {inheritedSpeech ? (
+            <span id={`${ids}-voice`} className="truncate text-body text-muted-foreground">
+              {defaultVoiceLabel}
+            </span>
+          ) : (
+            <OptionSelect
+              id={`${ids}-voice`}
+              className="min-w-0 flex-1"
+              value={current.voiceId ?? ""}
+              disabled={save.pending || !connection || voices.isPending}
+              options={[{ value: "", label: defaultVoiceLabel }, ...voiceChoices.options]}
+              onValueChange={(voiceId) => {
+                stopPreview();
+                save.run(
+                  botVoiceSelection({
+                    currentProvider: current.voiceProvider,
+                    defaultProvider: connection?.provider,
+                    voiceId: voiceId || null,
+                  }),
+                );
+              }}
+            />
+          )}
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
             aria-label={playing ? t`Stop` : t`Hear a sample`}
             title={playing ? t`Stop` : t`Hear a sample`}
-            disabled={save.pending || !canPreview || call !== null}
+            disabled={
+              save.pending || status.isPending || voices.isPending || !canPreview || call !== null
+            }
             onClick={() => {
               if (playing) stopPreview();
               else {

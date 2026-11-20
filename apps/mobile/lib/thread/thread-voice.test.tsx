@@ -6,7 +6,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiRequestContext } from "../api/api";
-import { captureApiRequestContext, rpc } from "../api/api";
+import { captureApiRequestContext, currentApiBase, rpc } from "../api/api";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../api/mobile-types";
 import { blockText } from "../api/mobile-types";
 import { clearSessionToken, currentSessionGeneration, saveSessionToken } from "../api/session";
@@ -48,7 +48,7 @@ vi.mock("../api/mobile-types", () => ({
   blockText: vi.fn(),
 }));
 vi.mock("../api/api", () => ({
-  currentApiBase: () => apiScope.apiBase,
+  currentApiBase: vi.fn(() => apiScope.apiBase),
   selectedSpaceId: () => apiScope.spaceId,
   currentSpaceSelectionGeneration: () => apiScope.selectionGeneration,
   captureApiRequestContext: vi.fn(),
@@ -117,6 +117,9 @@ describe("useThreadVoiceCall hand-over", () => {
     apiScope.apiBase = "https://api.example.test";
     apiScope.spaceId = "space-riley";
     apiScope.selectionGeneration = 0;
+    vi.mocked(currentApiBase)
+      .mockReset()
+      .mockImplementation(() => apiScope.apiBase);
     vi.mocked(captureApiRequestContext)
       .mockReset()
       .mockImplementation(
@@ -133,6 +136,21 @@ describe("useThreadVoiceCall hand-over", () => {
   afterEach(() => {
     act(() => root.unmount());
     vi.unstubAllGlobals();
+  });
+
+  it("can retry after endpoint validation fails before call setup", async () => {
+    render("riley");
+    vi.mocked(currentApiBase).mockImplementationOnce(() => {
+      throw new Error("Invalid API endpoint");
+    });
+    await act(async () => {
+      await expect(startVoiceCall!()).rejects.toThrow("Invalid API endpoint");
+    });
+    expect(startCall).not.toHaveBeenCalled();
+
+    await act(async () => startVoiceCall!());
+    expect(startCall).toHaveBeenCalledOnce();
+    expect(startCall).toHaveBeenCalledWith(expect.objectContaining({ botId: "riley" }));
   });
 
   it("rings the bot the caller was put through to in the same session", async () => {

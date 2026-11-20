@@ -6,12 +6,13 @@ import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
+import { captureApiRequestContext, selectedSpaceId } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { createSpeechOwner, speakText, stopSpeaking } from "../../lib/voice/voice";
 import { NativeActionButton } from "../native/native-action-button";
-import { SettingsGroup } from "../settings/settings-group";
+import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 import { MenuPicker } from "../ui/menu-picker";
 
 /** Hosted bot choices stay separate from this phone's Device voice preference. */
@@ -53,18 +54,22 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
     stale: [statusRead.queryKey],
   });
   const sample = useSave({
-    save: async (_, send) => {
+    save: async () => {
       cancelled.current = false;
-      const target = await send("voice/status", { botId });
-      if (cancelled.current) return;
-      if (!target.ready || !target.provider) throw new Error(t`Choose a voice in Settings first.`);
+      const requestContext = await captureApiRequestContext();
+      if (
+        cancelled.current ||
+        (requestContext.headers["x-rakazo-space-id"] ?? "") !== (selectedSpaceId() ?? "")
+      ) {
+        return;
+      }
       const name = bot?.name.trim();
       const spoken = await speakText(
         name ? t`Hi, I'm ${ph({ name })}.` : t`Hi, this is how I'll sound.`,
         {
           botId,
-          provider: target.provider,
-          voiceId: target.voiceId || undefined,
+          hostedPreview: true,
+          requestContext,
           owner,
         },
       );
@@ -95,7 +100,7 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
   const needsReconnect = Boolean(credentials.data && bot?.voiceProvider && !providers.connection);
 
   if (catalog.isPending) return null;
-  if (credentials.data && providers.options.length === 0) return null;
+  if (credentials.data && providers.options.length === 0 && !status.data?.ready) return null;
 
   return (
     <SettingsGroup
@@ -108,54 +113,62 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
             : undefined
       }
     >
-      <MenuPicker
-        label={t`Provider`}
-        choices={[
-          { key: "", label: providerDefault },
-          ...providers.options.map((choice) => ({ key: choice.value, label: choice.label })),
-        ]}
-        value={bot?.voiceProvider ?? ""}
-        disabled={busy || !catalog.data || !credentials.data}
-        onChange={(key) => {
-          if (key !== (bot?.voiceProvider ?? "")) {
-            sample.reset();
-            change.run(
-              botVoiceSelection({
-                provider: key || null,
-                currentProvider: bot?.voiceProvider,
-                ...(key ? {} : { voiceId: null }),
-              }),
-            );
-          }
-        }}
-      />
-      {provider ? (
+      {providers.options.length === 0 ? (
+        <SettingsRow title={t`Provider`} value={t`Default`} />
+      ) : (
+        <MenuPicker
+          label={t`Provider`}
+          choices={[
+            { key: "", label: providerDefault },
+            ...providers.options.map((choice) => ({ key: choice.value, label: choice.label })),
+          ]}
+          value={bot?.voiceProvider ?? ""}
+          disabled={busy || !catalog.data || !credentials.data}
+          onChange={(key) => {
+            if (key !== (bot?.voiceProvider ?? "")) {
+              sample.reset();
+              change.run(
+                botVoiceSelection({
+                  provider: key || null,
+                  currentProvider: bot?.voiceProvider,
+                  ...(key ? {} : { voiceId: null }),
+                }),
+              );
+            }
+          }}
+        />
+      )}
+      {provider || status.data?.ready ? (
         <View style={styles.voiceRow}>
           <View style={styles.voicePicker}>
-            <MenuPicker
-              label={t`Voice`}
-              choices={[
-                { key: "", label: voiceDefault },
-                ...voiceChoices.options.map((choice) => ({
-                  key: choice.value,
-                  label: choice.label,
-                })),
-              ]}
-              value={bot?.voiceId ?? ""}
-              disabled={busy || !providers.connection || !voices.data}
-              onChange={(key) => {
-                if (key !== (bot?.voiceId ?? "")) {
-                  sample.reset();
-                  change.run(
-                    botVoiceSelection({
-                      currentProvider: bot?.voiceProvider,
-                      defaultProvider: providers.connection?.provider,
-                      voiceId: key || null,
-                    }),
-                  );
-                }
-              }}
-            />
+            {!providers.connection && !bot?.voiceProvider ? (
+              <SettingsRow title={t`Voice`} value={t`Default`} />
+            ) : (
+              <MenuPicker
+                label={t`Voice`}
+                choices={[
+                  { key: "", label: voiceDefault },
+                  ...voiceChoices.options.map((choice) => ({
+                    key: choice.value,
+                    label: choice.label,
+                  })),
+                ]}
+                value={bot?.voiceId ?? ""}
+                disabled={busy || !providers.connection || !voices.data}
+                onChange={(key) => {
+                  if (key !== (bot?.voiceId ?? "")) {
+                    sample.reset();
+                    change.run(
+                      botVoiceSelection({
+                        currentProvider: bot?.voiceProvider,
+                        defaultProvider: providers.connection?.provider,
+                        voiceId: key || null,
+                      }),
+                    );
+                  }
+                }}
+              />
+            )}
           </View>
           <NativeActionButton
             accessibilityLabel={sample.pending ? t`Stop` : t`Hear a sample`}
@@ -164,7 +177,7 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
               ios: sample.pending ? "stop.fill" : "play.fill",
               android: sample.pending ? "stop" : "play",
             }}
-            disabled={change.pending || !bot || !providers.connection || !status.data?.ready}
+            disabled={change.pending || !bot || needsReconnect || !status.data?.ready}
             onPress={() => {
               if (sample.pending) {
                 cancelled.current = true;

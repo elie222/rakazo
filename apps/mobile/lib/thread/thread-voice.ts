@@ -218,7 +218,6 @@ export function useThreadVoiceCall({
     if (readOnly) return;
     const targetBotId = botId;
     if (!targetBotId || voiceCallStarting.current) return;
-    voiceCallStarting.current = true;
     const setupApiBase = currentApiBase();
     const setupSpaceId = selectedSpaceId();
     const setupSpaceGeneration = currentSpaceSelectionGeneration();
@@ -227,6 +226,7 @@ export function useThreadVoiceCall({
       setupSession === currentSessionGeneration() &&
       setupApiBase === currentApiBase() &&
       setupSpaceGeneration === currentSpaceSelectionGeneration();
+    voiceCallStarting.current = true;
     try {
       const requestContext = await captureApiRequestContext(setupSpaceId);
       if (!ownsSetup()) return;

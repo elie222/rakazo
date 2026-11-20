@@ -7,6 +7,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BotVoiceSettings } from "../../components/bots/bot-voice-settings";
+import type { ApiRequestContext } from "../api/api";
 import { queryClient, rpcQuery } from "../query/query";
 
 const state = vi.hoisted(() => ({
@@ -18,6 +19,9 @@ const state = vi.hoisted(() => ({
   },
   defaultProvider: "provider-a",
   connected: ["provider-a", "provider-b"],
+  ready: true,
+  spaceId: "space-a",
+  capture: vi.fn(),
   save: vi.fn(),
   status: vi.fn(),
   speak: vi.fn(),
@@ -25,12 +29,8 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("../api/api", () => ({
   currentApiBase: () => "https://api.example.test",
-  selectedSpaceId: () => "space-a",
-  captureApiRequestContext: async () => ({
-    apiBase: "https://api.example.test",
-    sessionGeneration: 1,
-    headers: { "x-rakazo-space-id": "space-a" },
-  }),
+  selectedSpaceId: () => state.spaceId,
+  captureApiRequestContext: state.capture,
   rpc: async (
     proc: string,
     input?: {
@@ -74,7 +74,7 @@ vi.mock("../api/api", () => ({
         ? (state.bot.voiceProvider ?? state.defaultProvider)
         : state.defaultProvider;
       return {
-        ready: true,
+        ready: state.ready,
         provider,
         voiceId:
           input?.botId && state.bot.voiceId
@@ -120,6 +120,9 @@ vi.mock("../../components/native/native-action-button", () => ({
   ),
 }));
 vi.mock("../../components/settings/settings-group", () => ({
+  SettingsRow: ({ title, value }: { title: string; value: string }) => (
+    <fieldset aria-label={title}>{value}</fieldset>
+  ),
   SettingsGroup: ({ children, footer }: { children: ReactNode; footer?: string }) => (
     <section>
       {children}
@@ -166,6 +169,13 @@ beforeEach(() => {
   state.bot = { id: "bot-a", name: "Helper", voiceProvider: null, voiceId: null };
   state.defaultProvider = "provider-a";
   state.connected = ["provider-a", "provider-b"];
+  state.ready = true;
+  state.spaceId = "space-a";
+  state.capture.mockImplementation(async () => ({
+    apiBase: "https://api.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": state.spaceId },
+  }));
   state.save.mockResolvedValue(undefined);
   state.status.mockResolvedValue(undefined);
   state.speak.mockResolvedValue(true);
@@ -228,7 +238,7 @@ it("keeps inherited choices null while Settings defaults update live", async () 
   expect(state.save).not.toHaveBeenCalled();
 });
 
-it("previews the fresh Settings default while the profile status remains cached", async () => {
+it("lets the server resolve fresh saved defaults instead of overriding with cached status", async () => {
   await open();
   const statusKey = rpcQuery("voice/status", { botId: "bot-a" }).queryKey;
   expect(queryClient.getQueryData(statusKey)).toMatchObject({
@@ -236,12 +246,17 @@ it("previews the fresh Settings default while the profile status remains cached"
     voiceId: "a-default",
   });
   state.defaultProvider = "provider-b";
+  state.status.mockClear();
   await act(async () => button("Hear a sample").click());
-  expect(state.status).toHaveBeenLastCalledWith({ botId: "bot-a" });
+  expect(state.status).not.toHaveBeenCalled();
   expect(state.speak).toHaveBeenCalledWith(expect.any(String), {
     botId: "bot-a",
-    provider: "provider-b",
-    voiceId: "b-default",
+    hostedPreview: true,
+    requestContext: {
+      apiBase: "https://api.example.test",
+      sessionGeneration: 1,
+      headers: { "x-rakazo-space-id": "space-a" },
+    },
     owner: expect.any(Symbol),
   });
   expect(queryClient.getQueryData(statusKey)).toMatchObject({
@@ -251,7 +266,7 @@ it("previews the fresh Settings default while the profile status remains cached"
   expect(state.save).not.toHaveBeenCalled();
 });
 
-it("plays only an explicit sample with the saved effective provider and voice, and stops on leave", async () => {
+it("previews the saved bot without overrides and stops on leave", async () => {
   state.bot.voiceProvider = "provider-b";
   state.bot.voiceId = "custom";
   const playing = deferred<boolean>();
@@ -261,8 +276,10 @@ it("plays only an explicit sample with the saved effective provider and voice, a
   await act(async () => button("Hear a sample").click());
   expect(state.speak).toHaveBeenCalledWith(expect.any(String), {
     botId: "bot-a",
-    provider: "provider-b",
-    voiceId: "custom",
+    hostedPreview: true,
+    requestContext: expect.objectContaining({
+      headers: { "x-rakazo-space-id": "space-a" },
+    }),
     owner: expect.any(Symbol),
   });
   const owner = state.speak.mock.calls[0]?.[1].owner;
@@ -275,11 +292,16 @@ it("plays only an explicit sample with the saved effective provider and voice, a
 });
 
 it.each(["stop", "leave"])(
-  "does not start a late sample after %s during readiness",
+  "does not start a late sample after %s during context capture",
   async (action) => {
     await open();
-    const readiness = deferred();
-    state.status.mockReturnValueOnce(readiness.promise);
+    const capture = deferred<ApiRequestContext>();
+    state.capture.mockResolvedValueOnce({
+      apiBase: "https://api.example.test",
+      sessionGeneration: 1,
+      headers: { "x-rakazo-space-id": "space-a" },
+    });
+    state.capture.mockReturnValueOnce(capture.promise);
     await act(async () => button("Hear a sample").click());
     expect(state.speak).not.toHaveBeenCalled();
     if (action === "stop") {
@@ -288,7 +310,13 @@ it.each(["stop", "leave"])(
       await act(async () => root.render(null));
     }
     expect(state.stop).toHaveBeenCalledWith(expect.any(Symbol));
-    await act(async () => readiness.resolve());
+    await act(async () =>
+      capture.resolve({
+        apiBase: "https://api.example.test",
+        sessionGeneration: 1,
+        headers: { "x-rakazo-space-id": "space-a" },
+      }),
+    );
     expect(state.speak).not.toHaveBeenCalled();
     expect(container.textContent).not.toContain("Could not play that sample.");
   },
@@ -302,9 +330,9 @@ it("reports a sample that fails to play", async () => {
   expect(button("Hear a sample").disabled).toBe(false);
 });
 
-it("reports a failed readiness lookup without starting a sample", async () => {
+it("reports a failed preview context capture without starting a sample", async () => {
   await open();
-  state.status.mockRejectedValueOnce(new Error("Could not check voice"));
+  state.capture.mockRejectedValue(new Error("Could not check voice"));
   await act(async () => button("Hear a sample").click());
   expect(state.speak).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Could not check voice");
@@ -328,11 +356,19 @@ it("pins a custom voice chosen under Default and resumes inheritance when reset"
   });
   expect(button("Provider A").getAttribute("aria-pressed")).toBe("true");
   expect(button("Custom voice").getAttribute("aria-pressed")).toBe("true");
+  expect(queryClient.getQueryData(rpcQuery("bots/get", { botId: "bot-a" }).queryKey)).toMatchObject(
+    {
+      voiceProvider: "provider-a",
+      voiceId: "custom",
+    },
+  );
   await act(async () => button("Hear a sample").click());
   expect(state.speak).toHaveBeenLastCalledWith(expect.any(String), {
     botId: "bot-a",
-    provider: "provider-a",
-    voiceId: "custom",
+    hostedPreview: true,
+    requestContext: expect.objectContaining({
+      headers: { "x-rakazo-space-id": "space-a" },
+    }),
     owner: expect.any(Symbol),
   });
   await act(async () => button("Default (Provider B)").click());
@@ -395,17 +431,91 @@ it("keeps the accepted provider and voice when a new selection fails to save", a
   expect(container.textContent).toContain("Could not save voice");
   expect(button("Provider B").getAttribute("aria-pressed")).toBe("true");
   expect(button("Custom voice").getAttribute("aria-pressed")).toBe("true");
+  expect(queryClient.getQueryData(rpcQuery("bots/get", { botId: "bot-a" }).queryKey)).toMatchObject(
+    {
+      voiceProvider: "provider-b",
+      voiceId: "custom",
+    },
+  );
   await act(async () => button("Hear a sample").click());
   expect(state.speak).toHaveBeenCalledWith(expect.any(String), {
     botId: "bot-a",
-    provider: "provider-b",
-    voiceId: "custom",
+    hostedPreview: true,
+    requestContext: expect.objectContaining({
+      headers: { "x-rakazo-space-id": "space-a" },
+    }),
     owner: expect.any(Symbol),
   });
 });
 
+it("shows included-ready speech as read-only defaults with an adjacent sample", async () => {
+  state.connected = [];
+  await act(async () => root.render(<BotVoiceSettings botId="bot-a" />));
+  await act(async () => {
+    await vi.waitFor(() => expect(button("Hear a sample").disabled).toBe(false));
+  });
+  expect(container.querySelectorAll("button[aria-pressed]")).toHaveLength(0);
+  expect(container.querySelector('[aria-label="Provider"]')?.textContent).toBe("Default");
+  expect(container.querySelector('[aria-label="Voice"]')?.textContent).toBe("Default");
+  await act(async () => button("Hear a sample").click());
+  expect(state.speak).toHaveBeenCalledWith(expect.any(String), {
+    botId: "bot-a",
+    hostedPreview: true,
+    requestContext: expect.objectContaining({
+      headers: { "x-rakazo-space-id": "space-a" },
+    }),
+    owner: expect.any(Symbol),
+  });
+  expect(state.save).not.toHaveBeenCalled();
+});
+
+it("keeps owned providers selectable when the inherited voice is included", async () => {
+  state.defaultProvider = "included-provider";
+  await open();
+  expect(container.querySelector('[aria-label="Voice"]')?.textContent).toBe("Default");
+  expect(button("Provider B").disabled).toBe(false);
+  await act(async () => button("Provider B").click());
+  expect(state.save).toHaveBeenCalledWith({
+    botId: "bot-a",
+    voiceProvider: "provider-b",
+    voiceId: null,
+  });
+});
+
+it("does not start a sample after the Space changes during context capture", async () => {
+  await open();
+  const context = {
+    apiBase: "https://api.example.test",
+    sessionGeneration: 1,
+    headers: { "x-rakazo-space-id": "space-a" },
+  };
+  const capture = deferred<typeof context>();
+  state.capture.mockResolvedValueOnce(context).mockReturnValueOnce(capture.promise);
+  await act(async () => button("Hear a sample").click());
+  state.spaceId = "space-b";
+  await act(async () => root.render(<BotVoiceSettings botId="bot-a" />));
+  await act(async () => capture.resolve(context));
+  expect(state.speak).not.toHaveBeenCalled();
+});
+
+it("keeps the preview pinned and hides its late error after the Space changes", async () => {
+  await open();
+  const playing = deferred<boolean>();
+  state.speak.mockReturnValueOnce(playing.promise);
+  await act(async () => button("Hear a sample").click());
+  expect(button("Stop").disabled).toBe(false);
+  state.spaceId = "space-b";
+  await act(async () => root.render(<BotVoiceSettings botId="bot-a" />));
+  expect(state.speak.mock.calls[0]?.[1].requestContext.headers).toEqual({
+    "x-rakazo-space-id": "space-a",
+  });
+  await act(async () => playing.reject(new Error("Old sample failed")));
+  expect(container.textContent).not.toContain("Old sample failed");
+});
+
 it("omits unavailable voice controls before any connection is configured", async () => {
   state.connected = [];
+  state.ready = false;
   await act(async () => root.render(<BotVoiceSettings botId="bot-a" />));
   await act(async () => {
     await vi.waitFor(() =>
