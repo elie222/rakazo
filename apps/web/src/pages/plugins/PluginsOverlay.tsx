@@ -74,9 +74,9 @@ function AddedMark({
   const favicon = useLinkFavicon(logo ? "" : (site ?? ""));
   const src = logo || favicon.icon;
   return src ? (
-    <img src={src} alt="" className="h-6 w-6 rounded-lg bg-favicon-plate object-contain p-0.5" />
+    <img src={src} alt="" className="size-6 rounded-md bg-white object-cover" />
   ) : (
-    <span className="grid h-6 w-6 place-items-center rounded-lg border border-border/60 bg-favicon-plate text-caption font-semibold text-foreground">
+    <span className="grid size-6 place-items-center rounded-md bg-white text-caption font-semibold text-foreground">
       {Array.from(name)[0]?.toUpperCase()}
     </span>
   );
@@ -419,7 +419,9 @@ export function PluginsOverlay({
       }}
     >
       <DialogContent showCloseButton={false} size="2xl" className="bg-card">
-        <DialogHeader className="flex-row items-end justify-between px-8 pt-4">
+        <DialogHeader
+          className={`flex-row justify-between px-8 pt-4 ${plugin ? "items-center" : "items-end"}`}
+        >
           {view === "manage" && !plugin && !detailItem ? (
             <div className="pb-1">
               <Button
@@ -436,6 +438,24 @@ export function PluginsOverlay({
                 <Trans>Connect Apps</Trans>
               </DialogTitle>
             </div>
+          ) : plugin ? (
+            <div className="flex min-w-0 items-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t`Back`}
+                onClick={() => {
+                  setPluginAutoConnect(false);
+                  setPlugin(null);
+                }}
+              >
+                <ChevronLeft />
+              </Button>
+              <DialogTitle className="sr-only">
+                <Trans>Connect Apps</Trans>
+              </DialogTitle>
+            </div>
           ) : (
             <DialogTitle className="pb-1.5 text-heading2 text-foreground">
               <Trans>Connect Apps</Trans>
@@ -447,7 +467,7 @@ export function PluginsOverlay({
             >
               <X />
             </DialogClose>
-            {browsing || (view === "manage" && (plugin || detailItem)) ? (
+            {browsing ? (
               <div className="flex items-center gap-1">
                 {browsing && addedCount > 0 ? (
                   <Button
@@ -456,9 +476,9 @@ export function PluginsOverlay({
                     className="gap-2.5 px-2.5 text-body text-muted-foreground"
                     onClick={() => setView("manage")}
                   >
-                    <span aria-hidden className="flex -space-x-1.5">
+                    <span aria-hidden className="flex -space-x-2">
                       {addedMarks.map((mark) => (
-                        <span key={mark.key} className="rounded-[9px] ring-2 ring-card">
+                        <span key={mark.key} className="rounded-md ring-2 ring-card">
                           <AddedMark name={mark.name} logo={mark.logo} site={mark.site} />
                         </span>
                       ))}

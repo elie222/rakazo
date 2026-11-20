@@ -91,7 +91,7 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
     expect.objectContaining({ name: "planning-notes", source: "plugin", readOnly: true }),
   );
   const servers = await rpc<McpServer[]>(page, "mcp/servers/list", undefined);
-  const server = servers.find((row) => row.installId === install.id)!;
+  const server = servers.find((row) => row.installId === install!.id)!;
   expect(server.oauthStatus).toBe("none");
   expect(await rpc(page, "mcp/assignments/list", { botId })).toEqual([]);
 
@@ -132,16 +132,13 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   await expect(dialog.getByTestId("connected-skills")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "integrations-manage");
 
-  // Removing the connector keeps the skills; removing the last part removes the plugin.
+  // Disconnect deletes the MCP server and the plugin, in every space of the account.
   await apps.getByRole("button", { name: /Planning Notes/ }).click();
-  await dialog.getByRole("button", { name: "Remove", exact: true }).click();
-  await dialog.getByRole("button", { name: "Confirm removal", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await dialog.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(dialog.getByTestId("installed-plugin")).toHaveCount(0);
   expect(await rpc(page, "mcp/servers/list", undefined)).toEqual([]);
   expect(await rpc(page, "mcp/assignments/list", { botId })).toEqual([]);
-  expect(await skillNames()).toContain("planning-notes");
-  await dialog.getByRole("button", { name: "Remove skills", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Add skills", exact: true })).toBeVisible();
   expect(await rpc(page, "capabilities/list", undefined)).toEqual([]);
   expect(await skillNames()).not.toContain("planning-notes");
   await dialog.getByRole("button", { name: "Close integrations", exact: true }).click();

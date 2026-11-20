@@ -1,18 +1,79 @@
 // @vitest-environment jsdom
 import type { CapabilityInstall, McpServer } from "@rakazo/contracts";
+import { i18n } from "@lingui/core";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const lingui = vi.hoisted(() => {
+  function textOf(value: unknown): string {
+    if (value && typeof value === "object" && "message" in value) return translate(value);
+    return String(value ?? "");
+  }
+  function format(message: string, values: Record<string, unknown> = {}) {
+    return message
+      .replace(/\{(\w+), plural, one \{([^}]*)\} other \{([^}]*)\}\}/g, (_, key, one, other) => {
+        const count = Number(values[key] ?? 0);
+        return String(count === 1 ? one : other).replaceAll("#", String(count));
+      })
+      .replace(/\{(\w+)\}/g, (_, key: string) => textOf(values[key]));
+  }
+  function translate(parts: unknown, ...values: unknown[]) {
+    if (typeof parts === "string") return parts;
+    if (parts && typeof parts === "object" && "message" in parts) {
+      const record = parts as { message: string; values?: Record<string, unknown> };
+      const extra =
+        values[0] && typeof values[0] === "object" ? (values[0] as Record<string, unknown>) : {};
+      return format(record.message, { ...extra, ...record.values });
+    }
+    if (
+      parts &&
+      typeof parts === "object" &&
+      "raw" in parts &&
+      Array.isArray((parts as { raw: unknown }).raw)
+    )
+      return String.raw(parts as TemplateStringsArray, ...(values as string[]));
+    return "";
+  }
+  const Trans = ({
+    children,
+    message,
+    values,
+  }: {
+    children?: ReactNode;
+    message?: string;
+    values?: Record<string, unknown>;
+  }) => (message ? format(message, values) : (children ?? null));
+  const Plural = ({
+    value,
+    one,
+    other,
+    children,
+  }: {
+    value: number;
+    one?: string;
+    other?: string;
+    children?: ReactNode;
+  }) => {
+    const template = value === 1 ? (one ?? other ?? "") : (other ?? one ?? "");
+    return template ? template.replaceAll("#", String(value)) : children;
+  };
+  return { translate, Trans, Plural, i18n: { _: translate, t: translate } };
+});
 const api = vi.hoisted(() => ({
   preview: vi.fn(),
   install: vi.fn(),
   parts: vi.fn(),
   approve: vi.fn(),
   connect: vi.fn(),
+  remove: vi.fn(),
   skills: vi.fn(),
   skill: vi.fn(),
+  toolList: vi.fn(),
+  assignmentList: vi.fn(),
+  setTools: vi.fn(),
+  agents: vi.fn(),
 }));
 // One space, so no "Available in" choice appears.
 vi.mock("./space-availability", () => ({
@@ -24,8 +85,16 @@ vi.mock("./space-availability", () => ({
 
 vi.mock("../../lib/query/rpc", () => ({
   rpc: {
-    capabilities: { pluginPreview: api.preview, install: api.install, pluginParts: api.parts },
-    mcp: { assignments: { approve: api.approve } },
+    capabilities: {
+      pluginPreview: api.preview,
+      install: api.install,
+      pluginParts: api.parts,
+      remove: api.remove,
+    },
+    mcp: {
+      assignments: { approve: api.approve, list: api.assignmentList, setTools: api.setTools },
+      servers: { tools: api.toolList, agents: api.agents },
+    },
     agentSkills: { list: api.skills, get: api.skill },
   },
 }));
@@ -33,17 +102,38 @@ vi.mock("../../lib/integrations/mcp-connect", () => ({ connectMcpOauth: api.conn
 vi.mock("@rakazo/chat-ui/web", () => ({
   useLinkFavicon: () => ({ icon: null, unusable: () => undefined }),
 }));
+vi.mock("@lingui/react", () => ({
+  useLingui: () => ({
+    _: lingui.translate,
+    t: lingui.translate,
+    i18n: lingui.i18n,
+  }),
+  Trans: lingui.Trans,
+  Plural: lingui.Plural,
+}));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
-    t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw({ raw: parts }, ...values),
+    _: lingui.translate,
+    t: lingui.translate,
+    i18n: lingui.i18n,
   }),
-  Trans: ({ children }: { children: ReactNode }) => children,
-  Plural: ({ value, other }: { value: number; other: string }) => other.replace("#", `${value}`),
+  Trans: lingui.Trans,
+  Plural: lingui.Plural,
 }));
 vi.mock("@rakazo/ui-web", () => {
-  const Container = ({ children, summary }: { children?: ReactNode; summary?: ReactNode }) => (
+  const Container = ({
+    children,
+    summary,
+    onOpenChange,
+  }: {
+    children?: ReactNode;
+    summary?: ReactNode;
+    onOpenChange?: (open: boolean) => void;
+  }) => (
     <div>
-      {summary}
+      <button type="button" onClick={() => onOpenChange?.(true)}>
+        {summary}
+      </button>
       {children}
     </div>
   );
@@ -55,6 +145,37 @@ vi.mock("@rakazo/ui-web", () => {
       size: _size,
       ...props
     }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
+    DropdownMenu: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    DropdownMenuTrigger: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    DropdownMenuContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    DropdownMenuItem: ({
+      children,
+      onClick,
+    }: {
+      children?: ReactNode;
+      onClick?: () => void;
+    }) => (
+      <button type="button" onClick={onClick}>
+        {children}
+      </button>
+    ),
+    Switch: ({
+      checked,
+      onCheckedChange,
+      ...props
+    }: ComponentProps<"button"> & {
+      checked?: boolean;
+      onCheckedChange?: (checked: boolean) => void;
+    }) => (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        {...props}
+        onClick={() => onCheckedChange?.(!checked)}
+      />
+    ),
+    useCopyText: () => [false, async () => true] as const,
   };
 });
 
@@ -151,6 +272,8 @@ async function render(
 }
 
 beforeEach(() => {
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.resetAllMocks();
   api.preview.mockResolvedValue(preview);
@@ -201,7 +324,7 @@ describe("plugin detail", () => {
     await render({ install, servers: [server] });
     expect(api.preview).not.toHaveBeenCalled();
     expect(container.textContent).toContain("notes-mcp");
-    await click("Sign in");
+    await click("Connect");
     expect(api.connect).toHaveBeenCalledWith(server.id);
     expect(container.querySelector("[role=alert]")?.textContent).toContain("Sign-in cancelled");
     await click("Use in this bot");
@@ -215,22 +338,25 @@ describe("plugin detail", () => {
       }),
     );
     await render({ install, servers: [server] });
-    await click("Sign in");
+    await click("Connect");
     const alert = container.querySelector('[role="alert"]');
     expect(alert?.querySelector("a")?.getAttribute("href")).toBe(
       "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
     );
     api.connect.mockRejectedValue(new Error("Could not sign in"));
-    await click("Sign in");
+    await click("Connect");
     expect(container.querySelector('[role="alert"] a')).toBeNull();
   });
 
-  it("removes the connector only after confirmation and keeps the skills", async () => {
+  it("uninstalls the plugin and its MCP server after confirmation", async () => {
+    api.remove.mockResolvedValue({ ok: true });
     await render({ install, servers: [server] });
-    await click("Remove");
-    expect(api.parts).not.toHaveBeenCalled();
-    await click("Confirm removal");
-    expect(api.parts).toHaveBeenCalledWith({ id: install.id, parts: ["skills"] });
+    expect(container.textContent).toContain("every space");
+    await click("Uninstall");
+    expect(api.remove).not.toHaveBeenCalled();
+    await click("Uninstall");
+    expect(api.remove).toHaveBeenCalledWith({ id: install.id });
+    expect(onBack).toHaveBeenCalled();
   });
 
   it("adds skills on their own, next to a connector", async () => {
@@ -309,8 +435,33 @@ describe("plugin detail", () => {
   it("recognizes an install saved under the normalized form of a pasted URL", async () => {
     api.preview.mockResolvedValue({ ...preview, installedSource: source });
     await render({ install, servers: [server], pasted: `${source}.git` });
-    expect(button("Remove")).toBeTruthy();
+    expect(button("Uninstall")).toBeTruthy();
     expect(container.textContent).toContain("notes-mcp");
+  });
+
+  it("lists a connector's tools and turns one off for this bot", async () => {
+    api.toolList.mockResolvedValue([{ name: "search", description: "Find notes" }]);
+    api.assignmentList.mockResolvedValue([
+      { serverId: "server-1", allowAllTools: true, allowedTools: [] },
+    ]);
+    api.setTools.mockResolvedValue({});
+    api.agents.mockResolvedValue({});
+    await render({
+      install,
+      servers: [{ ...server, health: { ...server.health, status: "ok", toolCount: 1 } }],
+    });
+    await click("1 tool");
+    expect(api.agents).toHaveBeenCalledWith({ id: "server-1", allBots: true, botIds: [] });
+    expect(api.toolList).toHaveBeenCalledWith({ id: "server-1" });
+    expect(container.textContent).toContain("search");
+    const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]');
+    await act(async () => toggle?.click());
+    expect(api.setTools).toHaveBeenCalledWith({
+      botId: "bot-1",
+      serverId: "server-1",
+      allowAllTools: false,
+      allowedTools: [],
+    });
   });
 
   it("reports connectors that answer as connected", async () => {
@@ -323,9 +474,9 @@ describe("plugin detail", () => {
   });
 
   it.each([
-    ["signed in", { oauthStatus: "connected" }, true, []],
-    ["signed in with a failed check", { oauthStatus: "connected", health: failed }, false, []],
-    ["never signed in with a failed check", { health: failed }, false, ["Sign in"]],
+    ["signed in", { oauthStatus: "connected" }, true, ["Reconnect"]],
+    ["signed in with a failed check", { oauthStatus: "connected", health: failed }, false, ["Reconnect"]],
+    ["never signed in with a failed check", { health: failed }, false, ["Connect"]],
     ["disabled", { oauthStatus: "connected", enabled: false }, false, []],
     [
       "signed out after an ok check",
@@ -340,7 +491,7 @@ describe("plugin detail", () => {
       expect(container.querySelector('[aria-label="Connected"]') !== null).toBe(connected);
       const signIn = [...container.querySelectorAll("button")]
         .map((node) => node.textContent?.trim())
-        .filter((text) => text === "Sign in" || text === "Reconnect");
+        .filter((text) => text === "Connect" || text === "Sign in" || text === "Reconnect");
       expect(signIn).toEqual(actions);
     },
   );

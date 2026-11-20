@@ -492,6 +492,27 @@ export function mcpRoutes(ctx: RouterContext) {
           if (!fresh) throw new IsolationError();
           return mcpServerDto(fresh, oauth);
         }),
+        tools: authed.mcp.servers.tools.handler(async ({ context, input }) => {
+          const server = await deps.prisma.mcpServer.findFirst({
+            where: { id: input.id, ...availableInSpace(context.actor) },
+          });
+          if (!server) throw new IsolationError();
+          if (!deps.mcp?.listTools) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "This server cannot be listed from here.",
+            });
+          }
+          try {
+            return await deps.mcp.listTools(server, {
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+            });
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: error instanceof Error ? error.message : "Could not list tools",
+            });
+          }
+        }),
         agents: authed.mcp.servers.agents.handler(async ({ context, input }) => {
           const owner = { spaceId: context.actor.spaceId, userId: context.actor.userId };
           const { server, assignments, seqs } = await deps.prisma.$transaction(async (tx) => {
@@ -620,6 +641,37 @@ export function mcpRoutes(ctx: RouterContext) {
             threadId: input.threadId,
           });
           return { ok: true as const };
+        }),
+        setTools: authed.mcp.assignments.setTools.handler(async ({ context, input }) => {
+          const row = await deps.prisma.$transaction(async (tx) => {
+            const [bot, server] = await Promise.all([
+              tx.bot.findFirst({
+                where: { id: input.botId, spaceId: context.actor.spaceId },
+                select: { id: true },
+              }),
+              tx.mcpServer.findFirst({
+                where: { id: input.serverId, ...availableInSpace(context.actor) },
+                select: { id: true },
+              }),
+            ]);
+            if (!bot || !server) throw new IsolationError();
+            return tx.botMcpServer.upsert({
+              where: { botId_serverId: { botId: bot.id, serverId: server.id } },
+              create: {
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+                botId: bot.id,
+                serverId: server.id,
+                allowAllTools: input.allowAllTools,
+                allowedTools: input.allowedTools as Prisma.InputJsonValue,
+              },
+              update: {
+                allowAllTools: input.allowAllTools,
+                allowedTools: input.allowedTools as Prisma.InputJsonValue,
+              },
+            });
+          });
+          return mcpAssignmentDto(row);
         }),
         replace: authed.mcp.assignments.replace.handler(async ({ context, input }) => {
           const { rows, seqs } = await deps.prisma.$transaction(async (tx) => {

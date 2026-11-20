@@ -120,7 +120,7 @@ export interface RouterDeps {
   integrationSettings?: IntegrationProviderSettings;
   mcpOAuth?: McpOAuthBroker;
   /** Probes MCP server health; without it servers are never probed from here. */
-  mcp?: Pick<McpConnector, "probe">;
+  mcp?: Pick<McpConnector, "probe"> & Partial<Pick<McpConnector, "listTools">>;
   connectors: ConnectorRegistry;
   remoteConnectors?: RemoteConnectorDependencies;
   pluginRepoFetcher?: PluginRepoFetcher;

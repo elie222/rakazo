@@ -227,6 +227,8 @@ async function addServerRows(
         headers: Object.fromEntries(Object.keys(server.headers).map((key) => [key, true])),
         secretId: stored?.id,
         enabled: true,
+        // A connected plugin's tools are for every bot until someone narrows the list.
+        allBots: true,
       },
     });
     await tx.mcpServerSpace.createMany({

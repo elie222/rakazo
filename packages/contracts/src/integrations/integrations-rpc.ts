@@ -139,6 +139,15 @@ export const integrationsRpc = {
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
       /** Launch the server once (installing a stdio package if needed), list its tools, close it. */
       test: oc.input(z.object({ id: Id })).output(McpServerSchema),
+      /** The tools this server offers, so a bot can turn each one on or off. */
+      tools: oc.input(z.object({ id: Id })).output(
+        z.array(
+          z.object({
+            name: z.string(),
+            description: z.string(),
+          }),
+        ),
+      ),
       /** Which agents can use the server: all of them, or only `botIds`. */
       agents: oc
         .input(z.object({ id: Id, allBots: z.boolean(), botIds: z.array(Id).max(500).default([]) }))
@@ -153,6 +162,17 @@ export const integrationsRpc = {
       dismiss: oc
         .input(z.object({ botId: Id, serverId: Id, threadId: Id.optional() }))
         .output(z.object({ ok: z.literal(true) })),
+      /** Which of one server's tools this bot may call. Every tool uses `allowAllTools`. */
+      setTools: oc
+        .input(
+          z.object({
+            botId: Id,
+            serverId: Id,
+            allowAllTools: z.boolean(),
+            allowedTools: z.array(z.string().min(1).max(200)).max(500).default([]),
+          }),
+        )
+        .output(BotMcpServerSchema),
       replace: oc
         .input(
           z.object({

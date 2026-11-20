@@ -818,6 +818,59 @@ export class McpConnector implements ConnectorProvider {
     return promise;
   }
 
+  /** The tools a connected server offers, reusing a live session when this process has one. */
+  async listTools(
+    server: McpServer,
+    context: { spaceId: string; userId: string; signal?: AbortSignal },
+  ): Promise<Array<{ name: string; description: string }>> {
+    const timeoutMs =
+      (this.options.installTimeoutMs ?? DEFAULT_MCP_INSTALL_TIMEOUT_MS) +
+      (this.options.startupTimeoutMs ?? DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS) +
+      30_000;
+    const adapterContext: AdapterContext = {
+      operationId: `mcp-tools-${server.id}`,
+      traceId: `mcp-tools-${server.id}`,
+      spaceId: context.spaceId,
+      userId: context.userId,
+      signal: combineSignals(context.signal, AbortSignal.timeout(timeoutMs)),
+    };
+    const key = this.sessionKey(server, adapterContext);
+    const shared =
+      this.sessions.get(key)?.revision === server.revision ||
+      this.connecting.get(key)?.revision === server.revision;
+    let secrets: string[] = [];
+    try {
+      const listed = shared
+        ? await this.withSession(server, adapterContext, (session) => {
+            const material = this.sessions.get(key)?.material;
+            secrets = [
+              ...(material ? oauthMaterialSecrets(material) : []),
+              ...(this.sessions.get(key)?.launchSecrets ?? []),
+            ];
+            return session.listTools({ signal: adapterContext.signal, refresh: true });
+          })
+        : await (async () => {
+            const connected = await this.connectSession(server, adapterContext, () => undefined);
+            secrets = [
+              ...oauthMaterialSecrets(connected.material),
+              ...(connected.launchSecrets ?? []),
+            ];
+            try {
+              return await connected.session.listTools({ signal: adapterContext.signal });
+            } finally {
+              await closeEntry(connected).catch(() => undefined);
+            }
+          })();
+      return listed.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description ?? "",
+      }));
+    } catch (error) {
+      if (shared) await this.evict(key).catch(() => undefined);
+      throw new Error(sanitizeConnectorError(error, secrets));
+    }
+  }
+
   private async runProbe(
     server: McpServer,
     context: AdapterContext,

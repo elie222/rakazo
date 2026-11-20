@@ -1,6 +1,7 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import { useLinkFavicon } from "@rakazo/chat-ui/web";
 import type {
+  BotMcpServer,
   CapabilityInstall,
   McpServer,
   PluginMarketplaceEntry,
@@ -9,13 +10,24 @@ import type {
 } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
 import { installedPluginParts, pluginSite } from "@rakazo/core";
-import { Button, Spinner } from "@rakazo/ui-web";
-import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
+import {
+  Button,
+  Disclosure,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Spinner,
+  Switch,
+  useCopyText,
+} from "@rakazo/ui-web";
+import { ArrowUpRight, Check, Ellipsis, FileText, Link2, Plug, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { connectMcpOauth } from "../../lib/integrations/mcp-connect";
+import { desktopBridge } from "../../lib/platform/desktop";
 import { rpc } from "../../lib/query/rpc";
 import type { ErrorDetails } from "../../lib/query/user-error";
-import { errorDetails } from "../../lib/query/user-error";
+import { errorDetails, errorText } from "../../lib/query/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 import { AvailabilityControl, reachesOtherSpaces, useOwnSpaces } from "./space-availability";
 
@@ -127,8 +139,14 @@ export function PluginRow({
   );
 }
 
-function sourceHref(source: string, sha: string | undefined) {
-  const [repo, subdir] = source.split("#");
+/** A connected plugin's tools start on for every bot. An assignment can turn some off for one bot. */
+function toolEnabled(assignment: BotMcpServer | undefined, name: string) {
+  if (!assignment || assignment.allowAllTools) return true;
+  return assignment.allowedTools.includes(name);
+}
+
+function sourceHref(source: string, sha: string | undefined): string {
+  const [repo = source, subdir] = source.split("#");
   return subdir ? `${repo}/tree/${sha ?? "HEAD"}/${subdir}` : repo;
 }
 
@@ -178,6 +196,14 @@ export function PluginDetail({
   const [recipe, setRecipe] = useState<{ name: string; content: string | null } | null>(null);
   const [allSkills, setAllSkills] = useState(false);
   const [noAuth, setNoAuth] = useState(new Set<string>());
+  const [confirm, setConfirm] = useState<"disconnect" | "uninstall" | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolRows, setToolRows] = useState<
+    { serverId: string; name: string; description: string; enabled: boolean }[] | null
+  >(null);
+  const [toolsLoading, setToolsLoading] = useState(false);
+  const [toolsError, setToolsError] = useState<string | null>(null);
+  const toolsRequest = useRef(0);
   const [attempt, setAttempt] = useState(0);
   const live = useRef(true);
   const spaceCount = useOwnSpaces().length;
@@ -329,6 +355,15 @@ export function PluginDetail({
   const busy = Boolean(pending);
   const everywhere = reachesOtherSpaces(install?.availability, spaceCount);
   const ready = Boolean(detail) && (Boolean(install) || Boolean(preview));
+  const pluginConnected =
+    servers.length > 0 &&
+    servers.every(
+      (server) => mcpServerConnection(server) === "connected" || noAuth.has(server.id),
+    );
+  const connectorPlugin = !skillPack && !managed && (connectorCount > 0 || servers.length > 0);
+  // A plugin is one install for the account. All spaces, the default, includes an
+  // organization created later. availability omitted means that default.
+  const allSpaces = install?.availability?.allSpaces !== false;
   const installedConnector = useRef(false);
   const startedSignIn = useRef(false);
   useEffect(() => {
@@ -376,7 +411,212 @@ export function PluginDetail({
     t,
   ]);
 
+  const spaceNote = !connectorPlugin
+    ? null
+    : !install
+      ? t`Connecting adds one plugin for your account. It then shows in every space, including an organization you create later.`
+      : allSpaces
+        ? t`This plugin is one install for your account. It is in every space, including an organization you create later. Disconnect deletes its MCP server and removes it from all of them.`
+        : t`This plugin is only in the spaces you chose. Disconnect deletes its MCP server and removes it from those spaces.`;
+
+  const [copied, copy] = useCopyText();
+  async function share() {
+    const href = sourceHref(selection.installedSource, detail?.resolvedSha);
+    if (await copy(href)) return;
+    window.open(href, "_blank", "noopener,noreferrer");
+  }
+
+  function startSignIn() {
+    const server = servers.find(
+      (row) => mcpServerNeedsSignIn(row) && mcpServerConnection(row) !== "needs_client",
+    );
+    if (server) void signIn(server);
+    else if (servers[0]) void signIn(servers[0]);
+  }
+
+  async function loadTools() {
+    const request = ++toolsRequest.current;
+    setToolsLoading(true);
+    setToolsError(null);
+    try {
+      const [listed, assignments] = await Promise.all([
+        Promise.all(
+          servers.map(async (server) => {
+            if (server.allBots !== true)
+              await rpc.mcp.servers.agents({ id: server.id, allBots: true, botIds: [] });
+            return {
+              server,
+              tools: await rpc.mcp.servers.tools({ id: server.id }),
+            };
+          }),
+        ),
+        activeBotId ? rpc.mcp.assignments.list({ botId: activeBotId }) : Promise.resolve([]),
+      ]);
+      if (request !== toolsRequest.current || !live.current) return;
+      const byServer = new Map(assignments.map((row) => [row.serverId, row]));
+      setToolRows(
+        listed.flatMap(({ server, tools }) =>
+          tools.map((tool) => ({
+            serverId: server.id,
+            name: tool.name,
+            description: tool.description,
+            enabled: toolEnabled(byServer.get(server.id), tool.name),
+          })),
+        ),
+      );
+    } catch (err) {
+      if (request === toolsRequest.current && live.current)
+        setToolsError(errorText(err, t`Could not list tools`));
+    } finally {
+      if (request === toolsRequest.current && live.current) setToolsLoading(false);
+    }
+  }
+
+  function toggleTool(serverId: string, name: string, enabled: boolean) {
+    if (!activeBotId || !toolRows) return;
+    const serverTools = toolRows.filter((row) => row.serverId === serverId);
+    const enabledNames = serverTools
+      .filter((row) => (row.name === name ? enabled : row.enabled))
+      .map((row) => row.name);
+    const allowAllTools = enabledNames.length === serverTools.length;
+    const previous = toolRows;
+    setToolRows(
+      toolRows.map((row) =>
+        row.serverId === serverId && row.name === name ? { ...row, enabled } : row,
+      ),
+    );
+    void run(
+      `tool:${serverId}:${name}`,
+      async () => {
+        try {
+          await rpc.mcp.assignments.setTools({
+            botId: activeBotId,
+            serverId,
+            allowAllTools,
+            allowedTools: allowAllTools ? [] : enabledNames,
+          });
+          await onChanged();
+        } catch (err) {
+          if (live.current) setToolRows(previous);
+          throw err;
+        }
+      },
+      t`Could not update tools`,
+    );
+  }
+
+  /** Deletes the MCP servers with the plugin. One install, so every space loses it. */
+  function removePlugin() {
+    if (!install) return;
+    void run(
+      "remove",
+      async () => {
+        const browser = desktopBridge()?.mcpBrowser;
+        await Promise.all(servers.map((server) => browser?.clear(server.id).catch(() => undefined)));
+        await rpc.capabilities.remove({ id: install.id });
+        setConfirm(null);
+        await onChanged();
+        onBack();
+      },
+      t`Could not remove plugin`,
+    );
+  }
+
   function headerAction() {
+    if (confirm && install) {
+      return (
+        <>
+          <Button variant="ghost" disabled={busy} onClick={() => setConfirm(null)}>
+            <Trans>Cancel</Trans>
+          </Button>
+          <Button variant="destructive" disabled={busy} onClick={removePlugin}>
+            {pending === "remove" ? (
+              <Trans>Removing…</Trans>
+            ) : confirm === "disconnect" ? (
+              <Trans>Disconnect</Trans>
+            ) : (
+              <Trans>Uninstall</Trans>
+            )}
+          </Button>
+        </>
+      );
+    }
+    if (connectorPlugin && pluginConnected) {
+      return (
+        <>
+          <Button variant="secondary" disabled={busy} onClick={startSignIn}>
+            <Trans>Reconnect</Trans>
+          </Button>
+          <Button variant="destructive" disabled={busy} onClick={() => setConfirm("disconnect")}>
+            <Trans>Disconnect</Trans>
+          </Button>
+        </>
+      );
+    }
+    if (connectorPlugin && (installed || !install)) {
+      const reconnect = servers.some(
+        (row) => row.oauthStatus === "reconnect" || row.oauthStatus === "connected",
+      );
+      // A disabled server stays off. Every other unconnected plugin still offers Connect.
+      const offerConnect =
+        !installed ||
+        servers.length === 0 ||
+        servers.some((row) => mcpServerConnection(row) !== "disabled");
+      return (
+        <>
+          {detail ? (
+            <Button variant="secondary" disabled={busy} onClick={() => void share()}>
+              {copied ? <Check /> : <Link2 />}
+              {copied ? <Trans>Copied</Trans> : <Trans>Share</Trans>}
+            </Button>
+          ) : null}
+          {offerConnect && !installed ? (
+            <Button
+              disabled={busy || !ready}
+              onClick={() =>
+                void setParts("header", toggle(headerPart, true), t`Could not install plugin`)
+              }
+            >
+              {pending === "header" ? <Trans>Connecting…</Trans> : <Trans>Connect</Trans>}
+            </Button>
+          ) : null}
+          {offerConnect && installed ? (
+            <Button disabled={busy} onClick={startSignIn}>
+              {pending && pending !== "remove" ? (
+                <Trans>Connecting…</Trans>
+              ) : reconnect ? (
+                <Trans>Reconnect</Trans>
+              ) : (
+                <Trans>Connect</Trans>
+              )}
+            </Button>
+          ) : null}
+          {installed ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    aria-label={t`More`}
+                    disabled={busy}
+                  />
+                }
+              >
+                <Ellipsis />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem variant="destructive" onClick={() => setConfirm("uninstall")}>
+                  <Trash2 />
+                  <Trans>Uninstall</Trans>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+        </>
+      );
+    }
     if (managed)
       return managed.connected ? (
         <Button variant="secondary" disabled={busy} onClick={managed.onManage}>
@@ -446,17 +686,6 @@ export function PluginDetail({
   return (
     <div data-testid="plugin-detail" className="space-y-7">
       <div className="flex items-start gap-4">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="mt-3.5 -ms-2 text-muted-foreground"
-          aria-label={t`Back`}
-          disabled={busy}
-          onClick={onBack}
-        >
-          <ChevronLeft />
-        </Button>
         <PluginLogo
           name={selection.name}
           logo={managed?.logo ?? selection.logo}
@@ -512,6 +741,100 @@ export function PluginDetail({
         </div>
       ) : null}
 
+      {spaceNote ? (
+        <p data-testid="plugin-space-note" className="px-1 text-body-sm text-muted-foreground">
+          {spaceNote}
+        </p>
+      ) : null}
+
+      {connectorPlugin && servers.length ? (
+        <section data-testid="plugin-accounts">
+          <h3 className="mb-2 px-1 text-body font-medium text-foreground">
+            <Trans>Accounts</Trans>
+          </h3>
+          <ul className="divide-y divide-border/60 rounded-xl border border-border/70">
+            {servers.map((server) => (
+              <li key={server.id} className="flex items-center gap-3 px-4 py-3">
+                <span className="min-w-0 flex-1 truncate text-body-lg font-medium">
+                  {server.name.startsWith(prefix) ? server.name.slice(prefix.length) : server.name}
+                </span>
+                {mcpServerConnection(server) === "connected" || noAuth.has(server.id) ? (
+                  <span className="shrink-0 text-body-sm font-medium text-success">
+                    <Trans>Connected</Trans>
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {pluginConnected ? (
+        <section data-testid="plugin-tools">
+          <h3 className="mb-2 px-1 text-body font-medium text-foreground">
+            <Trans>Tools</Trans>
+          </h3>
+          <Disclosure
+            className="rounded-xl border border-border/70"
+            summaryClassName="w-full justify-between px-4 py-3 text-body text-muted-foreground"
+            open={toolsOpen}
+            onOpenChange={(open) => {
+              setToolsOpen(open);
+              if (open && !toolRows && !toolsLoading) void loadTools();
+            }}
+            summary={
+              servers.some((server) => server.health.toolCount != null) || toolRows ? (
+                <Plural
+                  value={
+                    toolRows?.length ??
+                    servers.reduce((sum, server) => sum + (server.health.toolCount ?? 0), 0)
+                  }
+                  one="# tool"
+                  other="# tools"
+                />
+              ) : (
+                <Trans>Connected</Trans>
+              )
+            }
+          >
+            {toolsLoading ? (
+              <div className="grid place-items-center py-4">
+                <Spinner className="size-4 text-muted-foreground" aria-label={t`Loading…`} />
+              </div>
+            ) : null}
+            {toolsError ? (
+              <p className="px-4 py-3 text-body-sm text-destructive">{toolsError}</p>
+            ) : null}
+            {toolRows ? (
+              <ul className="border-t border-border/60">
+                {toolRows.map((tool) => (
+                  <li
+                    key={`${tool.serverId}:${tool.name}`}
+                    className="flex items-center gap-3 px-4 py-2.5"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-body text-foreground">{tool.name}</span>
+                      {tool.description ? (
+                        <span className="block truncate text-body-sm text-muted-foreground">
+                          {tool.description}
+                        </span>
+                      ) : null}
+                    </span>
+                    <Switch
+                      size="sm"
+                      checked={tool.enabled}
+                      disabled={!activeBotId || busy}
+                      aria-label={t`Enable ${tool.name}`}
+                      onCheckedChange={(checked) => toggleTool(tool.serverId, tool.name, checked)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </Disclosure>
+        </section>
+      ) : null}
+
       {!skillsOnly && (managed || connectorCount) ? (
         <section>
           <h3 className="mb-2 flex gap-2 px-1 text-body font-medium text-foreground">
@@ -551,23 +874,10 @@ export function PluginDetail({
                     </span>
                   </span>
                   {mcpServerConnection(server) === "connected" || noAuth.has(server.id) ? (
-                    <Check role="img" aria-label={t`Connected`} className="size-4 text-success" />
-                  ) : !mcpServerNeedsSignIn(server) ? null : (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() => void signIn(server)}
-                    >
-                      {pending === server.id ? (
-                        <Trans>Connecting…</Trans>
-                      ) : server.oauthStatus === "reconnect" ? (
-                        <Trans>Reconnect</Trans>
-                      ) : (
-                        <Trans>Sign in</Trans>
-                      )}
-                    </Button>
-                  )}
+                    <span className="shrink-0 text-body-sm font-medium text-success">
+                      <Check role="img" aria-label={t`Connected`} className="size-4" />
+                    </span>
+                  ) : null}
                   {activeBotId ? (
                     assigned.has(server.id) ? (
                       <span className="text-body-sm text-muted-foreground">
@@ -692,6 +1002,64 @@ export function PluginDetail({
               </li>
             ) : null}
           </ul>
+        </section>
+      ) : null}
+
+      {detail && connectorPlugin ? (
+        <section data-testid="plugin-information" className="space-y-2">
+          <h3 className="px-1 text-body font-medium text-foreground">
+            <Trans>Information</Trans>
+          </h3>
+          <dl className="divide-y divide-border/60 rounded-xl border border-border/70">
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <dt className="text-body text-muted-foreground">
+                <Trans>Capabilities</Trans>
+              </dt>
+              <dd className="text-body text-foreground">
+                <Plural value={connectorCount || servers.length} one="# app" other="# apps" />
+                {skills.length ? (
+                  <>
+                    {", "}
+                    <Plural value={skills.length} one="# skill" other="# skills" />
+                  </>
+                ) : null}
+              </dd>
+            </div>
+            {detail.author ? (
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <dt className="text-body text-muted-foreground">
+                  <Trans>Developer</Trans>
+                </dt>
+                <dd className="truncate text-body text-foreground">{detail.author}</dd>
+              </div>
+            ) : null}
+            {detail.homepage || selection.site ? (
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <dt className="text-body text-muted-foreground">
+                  <Trans>Website</Trans>
+                </dt>
+                <dd className="truncate text-body text-foreground">
+                  {detail.homepage || selection.site}
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <dt className="text-body text-muted-foreground">
+                <Trans>Availability</Trans>
+              </dt>
+              <dd className="text-body text-foreground">
+                {install ? (
+                  allSpaces ? (
+                    <Trans>All spaces</Trans>
+                  ) : (
+                    <Trans>Chosen spaces</Trans>
+                  )
+                ) : (
+                  <Trans>All spaces</Trans>
+                )}
+              </dd>
+            </div>
+          </dl>
         </section>
       ) : null}
 
