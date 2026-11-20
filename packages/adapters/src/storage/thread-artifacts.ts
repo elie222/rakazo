@@ -23,13 +23,13 @@ import {
   messageBlockForArtifact,
   validateAttachmentMimeType,
 } from "@rakazo/core";
-import type { Artifact, Prisma, PrismaClient } from "@rakazo/db";
+import type { Artifact, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withResolvedArtifactVersion,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "../computers/screens/computer-support.js";
 
 export type MaterializedThreadFile = {
@@ -44,6 +44,8 @@ export async function attachWorkspaceFileToThread(
     prisma: PrismaClient;
     artifacts: ArtifactStore;
     maxUploadSizeBytes?: number;
+    /** Signals the Space's artifacts once the file is attached, so open lists show it. */
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
   },
   input: {
     spaceId: string;
@@ -124,6 +126,10 @@ export async function attachWorkspaceFileToThread(
     await deps.artifacts.remove(stored.id, context).catch(() => undefined);
     throw error;
   });
+  await bestEffort(
+    "artifacts space change signal",
+    deps.events?.publishSpaceChange?.(input.spaceId, "artifacts"),
+  );
   return { artifactId: row.id, block: messageBlockForArtifact(row) };
 }
 
