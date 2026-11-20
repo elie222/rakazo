@@ -1,10 +1,9 @@
 import type { Bot, ModelApiProtocol, ModelCatalogEntry, ModelSettings } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
-  connectionDisplayName,
+  modelConnectionNames,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  providerDisplayName,
   selectCompatibleModelCredential,
   withConnectionName,
 } from "@rakazo/contracts";
@@ -379,10 +378,7 @@ export function connectedModelChoices(
       const entry = exact ?? models[0];
       if (!entry?.subscriptionName) return choice;
       const serving = connectionForModelChoice(credentials, choice);
-      const name = providerDisplayName(entry, serving?.authKind);
-      const providerLabel = serving
-        ? connectionDisplayName(serving, name, [entry.providerName ?? entry.provider])
-        : name;
+      const { connectionName: providerLabel } = modelConnectionNames(entry, serving);
       return {
         ...choice,
         providerLabel,

@@ -79,6 +79,19 @@ export function connectionDisplayName(
   return `${provider} (${label})`;
 }
 
+export function modelConnectionNames(
+  entry: Pick<ModelCatalogEntry, "provider" | "providerName" | "subscriptionName" | "auth">,
+  credential?: Pick<ModelCredential, "provider" | "label" | "endpointName"> & { authKind?: string },
+): { providerName: string; connectionName: string } {
+  const providerName = providerDisplayName(entry, credential?.authKind);
+  return {
+    providerName,
+    connectionName: credential
+      ? connectionDisplayName(credential, providerName, [entry.providerName ?? entry.provider])
+      : providerName,
+  };
+}
+
 /**
  * "Model (OpenRouter)", folding a named connection in so it reads "Model (OpenRouter, Work)"
  * instead of nesting brackets.
@@ -115,16 +128,14 @@ export function connectedBackupOptions(
   for (const [provider, models] of entries) {
     const owners = connections.get(provider) ?? [];
     const option = (entry: ModelCatalogEntry, connection?: ModelCredential) => {
-      const providerName = providerDisplayName(entry, connection?.authKind);
+      const names = modelConnectionNames(entry, connection);
       return {
         provider: entry.provider,
         modelId: entry.id,
         label: entry.label,
-        providerName,
+        providerName: names.providerName,
         ...(connection ? { credentialId: connection.id } : {}),
-        connectionName: connection
-          ? connectionDisplayName(connection, providerName, [entry.providerName ?? entry.provider])
-          : providerName,
+        connectionName: names.connectionName,
       };
     };
     for (const entry of models) {
