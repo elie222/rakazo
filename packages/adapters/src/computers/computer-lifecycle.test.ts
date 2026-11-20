@@ -122,7 +122,7 @@ describe("computer provisioning", () => {
           "computer-1",
           context,
         ),
-      ).resolves.toEqual({ ...ref, startSize: "standard" });
+      ).resolves.toEqual({ ...ref, startSize: "standard", onStart: expect.any(Function) });
       expect(provision).toHaveBeenCalledOnce();
       expect(prisma.computer.updateMany).toHaveBeenLastCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ state: "running" }) }),
@@ -1454,7 +1454,7 @@ describe("computer provisioning", () => {
           await vi.advanceTimersByTimeAsync(250);
           await new Promise((resolve) => setImmediate(resolve));
         }
-        await expect(started).resolves.toEqual({ ...ref, startSize: "standard" });
+        await expect(started).resolves.toEqual({ ...ref, startSize: "standard", onStart: expect.any(Function) });
         const activation = {
           state: "running",
           providerRef: next.providerRef,
@@ -1912,7 +1912,7 @@ describe("computer provisioning", () => {
         if (prepareFails) {
           await expect(result).rejects.toThrow("provider preparation failed");
         } else {
-          await expect(result).resolves.toEqual({ ...ref, startSize: "standard" });
+          await expect(result).resolves.toEqual({ ...ref, startSize: "standard", onStart: expect.any(Function) });
         }
         expect(prepare).toHaveBeenCalledWith(ref, context);
         expect(sandbox.importWorkspace).not.toHaveBeenCalled();
@@ -1976,7 +1976,7 @@ describe("computer provisioning", () => {
           "computer-1",
           context,
         ),
-      ).resolves.toEqual({ ...ref, startSize: "standard" });
+      ).resolves.toEqual({ ...ref, startSize: "standard", onStart: expect.any(Function) });
       expect(importWorkspace).toHaveBeenCalledTimes(1);
       expect(updateMany).toHaveBeenCalledTimes(2);
       expect(updateMany).toHaveBeenLastCalledWith(
@@ -2083,7 +2083,7 @@ describe("the record of a machine a start created", () => {
   it("is dropped in the transaction that stores the machine and leaves booting", async () => {
     const { row, writes, run } = start();
 
-    await expect(run()).resolves.toEqual({ ...ref, startSize: "standard" });
+    await expect(run()).resolves.toEqual({ ...ref, startSize: "standard", onStart: expect.any(Function) });
 
     expect(row).toMatchObject({ state: "running", providerRef: "machine-1" });
     expect(writes).toEqual(["in transaction: running", `in transaction: cancel ${key}`]);
@@ -2432,7 +2432,7 @@ describe("Team Computer wake", () => {
       const ref = await boot(harness);
 
       expect(harness.sandbox.provision).not.toHaveBeenCalled();
-      expect(ref).toMatchObject({ providerRef: "sandbox-1", startSize: "standard" });
+      expect(ref).toMatchObject({ providerRef: "sandbox-1", startSize: "standard", onStart: expect.any(Function) });
       const data = vi.mocked(harness.prisma.computer.updateMany).mock.calls[0]?.[0].data;
       expect(data?.runningSince).not.toEqual(runningSince);
       expect(data).toMatchObject({ runningSize: "standard", runningSizeSince: data?.runningSince });
@@ -2484,13 +2484,13 @@ describe("Team Computer wake", () => {
       new Error("database unavailable"),
     );
 
-    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard", onStart: expect.any(Function) });
   });
 
   it("removes folders of bots deleted while the Team Computer was stopped", async () => {
     const harness = wakeHarness("stopped");
 
-    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard", onStart: expect.any(Function) });
 
     expect(harness.findMany).toHaveBeenCalledWith({
       where: { spaceId: "workspace-1" },
@@ -2509,7 +2509,7 @@ describe("Team Computer wake", () => {
   it("does not look for deleted bots' folders when reconnecting to a running Team Computer", async () => {
     const harness = wakeHarness("running");
 
-    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard", onStart: expect.any(Function) });
 
     expect(harness.findMany).not.toHaveBeenCalled();
   });
@@ -2526,7 +2526,7 @@ describe("Team Computer wake", () => {
         provisioned,
       );
 
-      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
+      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard", onStart: expect.any(Function) });
 
       expect(harness.execute).toHaveBeenCalledWith(
         harness.ref,
@@ -2556,7 +2556,7 @@ describe("Team Computer wake", () => {
       await cleanupStarted.promise;
       await vi.advanceTimersByTimeAsync(20_000);
 
-      await expect(booting).resolves.toEqual({ ...harness.ref, startSize: "standard" });
+      await expect(booting).resolves.toEqual({ ...harness.ref, startSize: "standard", onStart: expect.any(Function) });
     } finally {
       vi.useRealTimers();
     }
@@ -2570,7 +2570,7 @@ describe("Team Computer wake", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     try {
-      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
+      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard", onStart: expect.any(Function) });
     } finally {
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     }
@@ -4544,12 +4544,17 @@ describe("withWakeableComputer", () => {
 
   function harness() {
     const prisma = {
-      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      computer: {
+        // The stretch is read again when the wake is recorded.
+        findUnique: vi.fn().mockResolvedValue(computer),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       computerRun: {
         createMany: vi.fn().mockResolvedValue({ count: 1 }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       $executeRaw: vi.fn().mockResolvedValue(0),
+      $transaction: vi.fn(async (work: (tx: unknown) => unknown) => work(prisma)),
     } as unknown as PrismaClient;
     return { prisma };
   }
@@ -4559,6 +4564,8 @@ describe("withWakeableComputer", () => {
     expect(update?.where).toMatchObject({ id: "computer-1", state: "running", runningSince });
     expect(update?.data).toMatchObject({ runningSize: "large" });
     expect(update?.data.runningSince).not.toEqual(runningSince);
+    // A new `updatedAt` keeps an idle stop holding the old row from claiming it.
+    expect(update?.data.updatedAt).toEqual(update?.data.runningSince);
     expect(prisma.computerRun.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: [expect.objectContaining({ startedAt: update?.data.runningSince, size: "large" })],

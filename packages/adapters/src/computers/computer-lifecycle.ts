@@ -224,13 +224,8 @@ export async function withWakeableComputer<Result>(
   try {
     return await call(ref);
   } finally {
-    const { runningSince } = computer;
-    const resized = runningSince && changedRunningSize(computer, runningSince, woke);
-    if (runningSince && resized)
-      await bestEffort(
-        "computer woken size",
-        startResizedStretch(deps.prisma, computer, runningSince, resized),
-      );
+    if (woke)
+      await bestEffort("computer woken size", recordWokenSize(deps.prisma, computer.id, woke));
   }
 }
 
@@ -391,7 +386,7 @@ export async function provisionComputer(
       );
       if (!damaged) {
         logProvisioned(ref, "reuse");
-        return ref;
+        return { ...ref, onStart: recordWakes(deps.prisma, computerId) };
       }
       context.signal.throwIfAborted();
     }
@@ -742,7 +737,7 @@ export async function provisionComputer(
       existing.state === "running" ? "gone" : "reconciled",
     );
     logProvisioned(ref, replacement ? "create" : ref.started ? "resume" : "reuse");
-    return { ...ref, startSize };
+    return { ...ref, startSize, onStart: recordWakes(deps.prisma, computerId) };
   } catch (error) {
     log.warn("computer.provision_failed", {
       provider: existing.kind,
@@ -855,17 +850,49 @@ async function startResizedStretch(
 ): Promise<void> {
   const now = new Date();
   const sizing = { runningSize: size, runningSizeSince: now };
-  const moved = await prisma.computer.updateMany({
-    where: {
-      id: computer.id,
-      state: "running",
-      providerRef: computer.providerRef,
-      runningSince,
-    },
-    data: { runningSince: now, ...sizing },
+  // One transaction, and a new `updatedAt`, so an idle stop working from the row as it was
+  // cannot claim it and end only the old stretch.
+  await prisma.$transaction(async (tx) => {
+    const moved = await tx.computer.updateMany({
+      where: {
+        id: computer.id,
+        state: "running",
+        providerRef: computer.providerRef,
+        runningSince,
+      },
+      data: { runningSince: now, updatedAt: now, ...sizing },
+    });
+    if (moved.count === 1)
+      await recordComputerRunStart(tx as PrismaClient, { ...computer, ...sizing }, now, "gone");
   });
-  if (moved.count === 1)
-    await recordComputerRunStart(prisma, { ...computer, ...sizing }, now, "gone");
+}
+
+/** The machine came up at `size`; if its open stretch is rated at another, a new one begins. */
+async function recordWokenSize(prisma: PrismaClient, computerId: string, size: ComputerSize) {
+  const computer = await prisma.computer.findUnique({
+    where: { id: computerId },
+    select: {
+      id: true,
+      spaceId: true,
+      userId: true,
+      homeKey: true,
+      kind: true,
+      providerRef: true,
+      runningSince: true,
+      runningSize: true,
+      runningSizeSince: true,
+    },
+  });
+  const runningSince = computer?.runningSince;
+  const resized = runningSince && changedRunningSize(computer, runningSince, size);
+  if (resized) await startResizedStretch(prisma, computer, runningSince, resized);
+}
+
+/** For a reference a whole run keeps: a wake during it moves the hours to the size it came up at. */
+function recordWakes(prisma: PrismaClient, computerId: string): ComputerRef["onStart"] {
+  return (size) => {
+    if (size) void bestEffort("computer woken size", recordWokenSize(prisma, computerId, size));
+  };
 }
 
 /**
