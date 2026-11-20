@@ -125,7 +125,10 @@ function useToolAgentTool(
           ]),
           response: host.modelResponses,
         });
-        throw new Error(`${name} is not available. Use a name find_tool lists.`);
+        throw new Error(
+          host.request.unavailableToolReasons?.[name] ??
+            `${name} is not available. Use a name find_tool lists.`,
+        );
       }
       const prepared = tool.prepareArguments?.(args ?? {}) ?? args ?? {};
       const validated = validateToolArguments(tool, {

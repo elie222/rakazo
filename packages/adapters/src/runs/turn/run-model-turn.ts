@@ -132,7 +132,7 @@ function modelTurnRequest(
     sourceMessage,
     userComputer,
   } = turn.capabilities;
-  const { strategicBuiltins, taskCatalogInstruction, tools } = turn.tools;
+  const { strategicBuiltins, taskCatalogInstruction, tools, unavailableToolReasons } = turn.tools;
   const { computerInstruction, workspaceInstruction } = turn.computerInstructions;
   const {
     agentSkillsLine,
@@ -258,6 +258,7 @@ function modelTurnRequest(
         !turnBlocks?.some((block) => block.kind === "image" && block.imageHandling === "confirm"),
     ),
     tools,
+    unavailableToolReasons,
     // The live array: secrets learned later in the run redact too.
     secrets: runSecrets,
     model: mainRunModel,
