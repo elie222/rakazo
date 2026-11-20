@@ -528,6 +528,18 @@ it("omits unavailable voice controls before any connection is configured", async
   expect(container.querySelector("button")).toBeNull();
 });
 
+it("shows a failed included-voice lookup instead of hiding the profile section", async () => {
+  state.connected = [];
+  state.status.mockRejectedValue(new Error("Could not load voice"));
+  await act(async () => root.render(<BotVoiceSettings botId="bot-a" />));
+  await act(async () => {
+    await vi.waitFor(() => expect(container.textContent).toContain("Could not load voice"));
+  });
+  expect(container.querySelector("section")).not.toBeNull();
+  expect(container.querySelector('[aria-label="Hear a sample"]')).toBeNull();
+  expect(state.speak).not.toHaveBeenCalled();
+});
+
 it("explains a disconnected saved provider instead of offering a stale ready preview", async () => {
   state.bot.voiceProvider = "provider-b";
   state.connected = ["provider-a"];

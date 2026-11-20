@@ -12,6 +12,7 @@ import {
   VOICE_RESPONSE_TIMEOUT_MS,
   withAbort,
 } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 import { File, Paths } from "expo-file-system";
 import type * as ExpoSpeech from "expo-speech";
@@ -304,6 +305,17 @@ export async function speakText(text: string, opts: SpeechOptions = {}): Promise
   return speakPrepared(text, opts, beginSpeech(opts.owner));
 }
 
+async function speechDevicePreference(opts: SpeechOptions): Promise<boolean | undefined> {
+  if (opts.hostedPreview || opts.provider) return false;
+  try {
+    return await loadDeviceVoicePreference();
+  } catch (error) {
+    // An unreadable local-only choice must never send reply text to a hosted voice.
+    getLogger().warn("device voice preference unavailable; using device voice", { error });
+    return true;
+  }
+}
+
 async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): Promise<boolean> {
   if (!isCurrentSpeech(epoch)) return false;
   // Each queued item owns the epoch while it prepares and plays.
@@ -323,16 +335,7 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
     prepareControl,
   );
   try {
-    let devicePreference: boolean | undefined;
-    try {
-      // Hosted previews bypass Device without overriding the server's saved bot/default selection.
-      devicePreference =
-        opts.hostedPreview || opts.provider ? false : await loadDeviceVoicePreference();
-    } catch {
-      // A read failure must not be treated as "off": that would send reply text
-      // through hosted voice after the user opted for on-device only.
-      devicePreference = true;
-    }
+    const devicePreference = await speechDevicePreference(opts);
     if (!isCurrentSpeech(epoch)) return false;
     if (devicePreference === true) return await speakCurrentOnDevice(text, opts, epoch);
     const requestContext = opts.requestContext ?? (await captureApiRequestContext());
@@ -513,11 +516,6 @@ function openQueuedSpeech(opts: SpeechOptions): QueuedSpeech {
   const epoch = beginSpeech(opts.owner);
   announcedSpeaker =
     opts.botId && opts.speaker ? { botId: opts.botId, speaker: opts.speaker } : undefined;
-  // Device-only speech never captures a hosted context, even when its preference cannot be read.
-  const preference =
-    opts.hostedPreview || opts.provider
-      ? Promise.resolve(false)
-      : loadDeviceVoicePreference().catch(() => true);
   let context: Promise<ApiRequestContext> | undefined;
   const requestContext = () =>
     (context ??= opts.requestContext
@@ -551,7 +549,7 @@ function openQueuedSpeech(opts: SpeechOptions): QueuedSpeech {
     );
   };
   const selectVoice = async (text: string, signal: AbortSignal) => {
-    const device = await preference;
+    const device = await speechDevicePreference(opts);
     if (device === true || signal.aborted || !isCurrentSpeech(epoch))
       return { device: true, utterances: [] };
     try {

@@ -1,6 +1,7 @@
 import { AiConsentBlocked, MAX_VOICE_AUDIO_BYTES, VOICE_RESPONSE_TIMEOUT_MS } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
+import { getLogger } from "@rakazo/logging";
 import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
@@ -1035,21 +1036,16 @@ describe("hosted voice playback controls", () => {
     ]);
     expect(ControllableAudio.instances[0]!.paused).toBe(true);
 
-    const played: Array<string | undefined> = [];
-    const seen = new Set<ControllableAudio>([ControllableAudio.instances[0]!]);
-    for (let step = 0; step < 40 && played.length < 2; step++) {
-      await Promise.resolve();
-      for (const audio of ControllableAudio.instances) {
-        if (seen.has(audio) || audio.paused) continue;
-        seen.add(audio);
-        played.push(getVoicePlaybackState().messageId);
-        audio.onended?.();
-      }
+    for (const messageId of ["b1", "b2"]) {
+      await vi.waitFor(() => {
+        expect(getVoicePlaybackState()).toMatchObject({ messageId, canPause: true });
+        expect(ControllableAudio.instances.at(-1)?.paused).toBe(false);
+      });
+      ControllableAudio.instances.at(-1)!.onended?.();
     }
 
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(true);
-    expect(played).toEqual(["b1", "b2"]);
     expect(ControllableAudio.instances).toHaveLength(3);
     expect(getVoicePlaybackState().status).toBe("idle");
   });
@@ -1801,12 +1797,18 @@ describe("on-device speech", () => {
   it.each([speakText, queueSpeech])(
     "uses on-device speech when the preference cannot be read, and never hosts the reply (%s)",
     async (say) => {
-      vi.mocked(SecureStore.getItemAsync).mockRejectedValue(new Error("device locked"));
+      const error = new Error("device locked");
+      const warning = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+      vi.mocked(SecureStore.getItemAsync).mockRejectedValue(error);
       vi.mocked(captureApiRequestContext).mockClear();
       vi.mocked(Speech.speak).mockImplementation((_text, options) => options?.onDone?.());
 
       await expect(say("Read this")).resolves.toBe(true);
 
+      expect(warning).toHaveBeenCalledWith(
+        "device voice preference unavailable; using device voice",
+        { error },
+      );
       expect(Speech.speak).toHaveBeenCalledWith("Read this", expect.any(Object));
       expect(captureApiRequestContext).not.toHaveBeenCalled();
       expect(rpc).not.toHaveBeenCalled();

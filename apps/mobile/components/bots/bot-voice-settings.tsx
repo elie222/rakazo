@@ -100,7 +100,8 @@ export function BotVoiceSettings({ botId }: { botId: string }) {
   const needsReconnect = Boolean(credentials.data && bot?.voiceProvider && !providers.connection);
 
   if (catalog.isPending) return null;
-  if (credentials.data && providers.options.length === 0 && !status.data?.ready) return null;
+  if (!failure && credentials.data && providers.options.length === 0 && !status.data?.ready)
+    return null;
 
   return (
     <SettingsGroup
