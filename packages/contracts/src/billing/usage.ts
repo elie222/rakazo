@@ -31,6 +31,7 @@ export const UsageTotalFieldSchema = z.enum([
   "outputTokens",
   "totalTokens",
   "costUsd",
+  "apiCostUsd",
 ]);
 export type UsageTotalField = z.infer<typeof UsageTotalFieldSchema>;
 
@@ -46,10 +47,28 @@ const UsageTotalsSchema = z.object({
   modelCalls: z.number().optional(),
   incomplete: z.array(UsageTotalFieldSchema).optional(),
 });
+/**
+ * The cost at list API prices: each call's own cost, or for a call without one (such as one a
+ * subscription covers) its tokens at the model's list price. Null when neither is known.
+ */
+const ApiCost = {
+  apiCostUsd: z.number().nullable(),
+  /** List prices make up part of it, so it is an estimate. */
+  apiCostEstimated: z.boolean(),
+};
+// Optional on the summary: servers from before it send only the real cost.
+const OptionalApiCost = z.object(ApiCost).partial().shape;
 export const UsageSummarySchema = UsageTotalsSchema.extend({
+  ...OptionalApiCost,
   runs: z.number(),
   models: z
-    .array(UsageTotalsSchema.required().extend({ provider: z.string(), model: z.string() }))
+    .array(
+      UsageTotalsSchema.required().extend({
+        ...OptionalApiCost,
+        provider: z.string(),
+        model: z.string(),
+      }),
+    )
     .optional(),
 });
 export type UsageSummary = z.infer<typeof UsageSummarySchema>;
@@ -67,12 +86,14 @@ export const UsageBreakdownInputSchema = z.object({
 export type UsageBreakdownInput = z.infer<typeof UsageBreakdownInputSchema>;
 
 export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
+  ...ApiCost,
   provider: z.string(),
   model: z.string(),
 });
 export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
 
 export const UsageBreakdownPointSchema = UsageTotalsSchema.required().extend({
+  ...ApiCost,
   /** The bucket's first day in the member's timezone, YYYY-MM-DD. */
   date: z.string(),
 });
@@ -99,7 +120,7 @@ export const UsageBreakdownSchema = z.object({
   bots: z.array(UsageBreakdownBotSchema),
   /** Every model used in the range, for the model selector. */
   modelOptions: z.array(z.object({ provider: z.string(), model: z.string() })),
-  totals: UsageTotalsSchema.required().extend({ runs: z.number() }),
+  totals: UsageTotalsSchema.required().extend({ ...ApiCost, runs: z.number() }),
   models: z.array(UsageBreakdownModelSchema),
   /** One point per day, or per month for an all-time history longer than two months. */
   overTimeUnit: z.enum(["day", "month"]),

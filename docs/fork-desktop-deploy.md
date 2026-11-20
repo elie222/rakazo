@@ -1,54 +1,52 @@
 # Deploying this fork's server to a desktop install
 
 The Mac mini runs the official Rakazo desktop app with its `rakazo-server` bundle swapped for one
-built from this fork. The fixes live on `feat/desktop-claude-code-fixes`; each release gets a
-`desktop/v<version>` branch that merges them onto the release tag.
+built from this fork's `main`. Three workflows keep it current:
 
-## After an upstream release
+- `upstream sync` merges upstream's `main` into this fork's `main` every morning.
+- `ci` runs the tests on every push to `main`, then publishes a compatible mobile update.
+- `desktop server deploy` builds the bundle on a GitHub Apple silicon runner once those tests pass,
+  copies it to the mini over Tailscale, and runs `scripts/fork/deploy-desktop-server.sh` there. That
+  script stops Rakazo, swaps the bundle in, reopens the app, and waits for the API's health check.
+  If the new server does not come up, it puts the previous bundle back. It refuses a bundle older
+  than the installed app, since that server would run against migrations it has never seen.
 
-1. Make the release branch (on any machine) and push it:
+When upstream's changes conflict with the fork's, the sync run fails. Merge `upstream/main` into a
+branch, resolve the conflicts, and merge its PR with **Create a merge commit**. A squash leaves the
+merge base behind, so every later sync conflicts again.
 
-   ```bash
-   git fetch upstream --tags
-   git switch -c desktop/v0.14.0 v0.14.0
-   git merge feat/desktop-claude-code-fixes
-   git push -u origin desktop/v0.14.0
+When the desktop app updates itself, it starts that release's official server. Run
+`gh workflow run "desktop server deploy"` to put the fork's back without waiting for the next merge.
+
+## One-time setup
+
+Repository secrets (Settings > Secrets and variables > Actions):
+
+- `EXPO_TOKEN`: an Expo access token for the mobile update.
+- `SYNC_TOKEN`: a fine-grained GitHub token for this repository only, with Contents and Workflows
+  read and write. Pushes made with the built-in token start no workflows and cannot change workflow
+  files.
+
+The deploy joins the tailnet through workload identity federation, so no tailnet secret is stored.
+A shell on the mini is worth more than anything else here, so the trust is narrow:
+
+1. Add the tag and its access to the tailnet policy. The tag is the deploy's alone, so other CI
+   on the tailnet never reaches the mini:
+
+   ```json
+   "tagOwners": { "tag:rakazo-deploy": ["autogroup:admin"] },
+   "grants": [{ "src": ["tag:rakazo-deploy"], "dst": ["tag:server"], "ip": ["22"] }],
+   "ssh": [{ "action": "accept", "src": ["tag:rakazo-deploy"], "dst": ["tag:server"], "users": ["<user>"] }]
    ```
 
-2. Build the bundle on the mini, so native modules are darwin-arm64. Stop if `df -g /` shows less
-   than 12 GB free.
+2. Under Trust credentials, add an OpenID Connect credential: issuer GitHub Actions, subject
+   `repo:<owner>/rakazo:environment:desktop-deploy`, scope Auth Keys write, tag
+   `tag:rakazo-deploy`. Only jobs in the `desktop-deploy` environment carry that subject, and only
+   `main` may use the environment.
 
-   ```bash
-   git clone --depth 1 --branch desktop/v0.14.0 https://github.com/mchisolm0/rakazo.git ~/oss/rakazo-build
-   cd ~/oss/rakazo-build
-   ELECTRON_SKIP_BINARY_DOWNLOAD=1 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pnpm install --frozen-lockfile \
-     --filter rakazo --filter "@rakazo/api..." --filter "@rakazo/worker..." --filter "@rakazo/web..."
-   DATABASE_URL=postgres://rakazo:rakazo@127.0.0.1:5433/rakazo pnpm db:generate
-   pnpm --filter @rakazo/web build
-   node scripts/build-server-bundle.mjs out
-   ```
-
-3. Let the app update itself, open it once so it installs `runtime/server-0.14.0`, and check it is
-   healthy.
-
-4. Quit Rakazo. `osascript -e 'quit app "Rakazo"'` does nothing over ssh, so send `kill -TERM` to
-   the main `Rakazo.app/Contents/MacOS/Rakazo` process, then to any `rakazo-server/apps/` processes
-   it leaves behind.
-
-5. Swap the bundle, keeping the `.complete` marker, and reopen:
-
-   ```bash
-   R=~/Library/Application\ Support/Rakazo/stack/runtime/server-0.14.0
-   mv "$R/rakazo-server" ~/oss/rakazo-build/official-rakazo-server
-   tar -C "$R" -xJf ~/oss/rakazo-build/out/rakazo-server-darwin-arm64-0.14.0.tar.xz
-   open -a Rakazo
-   ```
-
-6. Check that `stack/logs/api.log` says "api listening", `worker.log` says "worker ready", and
-   neither logs errors. If it does not come up, move `official-rakazo-server` back.
-
-7. Clean up: remove `~/oss/rakazo-build` and the previous `runtime/server-*` folder, then run
-   `pnpm store prune`.
+3. Secrets of the `desktop-deploy` environment: `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE` from that
+   credential (not sensitive, but kept beside the rest), `DEPLOY_SSH_HOST` (the mini's tailnet
+   name), and `DEPLOY_SSH_USER`.
 
 ## Settings the fixes read (`stack/.env`)
 

@@ -286,6 +286,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         modelCalls: number;
         runs: number;
         costUsd: number | null;
+        apiCostUsd: number | null;
         incomplete: string[];
         models: {
           model: string;
@@ -321,9 +322,10 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         totalTokens: 1172,
         modelCalls: 10,
         runs: 5,
-        incomplete: ["costUsd"],
+        incomplete: ["costUsd", "apiCostUsd"],
       });
       expect(mixed.costUsd).toBeCloseTo(0.00108);
+      expect(mixed.apiCostUsd).toBeCloseTo(0.00108);
       expect(
         mixed.models.map(({ model, modelCalls, totalTokens }) => [model, modelCalls, totalTokens]),
       ).toEqual([

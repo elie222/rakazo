@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { modelListCost } from "@rakazo/adapters";
 import type { UsageBreakdown, UsageBreakdownInput } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -211,6 +212,8 @@ describeBreakdown("usage.breakdown", () => {
       outputTokens: 0,
       totalTokens: 0,
       costUsd: 0,
+      apiCostUsd: 0,
+      apiCostEstimated: false,
       incomplete: [],
     });
 
@@ -233,11 +236,45 @@ describeBreakdown("usage.breakdown", () => {
       runs: 2,
       modelCalls: 5,
       totalTokens: 207,
-      incomplete: ["costUsd"],
+      incomplete: ["costUsd", "apiCostUsd"],
     });
     expect(mixed.totals.costUsd).toBeCloseTo(0.0165);
     expect(mixed.models.find((m) => m.model === "unpriced")?.costUsd).toBeNull();
     expect(mixed.models.find((m) => m.model === "m1")?.costUsd).toBeCloseTo(0.0115);
+    // It has no list price either, so the API cost is the priced calls' cost and a floor.
+    expect(mixed.totals.apiCostUsd).toBeCloseTo(0.0165);
+    expect(mixed.models.find((m) => m.model === "unpriced")?.apiCostUsd).toBeNull();
+    expect(mixed.totals.apiCostEstimated).toBe(false);
+
+    // A call without a cost on a listed model, such as one a subscription covers, gets its list price.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "anthropic",
+        model: "claude-sonnet-5-5",
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        totalTokens: 1_000_000,
+      },
+    });
+    const listPrice = modelListCost("anthropic", "claude-sonnet-5-5", {
+      calls: 1,
+      counted: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 1, cacheWriteTokens: 1 },
+      tokens: { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    })?.usd;
+    expect(listPrice).toBeGreaterThan(0);
+    const listed = await get({ range: "30d", botId: alpha.id });
+    expect(listed.models.find((m) => m.model === "claude-sonnet-5-5")?.apiCostUsd).toBeCloseTo(
+      listPrice!,
+    );
+    expect(listed.totals.apiCostUsd).toBeCloseTo(0.0165 + listPrice!);
+    expect(listed.totals.apiCostEstimated).toBe(true);
+    expect(listed.overTime.reduce((sum, point) => sum + (point.apiCostUsd ?? 0), 0)).toBeCloseTo(
+      0.0165 + listPrice!,
+    );
 
     // A month whose only call reports no tokens or cost reads unknown, not zero.
     await prisma.usageRecord.create({
@@ -256,7 +293,60 @@ describeBreakdown("usage.breakdown", () => {
       modelCalls: 1,
       totalTokens: null,
       costUsd: null,
+      apiCostUsd: null,
     });
+
+    // A call on that model without token counts leaves its list price standing, as a floor.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "anthropic",
+        model: "claude-sonnet-5-5",
+      },
+    });
+    const uncounted = (await get({ range: "30d", botId: alpha.id })).models.find(
+      (m) => m.model === "claude-sonnet-5-5",
+    );
+    expect(uncounted?.apiCostUsd).toBeCloseTo(listPrice!);
+    expect(uncounted?.incomplete).toContain("apiCostUsd");
+
+    // A listed model whose only call has no counts has nothing to price, so its cost stays unknown.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "anthropic",
+        model: "claude-opus-5-5",
+      },
+    });
+    const nothing = (await get({ range: "30d", botId: alpha.id })).models.find(
+      (m) => m.model === "claude-opus-5-5",
+    );
+    expect(nothing).toMatchObject({ apiCostUsd: null, apiCostEstimated: false });
+
+    // A call that reports only cache tokens is still priced, as a floor.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "anthropic",
+        model: "claude-haiku-5-5",
+        cacheReadTokens: 1_000_000,
+      },
+    });
+    const cacheOnly = (await get({ range: "30d", botId: alpha.id })).models.find(
+      (m) => m.model === "claude-haiku-5-5",
+    );
+    expect(cacheOnly?.apiCostUsd).toBeGreaterThan(0);
+    expect(cacheOnly).toMatchObject({ apiCostEstimated: true });
+    expect(cacheOnly?.incomplete).toContain("apiCostUsd");
 
     const elsewhere = await rpc<UsageBreakdown>(app, other, "usage/breakdown", { range: "all" });
     expect(summary(elsewhere)).toEqual({ runs: 1, calls: 1, tokens: 1_000_000 });
