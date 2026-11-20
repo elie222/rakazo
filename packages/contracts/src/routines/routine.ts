@@ -81,10 +81,12 @@ export const RoutineSchema = z.object({
 });
 export type Routine = z.infer<typeof RoutineSchema>;
 
+export const ROUTINE_NAME_MAX_LENGTH = 80;
+
 export const CreateRoutineInput = z
   .object({
     botId: Id,
-    name: z.string().min(1).max(80),
+    name: z.string().min(1).max(ROUTINE_NAME_MAX_LENGTH),
     prompt: z.string().min(1),
     crons: z.array(z.string().min(1)).default([]),
     timezone: TimeZoneSchema.default("UTC"),

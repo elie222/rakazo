@@ -1,6 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
+import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -462,7 +463,7 @@ function RoutineEditor({
           key="name"
           accessibilityLabel={t`Name`}
           placeholder={t`Name`}
-          maxLength={80}
+          maxLength={ROUTINE_NAME_MAX_LENGTH}
           value={draft.name}
           onChangeText={(name) => update({ name })}
         />
