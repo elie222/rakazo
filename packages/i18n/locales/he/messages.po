@@ -165,12 +165,12 @@ msgstr "נוצלו {0}%"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{agent} was invited to {group}"
-msgstr ""
+msgstr "{agent} הוזמן אל {group}"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{agent} was invited to a group"
-msgstr ""
+msgstr "{agent} הוזמן לקבוצה"
 
 #: apps/web/src/lib/billing/billing.ts
 msgid "{amount} / {period}"
@@ -215,7 +215,7 @@ msgstr "{amount} נוצלו היום"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{app} group"
-msgstr ""
+msgstr "קבוצה ב-{app}"
 
 #: apps/mobile/lib/thread/thread-voice.ts
 msgid "{bot} here."
@@ -526,16 +526,16 @@ msgstr "{names} שומר על המודל שלו"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{owner}'s {peer} wants to connect to {agent}"
-msgstr ""
+msgstr "{peer} של {owner} רוצה להתחבר אל {agent}"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 msgid "{owner}'s {peer} wants to connect to {named}"
-msgstr ""
+msgstr "{peer} של {owner} רוצה להתחבר אל {named}"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{owner}'s {peer} wants to connect to your bot"
-msgstr ""
+msgstr "{peer} של {owner} רוצה להתחבר לבוט שלך"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "{picked} of {total}"
@@ -1670,7 +1670,7 @@ msgstr "מראה: {label}"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Applies on its next start."
-msgstr ""
+msgstr "ייכנס לתוקף בהפעלה הבאה."
 
 #: apps/mobile/components/cards/AskActions.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -2395,7 +2395,7 @@ msgstr "שינוי {title}"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Change bot"
-msgstr ""
+msgstr "החלפת בוט"
 
 #: apps/mobile/lib/cards/run-error-presentation.ts
 #: apps/web/src/pages/shell/composer/composer-error.tsx
@@ -2457,7 +2457,7 @@ msgstr "הגדרות צ׳אט"
 #. placeholder {0}: ownerBot.name
 #: apps/web/src/pages/space/Board.tsx
 msgid "Chat with {0}"
-msgstr ""
+msgstr "צ׳אט עם {0}"
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Chat with your bots from other apps."
@@ -2759,7 +2759,7 @@ msgstr "סוכן ענן"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Cloud computers"
-msgstr ""
+msgstr "מחשבים בענן"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/thread/ask-block.tsx
@@ -2859,7 +2859,7 @@ msgstr "הפעלת המחשב נכשלה"
 
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Computer files"
-msgstr ""
+msgstr "קבצי המחשב"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -2967,7 +2967,7 @@ msgstr "חיבור {0}"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Connect {app}"
-msgstr ""
+msgstr "חיבור {app}"
 
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/components/cards/AppConnectCard.tsx
@@ -3203,7 +3203,7 @@ msgstr "שיחות"
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Conversations, names and searches are sent to store and recall context."
-msgstr ""
+msgstr "שיחות, שמות וחיפושים נשלחים כדי לשמור ולשלוף הקשר."
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
@@ -3357,7 +3357,7 @@ msgstr "לא ניתן לשנות"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Could not change computer size"
-msgstr ""
+msgstr "לא ניתן לשנות את גודל המחשב"
 
 #: apps/mobile/app/(settings)/language.tsx
 msgid "Could not change language"
@@ -3765,7 +3765,7 @@ msgstr "לא ניתן לטעון הודעות קודמות"
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 msgid "Could not load earlier versions"
-msgstr ""
+msgstr "לא ניתן לטעון גרסאות קודמות"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
@@ -4097,7 +4097,7 @@ msgstr "לא ניתן לשחזר את הבוט"
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Could not restore files"
-msgstr ""
+msgstr "לא ניתן לשחזר את הקבצים"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
@@ -4631,7 +4631,7 @@ msgstr "מטבע"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Current"
-msgstr ""
+msgstr "נוכחי"
 
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/mobile/components/settings/account-deletion.tsx
@@ -5361,7 +5361,7 @@ msgstr "הפעלת {0}"
 
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 msgid "Enabled models"
-msgstr ""
+msgstr "מודלים מופעלים"
 
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
@@ -5640,7 +5640,7 @@ msgstr "גבוה מאוד"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Extra large (uses {rate}× hours)"
-msgstr ""
+msgstr "גדול במיוחד (צורך פי {rate} שעות)"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -6278,7 +6278,7 @@ msgstr "לכלול מפתחות API"
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 msgid "Included"
-msgstr ""
+msgstr "כלול"
 
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -6567,7 +6567,7 @@ msgstr "שפה"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Large (uses {rate}× hours)"
-msgstr ""
+msgstr "גדול (צורך פי {rate} שעות)"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Large paste"
@@ -6715,7 +6715,7 @@ msgstr "טעינה אוטומטית של תמונות מהרשת"
 
 #: apps/web/src/components/I18nBootstrap.tsx
 msgid "Loading"
-msgstr ""
+msgstr "טוען"
 
 #: apps/web/src/pages/space/ActivityList.tsx
 msgid "Loading activity…"
@@ -7151,7 +7151,7 @@ msgstr "הודעות, היסטוריית צ׳אט, הוראות בוטים, זי
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Messages, files, bot instructions, memories and connected-app content are sent to run your bots."
-msgstr ""
+msgstr "הודעות, קבצים, הוראות לבוטים, זיכרונות ותוכן מאפליקציות מחוברות נשלחים כדי להפעיל את הבוטים שלך."
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -8216,7 +8216,7 @@ msgstr "ערך header אופציונלי"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Options for {app}"
-msgstr ""
+msgstr "אפשרויות עבור {app}"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
@@ -9350,11 +9350,11 @@ msgstr "שחזור {name}"
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Restore earlier version"
-msgstr ""
+msgstr "שחזור גרסה קודמת"
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 msgid "Restore files from {savedAt}?"
-msgstr ""
+msgstr "לשחזר את הקבצים מ-{savedAt}?"
 
 #: apps/mobile/components/computers/computer-maintenance-actions.tsx
 #: apps/web/src/components/computers/ComputerMaintenanceActions.tsx
@@ -9374,7 +9374,7 @@ msgstr "משחזר את סביבת העבודה"
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Restoring…"
-msgstr ""
+msgstr "משחזר…"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 #: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
@@ -9666,7 +9666,7 @@ msgstr "{name} נשמר מקומית"
 
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Saved at"
-msgstr ""
+msgstr "מועד השמירה"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -9923,11 +9923,11 @@ msgstr "יש לשלוח {code} אל {address} מ-{app} תוך 10 דקות."
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Send <0>{code}</0> from {app} within 10 minutes."
-msgstr ""
+msgstr "יש לשלוח <0>{code}</0> מ-{app} תוך 10 דקות."
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Send <0>{code}</0> to <1>{address}</1> from {app} within 10 minutes."
-msgstr ""
+msgstr "יש לשלוח <0>{code}</0> אל <1>{address}</1> מ-{app} תוך 10 דקות."
 
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Send answer"
@@ -9940,7 +9940,7 @@ msgstr "שליחה כקובץ"
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Send data to {name}?"
-msgstr ""
+msgstr "לשלוח נתונים אל {name}?"
 
 #: apps/mobile/components/settings/account-deletion.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -10322,7 +10322,7 @@ msgstr "אתרים שמתחברים אליהם נשארים מחוברים לכ�
 
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Size of {name}"
-msgstr ""
+msgstr "הגודל של {name}"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "sk-…"
@@ -10573,12 +10573,12 @@ msgstr "SSO אינו זמין כרגע. אפשר לנסות שוב."
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Standard"
-msgstr ""
+msgstr "רגיל"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ComputerUsage.tsx
 msgid "Standard hours by computer"
-msgstr ""
+msgstr "שעות רגילות לפי מחשב"
 
 #: apps/web/src/pages/shell/composer/github-star-prompt.tsx
 msgid "Star on GitHub"
@@ -10699,7 +10699,7 @@ msgstr "הפסקת הלימוד"
 #: apps/mobile/lib/api/user-error.ts
 #: apps/web/src/lib/query/user-error.ts
 msgid "Stop the computer first."
-msgstr ""
+msgstr "יש לעצור קודם את המחשב."
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/SubagentCard.tsx
@@ -10994,11 +10994,11 @@ msgstr "הדפדפן מאבד שוב ושוב את המיקרופון. אפשר 
 
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "The computer gets the files from the chosen time when it next starts. Its current files stay restorable."
-msgstr ""
+msgstr "בהפעלה הבאה שלו, המחשב יקבל את הקבצים מהמועד שנבחר. הקבצים הנוכחיים שלו יישארו זמינים לשחזור."
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 msgid "The computer gets these files when it next starts. Its current files stay restorable."
-msgstr ""
+msgstr "בהפעלה הבאה שלו, המחשב יקבל את הקבצים האלה. הקבצים הנוכחיים שלו יישארו זמינים לשחזור."
 
 #: packages/i18n/src/bot-removal.ts
 msgid "The group {names} will be deleted too, including its messages, files, and pages."
@@ -11068,7 +11068,7 @@ msgstr "השרת השתנה בזמן התחלת הבקשה"
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "The server didn’t list this model."
-msgstr ""
+msgstr "השרת לא כלל את המודל הזה ברשימה."
 
 #: apps/mobile/components/inbox/inbox-error-state.tsx
 msgid "The server had a problem"
@@ -11803,11 +11803,11 @@ msgstr "עד {limit} אתרים."
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Up to {times}× the vCPUs"
-msgstr ""
+msgstr "עד פי {times} vCPU"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Up to {vcpus} vCPU and {memoryGb} GB, {hours} Standard computer hours a month"
-msgstr ""
+msgstr "עד {vcpus} vCPU ו-{memoryGb} GB, {hours} שעות מחשב רגילות בחודש"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
@@ -12523,7 +12523,7 @@ msgstr "האפליקציות שלך"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Your bot"
-msgstr ""
+msgstr "הבוט שלך"
 
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
@@ -12569,7 +12569,7 @@ msgstr "ברירות המחדל שלך"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 msgid "Your devices"
-msgstr ""
+msgstr "המכשירים שלך"
 
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Your email address"
@@ -12621,11 +12621,11 @@ msgstr "התוכנית שלך תעלה {tierTargetLabel} כשתקופת הניס
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Your plan does not include this size."
-msgstr ""
+msgstr "התוכנית שלך לא כוללת את הגודל הזה."
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Your recordings and the text you play are sent for transcription and speech."
-msgstr ""
+msgstr "ההקלטות שלך והטקסט שמושמע נשלחים לתמלול ולהקראה."
 
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/VoiceConsentDialog.tsx

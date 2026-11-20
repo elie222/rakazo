@@ -165,12 +165,12 @@ msgstr "{0} % verbraucht"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{agent} was invited to {group}"
-msgstr ""
+msgstr "{agent} wurde zu {group} eingeladen"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{agent} was invited to a group"
-msgstr ""
+msgstr "{agent} wurde zu einer Gruppe eingeladen"
 
 #: apps/web/src/lib/billing/billing.ts
 msgid "{amount} / {period}"
@@ -215,7 +215,7 @@ msgstr "Heute {amount} ausgegeben"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{app} group"
-msgstr ""
+msgstr "{app}-Gruppe"
 
 #: apps/mobile/lib/thread/thread-voice.ts
 msgid "{bot} here."
@@ -526,16 +526,16 @@ msgstr "{names} behält sein eigenes Modell"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{owner}'s {peer} wants to connect to {agent}"
-msgstr ""
+msgstr "{peer} von {owner} möchte sich mit {agent} verbinden"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 msgid "{owner}'s {peer} wants to connect to {named}"
-msgstr ""
+msgstr "{peer} von {owner} möchte sich mit {named} verbinden"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{owner}'s {peer} wants to connect to your bot"
-msgstr ""
+msgstr "{peer} von {owner} möchte sich mit deinem Bot verbinden"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "{picked} of {total}"
@@ -1670,7 +1670,7 @@ msgstr "Darstellung: {label}"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Applies on its next start."
-msgstr ""
+msgstr "Gilt ab dem nächsten Start."
 
 #: apps/mobile/components/cards/AskActions.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -2395,7 +2395,7 @@ msgstr "{title} ändern"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Change bot"
-msgstr ""
+msgstr "Bot wechseln"
 
 #: apps/mobile/lib/cards/run-error-presentation.ts
 #: apps/web/src/pages/shell/composer/composer-error.tsx
@@ -2457,7 +2457,7 @@ msgstr "Chat-Einstellungen"
 #. placeholder {0}: ownerBot.name
 #: apps/web/src/pages/space/Board.tsx
 msgid "Chat with {0}"
-msgstr ""
+msgstr "Mit {0} chatten"
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Chat with your bots from other apps."
@@ -2759,7 +2759,7 @@ msgstr "Cloud-Agent"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Cloud computers"
-msgstr ""
+msgstr "Cloud-Computer"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/thread/ask-block.tsx
@@ -2859,7 +2859,7 @@ msgstr "Computer konnte nicht gestartet werden"
 
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Computer files"
-msgstr ""
+msgstr "Computerdateien"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -2967,7 +2967,7 @@ msgstr "{0} verbinden"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Connect {app}"
-msgstr ""
+msgstr "{app} verbinden"
 
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/components/cards/AppConnectCard.tsx
@@ -3203,7 +3203,7 @@ msgstr "Unterhaltungen"
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Conversations, names and searches are sent to store and recall context."
-msgstr ""
+msgstr "Unterhaltungen, Namen und Suchanfragen werden gesendet, um Kontext zu speichern und abzurufen."
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
@@ -3357,7 +3357,7 @@ msgstr "Änderung nicht möglich"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Could not change computer size"
-msgstr ""
+msgstr "Computergröße konnte nicht geändert werden"
 
 #: apps/mobile/app/(settings)/language.tsx
 msgid "Could not change language"
@@ -3765,7 +3765,7 @@ msgstr "Frühere Nachrichten konnten nicht geladen werden"
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 msgid "Could not load earlier versions"
-msgstr ""
+msgstr "Frühere Versionen konnten nicht geladen werden"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
@@ -4097,7 +4097,7 @@ msgstr "Bot konnte nicht wiederhergestellt werden"
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Could not restore files"
-msgstr ""
+msgstr "Dateien konnten nicht wiederhergestellt werden"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
@@ -4631,7 +4631,7 @@ msgstr "Währung"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Current"
-msgstr ""
+msgstr "Aktuell"
 
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/mobile/components/settings/account-deletion.tsx
@@ -5361,7 +5361,7 @@ msgstr "{0} aktivieren"
 
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 msgid "Enabled models"
-msgstr ""
+msgstr "Aktivierte Modelle"
 
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
@@ -5640,7 +5640,7 @@ msgstr "Sehr hoch"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Extra large (uses {rate}× hours)"
-msgstr ""
+msgstr "Sehr groß (verbraucht {rate}× Stunden)"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -6278,7 +6278,7 @@ msgstr "API-Schlüssel einbeziehen"
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 msgid "Included"
-msgstr ""
+msgstr "Inklusive"
 
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -6567,7 +6567,7 @@ msgstr "Sprache"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Large (uses {rate}× hours)"
-msgstr ""
+msgstr "Groß (verbraucht {rate}× Stunden)"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Large paste"
@@ -6715,7 +6715,7 @@ msgstr "Webbilder automatisch laden"
 
 #: apps/web/src/components/I18nBootstrap.tsx
 msgid "Loading"
-msgstr ""
+msgstr "Wird geladen"
 
 #: apps/web/src/pages/space/ActivityList.tsx
 msgid "Loading activity…"
@@ -7151,7 +7151,7 @@ msgstr "Nachrichten, Chatverlauf, Bot-Anweisungen, Erinnerungen, Anhänge, Scree
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Messages, files, bot instructions, memories and connected-app content are sent to run your bots."
-msgstr ""
+msgstr "Nachrichten, Dateien, Bot-Anweisungen, Erinnerungen und Inhalte verbundener Apps werden gesendet, um deine Bots auszuführen."
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -8216,7 +8216,7 @@ msgstr "Optionaler Header-Wert"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Options for {app}"
-msgstr ""
+msgstr "Optionen für {app}"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
@@ -9350,11 +9350,11 @@ msgstr "{name} wiederherstellen"
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Restore earlier version"
-msgstr ""
+msgstr "Frühere Version wiederherstellen"
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 msgid "Restore files from {savedAt}?"
-msgstr ""
+msgstr "Dateien vom {savedAt} wiederherstellen?"
 
 #: apps/mobile/components/computers/computer-maintenance-actions.tsx
 #: apps/web/src/components/computers/ComputerMaintenanceActions.tsx
@@ -9374,7 +9374,7 @@ msgstr "Dein Arbeitsbereich wird wiederhergestellt"
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Restoring…"
-msgstr ""
+msgstr "Wird wiederhergestellt…"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 #: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
@@ -9666,7 +9666,7 @@ msgstr "{name} lokal gespeichert"
 
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Saved at"
-msgstr ""
+msgstr "Gespeichert am"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -9923,11 +9923,11 @@ msgstr "Sende {code} innerhalb von 10 Minuten aus {app} an {address}."
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Send <0>{code}</0> from {app} within 10 minutes."
-msgstr ""
+msgstr "Sende <0>{code}</0> innerhalb von 10 Minuten aus {app}."
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Send <0>{code}</0> to <1>{address}</1> from {app} within 10 minutes."
-msgstr ""
+msgstr "Sende <0>{code}</0> innerhalb von 10 Minuten aus {app} an <1>{address}</1>."
 
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Send answer"
@@ -9940,7 +9940,7 @@ msgstr "Als Datei senden"
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Send data to {name}?"
-msgstr ""
+msgstr "Daten an {name} senden?"
 
 #: apps/mobile/components/settings/account-deletion.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -10322,7 +10322,7 @@ msgstr "Websites, bei denen du dich anmeldest, bleiben für alle in diesem Space
 
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Size of {name}"
-msgstr ""
+msgstr "Größe von {name}"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "sk-…"
@@ -10573,12 +10573,12 @@ msgstr "SSO ist vorübergehend nicht verfügbar. Versuche es erneut."
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Standard"
-msgstr ""
+msgstr "Standard"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ComputerUsage.tsx
 msgid "Standard hours by computer"
-msgstr ""
+msgstr "Standardstunden pro Computer"
 
 #: apps/web/src/pages/shell/composer/github-star-prompt.tsx
 msgid "Star on GitHub"
@@ -10699,7 +10699,7 @@ msgstr "Anlernen beenden"
 #: apps/mobile/lib/api/user-error.ts
 #: apps/web/src/lib/query/user-error.ts
 msgid "Stop the computer first."
-msgstr ""
+msgstr "Stoppe zuerst den Computer."
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/SubagentCard.tsx
@@ -10994,11 +10994,11 @@ msgstr "Der Browser verliert immer wieder das Mikrofon. Starte das Diktieren ern
 
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "The computer gets the files from the chosen time when it next starts. Its current files stay restorable."
-msgstr ""
+msgstr "Der Computer erhält beim nächsten Start die Dateien vom gewählten Zeitpunkt. Seine aktuellen Dateien bleiben wiederherstellbar."
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 msgid "The computer gets these files when it next starts. Its current files stay restorable."
-msgstr ""
+msgstr "Der Computer erhält diese Dateien beim nächsten Start. Seine aktuellen Dateien bleiben wiederherstellbar."
 
 #: packages/i18n/src/bot-removal.ts
 msgid "The group {names} will be deleted too, including its messages, files, and pages."
@@ -11068,7 +11068,7 @@ msgstr "Der Server hat sich beim Start der Anfrage geändert"
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "The server didn’t list this model."
-msgstr ""
+msgstr "Der Server hat dieses Modell nicht aufgeführt."
 
 #: apps/mobile/components/inbox/inbox-error-state.tsx
 msgid "The server had a problem"
@@ -11803,11 +11803,11 @@ msgstr "Bis zu {limit} Websites."
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Up to {times}× the vCPUs"
-msgstr ""
+msgstr "Bis zu {times}× so viele vCPUs"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Up to {vcpus} vCPU and {memoryGb} GB, {hours} Standard computer hours a month"
-msgstr ""
+msgstr "Bis zu {vcpus} vCPU und {memoryGb} GB, {hours} Standard-Computerstunden pro Monat"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
@@ -12523,7 +12523,7 @@ msgstr "Deine Apps"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Your bot"
-msgstr ""
+msgstr "Dein Bot"
 
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
@@ -12569,7 +12569,7 @@ msgstr "Deine Standards"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 msgid "Your devices"
-msgstr ""
+msgstr "Deine Geräte"
 
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Your email address"
@@ -12621,11 +12621,11 @@ msgstr "Nach dem Testzeitraum kostet dein Plan {tierTargetLabel}."
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
 msgid "Your plan does not include this size."
-msgstr ""
+msgstr "Dein Tarif umfasst diese Größe nicht."
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Your recordings and the text you play are sent for transcription and speech."
-msgstr ""
+msgstr "Deine Aufnahmen und der Text, den du abspielst, werden zur Transkription und Spracherzeugung gesendet."
 
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
