@@ -20,8 +20,11 @@ import { fetchSafeWebBytes, readBodyCapped } from "../../../web/web-ssrf.js";
 
 const API = "https://api.openai.com/v1";
 const IMAGE_DEADLINE_MS = 180_000;
-/** One base64 image at the attachment limit, plus room for the JSON around it. */
-const MAX_RESPONSE_BYTES = ATTACHMENT_MAX_BASE64_LENGTH + 64 * 1024;
+/**
+ * One base64 image at the attachment limit, allowing a CRLF after every 64 characters (servers
+ * wrap lines and JSON escapes each break to four bytes; the decoded size is the real limit), plus room for the JSON around it.
+ */
+const MAX_RESPONSE_BYTES = Math.ceil(ATTACHMENT_MAX_BASE64_LENGTH * (1 + 4 / 64)) + 64 * 1024;
 const MODEL_ID_PATTERN = /^[\w.:/@+-]{1,200}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -106,7 +109,9 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
     if (!result.success) throw new MediaGenerationError("provider_failure");
     const item = result.data.data[0]!;
     const bytes =
-      "b64_json" in item ? decodeImage(item.b64_json) : await this.download(item.url, context);
+      "b64_json" in item
+        ? decodeImage(item.b64_json)
+        : await this.download(item.url, context, signal);
     // The format is read from the bytes: servers differ in what they return and how they label it.
     const mimeType = detectImageMimeType(bytes);
     if (!mimeType || !GENERATED_IMAGE_MIME_TYPES.has(mimeType))
@@ -115,14 +120,18 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
     validateGeneratedMedia(output, "image");
     return output;
   }
-  private async download(url: string, context: AdapterContext): Promise<Uint8Array> {
+  private async download(
+    url: string,
+    context: AdapterContext,
+    signal: AbortSignal,
+  ): Promise<Uint8Array> {
     try {
       // Output URLs are untrusted. Pin public DNS, reject private addresses and redirects;
       // no API credential is ever sent to the output host.
       const result = await fetchSafeWebBytes(url, {
         fetch: this.options.fetch,
         resolveHostname: this.options.resolveHostname,
-        signal: context.signal,
+        signal,
         maxBytes: ATTACHMENT_MAX_BYTES,
         maxRedirects: 0,
         timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,

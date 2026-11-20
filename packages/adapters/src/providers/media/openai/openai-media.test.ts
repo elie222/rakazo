@@ -1,5 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { ATTACHMENT_MAX_BASE64_LENGTH } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { OpenAIMediaGenerationProvider } from "./openai-media.js";
 
@@ -98,6 +98,35 @@ describe("images API media generation", () => {
       mimeType: "image/png",
       bytes: new Uint8Array(PNG),
     });
+  });
+  it("accepts a near-limit image wrapped with CRLF every 76 characters", async () => {
+    const bytes = Buffer.alloc(ATTACHMENT_MAX_BYTES);
+    Buffer.from(PNG).copy(bytes);
+    const wrapped = bytes.toString("base64").replace(/(.{76})/g, "$1\r\n");
+    const { provider } = setup(json({ data: [{ b64_json: wrapped }] }));
+    const result = await provider.generateImage({ prompt: "draw" }, context);
+    expect(result.mimeType).toBe("image/png");
+    expect(result.bytes.length).toBe(ATTACHMENT_MAX_BYTES);
+  });
+  it("keeps a linked image download within the generation deadline", async () => {
+    const deadline = new AbortController();
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
+      ms === 180_000 ? deadline.signal : realTimeout(ms),
+    );
+    try {
+      const { provider, fetch } = setup(
+        json({ data: [{ url: "https://cdn.example.test/image.png" }] }),
+        new Response(new Uint8Array(PNG)),
+      );
+      await provider.generateImage({ prompt: "draw" }, context);
+      const downloadSignal = fetch.mock.calls[1]![1]!.signal!;
+      expect(downloadSignal.aborted).toBe(false);
+      deadline.abort(new Error("deadline"));
+      expect(downloadSignal.aborted).toBe(true);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
   it("downloads a linked image without sending the API key", async () => {
     const { provider, fetch } = setup(
