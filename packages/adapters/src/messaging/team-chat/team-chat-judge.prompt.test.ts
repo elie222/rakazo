@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { renderTeamChatEngagementPrompt, truncate } from "./team-chat-judge.prompt.js";
 
+const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
 describe("team-chat-judge prompt", () => {
   it("backs off before a split surrogate pair when truncating", () => {
     const shortened = truncate(`${"a".repeat(1_998)}😀${"b".repeat(10)}`, 2_000);
     expect(shortened).toBe(`${"a".repeat(1_998)}…`);
-    expect(shortened.isWellFormed()).toBe(true);
+    expect(shortened).not.toMatch(loneSurrogate);
     expect(shortened.length).toBeLessThanOrEqual(2_000);
   });
 
   it("keeps an emoji intact when it fits before the ellipsis", () => {
     const shortened = truncate(`${"a".repeat(1_997)}😀${"b".repeat(10)}`, 2_000);
     expect(shortened).toBe(`${"a".repeat(1_997)}😀…`);
-    expect(shortened.isWellFormed()).toBe(true);
+    expect(shortened).not.toMatch(loneSurrogate);
     expect(shortened.length).toBe(2_000);
   });
 
@@ -31,7 +33,7 @@ describe("team-chat-judge prompt", () => {
         },
       ],
     });
-    expect(prompt.isWellFormed()).toBe(true);
+    expect(prompt).not.toMatch(loneSurrogate);
     expect(prompt).toContain(`${"r".repeat(3_998)}…`);
     expect(prompt).toContain(`${"a".repeat(1_998)}…`);
   });
