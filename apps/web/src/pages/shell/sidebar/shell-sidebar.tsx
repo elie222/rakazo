@@ -421,6 +421,11 @@ function ShellSidebarFooter({
           closeMobileSidebar();
           navigate(`/app/x/${link.id}`);
         }}
+        onSharedPages={() => {
+          setMenuOpen(false);
+          closeMobileSidebar();
+          navigate("/review");
+        }}
         onArtifacts={() => {
           setMenuOpen(false);
           closeMobileSidebar();
