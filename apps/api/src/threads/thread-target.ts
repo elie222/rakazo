@@ -201,12 +201,16 @@ async function findSendReceipt(prisma: PrismaClient, threadId: string, clientNon
 export async function replayExistingSend(
   deps: { prisma: PrismaClient; events: ThreadEvents; jobs: JobPublisher },
   threadId: string,
+  authorUserId: string,
   clientNonce: string | undefined,
   releaseTakeover?: (runId: string) => Promise<void>,
 ) {
   if (!clientNonce) return null;
   const message = await findSendReceipt(deps.prisma, threadId, clientNonce);
   if (!message) return null;
+  if (message.authorUserId !== authorUserId) {
+    throw new ClientError("CONFLICT", "This message nonce is already in use.");
+  }
   const receiptEvent = await deps.prisma.event.findFirst({
     where: {
       threadId,
@@ -548,6 +552,7 @@ export async function sendThreadMessage(
   const existing = await replayExistingSend(
     deps,
     target.threadId,
+    actor.userId,
     input.clientNonce,
     releaseTakeover,
   );
@@ -1267,6 +1272,7 @@ export async function sendThreadMessage(
     const winner = await replayExistingSend(
       deps,
       target.threadId,
+      actor.userId,
       input.clientNonce,
       releaseTakeover,
     );

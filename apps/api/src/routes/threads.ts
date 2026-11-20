@@ -153,6 +153,7 @@ export function threadsRoutes(ctx: RouterContext) {
       const replayed = await replayExistingSend(
         deps,
         target.threadId,
+        actor.userId,
         input.clientNonce,
         releaseTakeover,
       );

@@ -21,6 +21,7 @@ describe("model setup gate", () => {
     deploymentModelCredentialCipher?: string;
     savedDeploymentModel?: boolean;
     savedStrictReceipt?: boolean;
+    savedStrictReceiptAuthorUserId?: string;
     modelLookupError?: Error;
     funding?: Pick<BillingStatus, "creditPurchasesEnabled" | "funding" | "balanceUsd">;
   }) {
@@ -49,13 +50,17 @@ describe("model setup gate", () => {
       },
       taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
       message: {
-        findUnique: vi
-          .fn()
-          .mockResolvedValue(
-            options.savedStrictReceipt
-              ? { id: "msg-saved", seq: 7, runId: "run-saved", sourceRuns: [] }
-              : null,
-          ),
+        findUnique: vi.fn().mockResolvedValue(
+          options.savedStrictReceipt
+            ? {
+                id: "msg-saved",
+                authorUserId: options.savedStrictReceiptAuthorUserId ?? "user-1",
+                seq: 7,
+                runId: "run-saved",
+                sourceRuns: [],
+              }
+            : null,
+        ),
       },
       event: {
         findFirst: vi
@@ -86,10 +91,12 @@ describe("model setup gate", () => {
               ),
       },
     } as unknown as PrismaClient;
+    const events = { notify: vi.fn().mockResolvedValue(undefined) };
+    const jobs = { enqueue: vi.fn().mockResolvedValue(undefined) };
     const deps = {
       prisma,
-      events: { notify: vi.fn().mockResolvedValue(undefined) },
-      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      events,
+      jobs,
       billing: options.funding && { status: vi.fn().mockResolvedValue(options.funding) },
       env: {
         agentRuntime: options.agentRuntime,
@@ -111,7 +118,7 @@ describe("model setup gate", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { actor, handler: appHandler(deps), prisma };
+    return { actor, handler: appHandler(deps), prisma, events, jobs };
   }
 
   async function call(handler: RouterHandler, actor: Actor, path: string, body: unknown) {
@@ -267,9 +274,31 @@ describe("model setup gate", () => {
     await expect(replayed.json()).resolves.toMatchObject({
       json: { runId: "run-saved", taskId: "task-saved", seq: 7 },
     });
+    expect(retry.jobs.enqueue).toHaveBeenCalledTimes(1);
     expect(retry.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
     expect(retry.prisma.deploymentSettings.findUnique).not.toHaveBeenCalled();
     expect(retry.prisma.bot.findMany).not.toHaveBeenCalled();
+
+    const otherMember = modelGateDeps({
+      agentRuntime: "pi",
+      savedStrictReceipt: true,
+      savedStrictReceiptAuthorUserId: "user-2",
+      modelLookupError: new SecretStoreUnavailableError(),
+    });
+    const conflict = await call(otherMember.handler, otherMember.actor, "threads/send", {
+      botId: "bot-1",
+      text: "Kyoto",
+      replyToMessageId: "ask-1",
+      answersQuestion: true,
+      clientNonce: "nonce-saved",
+    });
+    expect(conflict.status).toBe(409);
+    await expect(conflict.json()).resolves.toMatchObject({
+      json: expect.objectContaining({ code: "CONFLICT" }),
+    });
+    expect(otherMember.jobs.enqueue).not.toHaveBeenCalled();
+    expect(otherMember.events.notify).not.toHaveBeenCalled();
+    expect(otherMember.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
 
     const fresh = modelGateDeps({
       agentRuntime: "pi",

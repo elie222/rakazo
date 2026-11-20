@@ -2116,6 +2116,7 @@ describe("sendThreadMessage", () => {
       message: {
         findUnique: vi.fn().mockResolvedValue({
           id: "msg-1",
+          authorUserId: "user-1",
           seq: 4,
           runId: "run-waiting-1",
           sourceRuns: [],
@@ -3012,6 +3013,7 @@ describe("sendThreadMessage", () => {
       message: {
         findUnique: vi.fn().mockResolvedValue({
           id: "msg-saved",
+          authorUserId: "user-1",
           seq: 7,
           runId: "run-saved",
           sourceRuns: [],
@@ -3066,6 +3068,69 @@ describe("sendThreadMessage", () => {
       runIds: ["run-saved"],
     });
     expect(savedPrisma.$transaction).not.toHaveBeenCalled();
+
+    const otherEnqueue = vi.fn().mockResolvedValue(undefined);
+    const otherNotify = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      sendThreadMessage(
+        {
+          prisma: savedPrisma,
+          sandbox: {} as never,
+          events: { notify: otherNotify } as never,
+          jobs: { enqueue: otherEnqueue } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-2" } as Actor,
+        target,
+        {
+          text: "Kyoto",
+          replyToMessageId: "ask-1",
+          answersQuestion: true,
+          clientNonce: "nonce-retry",
+          noModel: true,
+        },
+      ),
+    ).rejects.toMatchObject({ kind: "CONFLICT" });
+    expect(otherEnqueue).not.toHaveBeenCalled();
+    expect(otherNotify).not.toHaveBeenCalled();
+    expect(savedPrisma.$transaction).not.toHaveBeenCalled();
+
+    const raceEnqueue = vi.fn().mockResolvedValue(undefined);
+    const raceNotify = vi.fn().mockResolvedValue(undefined);
+    const racePrisma = {
+      ...savedPrisma,
+      message: {
+        findUnique: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({
+          id: "msg-saved",
+          authorUserId: "user-1",
+          seq: 7,
+          runId: "run-saved",
+          sourceRuns: [],
+        }),
+      },
+      $transaction: vi
+        .fn()
+        .mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" })),
+    } as unknown as PrismaClient;
+    await expect(
+      sendThreadMessage(
+        {
+          prisma: racePrisma,
+          sandbox: {} as never,
+          events: { notify: raceNotify } as never,
+          jobs: { enqueue: raceEnqueue } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-2" } as Actor,
+        target,
+        {
+          text: "Kyoto",
+          replyToMessageId: "ask-1",
+          answersQuestion: true,
+          clientNonce: "nonce-retry",
+        },
+      ),
+    ).rejects.toMatchObject({ kind: "CONFLICT" });
+    expect(raceEnqueue).not.toHaveBeenCalled();
+    expect(raceNotify).not.toHaveBeenCalled();
 
     const freshPrisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
