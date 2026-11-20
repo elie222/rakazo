@@ -3,7 +3,7 @@ import { buttonVariants } from "@rakazo/ui-web";
 import { MessagesSquare, SquareKanban } from "lucide-react";
 import type { ReactNode } from "react";
 import { createContext, use } from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useMatch } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
 import { WindowChrome } from "../../components/WindowChrome";
 import { desktopBridge } from "../../lib/platform/desktop";
@@ -33,8 +33,8 @@ export function AppRailLayout({ enabled }: { enabled: boolean }) {
 /** As wide as the macOS window controls, which sit at its top on desktop. */
 function AppRail() {
   const { t } = useLingui();
-  const { pathname } = useLocation();
-  const onBoard = pathname === "/app/board";
+  // Matched like the route itself, so a trailing slash still marks the Board.
+  const onBoard = useMatch("/app/board") !== null;
   return (
     <nav
       data-testid="app-rail"

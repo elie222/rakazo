@@ -54,6 +54,8 @@ it("marks the section on screen", async () => {
   await render("/app/board", true);
   expect(host.textContent).toContain("board");
   expect(current()).toBe("Board");
+  await render("/app/board/", true);
+  expect(current()).toBe("Board");
 });
 
 it("leaves the page alone when the board is off", async () => {
