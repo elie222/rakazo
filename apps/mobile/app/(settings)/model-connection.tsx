@@ -560,7 +560,9 @@ export default function ModelConnection() {
   const catalogConnectionControls =
     !isOpenAiCompatible && selected ? (
       <>
-        {subscriptionSignIn && signInSetup ? (
+        {subscriptionSignIn &&
+        signInSetup &&
+        (oauth || credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
           <Pressable
             accessibilityRole="link"
             onPress={() => void Linking.openURL(signInSetup.url)}
