@@ -1,6 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
+import { useSignInSetup } from "@rakazo/chat-ui/sign-in-setup";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
@@ -215,9 +216,6 @@ export default function ModelConnection() {
 
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  // Signing in again, the setting is already on.
-  const signInSetup = credential?.authKind === "oauth" ? undefined : selected?.signInSetup;
-  const [setupShownFor, setSetupShownFor] = useState<string | null>(null);
   const {
     oauth,
     pasteCode,
@@ -245,6 +243,17 @@ export default function ModelConnection() {
     publishFeedback,
     clearFeedback,
   });
+  // Signing in again, the setting is already on.
+  const {
+    setup: signInSetup,
+    begin: beginSignIn,
+    proceed: proceedSignIn,
+    dismiss: dismissSetup,
+  } = useSignInSetup(
+    credential?.authKind === "oauth" ? undefined : selected?.signInSetup,
+    selected?.provider,
+    () => void startSubscriptionSignIn(),
+  );
 
   const cancelInFlightWork = useCallback(() => {
     modelProbe.invalidate();
@@ -619,7 +628,7 @@ export default function ModelConnection() {
                 style={{ marginTop: 12 }}
               />
             </View>
-          ) : signInSetup && setupShownFor === selected.provider ? (
+          ) : signInSetup ? (
             <View style={styles.oauthCard}>
               <Pressable
                 accessibilityRole="link"
@@ -631,16 +640,13 @@ export default function ModelConnection() {
               <NativeActionButton
                 fill
                 label={t`I’ve turned it on`}
-                onPress={() => {
-                  setSetupShownFor(null);
-                  void startSubscriptionSignIn();
-                }}
+                onPress={proceedSignIn}
                 style={{ marginTop: 12 }}
               />
               <NativeActionButton
                 fill
                 label={t`Cancel`}
-                onPress={() => setSetupShownFor(null)}
+                onPress={dismissSetup}
                 prominence="secondary"
                 style={{ marginTop: 12 }}
               />
@@ -656,9 +662,7 @@ export default function ModelConnection() {
                     ? t`Sign in again`
                     : (selected.oauthLabel ?? t`Sign in`)
               }
-              onPress={() =>
-                signInSetup ? setSetupShownFor(selected.provider) : void startSubscriptionSignIn()
-              }
+              onPress={beginSignIn}
               prominence="secondary"
               style={{ marginTop: 12 }}
             />

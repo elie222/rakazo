@@ -1,9 +1,9 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { useSignInSetup } from "@rakazo/chat-ui/sign-in-setup";
 import { Button, Disclosure, Input, Label, OptionSelect, Switch } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
 import { SignInSetupStep } from "../../components/models/SignInSetupStep";
-import { useSignInSetup } from "../../lib/models/use-sign-in-setup";
 import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";

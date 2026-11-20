@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { useSignInSetup } from "@rakazo/chat-ui/sign-in-setup";
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -11,7 +12,6 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children?: ReactNode }) => children,
 }));
 
-import { useSignInSetup } from "../../lib/models/use-sign-in-setup";
 import { SignInSetupStep } from "./SignInSetupStep";
 
 const setup = {

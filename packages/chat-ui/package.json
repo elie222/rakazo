@@ -7,6 +7,7 @@
     "./hooks": "./src/hooks.ts",
     "./mermaid": "./src/mermaid.ts",
     "./model-discovery": "./src/use-compatible-model-discovery.ts",
+    "./sign-in-setup": "./src/use-sign-in-setup.ts",
     "./native": "./src/markdown.native.tsx",
     "./web": "./src/markdown.web.tsx"
   },
