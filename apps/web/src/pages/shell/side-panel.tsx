@@ -3,11 +3,10 @@ import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
-import { PagesList } from "../../components/pages/PagesList";
 import type { createSpaceRpc } from "../../lib/query/rpc";
 import { RoutineEditor } from "../routines/RoutineEditor";
 import type { RoutineList } from "../routines/RoutineList";
-import { CreateGroupForm, GroupSettings } from "../space/GroupPanel";
+import { CreateGroupForm, GroupPanel } from "../space/GroupPanel";
 import { BotSettings } from "./bots/bot-panel";
 import { ResizableSidePanel } from "./resizable-side-panel";
 import type { Panel } from "./right-panel-state";
@@ -116,11 +115,10 @@ export function ShellSidePanel({
             />
           ) : null}
           {panel === "group-settings" && activeGroup ? (
-            <GroupSettings
+            <GroupPanel
               key={activeGroup.id}
               group={activeGroup}
               bots={bots}
-              pages={<PagesList groupId={activeGroup.id} />}
               onSave={async (input) => {
                 const updated = await rpc.groups.update({ groupId: activeGroup.id, ...input });
                 setGroups((current) =>

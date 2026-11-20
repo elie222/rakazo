@@ -1,13 +1,24 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group } from "@rakazo/contracts";
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, GROUP_NAME_MAX_LENGTH } from "@rakazo/contracts";
-import { BotAvatar, Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-web";
+import {
+  BotAvatar,
+  Button,
+  Checkbox,
+  GroupAvatar,
+  Input,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@rakazo/ui-web";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { PagesList } from "../../components/pages/PagesList";
 import { errorText } from "../../lib/query/user-error";
 import { useEventListener } from "../../lib/use-event-listener";
 import { DeleteItemDialog } from "../shell/create-delete-dialogs";
+import { SpaceMemorySection } from "./KnowledgeSection";
 
 function validSelection(name: string, selected: readonly string[]) {
   return (
@@ -221,7 +232,14 @@ export function CreateGroupForm({
   );
 }
 
-export function GroupSettings({
+/** The group panel's one page at a time: what the team made, what it shares, and who is in it. */
+export type GroupPanelTab = "pages" | "memory" | "settings";
+
+/**
+ * A group's panel: the team above its pages, shared notes and settings. Pages open first, so
+ * what the team built has a home; renaming or changing members is one tap away.
+ */
+export function GroupPanel({
   group,
   bots,
   onSave,
@@ -229,7 +247,6 @@ export function GroupSettings({
   onClose,
   onOpenBot,
   covered = false,
-  pages,
 }: {
   group: Group;
   bots: Bot[];
@@ -239,10 +256,10 @@ export function GroupSettings({
   onOpenBot?: (botId: string) => void;
   /** A full-screen overlay is on top, so Escape belongs to it. */
   covered?: boolean;
-  pages?: ReactNode;
 }) {
   const { t } = useLingui();
   const nameId = useId();
+  const [tab, setTab] = useState<GroupPanelTab>("pages");
   const [name, setName] = useState(group.name);
   const [selected, setSelected] = useState(group.members.map((member) => member.botId));
   // The panel can open on a cached group. A refreshed one replaces whatever was not edited, so a
@@ -309,10 +326,14 @@ export function GroupSettings({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-4 flex items-center justify-between">
-        <span className="text-body text-muted-foreground">
-          <Trans>Group settings</Trans>
+    <div className="flex h-full min-h-0 flex-col" data-testid="group-panel">
+      <div className="mb-4 flex items-center gap-3">
+        <GroupAvatar members={group.members} size={40} />
+        <span
+          className="min-w-0 flex-1 truncate text-body-lg font-medium text-foreground"
+          dir="auto"
+        >
+          {name}
         </span>
         <Button
           variant="ghost"
@@ -329,40 +350,58 @@ export function GroupSettings({
           {error}
         </p>
       ) : null}
-      <label htmlFor={nameId} className="block text-body text-muted-foreground">
-        <Trans>Name</Trans>
-        <Input
-          id={nameId}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={GROUP_NAME_MAX_LENGTH}
-          className="mt-2"
-        />
-      </label>
-      <MemberPicker bots={bots} selected={selected} onChange={setSelected} onOpenBot={onOpenBot} />
-      <Button
-        className="mt-5 w-full"
-        disabled={saving || !validSelection(name, selected)}
-        onClick={() => void save()}
-      >
-        {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
-      </Button>
-      {pages ? (
-        <section className="mt-6">
-          <SectionHeading variant="label" className="mb-2">
+      <Tabs value={tab} onValueChange={(value) => setTab(value as GroupPanelTab)}>
+        <TabsList className="mx-auto max-w-full overflow-x-auto">
+          <TabsTrigger value="pages" data-testid="group-tab-pages">
             <Trans>Pages</Trans>
-          </SectionHeading>
-          {pages}
-        </section>
-      ) : null}
-      <Button
-        variant="destructive"
-        className="mt-4 w-full"
-        disabled={saving}
-        onClick={() => setConfirmingDelete(true)}
-      >
-        <Trans>Delete group</Trans>
-      </Button>
+          </TabsTrigger>
+          <TabsTrigger value="memory" data-testid="group-tab-memory">
+            <Trans>Memory</Trans>
+          </TabsTrigger>
+          <TabsTrigger value="settings" data-testid="group-tab-settings">
+            <Trans>Settings</Trans>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent keepMounted value="pages" className="pt-4">
+          <PagesList groupId={group.id} />
+        </TabsContent>
+        <TabsContent keepMounted value="memory" className="pt-4">
+          <SpaceMemorySection />
+        </TabsContent>
+        <TabsContent keepMounted value="settings" className="space-y-4 pt-4">
+          <label htmlFor={nameId} className="block text-body text-muted-foreground">
+            <Trans>Name</Trans>
+            <Input
+              id={nameId}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={GROUP_NAME_MAX_LENGTH}
+              className="mt-2"
+            />
+          </label>
+          <MemberPicker
+            bots={bots}
+            selected={selected}
+            onChange={setSelected}
+            onOpenBot={onOpenBot}
+          />
+          <Button
+            className="mt-5 w-full"
+            disabled={saving || !validSelection(name, selected)}
+            onClick={() => void save()}
+          >
+            {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+          </Button>
+          <Button
+            variant="destructive"
+            className="mt-4 w-full"
+            disabled={saving}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trans>Delete group</Trans>
+          </Button>
+        </TabsContent>
+      </Tabs>
       {confirmingDelete ? (
         <DeleteItemDialog
           item={group}

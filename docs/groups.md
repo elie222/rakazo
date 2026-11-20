@@ -8,7 +8,9 @@ teammate.
 Choose **Create** (the **+** at the top of the sidebar), then **New group chat**. Name the group,
 pick 2 to 10 bots and choose **Create group**.
 
-Each bot keeps its own memory, computer and instructions; the group only shares the conversation.
+Each bot keeps its own memory, computer and instructions; the group shares the conversation. Open
+the group's panel to find the pages the team built, the Space's shared notes, and the group's
+settings.
 
 ## Who answers
 
@@ -16,8 +18,8 @@ Each bot keeps its own memory, computer and instructions; the group only shares 
 - **@Name** wakes that bot. Mention several to wake them all.
 - **@everyone** (or **@all**, **@所有人**) wakes every bot in the group.
 
-To rename the group or change who is in it, open **Group settings** from the group's header.
-**Delete group** removes the group chat.
+To rename the group or change who is in it, open the group's panel from its header and choose
+**Settings**. **Delete group** removes the group chat.
 
 ## Bots asking other bots
 

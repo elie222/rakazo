@@ -907,7 +907,7 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   await page.unroute("**/rpc/pages/list");
 });
 
-test("a group's pages show in its settings, and the palette finds and opens a page", async ({
+test("a group's pages show in its panel, and the palette finds and opens a page", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("rakazo.uiAppearance", "dark"));
@@ -924,7 +924,10 @@ test("a group's pages show in its settings, and the palette finds and opens a pa
   await page.getByTestId("bot-settings-trigger").click();
   const settings = page.getByTestId("side-panel");
   await expect(settings).toHaveAttribute("data-panel", "group-settings");
-  await expect(settings.getByRole("heading", { name: "Pages" })).toBeVisible();
+  await expect(settings.getByRole("tab", { name: "Pages" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(
     settings.getByText(
       "Pages this group builds for you appear here. Ask for a dashboard, tracker or plan to make one.",

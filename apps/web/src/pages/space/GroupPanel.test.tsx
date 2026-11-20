@@ -18,10 +18,12 @@ vi.mock("@lingui/react/macro", () => {
 // The alert dialog's Cancel closes it through onOpenChange, as Base UI does.
 let dismissDialog: (() => void) | undefined;
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { Checkbox } = await importOriginal<typeof UiWeb>();
+  const actual = await importOriginal<typeof UiWeb>();
   return {
-    Checkbox,
+    ...actual,
+    Checkbox: actual.Checkbox,
     BotAvatar: () => <span />,
+    GroupAvatar: () => <span />,
     Button: (props: ComponentProps<"button">) => <button {...props} />,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     AlertDialog: ({
@@ -51,8 +53,14 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
   };
 });
+vi.mock("../../components/pages/PagesList", () => ({
+  PagesList: ({ groupId }: { groupId: string }) => <p>Pages for {groupId}</p>,
+}));
+vi.mock("./KnowledgeSection", () => ({
+  SpaceMemorySection: () => <p>Shared memory notes</p>,
+}));
 
-import { GroupSettings } from "./GroupPanel";
+import { GroupPanel } from "./GroupPanel";
 
 const group: Group = {
   id: "group-1",
@@ -127,12 +135,12 @@ const bots = [
 
 async function render(
   options: {
-    onSave?: ComponentProps<typeof GroupSettings>["onSave"];
+    onSave?: ComponentProps<typeof GroupPanel>["onSave"];
     group?: Group;
     onRemove?: () => Promise<void>;
     covered?: boolean;
     instance?: string;
-    bots?: ComponentProps<typeof GroupSettings>["bots"];
+    bots?: ComponentProps<typeof GroupPanel>["bots"];
     onOpenBot?: (botId: string) => void;
   } = {},
 ) {
@@ -140,7 +148,7 @@ async function render(
   const onClose = vi.fn();
   await act(async () => {
     root.render(
-      <GroupSettings
+      <GroupPanel
         key={options.instance}
         group={options.group ?? group}
         bots={options.bots ?? bots}
@@ -191,7 +199,19 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe("GroupSettings", () => {
+describe("GroupPanel", () => {
+  it("opens on the group's pages, with shared memory and settings a tab away", async () => {
+    await render();
+    expect(button("Pages").getAttribute("aria-selected")).toBe("true");
+    expect(container.textContent).toContain("Pages for group-1");
+    await click("Memory");
+    expect(button("Memory").getAttribute("aria-selected")).toBe("true");
+    expect(container.textContent).toContain("Shared memory notes");
+    await click("Settings");
+    expect(button("Settings").getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector<HTMLInputElement>("input")!.value).toBe("Review team");
+  });
+
   it("follows a refreshed group in fields not edited and keeps the ones that were", async () => {
     const onSave = vi.fn(async () => undefined);
     await render({ onSave });

@@ -47,7 +47,8 @@ Some things every bot should know, such as your name, your company, or how you l
 written. Those go in **Shared memory**: every bot in the [space](./spaces.md) reads these notes and
 keeps them up to date.
 
-Find it in **Settings → Memory**, on the web, desktop and mobile apps.
+Find it in **Settings → Memory**, on the web, desktop and mobile apps, or under **Memory** in a
+group's panel on web and desktop.
 
 ## Memory providers
 

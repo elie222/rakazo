@@ -113,6 +113,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const groupPill = page.getByTestId("bot-settings-trigger");
   if ((await groupPill.getAttribute("aria-expanded")) !== "true") await groupPill.click();
   const desktopSettings = page.getByTestId("side-panel");
+  await desktopSettings.getByRole("tab", { name: "Settings" }).click();
   const groupName = desktopSettings.getByRole("textbox", { name: "Name", exact: true });
   await groupName.fill("Unsaved Draft team name");
   const sidebar = page.locator("aside").first();
@@ -120,6 +121,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await expect(page.getByRole("combobox", { name: "Message Review team" })).toBeVisible();
   await expect(desktopSettings).toHaveAttribute("data-panel", "closed");
   await sidebar.getByRole("button", { name: /^Draft team/ }).click();
+  await desktopSettings.getByRole("tab", { name: "Settings" }).click();
   await expect(groupName).toHaveValue("Draft team");
   await page.route("**/rpc/groups/update", async (route) => route.abort("failed"));
   await desktopSettings.getByRole("button", { name: "Save", exact: true }).click();
@@ -277,6 +279,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await expect(settings).toHaveAttribute("data-panel", "group-settings");
   expect((await settings.boundingBox())?.width).toBeLessThanOrEqual(390);
   await captureScreenshot(page, testInfo, "group-settings-mobile");
+  await settings.getByRole("tab", { name: "Settings" }).click();
   await settings.getByRole("button", { name: "Delete group", exact: true }).click();
   const confirmDelete = page.getByRole("alertdialog", { name: "Delete Draft team?" });
   await expect(confirmDelete).toBeVisible();
