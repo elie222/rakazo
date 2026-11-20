@@ -139,6 +139,7 @@ const DEEPSEEK_DISPLAY_MODEL_IDS: Record<string, string> = {
 };
 
 export type ConnectedModelChoice = {
+  preserveModelOrder?: boolean;
   key: string;
   provider: string;
   modelId: string;
@@ -160,6 +161,7 @@ type CatalogModelRef = {
 };
 
 type CredentialModelRef = {
+  preserveModelOrder?: boolean;
   provider: string;
   label: string;
   modelId?: string | null;
@@ -229,6 +231,7 @@ export function resolveSelectableModelId(
 
 function freeFormChoice(credential: CredentialModelRef, modelId: string): ConnectedModelChoice {
   return {
+    preserveModelOrder: credential.preserveModelOrder,
     key: modelOptionKey(credential.provider, modelId),
     provider: credential.provider,
     modelId,
@@ -367,6 +370,7 @@ export function connectedModelChoices(
 }
 
 export type ChatModelChoice = {
+  preserveModelOrder?: boolean;
   key: string;
   label: string;
   provider?: string;
@@ -403,10 +407,10 @@ export function groupModelChoices(choices: readonly ChatModelChoice[], query: st
   }
   for (const section of sections) {
     if (!section.heading) continue;
-    const own = section.data.filter((c) => c.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
+    const own = section.data.filter((c) => c.preserveModelOrder);
     const others = newestModelsFirst(
       section.data
-        .filter((c) => c.provider !== OPENAI_COMPATIBLE_PROVIDER_ID)
+        .filter((c) => !c.preserveModelOrder)
         .map((choice) => ({ id: choice.modelId ?? "", choice })),
     ).map((entry) => entry.choice);
     section.data = [...others, ...own];

@@ -523,7 +523,8 @@ describe("groupModelChoices order", () => {
     const connected = connectedModelChoices(
       [
         {
-          provider: "openai-compatible",
+          provider: "custom-endpoint",
+          preserveModelOrder: true,
           label: "Local",
           enabledModelIds: ["model-1", "model-3", "model-2"],
         },
@@ -544,7 +545,8 @@ describe("groupModelChoices under a shared heading", () => {
       {
         key: "a",
         label: "x",
-        provider: "openai-compatible",
+        provider: "custom-endpoint",
+        preserveModelOrder: true,
         modelId: "model-1",
         providerLabel: "Shared",
         modelLabel: "model-1",
@@ -552,7 +554,8 @@ describe("groupModelChoices under a shared heading", () => {
       {
         key: "b",
         label: "x",
-        provider: "openai-compatible",
+        provider: "custom-endpoint",
+        preserveModelOrder: true,
         modelId: "model-3",
         providerLabel: "Shared",
         modelLabel: "model-3",
@@ -576,7 +579,8 @@ describe("groupModelChoices under a shared heading", () => {
       {
         key: "e",
         label: "x",
-        provider: "openai-compatible",
+        provider: "custom-endpoint",
+        preserveModelOrder: true,
         modelId: "model-2",
         providerLabel: "Shared",
         modelLabel: "model-2",

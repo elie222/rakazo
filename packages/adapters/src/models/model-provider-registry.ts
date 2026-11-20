@@ -12,6 +12,7 @@ import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
  * without an entry is used exactly as the registry describes it.
  */
 export interface ModelProviderDefinition {
+  preserveModelOrder?: true;
   /** Kept where the registry renamed a provider, so existing names stay. */
   displayName?: string;
   /** The model a new connection preselects; only an exact catalog id. */
@@ -47,6 +48,7 @@ const unauthorized = async (response: Response) =>
   response.status === 401 || response.status === 403;
 
 export const modelProviders = {
+  "openai-compatible": { preserveModelOrder: true },
   "openai-codex": {
     displayName: "OpenAI Codex",
     recommendedModel: "gpt-6-luna",
