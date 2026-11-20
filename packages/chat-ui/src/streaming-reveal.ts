@@ -199,7 +199,11 @@ function planRevealSchedule(state: StreamingRevealState, count: number): RevealS
     REVEAL_MIN_LAG_MS,
     REVEAL_MAX_LAG_MS,
   );
-  const interval = Math.min(REVEAL_MAX_INTERVAL_MS, Math.max(lag, REVEAL_MIN_SPREAD_MS) / count);
+  // The whole append, however many blocks it adds, must finish revealing within the lag bound.
+  const tail = Math.max(state.passClock, now);
+  const ceiling = Math.max(0, now + REVEAL_MAX_LAG_MS - tail);
+  const available = Math.min(ceiling, Math.max(now + lag - tail, REVEAL_MIN_SPREAD_MS));
+  const interval = Math.min(REVEAL_MAX_INTERVAL_MS, available / count);
   const start = Math.max(now, state.passClock + interval);
   state.passClock = start + (count - 1) * interval;
   return {
