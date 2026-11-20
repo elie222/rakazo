@@ -40,6 +40,7 @@ import {
   firstWatchCheck,
   parseRoutineWatch,
   validateRoutineWatch,
+  watchWithInterval,
 } from "../routines/routine-watch.js";
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
 import type { ScheduleUnit } from "./schedule-intervals.js";
@@ -1079,19 +1080,9 @@ export async function updateScheduleFromTool(
   const existingWatch = parseRoutineWatch(existing.watch);
   let watch = existingWatch;
   if (input.everyMinutes !== undefined) {
-    if (!existingWatch) {
-      return { error: "everyMinutes is only for a routine that watches for changes." };
-    }
-    const parsed = RoutineWatchSchema.safeParse({
-      ...existingWatch,
-      everyMinutes: input.everyMinutes,
-    });
-    if (!parsed.success) {
-      return {
-        error: `everyMinutes must be a whole number from ${ROUTINE_WATCH_MIN_MINUTES} to 1440.`,
-      };
-    }
-    watch = parsed.data;
+    const retimed = watchWithInterval(existingWatch, input.everyMinutes);
+    if ("error" in retimed) return retimed;
+    watch = retimed.watch;
   }
   const watchChanged = watch?.everyMinutes !== existingWatch?.everyMinutes;
   if (
