@@ -161,7 +161,8 @@ export function useSubscriptionSignIn({
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
       setOauth(started);
-      await openSignInPage(started.verificationUri);
+      // A device code must be read before its page opens, so the person opens that page.
+      if (started.mode === "auth-url") await openSignInPage(started.verificationUri);
       waitingForCode = started.mode === "auth-url";
       if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
     } catch (err) {
