@@ -12,6 +12,7 @@ import {
   AVAILABILITY_SELECT,
   assertNameFreeWhereAvailable,
   availableInSpace,
+  lockOwner,
   NameTakenError,
   runAsSystemInTransaction,
   spaceAvailability,
@@ -335,6 +336,8 @@ export async function skillUpdateFromTool(
   try {
     // Re-scope mutate to owner + user source so a stale id cannot cross tenants.
     const changed = await prisma.$transaction(async (tx) => {
+      // Held before the read, so a change to where the skill is available can't slip in between.
+      if (renamed) await lockOwner(tx, owner.userId, "names:skill");
       const row = await tx.agentSkill.findFirst({
         where: { id: existing.id, ...availableInSpace(owner) },
         select: { spaceId: true, allSpaces: true, availableIn: AVAILABILITY_SELECT },
