@@ -23,6 +23,7 @@ model AiDataConsent {
 
 model User {
   meetingSessions MeetingSession[]
+  nativeCalendarRequests NativeCalendarRequest[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
   id                          String                       @id
@@ -1225,6 +1226,8 @@ model Message {
   replies          Message[] @relation("MessageReplies")
   runId            String?
   clientNonce      String?
+  nativeCalendarSessionId String?
+  nativeCalendarDeviceDigest String?
   /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
   searchTokens     Int[]
   /// A bot reply's tool calls as sent and returned (JSON, see ToolHistorySchema), encrypted like
@@ -1350,6 +1353,7 @@ model Run {
   updatedAt            DateTime          @updatedAt
   attempts             Attempt[]
   effects              ExternalEffect[]
+  nativeCalendarRequests NativeCalendarRequest[]
   steeringMessages     SteeringMessage[]
   externalMessage      ExternalMessage?
 
@@ -1534,6 +1538,26 @@ model Purchase {
   @@index([nextPollAt])
   @@index([spaceId, userId, createdAt])
   @@map("purchases")
+}
+
+model NativeCalendarRequest {
+  id        String   @id
+  runId     String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  spaceId   String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  deviceDigest String
+  status    String
+  operation Json?
+  result    Json?
+  expiresAt DateTime
+  @@index([sessionId, status, expiresAt])
+  @@index([expiresAt])
+  @@index([runId])
+  @@index([userId])
+  @@map("native_calendar_requests")
 }
 
 model ExternalEffect {

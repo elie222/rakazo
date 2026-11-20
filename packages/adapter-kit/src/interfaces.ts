@@ -1,4 +1,5 @@
 import type { ComputerSize } from "@rakazo/contracts";
+import type { ConnectedCalendarProvider } from "./personal-calendar.js";
 import type {
   AdapterContext,
   AdapterDescriptor,
@@ -322,6 +323,7 @@ export interface ConnectionAuthProvider {
 export interface ManagedConnectorProvider
   extends ConnectorProvider,
     Omit<ConnectionAuthProvider, "describe"> {
+  calendarProvider?: ConnectedCalendarProvider;
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
   /** The actions one app offers, to show people what connecting it gives bots. */
   listAppTools?(context: AdapterContext, externalId: string): Promise<ConnectorTool[]>;

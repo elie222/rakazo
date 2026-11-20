@@ -171,12 +171,27 @@ describe("autoReviewTimeoutMs", () => {
 });
 
 describe("autoReviewMinConfidence", () => {
-  it("is unset by default and ignores values out of range", () => {
+  it("is unset when blank, so each model's calibration decides", () => {
     expect(autoReviewMinConfidence({})).toBeUndefined();
-    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0.8" })).toBe(0.8);
-    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "2" })).toBeUndefined();
-    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "nope" })).toBeUndefined();
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "" })).toBeUndefined();
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "  " })).toBeUndefined();
   });
+
+  it("accepts a number from 0 to 1", () => {
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0" })).toBe(0);
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0.9" })).toBe(0.9);
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "1" })).toBe(1);
+    expect(autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "9e-1" })).toBe(0.9);
+  });
+
+  it.each(["90", "0,9", "50%", "1.5", "-0.1", "abc", "Infinity"])(
+    "refuses %j instead of loosening the floor to the model default",
+    (value) => {
+      expect(() => autoReviewMinConfidence({ RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: value })).toThrow(
+        "RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE must be a number from 0 to 1",
+      );
+    },
+  );
 });
 
 describe("parseAutoReviewJudgeText", () => {
