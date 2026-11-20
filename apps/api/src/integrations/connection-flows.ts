@@ -242,7 +242,7 @@ export async function beginConnection(
     logSetup(
       error instanceof ConnectorAuthUnavailableError
         ? "auth_config_unavailable"
-        : context.signal?.aborted
+        : context.signal?.aborted && error === context.signal.reason
           ? "request_aborted"
           : "provider_failed",
     );
