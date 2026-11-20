@@ -1053,6 +1053,29 @@ describe("renameSkillMd", () => {
     expect(renameSkillMd(original.join(newline), "New")).toBe(expected.join(newline));
   });
 
+  it.each([["\n"], ["\r\n"]])(
+    "replaces a plain scalar on the next line and keeps the line endings",
+    (newline) => {
+      const original = ["---", "name:", "  old", "description: d", "---", "Body"];
+      const expected = ["---", 'name: "new: x"', "description: d", "---", "Body"];
+      const renamed = renameSkillMd(original.join(newline), "new: x");
+      expect(renamed).toBe(expected.join(newline));
+      expect(parseSkillMd(renamed)).toMatchObject({ name: "new: x", description: "d" });
+    },
+  );
+
+  it("replaces a plain scalar that spans two indented lines", () => {
+    const original = ["---", "name:", "  old", "  name", "description: d", "---", "Body"];
+    const expected = ["---", "name: New", "description: d", "---", "Body"];
+    expect(renameSkillMd(original.join("\n"), "New")).toBe(expected.join("\n"));
+  });
+
+  it("replaces only the name line when the empty name is followed by a key", () => {
+    const original = ["---", "name:", "description: d", "---", "Body"];
+    const expected = ["---", "name: New", "description: d", "---", "Body"];
+    expect(renameSkillMd(original.join("\n"), "New")).toBe(expected.join("\n"));
+  });
+
   it("stays fast on a long indented block", () => {
     const content = `---\nname: >\n${"\t".repeat(200_000)}\u2028\n---\n`;
     expectLinearTime(() => renameSkillMd(content, "New"));

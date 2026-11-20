@@ -125,6 +125,11 @@ export function renameSkillMd(content: string, name: string): string {
     const rest = body.slice(end);
     const continuation = /^(?:\r?\n(?:[ \t].*)?(?=\r?\n|$))*/.exec(rest)?.[0] ?? "";
     end += continuation.length;
+  } else if (value === "" || value.startsWith("#")) {
+    // A plain name can start on the indented lines below an empty `name:`.
+    const rest = body.slice(end);
+    const continuation = /^(?:\r?\n[ \t][^\r\n]*)*/.exec(rest)?.[0] ?? "";
+    end += continuation.length;
   }
   const renamed = `${body.slice(0, start)} ${yamlScalar(name)}${body.slice(end)}`;
   return `${head}${renamed}${content.slice(head.length + body.length)}`;
