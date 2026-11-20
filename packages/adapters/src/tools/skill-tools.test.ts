@@ -19,9 +19,12 @@ function inScope(row: Record<string, unknown>, where: Scope): boolean {
   return true;
 }
 
-function makePrisma(rows: Array<Record<string, unknown>> = []) {
+function makePrisma(
+  rows: Array<Record<string, unknown>> = [],
+  routines: Array<{ id: string; userId: string; spaceId: string; prompt: string }> = [],
+) {
   const store = [...rows];
-  return {
+  const client = {
     agentSkill: {
       findMany: vi.fn(async ({ where }: { where?: Scope } = {}) =>
         store.filter((row) => !where || inScope(row, where)).map((row) => ({ ...row })),
@@ -88,8 +91,31 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
         return { count: 1 };
       }),
     },
+    routine: {
+      findMany: vi.fn(
+        async ({ where }: { where: { userId: string; spaceId?: { in: string[] } } }) =>
+          routines.filter(
+            (row) =>
+              row.userId === where.userId &&
+              (!where.spaceId || where.spaceId.in.includes(row.spaceId)) &&
+              row.prompt.includes("@"),
+          ),
+      ),
+      updateMany: vi.fn(
+        async ({ where, data }: { where: { id: string; prompt: string }; data: object }) => {
+          const row = routines.find((r) => r.id === where.id && r.prompt === where.prompt);
+          if (!row) return { count: 0 };
+          Object.assign(row, data);
+          return { count: 1 };
+        },
+      ),
+    },
     _store: store,
+    _routines: routines,
   };
+  return Object.assign(client, {
+    $transaction: vi.fn(async (run: (tx: typeof client) => unknown) => run(client)),
+  });
 }
 
 const owner = { spaceId: "ws-1", userId: "user-1" };
@@ -214,6 +240,60 @@ describe("skill tools", () => {
       newName: "Renamed",
     });
     expect(renamed).toMatchObject({ ok: true, name: "Renamed" });
+  });
+
+  it("points routines that mention a renamed skill at its new name", async () => {
+    const routine = (id: string, userId: string, spaceId: string, prompt: string) => ({
+      id,
+      userId,
+      spaceId,
+      prompt,
+    });
+    prisma = makePrisma(
+      [],
+      [
+        routine("r1", "user-1", "ws-1", "Run @Original, then @Original tools."),
+        routine("r2", "user-1", "ws-2", "Run @Original here."),
+        routine("r3", "user-2", "ws-1", "Run @Original here."),
+      ],
+    );
+    const created = await skillCreateFromTool(prisma as never, owner, {
+      name: "Original",
+      description: "d",
+      body: "body",
+    });
+    await skillCreateFromTool(prisma as never, owner, {
+      name: "Original tools",
+      description: "d",
+      body: "body",
+    });
+    const publishSpaceChange = vi.fn(async () => undefined);
+    await skillUpdateFromTool(
+      prisma as never,
+      owner,
+      { skillId: String(created.id), newName: "Renamed" },
+      { publishSpaceChange },
+    );
+    expect(publishSpaceChange.mock.calls).toEqual([["ws-1", "routines"]]);
+    expect(prisma._routines.map((row) => row.prompt)).toEqual([
+      "Run @Renamed, then @Original tools.",
+      "Run @Original here.",
+      "Run @Original here.",
+    ]);
+  });
+
+  it("leaves routines alone when the skill keeps its name", async () => {
+    prisma = makePrisma([], [{ id: "r1", userId: "user-1", spaceId: "ws-1", prompt: "@Keep" }]);
+    const created = await skillCreateFromTool(prisma as never, owner, {
+      name: "Keep",
+      description: "d",
+      body: "body",
+    });
+    await skillUpdateFromTool(prisma as never, owner, {
+      skillId: String(created.id),
+      description: "new",
+    });
+    expect(prisma.routine.updateMany).not.toHaveBeenCalled();
   });
 
   it("scopes list to the owner workspace and injects catalog lines", async () => {

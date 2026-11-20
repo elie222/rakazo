@@ -1,5 +1,9 @@
 import { ORPCError } from "@orpc/server";
-import { BUILTIN_AGENT_SKILLS } from "@rakazo/adapters";
+import {
+  BUILTIN_AGENT_SKILLS,
+  renameSkillInRoutines,
+  signalRenamedRoutines,
+} from "@rakazo/adapters";
 import type { Actor, AgentSkill, AgentSkillSource } from "@rakazo/contracts";
 import type { SkillSource } from "@rakazo/core";
 import {
@@ -10,7 +14,7 @@ import {
   mergeBuiltinSkills,
   parseSkillMd,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
   availableInSpace,
@@ -124,7 +128,10 @@ export function resolveSkillContent(input: {
   };
 }
 
-export function createAgentSkillsService(prisma: PrismaClient) {
+export function createAgentSkillsService(
+  prisma: PrismaClient,
+  events?: Pick<ThreadEvents, "publishSpaceChange">,
+) {
   async function owned(actor: Actor, skillId: string) {
     const row = await prisma.agentSkill.findFirst({
       where: { id: skillId, ...availableInSpace(actor) },
@@ -233,6 +240,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       }
       const resolved = resolveSkillContent({ ...input, prior: existing });
       const renamed = !findSkillByName([existing], resolved.name);
+      const previousName = existing.name;
       if (
         renamed &&
         builtinCatalog().some((s) => s.name.toLowerCase() === resolved.name.toLowerCase())
@@ -240,6 +248,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         throw new ORPCError("CONFLICT", { message: "A skill with that name already exists." });
       }
       // Mutate only owner-scoped user rows (never builtin/plugin), even if source was tampered.
+      let renamedRoutineSpaces: string[] = [];
       try {
         const updated = await prisma.$transaction(async (tx) => {
           if (renamed)
@@ -251,7 +260,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
               spaceAvailability(existing),
               existing.id,
             );
-          return tx.agentSkill.updateMany({
+          const result = await tx.agentSkill.updateMany({
             where: { id: existing.id, ...availableInSpace(actor), source: "user" },
             data: {
               name: resolved.name,
@@ -259,6 +268,16 @@ export function createAgentSkillsService(prisma: PrismaClient) {
               content: resolved.content,
             },
           });
+          if (result.count === 1 && renamed) {
+            const { allSpaces, spaceIds } = spaceAvailability(existing);
+            renamedRoutineSpaces = await renameSkillInRoutines(
+              tx,
+              { userId: existing.userId, spaceIds: allSpaces ? null : spaceIds },
+              previousName,
+              resolved.name,
+            );
+          }
+          return result;
         });
         if (updated.count !== 1) throw new IsolationError();
       } catch (error) {
@@ -268,6 +287,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         }
         throw error;
       }
+      await signalRenamedRoutines(events, renamedRoutineSpaces);
       return mapAgentSkill(await owned(actor, existing.id));
     },
 
