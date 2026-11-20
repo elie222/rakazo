@@ -75,7 +75,10 @@ export async function reviewToolCall(
         ? ownComputerReviewArgs(
             name,
             redactToolArgsForReview(args, ctx.secrets),
-            ctx.state.pageUrl && redactSecrets(ctx.state.pageUrl, ctx.secrets),
+            // A page a desktop action may have changed is not shown as the page acted on.
+            !ctx.state.pageUrlUncertain && ctx.state.pageUrl
+              ? redactSecrets(ctx.state.pageUrl, ctx.secrets)
+              : undefined,
           )
         : redactToolArgsForReview(args, ctx.secrets);
     const reviewRequest: AutoReviewRequest = {

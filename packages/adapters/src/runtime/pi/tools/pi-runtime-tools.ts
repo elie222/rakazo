@@ -92,6 +92,9 @@ export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost)
  * Unwraps to the real tool before anything else, so its gate, approvals, checkpoint, audit
  * and activity all name that tool exactly as a direct call would.
  */
+/** Desktop tools that can change the page the page browser last reported. */
+const DESKTOP_TOOL_NAMES = new Set(["computer_act", "open_path", "launch_app"]);
+
 function useToolAgentTool(
   wrapper: AgentTool,
   runnable: ReadonlyMap<string, AgentTool>,
@@ -378,11 +381,14 @@ function toAgentTool(
     // Pi runs a turn's tool calls concurrently by default, so a batch that
     // creates a routine and lists routines can read the list before the row
     // exists. Pi runs the whole batch in order when any call in it is
-    // sequential. Remember also needs this to avoid competing revision writes, and request_secret
-    // so a sibling request cannot start after one pauses for its card and share its answer.
+    // sequential. Remember also needs this to avoid competing revision writes, request_secret
+    // so a sibling request cannot start after one pauses for its card and share its answer, and the
+    // desktop tools so a page action never acts on a page a sibling just changed without the gate
+    // knowing (see pageUrlUncertain).
     ...(SCHEDULE_TOOL_NAMES.has(tool.name) ||
     tool.name === "remember" ||
-    tool.name === "request_secret"
+    tool.name === "request_secret" ||
+    DESKTOP_TOOL_NAMES.has(tool.name)
       ? { executionMode: "sequential" as const }
       : {}),
     parameters: parametersFor(tool),
