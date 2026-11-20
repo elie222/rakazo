@@ -63,6 +63,7 @@ import { threadSnapshot } from "../threads/thread-snapshot.js";
 import { isStopMessage, stopThreadRuns } from "../threads/thread-stop.js";
 import type { ThreadTarget } from "../threads/thread-target.js";
 import {
+  replayExistingSend,
   replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,
@@ -144,17 +145,27 @@ export function threadsRoutes(ctx: RouterContext) {
     startRoutines?: Parameters<typeof sendThreadMessage>[5],
     nativeSessionId?: string,
   ) => {
-    const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
+    const releaseTakeover = takeoverReleaser(deps, actor, target);
+    // Strict card answers replay any saved receipt before checking model setup so a retry
+    // after a lost HTTP response still returns its receipt if model lookup is unavailable.
+    if (input.answersQuestion) {
+      const replayed = await replayExistingSend(
+        deps,
+        target.threadId,
+        input.clientNonce,
+        releaseTakeover,
+      );
+      if (replayed) return replayed;
+    }
+    const setup = await modelSetup(deps, actor);
     // A bot with its own runnable model needs no main model, and stopping work needs none.
     const replied =
       target.kind === "group" ? await replyParentBotId(deps.prisma, target, input) : undefined;
     const noModel =
       setup.needsModel &&
       !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
-    // Strict card answers check receipt replay before model admission so a retry after a lost
-    // response still returns its receipt if the model later became unavailable.
-    if (noModel && !input.answersQuestion && !isStopMessage(input)) {
+    if (noModel && (input.answersQuestion || !isStopMessage(input))) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
     }
     if (target.kind === "bot") {
@@ -188,7 +199,7 @@ export function threadsRoutes(ctx: RouterContext) {
         nativeCalendarSessionId: deviceKey ? nativeSessionId : undefined,
         nativeCalendarDeviceDigest: deviceKey ? nativeCalendarDeviceDigest(deviceKey) : undefined,
       },
-      takeoverReleaser(deps, actor, target),
+      releaseTakeover,
       startRoutines,
     ).catch((error: unknown) => {
       if (error instanceof AttachmentValidationError) {

@@ -198,7 +198,7 @@ async function findSendReceipt(prisma: PrismaClient, threadId: string, clientNon
   });
 }
 
-async function replayExistingSend(
+export async function replayExistingSend(
   deps: { prisma: PrismaClient; events: ThreadEvents; jobs: JobPublisher },
   threadId: string,
   clientNonce: string | undefined,

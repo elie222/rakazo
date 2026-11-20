@@ -21,6 +21,7 @@ describe("model setup gate", () => {
     deploymentModelCredentialCipher?: string;
     savedDeploymentModel?: boolean;
     savedStrictReceipt?: boolean;
+    modelLookupError?: Error;
     funding?: Pick<BillingStatus, "creditPurchasesEnabled" | "funding" | "balanceUsd">;
   }) {
     const prisma = {
@@ -35,11 +36,17 @@ describe("model setup gate", () => {
       // A bot that follows the main model.
       bot: {
         findFirst: vi.fn().mockResolvedValue({ id: "bot-1", thread: { id: "thread-1" } }),
-        findMany: vi
-          .fn()
-          .mockResolvedValue([{ modelProvider: null, modelId: null, thinkingLevel: null }]),
+        findMany: options.modelLookupError
+          ? vi.fn().mockRejectedValue(options.modelLookupError)
+          : vi
+              .fn()
+              .mockResolvedValue([{ modelProvider: null, modelId: null, thinkingLevel: null }]),
       },
-      userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
+      userModelPreference: {
+        findFirst: options.modelLookupError
+          ? vi.fn().mockRejectedValue(options.modelLookupError)
+          : vi.fn().mockResolvedValue(null),
+      },
       taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
       message: {
         findUnique: vi
@@ -66,15 +73,17 @@ describe("model setup gate", () => {
       },
       steeringMessage: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: {
-        findUnique: vi
-          .fn()
-          .mockResolvedValue(
-            options.deploymentModelCredentialCipher
-              ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
-              : options.savedDeploymentModel
-                ? { defaultModelProvider: "openrouter", defaultModelId: "saved-model" }
-                : null,
-          ),
+        findUnique: options.modelLookupError
+          ? vi.fn().mockRejectedValue(options.modelLookupError)
+          : vi
+              .fn()
+              .mockResolvedValue(
+                options.deploymentModelCredentialCipher
+                  ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
+                  : options.savedDeploymentModel
+                    ? { defaultModelProvider: "openrouter", defaultModelId: "saved-model" }
+                    : null,
+              ),
       },
     } as unknown as PrismaClient;
     const deps = {
@@ -102,7 +111,7 @@ describe("model setup gate", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { actor, handler: appHandler(deps) };
+    return { actor, handler: appHandler(deps), prisma };
   }
 
   async function call(handler: RouterHandler, actor: Actor, path: string, body: unknown) {
@@ -230,7 +239,7 @@ describe("model setup gate", () => {
     });
     const refused = await call(fresh.handler, fresh.actor, "threads/send", {
       botId: "bot-1",
-      text: "Kyoto",
+      text: "stop",
       replyToMessageId: "ask-1",
       answersQuestion: true,
       clientNonce: "nonce-fresh",
@@ -239,6 +248,42 @@ describe("model setup gate", () => {
     await expect(refused.json()).resolves.toMatchObject({
       json: { message: MODEL_REQUIRED_SEND_ERROR },
     });
+  });
+
+  it("replays a committed strict card answer without calling model lookup when the credential store is unavailable", async () => {
+    const retry = modelGateDeps({
+      agentRuntime: "pi",
+      savedStrictReceipt: true,
+      modelLookupError: new SecretStoreUnavailableError(),
+    });
+    const replayed = await call(retry.handler, retry.actor, "threads/send", {
+      botId: "bot-1",
+      text: "Kyoto",
+      replyToMessageId: "ask-1",
+      answersQuestion: true,
+      clientNonce: "nonce-saved",
+    });
+    expect(replayed.status).toBe(200);
+    await expect(replayed.json()).resolves.toMatchObject({
+      json: { runId: "run-saved", taskId: "task-saved", seq: 7 },
+    });
+    expect(retry.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
+    expect(retry.prisma.deploymentSettings.findUnique).not.toHaveBeenCalled();
+    expect(retry.prisma.bot.findMany).not.toHaveBeenCalled();
+
+    const fresh = modelGateDeps({
+      agentRuntime: "pi",
+      modelLookupError: new SecretStoreUnavailableError(),
+    });
+    const failed = await call(fresh.handler, fresh.actor, "threads/send", {
+      botId: "bot-1",
+      text: "Kyoto",
+      replyToMessageId: "ask-1",
+      answersQuestion: true,
+      clientNonce: "nonce-fresh",
+    });
+    expect(failed.status).toBe(500);
+    expect(fresh.prisma.userModelPreference.findFirst).toHaveBeenCalledTimes(1);
   });
 
   it.each([false, true])(
