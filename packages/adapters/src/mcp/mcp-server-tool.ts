@@ -271,10 +271,9 @@ export async function removeMcpServerFromTool(
     where: availableInSpace(run),
     select: { id: true, name: true, slug: true, transport: true, secretId: true },
   });
+  const named = servers.filter((server) => server.name.toLowerCase() === name.toLowerCase());
   const slug = deriveMcpSlug(name);
-  const matches = servers.filter(
-    (server) => server.name.toLowerCase() === name.toLowerCase() || server.slug === slug,
-  );
+  const matches = named.length > 0 ? named : servers.filter((server) => server.slug === slug);
   const remote = servers.filter((server) => server.transport !== "stdio");
   if (matches.length === 0) {
     return {

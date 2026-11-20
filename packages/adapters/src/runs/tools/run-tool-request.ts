@@ -392,7 +392,7 @@ export async function prepareToolRequest(
   const { name, executionId, nextApprovedTool } = request;
   let { args } = request;
   if (
-    (SCHEDULE_TOOL_NAMES.has(name) || SKILL_TOOL_NAMES.has(name)) &&
+    (SCHEDULE_TOOL_NAMES.has(name) || SKILL_TOOL_NAMES.has(name) || name === "remove_mcp_server") &&
     (ctx.source.messagingChannelRun ||
       (await deps.prisma.steeringMessage.findFirst({
         where: {

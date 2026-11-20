@@ -154,6 +154,18 @@ describe("removeMcpServerFromTool", () => {
     });
   });
 
+  it("prefers the server with that exact name over one whose name shares its slug", async () => {
+    const { deps, tx } = fixture([
+      { id: "srv-1", name: "Brex!", slug: "brex", transport: "sse" },
+      { id: "srv-2", name: "Brex", slug: "brex", transport: "sse" },
+    ]);
+    await expect(removeMcpServerFromTool(deps, run, { name: "Brex" })).resolves.toEqual({
+      ok: true,
+      removed: "Brex",
+    });
+    expect(tx.mcpServer.delete).toHaveBeenCalledWith({ where: { id: "srv-2" } });
+  });
+
   it("leaves a local (stdio) server to Settings", async () => {
     const { deps, tx } = fixture([
       { id: "srv-1", name: "Local", slug: "local", transport: "stdio" },
