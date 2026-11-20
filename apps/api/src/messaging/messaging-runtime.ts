@@ -3,6 +3,7 @@ import type {
   JobPublisher,
   JobQueueOrder,
   MessagingInboundEvent,
+  MessagingInboundMessage,
   MessagingSurface,
   SandboxProvider,
   SecretStore,
@@ -136,7 +137,7 @@ export async function startMessagingRuntime({
   const teamRooms: TeamRoomPolicy = (provider) => roomsByProvider.get(provider) ?? undefined;
   /** Said once per room: an operator with no team-chat bot otherwise sees nothing. */
   const warnedRooms = new Set<string>();
-  const warnRoomWithoutBot = (event: MessagingInboundEvent) => {
+  const warnRoomWithoutBot = (event: Pick<MessagingInboundMessage, "provider" | "workspaceId">) => {
     const key = `${event.provider}:${event.workspaceId ?? ""}`;
     if (warnedRooms.has(key)) return;
     warnedRooms.add(key);

@@ -160,7 +160,6 @@ export interface AppEnv extends MessagingEnvironmentValues {
   messagingOpenSignup: boolean;
   /** Bot that owns team/external chat rooms on the messaging surface. */
   teamChatBotId: string | undefined;
-  /** Bot that owns Discord guild rooms, when it differs from `teamChatBotId`. */
   /** The bot that owns one platform's shared rooms, by provider id, when it is not the above. */
   teamChatBotIds: Record<string, string | undefined>;
   /** Optional model override for ambient engagement judging. */

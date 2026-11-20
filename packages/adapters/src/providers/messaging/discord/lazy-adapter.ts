@@ -229,8 +229,11 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
         if (delay === undefined || !this.listening) return;
         const timer = setTimeout(() => {
           this.retries.delete(timer);
-          // The last attempt has no retry left to handle its rejection, so it ends here.
-          void deliver(adapter, threadId, message, attempt + 1).catch(() => undefined);
+          // The last attempt has no retry left to handle its failure, so it is logged here.
+          void bestEffort(
+            "Discord gateway retry delivery",
+            deliver(adapter, threadId, message, attempt + 1),
+          );
         }, delay);
         timer.unref?.();
         this.retries.add(timer);
