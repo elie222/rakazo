@@ -1,6 +1,6 @@
 import type { Locator } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { completeOnboarding, signup } from "../helpers/helpers";
+import { completeOnboarding, openUserSettings, signup } from "../helpers/helpers";
 
 async function toggleGeometry(button: Locator) {
   const icon = button.locator("svg");
@@ -26,7 +26,7 @@ async function toggleGeometry(button: Locator) {
 for (const direction of ["ltr", "rtl"] as const) {
   test(`sidebar toggle icons follow the sidebar in ${direction}`, async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.setViewportSize({ width: 1300, height: 900 });
     await signup(
       page,
       `sidebar-icons-${direction}-${Date.now()}@rakazo.test`,
@@ -34,14 +34,20 @@ for (const direction of ["ltr", "rtl"] as const) {
       "Sidebar Icons",
     );
     await completeOnboarding(page);
-    await page.evaluate((dir) => {
-      document.documentElement.dir = dir;
-    }, direction);
-    // The resize also renders the sidebar on the side selected by the new document direction.
-    await page.setViewportSize({ width: 1300, height: 900 });
+    const right = direction === "rtl";
+    const html = page.locator("html");
+    if (right) {
+      const settings = await openUserSettings(page);
+      await settings.getByTestId("ui-locale-select").click();
+      await page.getByRole("option", { name: "עברית", exact: true }).click();
+      await expect(html).toHaveAttribute("lang", "he");
+      await page.goto("/app");
+      await page.waitForURL(/\/app\/[^/]+$/);
+    }
+    await expect(html).toHaveAttribute("lang", right ? "he" : "en");
+    await expect(html).toHaveAttribute("dir", direction);
 
     const sidebar = page.getByTestId("bots-sidebar");
-    const right = direction === "rtl";
     const side = right ? 1 : -1;
     await expect
       .poll(async () => {
@@ -51,13 +57,13 @@ for (const direction of ["ltr", "rtl"] as const) {
       .toBe(right ? 1300 : 0);
 
     const minimize = sidebar.getByTestId("minimize-bots-sidebar");
-    await expect(minimize).toHaveAccessibleName("Minimize bots");
+    await expect(minimize).toHaveAccessibleName(right ? "מזעור הבוטים" : "Minimize bots");
     expect(await toggleGeometry(minimize)).toEqual({ divider: side, arrow: side });
     await minimize.press("Enter");
     await expect(sidebar).toHaveAttribute("data-collapsed", "true");
 
     const restore = sidebar.getByTestId("restore-bots-sidebar");
-    await expect(restore).toHaveAccessibleName("Show bots");
+    await expect(restore).toHaveAccessibleName(right ? "הצגת בוטים" : "Show bots");
     expect(await toggleGeometry(restore)).toEqual({ divider: side, arrow: -side });
     await restore.click();
     await expect(sidebar).toHaveAttribute("data-collapsed", "false");
