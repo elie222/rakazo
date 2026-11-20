@@ -2,6 +2,7 @@ import type {
   AgentModelOAuthCredential,
   AgentRunRequest,
   AgentRuntime,
+  ModelBilling,
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
 } from "@rakazo/adapter-kit";
@@ -160,6 +161,12 @@ function assertCompatibleModelEnabled(
   }
 }
 
+const STORED_SECRET_BILLING = {
+  oauth: "subscription",
+  api_key: "api_key",
+  openai_compatible: "custom_endpoint",
+} as const satisfies Record<StoredModelSecret["kind"], ModelBilling>;
+
 export async function modelCreditBillingEnabled(
   deps: Pick<ExecutorDeps, "prisma" | "billingEnabled">,
 ): Promise<boolean> {
@@ -231,6 +238,8 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     (!operatorFunded && !credential
       ? approvedModelCreditOffering(provider, args[5])?.id
       : undefined);
+  material.billing =
+    callObserver || fundingOfferingId ? "credits" : (material.billing ?? "deployment");
   return {
     ...material,
     apiKey,
@@ -285,6 +294,7 @@ async function resolveModelKeyMaterial(
   ) => Promise<boolean | undefined>;
   /** The key is the user's own stored connection, not the deployment's. */
   ownCredential?: true;
+  billing?: ModelBilling;
   redact: string[];
 }> {
   if (credential) {
@@ -420,6 +430,7 @@ async function resolveModelKeyMaterial(
           : undefined,
         retireOAuth: retire,
         ownCredential: true,
+        billing: STORED_SECRET_BILLING[resolved.secret.kind],
         redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey].filter(
           (value): value is string => Boolean(value),
         ),
@@ -453,6 +464,7 @@ export function resolvedModelRunFields(
 ): Omit<AgentRunRequest["model"], "provider" | "id" | "thinkingLevel"> {
   return {
     connectionId: resolved.connectionId,
+    billing: resolved.billing,
     apiKey: resolved.oauth ? undefined : resolved.apiKey,
     callObserver: resolved.callObserver,
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
