@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RpcOptions, rpc } from "../../api/api";
 import type { PickedAttachment } from "../../composer/pick-attachments";
+import { foregroundCalendarDeviceKey } from "../../personal-calendar/device-calendar-key";
 
 export type ComposerSnapshot = {
   promptText: string;
@@ -98,6 +99,7 @@ export async function deliverSend(
     }
     artifactIds.push(id);
   }
+  const deviceKey = groupTarget ? undefined : foregroundCalendarDeviceKey();
   const message = {
     ...target,
     clientNonce: attempt.clientNonce,
@@ -108,6 +110,7 @@ export async function deliverSend(
     replyToMessageId: reroutedToGroup ? undefined : payload.replyTargetId,
     replyQuote: reroutedToGroup ? undefined : (payload.replyQuote ?? undefined),
     fromPage: reroutedToGroup ? undefined : payload.fromPage,
+    ...(deviceKey && { nativeCalendarDeviceKey: deviceKey }),
   } as const;
   // The routines run in the same server operation as the message: both or neither.
   const sent = plan.shouldRunRoutines

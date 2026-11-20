@@ -7,6 +7,11 @@ import {
   TOOL_QUESTION_FIELDS_MAX,
   ToolQuestionValueSchema,
 } from "../integrations/tool-question.js";
+import {
+  CalendarResponse,
+  NativeCalendarDeviceKey,
+  NativeCalendarRequest,
+} from "../personal-calendar/personal-calendar.js";
 import { botId } from "../rpc/inputs.js";
 import { SpaceChangeKind } from "../spaces/space.js";
 import { ProductEventSchema } from "./events.js";
@@ -60,6 +65,24 @@ export const threadsRpc = {
     sendWithRoutines: oc
       .input(threadSendWithRoutinesInput)
       .output(z.object({ routineRunIds: z.array(Id), send: threadSendOutput.optional() })),
+    nativeCalendarPending: oc
+      .input(botId.extend({ deviceKey: NativeCalendarDeviceKey }))
+      .output(z.array(NativeCalendarRequest)),
+    nativeCalendarClaim: oc
+      .input(
+        NativeCalendarRequest.pick({ id: true, runId: true, threadId: true }).extend({
+          deviceKey: NativeCalendarDeviceKey,
+        }),
+      )
+      .output(NativeCalendarRequest.nullable()),
+    nativeCalendarResult: oc
+      .input(
+        NativeCalendarRequest.pick({ id: true, runId: true, threadId: true }).extend({
+          deviceKey: NativeCalendarDeviceKey,
+          response: CalendarResponse,
+        }),
+      )
+      .output(z.object({ accepted: z.boolean() })),
     react: oc
       .input(
         threadTarget.safeExtend({

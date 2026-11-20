@@ -32,6 +32,8 @@ const EVENT_PAYLOAD_PLAIN_KEYS = new Set([
   "streaming",
 ]);
 
+const NO_PLAINTEXT_KEYS = new Set<string>();
+
 interface FieldSpec {
   /** Present for JSON columns: the scalar keys kept queryable beside the sealed copy. */
   plainKeys?: ReadonlySet<string>;
@@ -66,6 +68,15 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     fields: { payload: { plainKeys: EVENT_PAYLOAD_PLAIN_KEYS } },
     space: { column: "spaceId" },
     ownerRelation: "thread",
+  },
+  NativeCalendarRequest: {
+    table: "native_calendar_requests",
+    fields: {
+      operation: { plainKeys: NO_PLAINTEXT_KEYS },
+      result: { plainKeys: NO_PLAINTEXT_KEYS },
+    },
+    space: { column: "spaceId" },
+    ownerRelation: "user",
   },
   MeetingSession: {
     table: "meeting_sessions",
