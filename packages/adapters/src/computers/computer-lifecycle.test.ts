@@ -29,10 +29,8 @@ import {
   acquireComputerExecutionLease,
   acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
-  ComputerWaitTimedOutError,
   holdComputerExecutionLeaseForTakeover,
   provisionComputer,
-  RUN_COMPUTER_WAIT_MS,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
   replaceComputer,
@@ -40,6 +38,7 @@ import {
   waitForRunComputerLease,
 } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { ComputerWaitTimedOutError, RUN_COMPUTER_WAIT_MS } from "./run-computer-wait.js";
 import { SandboxUnsafeStopError, sandboxNotFoundError } from "./sandbox/sandbox-errors.js";
 
 // The plan's size is read from billing, which these Prisma doubles do not model.
