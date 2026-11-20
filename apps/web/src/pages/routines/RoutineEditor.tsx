@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
+import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { cronFromPreset } from "@rakazo/core";
 import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -153,6 +154,7 @@ export function RoutineEditor({
         <Input
           id={`${fieldId}-name`}
           value={draft.name}
+          maxLength={ROUTINE_NAME_MAX_LENGTH}
           placeholder={t`Name this routine`}
           onChange={(e) => onChange({ ...draft, name: e.target.value })}
           className="mt-2"

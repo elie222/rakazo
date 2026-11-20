@@ -370,6 +370,13 @@ describe("OIDC environment", () => {
       "AUTH_BREACHED_PASSWORD_CHECK_ENABLED must be true or false",
     );
   });
+  it("refuses an Auto Review confidence floor it can't read at startup", () => {
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "90" })).toThrow(
+      "RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE must be a number from 0 to 1",
+    );
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0.9" })).not.toThrow();
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "" })).not.toThrow();
+  });
   it("refuses a SIGNUPS_ENABLED value it can't read", () => {
     for (const value of ["false", "FALSE", " true ", "0", "1", ""]) {
       expect(loadEnv({ ...base, SIGNUPS_ENABLED: value }).signupsEnabled).toBe(value);
@@ -379,6 +386,28 @@ describe("OIDC environment", () => {
         "SIGNUPS_ENABLED must be true or false",
       );
     }
+  });
+  it("reads USER_DEVICES_ENABLED strictly and refuses a value it can't read", () => {
+    expect(loadEnv(base).userDevicesEnabled).toBe(true);
+    for (const value of ["", "  ", "true", "TRUE", "1"]) {
+      expect(loadEnv({ ...base, USER_DEVICES_ENABLED: value }).userDevicesEnabled).toBe(true);
+    }
+    for (const value of ["false", "FALSE", "False", " false ", "0"]) {
+      expect(loadEnv({ ...base, USER_DEVICES_ENABLED: value }).userDevicesEnabled).toBe(false);
+    }
+    for (const value of ["no", "off", "flase"]) {
+      expect(() => loadEnv({ ...base, USER_DEVICES_ENABLED: value })).toThrow(
+        "USER_DEVICES_ENABLED must be true or false",
+      );
+    }
+  });
+  it("refuses a RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC value it can't read", () => {
+    for (const value of ["", "0", "false", "1", "TRUE"]) {
+      expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: "no" })).toThrow(
+      "RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC must be true or false",
+    );
   });
   it("defaults to SSO with no policy bypass", () => {
     expect(loadEnv({ ...base, ...oidc }).oidc).toMatchObject({
