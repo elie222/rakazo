@@ -17,6 +17,8 @@ import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import { getLatestPage, removePage, renamePage } from "../lib/pages/pages";
 import { usePagedPages } from "../lib/pages/use-paged-pages";
 
+const NEXT_PAGE_FAILED = Symbol("next-page-failed");
+
 /** The bot's pages, pinned first and then most recently updated. */
 export default function PagesScreen() {
   const { botId, groupId } = useLocalSearchParams<{ botId?: string; groupId?: string }>();
@@ -25,7 +27,7 @@ export default function PagesScreen() {
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
   const { listed, showMore, refresh } = usePagedPages({ botId, groupId });
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | typeof NEXT_PAGE_FAILED | null>(null);
   const rename = useTextEditDialog(t`Rename`, PAGE_TITLE_MAX_LENGTH);
 
   if (listed.status !== "ready") {
@@ -134,7 +136,7 @@ export default function PagesScreen() {
     <ScrollView contentInsetAdjustmentBehavior="automatic">
       {problem ? (
         <Text accessibilityRole="alert" style={[styles.problem, { color: tokens.destructive }]}>
-          {problem}
+          {problem === NEXT_PAGE_FAILED ? t`Could not load pages.` : problem}
         </Text>
       ) : null}
       {pinned.length ? <SettingsGroup label={t`Pinned`}>{pinned.map(row)}</SettingsGroup> : null}
@@ -146,7 +148,10 @@ export default function PagesScreen() {
             key="more"
             accessibilityRole="button"
             title={t`Show more`}
-            onPress={() => void showMore().catch(() => setProblem(t`Could not load pages.`))}
+            onPress={() => {
+              setProblem((current) => (current === NEXT_PAGE_FAILED ? null : current));
+              void showMore().catch(() => setProblem(NEXT_PAGE_FAILED));
+            }}
           />
         </SettingsGroup>
       ) : null}
