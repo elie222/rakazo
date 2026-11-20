@@ -119,6 +119,11 @@ export function parseRoutineWatchState(value: unknown): RoutineWatchState | null
   return parsed.success ? parsed.data : null;
 }
 
+/** A new or re-armed watch takes its first reading a moment from now. */
+export function firstWatchCheck(): Date {
+  return new Date(Date.now() + 2_000);
+}
+
 export function nextRoutineWatchAt(watch: Pick<RoutineWatch, "everyMinutes">, from: Date): Date {
   return new Date(from.getTime() + watch.everyMinutes * 60_000);
 }
