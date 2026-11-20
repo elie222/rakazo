@@ -271,6 +271,7 @@ it("names models and providers by their labels, and keeps the id when none is kn
   const panel = await renderPanel([
     { provider: "openai-codex", id: "gpt-6-luna", label: "GPT-6 Luna", providerName: "ChatGPT" },
     { provider: "alpha", id: "shared", label: "Shared Model", providerName: "Alpha AI" },
+    { provider: "alpha", id: "shared-v2", label: "Shared Model", providerName: "Alpha AI" },
     { provider: "beta", id: "shared", label: "Shared Model", providerName: "Beta AI" },
   ]);
   try {
@@ -279,6 +280,7 @@ it("names models and providers by their labels, and keeps the id when none is kn
       modelOptions: [
         { provider: "openai-codex", model: "gpt-6-luna" },
         { provider: "alpha", model: "shared" },
+        { provider: "alpha", model: "shared-v2" },
         { provider: "beta", model: "shared" },
         { provider: "custom", model: "my-model" },
       ],
@@ -296,7 +298,8 @@ it("names models and providers by their labels, and keeps the id when none is kn
     expect(await panel.options("Model")).toEqual([
       "All models",
       "GPT-6 Luna",
-      "Shared Model (Alpha AI)",
+      "Shared Model (Alpha AI) — shared",
+      "Shared Model (Alpha AI) — shared-v2",
       "Shared Model (Beta AI)",
       "my-model",
     ]);

@@ -83,13 +83,16 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const totals = fresh?.totals;
   const modelNames = (data?.modelOptions ?? []).map((m) => ({ ...m, ...labelsFor(m) }));
   const modelOptions = data
-    ? modelNames.map((m) => ({
-        key: JSON.stringify([m.provider, m.model]),
-        label:
-          modelNames.filter((other) => other.modelLabel === m.modelLabel).length > 1
-            ? `${m.modelLabel} (${m.providerLabel})`
-            : m.modelLabel,
-      }))
+    ? modelNames.map((m) => {
+        const sameLabel = modelNames.filter((other) => other.modelLabel === m.modelLabel);
+        const sameProviderLabel = sameLabel.filter(
+          (other) => other.providerLabel === m.providerLabel,
+        );
+        let label = m.modelLabel;
+        if (sameLabel.length > 1) label = `${label} (${m.providerLabel})`;
+        if (sameProviderLabel.length > 1) label = `${label} — ${m.model}`;
+        return { key: JSON.stringify([m.provider, m.model]), label };
+      })
     : selectedModel
       ? [selectedModel]
       : [];
