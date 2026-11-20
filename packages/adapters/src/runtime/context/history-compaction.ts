@@ -395,6 +395,7 @@ export async function compactHistory(
           provider: deploymentFallback.provider,
           id: deploymentFallback.model,
           apiKey: deps.deploymentModelKey,
+          billing: "deployment" as const,
         }
       : await (async () => {
           const settings = await deps.prisma.deploymentSettings.findUnique({
@@ -404,6 +405,7 @@ export async function compactHistory(
             provider: settings?.defaultModelProvider ?? "scripted",
             id: settings?.defaultModelId ?? "scripted",
             apiKey: undefined,
+            billing: "deployment" as const,
           };
         })();
   if (!deps.runtime.describe().capabilities.compaction || model.provider === "scripted") {

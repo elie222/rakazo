@@ -47,7 +47,11 @@ import {
 } from "../../models/model-provider-allowlist.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
-import { parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
+import {
+  parseModelSecret,
+  STORED_MODEL_SECRET_BILLING,
+  secretValuesToRedact,
+} from "../../models/model-secret.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
@@ -160,12 +164,6 @@ function assertCompatibleModelEnabled(
     return;
   }
 }
-
-const STORED_SECRET_BILLING = {
-  oauth: "subscription",
-  api_key: "api_key",
-  openai_compatible: "custom_endpoint",
-} as const satisfies Record<StoredModelSecret["kind"], ModelBilling>;
 
 export async function modelCreditBillingEnabled(
   deps: Pick<ExecutorDeps, "prisma" | "billingEnabled">,
@@ -430,7 +428,7 @@ async function resolveModelKeyMaterial(
           : undefined,
         retireOAuth: retire,
         ownCredential: true,
-        billing: STORED_SECRET_BILLING[resolved.secret.kind],
+        billing: STORED_MODEL_SECRET_BILLING[resolved.secret.kind],
         redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey].filter(
           (value): value is string => Boolean(value),
         ),

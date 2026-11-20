@@ -111,6 +111,32 @@ describe("usage ledger", () => {
     });
     expect(data?.runId).toBeUndefined();
   });
+  it("fills in who paid when a later report reconciles a recorded call", async () => {
+    const updateMany = vi.fn(async (_args: { data: { billing?: string } }) => ({ count: 1 }));
+    const tx = { usageRecord: { createMany: vi.fn(async () => ({ count: 0 })), updateMany } };
+    const prisma = {
+      $transaction: async (work: (tx: unknown) => Promise<unknown>) => work(tx),
+    } as unknown as Pick<PrismaClient, "$transaction">;
+    const event = {
+      type: "usage" as const,
+      provider: "fixture",
+      model: "test",
+      callId: "call-fixture",
+      inputTokens: 10,
+      outputTokens: 2,
+    };
+    const attribution = {
+      fundingSource: "operator" as const,
+      spaceId: "space-fixture",
+      userId: "user-fixture",
+    };
+    await recordUsage(prisma, event, attribution, true);
+    await recordUsage(prisma, { ...event, billing: "deployment" }, attribution, true);
+    expect(updateMany.mock.calls.map(([args]) => args.data.billing)).toEqual([
+      undefined,
+      "deployment",
+    ]);
+  });
   it("records usage whose first transaction lost a deadlock", async () => {
     const createMany = vi
       .fn()

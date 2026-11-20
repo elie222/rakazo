@@ -1,4 +1,5 @@
 import type { OAuthCredential } from "@earendil-works/pi-ai";
+import type { ModelBilling } from "@rakazo/adapter-kit";
 import type {
   ModelApiProtocol,
   ModelContextLimits,
@@ -319,3 +320,9 @@ export function secretValuesToRedact(secret: StoredModelSecret): string[] {
   if (secret.reconnectRequired) return [];
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
 }
+
+export const STORED_MODEL_SECRET_BILLING = {
+  oauth: "subscription",
+  api_key: "api_key",
+  openai_compatible: "custom_endpoint",
+} as const satisfies Record<StoredModelSecret["kind"], ModelBilling>;

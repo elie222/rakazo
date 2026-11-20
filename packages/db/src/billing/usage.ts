@@ -42,6 +42,7 @@ export async function recordUsage(
       ? JSON.parse(JSON.stringify(event.pricingSnapshot))
       : undefined,
     usageSource: event.usageSource ?? null,
+    ...(event.billing ? { billing: event.billing } : {}),
   };
   const data = {
     fundingSource: attribution.fundingSource ?? "customer",
@@ -57,7 +58,6 @@ export async function recordUsage(
     callId: event.callId ?? null,
     operationKind: attribution.operationKind ?? event.operationKind ?? "answer",
     agentId: event.agentId ?? null,
-    billing: event.billing ?? null,
   };
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
