@@ -359,8 +359,8 @@ export async function savedContextWriteNeedsReview(
   );
 }
 
-/** A scheme of two letters or more, so a drive letter is not taken for one. */
-const URI_SCHEME = /^[a-z][a-z0-9+.-]+:/i;
+/** What open_path opens as a page rather than a workspace file, as its handler decides. */
+const HTTP_LINK = /^https?:\/\//i;
 /** Page actions that put text or files the bot chose into the page. */
 const PAGE_TYPING_KINDS = new Set(["fill", "type", "upload"]);
 
@@ -373,35 +373,38 @@ function actionsOf(args: Record<string, unknown>): Record<string, unknown>[] {
 }
 
 /**
- * What a call on the bot's own computer could send off it, which the approval model checks in Auto
- * once outside text entered the run (see isRunTainted): "command" for a shell command, which can
- * reach anything; "page" for a page opened, or typed or uploaded into, on a site the run was not
- * given (`pageSiteGiven`, see outboundSiteGate); "input" for desktop typing or key presses (which
- * can paste) or an app opened with a URI. Page clicks, pointer moves, scrolling and opening a file
- * or app send nothing the bot chose, so they get nothing. Like every taint check it only informs the review; Ask and Never ask treat the call as
- * they treat any other. The predicates are only checked for calls that could send something.
+ * Whether a call on the bot's own computer could send something off it, and so goes to the approval
+ * model in Auto once outside text entered the run (see isRunTainted): a shell command, which can
+ * reach anything; a page opened, or typed or uploaded into, on a site the run was not given
+ * (`pageSiteGiven`, see outboundSiteGate); desktop typing or key presses (which can paste), or an
+ * app opened with a URI. Page clicks, pointer moves, scrolling and opening a file or app send
+ * nothing the bot chose. Like every taint check it only informs the review; Ask and Never ask treat
+ * the call as they treat any other. The predicates are only checked for calls that could send
+ * something.
  */
-export async function ownComputerActionReview(
+export async function ownComputerActionNeedsReview(
   toolName: string,
   args: Record<string, unknown>,
   checks: { tainted: () => Promise<boolean>; pageSiteGiven: () => Promise<boolean> },
-): Promise<"command" | "page" | "input" | undefined> {
-  const kind = whatCouldLeave(toolName, args);
-  if (!kind || !(await checks.tainted())) return undefined;
-  return kind === "page" && (await checks.pageSiteGiven()) ? undefined : kind;
+): Promise<boolean> {
+  const sends = whatCouldSend(toolName, args);
+  if (!sends || !(await checks.tainted())) return false;
+  return sends !== "page" || !(await checks.pageSiteGiven());
 }
 
-function whatCouldLeave(
+/** "page" when what leaves goes to a page's site, which may be one the run was given. */
+function whatCouldSend(
   toolName: string,
   args: Record<string, unknown>,
-): "command" | "page" | "input" | undefined {
+): "page" | "other" | undefined {
   switch (toolName) {
     case "shell":
-      return "command";
+      return "other";
     case "browser_navigate":
       return "page";
     case "open_path":
-      return URI_SCHEME.test(String(args.path ?? "").trim()) ? "page" : undefined;
+      // Only an http(s) link opens as a page; anything else is a workspace file.
+      return HTTP_LINK.test(String(args.path ?? "").trim()) ? "page" : undefined;
     case "browser_act":
       return actionsOf(args).some((action) => PAGE_TYPING_KINDS.has(String(action.kind)))
         ? "page"
@@ -412,10 +415,10 @@ function whatCouldLeave(
         (action) =>
           action.kind === "type" || action.kind === "key" || String(action.uri ?? "").trim(),
       )
-        ? "input"
+        ? "other"
         : undefined;
     case "launch_app":
-      return String(args.uri ?? "").trim() ? "input" : undefined;
+      return String(args.uri ?? "").trim() ? "other" : undefined;
     default:
       return undefined;
   }

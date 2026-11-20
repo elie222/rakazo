@@ -10,7 +10,7 @@ import {
   humanizeToolName,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
-  ownComputerActionReview,
+  ownComputerActionNeedsReview,
   planActionGate,
   repeatsDeniedAction,
   resolveActionApprovalForTools,
@@ -263,7 +263,7 @@ export async function gateToolCall(
   const pageSite = pageUrl ? urlSite(pageUrl) : undefined;
   const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   // Only the approval model reads this, so only Auto looks for outside content here.
-  const ownComputerReview = await ownComputerActionReview(name, args, {
+  const ownComputerActionReviewed = await ownComputerActionNeedsReview(name, args, {
     tainted: async () => mode === "auto" && (await isRunTainted(ctx)),
     pageSiteGiven: async () =>
       pageUrl !== undefined &&
@@ -281,10 +281,9 @@ export async function gateToolCall(
   // A page opened on a new site is judged on its URL alone, as a fetch is, when the URL is short
   // enough to show whole; a longer one is judged with the call's other arguments, under their limit.
   const newPageUrl =
-    ownComputerReview && opensPage && pageSite && pageUrl!.length <= MAX_FETCH_URL_LENGTH
+    ownComputerActionReviewed && opensPage && pageSite && pageUrl!.length <= MAX_FETCH_URL_LENGTH
       ? pageUrl
       : undefined;
-  const ownComputerActionReviewed = ownComputerReview !== undefined;
   // Outside text only ever informs the approval model: these go to it in Auto, and nowhere else.
   const reviewOnly =
     connectorReadGated ||
