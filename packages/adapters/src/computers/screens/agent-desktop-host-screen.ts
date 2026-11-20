@@ -303,16 +303,19 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     else snapshots.delete(found.windowId);
     const lines: string[] = [];
     let truncated = data?.complete === false;
-    const visit = (node: AgentDesktopNode, depth: number) => {
+    const visit = (node: AgentDesktopNode, depth: number, root = false) => {
       if (lines.length >= HOST_SCREEN_MAX_ELEMENTS) {
         truncated = true;
         return;
       }
-      lines.push(`${"  ".repeat(depth)}- ${row(node, snapshot)}`);
       if (node.subtree_truncated) truncated = true;
-      for (const child of node.children ?? []) visit(child, depth + 1);
+      // Toolkits nest many unnamed wrappers (GTK draws about twenty for each row of a file list);
+      // listing them spends the row cap before panes later in the window are reached.
+      const shown = root || Boolean(node.name || node.value || elementNumber(node, snapshot));
+      if (shown) lines.push(`${"  ".repeat(depth)}- ${row(node, snapshot)}`);
+      for (const child of node.children ?? []) visit(child, shown ? depth + 1 : depth);
     };
-    if (data?.tree) visit(data.tree, 0);
+    if (data?.tree) visit(data.tree, 0, true);
     for (const match of data?.matches ?? []) visit({ ...match, children: [] }, 0);
     return {
       tree: boundedHostScreenTree(lines.join("\n"), truncated),
@@ -496,10 +499,16 @@ function appName(window: AgentDesktopWindow) {
   return window.app_name.replace(/\.exe$/i, "");
 }
 
-function row(node: AgentDesktopNode, snapshot: string) {
+/** The number the bot uses for an element of this snapshot, if it can act on it. */
+function elementNumber(node: AgentDesktopNode, snapshot: string) {
   const match = node.ref_id ? REF.exec(node.ref_id) : null;
+  return match && match[1] === snapshot ? match[2] : undefined;
+}
+
+function row(node: AgentDesktopNode, snapshot: string) {
+  const element = elementNumber(node, snapshot);
   const parts = [
-    ...(match && match[1] === snapshot ? [`[${match[2]}]`] : []),
+    ...(element ? [`[${element}]`] : []),
     node.role || "element",
     ...(node.name ? [JSON.stringify(node.name)] : []),
     ...(node.value && node.value !== node.name ? [`= ${JSON.stringify(node.value)}`] : []),

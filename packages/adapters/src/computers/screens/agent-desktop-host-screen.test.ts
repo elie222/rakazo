@@ -260,6 +260,33 @@ describe("agent-desktop host screen", () => {
     });
   });
 
+  it("leaves out unnamed wrappers so later panes fit under the row cap", async () => {
+    const wrapped = (node: object, levels: number): object =>
+      levels
+        ? { role: "group", states: ["offscreen"], children: [wrapped(node, levels - 1)] }
+        : node;
+    const files = Array.from({ length: HOST_SCREEN_MAX_ELEMENTS - 100 }, (_, index) =>
+      wrapped({ role: "statictext", name: `file ${index}` }, 3),
+    );
+    const sidebar = {
+      role: "list",
+      name: "Sidebar",
+      children: [{ ref_id: "@s0000000a:e9", role: "option" }],
+    };
+    const { screen } = cli({
+      snapshot: () =>
+        ok({
+          ...snapshot,
+          tree: { role: "window", children: [{ role: "group", children: files }, sidebar] },
+        }),
+    });
+    const { tree } = await screen.observe(scope, "notepad");
+    expect(tree).not.toMatch(/- group/);
+    expect(tree).toMatch(/^- window\n {2}- statictext "file 0"$/m);
+    expect(tree).toMatch(/^ {2}- list "Sidebar"\n {4}- \[9\] option$/m);
+    expect(tree).not.toMatch(/cut off/);
+  });
+
   it("caps the rows and says the rest were cut off", async () => {
     const children = Array.from({ length: HOST_SCREEN_MAX_ELEMENTS + 5 }, (_, index) => ({
       ref_id: `@s0000000a:e${index}`,
