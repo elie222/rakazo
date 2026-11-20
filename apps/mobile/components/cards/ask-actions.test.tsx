@@ -106,3 +106,37 @@ it("lists a question's options as rows and marks the chosen one", async () => {
   );
   expect(rows().map((row) => row.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
 });
+
+it("renders six question option rows and lets the person pick the sixth", async () => {
+  const onAnswer = vi.fn(async () => undefined);
+  const labels = ["Berlin", "Seoul", "Toronto", "Paris", "Osaka", "Cairo"];
+  const actions = labels.map((label, index) => ({ id: `choice-${index + 1}`, label }));
+  await act(async () =>
+    root.render(<AskActions actions={actions} approval={false} onAnswer={onAnswer} />),
+  );
+  const rows = () => [...container.querySelectorAll("button")];
+  expect(rows().map((row) => row.getAttribute("aria-label"))).toEqual(labels);
+
+  await act(async () => rows()[5]?.click());
+  expect(onAnswer).toHaveBeenCalledWith("choice-6");
+
+  await act(async () =>
+    root.render(
+      <AskActions
+        actions={actions}
+        approval={false}
+        disabled
+        selectedAnswer="choice-6"
+        onAnswer={onAnswer}
+      />,
+    ),
+  );
+  expect(rows().map((row) => row.getAttribute("aria-pressed"))).toEqual([
+    "false",
+    "false",
+    "false",
+    "false",
+    "false",
+    "true",
+  ]);
+});

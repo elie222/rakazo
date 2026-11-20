@@ -24,7 +24,7 @@ export function expectedClarificationText(
     !asks[0]!.text?.trim() ||
     !asks[0]!.actions ||
     asks[0]!.actions!.length < 2 ||
-    asks[0]!.actions!.length > 4 ||
+    asks[0]!.actions!.length > 6 ||
     asks[0]!.actions!.some((action) => !action.label.trim())
   )
     return null;
