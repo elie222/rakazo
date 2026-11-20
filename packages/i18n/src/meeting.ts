@@ -38,9 +38,15 @@ export function meetingTime(utcMs: number): string {
   });
 }
 
+/** A turn's offset into the meeting: "4:05", or "1:02:03" once it passes an hour. */
 export function transcriptTime(offsetMs: number): string {
-  const seconds = Math.floor(Math.max(0, offsetMs) / 1000);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const total = Math.floor(Math.max(0, offsetMs) / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
+    : `${minutes}:${seconds}`;
 }
 
 type CalendarEventState = {
