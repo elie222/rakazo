@@ -357,7 +357,12 @@ export const workTools: ConnectorTool[] = [
         runAt: scheduleTimingSpecs.runAt,
         delayMinutes: scheduleTimingSpecs.delayMinutes,
         delaySeconds: scheduleTimingSpecs.delaySeconds,
-        everyMinutes: { type: "number", description: "A watch's check interval: 5–1440 minutes." },
+        everyMinutes: {
+          type: "integer",
+          minimum: 5,
+          maximum: 1440,
+          description: "A watch's check interval in minutes.",
+        },
         on: optionalRoutineEvents,
       },
       required: ["routineId"],
