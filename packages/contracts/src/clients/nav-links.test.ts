@@ -16,9 +16,45 @@ describe("parseNavLinks", () => {
         ]),
       ),
     ).toEqual([
-      { id: "clients", label: "Clients", path: "/ext/clients/", trusted: false },
-      { id: "approvals", label: "Approvals", path: "/ext/approvals/?view=open", trusted: true },
+      {
+        id: "clients",
+        label: "Clients",
+        path: "/ext/clients/",
+        trusted: false,
+        adminOnly: false,
+        newTab: false,
+      },
+      {
+        id: "approvals",
+        label: "Approvals",
+        path: "/ext/approvals/?view=open",
+        trusted: true,
+        adminOnly: false,
+        newTab: false,
+      },
     ]);
+  });
+
+  it("parses admin-only and new-tab links", () => {
+    expect(
+      parseNavLinks(
+        JSON.stringify([
+          { id: "console", label: "Console", path: "/ext/console/", adminOnly: true, newTab: true },
+        ]),
+      ),
+    ).toEqual([
+      {
+        id: "console",
+        label: "Console",
+        path: "/ext/console/",
+        trusted: false,
+        adminOnly: true,
+        newTab: true,
+      },
+    ]);
+    expect(() =>
+      parseNavLinks(JSON.stringify([{ id: "x", label: "X", path: "/x", newTab: "yes" }])),
+    ).toThrow("RAKAZO_NAV_LINKS");
   });
 
   it.each([
