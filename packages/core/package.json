@@ -79,6 +79,11 @@
       "development": "./src/node/desktop-runtime.ts",
       "default": "./src/node/desktop-runtime.ts"
     },
+    "./node/local-signup": {
+      "types": "./src/node/local-signup.ts",
+      "development": "./src/node/local-signup.ts",
+      "default": "./src/node/local-signup.ts"
+    },
     "./node/screen-capability": {
       "types": "./src/node/screen-capability.ts",
       "development": "./src/node/screen-capability.ts",

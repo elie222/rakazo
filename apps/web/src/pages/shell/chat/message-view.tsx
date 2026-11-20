@@ -257,6 +257,7 @@ export const MessageView = memo(function MessageView({
     <MessageHoverActions
       message={message}
       side={message.role === "user" ? "start" : "end"}
+      speakerName={speakerName ?? author?.name}
       onReply={onReply}
       onMarkUnread={onMarkUnread}
       markedUnread={markedUnread}
