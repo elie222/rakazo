@@ -25,7 +25,7 @@ export function AdminBotsPage() {
           <ChevronLeft />
         </Link>
         <h1 className="flex-1 font-medium">
-          <Trans>Bot marketplace</Trans>
+          <Trans>Bot market</Trans>
         </h1>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto">

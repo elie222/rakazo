@@ -59,6 +59,7 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
   await completeOnboarding(page);
 
   await page.goto("/admin/bots");
+  await expect(page.getByRole("heading", { name: "Bot market", exact: true })).toBeVisible();
   const panel = page.getByTestId("admin-bots");
   await expect(panel.getByText("No bots here yet.", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "01-ops-console-empty");
@@ -104,11 +105,12 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
   await completeOnboarding(member);
 
   await member.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await member
-    .getByRole("dialog", { name: "Integrations", exact: true })
-    .getByTestId("open-bot-market")
-    .click();
-  const market = member.getByTestId("bot-marketplace-dialog");
+  const integrations = member.getByRole("dialog", { name: "Integrations", exact: true });
+  const marketEntry = integrations.getByRole("button", { name: "Bot market", exact: true });
+  await expect(marketEntry).toBeVisible();
+  await captureScreenshot(member, testInfo, "05a-user-market-entry");
+  await marketEntry.click();
+  const market = member.getByRole("dialog", { name: "Bot market", exact: true });
   await expect(market.getByTestId("market-featured-card")).toHaveCount(1);
   await expect(market.getByTestId("market-row")).toHaveCount(1);
   await captureScreenshot(member, testInfo, "06-user-market-browse");

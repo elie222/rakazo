@@ -29,7 +29,7 @@ import {
   Input,
   Spinner,
 } from "@rakazo/ui-web";
-import { ChevronDown, ChevronRight, LayoutTemplate, Store, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, LayoutTemplate, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../../components/integrations/IntegrationSetup";
 import type {
@@ -394,11 +394,11 @@ export function PluginsOverlay({
       }}
     >
       <DialogContent showCloseButton={false} size="2xl" className="bg-card">
-        <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
+        <DialogHeader className="flex-row flex-wrap items-start justify-between px-8 pt-7">
           <DialogTitle className="text-heading2 text-foreground">
             <Trans>Integrations</Trans>
           </DialogTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {browsing && appCount > 0 ? (
               <Button
                 variant="ghost"
@@ -442,12 +442,13 @@ export function PluginsOverlay({
             {browsing && onOpenMarket ? (
               <Button
                 variant="ghost"
-                className="-my-1 h-9 gap-2 px-2.5 text-body text-muted-foreground"
+                size="lg"
+                className="-my-1 gap-2 px-2.5 text-body text-muted-foreground"
                 data-testid="open-bot-market"
                 onClick={onOpenMarket}
               >
-                <Store />
-                <Trans>Market</Trans>
+                <Bot aria-hidden="true" />
+                <Trans>Bot market</Trans>
               </Button>
             ) : null}
             {browsing || view === "manage" ? (
