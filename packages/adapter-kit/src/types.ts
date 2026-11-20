@@ -1638,6 +1638,11 @@ export interface BrowserPurchaseCheckRequest {
 /** `steps`: the indexes of the clicks that would complete the purchase. */
 export interface BrowserPurchaseCheckResult {
   purchase: (BrowserPurchase & { steps: number[] }) | null;
+  /**
+   * The page could not be read because a JavaScript dialog is open on it: its type (alert, confirm,
+   * prompt, beforeunload). The caller decides whether a press may answer it.
+   */
+  dialog?: string;
 }
 
 /** A sandbox must route these commands through its owned screen, never generic host execution. */

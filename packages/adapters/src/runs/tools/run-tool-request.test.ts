@@ -354,7 +354,7 @@ describe("prepareToolRequest: a saved login that asks first", () => {
     ).toEqual({ error: expect.stringContaining("separate browser_act calls") });
   });
 
-  it("signs in and pays in separate calls, whether the purchase check finds one or fails", async () => {
+  it("signs in and pays in separate calls, and signs in nowhere when the check fails", async () => {
     const { ctx, request } = await setup();
     const found = {
       steps: [],
@@ -363,12 +363,15 @@ describe("prepareToolRequest: a saved login that asks first", () => {
       amount: "$5",
       amountSource: "page",
     };
-    for (const purchaseCheck of [
-      async () => ({ purchase: found }),
-      async () => {
-        throw new Error("page gone");
-      },
-    ]) {
+    for (const [purchaseCheck, error] of [
+      [async () => ({ purchase: found }), "separate browser_act calls"],
+      [
+        async () => {
+          throw new Error("page gone");
+        },
+        "couldn't be read",
+      ],
+    ] as const) {
       const paying = {
         ...ctx(),
         providers: { browser: { purchaseCheck } },
@@ -378,7 +381,7 @@ describe("prepareToolRequest: a saved login that asks first", () => {
         actions: [fill("work", "Password"), { kind: "click", ref: "e2" }],
       });
       expect(await prepareToolRequest(paying as never, prepared)).toEqual({
-        error: expect.stringContaining("separate browser_act calls"),
+        error: expect.stringContaining(error),
       });
       expect(prepared.loginUse).toBeUndefined();
       expect(prepared.purchase).toBeUndefined();
