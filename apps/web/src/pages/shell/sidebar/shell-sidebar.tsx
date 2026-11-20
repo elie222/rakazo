@@ -220,6 +220,8 @@ export function ShellSidebar({
                   event.keyCode === 229
                 )
                   return;
+                // Handled here, so an open phone drawer stays open for this keypress.
+                event.preventDefault();
                 if (activityMode) setActivityFilters({ ...activityFilters, query: "" });
                 else setQuery("");
                 setSearchOpen(false);
@@ -420,6 +422,11 @@ function ShellSidebarFooter({
           setMenuOpen(false);
           closeMobileSidebar();
           navigate(`/app/x/${link.id}`);
+        }}
+        onSharedPages={() => {
+          setMenuOpen(false);
+          closeMobileSidebar();
+          navigate("/review");
         }}
         onArtifacts={() => {
           setMenuOpen(false);
