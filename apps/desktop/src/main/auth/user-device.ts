@@ -26,6 +26,8 @@ export interface DeviceTokenCipher {
 
 const MAX_DEVICE_FILE_BYTES = 8 * 1024;
 const MAX_TOKEN_LENGTH = 1024;
+/** Answers meaning this server will not pair this computer (an older server, a limit, a bad request). */
+const PAIRING_REFUSALS = new Set([400, 403, 404, 409, 422]);
 
 export interface PairedDevice {
   token: string;
@@ -352,8 +354,8 @@ export function createUserDeviceAccess(deps: {
       });
       if (!response.ok) {
         await response.body?.cancel();
-        // Signed out: the next page load after sign-in tries again.
-        if (response.status !== 401) unavailable.add(origin);
+        // Signed out, a busy server or a deploy in progress: the next page load tries again.
+        if (PAIRING_REFUSALS.has(response.status)) unavailable.add(origin);
         return;
       }
       const body = (await response.json()) as Partial<

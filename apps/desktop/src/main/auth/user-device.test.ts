@@ -503,11 +503,36 @@ describe("remote computer access", () => {
     expect(clients).toHaveLength(1);
 
     const refused = setup({ fetch });
-    status = 404;
-    await refused.access.select(other);
-    await refused.access.pair();
-    await refused.access.pair();
-    expect(fetch.mock.calls.filter(([url]) => url.startsWith(other))).toHaveLength(1);
+    for (const refusal of [400, 403, 404, 409, 422]) {
+      status = refusal;
+      const target = `https://refused-${refusal}.example.com`;
+      await refused.access.select(target);
+      await refused.access.pair();
+      await refused.access.pair();
+      expect(fetch.mock.calls.filter(([url]) => url.startsWith(target))).toHaveLength(1);
+    }
+  });
+
+  it("retries a pairing the server could not answer on the next page load", async () => {
+    for (const failure of [503, 502, 500, 429, 408, "network"] as const) {
+      let failing = true;
+      const fetch = vi.fn(async (url: string) => {
+        if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
+        if (failing && failure === "network") throw new Error("offline");
+        return failing
+          ? new Response(null, { status: failure as number })
+          : Response.json({ deviceId: "device-1", token: "device-token" });
+      });
+      const { access, clients } = setup({ fetch });
+      // A saved pairing would reconnect on its own, so each failure gets a server of its own.
+      await access.select(`https://retry-${failure}.example.com`);
+      await access.pair();
+      await access.pair();
+      expect(clients).toEqual([]);
+      failing = false;
+      await access.pair();
+      expect(clients).toHaveLength(1);
+    }
   });
 
   it("never pairs without secure storage", async () => {
