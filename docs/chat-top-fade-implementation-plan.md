@@ -1,6 +1,6 @@
 # 对话顶部渐变模糊：落地开发计划
 
-状态：待执行。
+状态：已执行（Web / Electron）；`chat-header` E2E 留给 nightly / CI 运行。
 
 设计依据：[`chat-top-fade-design.md`](./chat-top-fade-design.md)。
 
@@ -23,6 +23,19 @@
 - 移动端原生模糊。
 - 任何 RPC、数据库、迁移、环境变量或翻译文案改动。
 
+## 执行结果
+
+- `ChatTopFade` 已接入对话列；遮罩高度、内容顶部留白和 `scroll-padding-top` 由
+  `--chat-top-clearance` 统一为 80 / 84px。
+- TypeScript、Web 全量单测、`pnpm checks`、生产构建和启动体积预算均通过。
+- 用生产构建 CSS 在真实 Chromium 中验证：1280px 下遮罩/留白/滚动对齐均为 84px，
+  390px 下均为 80px；`::before` 的 computed backdrop filter 为 20px blur，
+  mask 为纵向渐变；头部 `z-index` 高于遮罩。
+- 实现中发现并修正两处：手写 `-webkit-` 会让 Lightning CSS 去重掉标准属性，改为只写
+  标准属性；`scroll-padding-top` 从旧的 64px 改为与遮罩同高，避免跳转消息落在渐隐区。
+- `apps/web/e2e/chat/chat-header.spec.ts` 已补充几何、层级、模糊、静止与窄屏断言；
+  该 spec 属于 nightly，PR CI 默认不跑，截图与最终通过需触发 nightly 后确认。
+
 ## 2. 已核实的前置事实
 
 | 事实 | 位置 | 对实现的影响 |
@@ -31,7 +44,7 @@
 | 对话列是 `relative` 容器 | `apps/web/src/pages/Shell.tsx:1125` | 可以放绝对定位遮罩 |
 | 头部绝对定位在顶部，`z-10` | `apps/web/src/pages/shell/chat/chat-header.tsx:50` | 遮罩必须低于 `z-10` |
 | 头部高度 60px | `py-3` + 36px 控件 | 遮罩约 84px，下方留 24px 过渡 |
-| 内容顶部留白 80/84px | `apps/web/src/pages/shell/chat/transcript.tsx:620` | 遮罩高度与留白同源 |
+| 内容顶部留白与滚动对齐 80/84px | `apps/web/src/pages/shell/chat/transcript.tsx:620` | 遮罩高度、留白与跳转对齐同源 |
 | 输入区在对话列之外，`z-30` | `apps/web/src/pages/Shell.tsx:1225` | 遮罩不会压到输入区 |
 | 搜索条 `z-20`、侧栏 `z-20` | `apps/web/src/pages/Shell.tsx:1133`、`apps/web/src/pages/shell/resizable-side-panel.tsx:78` | 遮罩不能高于这些层 |
 | 消息悬停操作 `z-1` | `apps/web/src/pages/shell/chat/transcript.tsx:681` | 顶部悬停按钮会被遮罩压暗，符合预期 |
@@ -66,9 +79,10 @@ pnpm checks
 - 分支基于最新 `main`，且没有与 `Shell.tsx`、`transcript.tsx`、`chat-header.spec.ts`
   冲突的未合并改动。
 
-### Step 1：建立顶部留白的单一来源
+### Step 1：建立顶部留白与滚动对齐的单一来源
 
-目的：让遮罩高度和内容顶部留白永远相等，避免以后改头部高度时漂移。
+目的：让遮罩高度、内容顶部留白和 `scroll-padding-top` 永远相等，避免以后改头部高度时
+漂移，也避免跳转到消息时落在渐隐区。
 
 文件：
 
@@ -92,13 +106,14 @@ pnpm checks
 ```tsx
 // apps/web/src/pages/shell/chat/transcript.tsx
 className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden
-  overflow-y-auto scroll-pt-16 scroll-pb-7 pt-(--chat-top-clearance) pb-12
-  md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
+  overflow-y-auto scroll-pt-(--chat-top-clearance) scroll-pb-7
+  pt-(--chat-top-clearance) pb-12 md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
 ```
 
 注意：
 
 - 原来的 `pt-20 md:pt-[84px]` 必须删除，不能和 `pt-(--chat-top-clearance)` 并存。
+- 原来的 `scroll-pt-16` 也必须替换，否则跳转和“回复保持”会停在 64px，落在遮罩下半段。
 - 变量必须和 `pt-(--chat-top-clearance)` 在同一个变更里提交；否则变量不存在时
   `padding-top` 会失效。
 - 不要在 `Transcript` 内部再声明一份变量，单一来源放在对话列。
@@ -111,12 +126,12 @@ pnpm --filter @rakazo/web check
 
 浏览器几何检查（1280px 与 390px 两个宽度）：
 
-- `getComputedStyle(transcript).paddingTop` 分别为 `84px`、`80px`。
+- `getComputedStyle(transcript).paddingTop` 和 `scrollPaddingTop` 分别为 `84px`、`80px`。
 - 头部位置、首条消息位置与改动前一致；此步骤不应产生任何视觉变化。
 
 完成标准：
 
-- 两个断点的 computed padding 正确。
+- 两个断点的 computed padding 与 scroll padding 正确。
 - 没有引入水平滚动或布局位移。
 
 ### Step 2：新增遮罩组件与样式
@@ -163,15 +178,12 @@ export function ChatTopFade() {
   position: absolute;
   inset: 0;
   backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  -webkit-mask-image: linear-gradient(to bottom, #000, transparent 50%);
   mask-image: linear-gradient(to bottom, #000, transparent 50%);
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .chat-top-fade::before {
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 ```
@@ -181,6 +193,7 @@ export function ChatTopFade() {
 - 两层结构不能合并，原因见设计文档 2.3。
 - 外层负责颜色渐变，`::before` 负责模糊和遮罩。
 - 不新增颜色 token，不写产品十六进制色；`#000` 只作为遮罩模板。
+- 只写标准属性，不手写 `-webkit-`；Lightning CSS 会按目标浏览器自动补前缀。
 - 不加动画、`will-change` 或滚动监听。
 
 完成后验证：
@@ -282,6 +295,7 @@ const boxes = await page.evaluate(() => {
   return {
     fadeHeight: fadeRect.height,
     transcriptPadding: parseFloat(getComputedStyle(transcript).paddingTop),
+    transcriptScrollPadding: parseFloat(getComputedStyle(transcript).scrollPaddingTop),
     transcriptTop: transcriptRect.top,
     fadeTop: fadeRect.top,
     transcriptLeft: transcriptRect.left,
@@ -294,6 +308,7 @@ const boxes = await page.evaluate(() => {
 });
 
 expect(Math.abs(boxes.fadeHeight - boxes.transcriptPadding)).toBeLessThanOrEqual(1);
+expect(boxes.transcriptScrollPadding).toBe(boxes.transcriptPadding);
 expect(boxes.fadeTop).toBe(boxes.transcriptTop);
 expect(boxes.fadeLeft).toBe(boxes.transcriptLeft);
 expect(Math.abs(boxes.fadeWidth - boxes.transcriptWidth)).toBeLessThanOrEqual(1);
@@ -353,11 +368,13 @@ const narrow = await page.evaluate(() => {
   const fade = document.querySelector('[data-testid="chat-top-fade"]')!;
   return {
     padding: parseFloat(getComputedStyle(transcript).paddingTop),
+    scrollPadding: parseFloat(getComputedStyle(transcript).scrollPaddingTop),
     fadeHeight: fade.getBoundingClientRect().height,
   };
 });
 
 expect(narrow.padding).toBe(80);
+expect(narrow.scrollPadding).toBe(narrow.padding);
 expect(narrow.fadeHeight).toBe(80);
 ```
 
@@ -458,8 +475,8 @@ CI 与 review：
 | ID | 验收标准 | 验证方式 | 证据 |
 | --- | --- | --- | --- |
 | AC-01 | 遮罩只在对话列内，起点和宽度与滚动容器一致，不覆盖侧栏、侧面板或输入区 | E2E 几何断言 | `fade` 与 `transcript` 的 `top`/`left`/宽度一致 |
-| AC-02 | 1280px 下遮罩高度与内容顶部留白都是 84px（±1px） | E2E `fadeHeight` 与 `paddingTop` 比较 | 断言通过 |
-| AC-03 | 390px 下遮罩高度与内容顶部留白都是 80px | E2E 窄屏断言 | 断言通过 |
+| AC-02 | 1280px 下遮罩高度、内容顶部留白、滚动对齐都是 84px（±1px） | E2E 比较 `fadeHeight`、`paddingTop`、`scrollPaddingTop` | 断言通过 |
+| AC-03 | 390px 下遮罩高度、内容顶部留白、滚动对齐都是 80px | E2E 窄屏断言 | 断言通过 |
 | AC-04 | 静止在 `scrollTop = 0` 时，第一条消息顶部不低于遮罩底部 | E2E 首条消息与 `fadeRect` 比较 | 断言通过 + 截图 |
 | AC-05 | 滚动后顶部内容出现渐隐与模糊，过渡没有硬边 | 明暗两套截图 | `chat-header-floating-{light,dark}.png` |
 | AC-06 | 头部胶囊、按钮、拖拽条在遮罩之上，保持清晰 | E2E `headerZ > fadeZ` + 截图 | 断言通过 + 截图 |
@@ -555,8 +572,8 @@ CI 与 review：
 ## 8. 执行清单
 
 - [ ] Step 0：记录基线，确认没有冲突改动。
-- [ ] Step 1：对话列声明 `--chat-top-clearance`，`Transcript` 改用该变量。
-- [ ] Step 1：1280 / 390 两个断点的 computed padding 正确。
+- [ ] Step 1：对话列声明 `--chat-top-clearance`，`Transcript` 的留白与滚动对齐改用该变量。
+- [ ] Step 1：1280 / 390 两个断点的 computed padding 与 scroll padding 正确。
 - [ ] Step 2：新增 `chat-top-fade.tsx` 与 `chat-top-fade.css`。
 - [ ] Step 3：`Shell.tsx` 渲染 `<ChatTopFade />`，头部加 `data-testid`。
 - [ ] Step 3：确认遮罩 `pointer-events-none`、`aria-hidden`、`z-[5]`。

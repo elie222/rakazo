@@ -1,6 +1,6 @@
 # 对话顶部渐变模糊：调研与设计
 
-状态：设计完成，待实现。
+状态：已实现（Web / Electron）；移动端保持现有渐变。
 
 落地计划：[`chat-top-fade-implementation-plan.md`](./chat-top-fade-implementation-plan.md)。
 
@@ -174,18 +174,18 @@ Composer 外层          z-30（在对话列之外）
 | 项 | 值 | 说明 |
 | --- | --- | --- |
 | 头部高度 | 60px | `py-3` + 36px 控件 |
-| 遮罩高度 | 80px / 84px | 与滚动内容顶部留白完全一致；`md` 起为 84px |
+| 遮罩高度 | 80px / 84px | 与内容顶部留白、`scroll-padding-top` 完全一致；`md` 起为 84px |
 | 背景渐变 | `--background` 0% → 60% 不透明 35% → 透明 100% | 与 Codync 一致 |
 | 模糊半径 | 20px | 与 Codync 一致 |
 | 模糊遮罩 | 顶部全模糊 → 50% 高度完全透明 | 模糊不进入已经清晰的内容区 |
-| 断点 | 48rem（Tailwind `md`） | 与现有 `pt-20 md:pt-[84px]` 一致 |
+| 断点 | 48rem（Tailwind `md`） | 与 `--chat-top-clearance` 的响应式值一致 |
 
 ### 5.3 单一来源
 
-遮罩高度和滚动内容顶部留白必须始终相等。现在它们分别写在两个组件里，后续改字号或头部
-高度时容易漂移。
+遮罩高度、滚动内容顶部留白和滚动对齐（`scroll-padding-top`）必须始终相等。现在它们
+分别写在不同的类里，后续改字号或头部高度时容易漂移。
 
-实现时在对话列上定义一个变量，供两处共用：
+实现时在对话列上定义一个变量，供三处共用：
 
 ```tsx
 <div
@@ -197,6 +197,8 @@ Composer 外层          z-30（在对话列之外）
 ```
 
 - `Transcript` 的 `pt-20 md:pt-[84px]` 改为 `pt-(--chat-top-clearance)`。
+- `Transcript` 的 `scroll-pt-16` 改为 `scroll-pt-(--chat-top-clearance)`，让跳转到消息
+  和“回复保持”都停在遮罩下方，而不是停在旧的 64px。
 - `.chat-top-fade` 的 `height` 使用 `var(--chat-top-clearance, 5rem)`。
 
 Tailwind 4.3.5 已确认支持 `pt-(--custom-property)` 和带响应式变体的自定义属性声明。
@@ -244,18 +246,18 @@ export function ChatTopFade() {
   position: absolute;
   inset: 0;
   backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  -webkit-mask-image: linear-gradient(to bottom, #000, transparent 50%);
   mask-image: linear-gradient(to bottom, #000, transparent 50%);
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .chat-top-fade::before {
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 ```
+
+只写标准属性，让构建自动补 `-webkit-`。手写前缀会让 Lightning CSS 在去重时
+只保留前缀，反而丢掉标准属性；生产构建已验证会自动输出两种形式。
 
 `Shell.tsx` 中渲染在 `ChatHeader` 之前：
 
@@ -318,7 +320,7 @@ export function ChatTopFade() {
 | `apps/web/src/pages/shell/chat/chat-top-fade.tsx` | 新增遮罩组件 |
 | `apps/web/src/pages/shell/chat/chat-top-fade.css` | 新增两层渐变与降级规则 |
 | `apps/web/src/pages/Shell.tsx` | 对话列声明 `--chat-top-clearance`，渲染 `<ChatTopFade />` |
-| `apps/web/src/pages/shell/chat/transcript.tsx` | 顶部留白改用 `pt-(--chat-top-clearance)` |
+| `apps/web/src/pages/shell/chat/transcript.tsx` | 顶部留白和滚动对齐改用 `--chat-top-clearance` |
 | `apps/web/e2e/chat/chat-header.spec.ts` | 断言遮罩存在，保留命中测试，更新明暗两套截图 |
 
 没有契约、RPC、数据库、迁移或环境变量改动。
@@ -332,6 +334,7 @@ export function ChatTopFade() {
 3. Web E2E（交给 CI 运行，不在本机跑全量）：
    - 对话滚到中部时，顶部消息出现渐隐与模糊，头部胶囊和按钮保持清晰。
    - 滚回 `scrollTop = 0` 时，第一条消息和“加载更早消息”按钮不被压暗。
+   - 跳转到较早消息时，目标消息停在遮罩下方，不落在渐隐区。
    - 在头部两枚胶囊之间的空隙点击或滚动，事件仍然落到 `transcript`。
    - 浅色、深色各截一张图；PR 描述里附上 CI 的 E2E 截图。
 4. 手动检查：
