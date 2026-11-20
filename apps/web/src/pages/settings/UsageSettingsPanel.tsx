@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { UsageBreakdownBot, UsageDateRange } from "@rakazo/contracts";
+import type { ModelCatalogEntry, UsageBreakdownBot, UsageDateRange } from "@rakazo/contracts";
+import { canonicalPiProviderId } from "@rakazo/contracts";
 import {
   Field,
   FieldLabel,
@@ -47,6 +48,19 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
     staleTime: 30_000,
   });
 
+  const catalog = useQuery(queries.models.list.queryOptions()).data ?? NO_CATALOG;
+  // The names the Models tab shows; a model the catalog no longer lists keeps its id.
+  const labelsFor = ({ provider, model }: { provider: string; model: string }) => {
+    const entry = catalog.find(
+      (e) =>
+        e.id === model && canonicalPiProviderId(e.provider) === canonicalPiProviderId(provider),
+    );
+    return {
+      modelLabel: entry?.label ?? model,
+      providerLabel: entry?.providerName ?? provider,
+    };
+  };
+
   const count = new Intl.NumberFormat(i18n.locale);
   const usd = new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" });
   const number = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
@@ -67,14 +81,14 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const overTime = fresh?.overTime ?? [];
   const monthly = fresh?.overTimeUnit === "month";
   const totals = fresh?.totals;
-  const modelNames = data?.modelOptions ?? [];
+  const modelNames = (data?.modelOptions ?? []).map((m) => ({ ...m, ...labelsFor(m) }));
   const modelOptions = data
     ? modelNames.map((m) => ({
         key: JSON.stringify([m.provider, m.model]),
         label:
-          modelNames.filter((other) => other.model === m.model).length > 1
-            ? `${m.model} (${m.provider})`
-            : m.model,
+          modelNames.filter((other) => other.modelLabel === m.modelLabel).length > 1
+            ? `${m.modelLabel} (${m.providerLabel})`
+            : m.modelLabel,
       }))
     : selectedModel
       ? [selectedModel]
@@ -247,24 +261,27 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
               </TableRow>
             </TableHeader>
             <TableBody>
-              {models.map((row) => (
-                <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
-                  <TableCell>
-                    <div className="text-foreground">{row.model}</div>
-                    <div className="text-label text-muted-foreground">{row.provider}</div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.modelCalls)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.inputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.outputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
-                </TableRow>
-              ))}
+              {models.map((row) => {
+                const { modelLabel, providerLabel } = labelsFor(row);
+                return (
+                  <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
+                    <TableCell>
+                      <div className="text-foreground">{modelLabel}</div>
+                      <div className="text-label text-muted-foreground">{providerLabel}</div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {number(row.modelCalls)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {number(row.inputTokens)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {number(row.outputTokens)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -284,3 +301,5 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
     </div>
   );
 }
+
+const NO_CATALOG: ModelCatalogEntry[] = [];

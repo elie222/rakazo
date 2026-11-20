@@ -31,10 +31,21 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
 }));
 
 const breakdown = vi.hoisted(() => ({ fetch: vi.fn() }));
+const catalog = vi.hoisted(() => ({
+  entries: [] as { provider: string; id: string; label: string; providerName?: string }[],
+}));
 
 vi.mock("../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof QueryModule>()),
   useSpaceQueries: () => ({
+    models: {
+      list: {
+        queryOptions: () => ({
+          queryKey: ["models-list"],
+          queryFn: async () => catalog.entries,
+        }),
+      },
+    },
     usage: {
       breakdown: {
         queryOptions: ({ input }: { input: unknown }) => ({
@@ -81,9 +92,10 @@ const usageFor = (input: Input) => ({
 
 const settle = () => act(flush);
 
-async function renderPanel() {
+async function renderPanel(entries: typeof catalog.entries = []) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   breakdown.fetch.mockReset();
+  catalog.entries = entries;
   breakdown.fetch.mockImplementation(async (input: Input) => usageFor(input));
   const container = document.createElement("div");
   document.body.append(container);
@@ -249,6 +261,44 @@ it("tells apart a model name that two providers share", async () => {
       "shared (alpha)",
       "shared (beta)",
       "solo",
+    ]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("names models and providers by their labels, and keeps the id when none is known", async () => {
+  const panel = await renderPanel([
+    { provider: "openai-codex", id: "gpt-6-luna", label: "GPT-6 Luna", providerName: "ChatGPT" },
+    { provider: "alpha", id: "shared", label: "Shared Model", providerName: "Alpha AI" },
+    { provider: "beta", id: "shared", label: "Shared Model", providerName: "Beta AI" },
+  ]);
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      modelOptions: [
+        { provider: "openai-codex", model: "gpt-6-luna" },
+        { provider: "alpha", model: "shared" },
+        { provider: "beta", model: "shared" },
+        { provider: "custom", model: "my-model" },
+      ],
+      models: [
+        { provider: "openai-codex", model: "gpt-6-luna", ...point(3, 400, 0.04) },
+        { provider: "custom", model: "my-model", ...point(1, 10, 0.001) },
+      ],
+    }));
+    await panel.pick("7 days");
+    expect(
+      [...panel.container.querySelectorAll("tbody tr")].map(
+        (row) => row.querySelector("td")?.textContent,
+      ),
+    ).toEqual(["GPT-6 LunaChatGPT", "my-modelcustom"]);
+    expect(await panel.options("Model")).toEqual([
+      "All models",
+      "GPT-6 Luna",
+      "Shared Model (Alpha AI)",
+      "Shared Model (Beta AI)",
+      "my-model",
     ]);
   } finally {
     await panel.unmount();
