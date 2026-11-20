@@ -380,10 +380,9 @@ export function connectedModelChoices(
       if (!entry?.subscriptionName) return choice;
       const serving = connectionForModelChoice(credentials, choice);
       const name = providerDisplayName(entry, serving?.authKind);
-      const providerLabel =
-        !exact && serving
-          ? connectionDisplayName(serving, name, [entry.providerName ?? entry.provider])
-          : name;
+      const providerLabel = serving
+        ? connectionDisplayName(serving, name, [entry.providerName ?? entry.provider])
+        : name;
       return {
         ...choice,
         providerLabel,

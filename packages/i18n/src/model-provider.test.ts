@@ -2,6 +2,7 @@ import { i18n } from "@lingui/core";
 import { connectedBackupOptions, providerDisplayName } from "@rakazo/contracts";
 import { botModelState, connectedModelChoices } from "@rakazo/core";
 import { afterEach, expect, it } from "vitest";
+import { messages as germanMessages } from "../locales/de/messages.po";
 import { localizeModelEntry } from "./model-provider";
 
 afterEach(() => i18n.activate("en"));
@@ -153,4 +154,45 @@ it("labels chat choices by the serving credential regardless of list order", () 
       label: "Model (Example subscription)",
     });
   }
+});
+
+it("uses existing generated ids in the real compiled German catalog", () => {
+  i18n.load("de", germanMessages);
+  i18n.activate("de");
+  for (const [subscriptionName, subscriptionNameId, expected] of [
+    ["Claude subscription", "oCbawp", "Claude-Abonnement"],
+    ["ChatGPT subscription", "XrwIDk", "ChatGPT-Abonnement"],
+  ]) {
+    const entry = {
+      provider: "example",
+      providerName: "Example",
+      subscriptionName,
+      subscriptionNameId,
+      auth: "both" as const,
+    };
+    expect(providerDisplayName(localizeModelEntry(entry), "oauth")).toBe(expected);
+    expect(providerDisplayName(localizeModelEntry(entry), "api_key")).toBe("Example");
+  }
+});
+
+it("keeps custom connection labels for enabled catalog models", () => {
+  const entry = {
+    provider: "example",
+    providerName: "Example",
+    subscriptionName: "Example subscription",
+    auth: "both" as const,
+    id: "model",
+    label: "Model",
+    billing: "",
+  };
+  const credential = {
+    id: "work",
+    provider: "example",
+    label: "Work",
+    authKind: "oauth",
+    enabledModelIds: ["model"],
+  };
+  expect(connectedModelChoices([credential], [entry])[0]?.providerLabel).toBe(
+    "Example subscription (Work)",
+  );
 });

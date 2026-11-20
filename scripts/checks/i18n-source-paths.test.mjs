@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { extractFromFileWithBabel, getCatalogs } from "@lingui/cli/api";
 import { getConfig } from "@lingui/conf";
+import { formatter } from "@lingui/format-po";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 for (const folder of [".", "apps/web"]) {
@@ -51,6 +52,26 @@ test("subscription descriptors retain existing translation keys", async () => {
     { linguiConfig: getConfig({ configPath: path.join(root, "lingui.config.ts") }) },
     { plugins: ["typescript"] },
   );
-  assert(messages.some((message) => message.id === "ChatGPT subscription"));
-  assert(messages.some((message) => message.id === "Claude subscription"));
+  assert(
+    messages.some(
+      (message) => message.id === "XrwIDk" && message.message === "ChatGPT subscription",
+    ),
+  );
+  assert(
+    messages.some(
+      (message) => message.id === "oCbawp" && message.message === "Claude subscription",
+    ),
+  );
+});
+
+test("generated subscription ids preserve the existing PO entry format", async () => {
+  const po = await formatter().serialize(
+    {
+      XrwIDk: { message: "ChatGPT subscription", translation: "ChatGPT-Abonnement" },
+      oCbawp: { message: "Claude subscription", translation: "Claude-Abonnement" },
+    },
+    { locale: "de", sourceLocale: "en", filename: "messages.po", existing: undefined },
+  );
+  assert(!po.includes("js-lingui-explicit-id"));
+  assert(po.includes('msgid "Claude subscription"'));
 });
