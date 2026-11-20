@@ -81,3 +81,16 @@ function refusalClass(message: string): AnalyticsModelSignInErrorClass {
   if (status >= 400) return "rejected";
   return "other";
 }
+
+export const SIGN_IN_EXPIRED = "This code expired. Start again.";
+
+/** What the person reads for a sign-in that ended: never the provider's own words. */
+export function signInFailureText({ reason, errorClass }: PiOAuthEnd): string {
+  if (reason === "expired" || reason === "timed_out") return SIGN_IN_EXPIRED;
+  if (errorClass === "denied") return "Sign-in was declined. Start again.";
+  if (errorClass === "invalid_code") return "That code did not work. Start again.";
+  if (errorClass === "unavailable" || errorClass === "rate_limited") {
+    return "Sign-in is unavailable right now. Try again in a minute.";
+  }
+  return "Sign-in failed. Start again.";
+}

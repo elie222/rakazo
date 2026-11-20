@@ -1,0 +1,166 @@
+import type { AuthEvent, AuthInteraction } from "@earendil-works/pi-ai";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  CHATGPT_DEVICE_CODE_TTL_SECONDS,
+  createChatGptDeviceCodeLogin,
+} from "./pi-chatgpt-device-code.js";
+
+const PROVIDER_BODY = "upstream proxy said: internal trace 7f3a";
+
+type Answer = Response | Error;
+
+function fakeProvider(answers: { code?: Answer[]; poll: Answer[]; token?: Answer[] }) {
+  const queues = {
+    code: answers.code ?? [Response.json({ device_auth_id: "dev-1", user_code: "ABCD-1234" })],
+    poll: answers.poll,
+    token: answers.token ?? [tokenAnswer()],
+  };
+  const calls: string[] = [];
+  const request = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const step = url.endsWith("/usercode")
+      ? "code"
+      : url.endsWith("/deviceauth/token")
+        ? "poll"
+        : "token";
+    calls.push(step);
+    const queue = queues[step];
+    const answer = queue.length > 1 ? queue.shift() : queue[0];
+    if (!answer) throw new Error(`no ${step} answer`);
+    if (init?.signal?.aborted) throw init.signal.reason;
+    if (answer instanceof Error) throw answer;
+    return answer.clone();
+  }) as typeof fetch;
+  return {
+    fetch: request,
+    calls,
+    count: (step: string) => calls.filter((call) => call === step).length,
+  };
+}
+
+function tokenAnswer() {
+  const claims = { "https://api.openai.com/auth": { chatgpt_account_id: "acct-1" } };
+  const access = `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`;
+  return Response.json({ access_token: access, refresh_token: "refresh-1", expires_in: 3600 });
+}
+
+const approved = () =>
+  Response.json({ authorization_code: "auth-code", code_verifier: "verifier" });
+const pending = () => new Response("", { status: 403 });
+const status = (code: number, body = PROVIDER_BODY) => new Response(body, { status: code });
+
+function interaction(signal?: AbortSignal) {
+  const events: AuthEvent[] = [];
+  const value: AuthInteraction = {
+    signal,
+    prompt: async () => {
+      throw new Error("no prompt expected");
+    },
+    notify: (event) => events.push(event),
+  };
+  return { value, events };
+}
+
+describe("ChatGPT device-code sign-in", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("keeps waiting through provider errors and dropped connections until the person approves", async () => {
+    const provider = fakeProvider({
+      poll: [pending(), status(502), new TypeError("fetch failed"), status(503), approved()],
+    });
+    const { value, events } = interaction();
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(value);
+
+    await vi.advanceTimersByTimeAsync(5 * 5_000);
+
+    await expect(login).resolves.toMatchObject({
+      type: "oauth",
+      refresh: "refresh-1",
+      accountId: "acct-1",
+    });
+    expect(provider.count("poll")).toBe(5);
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "device_code",
+        userCode: "ABCD-1234",
+        expiresInSeconds: CHATGPT_DEVICE_CODE_TTL_SECONDS,
+      }),
+    ]);
+  });
+
+  it("ends on a refusal without quoting the provider's response", async () => {
+    const provider = fakeProvider({
+      poll: [
+        status(400, JSON.stringify({ error: { code: "access_denied", detail: PROVIDER_BODY } })),
+      ],
+    });
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
+    const failed = login.catch((error: unknown) => error as Error);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    const error = await failed;
+    expect(error.message).toContain("status 400");
+    expect(error.message).not.toContain(PROVIDER_BODY);
+    expect(provider.count("poll")).toBe(1);
+  });
+
+  it("slows down when the provider asks", async () => {
+    const provider = fakeProvider({
+      poll: [status(400, JSON.stringify({ error: "slow_down" })), approved()],
+    });
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(provider.count("poll")).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(login).resolves.toMatchObject({ accountId: "acct-1" });
+  });
+
+  it("says the code expired once its time runs out", async () => {
+    const provider = fakeProvider({ poll: [status(500)] });
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
+    const rejected = expect(login).rejects.toThrow("Sign-in expired.");
+
+    await vi.advanceTimersByTimeAsync(CHATGPT_DEVICE_CODE_TTL_SECONDS * 1000 + 5_000);
+
+    await rejected;
+  });
+
+  it("retries a code request and token exchange the provider failed briefly", async () => {
+    const provider = fakeProvider({
+      code: [status(503), Response.json({ device_auth_id: "dev-1", user_code: "ABCD-1234" })],
+      poll: [approved()],
+      token: [status(502), tokenAnswer()],
+    });
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(interaction().value);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    await expect(login).resolves.toMatchObject({ accountId: "acct-1" });
+    expect(provider.calls).toEqual(["code", "code", "poll", "token", "token"]);
+  });
+
+  it("stops waiting when the sign-in is cancelled", async () => {
+    const provider = fakeProvider({ poll: [pending()] });
+    const controller = new AbortController();
+    const login = createChatGptDeviceCodeLogin({ fetch: provider.fetch })(
+      interaction(controller.signal).value,
+    );
+    const rejected = expect(login).rejects.toThrow("Sign-in cancelled.");
+
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort(new Error("Sign-in cancelled."));
+    await rejected;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(provider.count("poll")).toBe(1);
+  });
+});

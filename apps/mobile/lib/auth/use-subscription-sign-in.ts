@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { AnalyticsModelSignInStep, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
 import { clampCatalogThinkingLevel } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
@@ -115,10 +116,14 @@ export function useSubscriptionSignIn({
     if (codeCopiedTimerRef.current) clearTimeout(codeCopiedTimerRef.current);
   }, [cancelOAuth]);
 
-  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal, rpc);
+  async function finishSubscriptionSignIn(login: ModelOAuthBegin, controller: AbortController) {
+    await waitForModelOAuth(login, controller.signal, rpc);
     if (controller.signal.aborted) return;
-    const saved = await rpc("models/finishOAuth", { loginId }, { signal: controller.signal });
+    const saved = await rpc(
+      "models/finishOAuth",
+      { loginId: login.loginId },
+      { signal: controller.signal },
+    );
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     credentialIdRef.current = saved.id;
@@ -164,7 +169,7 @@ export function useSubscriptionSignIn({
       // A device code must be read before its page opens, so the person opens that page.
       if (started.mode === "auth-url") await openSignInPage(started.verificationUri);
       waitingForCode = started.mode === "auth-url";
-      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
+      if (!waitingForCode) await finishSubscriptionSignIn(started, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
@@ -200,7 +205,7 @@ export function useSubscriptionSignIn({
         },
       );
       submitted = true;
-      await finishSubscriptionSignIn(oauth.loginId, controller);
+      await finishSubscriptionSignIn(oauth, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (submitted) {
@@ -221,6 +226,18 @@ export function useSubscriptionSignIn({
       }
     }
   }
+
+  // Nothing asks the server about a code waiting to be pasted, so the card ends on the code's
+  // own clock. A device code's expiry arrives with its status.
+  useTimeout(
+    () => {
+      if (oauthCodeSubmittingRef.current) return;
+      cancelOAuth();
+      publishFeedback("connection", { error: t`This code expired. Start again.` });
+    },
+    oauth?.mode === "auth-url" ? oauth.expiresInSeconds * 1000 : null,
+    oauth?.loginId,
+  );
 
   return {
     oauth,

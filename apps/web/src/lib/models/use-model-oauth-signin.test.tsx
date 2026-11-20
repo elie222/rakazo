@@ -15,7 +15,7 @@ vi.mock("../platform/desktop", () => ({
   onDesktopOAuthCallback: vi.fn(),
 }));
 vi.mock("./model-auth", () => ({
-  waitForModelOAuth: (_loginId: string, signal: AbortSignal) =>
+  waitForModelOAuth: (_login: unknown, signal: AbortSignal) =>
     new Promise<void>((resolve) =>
       signal.addEventListener("abort", () => resolve(), { once: true }),
     ),
@@ -107,4 +107,35 @@ it("shows a device code before its page opens, leaving the opening to the person
     [{ loginId: "login", step: "page_opened" }],
     [{ loginId: "login", step: "code_copied" }],
   ]);
+});
+
+it("ends a code waiting to be pasted when it expires, and says so", async () => {
+  vi.useFakeTimers();
+  try {
+    models.beginOAuth.mockResolvedValue({
+      mode: "auth-url",
+      loginId: "login",
+      verificationUri,
+      expiresInSeconds: 300,
+    });
+    vi.spyOn(window, "open").mockReturnValue(null);
+    await act(async () => {
+      void latest.startSubscriptionSignIn({ provider: "subscription" });
+    });
+    expect(latest.oauth).toMatchObject({ mode: "auth-url" });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(299_999);
+    });
+    expect(onError).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(onError).toHaveBeenCalledExactlyOnceWith("This code expired. Start again.");
+    expect(latest.oauth).toBeNull();
+    expect(models.cancelOAuth).toHaveBeenCalledExactlyOnceWith({ loginId: "login" });
+  } finally {
+    vi.useRealTimers();
+  }
 });
