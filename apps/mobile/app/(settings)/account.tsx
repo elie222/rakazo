@@ -33,6 +33,7 @@ import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useMobileTokens, useThemedStyles } from "../../lib/native/native";
 import { formatUpdateLabel, getAppVersionInfo } from "../../lib/platform/app-version";
+import { openWriteReview, writeReviewUrl } from "../../lib/platform/store-review";
 import { openStoreListing, useStoreUpdateAvailable } from "../../lib/platform/store-update";
 import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 import { useApprovalSettings } from "../../lib/settings/approval-settings";
@@ -412,6 +413,17 @@ export default function Account() {
               })
             : null}
         </SettingsGroup>
+
+        {writeReviewUrl() ? (
+          <SettingsGroup>
+            <SettingsRow
+              accessibilityRole="button"
+              leading={icon({ ios: "star", android: "star-outline" })}
+              title={t`Rate Rakazo`}
+              onPress={openWriteReview}
+            />
+          </SettingsGroup>
+        ) : null}
 
         <View style={styles.section}>
           <NativeActionButton

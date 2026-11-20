@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { accountDisplay, chatSnoozed } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import type { Href } from "expo-router";
 import {
   Redirect,
@@ -101,6 +102,7 @@ import { native, useThemedStyles } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
 import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/notifications/app-badge";
 import { registerPushToken } from "../lib/notifications/push";
+import { askForReviewIfDue } from "../lib/platform/store-review";
 import { loadActivityMode, saveActivityMode } from "../lib/preferences/activity-mode";
 import { usePublishSearchInbox } from "../lib/search/use-publish-search-inbox";
 import {
@@ -222,6 +224,10 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       if (!userId) return;
       let active = true;
       void offerPasskeyOnce(userId, () => active);
+      void bestEffort(
+        "store review prompt",
+        askForReviewIfDue(() => active),
+      );
       return () => {
         active = false;
       };
