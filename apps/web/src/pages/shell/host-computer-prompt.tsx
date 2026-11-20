@@ -116,7 +116,13 @@ export function HostComputerPrompt({
     <Dialog
       open
       onOpenChange={(next) => {
-        if (configuring) setOpen(next);
+        if (!configuring) return;
+        setOpen(next);
+        // A failure belongs to an attempt made while the dialog is open, so each opening starts clean.
+        if (!next) {
+          setError(null);
+          choice.reset();
+        }
       }}
     >
       <DialogContent showCloseButton={configuring} className="rounded-2xl sm:max-w-[440px]">
