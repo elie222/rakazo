@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const store = new Map<string, string>();
+const failRead = vi.hoisted(() => ({ on: false }));
 const native = vi.hoisted(() => ({
   apiBase: "https://chat.example.test",
   alert: vi.fn(),
@@ -8,7 +9,10 @@ const native = vi.hoisted(() => ({
 }));
 
 vi.mock("expo-secure-store", () => ({
-  getItemAsync: vi.fn(async (key: string) => store.get(key) ?? null),
+  getItemAsync: vi.fn(async (key: string) => {
+    if (failRead.on) throw new Error("keychain locked");
+    return store.get(key) ?? null;
+  }),
   setItemAsync: vi.fn(async (key: string, value: string) => {
     store.set(key, value);
   }),
@@ -37,6 +41,7 @@ describe("self-hosted support offer", () => {
     native.alert.mockClear();
     native.openUrl.mockClear();
     native.apiBase = "https://chat.example.test";
+    failRead.on = false;
   });
 
   it("asks once per device and opens the chosen payment page", async () => {
@@ -66,6 +71,16 @@ describe("self-hosted support offer", () => {
     expect(native.alert).not.toHaveBeenCalled();
 
     await support.offerSelfHostedSupportOnce(() => true);
+    expect(native.alert).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks again on the next visit after a failed read", async () => {
+    const support = await load();
+    failRead.on = true;
+    await expect(support.offerSelfHostedSupportOnce(() => true)).rejects.toThrow();
+    failRead.on = false;
+
+    await expect(support.offerSelfHostedSupportOnce(() => true)).resolves.toBe(true);
     expect(native.alert).toHaveBeenCalledTimes(1);
   });
 });

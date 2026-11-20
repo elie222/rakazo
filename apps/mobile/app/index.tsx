@@ -224,15 +224,14 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     useCallback(() => {
       if (!userId) return;
       let active = true;
+      // One prompt per visit: the passkey offer, then the support offer, then the store rating.
       void bestEffort(
-        "self-hosted support prompt",
-        offerPasskeyOnce(userId, () => active).then(async (asked) => {
-          if (!asked) await offerSelfHostedSupportOnce(() => active);
-        }),
-      );
-      void bestEffort(
-        "store review prompt",
-        askForReviewIfDue(() => active),
+        "inbox prompts",
+        (async () => {
+          if (await offerPasskeyOnce(userId, () => active)) return;
+          if (await offerSelfHostedSupportOnce(() => active)) return;
+          await askForReviewIfDue(() => active);
+        })(),
       );
       return () => {
         active = false;
