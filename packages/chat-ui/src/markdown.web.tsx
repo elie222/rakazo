@@ -800,17 +800,20 @@ const MarkdownBlock = memo(function MarkdownBlock({
   source,
   streaming,
   blockKey,
+  blockStart,
   reveal,
 }: {
   source: string;
   streaming: boolean;
   blockKey: string;
+  blockStart: number;
   reveal: StreamingRevealState;
 }) {
   const parsed = streaming ? closeUnterminatedFence(source) : source;
   const revealPlugin = useMemo(
-    () => (streaming ? createStreamingRevealPlugin(reveal, blockKey) : undefined),
-    [streaming, reveal, blockKey],
+    () =>
+      streaming ? createStreamingRevealPlugin(reveal, blockKey, source, blockStart) : undefined,
+    [streaming, reveal, blockKey, source, blockStart],
   );
   const rehype = useMemo(
     () => (streaming && revealPlugin ? [...rehypePlugins, revealPlugin] : rehypePlugins),
@@ -938,6 +941,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                       source={block.source}
                       streaming={streaming}
                       blockKey={block.key}
+                      blockStart={block.start}
                       reveal={reveal}
                     />
                   </Fragment>
@@ -947,6 +951,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                   source={children}
                   streaming={streaming}
                   blockKey="root-0"
+                  blockStart={0}
                   reveal={reveal}
                 />
               )}

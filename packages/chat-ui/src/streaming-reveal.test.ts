@@ -40,7 +40,8 @@ describe("streaming reveal commit", () => {
   it("drops progress from a render pass that was abandoned", () => {
     const state = createStreamingRevealState();
     state.pending.set("paragraph-0", {
-      text: "abandoned",
+      source: "abandoned",
+      start: 0,
       pass: 1,
       units: 2,
       now: 10,
@@ -52,8 +53,14 @@ describe("streaming reveal commit", () => {
 
   it("forgets blocks that are no longer in the message", () => {
     const state = createStreamingRevealState();
-    state.blocks.set("paragraph-0", "old");
-    state.pending.set("paragraph-1", { text: "new", pass: 1, units: 1, now: 10 });
+    state.blocks.set("paragraph-0", { source: "old", start: 0 });
+    state.pending.set("paragraph-1", {
+      source: "new",
+      start: 4,
+      pass: 1,
+      units: 1,
+      now: 10,
+    });
     commitStreamingReveal(state, 1, ["paragraph-1"]);
     expect([...state.blocks.keys()]).toEqual(["paragraph-1"]);
   });

@@ -39,25 +39,22 @@ const REVEAL_MAX_DELTA_CHARS = 600;
  * definition that prevents splitting would otherwise rebuild thousands of spans on every chunk.
  */
 const REVEAL_MAX_BLOCK_CHARS = 20_000;
-/** The next version of a block may rewrite trailing whitespace or punctuation. */
-const REVEAL_TAIL_SLACK_CHARS = 8;
-const REVEAL_WORD_CHAR_RE = /[\p{L}\p{N}]/u;
 const REVEAL_FALLBACK_WORD_RE = /\s+|[\p{L}\p{N}_]+|[^\s\p{L}\p{N}_]/gu;
 const REVEAL_CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
 
+/** Source of one block, with the offset it starts at in the whole message source. */
+type BlockSource = { source: string; start: number };
+
 /** Progress one render pass wrote for a block, committed only if that pass reaches the screen. */
-type PendingBlock = {
-  text: string;
+type PendingBlock = BlockSource & {
   pass: number;
   units: number;
   now: number;
 };
 
 export type StreamingRevealState = {
-  /** Rendered text of each block seen so far, by the block's stable key. */
-  blocks: Map<string, string>;
-  /** Rendered text of the whole message at the last commit, in block order. */
-  renderedText: string;
+  /** Source of each block seen so far, by the block's stable key. */
+  blocks: Map<string, BlockSource>;
   /** Progress written by render passes that have not committed yet. */
   pending: Map<string, PendingBlock>;
   /** Incremented once per render pass so an abandoned pass cannot commit its progress. */
@@ -77,7 +74,6 @@ export type StreamingRevealState = {
 export function createStreamingRevealState(): StreamingRevealState {
   return {
     blocks: new Map(),
-    renderedText: "",
     pending: new Map(),
     pass: 0,
     rate: undefined,
@@ -125,24 +121,10 @@ export function isIncrementalRevealSource(previous: string, next: string): boole
   );
 }
 
-function commonPrefixLength(left: string, right: string): number {
-  const limit = Math.min(left.length, right.length);
-  let index = 0;
-  while (index < limit && left.charCodeAt(index) === right.charCodeAt(index)) index += 1;
-  return index;
-}
-
-/**
- * How much of `text` was already revealed by its previous version `entry`, or 0 when `entry` is
- * not a predecessor. A near-prefix with only whitespace or punctuation in the tail counts: the
- * next version of a block rewrites trailing whitespace or closes markdown. A tail containing a
- * word character is other content that merely shares a prefix, so it must not pass as progress.
- */
-function revealPredecessorLength(text: string, entry: string): number {
-  const prefix = commonPrefixLength(text, entry);
-  if (prefix === 0) return 0;
-  const tail = entry.slice(prefix);
-  return tail.length <= REVEAL_TAIL_SLACK_CHARS && !REVEAL_WORD_CHAR_RE.test(tail) ? prefix : 0;
+function lastBlock(state: StreamingRevealState): BlockSource | undefined {
+  let tail: BlockSource | undefined;
+  for (const block of state.blocks.values()) tail = block;
+  return tail;
 }
 
 /**
@@ -163,11 +145,10 @@ export function commitStreamingReveal(
   for (const [key, pending] of state.pending) {
     state.pending.delete(key);
     if (pending.pass !== pass) continue;
-    state.blocks.set(key, pending.text);
+    state.blocks.set(key, { source: pending.source, start: pending.start });
     units += pending.units;
     arrival = Math.max(arrival, pending.now);
   }
-  state.renderedText = [...state.blocks.values()].join("\n");
   if (units === 0) return;
   // Only a continuous stream updates the speed. A pause keeps the previous speed, or a burst
   // after a pause would be scheduled at the slow pace it looked like it had.
@@ -236,17 +217,57 @@ function isMathCodeElement(node: HastNode): boolean {
   );
 }
 
+/** Source offset of a node, or the block start when the parser supplied no position. */
+function sourceOffset(node: HastNode, fallback: number): number {
+  return node.position?.start?.offset ?? fallback;
+}
+
+/**
+ * How much of the block's source was already on screen before this version. The source is the
+ * stable coordinate: closing markdown formatting rewrites the rendered text without moving the
+ * text that was already visible, so the appended source is exactly what is new.
+ */
+function revealedSourceLength(
+  state: StreamingRevealState,
+  blockKey: string,
+  blockSource: string,
+  blockStart: number,
+): number {
+  if (!state.incremental) return Number.POSITIVE_INFINITY;
+  const previous = state.blocks.get(blockKey);
+  if (previous) {
+    return blockSource.startsWith(previous.source)
+      ? previous.source.length
+      : Number.POSITIVE_INFINITY;
+  }
+  // A reference definition switches parsing from split blocks to one root block. The previous
+  // block sources concatenate to the previous full source, so its prefix is already visible.
+  if (blockKey === "root-0") {
+    const fullSource = [...state.blocks.values()].map((block) => block.source).join("");
+    return fullSource.length > 0 && blockSource.startsWith(fullSource) ? fullSource.length : 0;
+  }
+  // A replacement at the same source offset (a paragraph becoming a list item) keeps the prefix
+  // it already drew. A block that starts later is new text and fades in from the beginning.
+  const tail = lastBlock(state);
+  return tail && tail.start === blockStart && blockSource.startsWith(tail.source)
+    ? tail.source.length
+    : 0;
+}
+
 /**
  * Wraps every rendered unit in a span that carries its fade-in delay. Units that were already on
  * screen are marked settled and keep their DOM position; new units are appended, so React never
  * reuses an existing span for different text.
  */
-export function createStreamingRevealPlugin(state: StreamingRevealState, blockKey: string) {
+export function createStreamingRevealPlugin(
+  state: StreamingRevealState,
+  blockKey: string,
+  blockSource: string,
+  blockStart: number,
+) {
   return function streamingRevealRehypePlugin() {
     return (tree: HastNode) => {
       const slots: RevealSlot[] = [];
-      const blockTexts: string[] = [];
-      let offset = 0;
 
       const walk = (node: HastNode, skip: boolean) => {
         const children = node.children;
@@ -262,14 +283,11 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
                 kind: "text",
                 parent: node,
                 index,
-                start: offset,
+                start: sourceOffset(child, blockStart),
                 value,
                 units: [],
               });
             }
-            // Skipped text still occupies offsets, so prefix comparisons follow render order.
-            blockTexts.push(value);
-            offset += value.length;
             continue;
           }
           const tagName = child.tagName;
@@ -277,18 +295,15 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
           // A list marker is a pseudo-element, not a text node. Schedule it before the item's
           // first unit so the bullet fades in with the text; the stylesheet transitions its color.
           if (!childSkip && tagName === "li") {
-            slots.push({ kind: "marker", node: child, start: offset });
+            slots.push({ kind: "marker", node: child, start: sourceOffset(child, blockStart) });
           }
           // Code inside a pre is skipped with it; reaching here means inline code, which fades in
           // as one unit alongside the words around it.
           if (!childSkip && tagName === "code") {
-            const text = collectHastText(child);
-            if (text.length === 0) continue;
+            if (collectHastText(child).length === 0) continue;
             if (!isMathCodeElement(child)) {
-              slots.push({ kind: "element", node: child, start: offset });
+              slots.push({ kind: "element", node: child, start: sourceOffset(child, blockStart) });
             }
-            blockTexts.push(text);
-            offset += text.length;
             continue;
           }
           walk(child, childSkip);
@@ -296,36 +311,15 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
       };
       walk(tree, false);
 
-      const blockText = blockTexts.join("");
-      const tooLong = blockText.length > REVEAL_MAX_BLOCK_CHARS;
+      const tooLong = blockSource.length > REVEAL_MAX_BLOCK_CHARS;
       if (!tooLong) {
         for (const slot of slots) {
           if (slot.kind === "text") slot.units = segmentRevealUnits(slot.value);
         }
       }
-      const previous = state.blocks.get(blockKey);
-      // A block never seen before is new text, however its text compares to other blocks. A block
-      // already on screen keeps the prefix it had; a rewrite settles it whole rather than replaying
-      // text the reader already saw.
-      let revealed = Number.POSITIVE_INFINITY;
-      if (!tooLong && state.incremental) {
-        if (previous === undefined) {
-          // A reference definition switches parsing from blocks to one root block. The new block
-          // still starts with the text already on screen, so settle that prefix instead of
-          // replaying the whole message.
-          revealed =
-            blockKey === "root-0" &&
-            state.renderedText.length > 0 &&
-            blockText.startsWith(state.renderedText)
-              ? state.renderedText.length
-              : 0;
-        } else if (previous.length === 0) {
-          revealed = 0;
-        } else {
-          const prefix = revealPredecessorLength(blockText, previous);
-          revealed = prefix > 0 ? prefix : Number.POSITIVE_INFINITY;
-        }
-      }
+      const revealed = tooLong
+        ? Number.POSITIVE_INFINITY
+        : revealedSourceLength(state, blockKey, blockSource, blockStart);
 
       let fresh = 0;
       for (const slot of slots) {
@@ -333,15 +327,19 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
           if (slot.start >= revealed) fresh += 1;
           continue;
         }
-        let cursor = slot.start;
+        // Rendered offset within the text node that was already visible. Text nodes normally map
+        // one to one onto their source; an escape can shift the boundary by a few characters.
+        const visible = Math.max(0, Math.min(slot.value.length, revealed - slot.start));
+        let cursor = 0;
         for (const unit of slot.units) {
-          if (cursor >= revealed && unit.trim().length > 0) fresh += 1;
+          if (cursor >= visible && unit.trim().length > 0) fresh += 1;
           cursor += unit.length;
         }
       }
       const schedule = fresh > 0 ? planRevealSchedule(state, fresh) : undefined;
       state.pending.set(blockKey, {
-        text: blockText,
+        source: blockSource,
+        start: blockStart,
         pass: state.pass,
         units: fresh,
         now: schedule?.now ?? performance.now(),
@@ -381,7 +379,8 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
           );
           continue;
         }
-        let cursor = slot.start;
+        const visible = Math.max(0, Math.min(slot.value.length, revealed - slot.start));
+        let cursor = 0;
         const out: HastNode[] = [];
         for (const unit of slot.units) {
           if (unit.trim().length === 0) {
@@ -391,7 +390,7 @@ export function createStreamingRevealPlugin(state: StreamingRevealState, blockKe
               type: "element",
               tagName: "span",
               properties:
-                cursor >= revealed ? nextRevealProperties() : { "data-rk-reveal": "settled" },
+                cursor >= visible ? nextRevealProperties() : { "data-rk-reveal": "settled" },
               children: [{ type: "text", value: unit }],
             });
           }
