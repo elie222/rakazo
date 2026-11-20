@@ -286,11 +286,15 @@ export function ownComputerReviewArgs(
     const page = pageUrl && URL.canParse(pageUrl) ? new URL(pageUrl).origin : undefined;
     return page && page !== "null" ? { ...rest, page } : rest;
   }
-  if (toolName !== "shell" || typeof args.command !== "string") return args;
-  const command = args.command;
+  // The shell also runs a command given as `cmd`; the review shows it as `command` either way.
+  const given = toolName === "shell" ? (args.command ?? args.cmd) : undefined;
+  if (typeof given !== "string") return args;
+  const { cmd: _alias, ...named } = args;
+  const shellArgs = { ...named, command: given };
+  const command = given;
   const fits = (value: Record<string, unknown>) =>
     JSON.stringify(value).length <= MAX_REVIEWED_COMMAND_ARGS;
-  if (command.length <= MAX_REVIEW_COMMAND_CHARS && fits(args)) return args;
+  if (command.length <= MAX_REVIEW_COMMAND_CHARS && fits(shellArgs)) return shellArgs;
   // Quotes and newlines grow when the arguments are serialized, so the cut shrinks until it fits.
   for (let head = COMMAND_HEAD_CHARS, tail = COMMAND_TAIL_CHARS; ; ) {
     // Read past both cuts, so an address split by one still shows its host.
@@ -301,9 +305,9 @@ export function ownComputerReviewArgs(
       ),
     );
     // Too many to list: the whole command goes, and one too long to review asks.
-    if (!addresses) return args;
+    if (!addresses) return shellArgs;
     const reviewed = {
-      ...args,
+      ...shellArgs,
       command: `${command.slice(0, head)}\n…[${command.length - head - tail} characters left out]…\n${command.slice(command.length - tail)}`,
       ...(addresses.length ? { addressesInPartLeftOut: addresses } : {}),
     };
