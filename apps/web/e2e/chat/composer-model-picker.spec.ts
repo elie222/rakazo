@@ -111,7 +111,7 @@ test("the chat's model can be changed from the message box once turned on", asyn
   await captureScreenshot(page, testInfo, "composer-model-picker");
   // Hovering names the keys that open the list and step its thinking.
   await picker.hover();
-  await expect(page.getByRole("tooltip")).toContainText("Model");
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText("Model");
   await captureScreenshot(page, testInfo, "composer-model-picker-shortcuts");
   await page.getByRole("combobox", { name: /^Message/ }).focus();
   const smart = page.getByRole("option", { name: "e2e-smart" });

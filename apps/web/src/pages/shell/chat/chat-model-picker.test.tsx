@@ -158,6 +158,33 @@ describe("ChatModelPicker", () => {
     expect(options()).toHaveLength(12);
   });
 
+  it("names its keys on the compact button's tooltip, and hides it while the list is open", async () => {
+    act(() =>
+      root.render(
+        <ChatModelPicker
+          compact
+          choices={choices(2)}
+          value=""
+          onChange={onChange}
+          hint="Model ⌘⇧M"
+          keyShortcuts="Meta+Shift+M"
+        />,
+      ),
+    );
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label^="Model"]')!;
+    expect(trigger.getAttribute("aria-keyshortcuts")).toBe("Meta+Shift+M");
+    const tooltip = () => document.querySelector('[data-slot="tooltip-content"]');
+    await act(async () => {
+      trigger.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+      trigger.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+      trigger.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(tooltip()?.textContent).toContain("Model ⌘⇧M"));
+    act(() => trigger.click());
+    expect(options().length).toBeGreaterThan(0);
+    await vi.waitFor(() => expect(tooltip()).toBeNull());
+  });
+
   it("says when nothing matches", () => {
     render(choices(11), "");
     act(() => container.querySelector<HTMLButtonElement>("button#model")!.click());
