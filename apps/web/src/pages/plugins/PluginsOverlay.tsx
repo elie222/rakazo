@@ -396,8 +396,13 @@ export function PluginsOverlay({
           <DialogTitle className="mr-auto text-heading2 text-foreground">
             <Trans>Integrations</Trans>
           </DialogTitle>
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
+          >
+            <X />
+          </DialogClose>
           {browsing || view === "manage" ? (
-            <div className="order-last flex w-full flex-wrap items-center gap-2 sm:order-none sm:w-auto">
+            <div className="flex w-full flex-wrap items-center gap-2">
               {browsing && appCount > 0 ? (
                 <Button
                   variant="ghost"
@@ -451,11 +456,6 @@ export function PluginsOverlay({
               />
             </div>
           ) : null}
-          <DialogClose
-            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
-          >
-            <X />
-          </DialogClose>
         </DialogHeader>
 
         {browsing ? (

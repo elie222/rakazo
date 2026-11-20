@@ -379,6 +379,7 @@ it("keeps Close outside the wrapping action group so narrow screens still reach 
     button.textContent?.includes("Templates"),
   )!;
   expect(templates.parentElement!.contains(close!)).toBe(false);
+  expect(close!.compareDocumentPosition(templates) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 it("leaves no empty action row above a form that has no header actions", async () => {
