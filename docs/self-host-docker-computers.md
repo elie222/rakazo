@@ -80,6 +80,17 @@ whenever the rules are missing. A host-run supervisor (`pnpm dev`) and the deskt
 **This computer** stack default to open: Docker Desktop keeps its bridges in a VM the host
 rules cannot reach.
 
+To see the supervisor's current egress decision, run this from the Compose install directory:
+
+```bash
+docker compose -f docker-compose.images.yml exec supervisor pnpm --filter @rakazo/sandbox-supervisor egress
+```
+
+Use the same Compose files and project options you used to start the stack. The report shows
+whether the firewall check is pending, verified, or failed, and explains when `auto` fell back to
+open egress. It reports the supervisor's last check for new computer starts. Recreate the
+supervisor after changing the host rules to run that check again.
+
 Screen streaming is unaffected: the supervisor and web proxy join each computer's bridge,
 and the ruleset exempts traffic whose in- and out-interface are both `rakazo-c*` before
 any drop (that exemption is load-bearing on hosts where `br_netfilter` feeds bridged
@@ -219,6 +230,33 @@ reaches the host's GPU driver directly, which is a larger attack surface than th
 sandbox, and nothing limits how much GPU memory or time one computer takes from the others or
 from other GPU software on the host. Enable it only when you trust every bot on the deployment
 with that.
+
+## Browser proxy
+
+Some public sites refuse connections from datacenter addresses. With
+`SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL` the bot browser sends selected sites through an HTTP
+proxy you run, and every other site connects directly as before (Docker sandboxes only). The
+value is a [proxy auto-config](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_PAC_file)
+(PAC) script: an absolute `http://` or `https://` URL the browser downloads it from, or the whole
+script as a base64 `data:` URL of at most 64 KiB, for example:
+
+```sh
+pac='function FindProxyForURL(url, host) {
+  if (dnsDomainIs(host, ".example.com")) return "PROXY proxy.example.net:3128";
+  return "DIRECT";
+}'
+echo "SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL=data:application/x-ns-proxy-autoconfig;base64,$(printf '%s' "$pac" | base64 | tr -d '\n')"
+```
+
+The supervisor refuses to start with any other kind of value, or one containing spaces. It hands
+the value to every computer, whose browser starts with `--proxy-pac-url`; page reading and the
+bot's browser actions use that same browser, so they follow the script too. Programs the bot
+runs in its terminal do not. Unset, nothing changes.
+
+Under restricted egress the computer reaches only public addresses, so the PAC URL and the
+proxy must be on public addresses as well; a proxy on the Docker host or the LAN is blocked.
+Recreate the supervisor after a change; each computer picks it up on its next start, which
+replaces it. The home and saved browser profiles are kept.
 
 ## Time zone and language
 

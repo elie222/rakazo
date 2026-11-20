@@ -9,11 +9,16 @@ import type {
 } from "@rakazo/adapter-kit";
 import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { z } from "zod";
-import { combineSignals } from "../../../connector-safety.js";
-import type { RemoteTransportDependencies } from "../../../remote-mcp.js";
-import { callRemoteMcpTool } from "../../../remote-mcp.js";
-import { clampMaxChars, clampMaxResults, clampOffset, pageWindow } from "../../../web-limits.js";
-import { assertSafeWebUrl, withAbort } from "../../../web-ssrf.js";
+import { combineSignals } from "../../../integrations/connector-safety.js";
+import type { RemoteTransportDependencies } from "../../../mcp/remote-mcp.js";
+import { callRemoteMcpTool } from "../../../mcp/remote-mcp.js";
+import {
+  clampMaxChars,
+  clampMaxResults,
+  clampOffset,
+  pageWindow,
+} from "../../../web/web-limits.js";
+import { assertSafeWebUrl, withAbort } from "../../../web/web-ssrf.js";
 
 const ENDPOINT = "https://search.parallel.ai/mcp";
 const USER_AGENT = "Rakazo/0.1 (+https://github.com/elie222/rakazo; web tools)";

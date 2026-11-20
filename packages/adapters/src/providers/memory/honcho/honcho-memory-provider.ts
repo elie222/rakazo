@@ -8,6 +8,7 @@ import type {
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
+import { truncateUtf8 } from "@rakazo/core";
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
@@ -15,9 +16,8 @@ import {
   localServiceTrustSettings,
   parseServiceBaseUrl,
   pinLocalServiceHost,
-} from "../../../local-service-endpoint.js";
-import type { ResolveHostname } from "../../../network-address.js";
-import { truncateUtf8 } from "../../../utf8.js";
+} from "../../../network/local-service-endpoint.js";
+import type { ResolveHostname } from "../../../network/network-address.js";
 import type { HonchoConnectionConfig, HonchoReasoningLevel } from "./honcho-client.js";
 import {
   createHonchoConclusions,

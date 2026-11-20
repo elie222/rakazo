@@ -132,6 +132,21 @@ not an online rolling migration. Stop the old API and worker, apply the migratio
 versions together. Its lock waits are bounded so contention fails the migration instead of leaving
 application traffic queued indefinitely.
 
+## Integrations connected before 30 October 2026
+
+Integrations connected through Pipedream before 30 October 2026 saved only the app's name, not
+which account was signed in. Releases since then use a connection only when it names its account,
+so these apps give bots no tools; the first time a bot tries one, it asks the user to reconnect.
+To find them ahead of time, run:
+
+```sql
+SELECT "id", "spaceId", "provider" FROM "connections"
+WHERE "connectorId" = 'pipedream' AND "status" = 'connected' AND "providerRef" = "provider";
+```
+
+Reconnect each listed app from its Space's Integrations page. Nothing is backfilled automatically,
+because a Space can have more than one account for the same app.
+
 ## Published images and tags
 
 `.github/workflows/publish-server-image.yml` publishes to `ghcr.io/<owner>/<repo>/…`, derived from

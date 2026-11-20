@@ -7,7 +7,7 @@ import {
   assertSandboxReadLimit,
   assertSandboxWorkspaceContract,
   provisionPrepared,
-} from "../../../sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
 import { AppleContainerSandboxProvider, localVmFirewall } from "./apple-container-sandbox.js";
 import { fakeCli, removeFakeClis } from "./apple-container-sandbox.test-support.js";
 

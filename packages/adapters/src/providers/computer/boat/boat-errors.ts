@@ -7,7 +7,7 @@ import {
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import { parseRetryAfter, redactSecrets } from "@rakazo/core";
-import { readBodyCapped } from "../../../web-ssrf.js";
+import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const MAX_BOAT_ERROR_RESPONSE_BYTES = 16 * 1024;
 const BOAT_ERROR_RESPONSE_TIMEOUT_MS = 2_000;
@@ -30,6 +30,16 @@ export class BoatApiError extends Error implements ResponseError {
   ) {
     super(message);
   }
+}
+
+export function boatResumeInProgress(error: unknown): boolean {
+  return (
+    error instanceof BoatApiError &&
+    (error.code === "sandbox_resuming" ||
+      (error.code === "resume_failed" &&
+        error.response.status === 409 &&
+        /\bAgent resume already in progress\b/i.test(error.message)))
+  );
 }
 
 /** Boat's limit on API requests per minute from one IP address, across every endpoint. */

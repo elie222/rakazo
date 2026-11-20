@@ -26,7 +26,7 @@ body,
     env(safe-area-inset-left);
 }
 
-/* Switching spaces in place (lib/space-switch.ts): the sidebar holds still while the
+/* Switching spaces in place (pages/shell/space-switch.ts): the sidebar holds still while the
    conversation crossfades, instead of the whole screen redrawing. */
 .rk-space-switching [data-space-switch="sidebar"] {
   view-transition-name: rk-space-sidebar;

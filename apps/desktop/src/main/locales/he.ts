@@ -35,6 +35,10 @@ export const HE_MESSAGES: Record<string, string> = {
   Close: "סגירה",
   "Close Window": "סגירת החלון",
   "Bring All to Front": "הבאת הכל לחזית",
+  "Checking for Updates…": "בודק עדכונים…",
+  "Downloading Update…": "מוריד עדכון…",
+  "Restart to Update…": "הפעלה מחדש לעדכון…",
+  "Downloading Rakazo {version}…": "מוריד את Rakazo {version}…",
   "Rakazo {version} is ready to install.": "Rakazo {version} מוכן להתקנה.",
   Restart: "הפעלה מחדש",
   Later: "אחר כך",
@@ -219,4 +223,12 @@ export const HE_MESSAGES: Record<string, string> = {
     "Docker מותקן אבל לא פועל. יש להפעיל את שירות Docker כדי להמשיך.",
   "Rakazo stopped unexpectedly.": "Rakazo נעצר באופן בלתי צפוי.",
   Reload: "טען מחדש",
+  "Mac app control": "שליטה ביישומי Mac",
+  "Set up Mac app control": "הגדרת שליטה ביישומי Mac",
+  "Commands already work. To use apps, allow Accessibility and Screen Recording for Rakazo in System Settings, then restart Rakazo.":
+    "פקודות כבר פועלות. כדי להשתמש ביישומים, אפשרו ל-Rakazo גישה לנגישות ולהקלטת מסך בהגדרות המערכת, ואז הפעילו מחדש את Rakazo.",
+  "Open System Settings": "פתיחת הגדרות המערכת",
+  "Restart Rakazo": "הפעלה מחדש של Rakazo",
+  "Not Now": "לא עכשיו",
+  "Restart Rakazo to finish setup": "הפעילו מחדש את Rakazo כדי להשלים את ההגדרה",
 };

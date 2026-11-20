@@ -2,23 +2,26 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { UnreferencedMachine, UnreferencedMachineRecords } from "@rakazo/adapter-kit";
 import { SandboxRateLimitError, SandboxSizeUnavailableError } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
-import { COMPUTER_SIZE_SPECS } from "@rakazo/contracts";
+import { COMPUTER_SIZE_SPECS, ComputerSizeSchema } from "@rakazo/contracts";
 import { withAbort } from "@rakazo/core";
-import { shellQuote } from "../../../computer-support.js";
 import type {
   CommandResult,
   CommandStartOpts,
   RemoteDesktop,
   RemoteDesktopSdk,
-} from "../../../remote-desktop-sandbox.js";
-import { RemoteDesktopSandboxProvider } from "../../../remote-desktop-sandbox.js";
-import { deleteUnreferencedMachine, recordUnreferencedMachine } from "../../../sandbox-cleanup.js";
+} from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import { RemoteDesktopSandboxProvider } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import {
+  deleteUnreferencedMachine,
+  recordUnreferencedMachine,
+} from "../../../computers/sandbox/sandbox-cleanup.js";
 import {
   isSandboxGoneError,
   isSandboxUnsafeStopError,
   SandboxUnsafeStopError,
   sandboxNotFoundError,
-} from "../../../sandbox-errors.js";
+} from "../../../computers/sandbox/sandbox-errors.js";
+import { shellQuote } from "../../../computers/screens/computer-support.js";
 
 /** instabox's stock desktop image; the shared prepare step installs the rest. */
 export const INSTABOX_COMPUTER_TEMPLATE = "agent-browser";
@@ -214,9 +217,7 @@ export function instaboxSdk(
         throw translate(error, id);
       }
       const want = specOf(size);
-      const have = info.machine.spec;
-      if (info.state === "running" || (have.vcpus === want.vcpus && have.memMiB === want.memMiB))
-        return;
+      if (info.state === "running" || sameSpec(info.machine.spec, want)) return;
       try {
         await machine.resize(want);
       } catch (error) {
@@ -286,6 +287,10 @@ export function instaboxDesktop(
 ): RemoteDesktop {
   return {
     sandboxId: machine.sandboxId,
+    readSize: async () => {
+      const { spec } = (await machine.getInfo()).machine;
+      return ComputerSizeSchema.options.find((size) => sameSpec(spec, specOf(size)));
+    },
     getHost: (port) => {
       if (port !== SCREEN_PORT)
         throw new Error(`instabox computer publishes port ${SCREEN_PORT} only`);
@@ -557,6 +562,10 @@ function isFailedOperation(error: unknown): boolean {
 function specOf(size: ComputerSize): InstaboxSpec {
   const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[size];
   return { vcpus, memMiB: memoryGb * 1024 };
+}
+
+function sameSpec(left: InstaboxSpec, right: InstaboxSpec): boolean {
+  return left.vcpus === right.vcpus && left.memMiB === right.memMiB;
 }
 
 function isInsideComputerNotFound(error: Error): boolean {

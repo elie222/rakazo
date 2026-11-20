@@ -69,6 +69,7 @@ import { socialCallbackProtection } from "./social-callback-protection.js";
 import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
+export { agentImportEmail } from "./agent-import-email.js";
 export type { DirectoryAccountChange } from "./directory.js";
 export { createDirectory } from "./directory.js";
 export {
@@ -79,6 +80,7 @@ export {
 } from "./email.js";
 export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
+export { modelConnectionEmail } from "./model-connection-email.js";
 export type { OidcConfig } from "./oidc.js";
 export {
   organizationInvitationEmail,

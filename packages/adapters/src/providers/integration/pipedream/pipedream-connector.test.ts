@@ -2,7 +2,7 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { ResponseTooLargeError } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ThirdPartyConnectorEmulator } from "../../../third-party-connector-emulator.js";
+import { ThirdPartyConnectorEmulator } from "../../../integrations/third-party-connector-emulator.js";
 import {
   isPipedreamEnabled,
   MAX_PIPEDREAM_RESPONSE_BYTES,

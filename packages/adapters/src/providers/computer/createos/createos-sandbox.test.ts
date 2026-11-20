@@ -11,13 +11,13 @@ import {
 } from "@rakazo/core/node/desktop-runtime";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   assertSandboxReadLimit,
   MachineRecords,
   settleMachineCleanup,
   untilAborted,
-} from "../../../sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
 import {
   CHROME_OWNS_DEBUG_PORT_SCRIPT,
   CREATEOS_SCREEN_MAP_SCRIPT,

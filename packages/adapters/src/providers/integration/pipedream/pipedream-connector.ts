@@ -8,15 +8,21 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import { ResponseTooLargeError } from "@rakazo/core";
+import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
-import { catalogToolPrefix } from "../../../approval-effect.js";
-import { resolveAccountToolCall, scopeConnectorTools } from "../../../connector-accounts.js";
-import { collectPages, filterCatalog } from "../../../connector-catalog.js";
+import { catalogToolPrefix } from "../../../approvals/approval-effect.js";
+import {
+  resolveAccountToolCall,
+  scopeConnectorTools,
+} from "../../../integrations/connector-accounts.js";
+import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
 import {
   combineSignals,
   redactConnectorPayload,
   sanitizeConnectorError,
-} from "../../../connector-safety.js";
+} from "../../../integrations/connector-safety.js";
+import type { RemoteTransportDependencies } from "../../../mcp/remote-mcp.js";
+import { callRemoteMcpTool, listRemoteMcpTools } from "../../../mcp/remote-mcp.js";
 import {
   CATALOG_EXECUTE,
   catalogEntries,
@@ -25,11 +31,8 @@ import {
   isLazyCatalogControlRoute,
   lazyCatalogTools,
   resolveCatalogCall,
-} from "../../../lazy-tool-catalog.js";
-import type { RemoteTransportDependencies } from "../../../remote-mcp.js";
-import { callRemoteMcpTool, listRemoteMcpTools } from "../../../remote-mcp.js";
-import { isVitestRuntime } from "../../../test-runtime.js";
-import { readBodyCapped, withAbort } from "../../../web-ssrf.js";
+} from "../../../tools/lazy-tool-catalog.js";
+import { readBodyCapped, withAbort } from "../../../web/web-ssrf.js";
 
 const API_BASE = "https://api.pipedream.com";
 const MCP_ENDPOINT = "https://remote.mcp.pipedream.net/v3";

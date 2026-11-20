@@ -1,7 +1,7 @@
 import type { AgentImportFile } from "@rakazo/contracts";
-import type { AgentImportParse, SkillFiles } from "./shared.js";
-import { byPath, fileMap, instructionItem, memoryItem, skillItems } from "./shared.js";
 import { isOpenClawDefault } from "./stock.js";
+import type { AgentImportParse, SkillFiles } from "./types.js";
+import { byPath, fileMap, instructionItem, memoryItem, skillItems } from "./types.js";
 
 /** IDENTITY.md is read for the bot's name and description only, not as instructions. */
 export const OPENCLAW_INSTRUCTION_FILES = [

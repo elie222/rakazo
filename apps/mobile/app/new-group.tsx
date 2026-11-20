@@ -11,20 +11,24 @@ import { useHeaderHeight } from "expo-router/react-navigation";
 import { useContext, useEffect, useMemo, useState } from "react";
 import { BackHandler, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
-import { BotChipPicker } from "../components/bot-chip-picker";
-import { GlassIconButton } from "../components/glass-icon-button";
-import { GroupAvatar } from "../components/group-avatar";
-import { NativeActionButton } from "../components/native-action-button";
-import { SheetCloseButton } from "../components/sheet-close-button";
-import { CallKeyboardContext } from "../lib/call-keyboard-context";
-import { hapticSuccess } from "../lib/haptics";
-import type { MobileBot } from "../lib/mobile-types";
-import { native, useMobileTokens } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
-import { formRead, queryClient, rpcQuery, useSave } from "../lib/query";
-import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "../lib/search-inbox";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { GroupAvatar } from "../components/bots/group-avatar";
+import { BotChipPicker } from "../components/composer/bot-chip-picker";
+import { GlassIconButton } from "../components/native/glass-icon-button";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { SheetCloseButton } from "../components/native/sheet-close-button";
+import type { MobileBot } from "../lib/api/mobile-types";
+import { errorText } from "../lib/api/user-error";
+import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { hapticSuccess } from "../lib/native/haptics";
+import { native, useMobileTokens } from "../lib/native/native";
+import { iosAtLeast } from "../lib/native/native-controls";
+import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";
+import {
+  addToSearchInbox,
+  isSearchInboxSession,
+  searchInboxSession,
+} from "../lib/search/search-inbox";
 
 export default function NewGroup() {
   const call = useContext(CallKeyboardContext);

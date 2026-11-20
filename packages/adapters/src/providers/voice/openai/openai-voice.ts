@@ -7,6 +7,7 @@ import type {
   VoiceProvider,
   VoiceSynthesizeRequest,
   VoiceTranscribeRequest,
+  VoiceUsage,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
 import { deadlineSignal } from "@rakazo/core";
@@ -18,8 +19,8 @@ import {
   verifyVoiceHttpGet,
   voiceLanguageHint,
   voiceRequestError,
-} from "../../../voice-http.js";
-import type { VoiceProviderDefinition } from "../../../voice-provider-descriptor.js";
+} from "../../../voice/voice-http.js";
+import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 
 const API = "https://api.openai.com/v1";
 const TTS_MODEL = "gpt-4o-mini-tts";
@@ -73,7 +74,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: TTS_MODEL,
+        model: request.model || TTS_MODEL,
         voice: request.voiceId,
         input: request.text,
         response_format: "mp3",
@@ -81,15 +82,32 @@ export class OpenAIVoiceProvider implements VoiceProvider {
       signal,
     });
     await requireOk(res, "OpenAI", "speaking");
-    return { bytes: await readVoiceAudio(res, signal), mimeType: "audio/mpeg" };
+    return {
+      ...(res.headers.get("x-request-id")
+        ? { providerRequestId: res.headers.get("x-request-id")! }
+        : {}),
+      bytes: await readVoiceAudio(res, signal),
+      mimeType: "audio/mpeg",
+      ...(request.model === "tts-1" || request.model === "tts-1-hd"
+        ? {
+            usage: {
+              model: request.model,
+              unit: "characters" as const,
+              units: Array.from(request.text).length,
+            },
+          }
+        : {}),
+    };
   }
 
   async transcribe(
     request: VoiceTranscribeRequest,
     context: AdapterContext,
-  ): Promise<{ text: string }> {
+  ): Promise<{ text: string; usage?: VoiceUsage; providerRequestId?: string }> {
     const form = new FormData();
-    form.set("model", STT_MODEL);
+    const model = request.model || STT_MODEL;
+    form.set("model", model);
+    if (model === "whisper-1") form.set("response_format", "verbose_json");
     const language = voiceLanguageHint(request.language);
     if (language?.length === 2) form.set("language", language);
     form.set(
@@ -105,11 +123,54 @@ export class OpenAIVoiceProvider implements VoiceProvider {
     });
     const body = await readVoiceJson(res, { requireValid: res.ok });
     if (!res.ok) throw voiceRequestError(res.status, "OpenAI", "transcribing", body);
-    return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
+    const result = body as {
+      text?: unknown;
+      duration?: number;
+      usage?: {
+        type?: string;
+        total_tokens?: number;
+        seconds?: number;
+        input_tokens?: number;
+        output_tokens?: number;
+        input_token_details?: { audio_tokens?: number; text_tokens?: number };
+      };
+    } | null;
+    const usage = result?.usage;
+    const units =
+      usage?.type === "tokens" ? usage.total_tokens : (usage?.seconds ?? result?.duration);
+    return {
+      ...(res.headers.get("x-request-id")
+        ? { providerRequestId: res.headers.get("x-request-id")! }
+        : {}),
+      text: String(result?.text ?? "").trim(),
+      ...(typeof units === "number" && Number.isFinite(units) && units >= 0
+        ? {
+            usage: {
+              model,
+              unit: usage?.type === "tokens" ? ("tokens" as const) : ("seconds" as const),
+              units,
+              ...(usage?.input_tokens !== undefined ? { inputTokens: usage.input_tokens } : {}),
+              ...(usage?.output_tokens !== undefined ? { outputTokens: usage.output_tokens } : {}),
+              ...(usage?.input_token_details?.audio_tokens !== undefined
+                ? { inputAudioTokens: usage.input_token_details.audio_tokens }
+                : {}),
+              ...(usage?.input_token_details?.text_tokens !== undefined
+                ? { inputTextTokens: usage.input_token_details.text_tokens }
+                : {}),
+            },
+          }
+        : {}),
+    };
   }
 }
 
 export const openaiVoice: VoiceProviderDefinition = {
+  deploymentUsageUnit: (operation, model) => {
+    if (operation === "synthesize" && (model === "tts-1" || model === "tts-1-hd"))
+      return "characters";
+    if (operation === "transcribe" && model === "whisper-1") return "seconds";
+    return undefined;
+  },
   catalog: {
     name: "OpenAI",
     description: "Simple TTS plus Whisper-class transcription. Reuse an OpenAI key.",

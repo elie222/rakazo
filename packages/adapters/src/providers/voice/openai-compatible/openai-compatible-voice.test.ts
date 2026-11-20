@@ -1,6 +1,6 @@
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "../../../openai-compatible-url.js";
+import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "../../../models/endpoints/openai-compatible-url.js";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
@@ -692,7 +692,7 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(body, { status: 503 }));
     await expect(
       provider(fetchMock).synthesize({ text: "Hi", voiceId: "alloy", apiKey: keyless }, ctx),
-    ).rejects.toThrow(/Model unavailable/);
+    ).rejects.toMatchObject({ cause: { message: expect.stringMatching(/Model unavailable/) } });
   });
 
   it("surfaces the server's error detail when speaking fails", async () => {

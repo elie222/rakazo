@@ -5,22 +5,23 @@ import { cloudAgentHttpsUrl, helperCardState, displayName as safeDisplayName } f
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewInstance } from "react-native";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { mobileTokens } from "../../lib/appearance";
-import type { MobileBot, MobileSnapshot } from "../../lib/mobile-types";
-import { useResolvedAppearance } from "../../lib/native";
-import { useSave } from "../../lib/query";
-import type { UserBubble } from "../../lib/user-bubble";
-import { withUserBubble } from "../../lib/user-bubble";
-import { BotMention } from "../bot-mention";
-import { NativeActionButton } from "../native-action-button";
-import { NativeSymbol } from "../native-symbol";
+import type { MobileBot, MobileSnapshot } from "../../lib/api/mobile-types";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import type { UserBubble } from "../../lib/messages/user-bubble";
+import { withUserBubble } from "../../lib/messages/user-bubble";
+import { useResolvedAppearance } from "../../lib/native/native";
+import { openExternalUrl } from "../../lib/platform/open-url";
+import { useSave } from "../../lib/query/query";
+import { BotMention } from "../messages/bot-mention";
+import { NativeActionButton } from "../native/native-action-button";
+import { NativeSymbol } from "../native/native-symbol";
 import type { MessageActionProps } from "./message-bubble";
 import type { MessageRowActions } from "./message-row";
 
@@ -226,7 +227,7 @@ export function SpecialMessageCard(props: SpecialMessageCardProps) {
       <Pressable
         {...actionProps}
         onPress={() => {
-          if (href) Linking.openURL(href).catch(() => undefined);
+          if (href) void openExternalUrl(href);
         }}
         testID="cloud-agent-card"
         accessibilityRole={href ? "link" : "text"}

@@ -5,28 +5,37 @@ import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Alert, Pressable, Text, View } from "react-native";
 import { Thread } from "../components/thread/thread-screen";
-import { currentApiBase, selectedSpaceId } from "../lib/api";
-import { integrationsCacheScope } from "../lib/integrations-cache";
-import { useMobileTokens } from "../lib/native";
-import {
-  threadRouteSpaceOnFocus,
-  threadSpaceRequest,
-  threadSpaceSwitchResult,
-} from "../lib/notification-open";
-import { selectSpaceAcrossOrganizations } from "../lib/organizations";
+import { currentApiBase, selectedSpaceId } from "../lib/api/api";
 import {
   currentReadySessionGeneration,
   currentSessionGeneration,
   loadVerifiedIntegrationsScope,
   subscribeSessionGeneration,
-} from "../lib/session";
-import { errorText } from "../lib/user-error";
+} from "../lib/api/session";
+import { errorText } from "../lib/api/user-error";
+import { integrationsCacheScope } from "../lib/integrations/integrations-cache";
+import { useMobileTokens } from "../lib/native/native";
+import {
+  threadRouteSpaceOnFocus,
+  threadSpaceRequest,
+  threadSpaceSwitchResult,
+} from "../lib/notifications/notification-open";
+import { selectSpaceAcrossOrganizations } from "../lib/spaces/organizations";
+
+type ThreadOwner = { key: string; generation: number; userId: string; apiBase: string };
+
+/** The account the last chat confirmed, so a chat opened later in the same session draws at once. */
+let confirmedOwner: ThreadOwner | null = null;
 
 export default function ThreadRoute() {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
-  const [owner, setOwner] = useState<{ key: string; generation: number; userId: string } | null>(
-    null,
+  const [owner, setOwner] = useState<ThreadOwner | null>(() =>
+    confirmedOwner?.generation === generation &&
+    generation === ready &&
+    confirmedOwner.apiBase === currentApiBase()
+      ? confirmedOwner
+      : null,
   );
   useEffect(() => {
     if (generation !== ready) return;
@@ -44,10 +53,17 @@ export default function ThreadRoute() {
             generation === currentSessionGeneration() &&
             apiBase === currentApiBase()
           )
-            setOwner({
-              key: JSON.stringify([apiBase, scope.userId]),
-              generation,
-              userId: scope.userId,
+            setOwner((current) => {
+              const next = {
+                key: JSON.stringify([apiBase, scope.userId]),
+                generation,
+                userId: scope.userId,
+                apiBase,
+              };
+              confirmedOwner = next;
+              return current?.key === next.key && current.generation === generation
+                ? current
+                : next;
             });
         })
         .catch((error) => {
