@@ -22,7 +22,6 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { finishRoutineHandover } from "../routines/routine-handover.js";
 import { postRoutineNotice, routineEditChange, routineEdited } from "../routines/routine-notice.js";
 import type { RoutineEvents } from "../routines/routine-triggers.js";
 import {
@@ -39,6 +38,8 @@ import {
 } from "../routines/routine-triggers.prompt.js";
 import { validateRoutineWatch } from "../routines/routine-watch.js";
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
+import type { ScheduleUnit } from "./schedule-intervals.js";
+import { intervalRangeError } from "./schedule-intervals.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
@@ -73,8 +74,6 @@ export function filterBuiltinToolsForThread<T extends { name: string }>(
       !groupId || tool.name !== "message_bot",
   );
 }
-
-type ScheduleUnit = "minutes" | "hours" | "days" | "seconds";
 
 export type ResolvedSchedule =
   | { ok: true; cron: string; nextRunAt: Date; oneShot: boolean }
@@ -248,6 +247,8 @@ export function resolveScheduleTiming(
   if (unit === "minutes" && every < 1) {
     return { ok: false, error: "minimum interval is 1 minute" };
   }
+  const rangeError = intervalRangeError(every, unit);
+  if (rangeError) return { ok: false, error: rangeError };
   const cron = cronFromPreset({ freq: "Interval", n: every, unit });
   const intervalError = validateRepeatingCron(cron);
   if (intervalError) return { ok: false, error: intervalError };
@@ -1037,6 +1038,22 @@ export async function updateScheduleFromTool(
         })
       : { error: "Schedule not found." };
   }
+  // A routine runs with its owner's accounts, so only they change what it does; anyone may pause
+  // or resume it, which keeps it theirs.
+  if (
+    existing.userId !== input.userId &&
+    (input.name !== undefined ||
+      input.prompt !== undefined ||
+      input.inChat !== undefined ||
+      input.timezone !== undefined ||
+      input.on !== undefined ||
+      Object.values(input.schedule).some(isScheduleValueProvided))
+  ) {
+    return {
+      error:
+        "Only the person who owns this routine can change it. You can still pause or resume it with active, or make the user their own copy with schedule_create.",
+    };
+  }
 
   let timezone = existing.timezone;
   if (input.timezone !== undefined) {
@@ -1131,14 +1148,6 @@ export async function updateScheduleFromTool(
   if (crons.length === 0 && existing.watch == null && !hasRoutineEvents(events)) {
     return { error: "A routine needs a schedule or an event. Cancel it instead." };
   }
-  // Editing hands the routine to the editor, and events only start the bot creator's routines,
-  // so another member's edit would leave them silently off.
-  if (hasRoutineEvents(events) && existing.userId !== input.userId && input.on === undefined) {
-    return {
-      error:
-        "This routine starts on events, which run only for the person who owns it. Ask them to change it, or pass on {} to remove its events.",
-    };
-  }
   const eventsChanged =
     JSON.stringify(routineEventsView(events)) !== JSON.stringify(routineEventsView(existing));
   // Events the bot sends were checked against the bot's creator, so their key is made even when
@@ -1154,7 +1163,7 @@ export async function updateScheduleFromTool(
   const timingChanged =
     retime || active !== existing.active || nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
 
-  // The scope is part of the write, so the routine cannot change hands between the read and it.
+  // The owner is part of the write, so a routine that changed hands since the read is left alone.
   // A name or prompt edit writes only those fields, so a run claimed meanwhile keeps its advance;
   // a timing edit applies only if no run advanced the routine since the read.
   const { count } = await deps.prisma.routine.updateMany({
@@ -1168,11 +1177,6 @@ export async function updateScheduleFromTool(
       ...(inChat ? { watch: { equals: Prisma.DbNull } } : {}),
     },
     data: {
-      // A routine runs with its owner's accounts, so whoever edits it takes it over, and a watch
-      // starts a fresh baseline from the new owner's accounts.
-      ...(existing.userId === input.userId
-        ? {}
-        : { userId: input.userId, watchState: Prisma.DbNull }),
       ...(name === undefined ? {} : { name }),
       ...(prompt === undefined ? {} : { prompt }),
       ...(inChat === undefined ? {} : { inChat }),
@@ -1193,14 +1197,6 @@ export async function updateScheduleFromTool(
     if (active && nextRunAt) await deps.jobs.enqueue(routineWakeupJob(existing.id, nextRunAt));
     else if (existing.active) await deps.jobs.cancel(routineJobKey(existing.id));
   }
-  if (existing.userId !== input.userId) {
-    await finishRoutineHandover(deps, {
-      id: existing.id,
-      previousUserId: existing.userId,
-      userId: input.userId,
-    });
-  }
-
   try {
     await deps.events.append({
       spaceId: input.spaceId,

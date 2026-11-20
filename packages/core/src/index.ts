@@ -59,6 +59,7 @@ export * from "./computers/computer-updates.js";
 export * from "./computers/home-versions.js";
 export * from "./computers/screen-reconnect.js";
 export * from "./deployment/compose-update.js";
+export * from "./deployment/env-flag.js";
 export * from "./deployment/self-update.js";
 export * from "./integrations/app-connect.js";
 export * from "./integrations/cloud-agent.js";

@@ -219,11 +219,12 @@ export function SidebarFooter({
               <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
               <Trans>Artifacts</Trans>
             </Button>
+            {/* From md up the rail opens the Board, so only the phone drawer lists it here. */}
             {onBoard ? (
               <Button
                 variant="ghost"
                 size="lg"
-                className="w-full justify-start gap-2.5 font-normal"
+                className="w-full justify-start gap-2.5 font-normal md:hidden"
                 onClick={onBoard}
               >
                 <SquareKanban className="text-muted-foreground" strokeWidth={1.75} />
