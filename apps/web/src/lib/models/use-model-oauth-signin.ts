@@ -131,7 +131,9 @@ export function useModelOAuthSignIn(options: {
       if (submitted) {
         oauthLoginIdRef.current = null;
         setOauth(null);
-        void rpc.models.cancelOAuth({ loginId: attempt.loginId }).catch(() => undefined);
+        void rpc.models
+          .cancelOAuth({ loginId: attempt.loginId, reason: "interrupted" })
+          .catch(() => undefined);
       } else {
         retryable = true;
         setPasteCode(code);
@@ -222,7 +224,9 @@ export function useModelOAuthSignIn(options: {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
-      if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+      if (loginId) {
+        void rpc.models.cancelOAuth({ loginId, reason: "interrupted" }).catch(() => undefined);
+      }
       onErrorRef.current(errorText(err, "Could not start sign-in"));
       setOauth(null);
     } finally {

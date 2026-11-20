@@ -2516,27 +2516,34 @@ describe("PiOAuthLogins across API processes", () => {
     });
   });
 
-  it("reports a sign-in stopped before its row was stored with the reason it was stopped", async () => {
-    const { store } = handoffStore();
-    const create = (store as unknown as { prisma: { modelOAuthSession: { create: Mock } } }).prisma
-      .modelOAuthSession.create;
-    const stored = create.getMockImplementation()!;
-    const held = deferred<void>();
-    create.mockImplementationOnce(async (args: unknown) => {
-      await held.promise;
-      return stored(args);
-    });
-    const ended: PiOAuthEnded[] = [];
-    const process = apiProcess(store, ended);
-    const started = process.logins.begin({ ...member, provider: "anthropic", persist: keep });
-    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
-    const loginId = (create.mock.calls[0]![0] as { data: { id: string } }).data.id;
-    await process.logins.cancel(loginId, member, "left");
-    held.resolve();
-    await started;
+  it.each([
+    ["the app's reason", "left"],
+    ["a shutdown", "interrupted"],
+  ] as const)(
+    "reports a sign-in stopped before its row was stored with why it stopped: %s",
+    async (_case, expected) => {
+      const { store } = handoffStore();
+      const create = (store as unknown as { prisma: { modelOAuthSession: { create: Mock } } })
+        .prisma.modelOAuthSession.create;
+      const stored = create.getMockImplementation()!;
+      const held = deferred<void>();
+      create.mockImplementationOnce(async (args: unknown) => {
+        await held.promise;
+        return stored(args);
+      });
+      const ended: PiOAuthEnded[] = [];
+      const process = apiProcess(store, ended);
+      const started = process.logins.begin({ ...member, provider: "anthropic", persist: keep });
+      await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+      const loginId = (create.mock.calls[0]![0] as { data: { id: string } }).data.id;
+      if (expected === "left") await process.logins.cancel(loginId, member, "left");
+      else await process.logins.abortAll();
+      held.resolve();
+      await started;
 
-    expect(ended.map((end) => end.reason)).toEqual(["left"]);
-  });
+      expect(ended.map((end) => end.reason)).toEqual([expected]);
+    },
+  );
 
   it("reports a sign-in another process cancels once, and not again when it runs out", async () => {
     vi.useFakeTimers();

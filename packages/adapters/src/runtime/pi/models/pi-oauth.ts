@@ -389,7 +389,7 @@ type Session<T> = {
   /** The expiry timer fired while the credential was being saved. */
   expired?: boolean;
   /** Why it was stopped, for a row stored only after that. */
-  stoppedAs?: ModelSignInCancelReason;
+  stoppedAs?: PiOAuthEnd["reason"];
 };
 
 type Outcome<T> =
@@ -1374,8 +1374,8 @@ export class PiOAuthLogins<T = unknown> {
   }
 
   /** Drops a sign-in the person or the clock ended, and reports it if it was still waiting. */
-  private removeSession(session: Session<T>, ended: ModelSignInCancelReason | "timed_out"): void {
-    if (ended !== "timed_out") session.stoppedAs = ended;
+  private removeSession(session: Session<T>, ended: PiOAuthEnd["reason"]): void {
+    session.stoppedAs = ended;
     const owned = session.lease !== undefined;
     const waiting = session.state === "pending" ? this.pendingOf(session) : undefined;
     this.detachSession(session);
@@ -1429,6 +1429,7 @@ export class PiOAuthLogins<T = unknown> {
     );
     for (const session of sessions) {
       if (session.state === "finalizing") continue;
+      session.stoppedAs = "interrupted";
       this.detachSession(session);
       session.abort.abort();
     }

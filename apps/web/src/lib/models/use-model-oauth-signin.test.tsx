@@ -14,12 +14,15 @@ vi.mock("../platform/desktop", () => ({
   oauthStateOf: () => undefined,
   onDesktopOAuthCallback: vi.fn(),
 }));
-vi.mock("./model-auth", () => ({
-  waitForModelOAuth: (_loginId: string, signal: AbortSignal) =>
-    new Promise<void>((resolve) =>
-      signal.addEventListener("abort", () => resolve(), { once: true }),
-    ),
-}));
+const waitForModelOAuth = vi.hoisted(() =>
+  vi.fn(
+    (_loginId: string, signal: AbortSignal) =>
+      new Promise<void>((resolve) =>
+        signal.addEventListener("abort", () => resolve(), { once: true }),
+      ),
+  ),
+);
+vi.mock("./model-auth", () => ({ waitForModelOAuth }));
 
 const verificationUri = "https://example.test/device";
 let latest: ReturnType<typeof useModelOAuthSignIn>;
@@ -132,4 +135,14 @@ it("tells the server why a sign-in stopped: Cancel, a newer choice, or leaving",
     [{ loginId: "login", reason: "replaced" }],
     [{ loginId: "login", reason: "left" }],
   ]);
+});
+
+it("tells the server a sign-in the app gave up on was interrupted, not cancelled", async () => {
+  waitForModelOAuth.mockRejectedValueOnce(new Error("Sign-in timed out"));
+  await act(async () => {
+    await latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+
+  expect(onError).toHaveBeenCalledWith("Sign-in timed out");
+  expect(models.cancelOAuth.mock.calls).toEqual([[{ loginId: "login", reason: "interrupted" }]]);
 });

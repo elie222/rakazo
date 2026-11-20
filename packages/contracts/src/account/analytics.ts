@@ -88,7 +88,7 @@ export const AnalyticsModelSignInEndReason = z.enum([
   "timed_out",
   // The provider accepted the sign-in, and saving the connection failed.
   "save_failed",
-  // The server stopped while it held the sign-in.
+  // The server stopped while it held the sign-in, or the app gave up on an error of its own.
   "interrupted",
 ]);
 /** The reasons an app gives when it stops a sign-in itself. */
@@ -96,6 +96,7 @@ export const ModelSignInCancelReason = AnalyticsModelSignInEndReason.extract([
   "cancelled",
   "replaced",
   "left",
+  "interrupted",
 ]);
 /** What the provider refused, as a class. Never its message. */
 export const AnalyticsModelSignInErrorClass = z.enum([

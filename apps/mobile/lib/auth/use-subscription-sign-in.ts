@@ -178,7 +178,9 @@ export function useSubscriptionSignIn({
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
-      if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
+      if (loginId) {
+        void rpc("models/cancelOAuth", { loginId, reason: "interrupted" }).catch(() => undefined);
+      }
       publishFeedback("connection", {
         error: errorText(err, t`Could not start sign-in`),
       });
@@ -215,7 +217,9 @@ export function useSubscriptionSignIn({
       if (submitted) {
         oauthLoginIdRef.current = null;
         setOauth(null);
-        void rpc("models/cancelOAuth", { loginId: oauth.loginId }).catch(() => undefined);
+        void rpc("models/cancelOAuth", { loginId: oauth.loginId, reason: "interrupted" }).catch(
+          () => undefined,
+        );
       } else {
         retryable = true;
         setPasteCode(code);
