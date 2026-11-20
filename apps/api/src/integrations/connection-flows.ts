@@ -200,6 +200,7 @@ export async function beginConnection(
       | "authorization_ready"
       | "connected"
       | "request_aborted"
+      | "auth_config_unavailable"
       | "provider_failed"
       | "invalid_authorization_url"
       | "save_failed"
@@ -238,7 +239,13 @@ export async function beginConnection(
       connectionContext(context.actor, "connections.begin", context.signal),
     );
   } catch (error) {
-    logSetup(context.signal?.aborted ? "request_aborted" : "provider_failed");
+    logSetup(
+      error instanceof ConnectorAuthUnavailableError
+        ? "auth_config_unavailable"
+        : context.signal?.aborted
+          ? "request_aborted"
+          : "provider_failed",
+    );
     await markFailed();
     if (error instanceof ConnectorAuthUnavailableError) {
       getLogger().warn("connections.begin app has no usable auth config", {

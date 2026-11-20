@@ -112,6 +112,31 @@ describe("model sign-in lifecycle logs", () => {
     expect(lifecycle().filter((event) => event["model.sign_in.stage"] === "ended")).toHaveLength(1);
   });
 
+  it("classifies a local start deadline as a timeout", async () => {
+    const exchange = deferred<Credential>();
+    const logins = new PiOAuthLogins<string>(() => exchange.promise);
+    sessions.push(logins);
+    const result = expect(begin(logins)).rejects.toThrow("Subscription sign-in did not start");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await result;
+    expect(lifecycle()).toContainEqual(
+      expect.objectContaining({
+        "model.sign_in.stage": "start_failed",
+        "model.sign_in.reason": "timed_out",
+      }),
+    );
+  });
+
+  it("logs interruption for an in-memory sign-in on shutdown", async () => {
+    const { logins } = deviceSignIn();
+    const started = await begin(logins);
+    await logins.abortAll();
+    expect(lifecycle().at(-1)).toMatchObject({
+      "model.sign_in.id": started.loginId,
+      "model.sign_in.stage": "interrupted",
+    });
+  });
+
   it("distinguishes a replacement from an explicit cancellation", async () => {
     const { logins } = deviceSignIn();
     const first = await begin(logins);

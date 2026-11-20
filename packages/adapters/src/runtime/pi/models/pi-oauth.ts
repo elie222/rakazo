@@ -738,12 +738,13 @@ export class PiOAuthLogins<T = unknown> {
     });
 
     const { abort, abortFromRequest, signInStarted, session } = prepared;
+    const startTimeout = new Error("Subscription sign-in did not start. Try again.");
 
     try {
       const started = await Promise.race([
         signInStarted,
         sleep(SIGN_IN_START_WAIT_MS).then(() => {
-          throw new Error("Subscription sign-in did not start. Try again.");
+          throw startTimeout;
         }),
       ]);
       input.signal?.removeEventListener("abort", abortFromRequest);
@@ -771,7 +772,11 @@ export class PiOAuthLogins<T = unknown> {
       logModelSignIn(
         session,
         "start_failed",
-        signInFailure(error instanceof Error ? error.message : ""),
+        input.signal?.aborted
+          ? { reason: "cancelled" }
+          : error === startTimeout
+            ? { reason: "timed_out" }
+            : signInFailure(error instanceof Error ? error.message : ""),
       );
       input.signal?.removeEventListener("abort", abortFromRequest);
       abort.abort();
@@ -1012,11 +1017,13 @@ export class PiOAuthLogins<T = unknown> {
       );
       session.result = value;
       session.state = "connected";
-      logModelSignIn(session, "connected");
-      await this.writeOutcome(session, {
-        status: "connected",
-        result: value as Prisma.InputJsonValue,
-      });
+      if (
+        await this.writeOutcome(session, {
+          status: "connected",
+          result: value as Prisma.InputJsonValue,
+        })
+      )
+        logModelSignIn(session, "connected");
     } catch (error) {
       // A refusal the person can act on keeps its own words; anything else is a server fault.
       const refusal =
@@ -1149,6 +1156,7 @@ export class PiOAuthLogins<T = unknown> {
             }),
         );
         // No row: another process cancelled or replaced the sign-in, and reported that.
+        if (written.count === 0) logModelSignIn(session, "handoff_lost");
         return written.count > 0;
       } catch (error) {
         if (attempt >= OUTCOME_WRITE_ATTEMPTS) {
@@ -1451,7 +1459,9 @@ export class PiOAuthLogins<T = unknown> {
       this.detachSession(session);
       session.abort.abort();
     }
-    for (const session of interrupted) logModelSignIn(session, "interrupted");
+    for (const session of this.handoff ? interrupted : sessions) {
+      if (session.state === "pending") logModelSignIn(session, "interrupted");
+    }
     await Promise.all([
       ...saving,
       ...interrupted.map((session) =>
