@@ -25,6 +25,7 @@ import {
   parseModelSecret,
   serializeModelSecret,
 } from "../../../models/model-secret.js";
+import { logModelSignIn } from "./model-sign-in-log.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 import type { PiOAuthEnd, PiOAuthEnded, PiOAuthMeasure, PiOAuthPending } from "./pi-oauth-ended.js";
 import { PENDING_SIGN_IN_COLUMNS, pendingSignInOfRow, signInFailure } from "./pi-oauth-ended.js";
@@ -574,7 +575,9 @@ export class PiOAuthLogins<T = unknown> {
     if (!session) return started;
     try {
       await this.store(session, input, started.mode, verifier);
+      logModelSignIn(session, "authorization_ready");
     } catch (error) {
+      logModelSignIn(session, "storage_failed");
       session.abort.abort();
       this.detachSession(session);
       throw error;
@@ -628,6 +631,7 @@ export class PiOAuthLogins<T = unknown> {
         setup: deferred<void>(),
       };
 
+      logModelSignIn(session, issuedAt ? "resumed" : "started");
       const signInStarted = deferred<PiOAuthStarted>();
 
       const done = this.loginFn(
@@ -764,6 +768,11 @@ export class PiOAuthLogins<T = unknown> {
         ...started,
       };
     } catch (error) {
+      logModelSignIn(
+        session,
+        "start_failed",
+        signInFailure(error instanceof Error ? error.message : ""),
+      );
       input.signal?.removeEventListener("abort", abortFromRequest);
       abort.abort();
       this.detachSession(session);
@@ -869,6 +878,7 @@ export class PiOAuthLogins<T = unknown> {
       this.detachSession(session);
       return { ok: true };
     }
+    logModelSignIn(session, "code_submitted");
     resolve(normalizedCode);
     return { ok: true };
   }
@@ -893,7 +903,9 @@ export class PiOAuthLogins<T = unknown> {
     try {
       stored = JSON.parse(await handoff.secrets.load(row.ciphertext, loginId)) as HandedOffSignIn;
     } catch (error) {
-      getLogger().error("model sign-in hand-off unreadable", error);
+      getLogger().error("model sign-in hand-off unreadable", error, {
+        "model.sign_in.id": loginId,
+      });
       return undefined;
     }
     if (typeof stored.verifier !== "string" || typeof stored.provider !== "string") {
@@ -952,11 +964,14 @@ export class PiOAuthLogins<T = unknown> {
       );
       // Cancelled, replaced or disconnected on another process.
       if (renewed.count === 0 && session.state === "pending") {
+        logModelSignIn(session, "handoff_lost");
         session.abort.abort(new Error("Sign-in cancelled."));
         this.detachSession(session);
       }
     } catch (error) {
-      getLogger().error("model sign-in lease not renewed", error);
+      getLogger().error("model sign-in lease not renewed", error, {
+        "model.sign_in.id": session.id,
+      });
     }
   }
 
@@ -969,12 +984,15 @@ export class PiOAuthLogins<T = unknown> {
     const finishing = deferred<void>();
     session.finishing = finishing.promise;
     session.state = "finalizing";
+    logModelSignIn(session, "authorized");
     try {
       if (session.stored && !(await this.markSaving(session))) {
+        logModelSignIn(session, "handoff_lost");
         session.abort.abort(new Error("Sign-in cancelled."));
         this.detachSession(session);
         return;
       }
+      logModelSignIn(session, "saving");
       // The request that started the sign-in may be long gone; save as its member.
       const value = await runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
         session.persist({
@@ -994,6 +1012,7 @@ export class PiOAuthLogins<T = unknown> {
       );
       session.result = value;
       session.state = "connected";
+      logModelSignIn(session, "connected");
       await this.writeOutcome(session, {
         status: "connected",
         result: value as Prisma.InputJsonValue,
@@ -1004,11 +1023,12 @@ export class PiOAuthLogins<T = unknown> {
         error instanceof ModelSignInError || error instanceof ModelProviderNotAllowedError
           ? error
           : undefined;
-      if (!refusal) getLogger().error("model sign-in not saved", error);
+      if (!refusal)
+        getLogger().error("model sign-in not saved", error, { "model.sign_in.id": session.id });
       session.state = "failed";
       session.error = refusal ? refusal.message : SIGN_IN_SAVE_FAILED;
       if (await this.writeOutcome(session, { status: "failed", error: session.error })) {
-        this.report(this.pendingOf(session), { reason: "save_failed" });
+        this.report(this.pendingOf(session), { reason: "save_failed" }, session.id);
       }
     } finally {
       this.releaseLease(session);
@@ -1031,7 +1051,7 @@ export class PiOAuthLogins<T = unknown> {
       this.pending.get(session.id) === session &&
       (await this.writeOutcome(session, { status: "failed", error: message }))
     ) {
-      this.report(this.pendingOf(session), signInFailure(message));
+      this.report(this.pendingOf(session), signInFailure(message), session.id);
     }
   }
 
@@ -1043,12 +1063,14 @@ export class PiOAuthLogins<T = unknown> {
   }
 
   /** Measurement never decides how a sign-in ends. */
-  private report(pending: PiOAuthPending | undefined, end: PiOAuthEnd): void {
-    if (!pending || !this.onEnded) return;
+  private report(pending: PiOAuthPending | undefined, end: PiOAuthEnd, loginId: string): void {
+    if (!pending) return;
+    logModelSignIn({ ...pending, id: loginId }, "ended", end);
+    if (!this.onEnded) return;
     try {
       this.onEnded({ ...pending, ...end });
     } catch (error) {
-      getLogger().error("model sign-in end not reported", error);
+      getLogger().error("model sign-in end not reported", error, { "model.sign_in.id": loginId });
     }
   }
 
@@ -1072,7 +1094,7 @@ export class PiOAuthLogins<T = unknown> {
       const deleted = await handoff.prisma.modelOAuthSession.deleteMany({
         where: { ...waiting, id: row.id },
       });
-      if (deleted.count === 1) this.report(pendingSignInOfRow(row), { reason });
+      if (deleted.count === 1) this.report(pendingSignInOfRow(row), { reason }, row.id);
     }
   }
 
@@ -1130,7 +1152,10 @@ export class PiOAuthLogins<T = unknown> {
         return written.count > 0;
       } catch (error) {
         if (attempt >= OUTCOME_WRITE_ATTEMPTS) {
-          getLogger().error("model sign-in outcome not stored", error);
+          logModelSignIn(session, "storage_failed");
+          getLogger().error("model sign-in outcome not stored", error, {
+            "model.sign_in.id": session.id,
+          });
           return false;
         }
         await sleep(SAVE_WAIT_POLL_MS * attempt);
@@ -1253,7 +1278,7 @@ export class PiOAuthLogins<T = unknown> {
       break;
     }
     const ref = { id: loginId, userId: actor.userId, spaceId: actor.spaceId };
-    if (!this.handoff) this.report(waiting, { reason: "cancelled" });
+    if (!this.handoff) this.report(waiting, { reason: "cancelled" }, loginId);
     // Any process may hold it: that process sees its row go and stops. A save under way
     // finishes; the client has stopped asking for it.
     await this.forgetRow(ref, { ended: "cancelled" });
@@ -1299,6 +1324,7 @@ export class PiOAuthLogins<T = unknown> {
         throwIfAborted(signal);
         continue;
       }
+      logModelSignIn(session, "replaced");
       session.abort.abort(new Error("Sign-in replaced."));
       this.removeSession(session, "cancelled");
       return;
@@ -1370,7 +1396,7 @@ export class PiOAuthLogins<T = unknown> {
     const owned = session.lease !== undefined;
     const waiting = session.state === "pending" ? this.pendingOf(session) : undefined;
     this.detachSession(session);
-    if (!this.handoff) this.report(waiting, { reason: ended });
+    if (!this.handoff) this.report(waiting, { reason: ended }, session.id);
     // A pasted code another process received is that process's to finish.
     if (session.stored) void this.forgetRow(session, { unclaimedOnly: !owned, ended });
   }
@@ -1405,7 +1431,9 @@ export class PiOAuthLogins<T = unknown> {
         });
       });
     } catch (error) {
-      getLogger().error("model sign-in hand-off not deleted", error);
+      getLogger().error("model sign-in hand-off not deleted", error, {
+        "model.sign_in.id": ref.id,
+      });
     }
   }
 
@@ -1423,6 +1451,7 @@ export class PiOAuthLogins<T = unknown> {
       this.detachSession(session);
       session.abort.abort();
     }
+    for (const session of interrupted) logModelSignIn(session, "interrupted");
     await Promise.all([
       ...saving,
       ...interrupted.map((session) =>
