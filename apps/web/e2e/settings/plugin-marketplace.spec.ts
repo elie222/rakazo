@@ -394,3 +394,16 @@ test("an app that is also a chat app here leads to messaging settings", async ({
   await hint.getByRole("button", { name: "Chat from Chatty", exact: true }).click();
   await expect(dialog).toBeHidden();
 });
+
+test("Skills search explains an empty result", async ({ page }, testInfo) => {
+  await signup(page, `skills-search-${Date.now()}@rakazo.test`, "password12", "Skills Search");
+  await completeOnboarding(page);
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Skills", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Skills", exact: true });
+  await dialog
+    .getByRole("textbox", { name: "Search skills", exact: true })
+    .fill("zzzz-no-matching-skill");
+  await expect(dialog.getByRole("status")).toHaveText("No skills match your search.");
+  await captureScreenshot(page, testInfo, "skills-search-empty");
+});
