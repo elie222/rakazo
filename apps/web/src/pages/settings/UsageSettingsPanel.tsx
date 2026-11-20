@@ -48,14 +48,21 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
     staleTime: 30_000,
   });
 
-  const catalog = useQuery(queries.models.list.queryOptions()).data ?? NO_CATALOG;
+  const catalogQuery = useQuery(queries.models.list.queryOptions());
+  const catalog = catalogQuery.data ?? NO_CATALOG;
   const labelsFor = ({ provider, model }: { provider: string; model: string }) => {
     const entry = catalog.find(
       (e) =>
         e.id === model && canonicalPiProviderId(e.provider) === canonicalPiProviderId(provider),
     );
     return {
-      modelLabel: entry?.label ?? t`Unlisted model`,
+      modelLabel:
+        entry?.label ??
+        (catalogQuery.isError
+          ? t`Model name unavailable`
+          : catalogQuery.isPending
+            ? t`Loading model name…`
+            : t`Unlisted model`),
       providerLabel: entry?.providerName,
     };
   };
@@ -81,22 +88,21 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const monthly = fresh?.overTimeUnit === "month";
   const totals = fresh?.totals;
   const modelNames = (data?.modelOptions ?? []).map((m) => ({ ...m, ...labelsFor(m) }));
-  const modelOptions = data
-    ? modelNames.map((m) => {
-        const sameLabel = modelNames.filter((other) => other.modelLabel === m.modelLabel);
-        const sameProviderLabel = sameLabel.filter(
-          (other) => other.providerLabel === m.providerLabel,
-        );
-        let label = m.modelLabel;
-        if (sameLabel.length > 1 && m.providerLabel) label = `${label} (${m.providerLabel})`;
-        if (sameProviderLabel.length > 1) {
-          label = `${label} (${sameProviderLabel.indexOf(m) + 1})`;
-        }
-        return { key: JSON.stringify([m.provider, m.model]), label };
-      })
-    : selectedModel
-      ? [selectedModel]
-      : [];
+  const candidates = modelNames.map((m) => {
+    const sharedName = modelNames.some((other) => other !== m && other.modelLabel === m.modelLabel);
+    return {
+      key: JSON.stringify([m.provider, m.model]),
+      label: sharedName && m.providerLabel ? `${m.modelLabel} (${m.providerLabel})` : m.modelLabel,
+      providerLabel: sharedName ? undefined : m.providerLabel,
+    };
+  });
+  const needsReferences = new Set(candidates.map((m) => m.label)).size < candidates.length;
+  const referenceKeys = candidates.map((m) => m.key).sort();
+  const displayModels = candidates.map((m) => ({
+    ...m,
+    label: needsReferences ? `${referenceKeys.indexOf(m.key) + 1}. ${m.label}` : m.label,
+  }));
+  const modelOptions = data ? displayModels : selectedModel ? [selectedModel] : [];
 
   // A new date range can drop the selected bot or model from the lists: go back to all.
   useEffect(() => {
@@ -266,13 +272,18 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
             </TableHeader>
             <TableBody>
               {models.map((row) => {
+                const display = displayModels.find(
+                  (m) => m.key === JSON.stringify([row.provider, row.model]),
+                );
                 const { modelLabel, providerLabel } = labelsFor(row);
                 return (
                   <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
                     <TableCell>
-                      <div className="text-foreground">{modelLabel}</div>
-                      {providerLabel && (
-                        <div className="text-label text-muted-foreground">{providerLabel}</div>
+                      <div className="text-foreground">{display?.label ?? modelLabel}</div>
+                      {(display ? display.providerLabel : providerLabel) && (
+                        <div className="text-label text-muted-foreground">
+                          {display ? display.providerLabel : providerLabel}
+                        </div>
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
