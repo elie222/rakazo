@@ -9,10 +9,12 @@ import { isDeliveryMessage } from "./message-visibility.js";
 /** Bound the source considered when deriving a reply excerpt. */
 export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
 
+const REPLY_LINE_BREAK = /\r\n?|\n/u;
+
 /** The first nonblank reply line, capped without splitting a surrogate pair. */
 export function compactReplyExcerpt(text: string): string {
   const first = text
-    .split(/\r?\n/u)
+    .split(REPLY_LINE_BREAK)
     .map((line) => line.trim())
     .find(Boolean);
   const excerpt = (first ?? "").slice(0, 280);
@@ -101,7 +103,9 @@ export function memberMessageAlerts(message: {
 }
 
 export function replyLineText(quote?: string, preview?: string, fallback?: string): string {
-  return quote ? quote.replace(/\s+/gu, " ") : (preview || fallback || "").split(/\r?\n/u)[0] || "";
+  return quote
+    ? quote.replace(/\s+/gu, " ")
+    : (preview || fallback || "").split(REPLY_LINE_BREAK, 1)[0] || "";
 }
 
 /** Pick only metadata from validated parent blocks, preferring a photo over a file. */

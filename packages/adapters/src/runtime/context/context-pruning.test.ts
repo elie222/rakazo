@@ -6,6 +6,7 @@ import {
   pruneForRebuild,
   pruneStalePageStateContext,
 } from "./context-pruning.js";
+import { TOOL_IMAGE_REMOVED_NOTE } from "./runtime-context.prompt.js";
 
 describe("context pruning on rebuild", () => {
   const pageResult = (id: string, toolName: string, text = `page ${id} ${"x".repeat(1_200)}`) => ({
@@ -209,7 +210,7 @@ describe("context pruning on rebuild", () => {
     ];
 
     expect(() => pruneComputerScreenshotContext(messages, 1)).toThrow(
-      "the prompt contains 2 non-screenshot images",
+      "the prompt contains 2 user images",
     );
   });
 
@@ -344,8 +345,35 @@ describe("context pruning on rebuild", () => {
     const atLimit = [userImage("u1"), userImage("u2"), screenshot("a")];
     expect(kept(pruneComputerScreenshotContext(atLimit, 2))).toEqual([true, true, false]);
     expect(() => pruneComputerScreenshotContext([...atLimit, userImage("u3")], 2)).toThrow(
-      "contains 3 non-screenshot images",
+      "contains 3 user images",
     );
+  });
+
+  it("drops older images a connected tool returned, as it does screenshots", () => {
+    const toolImage = (name: string): Message => ({
+      role: "toolResult",
+      toolCallId: name,
+      toolName: "mcp__showcase__render_preview",
+      content: [
+        { type: "text", text: `${name} preview` },
+        { type: "image", data: name, mimeType: "image/png" },
+      ],
+      details: { content: [] },
+      isError: false,
+      timestamp: 1,
+    });
+    const messages = [userImage("u"), toolImage("p1"), screenshot("a"), toolImage("p2")];
+
+    const pruned = pruneComputerScreenshotContext(messages, 3);
+
+    expect(kept(pruned)).toEqual([true, false, true, true]);
+    expect(pruned[1]).toMatchObject({
+      content: [
+        { type: "text", text: "p1 preview" },
+        { type: "text", text: TOOL_IMAGE_REMOVED_NOTE },
+      ],
+    });
+    expect(() => pruneComputerScreenshotContext(messages, 0)).toThrow("contains 1 user images");
   });
 
   it("treats a non-finite limit as no limit", () => {

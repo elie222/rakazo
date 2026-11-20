@@ -296,10 +296,11 @@ class TtlCache<V> {
     private readonly ttlMs: number,
     private readonly max: number,
   ) {}
-  get(key: string): V | undefined {
+  /** The value, unless it expires within `freshForMs`. */
+  get(key: string, freshForMs = 0): V | undefined {
     const entry = this.entries.get(key);
     if (!entry) return;
-    if (entry.expires <= Date.now()) {
+    if (entry.expires <= Date.now() + freshForMs) {
       this.entries.delete(key);
       return;
     }
@@ -361,8 +362,8 @@ export class ContentKeyRing {
     return promise;
   }
 
-  private async unwrap(record: SpaceKeyRecord): Promise<DataKey> {
-    const cached = this.keys.get(record.id);
+  private async unwrap(record: SpaceKeyRecord, freshForMs = 0): Promise<DataKey> {
+    const cached = this.keys.get(record.id, freshForMs);
     if (cached) return cached;
     const key: DataKey = {
       id: record.id,
@@ -372,6 +373,22 @@ export class ContentKeyRing {
     };
     this.keys.set(record.id, key);
     return key;
+  }
+
+  /**
+   * Loads a space's keys so they stay in memory at least `freshForMs` longer, reloading them when
+   * they would expire sooner. The keys in memory stay usable until their replacements are in.
+   */
+  async preload(spaceId: string, freshForMs: number): Promise<void> {
+    const cached = this.versions.get(spaceId, freshForMs);
+    if (cached?.every((key) => this.keys.get(key.id, freshForMs))) return;
+    await this.once(`preload:${spaceId}`, async () => {
+      const records = await this.store.forSpace(spaceId);
+      const keys = await Promise.all(records.map((record) => this.unwrap(record, freshForMs)));
+      // A rotation that finished meanwhile cached a newer version; keep it.
+      const newest = this.versions.get(spaceId)?.at(-1)?.version ?? 0;
+      if (keys.length && keys.at(-1)!.version >= newest) this.versions.set(spaceId, keys);
+    });
   }
 
   /** Every key version of a space, oldest first. Empty when the space has none yet. */

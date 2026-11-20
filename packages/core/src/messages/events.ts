@@ -7,6 +7,7 @@ import type {
 } from "@rakazo/contracts";
 import { preserveIdentitySource } from "../bots/identity-source.js";
 import { cloudAgentBlockFromPayload } from "../integrations/cloud-agent.js";
+import { sliceWellFormed } from "../primitives/utf8.js";
 import { modelFallbackFailure, parseModelFallbackFailure } from "../runs/run-error.js";
 import { payloadAuthor } from "./message-replies.js";
 
@@ -304,7 +305,7 @@ export function runFailureError(event: {
 // text while the UI shows a bounded first line.
 function clampRunFailure(message: string): string {
   return message.length > RUN_FAILURE_ERROR_MAX
-    ? `${message.slice(0, RUN_FAILURE_ERROR_MAX)}…`
+    ? `${sliceWellFormed(message, RUN_FAILURE_ERROR_MAX)}…`
     : message;
 }
 
@@ -345,6 +346,10 @@ export function reduceLiveMessageBlocks(
     update.type === "progress"
       ? update.payload?.activity === true
       : tail?.kind === "progress" && tail.activity === true;
+  const shown =
+    update.type === "progress"
+      ? update.payload?.shown === true
+      : tail?.kind === "progress" && tail.shown === true;
 
   if (pendingToolNames.length > 0 && endsSentence(tailText)) {
     let next = activity ? [...segments] : appendTextSegment(segments, tailText);
@@ -358,6 +363,7 @@ export function reduceLiveMessageBlocks(
       kind: "progress",
       text: tailText,
       ...(activity ? { activity: true as const } : {}),
+      ...(shown ? { shown: true as const } : {}),
       ...(pendingToolNames.length > 0 ? { pendingToolNames } : {}),
     },
   ];

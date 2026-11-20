@@ -77,6 +77,15 @@ describe("matchesPluginQuery", () => {
     expect(matchesPluginQuery(calcom, "endar")).toBe(false);
     expect(matchesPluginQuery(calcom, "cal invoices")).toBe(false);
   });
+  it.each(["Caf\u00e9 Tools", "Cafe\u0301 Tools"])(
+    "matches canonically equivalent accented prefixes in %s",
+    (displayName) => {
+      const plugin = entry({ name: "example", displayName });
+      expect(matchesPluginQuery(plugin, "CAF\u00c9 too")).toBe(true);
+      expect(matchesPluginQuery(plugin, "CAFE\u0301 too")).toBe(true);
+      expect(matchesPluginQuery(plugin, "cafe too")).toBe(false);
+    },
+  );
 });
 
 describe("matchesWordPrefixes", () => {

@@ -3,14 +3,23 @@ import { Button } from "@rakazo/ui-web/components/ui/button";
 import { cn } from "@rakazo/ui-web/lib/utils";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import * as React from "react";
+import type { FieldSize } from "../../lib/control-size.js";
+import { controlHeight } from "../../lib/control-size.js";
 
 type InputProps = Omit<React.ComponentProps<"input">, "size"> & {
-  size?: "default" | "xl";
+  size?: FieldSize;
 };
 
 const inputClass =
   // off-scale: 16px below md stops iOS Safari zooming into a focused field.
-  "h-9 w-full min-w-0 rounded-lg border border-input bg-transparent dark:bg-input/30 px-3 py-1 text-[16px]/6 text-foreground transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-body file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-body dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-[size=xl]:h-12 data-[size=xl]:rounded-xl data-[size=xl]:px-4 data-[size=xl]:md:text-body-lg";
+  "w-full min-w-0 rounded-lg border border-input bg-transparent dark:bg-input/30 px-3 py-1 text-[16px]/6 text-foreground transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-body file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-body dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40";
+
+const inputSize: Record<FieldSize, string> = {
+  sm: controlHeight.sm,
+  default: controlHeight.default,
+  lg: controlHeight.lg,
+  xl: `${controlHeight.xl} rounded-xl px-4 md:text-body-lg`,
+};
 
 /** The labels of the show/hide button on hidden fields; the kit itself is not translated. */
 const RevealLabelsContext = React.createContext({ show: "Show password", hide: "Hide password" });
@@ -36,7 +45,7 @@ function Input({ className, type, size = "default", ...props }: InputProps) {
       type={type}
       data-slot="input"
       data-size={size}
-      className={cn(inputClass, className)}
+      className={cn(inputClass, inputSize[size], className)}
       {...props}
     />
   );
@@ -47,7 +56,12 @@ function Input({ className, type, size = "default", ...props }: InputProps) {
  * input like any other field. The input is a block, so its margins pass through the wrapper and
  * the button stays centred on the field.
  */
-function HiddenInput({ className, size, disabled, ...props }: Omit<InputProps, "type">) {
+function HiddenInput({
+  className,
+  size = "default",
+  disabled,
+  ...props
+}: Omit<InputProps, "type">) {
   const labels = React.useContext(RevealLabelsContext);
   const [shown, setShown] = React.useState(false);
   // Disabling the field, say while a form submits, hides the value again, and it stays hidden
@@ -61,7 +75,13 @@ function HiddenInput({ className, size, disabled, ...props }: Omit<InputProps, "
         data-slot="input"
         data-size={size}
         disabled={disabled}
-        className={cn(inputClass, "block", className, "pr-9 data-[size=xl]:pr-12")}
+        className={cn(
+          inputClass,
+          inputSize[size],
+          "block",
+          className,
+          size === "xl" ? "pr-12" : "pr-9",
+        )}
         {...props}
       />
       <Button

@@ -73,7 +73,13 @@ function stripSingleEmphasis(text: string): string {
     const char = chars[k] ?? "";
     for (const [marker, next] of Object.entries(nextCloser)) {
       if (LINE_END.test(char)) next[k] = -1;
-      else if (char === marker && k > 0 && !SPACE.test(chars[k - 1] ?? " ") && !isWordChar(k + 1))
+      else if (
+        char === marker &&
+        k > 0 &&
+        !SPACE.test(chars[k - 1] ?? " ") &&
+        chars[k - 1] !== marker &&
+        !isWordChar(k + 1)
+      )
         next[k] = k;
       else next[k] = next[k + 1] ?? -1;
     }
@@ -84,7 +90,13 @@ function stripSingleEmphasis(text: string): string {
   while (i < n) {
     const char = chars[i] ?? "";
     const next = nextCloser[char];
-    if (next && !isWordChar(i - 1) && i + 1 < n && !SPACE.test(chars[i + 1] ?? " ")) {
+    if (
+      next &&
+      !isWordChar(i - 1) &&
+      i + 1 < n &&
+      !SPACE.test(chars[i + 1] ?? " ") &&
+      chars[i + 1] !== char
+    ) {
       const close = next[i + 1] ?? -1;
       if (close !== -1) {
         out += chars.slice(i + 1, close).join("");
@@ -144,7 +156,7 @@ export function speakable(input: string): string {
   text = text.replace(/^\s*\d+[.)]\s+/gm, "");
   text = text.replace(/^\s*>\s?/gm, "");
 
-  text = text.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  text = text.replace(/(\*\*|__)(?=\S)(.*?\S)\1/g, "$2");
   text = stripSingleEmphasis(text);
   text = text.replace(/~~(.*?)~~/g, "$1");
 
@@ -173,6 +185,24 @@ const BOUNDARY =
   /(?<!\b(?:e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms|No|approx))(?<![.\d])([.!?])(["')\]]*)\s+/g;
 
 /**
+ * Markdown (or any agent output) as the sentences a voice reads, one per item. Unlike
+ * toUtterances nothing is glued together, so a short sentence keeps its own identity.
+ */
+export function splitSentences(input: string): string[] {
+  const MARK = "\u0000";
+  return speakable(input)
+    .replace(BOUNDARY, `$1$2${MARK}`)
+    .split(MARK)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** What a sentence says, ignoring case, markup and punctuation: `**Done.` matches `Done.` */
+export function sentenceKey(sentence: string): string {
+  return sentence.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/**
  * Split speakable text into utterances a synthesizer can start on.
  * Short fragments are glued onto their neighbour so the voice keeps context.
  * maxChars bounds UTF-16 code units, matching the synthesis API's limit.
@@ -181,15 +211,7 @@ export function toUtterances(input: string, { minChars = 12, maxChars = 320 } = 
   if (!Number.isInteger(maxChars) || maxChars < 2) {
     throw new RangeError("maxChars must be an integer of at least 2");
   }
-  const text = speakable(input);
-  if (!text) return [];
-
-  const MARK = "\u0000";
-  const rough = text
-    .replace(BOUNDARY, `$1$2${MARK}`)
-    .split(MARK)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const rough = splitSentences(input);
 
   const out: string[] = [];
   for (const piece of rough) {

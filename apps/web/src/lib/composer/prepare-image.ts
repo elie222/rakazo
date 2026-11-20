@@ -22,7 +22,8 @@ export async function prepareImage(file: File): Promise<File> {
     }
     image = await createImageBitmap(file);
     const edge = Math.max(image.width, image.height);
-    if (edge <= ATTACHMENT_IMAGE_MAX_EDGE && file.size < IMAGE_RECOMPRESS_BYTES) return file;
+    const needsResize = edge > ATTACHMENT_IMAGE_MAX_EDGE;
+    if (!needsResize && file.size < IMAGE_RECOMPRESS_BYTES) return file;
     const scale = Math.min(1, ATTACHMENT_IMAGE_MAX_EDGE / edge);
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(image.width * scale));
@@ -36,6 +37,7 @@ export async function prepareImage(file: File): Promise<File> {
     );
     // Browsers may silently encode PNG when the requested format is unsupported.
     if (!blob?.size || blob.type !== mimeType) return file;
+    if (!needsResize && blob.size >= file.size) return file;
     return new File([blob], file.name, { type: mimeType, lastModified: file.lastModified });
   } catch {
     return file;

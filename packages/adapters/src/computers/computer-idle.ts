@@ -9,9 +9,11 @@ import {
   computerSleepJob,
   isSandboxProviderOutage,
   runJobKey,
+  SandboxDiskTooLargeError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceSaveFailedError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_ALLOWANCE_USED_ERROR } from "@rakazo/contracts";
@@ -612,22 +614,26 @@ export async function sleepComputerIfIdle(
       }
       return;
     }
-    if (isSandboxDamagedError(error)) {
-      // Nothing on it can run, so no checkpoint can be taken, now or later. Stop it anyway with
-      // its disk kept, rather than resume and fail on it every idle window; Recover rebuilds it.
+    if (isSandboxDamagedError(error) || error instanceof SandboxDiskTooLargeError) {
+      // Nothing on it can run, or it cannot start to run anything, so no checkpoint can be taken,
+      // now or later. Stop it anyway with its disk kept, rather than resume and fail on it every
+      // idle window; Recover rebuilds it.
       damaged = true;
       getLogger().warn("computer.checkpoint_skipped", {
         "computer.id": computerId,
         provider: computer.kind,
-        reason: "damaged",
+        reason: error instanceof SandboxDiskTooLargeError ? "disk_too_large" : "damaged",
         error,
       });
     } else if (
-      error instanceof WorkspaceTooLargeError &&
+      (error instanceof WorkspaceTooLargeError || error instanceof WorkspaceSaveFailedError) &&
       (await providerKeepsHome(deps.sandbox, ref).catch(() => false))
     ) {
       // The provider's disk is the source of truth and survives the stop; this save is only a
-      // backup, and the next start prefers the newer disk over the older backup.
+      // backup, and the next start prefers the newer disk over the older backup. Retrying a save
+      // the disk itself failed would fail the same way every idle window. A disk that fails reads
+      // can fail the provider's own save on stop too, so it stops like a damaged computer.
+      damaged = error instanceof WorkspaceSaveFailedError && error.reason === "disk_error";
       getLogger().warn("computer.checkpoint_skipped", {
         "computer.id": computerId,
         provider: computer.kind,
@@ -972,11 +978,13 @@ export function sleepDeferReason(error: unknown): string | undefined {
           ? error.limit === "bytes"
             ? "too_large"
             : "too_many_files"
-          : error instanceof HomeSaveConflictError
-            ? "saved_elsewhere"
-            : error instanceof BrowserStillRunningError
-              ? "browser_running"
-              : undefined;
+          : error instanceof WorkspaceSaveFailedError
+            ? error.reason
+            : error instanceof HomeSaveConflictError
+              ? "saved_elsewhere"
+              : error instanceof BrowserStillRunningError
+                ? "browser_running"
+                : undefined;
 }
 
 /**
@@ -1126,8 +1134,14 @@ async function inspectBackgroundWork(
       ? await sandbox.inspectBackgroundWork(computer, computerId, context)
       : await probeBackgroundWork(sandbox, computer, computerId, context);
   } catch (error) {
-    // A gone or damaged sandbox runs nothing; the checkpoint below then stops the computer.
-    if (isSandboxGoneError(error) || isSandboxDamagedError(error)) return "idle";
+    // A gone or damaged sandbox, or one too large to start, runs nothing; the checkpoint below
+    // then stops the computer.
+    if (
+      isSandboxGoneError(error) ||
+      isSandboxDamagedError(error) ||
+      error instanceof SandboxDiskTooLargeError
+    )
+      return "idle";
     getLogger().warn("computer.background_work_probe_failed", {
       "computer.id": computerId,
       provider: computer.kind,

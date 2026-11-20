@@ -2382,6 +2382,139 @@ describe("installed MCP sessions last for a whole run", () => {
   });
 });
 
+describe("an installed source whose tools cannot be listed", () => {
+  const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
+  const mcpInstall = {
+    id: "mcp-down",
+    kind: "mcp",
+    name: "Team Gateway",
+    source: "https://gateway.example.test/mcp",
+    secretId: null,
+    createdAt: new Date(0),
+    config: { preset: "custom", auth: { type: "none" } },
+  };
+  const apiInstall = {
+    id: "api-up",
+    kind: "api",
+    name: "Notes",
+    source: "https://notes.example.test",
+    secretId: null,
+    createdAt: new Date(1),
+    config: {
+      auth: { type: "none" },
+      operations: [{ id: "listNotes", method: "GET", path: "/notes", readOnly: true }],
+    },
+  };
+
+  /** A gateway that refuses every request while `down`, then lists one tool. */
+  function gateway() {
+    const state = { down: true };
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (state.down) return new Response("upstream is restarting", { status: 503 });
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const message = JSON.parse(await request.text()) as { id?: number; method?: string };
+      if (message.id === undefined) return new Response(null, { status: 202 });
+      if (message.method === "initialize") {
+        return Response.json({
+          jsonrpc: "2.0",
+          id: message.id,
+          result: {
+            protocolVersion: "2025-11-25",
+            capabilities: { tools: {} },
+            serverInfo: { name: "gateway", version: "1" },
+          },
+        });
+      }
+      return Response.json({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: { tools: [{ name: "search", inputSchema: { type: "object" } }] },
+      });
+    });
+    const provider = new InstalledConnectorProvider(
+      {
+        capabilityInstall: {
+          findMany: vi.fn().mockResolvedValue([mcpInstall, apiInstall]),
+          findFirst: vi.fn().mockResolvedValue(mcpInstall),
+        },
+      } as never,
+      {} as never,
+      { fetch: fetch as unknown as typeof globalThis.fetch, resolveHostname: publicResolver },
+    );
+    return { state, provider };
+  }
+
+  function context(signal = new AbortController().signal) {
+    return { spaceId: "space-1", userId: "user-1", signal } as never;
+  }
+
+  it("keeps the other tools and tells the model the source is unavailable", async () => {
+    const { provider } = gateway();
+
+    const tools = await provider.discoverTools(context());
+
+    expect(tools.map((tool) => tool.name)).toEqual(["team_gateway__unavailable", "listNotes"]);
+    expect(tools[0]).toMatchObject({
+      readOnly: true,
+      route: { connectorId: "installed", resourceId: "mcp-down", catalogGroup: "Team Gateway" },
+    });
+    expect(tools[0]?.description).toContain('"Team Gateway"');
+
+    const events: Array<{ type: string; message?: string }> = [];
+    for await (const event of provider.execute(
+      { tool: "team_gateway__unavailable", args: {}, executionId: "one", route: tools[0]?.route },
+      context(),
+    )) {
+      events.push(event as never);
+    }
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe("error");
+    expect(events[0]?.message).toContain('"Team Gateway" could not list its tools');
+  });
+
+  it("keeps two unavailable sources with one name within the tool name limit", async () => {
+    const installs = ["k1", "k2"].map((suffix) => ({
+      ...mcpInstall,
+      id: `c0000000000000000000000${suffix}`,
+      name: "Customer Relationship Gateway",
+    }));
+    const lister = new InstalledConnectorProvider(
+      { capabilityInstall: { findMany: vi.fn().mockResolvedValue(installs) } } as never,
+      {} as never,
+      {
+        fetch: (async () => new Response(null, { status: 503 })) as typeof globalThis.fetch,
+        resolveHostname: publicResolver,
+      },
+    );
+
+    const names = (await lister.discoverTools(context())).map((tool) => tool.name);
+
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) expect(name.length).toBeLessThanOrEqual(64);
+  });
+
+  it("lists the real tools again once the source answers", async () => {
+    const { provider, state } = gateway();
+    await provider.discoverTools(context());
+    state.down = false;
+
+    const tools = await provider.discoverTools(context());
+
+    expect(tools.map((tool) => tool.name)).toEqual(["search", "listNotes"]);
+  });
+
+  it("says nothing about the source when the run was cancelled", async () => {
+    const { provider } = gateway();
+    const controller = new AbortController();
+    controller.abort();
+
+    const tools = await provider.discoverTools(context(controller.signal));
+
+    expect(tools.map((tool) => tool.name)).toEqual(["listNotes"]);
+  });
+});
+
 describe("private installed connectors", () => {
   const LOCAL_API = "http://127.0.0.1:4000";
   const config = {

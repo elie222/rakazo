@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { sliceWellFormed } from "../primitives/utf8.js";
 import { speechFromBlocks } from "./speech-text.js";
 
 /** The fields grouping reads; web `ThreadMessage` and mobile `MobileMessage` both satisfy it. */
@@ -125,7 +126,7 @@ export function voiceChatSummary(group: VoiceChatGroup): string {
   const end = spoken.search(/[.!?](\s|$)/u);
   const sentence = end === -1 ? spoken : spoken.slice(0, end + 1);
   return sentence.length > SUMMARY_MAX
-    ? `${sentence.slice(0, SUMMARY_MAX - 1).trimEnd()}…`
+    ? `${sliceWellFormed(sentence, SUMMARY_MAX - 1).trimEnd()}…`
     : sentence;
 }
 

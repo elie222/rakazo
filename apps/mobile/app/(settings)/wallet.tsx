@@ -12,6 +12,7 @@ import {
 import { LoadFailure } from "../../components/ui/load-failure";
 import { errorText } from "../../lib/api/user-error";
 import { useSideInsets } from "../../lib/layout/side-insets";
+import { openExternalUrl } from "../../lib/platform/open-url";
 import { accountRpcQuery, formRead, queryClient, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
@@ -100,7 +101,7 @@ export default function WalletSettings() {
               <SettingsRow
                 accessibilityRole="button"
                 disabled={pending}
-                onPress={() => void Linking.openURL(status.verificationUrl)}
+                onPress={() => void openExternalUrl(status.verificationUrl)}
                 title={t`Open`}
               />
               <SettingsRow

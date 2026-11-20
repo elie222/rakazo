@@ -57,12 +57,13 @@ function minorUnits(number: string): number | null {
 }
 
 /**
- * A limit amount the user typed, such as "200", "1,000" or "12,50", in minor units. Null for
+ * A limit amount the user typed, such as "200", "1,000", "12,50" or ".99", in minor units. Null for
  * anything else, zero, or more than the largest limit.
  */
 export function parseLimitInput(text: string): number | null {
   const trimmed = text.trim();
-  if (!/^\d(?:[\d.,\s\u00a0\u202f]*\d)?[.,]?$/.test(trimmed)) return null;
+  const leadingDecimal = /^[.,]\d{1,2}$/.test(trimmed);
+  if (!leadingDecimal && !/^\d(?:[\d.,\s\u00a0\u202f]*\d)?[.,]?$/.test(trimmed)) return null;
   const amount = minorUnits(trimmed);
   return amount && amount <= MAX_SPENDING_LIMIT ? amount : null;
 }

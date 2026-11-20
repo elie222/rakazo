@@ -15,6 +15,12 @@ import {
   SCHEDULE_TOOL_NAMES,
 } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
+import {
+  backgroundRunToolUnavailableReason,
+  createdRunToolUnavailableReason,
+  disabledBuiltinToolUnavailableReason,
+  groupMessageBotUnavailableReason,
+} from "./run-tool-selection.prompt.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
 
 export const READ_ONLY_AGENT_TOOLS = new Set([
@@ -68,6 +74,16 @@ export const FLEET_WRITE_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_WRI
  * every tool (see commitAnswerRunInput).
  */
 const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
+
+/** Messaging and media tools a background run is not offered (see selectBuiltinToolsForRun). */
+const BACKGROUND_DROPPED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "message_user",
+  "message_bot",
+  "handoff_to_bot",
+  "message_agent",
+  "generate_image",
+  "generate_video",
+]);
 
 /** Delegation stays one level deep; account settings and direct replies remain the parent's. */
 export const SUBAGENT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
@@ -193,20 +209,13 @@ export function selectBuiltinToolsForRun(options: {
       (options.hasGroups === true || tool.name !== "post_to_group") &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
-      (!isBackgroundRunTrigger(options.trigger) ||
-        ![
-          "message_user",
-          "message_bot",
-          "handoff_to_bot",
-          "message_agent",
-          "generate_image",
-          "generate_video",
-        ].includes(tool.name)) &&
+      (!isBackgroundRunTrigger(options.trigger) || !BACKGROUND_DROPPED_TOOL_NAMES.has(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
       (emailClaimOffered || tool.name !== "claim_email_address") &&
       (options.userComputer || tool.name !== "user_computer_shell") &&
+      (options.userComputer || options.userComputerScreen || tool.name !== "user_computer_list") &&
       (options.userComputerScreen || !USER_COMPUTER_SCREEN_TOOLS.has(tool.name)) &&
       // Already on a call, or reached through a messaging channel that cannot ring.
       ((options.phoneCallsEnabled &&
@@ -234,6 +243,36 @@ export function selectBuiltinToolsForRun(options: {
           !tool.name.startsWith("scratchpad_") &&
           !tool.name.startsWith("ticket_"))),
   );
+}
+
+/**
+ * Why each built-in this run was not offered is unavailable, for the model's use_tool error.
+ * The first matching reason wins; a built-in dropped for another reason gets none.
+ */
+export function unavailableBuiltinToolReasons(
+  options: {
+    groupId: string | null;
+    trigger: string;
+    disabledBuiltinTools?: readonly string[];
+  },
+  offered: readonly { name: string }[],
+): Record<string, string> {
+  const offeredNames = new Set(offered.map((tool) => tool.name));
+  const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
+  const reasons: Record<string, string> = {};
+  for (const name of BUILTIN_AGENT_TOOL_NAMES) {
+    if (offeredNames.has(name)) continue;
+    if (options.trigger === "created" && !CREATED_RUN_TOOL_NAMES.has(name)) {
+      reasons[name] = createdRunToolUnavailableReason(name);
+    } else if (disabled.has(name)) {
+      reasons[name] = disabledBuiltinToolUnavailableReason(name);
+    } else if (options.groupId && name === "message_bot") {
+      reasons[name] = groupMessageBotUnavailableReason(offeredNames.has("handoff_to_bot"));
+    } else if (isBackgroundRunTrigger(options.trigger) && BACKGROUND_DROPPED_TOOL_NAMES.has(name)) {
+      reasons[name] = backgroundRunToolUnavailableReason(name);
+    }
+  }
+  return reasons;
 }
 
 export const PAGE_BROWSER_TOOL_NAMES = new Set([

@@ -83,6 +83,9 @@ function builtinParameters(tool: ConnectorTool) {
     return Type.Object({
       command: Type.String(),
       cwd: Type.Optional(Type.String()),
+      ...(tool.name === "user_computer_shell"
+        ? { computerId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })) }
+        : {}),
     });
   }
   if (tool.name === "run_subagent") {

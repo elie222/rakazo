@@ -27,11 +27,16 @@ export const telegramMessaging = defineMessagingPlatform({
   env: {
     telegramBotToken: { name: "TELEGRAM_BOT_TOKEN", required: true },
     telegramWebhookSecret: { name: "TELEGRAM_WEBHOOK_SECRET_TOKEN", required: true },
+    /** "off" ignores group and supergroup chats on every Telegram bot, leaving direct chats only. */
+    telegramGroups: { name: "TELEGRAM_GROUPS" },
     /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
     telegramBots: { read: telegramBotsFromEnv },
   },
   mount(env, options) {
-    return telegramPlatform("telegram", env.telegramBotToken, env.telegramWebhookSecret, options);
+    return telegramPlatform("telegram", env.telegramBotToken, env.telegramWebhookSecret, {
+      ...options,
+      groups: telegramGroupsEnabled(env.telegramGroups),
+    });
   },
   // Same rules as the default bot; each named bot has its own token and so
   // its own getUpdates slot. The surface maps their native "telegram:" thread
@@ -47,7 +52,10 @@ export const telegramMessaging = defineMessagingPlatform({
         continue;
       }
       tokens.add(bot.botToken.trim());
-      const platform = telegramPlatform(provider, bot.botToken, bot.webhookSecret, options);
+      const platform = telegramPlatform(provider, bot.botToken, bot.webhookSecret, {
+        ...options,
+        groups: telegramGroupsEnabled(env.telegramGroups),
+      });
       platform.adapterName = "telegram";
       platforms.push(platform);
     }
@@ -92,11 +100,15 @@ export function telegramBotsFromEnv(
   return bots;
 }
 
+function telegramGroupsEnabled(setting: string | undefined): boolean {
+  return setting?.toLowerCase() !== "off";
+}
+
 function telegramPlatform(
   provider: string,
   botToken: string,
   secretToken: string,
-  options: MessagingMountContext,
+  options: MessagingMountContext & { groups: boolean },
 ): MessagingPlatform {
   const adapter = new TelegramAdapterWithLinkAddresses({
     botToken,
@@ -112,7 +124,7 @@ function telegramPlatform(
       return adapter.verifiedLinkAddress;
     },
     resolveAddress: (signal) => adapter.resolveLinkAddress(signal),
-    capabilities: { direct: true, groups: true, receipt: null, files: true },
+    capabilities: { direct: true, groups: options.groups, receipt: null, files: true },
     ...withTelegramRedelivery(adapter),
     ...telegramGroupHooks(adapter),
     isPermanentSendError: isTelegramBlocked,

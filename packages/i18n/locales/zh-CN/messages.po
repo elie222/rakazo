@@ -96,6 +96,12 @@ msgstr "{0} {unitLabel}"
 msgid "{0} connection"
 msgstr "{0} 连接"
 
+#. placeholder {0}: draft.source
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+msgid "{0} draft"
+msgstr "{0}草稿"
+
 #. placeholder {0}: parts.amount
 #: apps/web/src/components/messages/ArtifactFileCard.tsx
 msgid "{0} GB"
@@ -156,6 +162,16 @@ msgstr "{0}，开启前保持暂停"
 msgid "{0}% used"
 msgstr "已用 {0}%"
 
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{agent} was invited to {group}"
+msgstr "{agent} 已受邀加入 {group}"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{agent} was invited to a group"
+msgstr "{agent} 已受邀加入一个群组"
+
 #: apps/web/src/lib/billing/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
@@ -195,6 +211,11 @@ msgstr "本周已花费 {amount}"
 #: apps/mobile/lib/account/spending-limit.ts
 msgid "{amount} spent today"
 msgstr "今天已花费 {amount}"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{app} group"
+msgstr "{app} 群组"
 
 #: apps/mobile/lib/thread/thread-voice.ts
 msgid "{bot} here."
@@ -240,6 +261,10 @@ msgstr "{count, plural, other {与 {peer} 的 # 条消息}}"
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "{count, plural, one {# row} other {# rows}}"
 msgstr "{count, plural, one {# 行} other {# 行}}"
+
+#: apps/mobile/components/thread/selection-bar.tsx
+msgid "{count, plural, one {# selected} other {# selected}}"
+msgstr "{count, plural, other {已选择 # 项}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
@@ -433,6 +458,10 @@ msgstr "{name}（与内置技能同名）"
 msgid "{name} (unsupported type)"
 msgstr "{name}（不支持的类型）"
 
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "{name} {part}"
+msgstr "{name} {part}"
+
 #: apps/mobile/lib/inbox/activity.ts
 #: apps/web/src/lib/activity-list-filters.ts
 msgid "{name} asked"
@@ -494,6 +523,23 @@ msgstr "{names} 保留自己的模型"
 #: apps/web/src/pages/model-settings/space-bots-model.tsx
 msgid "{names} keeps its own model"
 msgstr "{names} 保留自己的模型"
+
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{owner}'s {peer} wants to connect to {agent}"
+msgstr "{owner} 的 {peer} 想要连接到 {agent}"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+msgid "{owner}'s {peer} wants to connect to {named}"
+msgstr "{owner} 的 {peer} 想要连接到 {named}"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "{owner}'s {peer} wants to connect to your bot"
+msgstr "{owner} 的 {peer} 想要连接到你的 Bot"
+
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "{picked} of {total}"
+msgstr "{picked}/{total}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
@@ -695,6 +741,10 @@ msgstr "{summary} 备用模型也失败了。"
 msgid "{title}, {label}"
 msgstr "{title}，{label}"
 
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "{title}, {status}"
+msgstr "{title}，{status}"
+
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "{title}, saved as {savedAs}"
 msgstr "{title}，保存为 {savedAs}"
@@ -712,8 +762,7 @@ msgstr "已用 {used}%"
 msgid "{variable} is reserved. Choose another name."
 msgstr "{variable} 已被保留。请选择其他名称。"
 
-#: apps/mobile/app/(settings)/billing.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: packages/i18n/src/computer-usage.ts
 msgid "{vcpus} vCPU, {memoryGb} GB, {hours} computer hours a month"
 msgstr "{vcpus} vCPU、{memoryGb} GB、每月 {hours} 小时电脑时长"
 
@@ -925,6 +974,15 @@ msgstr "约 {kb} KB 的记忆不再提供给 Bot。"
 msgid "About {label}"
 msgstr "关于{label}"
 
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "About you"
+msgstr "关于你"
+
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
+msgid "Accept"
+msgstr "接受"
+
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "Access key ID"
 msgstr "访问密钥 ID"
@@ -939,6 +997,7 @@ msgstr "访问令牌（可选）"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/paywall.tsx
+#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/mobile/components/inbox/inbox-header.tsx
 #: apps/mobile/lib/inbox/use-inbox-header.ts
 #: apps/web/src/components/account/AccountMenu.tsx
@@ -1010,6 +1069,11 @@ msgstr "启用：{name}"
 #: apps/web/src/pages/shell/sidebar/sidebar-header.tsx
 msgid "Activity"
 msgstr "动态"
+
+#: apps/web/src/components/audit/AuditLog.tsx
+#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+msgid "Activity log"
+msgstr "活动日志"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -1341,9 +1405,11 @@ msgstr "全部时间"
 msgid "Allow"
 msgstr "允许"
 
+#: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Allow"
 msgstr "允许"
 
@@ -1498,6 +1564,11 @@ msgstr "其他智能体"
 msgid "Another assistant"
 msgstr "其他助手"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Another bot"
+msgstr "另一个 Bot"
+
 #: apps/mobile/components/calls/IncomingCall.tsx
 #: apps/mobile/lib/calls/incoming-calls.ts
 msgid "Answer"
@@ -1596,6 +1667,11 @@ msgstr "外观"
 msgid "Appearance: {label}"
 msgstr "外观：{label}"
 
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Applies on its next start."
+msgstr "下次启动时生效。"
+
 #: apps/mobile/components/cards/AskActions.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Apply"
@@ -1617,10 +1693,8 @@ msgstr "审批模型"
 msgid "Approvals"
 msgstr "审批"
 
-#: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
-#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Approve"
 msgstr "批准"
@@ -1635,6 +1709,8 @@ msgstr "请在屏幕上批准或拒绝。"
 msgid "Approve this server to let your agent use its tools."
 msgstr "批准此服务器后，智能体才能使用它的工具。"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 msgid "Approved"
 msgstr "已批准"
@@ -1749,10 +1825,6 @@ msgstr "附件"
 msgid "Authentication"
 msgstr "认证"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Authentication failed."
-msgstr "身份验证失败。"
-
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
@@ -1775,11 +1847,6 @@ msgstr "授权参数（可选）"
 msgid "Authorization server"
 msgstr "授权服务器"
 
-#: apps/mobile/components/cards/AppConnectCard.tsx
-#: apps/web/src/pages/shell/chat/message-cards.tsx
-msgid "Authorization timed out. Please try again."
-msgstr "授权超时，请重试。"
-
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "Authorize"
 msgstr "授权"
@@ -1792,6 +1859,13 @@ msgstr "授权此服务器后，智能体才能使用其工具。将打开弹窗
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Auto"
 msgstr "自动"
+
+#: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Auto-join"
+msgstr "自动加入"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -1819,10 +1893,6 @@ msgstr "Shell 命令可通过 {commandVariable} 使用"
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Avatar Studio"
 msgstr "头像工作室"
-
-#: apps/web/src/pages/shell/computers/computer-panel.tsx
-msgid "Awake"
-msgstr "运行中"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/new-group.tsx
@@ -1857,6 +1927,10 @@ msgstr "后退或前进"
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Back to chat"
 msgstr "返回聊天"
+
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Back to meetings"
+msgstr "返回会议"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/auth/Auth.tsx
@@ -1934,9 +2008,8 @@ msgstr "已阻塞"
 msgid "Board"
 msgstr "看板"
 
-#: apps/mobile/lib/computers/computer.ts
-#: apps/web/src/pages/shell/computers/computer-view.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
+#: packages/i18n/src/computer-preview.ts
 msgid "Booting live desktop…"
 msgstr "正在启动实时桌面…"
 
@@ -1995,6 +2068,10 @@ msgstr "Bot 模型"
 msgid "Bot screen"
 msgstr "Bot 屏幕"
 
+#: apps/web/src/pages/shell/computers/computer-panel.tsx
+msgid "Bot screen preview"
+msgstr "Bot 屏幕预览"
+
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Bot style"
@@ -2051,6 +2128,10 @@ msgstr "每个 Bot 都有自己的电脑和浏览器"
 msgid "Bots with their own model"
 msgstr "使用自己模型的 Bot"
 
+#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
+msgid "Bound to bots"
+msgstr "已绑定 Bot"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Brain label"
 msgstr "Brain 标签"
@@ -2074,6 +2155,24 @@ msgstr "内置"
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Button “{button}” · read from the page, not checked"
 msgstr "按钮“{button}”· 读取自页面，未核实"
+
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Calendar options"
+msgstr "日历选项"
+
+#: apps/mobile/app/meeting-calendar.tsx
+msgid "Calendar scheduling is unavailable."
+msgstr "日历排程不可用。"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/lib/integrations/meeting-calendar-connect.ts
+msgid "Calendar sign-in did not complete."
+msgstr "日历登录未完成。"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/lib/integrations/meeting-calendar-connect.ts
+msgid "Calendar sign-in is temporarily unavailable."
+msgstr "日历登录暂时不可用。"
 
 #: apps/mobile/components/composer/thread-composer.tsx
 #: apps/web/src/pages/shell/chat/chat-header.tsx
@@ -2155,6 +2254,8 @@ msgstr "无法读取图像"
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/index.tsx
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/mobile/app/meeting-transcript.tsx
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-space.tsx
 #: apps/mobile/app/pages.tsx
@@ -2165,6 +2266,7 @@ msgstr "无法读取图像"
 #: apps/mobile/components/bots/profile-edit-dialog.tsx
 #: apps/mobile/components/cards/AskActions.tsx
 #: apps/mobile/components/cards/secret-ask-sheet.tsx
+#: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/mobile/components/computers/computer-maintenance-actions.tsx
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
@@ -2175,6 +2277,7 @@ msgstr "无法读取图像"
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/mobile/components/thread/message-row.tsx
 #: apps/mobile/components/thread/quote-sheet.tsx
+#: apps/mobile/components/thread/selection-bar.tsx
 #: apps/mobile/components/ui/name-dialog-compose.tsx
 #: apps/mobile/components/ui/name-dialog.tsx
 #: apps/mobile/components/vault/confirm-identity.tsx
@@ -2203,18 +2306,19 @@ msgstr "无法读取图像"
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Cancel"
 msgstr "取消"
+
+#: apps/mobile/components/composer/dictation-bar.tsx
+msgid "Cancel dictation"
+msgstr "取消听写"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
 msgid "Cancel invitation"
 msgstr "取消邀请"
-
-#: apps/web/src/pages/shell/bots/agent-import.tsx
-msgid "Cancel new bot"
-msgstr "取消新建 Bot"
 
 #: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Cancel new group"
@@ -2288,6 +2392,11 @@ msgstr "更改 {name}"
 msgid "Change {title}"
 msgstr "更改{title}"
 
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Change bot"
+msgstr "更换 Bot"
+
 #: apps/mobile/lib/cards/run-error-presentation.ts
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Change model"
@@ -2345,10 +2454,10 @@ msgstr "聊天设置"
 msgid "Chat Settings"
 msgstr "聊天设置"
 
-#: apps/mobile/app/(settings)/messaging.tsx
-#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Chat with your bot from Slack."
-msgstr "在 Slack 中与你的 Bot 聊天。"
+#. placeholder {0}: ownerBot.name
+#: apps/web/src/pages/space/Board.tsx
+msgid "Chat with {0}"
+msgstr "与 {0} 聊天"
 
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Chat with your bots from other apps."
@@ -2385,14 +2494,6 @@ msgstr "检查更新"
 msgid "Check in."
 msgstr "报到。"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Check the API key or sign-in, then test again."
-msgstr "请检查 API 密钥或登录，然后重新测试。"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Check the server URL and network, then test again."
-msgstr "请检查服务器 URL 和网络，然后重新测试。"
-
 #: apps/mobile/components/cards/ImportSetupCard.tsx
 #: apps/web/src/pages/shell/bots/import-setup-card.tsx
 msgid "Check this yourself"
@@ -2422,6 +2523,10 @@ msgstr "正在检查连接…"
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Checking…"
 msgstr "正在检查…"
+
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Choose"
+msgstr "选择"
 
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Choose a bot shape, color, or upload an image"
@@ -2466,6 +2571,15 @@ msgstr "选择文件夹"
 #: apps/web/src/components/billing/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr "选择如何使用 Rakazo"
+
+#: apps/web/src/pages/shell/bots/agent-import.tsx
+msgid "Choose your {home} folder, or a backup of it."
+msgstr "选择你的 {home} 文件夹或其备份。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Choosing a join option shares transcripts with this Space."
+msgstr "选择加入方式后，文字记录将与此空间共享。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -2543,11 +2657,13 @@ msgstr "正在清空…"
 #: apps/mobile/components/native/sheet-close-button.ios.tsx
 #: apps/mobile/components/native/sheet-close-button.tsx
 #: apps/web/src/components/ErrorBoundary.tsx
+#: apps/web/src/components/I18nBootstrap.tsx
 #: apps/web/src/components/WindowChrome.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/settings/PeerMessagesOverlay.tsx
+#: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -2640,6 +2756,11 @@ msgstr "云端"
 msgid "Cloud agent"
 msgstr "云端智能体"
 
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Cloud computers"
+msgstr "云电脑"
+
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/components/vault/confirm-identity.tsx
@@ -2727,16 +2848,18 @@ msgstr "已完成"
 #: apps/mobile/components/cards/ComputerCard.tsx
 #: apps/mobile/components/computers/computer-mode-picker.tsx
 #: apps/web/src/components/computers/ComputerCard.tsx
-#: apps/web/src/pages/settings/settings-nav.ts
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Computer"
 msgstr "电脑"
 
-#: apps/mobile/lib/computers/computer.ts
-#: apps/web/src/pages/shell/computers/computer-view.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
+#: packages/i18n/src/computer-preview.ts
 msgid "Computer failed to boot"
 msgstr "电脑启动失败"
+
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Computer files"
+msgstr "电脑文件"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -2752,17 +2875,16 @@ msgstr "电脑已用 {percent}% 空间"
 msgid "Computer is asleep"
 msgstr "电脑已休眠"
 
-#: apps/web/src/pages/shell/computers/computer-view.tsx
+#: packages/i18n/src/computer-preview.ts
 msgid "Computer is asleep. Open it to wake."
 msgstr "电脑已休眠。打开就能唤醒。"
 
-#: apps/mobile/lib/computers/computer.ts
+#: packages/i18n/src/computer-preview.ts
 msgid "Computer is asleep. Take control to wake it."
 msgstr "电脑已休眠。接管控制即可唤醒。"
 
-#: apps/mobile/lib/computers/computer.ts
 #: apps/web/src/pages/shell/computers/computer-overlay.tsx
-#: apps/web/src/pages/shell/computers/computer-view.tsx
+#: packages/i18n/src/computer-preview.ts
 msgid "Computer is stopped"
 msgstr "电脑已停止"
 
@@ -2781,8 +2903,7 @@ msgstr "电脑操作模型…"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
-#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
-#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
+#: apps/web/src/pages/settings/settings-nav.ts
 msgid "Computers"
 msgstr "电脑"
 
@@ -2818,10 +2939,6 @@ msgstr "确认密码"
 msgid "Confirm removal"
 msgstr "确认移除"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Confirm the URL is reachable from this browser session, then test again."
-msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
-
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -2840,6 +2957,18 @@ msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
 msgid "Connect"
 msgstr "连接"
 
+#. placeholder {0}: data.calendarLabel
+#. placeholder {0}: list.data.calendarLabel
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Connect {0}"
+msgstr "连接{0}"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Connect {app}"
+msgstr "连接 {app}"
+
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
@@ -2851,12 +2980,9 @@ msgstr "连接 {name}"
 msgid "Connect {selectedProviderName}"
 msgstr "连接 {selectedProviderName}"
 
-#: apps/mobile/app/(settings)/messaging.tsx
-#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Connect a chat app"
-msgstr "连接聊天应用"
-
+#: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/app/chat-model.tsx
+#: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/shell/chat/chat-model-picker.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
@@ -2877,6 +3003,7 @@ msgstr "请先连接语音提供商。"
 msgid "Connect API key"
 msgstr "连接 API 密钥"
 
+#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
@@ -2951,6 +3078,20 @@ msgstr "已连接 {0}。"
 msgid "Connected."
 msgstr "已连接。"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Connecting calendar…"
+msgstr "正在连接日历…"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Connecting shares calendar access with the meeting service. You choose which meetings your bot joins."
+msgstr "连接后，会议服务将获得日历访问权限。由你选择 Bot 加入哪些会议。"
+
+#: packages/i18n/src/computer-preview.ts
+msgid "Connecting to the screen…"
+msgstr "正在连接屏幕…"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
@@ -2973,10 +3114,6 @@ msgstr "找不到连接"
 #: apps/mobile/app/(settings)/plugin.tsx
 msgid "Connection pending"
 msgstr "连接待完成"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Connection test failed."
-msgstr "连接测试失败。"
 
 #. placeholder {0}: item.name
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
@@ -3065,12 +3202,17 @@ msgid "Conversations"
 msgstr "对话"
 
 #: apps/mobile/lib/settings/ai-consent.ts
+msgid "Conversations, names and searches are sent to store and recall context."
+msgstr "对话、名称和搜索内容会被发送，用于存储和读取上下文。"
+
+#: apps/mobile/lib/settings/ai-consent.ts
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
 msgstr "对话、名称、记忆、搜索内容以及 Bot 和空间 ID 会被发送，用于存储和读取上下文。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/messages/code-copy-button.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
+#: apps/web/src/components/messages/ArtifactFileCard.tsx
 #: apps/web/src/components/messages/markdown-copy.tsx
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
@@ -3082,6 +3224,7 @@ msgstr "对话、名称、记忆、搜索内容以及 Bot 和空间 ID 会被发
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+#: apps/web/src/pages/space/Artifacts.tsx
 msgid "Copied"
 msgstr "已复制"
 
@@ -3089,6 +3232,7 @@ msgstr "已复制"
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/cards/run-error-sheet.tsx
 #: apps/mobile/components/thread/message-row.tsx
+#: apps/mobile/components/thread/selection-bar.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -3096,6 +3240,11 @@ msgstr "已复制"
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Copy"
 msgstr "复制"
+
+#. placeholder {0}: state.artifact.name
+#: apps/web/src/pages/space/Artifacts.tsx
+msgid "Copy {0}"
+msgstr "复制{0}"
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -3107,6 +3256,10 @@ msgstr "复制 {address}"
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Copy {label}"
 msgstr "复制 {label}"
+
+#: apps/web/src/components/messages/ArtifactFileCard.tsx
+msgid "Copy {name}"
+msgstr "复制{name}"
 
 #: apps/mobile/components/messages/code-copy-button.tsx
 #: apps/mobile/components/thread/message-row.tsx
@@ -3200,6 +3353,11 @@ msgstr "无法取消邀请"
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 msgid "Could not change"
 msgstr "无法更改"
+
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Could not change computer size"
+msgstr "无法更改电脑规格"
 
 #: apps/mobile/app/(settings)/language.tsx
 msgid "Could not change language"
@@ -3431,6 +3589,10 @@ msgstr "无法删除此制品"
 msgid "Could not delete this artifact."
 msgstr "无法删除此产物。"
 
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Could not delete transcript"
+msgstr "无法删除文字记录"
+
 #: apps/mobile/lib/composer/composer-dictation.ts
 msgid "Could not dictate"
 msgstr "无法听写"
@@ -3479,6 +3641,10 @@ msgstr "无法下载 {name}。请重试。"
 msgid "Could not enable tools"
 msgstr "无法启用工具"
 
+#: apps/web/src/components/audit/AuditLog.tsx
+msgid "Could not export the log."
+msgstr "无法导出日志。"
+
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not finish sign-in"
 msgstr "无法完成登录"
@@ -3520,6 +3686,9 @@ msgstr "无法退出空间"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/lib/account/user-devices.ts
 #: apps/web/src/components/account/PasskeySettings.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
 #: apps/web/src/components/ErrorBoundary.tsx
 #: apps/web/src/lib/auth/user-devices.ts
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -3567,10 +3736,20 @@ msgstr "无法加载 Bot。请重新加载后重试。"
 msgid "Could not load bots. Reload to try again."
 msgstr "无法加载 Bot。请重新加载后再试。"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Could not load calendar"
+msgstr "无法加载日历"
+
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/components/inbox/inbox-error-state.tsx
 msgid "Could not load chats"
 msgstr "无法加载聊天列表"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Could not load computer hours"
+msgstr "无法加载电脑时长"
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "Could not load computer settings"
@@ -3583,6 +3762,10 @@ msgstr "无法加载凭据。"
 #: apps/mobile/lib/thread/thread-paging.ts
 msgid "Could not load earlier messages"
 msgstr "无法加载更早的消息"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+msgid "Could not load earlier versions"
+msgstr "无法加载更早的版本"
 
 #: apps/mobile/app/group-settings.tsx
 msgid "Could not load group"
@@ -3676,6 +3859,10 @@ msgstr "无法加载模板"
 msgid "Could not load the desktop. This device cannot reach the screen URL."
 msgstr "无法加载桌面。此设备无法访问屏幕地址。"
 
+#: apps/web/src/components/audit/AuditLog.tsx
+msgid "Could not load the log."
+msgstr "无法加载日志。"
+
 #: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Could not load this artifact."
@@ -3694,6 +3881,10 @@ msgstr "无法加载此文件。"
 #: apps/mobile/app/page.tsx
 msgid "Could not load this page."
 msgstr "无法加载此页面。"
+
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Could not load transcript"
+msgstr "无法加载文字记录"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Could not load usage."
@@ -3750,6 +3941,10 @@ msgstr "无法打开消息"
 msgid "Could not open the bot"
 msgstr "无法打开 Bot"
 
+#: apps/mobile/app/meeting-transcript.tsx
+msgid "Could not open the transcript"
+msgstr "无法打开文字记录"
+
 #: apps/mobile/components/media/pdf-preview.tsx
 msgid "Could not open this PDF."
 msgstr "无法打开此 PDF。"
@@ -3785,10 +3980,6 @@ msgstr "无法预览插件"
 msgid "Could not reach that server"
 msgstr "无法连接到该服务器"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Could not reach the model server."
-msgstr "无法连接到模型服务器。"
-
 #: apps/mobile/components/inbox/inbox-error-state.tsx
 #: apps/mobile/lib/api/user-error.ts
 #: apps/mobile/lib/pages/page-load-failure.tsx
@@ -3803,6 +3994,7 @@ msgid "Could not reach the server"
 msgstr "无法连接服务器"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/pages/model-settings/use-model-connection-form.ts
 msgid "Could not reach this model server"
 msgstr "无法连接到此模型服务器"
 
@@ -3861,6 +4053,10 @@ msgstr "无法移除凭据"
 msgid "Could not remove the item"
 msgstr "无法移除此项目"
 
+#: apps/mobile/app/server.tsx
+msgid "Could not remove the server"
+msgstr "无法移除服务器"
+
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
@@ -3897,6 +4093,11 @@ msgstr "无法重置密码"
 #: apps/mobile/components/thread/thread-header.tsx
 msgid "Could not restore bot"
 msgstr "无法恢复 Bot"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Could not restore files"
+msgstr "无法恢复文件"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
@@ -4064,6 +4265,11 @@ msgstr "无法分享邀请链接"
 msgid "Could not share this artifact"
 msgstr "无法分享此制品"
 
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Could not share transcript"
+msgstr "无法共享文字记录"
+
 #: apps/web/src/components/vault/VaultSettings.tsx
 msgid "Could not show the credential"
 msgstr "无法显示凭据"
@@ -4116,8 +4322,10 @@ msgstr "无法开始教学"
 msgid "Could not submit answer"
 msgstr "无法提交回答"
 
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
 msgid "Could not submit this answer"
 msgstr "无法提交此回答"
 
@@ -4170,6 +4378,11 @@ msgstr "无法更新账单"
 msgid "Could not update bot access"
 msgstr "无法更新 Bot 访问权限"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Could not update calendar"
+msgstr "无法更新日历"
+
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
@@ -4181,6 +4394,11 @@ msgstr "无法更新聊天"
 #: apps/web/src/components/computers/ComputerMaintenanceActions.tsx
 msgid "Could not update computer"
 msgstr "无法更新电脑"
+
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Could not update meetings"
+msgstr "无法更新会议"
 
 #: apps/mobile/app/(settings)/models.tsx
 #: apps/mobile/lib/account/account-name-editor.ts
@@ -4252,6 +4470,11 @@ msgstr "无法刷新——显示最近加载的消息。"
 msgid "Couldn't start the computer"
 msgstr "无法启动电脑"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+msgid "Couldn’t submit the draft"
+msgstr "无法提交草稿"
+
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Couldn't update bot style"
@@ -4289,7 +4512,7 @@ msgstr "国家/地区"
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/mobile/lib/inbox/use-inbox-header.ts
 #: apps/web/src/components/spaces/CreateOrganizationDialog.tsx
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-header.tsx
@@ -4346,12 +4569,17 @@ msgstr "创建你的账户"
 msgid "Created"
 msgstr "已创建"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Created routine \"{name}\""
+msgstr "已创建例行任务“{name}”"
+
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-group.tsx
 #: apps/mobile/app/new-organization.tsx
 #: apps/mobile/app/new-space.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+#: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Creating…"
@@ -4400,6 +4628,10 @@ msgstr "Cron 表达式"
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Currency"
 msgstr "币种"
+
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Current"
+msgstr "当前"
 
 #: apps/mobile/app/(settings)/change-password.tsx
 #: apps/mobile/components/settings/account-deletion.tsx
@@ -4499,18 +4731,27 @@ msgstr "天"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/components/calls/IncomingCall.tsx
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
 #: apps/mobile/lib/calls/incoming-calls.ts
 #: apps/web/src/components/call/IncomingCall.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Decline"
 msgstr "拒绝"
 
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
+msgid "Declined"
+msgstr "已拒绝"
+
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Default"
 msgstr "默认"
@@ -4549,6 +4790,7 @@ msgstr "默认范围"
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/app/index.tsx
+#: apps/mobile/app/meeting-transcript.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
@@ -4680,6 +4922,16 @@ msgstr "要删除此例行任务吗？"
 msgid "Delete this Space's credentials?"
 msgstr "要删除此空间的凭据吗？"
 
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Delete this transcript?"
+msgstr "删除此文字记录？"
+
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Delete transcript"
+msgstr "删除文字记录"
+
 #: apps/mobile/components/settings/account-deletion.tsx
 msgid "Delete your account?"
 msgstr "要删除你的账户吗？"
@@ -4703,6 +4955,11 @@ msgstr "已删除"
 msgid "Deleted bot"
 msgstr "已删除的 Bot"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Deleted routine \"{name}\""
+msgstr "已删除例行任务“{name}”"
+
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -4725,7 +4982,6 @@ msgstr "已拒绝"
 msgid "Deny"
 msgstr "拒绝"
 
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/space/Board.tsx
 msgid "Description"
 msgstr "描述"
@@ -4804,7 +5060,14 @@ msgstr "禁用工具"
 msgid "Disabled"
 msgstr "已禁用"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Disabled routine \"{name}\""
+msgstr "已禁用例行任务“{name}”"
+
 #: apps/mobile/app/(settings)/memory-note.tsx
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 msgid "Discard"
 msgstr "放弃"
 
@@ -4816,10 +5079,16 @@ msgstr "要放弃更改吗？"
 msgid "Discard recording"
 msgstr "丢弃录音"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+msgid "Discarded"
+msgstr "已丢弃"
+
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/(settings)/wallet.tsx
+#: apps/mobile/app/meeting-calendar.tsx
 #: apps/mobile/components/models/model-providers.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
@@ -4841,6 +5110,16 @@ msgstr "断开 {disconnectName}？"
 msgid "Disconnect {name}?"
 msgstr "断开 {name}？"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Disconnect calendar"
+msgstr "断开日历"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Disconnect calendar?"
+msgstr "断开日历？"
+
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Disconnect Self-hosted"
@@ -4853,6 +5132,11 @@ msgstr "已断开 {disconnectName}。"
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Disconnected {provider}."
 msgstr "已断开 {provider}。"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Disconnecting calendar…"
+msgstr "正在断开日历…"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -5075,6 +5359,15 @@ msgstr "内置"
 msgid "Enable {0}"
 msgstr "启用 {0}"
 
+#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+msgid "Enabled models"
+msgstr "已启用的模型"
+
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Enabled routine \"{name}\""
+msgstr "已启用例行任务“{name}”"
+
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
 msgstr "终端用户 ID"
@@ -5129,10 +5422,6 @@ msgstr "请输入 1 到 1000 之间的整数作为图像限制。"
 #: apps/mobile/app/(settings)/spending-limit.tsx
 msgid "Enter an amount"
 msgstr "请输入金额"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Enter an API key before testing."
-msgstr "测试前请输入 API 密钥。"
 
 #: apps/web/src/lib/routines/routine-draft.ts
 msgid "Enter an HTTPS URL"
@@ -5246,12 +5535,9 @@ msgid "Everyone here sees its chats, bots and memory"
 msgstr "这里的每个人都能看到它的聊天、Bot 和记忆"
 
 #: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {app}."
 msgstr "此 Bot 空间中的每个人都能阅读它从 {app} 收到的聊天。"
-
-#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Everyone in this bot's space can read the chats it gets from {linkApp}."
-msgstr "此 Bot 所在空间的所有人都能读取它从 {linkApp} 收到的对话。"
 
 #. placeholder {0}: first.name
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -5288,6 +5574,15 @@ msgstr "展开表格"
 msgid "expired"
 msgstr "已过期"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
+#: apps/mobile/components/thread/message-bubble.tsx
+#: apps/web/src/components/messages/AskCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
+msgid "Expired"
+msgstr "已过期"
+
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -5308,6 +5603,7 @@ msgid "Expiry"
 msgstr "有效期"
 
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Export"
@@ -5341,6 +5637,10 @@ msgstr "极高"
 #: apps/web/src/lib/models/model-catalog.ts
 msgid "Extra high"
 msgstr "极高"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Extra large (uses {rate}× hours)"
+msgstr "超大（消耗 {rate} 倍时长）"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -5436,12 +5736,6 @@ msgstr "在聊天中查找"
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
-msgid "Find models"
-msgstr "查找模型"
-
-#: apps/mobile/components/models/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Finding…"
 msgstr "正在查找…"
 
@@ -5485,14 +5779,6 @@ msgstr "聚焦消息框"
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Forgot password?"
 msgstr "忘记密码？"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Found {count} model."
-msgstr "找到 {count} 个模型。"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Found {count} models."
-msgstr "找到 {count} 个模型。"
 
 #: apps/mobile/app/paywall.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -5594,6 +5880,11 @@ msgstr "获取邮箱地址"
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "在此 Bot 完成或需要输入时收到通知"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Get permission to record and share the transcript with this Space."
+msgstr "请先征得同意，再录制会议并与此空间共享文字记录。"
+
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Get the mobile app"
 msgstr "获取移动应用"
@@ -5634,10 +5925,6 @@ msgstr "正在授予…"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 msgid "GraphQL endpoint"
 msgstr "GraphQL 端点"
-
-#: apps/web/src/pages/shell/bots/agent-import.tsx
-msgid "Grok Bot"
-msgstr "Grok Bot"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
@@ -5776,7 +6063,7 @@ msgstr "隐藏"
 msgid "Hide {label}"
 msgstr "隐藏 {label}"
 
-#: apps/mobile/components/thread/header/chat-route-header.tsx
+#: apps/mobile/components/inbox/inbox-header.tsx
 msgid "Hide chats"
 msgstr "隐藏聊天"
 
@@ -5834,6 +6121,11 @@ msgstr "小时"
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "hours"
 msgstr "小时"
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/billing/ComputerUsage.tsx
+msgid "Hours by computer"
+msgstr "各电脑时长"
 
 #: apps/mobile/app/(settings)/signup-survey.tsx
 #: apps/web/src/components/account/SignupSurvey.tsx
@@ -5930,6 +6222,7 @@ msgid "Import"
 msgstr "导入"
 
 #: apps/web/src/components/settings/AccountDataSettings.tsx
+#: apps/web/src/pages/shell/bots/agent-import-dialog.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Import an agent"
 msgstr "导入智能体"
@@ -5954,6 +6247,11 @@ msgstr "进行中"
 msgid "In review"
 msgstr "审核中"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "In the meeting"
+msgstr "会议中"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "In this bot"
@@ -5975,6 +6273,12 @@ msgstr "收件箱整理"
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Include API keys"
 msgstr "包含 API 密钥"
+
+#: apps/mobile/components/models/model-role-settings.tsx
+#: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
+#: apps/web/src/pages/model-settings/role-model-picker.tsx
+msgid "Included"
+msgstr "已包含"
 
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "Incoming call"
@@ -6165,6 +6469,26 @@ msgstr "加入 {organizationName}"
 msgid "Join {spaceName}"
 msgstr "加入 {spaceName}"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Join meeting"
+msgstr "加入会议"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Join this meeting"
+msgstr "加入此会议"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Join this series"
+msgstr "加入此系列"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Joining…"
+msgstr "正在加入…"
+
 #: apps/mobile/components/thread/thread-list-controls.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
 msgid "Jump to latest"
@@ -6241,6 +6565,10 @@ msgstr "实验室"
 msgid "Language"
 msgstr "语言"
 
+#: packages/i18n/src/computer-usage.ts
+msgid "Large (uses {rate}× hours)"
+msgstr "大（消耗 {rate} 倍时长）"
+
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Large paste"
 msgstr "大段粘贴"
@@ -6287,10 +6615,20 @@ msgstr "要退出 {0} 吗？"
 msgid "Leave {name}?"
 msgstr "退出 {name}？"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Leave meeting"
+msgstr "离开会议"
+
 #: apps/mobile/app/space-members.tsx
 #: apps/web/src/components/spaces/SpaceMembersSettings.tsx
 msgid "Leave space"
 msgstr "退出空间"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Leaving…"
+msgstr "正在离开…"
 
 #: apps/mobile/components/computers/computer-keyboard-bar.tsx
 msgid "Left"
@@ -6360,6 +6698,7 @@ msgstr "实时工作状态"
 msgid "Load earlier messages"
 msgstr "加载更早的消息"
 
+#: apps/web/src/components/audit/AuditLog.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Load more"
 msgstr "加载更多"
@@ -6374,9 +6713,17 @@ msgstr "加载更早的运行记录"
 msgid "Load web images automatically"
 msgstr "自动加载网络图片"
 
+#: apps/web/src/components/I18nBootstrap.tsx
+msgid "Loading"
+msgstr "加载中"
+
 #: apps/web/src/pages/space/ActivityList.tsx
 msgid "Loading activity…"
 msgstr "正在加载动态…"
+
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Loading calendar…"
+msgstr "正在加载日历…"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 #: apps/mobile/components/media/inline-image-attachment.tsx
@@ -6387,6 +6734,11 @@ msgstr "正在加载图片…"
 msgid "Loading integrations…"
 msgstr "正在加载集成…"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Loading meetings…"
+msgstr "正在加载会议…"
+
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 msgid "Loading memory settings…"
 msgstr "正在加载记忆设置…"
@@ -6394,6 +6746,10 @@ msgstr "正在加载记忆设置…"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "Loading model catalog…"
 msgstr "正在加载模型目录…"
+
+#: apps/web/src/components/pages/PageNotice.tsx
+msgid "Loading page…"
+msgstr "正在加载页面…"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
@@ -6406,6 +6762,11 @@ msgstr "正在加载预览…"
 #: apps/mobile/components/integrations/integration-detail.tsx
 msgid "Loading tools…"
 msgstr "正在加载工具…"
+
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Loading transcript…"
+msgstr "正在加载文字记录…"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Loading usage…"
@@ -6440,8 +6801,10 @@ msgstr "正在加载语音提供商…"
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 #: apps/web/src/pages/routines/RoutineRunHistory.tsx
 #: apps/web/src/pages/settings/PeerMessagesOverlay.tsx
+#: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
+#: packages/i18n/src/computer-usage.ts
 msgid "Loading…"
 msgstr "加载中…"
 
@@ -6642,6 +7005,34 @@ msgstr "中"
 msgid "Medium"
 msgstr "中"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Meeting ended"
+msgstr "会议已结束"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Meeting failed"
+msgstr "会议失败"
+
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Meeting joins are unavailable."
+msgstr "无法加入会议。"
+
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Meeting link"
+msgstr "会议链接"
+
+#: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/bot-profile.tsx
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/chat/chat-header.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Meetings"
+msgstr "会议"
+
 #: apps/mobile/lib/bots/identity-display.ts
 #: apps/web/src/lib/bots/identity-display.ts
 msgid "Member"
@@ -6705,8 +7096,10 @@ msgstr "提到了 OpenClaw 功能"
 msgid "Mentions: {mentions}"
 msgstr "提到：{mentions}"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/lib/search/search-sheet.ts
 #: apps/mobile/lib/thread/thread-message-text.ts
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/pages/shell/chat/chat-shared.ts
 #: apps/web/src/pages/shell/composer/composer.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
@@ -6759,6 +7152,10 @@ msgstr "已发给 {peer}"
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines."
 msgstr "消息、聊天记录、Bot 指令、记忆、附件、截图及已连接应用的内容会被发送，以运行你的 Bot，包括例行任务。"
+
+#: apps/mobile/lib/settings/ai-consent.ts
+msgid "Messages, files, bot instructions, memories and connected-app content are sent to run your bots."
+msgstr "消息、文件、Bot 指令、记忆及已连接应用的内容会被发送，以运行你的 Bot。"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -6814,10 +7211,12 @@ msgstr "模式"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-picker.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
@@ -6825,10 +7224,6 @@ msgstr "模式"
 #: apps/web/src/pages/shell/chat/chat-model-picker.tsx
 msgid "Model"
 msgstr "模型"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Model \"{modelId}\" was not listed."
-msgstr "模型“{modelId}”未列出。"
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -6878,10 +7273,6 @@ msgstr "按提供商成本计费的模型"
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 msgid "Models from server"
 msgstr "来自服务器的模型"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Models list OK. {modelCount, plural, one {# model} other {# models}} available. Chat was not tested."
-msgstr "模型列表正常。{modelCount, plural, one {# 个模型} other {# 个模型}}可用。未测试聊天。"
 
 #: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
@@ -7278,8 +7669,14 @@ msgstr "没有 Bot"
 msgid "No bots match"
 msgstr "没有匹配的 Bot"
 
+#: packages/i18n/src/computer-usage.ts
+msgid "No computer hours used yet"
+msgstr "尚未使用电脑时长"
+
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "No longer active"
 msgstr "已停用"
@@ -7331,10 +7728,6 @@ msgstr "还没有消息"
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "No model catalog is available."
 msgstr "没有可用的模型目录。"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "No models listed."
-msgstr "未列出模型。"
 
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "No OpenClaw, Hermes or agent document found."
@@ -7430,6 +7823,11 @@ msgstr "暂无可用工具。"
 msgid "No trigger"
 msgstr "无触发器"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "No upcoming meetings"
+msgstr "没有即将举行的会议"
+
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "No usage for this selection."
 msgstr "所选范围内没有用量。"
@@ -7441,9 +7839,11 @@ msgstr "未找到网站列和密码列。"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
 #: apps/mobile/components/settings/spending-limit-row.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "None"
 msgstr "无"
@@ -7674,6 +8074,10 @@ msgstr "只有 Bot 的创建者才能设置它的 Webhook 密钥。"
 msgid "Only the owner of this account can choose a plan."
 msgstr "只有此账户的所有者可以选择方案。"
 
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "Only this bot"
+msgstr "仅此 Bot"
+
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Only you"
@@ -7795,10 +8199,6 @@ msgstr "OpenAI 兼容服务器 URL"
 msgid "OpenAPI JSON"
 msgstr "OpenAPI JSON"
 
-#: apps/web/src/pages/shell/bots/agent-import.tsx
-msgid "OpenClaw or Hermes"
-msgstr "OpenClaw 或 Hermes"
-
 #: apps/web/src/components/pages/DownloadPdfButton.tsx
 msgid "Opens your browser's print dialog. Choose Save as PDF as the destination."
 msgstr "打开浏览器的打印对话框。目标请选择“另存为 PDF”。"
@@ -7817,9 +8217,10 @@ msgstr "可选"
 msgid "Optional header value"
 msgstr "可选请求头值"
 
-#: apps/mobile/components/settings/social-sign-in-buttons.tsx
-msgid "or"
-msgstr "或"
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Options for {app}"
+msgstr "{app} 选项"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Or connect an API key"
@@ -7840,6 +8241,10 @@ msgstr "组织"
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Organization API key"
 msgstr "组织 API 密钥"
+
+#: apps/web/src/pages/settings/OrganizationSettingsPanel.tsx
+msgid "Organization options"
+msgstr "组织选项"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
@@ -7864,6 +8269,10 @@ msgstr "OTA {id}"
 #: apps/mobile/lib/platform/app-version.ts
 msgid "OTA {id}, {date}"
 msgstr "OTA {id}, {date}"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Other computers"
+msgstr "其他电脑"
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/components/models/FoundModelPicker.tsx
@@ -8026,11 +8435,6 @@ msgstr "逾期未付"
 msgid "Paste a replacement key"
 msgstr "粘贴替换密钥"
 
-#: apps/mobile/components/models/compatible-endpoint-form.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
-msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
-msgstr "粘贴服务器的 OpenAI 兼容地址。需要时 Rakazo 会补上 /v1。"
-
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Paste the reply"
 msgstr "粘贴回复"
@@ -8039,10 +8443,6 @@ msgstr "粘贴回复"
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Paste your API key"
 msgstr "粘贴你的 API 密钥"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Paste your API key, then test again."
-msgstr "请粘贴你的 API 密钥，然后重新测试。"
 
 #: apps/mobile/components/calls/voice-player-bar.tsx
 #: apps/mobile/components/media/audio-attachment.tsx
@@ -8121,14 +8521,6 @@ msgstr "选择 {min}–{max} 个"
 #: apps/mobile/components/inbox/pick-chat-pane.tsx
 msgid "Pick a chat"
 msgstr "选择聊天"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Pick a model from the catalog."
-msgstr "请从目录中选择模型。"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Pick a model from the list or enter a model id served by this endpoint."
-msgstr "请从列表中选择模型，或输入此端点提供的模型 ID。"
 
 #: apps/web/src/lib/routines/routine-draft.ts
 msgid "Pick a tool to check"
@@ -8215,10 +8607,16 @@ msgstr "PR 审查员"
 msgid "Preferences"
 msgstr "偏好设置"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Preparing transcript…"
+msgstr "正在准备文字记录…"
+
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/pages/plugins/github-import.tsx
+#: apps/web/src/pages/space/Artifacts.tsx
 msgid "Preview"
 msgstr "预览"
 
@@ -8255,7 +8653,6 @@ msgstr "隐私"
 msgid "Privacy policies"
 msgstr "隐私政策"
 
-#: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 msgid "Privacy policy"
 msgstr "隐私政策"
@@ -8264,6 +8661,10 @@ msgstr "隐私政策"
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Private"
 msgstr "私有"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Private Computer"
+msgstr "私有电脑"
 
 #: apps/web/src/pages/shell/bots/bot-picker.tsx
 msgid "Private workspace with its own bots and groups."
@@ -8425,10 +8826,19 @@ msgstr "已收到"
 msgid "Recent"
 msgstr "最近"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "Recent meetings"
+msgstr "最近的会议"
+
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 msgid "Recent payments"
 msgstr "最近付款"
+
+#: apps/mobile/app/server.tsx
+msgid "Recent servers"
+msgstr "最近的服务器"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Recommended"
@@ -8528,7 +8938,6 @@ msgid "Redirect URI"
 msgstr "重定向 URI"
 
 #: apps/web/src/App.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
 #: apps/web/src/components/ErrorBoundary.tsx
 msgid "Refresh"
 msgstr "刷新"
@@ -8591,6 +9000,7 @@ msgstr "远程 MCP 服务器"
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/(settings)/vault.tsx
+#: apps/mobile/app/server.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
@@ -8926,10 +9336,12 @@ msgid "Restart to update"
 msgstr "重启后更新"
 
 #: apps/mobile/app/bot-settings.tsx
+#: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/mobile/components/inbox/archived-bot-list.ios.tsx
 #: apps/mobile/components/inbox/archived-bot-list.tsx
 #: apps/mobile/components/thread/header/chat-route-header.tsx
 #: apps/mobile/components/thread/thread-header.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
 #: apps/web/src/pages/shell/bots/instruction-settings.tsx
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Restore"
@@ -8938,6 +9350,15 @@ msgstr "恢复"
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Restore {name}"
 msgstr "恢复 {name}"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Restore earlier version"
+msgstr "恢复更早的版本"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+msgid "Restore files from {savedAt}?"
+msgstr "恢复 {savedAt} 的文件？"
 
 #: apps/mobile/components/computers/computer-maintenance-actions.tsx
 #: apps/web/src/components/computers/ComputerMaintenanceActions.tsx
@@ -8953,6 +9374,11 @@ msgstr "已恢复"
 #: apps/web/src/components/computers/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
 msgstr "正在恢复工作区"
+
+#: apps/mobile/components/computers/computer-home-versions.tsx
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Restoring…"
+msgstr "正在恢复…"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 #: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
@@ -8979,6 +9405,8 @@ msgstr "恢复通知"
 #: apps/web/src/components/account/AccountAccess.tsx
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/components/vault/VaultItemActivity.tsx
@@ -9019,10 +9447,6 @@ msgstr "返回收件箱"
 #: apps/web/src/pages/integrations/SlackInstallCallback.tsx
 msgid "Return to Rakazo"
 msgstr "返回 Rakazo"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Review provider settings and test again."
-msgstr "请检查提供商设置并重新测试。"
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -9201,7 +9625,6 @@ msgstr "周六"
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
-#: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
@@ -9244,6 +9667,10 @@ msgstr "已保存"
 #: apps/mobile/lib/artifacts/artifact-open.ts
 msgid "Saved {name} locally"
 msgstr "已将 {name} 保存在本地"
+
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "Saved at"
+msgstr "保存时间"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -9315,6 +9742,11 @@ msgstr "回答是或否，或一句话说明。"
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Schedule delayed"
 msgstr "计划执行延迟"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Scheduled"
+msgstr "已安排"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Scheduled routines"
@@ -9460,19 +9892,27 @@ msgstr "安全与运维"
 msgid "Security code"
 msgstr "安全码"
 
-#: apps/web/src/pages/shell/chat/chat-header.tsx
-msgid "Select a bot"
-msgstr "选择 Bot"
+#: apps/mobile/components/calls/VoiceChatCard.tsx
+#: apps/mobile/components/thread/message-row.tsx
+msgid "Select messages"
+msgstr "选择消息"
 
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Select text"
 msgstr "选择文本"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Selected"
+msgstr "已选择"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Self-hosted"
 msgstr "自托管"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/mobile/components/composer/thread-composer.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Send"
 msgstr "发送"
@@ -9486,12 +9926,12 @@ msgid "Send {code} to {address} from {app} within 10 minutes."
 msgstr "请在 10 分钟内从 {app} 向 {address} 发送 {code}。"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Send <0>{linkCode}</0> from {linkApp} within 10 minutes."
-msgstr "请在 10 分钟内从 {linkApp} 发送 <0>{linkCode}</0>。"
+msgid "Send <0>{code}</0> from {app} within 10 minutes."
+msgstr "请在 10 分钟内从 {app} 发送 <0>{code}</0>。"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
-msgid "Send <0>{linkCode}</0> to <1>{linkAddress}</1> from {linkApp} within 10 minutes."
-msgstr "请在 10 分钟内从 {linkApp} 将 <0>{linkCode}</0> 发送到 <1>{linkAddress}</1>。"
+msgid "Send <0>{code}</0> to <1>{address}</1> from {app} within 10 minutes."
+msgstr "请在 10 分钟内从 {app} 向 <1>{address}</1> 发送 <0>{code}</0>。"
 
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Send answer"
@@ -9501,6 +9941,10 @@ msgstr "发送回答"
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Send as file"
 msgstr "作为文件发送"
+
+#: apps/mobile/lib/settings/ai-consent.ts
+msgid "Send data to {name}?"
+msgstr "向 {name} 发送数据？"
 
 #: apps/mobile/components/settings/account-deletion.tsx
 #: apps/web/src/components/account/AccountAccess.tsx
@@ -9516,6 +9960,14 @@ msgstr "发送录音"
 msgid "Send reset link"
 msgstr "发送重置链接"
 
+#: apps/web/src/pages/shell/bots/agent-import.tsx
+msgid "Send this prompt to {assistantName}"
+msgstr "将此提示词发送给 {assistantName}"
+
+#: apps/web/src/pages/shell/bots/agent-import.tsx
+msgid "Send this prompt to your assistant"
+msgstr "将此提示词发送给你的助手"
+
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Send with Enter"
 msgstr "按 Enter 发送"
@@ -9527,9 +9979,11 @@ msgstr "按 Enter 发送"
 msgid "Sending…"
 msgstr "正在发送…"
 
+#: apps/mobile/components/cards/ToolQuestionCard.tsx
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
+#: apps/web/src/components/messages/ToolQuestionCard.tsx
 msgid "Sent"
 msgstr "已发送"
 
@@ -9537,10 +9991,6 @@ msgstr "已发送"
 #: apps/mobile/app/server.tsx
 msgid "Server"
 msgstr "服务器"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Server found. Enter a model name."
-msgstr "已找到服务器。请输入模型名称。"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 msgid "Server integrations"
@@ -9606,9 +10056,7 @@ msgstr "设置：用量"
 msgid "Setup complete"
 msgstr "设置完成"
 
-#: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/components/computers/ComputersUnavailableHint.tsx
-#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 msgid "Setup help"
 msgstr "设置帮助"
 
@@ -9646,10 +10094,6 @@ msgstr "共享“{title}”"
 msgid "Share {name}"
 msgstr "分享 {name}"
 
-#: apps/mobile/lib/settings/ai-consent.ts
-msgid "Share data with {name}?"
-msgstr "与 {name} 分享数据？"
-
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
 msgid "Share invite link"
@@ -9662,6 +10106,11 @@ msgstr "分享链接"
 #: apps/mobile/app/share.tsx
 msgid "Share to"
 msgstr "分享到"
+
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Share transcript with Space"
+msgstr "与空间共享文字记录"
 
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 msgid "Share voice data with {name}?"
@@ -9796,10 +10245,6 @@ msgid "Sign in at <0>{0}</0>, then paste the code here."
 msgstr "在 <0>{0}</0> 登录，然后将代码粘贴到这里。"
 
 #: apps/mobile/app/sign-in.tsx
-msgid "Sign in to continue to Rakazo"
-msgstr "登录以继续使用 Rakazo"
-
-#: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "登录 Rakazo"
@@ -9879,6 +10324,10 @@ msgstr "网站"
 msgid "Sites you sign in to stay signed in for everyone in this space"
 msgstr "你登录的网站会对此空间的所有人保持登录"
 
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Size of {name}"
+msgstr "{name} 的规格"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "sk-…"
 msgstr "sk-…"
@@ -9912,10 +10361,6 @@ msgstr "技能 {position}"
 msgid "Skills"
 msgstr "技能"
 
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
-msgid "Skills join the library all your bots share."
-msgstr "技能会加入所有 Bot 共享的技能库。"
-
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/app/new-group.tsx
 #: apps/mobile/components/cards/ComputerCard.tsx
@@ -9928,9 +10373,19 @@ msgstr "跳过"
 msgid "Skip or deploy key"
 msgstr "跳过或使用部署密钥"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Skip this meeting"
+msgstr "跳过此会议"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "Skip unrelated memories"
 msgstr "跳过无关记忆"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Skipped"
+msgstr "已跳过"
 
 #: apps/mobile/components/cards/ComputerCard.tsx
 #: apps/web/src/components/computers/ComputerCard.tsx
@@ -10068,6 +10523,11 @@ msgstr "空间已创建"
 msgid "Space default"
 msgstr "空间默认"
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Space limit reached"
+msgstr "已达空间上限"
+
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Spaces"
 msgstr "空间"
@@ -10114,6 +10574,15 @@ msgstr "单点登录"
 #: apps/web/src/lib/query/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO 暂时不可用，请重试。"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Standard"
+msgstr "标准"
+
+#: apps/mobile/app/(settings)/billing.tsx
+#: apps/web/src/components/billing/ComputerUsage.tsx
+msgid "Standard hours by computer"
+msgstr "各电脑的标准时长"
 
 #: apps/web/src/pages/shell/composer/github-star-prompt.tsx
 msgid "Star on GitHub"
@@ -10214,9 +10683,14 @@ msgstr "步骤"
 msgid "Stop"
 msgstr "停止"
 
-#: apps/mobile/components/composer/thread-composer.tsx
+#: apps/mobile/components/composer/dictation-bar.tsx
 msgid "Stop dictating"
 msgstr "停止听写"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Stop joining this series"
+msgstr "停止加入此系列"
 
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Stop speaking"
@@ -10225,6 +10699,11 @@ msgstr "停止朗读"
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
 msgstr "停止示范"
+
+#: apps/mobile/lib/api/user-error.ts
+#: apps/web/src/lib/query/user-error.ts
+msgid "Stop the computer first."
+msgstr "请先停止电脑。"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/SubagentCard.tsx
@@ -10250,6 +10729,11 @@ msgstr "流式回复"
 #: apps/web/src/lib/bots/identity-display.ts
 msgid "subagent"
 msgstr "子智能体"
+
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
+msgid "Subject"
+msgstr "主题"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -10389,11 +10873,6 @@ msgstr "表格"
 msgid "Take control"
 msgstr "接管控制权"
 
-#: apps/mobile/app/index.tsx
-#: apps/mobile/components/inbox/inbox-render-item.tsx
-msgid "Tap + to create a bot"
-msgstr "点按 + 创建 Bot"
-
 #: apps/mobile/components/media/inline-image-attachment.tsx
 msgid "Tap to open"
 msgstr "点按打开"
@@ -10417,6 +10896,7 @@ msgstr "团队"
 
 #: apps/mobile/lib/computers/computer.ts
 #: apps/web/src/pages/shell/computers/computer-view.tsx
+#: packages/i18n/src/computer-usage.ts
 msgid "Team Computer"
 msgstr "团队电脑"
 
@@ -10449,10 +10929,6 @@ msgstr "条款"
 msgid "Test"
 msgstr "测试"
 
-#: apps/web/src/components/models/ModelConnectionPreflightNotice.tsx
-msgid "Test API key"
-msgstr "测试 API 密钥"
-
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "测试连接"
@@ -10460,10 +10936,6 @@ msgstr "测试连接"
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 msgid "Testing"
 msgstr "测试"
-
-#: apps/web/src/components/models/ModelConnectionPreflightNotice.tsx
-msgid "Testing…"
-msgstr "正在测试…"
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
@@ -10524,13 +10996,13 @@ msgstr "Bot 的浏览器会对此空间的所有人保持登录"
 msgid "The browser keeps dropping the microphone. Start dictation again to retry."
 msgstr "浏览器反复断开麦克风连接。请重新启动语音输入。"
 
-#: apps/web/src/pages/settings/settings-nav.ts
-msgid "The computer your bots work on."
-msgstr "你的 Bot 工作所用的电脑。"
+#: apps/web/src/components/computers/ComputerHomeVersions.tsx
+msgid "The computer gets the files from the chosen time when it next starts. Its current files stay restorable."
+msgstr "电脑下次启动时会获得所选时间的文件。它当前的文件仍可恢复。"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "The connection timed out."
-msgstr "连接超时。"
+#: apps/mobile/components/computers/computer-home-versions.tsx
+msgid "The computer gets these files when it next starts. Its current files stay restorable."
+msgstr "电脑下次启动时会获得这些文件。它当前的文件仍可恢复。"
 
 #: packages/i18n/src/bot-removal.ts
 msgid "The group {names} will be deleted too, including its messages, files, and pages."
@@ -10562,10 +11034,6 @@ msgstr "所有者可能已关闭其链接或删除了它。"
 #: apps/mobile/lib/cards/run-error-presentation.ts
 msgid "The provider couldn't serve the model selected for this bot."
 msgstr "提供商无法提供为此 Bot 选择的模型。"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "The provider is rate-limiting requests."
-msgstr "提供商正在限制请求频率。"
 
 #: apps/mobile/lib/cards/run-error-presentation.ts
 msgid "The provider received too many requests to answer this bot."
@@ -10600,6 +11068,12 @@ msgstr "所选记忆提供商在此构建中不可用。"
 msgid "The server changed while starting the request"
 msgstr "请求开始时服务器已更改"
 
+#: apps/mobile/components/models/compatible-endpoint-form.tsx
+#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
+#: apps/web/src/pages/onboarding/model-step.tsx
+msgid "The server didn’t list this model."
+msgstr "服务器未列出此模型。"
+
 #: apps/mobile/components/inbox/inbox-error-state.tsx
 msgid "The server had a problem"
 msgstr "服务器出现问题"
@@ -10611,6 +11085,11 @@ msgstr "服务器出现问题。请稍后重试。"
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
 msgstr "共享链接将失效"
+
+#: apps/mobile/app/meeting-transcript.tsx
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "The transcript will be removed from Rakazo."
+msgstr "文字记录将从 Rakazo 中移除。"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -10682,10 +11161,6 @@ msgstr "无法读取此验证器密钥。"
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "This backup could not be read."
 msgstr "无法读取此备份。"
-
-#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
-msgid "This bot"
-msgstr "此 Bot"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -10889,10 +11364,6 @@ msgstr "这将永久删除你的账户、Bot、对话、记忆、文件和已保
 msgid "This permanently removes every message and stops current work. The chat remains available."
 msgstr "将永久删除全部消息并停止当前工作。聊天仍可使用。"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "This provider cannot be tested without saving."
-msgstr "此提供商必须先保存才能测试。"
-
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 msgid "This removes every message and stops current work. The bot, computer, memory, and routines are kept."
 msgstr "这将删除所有消息并停止当前工作。Bot、电脑、记忆和例行任务会保留。"
@@ -10990,6 +11461,8 @@ msgstr "运行时间可能不同"
 msgid "Title"
 msgstr "标题"
 
+#: apps/mobile/components/cards/OutgoingDraftCard.tsx
+#: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 msgid "To"
 msgstr "到"
@@ -11085,10 +11558,22 @@ msgstr "合计"
 msgid "Transcribing…"
 msgstr "正在转写…"
 
+#: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/meeting-transcript.tsx
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "Transcript"
 msgstr "文字记录"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Transcript ready"
+msgstr "文字记录已就绪"
+
+#: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
+msgid "Transcript turns"
+msgstr "文字记录发言"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -11142,19 +11627,25 @@ msgstr "受信任的网站"
 
 #: apps/mobile/app/(settings)/archived-bots.tsx
 #: apps/mobile/app/computer.tsx
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/mobile/app/meetings.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/app/peer-chat.tsx
 #: apps/mobile/app/routines.tsx
 #: apps/mobile/app/search.tsx
 #: apps/mobile/components/inbox/inbox-error-state.tsx
+#: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/mobile/components/routines/routine-run-history.tsx
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/mobile/components/ui/app-error-boundary.tsx
 #: apps/mobile/lib/pages/page-load-failure.tsx
 #: apps/web/src/components/pages/PageNotice.tsx
 #: apps/web/src/components/pages/PagesList.tsx
+#: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/first-bot.tsx
+#: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/SharedPage.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "Try again"
@@ -11169,6 +11660,7 @@ msgstr "重试"
 #: apps/mobile/app/board.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/index.tsx
+#: apps/mobile/app/meeting-calendar.tsx
 #: apps/mobile/app/new-organization.tsx
 #: apps/mobile/app/peer-chat.tsx
 #: apps/mobile/app/routine.tsx
@@ -11299,6 +11791,11 @@ msgstr "取消延后 {0}"
 msgid "Unsupported file type: {0}"
 msgstr "不支持的文件类型：{0}"
 
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Untitled meeting"
+msgstr "未命名会议"
+
 #: apps/mobile/components/computers/computer-keyboard-bar.tsx
 msgid "Up"
 msgstr "向上"
@@ -11308,9 +11805,22 @@ msgstr "向上"
 msgid "Up to {limit} sites."
 msgstr "最多 {limit} 个网站。"
 
+#: apps/web/src/components/billing/ModelCredits.tsx
+msgid "Up to {times}× the vCPUs"
+msgstr "最多 {times} 倍的 vCPU"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "Up to {vcpus} vCPU and {memoryGb} GB, {hours} Standard computer hours a month"
+msgstr "最高 {vcpus} vCPU 和 {memoryGb} GB，每月 {hours} 小时标准电脑时长"
+
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Up to date"
 msgstr "已是最新"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Upcoming meetings"
+msgstr "即将举行的会议"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/lib/api/client-update.ts
@@ -11342,6 +11852,10 @@ msgstr "更新指令？"
 msgid "Update progress"
 msgstr "更新进度"
 
+#: apps/web/src/lib/integrations/meeting-calendar-connect.ts
+msgid "Update Rakazo to connect your calendar from the desktop app."
+msgstr "请更新 Rakazo，以便从桌面应用连接日历。"
+
 #: apps/mobile/lib/api/client-update.ts
 #: apps/web/src/lib/platform/client-update.ts
 msgid "Update required"
@@ -11361,6 +11875,11 @@ msgstr "请更新服务器，以便在此移动版本中使用 AI 数据共享�
 msgid "Updated below"
 msgstr "已在下方更新"
 
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Updated routine \"{name}\""
+msgstr "已更新例行任务“{name}”"
+
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Updates"
 msgstr "更新"
@@ -11379,8 +11898,10 @@ msgstr "正在更新 {name} 的电脑"
 msgid "Updating Team Computer"
 msgstr "正在更新团队电脑"
 
+#: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/computer.tsx
 #: apps/mobile/lib/cards/run-error-presentation.ts
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
@@ -11455,10 +11976,6 @@ msgstr "请使用相同邮箱地址的账户"
 #: apps/mobile/lib/api/endpoint.ts
 msgid "Use an http or https URL"
 msgstr "请使用 http 或 https 地址"
-
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Use Connect to verify the key."
-msgstr "请使用“连接”验证密钥。"
 
 #: apps/mobile/app/server.tsx
 msgid "Use default server"
@@ -11629,6 +12146,15 @@ msgstr "查看全部"
 msgid "View source"
 msgstr "查看源代码"
 
+#: apps/mobile/app/meetings.tsx
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "View transcript"
+msgstr "查看文字记录"
+
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "View transcript: {platform}, {time}"
+msgstr "查看文字记录：{platform}，{time}"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
@@ -11654,9 +12180,10 @@ msgstr "未允许共享语音数据。"
 msgid "Voice request timed out."
 msgstr "语音请求超时。"
 
-#: apps/web/src/lib/models/model-connection-preflight.ts
-msgid "Wait a moment and test again."
-msgstr "请稍候并重新测试。"
+#. js-lingui-explicit-id
+#: packages/i18n/src/meeting.ts
+msgid "Waiting for admission"
+msgstr "等待准入"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Waiting for sign-in — the code expires in about {minutes} minutes."
@@ -11740,6 +12267,7 @@ msgid "Welcome back"
 msgstr "欢迎回来"
 
 #: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/sign-in.tsx
 #: apps/web/src/components/account/SignupSurvey.tsx
 msgid "Welcome to Rakazo"
 msgstr "欢迎使用 Rakazo"
@@ -11760,6 +12288,10 @@ msgstr "你最希望 Rakazo 帮你做什么？"
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "What do you want me on first?"
 msgstr "你想让我先做什么？"
+
+#: apps/web/src/pages/shell/bots/agent-import-plan.tsx
+msgid "What it remembers"
+msgstr "它记住的内容"
 
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "What result will you demonstrate?"
@@ -11969,10 +12501,6 @@ msgstr "如果没有自动跳转，可以关闭此标签页。"
 msgid "You can close this window."
 msgstr "可以关闭此窗口。"
 
-#: apps/mobile/lib/settings/ai-consent.ts
-msgid "You can turn this off in Account → AI data sharing."
-msgstr "你可以在账户 → AI 数据共享中关闭此功能。"
-
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "You declined"
 msgstr "你已拒接"
@@ -11999,6 +12527,16 @@ msgstr "你的 Anthropic"
 #: apps/web/src/pages/plugins/manage-view.tsx
 msgid "Your apps"
 msgstr "你的应用"
+
+#: apps/mobile/app/(settings)/messaging.tsx
+#: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+msgid "Your bot"
+msgstr "你的 Bot"
+
+#: apps/mobile/app/meeting-calendar.tsx
+#: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
+msgid "Your bot will be removed from upcoming meetings on this calendar."
+msgstr "你的 Bot 将退出此日历中即将举行的会议。"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your card is charged {annualPrice} today, less the unused part of this month."
@@ -12035,6 +12573,11 @@ msgstr "每个工作日早上，一眼了解当天安排"
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Your defaults"
 msgstr "你的默认设置"
+
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/ComputerDeviceSettings.tsx
+msgid "Your devices"
+msgstr "你的设备"
 
 #: apps/web/src/pages/auth/Auth.tsx
 msgid "Your email address"
@@ -12083,6 +12626,15 @@ msgstr "试用结束后，你的方案将变为 {price}。"
 msgid "Your plan becomes {tierTargetLabel} when your trial ends."
 msgstr "试用结束后，你的方案将变为 {tierTargetLabel}。"
 
+#: apps/mobile/app/(settings)/computers.tsx
+#: apps/web/src/components/computers/CloudComputerSizes.tsx
+msgid "Your plan does not include this size."
+msgstr "你的方案不包含此规格。"
+
+#: apps/mobile/lib/settings/ai-consent.ts
+msgid "Your recordings and the text you play are sent for transcription and speech."
+msgstr "你的录音和播放的文本会被发送，用于语音转文字和语音合成。"
+
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/VoiceConsentDialog.tsx
 msgid "Your recordings are sent for transcription, and text you play is sent to generate speech."
@@ -12127,6 +12679,11 @@ msgstr "你的语音提供商额度已用完。"
 #: apps/web/src/lib/query/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "你的语音提供商拒绝了该密钥。"
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/pages/model-settings/connection-controls.tsx
+msgid "Zero data retention"
+msgstr "零数据保留"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx

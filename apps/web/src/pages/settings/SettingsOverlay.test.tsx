@@ -105,6 +105,37 @@ vi.mock("../../components/settings/ApprovalRulesSettings", () => ({
 }));
 vi.mock("../../components/vault/VaultSettings", () => ({ VaultSettings: recordScope("vault") }));
 vi.mock("./LabsSettingsPanel", () => ({ LabsSettingsPanel: () => null }));
+vi.mock("./OrganizationSettingsPanel", () => ({
+  OrganizationOptionsMenu: ({ onActivityLog }: { onActivityLog: () => void }) => (
+    <button type="button" aria-label="Organization options" onClick={onActivityLog} />
+  ),
+  OrganizationSettingsPanel: ({
+    page,
+    onPageChange,
+  }: {
+    page: string;
+    onPageChange: (page: "main" | "members" | "log") => void;
+  }) => (
+    <div data-testid="organization-page" data-page={page}>
+      <button type="button" onClick={() => onPageChange("members")}>
+        Members
+      </button>
+    </div>
+  ),
+}));
+const { cloudComputerCount } = vi.hoisted(() => ({ cloudComputerCount: { current: 0 } }));
+vi.mock("../../components/computers/CloudComputerSizes", () => ({
+  CloudComputerSizes: () => <div data-testid="cloud-computers" />,
+  useCloudComputers: () => ({
+    data: { computers: Array.from({ length: cloudComputerCount.current }) },
+    isError: false,
+  }),
+}));
+vi.mock("../../components/computers/ComputerDeviceSettings", () => ({
+  ComputerDeviceSettings: () => <div data-testid="computer-devices" />,
+  useThisComputer: () => ({ thisComputer: null, plainHttp: false }),
+  userDevicesQuery: () => ({ queryKey: ["user:", "userDevices"], queryFn: async () => [] }),
+}));
 vi.mock("../../components/computers/ComputersUnavailableHint", () => ({
   computersAreUnavailable: () => false,
 }));
@@ -356,5 +387,63 @@ it("says what a page is for only where its name does not", async () => {
     );
   } finally {
     await voice.cleanup();
+  }
+});
+
+it("offers Computers once the Space has a cloud computer, with its sizes and paired computers", async () => {
+  const none = await render({ section: "computer" });
+  try {
+    expect(none.container.querySelector('[data-testid="settings-nav-computer"]')).toBeNull();
+    expect(none.container.querySelector('[data-testid="cloud-computers"]')).toBeNull();
+  } finally {
+    await none.cleanup();
+  }
+  cloudComputerCount.current = 1;
+  const some = await render({ section: "computer" });
+  try {
+    expect(some.container.querySelector('[data-testid="settings-nav-computer"]')?.textContent).toBe(
+      "Computers",
+    );
+    expect(some.container.querySelector('[data-testid="cloud-computers"]')).not.toBeNull();
+    expect(some.container.querySelector('[data-testid="computer-devices"]')).not.toBeNull();
+  } finally {
+    cloudComputerCount.current = 0;
+    await some.cleanup();
+  }
+});
+
+it("keeps the organization options in the page header, on the main Organization page only", async () => {
+  const { container, rerender, cleanup } = await render({ section: "organization" });
+  const header = () => container.querySelector('[data-testid="settings-header"]')!;
+  const options = () => header().querySelector('button[aria-label="Organization options"]');
+  const page = () =>
+    container.querySelector('[data-testid="organization-page"]')?.getAttribute("data-page");
+  try {
+    expect(options()).not.toBeNull();
+
+    await act(async () =>
+      header()
+        .querySelector<HTMLButtonElement>("button[aria-label='Organization options']")!
+        .click(),
+    );
+    expect(page()).toBe("log");
+    expect(options()).toBeNull();
+
+    // Leaving the section resets the page, so coming back shows the main page and its menu.
+    await rerender({ section: "general" });
+    expect(options()).toBeNull();
+    await rerender({ section: "organization" });
+    expect(page()).toBe("main");
+    expect(options()).not.toBeNull();
+
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="organization-page"] button')!
+        .click(),
+    );
+    expect(page()).toBe("members");
+    expect(options()).toBeNull();
+  } finally {
+    await cleanup();
   }
 });

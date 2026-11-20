@@ -61,9 +61,23 @@ test("model settings cleanup frames", { tag: "@nightly" }, async ({ page }, test
 
   // Connecting from the empty first slot makes the provider's model the main model.
   await dialog.getByLabel("API key").fill("fake-cleanup-api-key");
+  await expect(dialog.getByText("Zero data retention", { exact: true })).toBeVisible();
+  const retention = dialog.locator("[role='switch']");
+  await expect(retention).toHaveAttribute("aria-checked", "false");
+  await retention.click();
+  await expect(retention).toHaveAttribute("aria-checked", "true");
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-1b-zero-data-retention");
   providerConnected = true;
   await dialog.getByRole("button", { name: "Connect API key", exact: true }).click();
   await expect(dialog).toBeHidden();
+  const connected = await rpc<Array<{ provider: string; zeroDataRetention?: boolean }>>(
+    page,
+    "models/credentials",
+    {},
+  );
+  expect(connected.find((credential) => credential.provider === "openrouter")).toMatchObject({
+    zeroDataRetention: true,
+  });
   await pickReopenedModel(page);
   const primary = mainList.getByTestId("model-role-row-1");
   await expect(primary).toContainText("OpenRouter");
@@ -157,7 +171,6 @@ async function fulfillWithoutModelStep(route: Route) {
 }
 
 test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page }, testInfo) => {
-  let expandedModels = false;
   const completionBodies: Array<Record<string, unknown>> = [];
   const completionHeaders: Array<string | string[] | undefined> = [];
   const server = createServer(async (request, response) => {
@@ -169,9 +182,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
           data: [
             { id: LOCAL_MODEL_ID },
             { id: SECOND_MODEL_ID },
-            ...(expandedModels
-              ? Array.from({ length: 9 }, (_, index) => ({ id: `fixture-extra-${index}` }))
-              : []),
+            ...Array.from({ length: 9 }, (_, index) => ({ id: `fixture-extra-${index}` })),
           ],
         }),
       );
@@ -251,35 +262,25 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await captureScreenshot(page, testInfo, "add-provider-list-search");
     await providerSearch.press("Escape");
     await openModelConnection(page, "OpenAI-compatible");
-    await expect(
-      page.getByText("Paste the OpenAI-compatible address", { exact: false }),
-    ).toBeHidden();
-    await page.getByText("Setup help", { exact: true }).click();
-    await expect(
-      page.getByText("Paste the OpenAI-compatible address", { exact: false }),
-    ).toBeVisible();
-    await page.getByText("Setup help", { exact: true }).click();
-    await expect(
-      page.getByText("Paste the OpenAI-compatible address", { exact: false }),
-    ).toBeHidden();
     await page.getByLabel("OpenAI-compatible server URL").fill(baseUrl);
     await page.getByLabel("Model id").fill("manual-model-not-listed");
-    await page.getByRole("button", { name: "Find models" }).click();
 
     await expect(page.getByLabel("Model id")).toHaveValue("manual-model-not-listed");
+    await expect(
+      page.getByText("The server didn’t list this model.", { exact: true }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Use a found model" }).click();
     const discoveredModels = page.getByRole("combobox", { name: "Models from server" });
     await expect(discoveredModels).toHaveText(LOCAL_MODEL_ID);
     await chooseOption(discoveredModels, "Other model…");
     await expect(page.getByLabel("Model id")).toBeVisible();
-    await page.getByRole("button", { name: "Find models" }).click();
+    await page.getByRole("button", { name: "Use a found model" }).click();
     await expect(discoveredModels).toHaveText(LOCAL_MODEL_ID);
-    await expect(page.getByText("Found 2 models.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
 
-    expandedModels = true;
-    await page.getByRole("button", { name: "Find models" }).click();
+    const enabledModels = page.getByRole("button", { name: "Enabled models", exact: true });
+    await enabledModels.click();
     const modelSearch = page.getByRole("textbox", { name: "Search models", exact: true });
     await expect(modelSearch).toBeVisible();
     await captureScreenshot(page, testInfo, "compatible-model-list-search");
@@ -287,12 +288,12 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByText("1 selected model is hidden by your search.")).toBeVisible();
     await captureScreenshot(page, testInfo, "compatible-model-list-search-filtered");
     await modelSearch.fill("");
-    expandedModels = false;
-    await page.getByRole("button", { name: "Find models" }).click();
     await expect(page.getByRole("checkbox", { name: LOCAL_MODEL_ID })).toBeChecked();
     await page.getByRole("checkbox", { name: SECOND_MODEL_ID }).check();
+    await enabledModels.click();
+    await expect(modelSearch).toBeHidden();
     await page.getByText("Advanced", { exact: true }).click();
-    await page.getByRole("button", { name: "Add header", exact: true }).click();
+    await page.getByRole("button", { name: "Add header", exact: true }).press("Enter");
     await page.getByRole("textbox", { name: "Header name", exact: true }).fill("x-session");
     await page.getByLabel("Header value", { exact: true }).fill("fake-session-secret");
     await captureScreenshot(page, testInfo, "openai-compatible-header-edit");
@@ -324,6 +325,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await openUserSettings(page, "models");
     const saved = await manageModelConnection(page, "OpenAI-compatible");
     await captureScreenshot(page, testInfo, "model-provider-models");
+    await saved.getByRole("button", { name: "Enabled models", exact: true }).click();
     await expect(saved.getByRole("checkbox", { name: SECOND_MODEL_ID })).toBeChecked();
     await captureScreenshot(page, testInfo, "openai-compatible-multi-model");
     await saved.getByText("Advanced", { exact: true }).click();
@@ -343,7 +345,6 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     ).toEqual([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
 
     await saved.getByLabel("OpenAI-compatible server URL").fill("");
-    await expect(saved.getByRole("button", { name: "Find models" })).toBeDisabled();
     await expect(saved.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await saved.getByLabel("OpenAI-compatible server URL").fill(baseUrl);
     await expect(saved.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
@@ -444,12 +445,7 @@ test("a refused private model server names the setting that allows it", async ({
   await openUserSettings(page, "models");
   const dialog = await openModelConnection(page, "OpenAI-compatible");
   await dialog.getByLabel("OpenAI-compatible server URL").fill("http://192.168.1.20:1234/v1");
-  await dialog.getByRole("button", { name: "Find models", exact: true }).click();
-  const alert = dialog.getByRole("alert");
-  await expect(alert.getByText(message, { exact: true })).toBeVisible();
-  await expect(
-    alert.getByText("Review provider settings and test again.", { exact: true }),
-  ).toBeVisible();
+  await expect(dialog.getByText(message, { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "openai-compatible-private-endpoint-refused");
 });
 
@@ -550,4 +546,64 @@ test("model funding connections", async ({ page }, testInfo) => {
     modelId: model.id,
     credentialId: "personal-example",
   });
+});
+
+test("an approval default the deployment pays for reads as included", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `approval-included-${stamp}@rakazo.test`, "password12", "Model Settings");
+  await completeOnboarding(page);
+  const included = {
+    provider: "example",
+    providerName: "Example",
+    id: "reviewer-example",
+    label: "Reviewer",
+    billing: "",
+    protocol: "decisions" as const,
+  };
+  const other = {
+    provider: "example",
+    providerName: "Example",
+    id: "judge-example",
+    label: "Judge",
+    billing: "",
+    creditOfferingId: "offering-example",
+  };
+  let settings: ModelRoleSettings = { primary: null, backups: [] };
+  const view = () => ({
+    ...settings,
+    deploymentPrimary: { provider: included.provider, modelId: included.id },
+    deploymentIncluded: true,
+  });
+  const approval = (route: Route) =>
+    (route.request().postDataJSON() as { json: { role: string } }).json.role === "approval";
+  await page.route("**/rpc/models/forRole", (route) =>
+    approval(route) ? route.fulfill({ json: { json: [included, other] } }) : route.continue(),
+  );
+  await page.route("**/rpc/models/role", (route) =>
+    approval(route) ? route.fulfill({ json: { json: view() } }) : route.continue(),
+  );
+  await page.route("**/rpc/models/setRole", async (route) => {
+    if (!approval(route)) return route.continue();
+    const { json } = route.request().postDataJSON() as { json: Partial<ModelRoleSettings> };
+    settings = { ...settings, ...json };
+    await route.fulfill({ json: { json: view() } });
+  });
+  await page.reload();
+  await openUserSettings(page, "models");
+  const section = page.getByTestId("model-role-approval");
+  await expect(section.getByTestId("model-role-default")).toHaveText("ReviewerIncluded");
+  await captureScreenshot(page, testInfo, "model-settings-approval-included");
+
+  await section.getByRole("button", { name: "Change Approval model", exact: true }).click();
+  await page.getByRole("option", { name: "Judge", exact: true }).click();
+  await expect(section.getByTestId("model-role-row-1")).toContainText("Judge");
+  await section.getByRole("button", { name: "Change Judge", exact: true }).click();
+  const back = page.getByRole("option").filter({ hasText: "Reviewer" });
+  await expect(back).toHaveText("ReviewerIncluded");
+  await captureScreenshot(page, testInfo, "model-settings-approval-included-picker");
+  await back.click();
+  await expect(section.getByTestId("model-role-default")).toHaveText("ReviewerIncluded");
+  expect(settings.primary).toBeNull();
 });

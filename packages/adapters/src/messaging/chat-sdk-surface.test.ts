@@ -46,7 +46,7 @@ function createPlatform(
           isMe?: boolean;
           isMention?: boolean;
           rawType?: string;
-          files?: Array<{ name: string; url: string; authenticated?: boolean }>;
+          files?: Array<{ name: string; url: string; authenticated?: boolean; unsized?: boolean }>;
         };
         // Fire-and-forget: matches Chat SDK adapters that return 200 before
         // processMessage settles, relying on waitUntil for background work.
@@ -71,7 +71,7 @@ function createPlatform(
               name: file.name,
               url: file.url,
               mimeType: "image/png",
-              size: 3,
+              ...(file.unsized ? {} : { size: 3 }),
               ...(file.authenticated ? { fetchData: async () => Buffer.from([1, 2, 3]) } : {}),
             })),
             isMention: payload.isMention,
@@ -249,6 +249,71 @@ describe("ChatSdkMessagingSurface inbound", () => {
       { name: "screen.png", mimeType: "image/png", size: 3, fetch: expect.any(Function) },
     ]);
     await expect(event.attachments?.[0]?.fetch()).resolves.toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("asks the platform the size of a file it left unreported before handing it over", async () => {
+    const attachmentSize = vi.fn(async () => 2048);
+    const { surface, events } = createSurface({ attachmentSize });
+    await surface.handleWebhook(
+      "mock",
+      webhookRequest({
+        threadId: "mock:Duser:1",
+        id: "m-1",
+        text: "",
+        files: [
+          {
+            name: "clip.mov",
+            url: "https://files.example.test/a",
+            authenticated: true,
+            unsized: true,
+          },
+          { name: "known.png", url: "https://files.example.test/b", authenticated: true },
+          { name: "public.png", url: "https://cdn.example.test/c.png", unsized: true },
+        ],
+      }),
+    );
+
+    const event = events[0];
+    if (event?.type !== "message") throw new Error("expected a message");
+    expect(event.attachments?.map(({ name, size }) => ({ name, size }))).toEqual([
+      { name: "clip.mov", size: 2048 },
+      { name: "known.png", size: 3 },
+    ]);
+    // Only the downloadable file without a size is looked up.
+    expect(attachmentSize).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: "clip.mov" }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("hands a file over with its size unknown when the platform cannot tell it", async () => {
+    const attachmentSize = vi.fn(async () => {
+      throw new Error("lookup failed");
+    });
+    const { surface, events } = createSurface({ attachmentSize });
+    const response = await surface.handleWebhook(
+      "mock",
+      webhookRequest({
+        threadId: "mock:Duser:1",
+        id: "m-1",
+        text: "",
+        files: [
+          {
+            name: "clip.mov",
+            url: "https://files.example.test/a",
+            authenticated: true,
+            unsized: true,
+          },
+        ],
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    const event = events[0];
+    if (event?.type !== "message") throw new Error("expected a message");
+    expect(event.attachments).toEqual([
+      { name: "clip.mov", mimeType: "image/png", fetch: expect.any(Function) },
+    ]);
   });
 
   it("hydrates incomplete Slack app-mention file stubs from the exact history message", async () => {
