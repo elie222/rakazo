@@ -810,6 +810,60 @@ describe("web markdown mentions", () => {
 });
 
 describe("web markdown streaming", () => {
+  it("fades in only the words that arrived after the previous frame", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const reveal = () => [...container.querySelectorAll("[data-rk-reveal]")];
+    const render = async (text: string) => {
+      await act(async () => {
+        root.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
+      });
+    };
+    await render("First reply");
+    const first = reveal();
+    expect(first).toHaveLength(2);
+    expect(first.every((unit) => unit.getAttribute("data-rk-reveal") === "new")).toBe(true);
+    // The DOM holds the whole text from the first frame; the delay only changes opacity.
+    expect(container.textContent).toBe("First reply");
+
+    await render("First reply continues");
+    const all = reveal();
+    expect(all).toHaveLength(3);
+    expect(all.slice(0, 2).every((unit) => unit.getAttribute("data-rk-reveal") === "settled")).toBe(
+      true,
+    );
+    expect(all[2]?.getAttribute("data-rk-reveal")).toBe("new");
+    expect(all[2]?.getAttribute("style")).toContain("--rk-reveal-delay");
+    expect(container.textContent).toBe("First reply continues");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("shows a replaced snapshot at once instead of replaying it", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"A first reply."}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"A different conversation."}</ChatMarkdown>);
+    });
+    const units = [...container.querySelectorAll("[data-rk-reveal]")];
+    expect(units.length).toBeGreaterThan(0);
+    expect(units.every((unit) => unit.getAttribute("data-rk-reveal") === "settled")).toBe(true);
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("draws every streamed prefix as the whole text would be drawn", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const reply = [
@@ -842,11 +896,14 @@ describe("web markdown streaming", () => {
       "",
       "Really.",
     ].join("\n");
+    // Reveal spans only carry the fade-in delay; compare the text they draw.
     const shape = (node: Node): string =>
       [...node.childNodes]
-        .map((child) =>
-          child instanceof Element ? `<${child.tagName}>${shape(child)}</>` : child.textContent,
-        )
+        .map((child) => {
+          if (!(child instanceof Element)) return child.textContent;
+          if (child.hasAttribute("data-rk-reveal")) return shape(child);
+          return `<${child.tagName}>${shape(child)}</>`;
+        })
         .join("");
     const streamed = document.createElement("div");
     const whole = document.createElement("div");
@@ -858,9 +915,7 @@ describe("web markdown streaming", () => {
         streamedRoot.render(<ChatMarkdown streaming>{text}</ChatMarkdown>);
         wholeRoot.render(<ChatMarkdown key={end}>{closeUnterminatedFence(text)}</ChatMarkdown>);
       });
-      expect(shape(streamed.firstChild!), JSON.stringify(text)).toBe(
-        `${shape(whole.firstChild!)}<SPAN></>`,
-      );
+      expect(shape(streamed.firstChild!), JSON.stringify(text)).toBe(shape(whole.firstChild!));
     }
     await act(async () => {
       streamedRoot.render(<ChatMarkdown>{reply}</ChatMarkdown>);
