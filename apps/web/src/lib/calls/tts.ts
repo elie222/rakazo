@@ -35,6 +35,11 @@ interface SpeakOptions {
 }
 
 const IDLE: SpeechSnapshot = { status: "idle" };
+
+/** The failure when no voice is connected; callers can offer Voice settings for it. */
+export function voiceNotReadyText(): string {
+  return t`Add a voice provider key and pick a voice in Voice settings.`;
+}
 const SILENT_CLIP =
   "data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
@@ -201,7 +206,7 @@ export class Speaker {
       { signal, context: { spaceId } },
     );
     if (!body.ready) {
-      throw new Error(t`Add a voice provider key and pick a voice in Voice settings.`);
+      throw new Error(voiceNotReadyText());
     }
     return body.utterances ?? [];
   }
