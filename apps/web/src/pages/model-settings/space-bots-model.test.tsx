@@ -135,6 +135,14 @@ it("asks only when the main model changes and some bots would not follow", async
   expect(toast.dismiss).toHaveBeenCalledWith("space-bots-model");
 });
 
+it("uses the singular verb when one bot keeps its own model", async () => {
+  bots.list.mockResolvedValue([list[0]]);
+  const { rerender, unmount } = await render();
+  await rerender("s:a:two");
+  expect(toast).toHaveBeenCalledWith("Archie keeps its own model", expect.anything());
+  await unmount();
+});
+
 it("still names the bots when the list fails right after the main model changes", async () => {
   bots.list.mockResolvedValueOnce(list).mockRejectedValue(new Error("offline"));
   const { rerender, unmount } = await render();

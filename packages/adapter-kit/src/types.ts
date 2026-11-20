@@ -620,9 +620,18 @@ export interface AgentSteeringMessage {
 /** Adapter-supplied cache policy metadata; absent fields mean unknown. */
 export type CacheCapabilities = ConnectionCacheCapabilities;
 
+/** Who pays for a model call: the user's subscription or key, the deployment, or its credits. */
+export type ModelBilling =
+  | "subscription"
+  | "api_key"
+  | "custom_endpoint"
+  | "credits"
+  | "deployment";
+
 export interface AgentRunModel {
   /** Server-side spending authorization, carried with the resolved credential. */
   callObserver?: ModelCallObserver;
+  billing?: ModelBilling;
   cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
@@ -897,6 +906,7 @@ export type AgentRuntimeEvent =
       callId?: string;
       operationKind?: UsageOperationKind;
       agentId?: string;
+      billing?: ModelBilling;
     } & AgentUsage)
   | { type: "checkpoint"; blob: string }
   /**
