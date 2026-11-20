@@ -39,7 +39,6 @@ export function useTrustedLinkSites() {
     },
     [queryClient, save, userId],
   );
-  /** Runs through the client the caller's save receives, so the request names the same space. */
   const remove = useCallback(
     async (site: string, client: RpcClient) => {
       await client.trustedLinkSites.remove({ site });

@@ -9,7 +9,6 @@ import { SettingsGroup, SettingsRow } from "./SettingsRows";
 export function TrustedLinkSitesSettings() {
   const { t } = useLingui();
   const { sites, remove } = useTrustedLinkSites();
-  // Holds every Remove button while one removal is in flight; a second click sends nothing.
   const removal = useSave({
     save: (site: string, client) => remove(site, client),
   });

@@ -15,6 +15,7 @@ test("lists a trusted site in Settings and removes it", async ({ page }, testInf
   const group = settings.getByTestId("trusted-link-sites");
   const remove = group.getByRole("button", { name: "Remove example.com", exact: true });
   await expect(remove).toBeEnabled();
+  await remove.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "trusted-link-sites-settings");
   await remove.click();
   await expect(remove).toHaveCount(0);
