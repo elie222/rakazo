@@ -6,7 +6,7 @@ import { createContext, use } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
 import { WindowChrome } from "../../components/WindowChrome";
-import { DARWIN_WINDOW_CONTROLS_WIDTH_PX, desktopBridge } from "../../lib/platform/desktop";
+import { desktopBridge } from "../../lib/platform/desktop";
 
 const AppRailContext = createContext(false);
 
@@ -22,8 +22,7 @@ export function AppRailLayout({ enabled }: { enabled: boolean }) {
     <AppRailContext value>
       <div className="flex h-full min-w-0">
         <AppRail />
-        {/* Contains the bots sidebar, which is fixed to its frame's leading edge, beside the rail. */}
-        <div className="relative h-full min-w-0 flex-1 contain-layout">
+        <div className="h-full min-w-0 flex-1">
           <Outlet />
         </div>
       </div>
@@ -31,6 +30,7 @@ export function AppRailLayout({ enabled }: { enabled: boolean }) {
   );
 }
 
+/** As wide as the macOS window controls, which sit at its top on desktop. */
 function AppRail() {
   const { t } = useLingui();
   const { pathname } = useLocation();
@@ -39,8 +39,7 @@ function AppRail() {
     <nav
       data-testid="app-rail"
       aria-label={t`Sections`}
-      className="app-drag hidden shrink-0 flex-col items-center gap-2 border-e border-sidebar-border bg-sidebar pt-4 pb-3 md:flex"
-      style={{ width: DARWIN_WINDOW_CONTROLS_WIDTH_PX }}
+      className="app-drag hidden w-18 shrink-0 flex-col items-center gap-2 border-e border-sidebar-border bg-sidebar pt-4 pb-3 md:flex"
     >
       {desktopBridge() ? <WindowChrome className="mb-2" /> : null}
       <RailLink to="/app" label={t`Chats`} active={!onBoard}>

@@ -24,6 +24,7 @@ import { useQueryUserId } from "../../../lib/query/query";
 import { switchOrganization, useOrganizations } from "../../../lib/spaces/organizations";
 import { ActivityList } from "../../space/ActivityList";
 import { SpaceSearchResults } from "../../space/SpaceSearch";
+import { useAppRail } from "../app-rail";
 import type { ChatMenuState } from "../chat/chat-context-menu";
 import type { Panel } from "../right-panel-state";
 import type { SettingsSection } from "../shell-overlay-url";
@@ -118,6 +119,7 @@ export function ShellSidebar({
   openSpaceChat: (spaceId: string, path: string) => void;
 }) {
   const { t } = useLingui();
+  const rail = useAppRail();
   const {
     query,
     setQuery,
@@ -163,7 +165,8 @@ export function ShellSidebar({
         className={
           isMobile
             ? `absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform duration-200 ease-out motion-reduce:transition-none ${mobileOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"}`
-            : "h-full overflow-hidden border-sidebar-border"
+            : // The sidebar is fixed to the window edge, so it steps aside for the rail there.
+              `h-full overflow-hidden border-sidebar-border ${rail ? "data-[side=left]:left-18 data-[side=right]:right-18" : ""}`
         }
       >
         <SidebarHeader
