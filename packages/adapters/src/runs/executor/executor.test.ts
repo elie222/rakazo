@@ -25,6 +25,7 @@ import {
   IMAGE_RETURNING_COMPUTER_TOOLS,
   modelAcceptsImageInput,
 } from "../../models/model-vision.js";
+import { selectCompactedHistory } from "../../runtime/context/history-compaction.js";
 import { RetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
 import {
   modelsForRequest,
@@ -2153,21 +2154,62 @@ describe("createRunExecutor", () => {
 
   it("keeps the current reaction out of history because its target is supplied in the prompt", () => {
     const messages = [
-      { id: "parent", role: "assistant", content: "Proceed?" },
+      { id: "parent", seq: 0, role: "assistant" as const, content: "Proceed?" },
       {
         id: "reaction",
-        role: "user",
+        seq: 1,
+        role: "user" as const,
         content: "User reacted with 👍 to <reaction_target>Proceed?</reaction_target>",
       },
     ];
-    expect(
-      threadContextForRun(
-        "reaction",
-        { messages, summary: null, historyCompactedUpToSeq: null },
-        false,
-        "reaction",
-      ).messages,
-    ).toEqual([messages[0]]);
+    const context = threadContextForRun(
+      "reaction",
+      { messages, summary: null, historyCompactedUpToSeq: null },
+      false,
+      "reaction",
+    );
+    expect(selectCompactedHistory(context).history).toEqual([messages[0]]);
+  });
+
+  it("keeps the compacted summary when a message newer than the reaction exists", () => {
+    const message = (id: string, seq: number) => ({
+      id,
+      seq,
+      role: "user" as const,
+      content: id,
+    });
+    const messages = [message("m5", 5), message("m6", 6), message("r7", 7), message("m8", 8)];
+    const summary = "S";
+    const reaction = threadContextForRun(
+      "reaction",
+      { messages, summary, historyCompactedUpToSeq: 4 },
+      false,
+      "r7",
+    );
+    expect(selectCompactedHistory(reaction)).toMatchObject({
+      usedLocalSummary: true,
+      summary: "S",
+      history: [message("m5", 5), message("m6", 6), message("m8", 8)],
+    });
+    // Without a newer message the reaction is still left out and the summary kept.
+    const latest = threadContextForRun(
+      "reaction",
+      { messages: messages.slice(0, 3), summary, historyCompactedUpToSeq: 4 },
+      false,
+      "r7",
+    );
+    expect(selectCompactedHistory(latest)).toMatchObject({
+      usedLocalSummary: true,
+      history: [message("m5", 5), message("m6", 6)],
+    });
+    // A run that is not a reaction keeps every message.
+    const user = threadContextForRun(
+      "user",
+      { messages, summary, historyCompactedUpToSeq: 4 },
+      false,
+      "r7",
+    );
+    expect(selectCompactedHistory(user).history).toHaveLength(4);
   });
 
   it("isolates routine runs from every thread-history source", () => {

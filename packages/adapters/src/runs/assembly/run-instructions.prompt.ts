@@ -517,7 +517,7 @@ export function userTurnInstructions(parts: {
 /** How much of its chat a run reads: all of it, only its latest messages, or none. */
 export type HistoryReach = "all" | "recent" | "none";
 
-export function threadContextForRun<T extends { id?: string; role: string }>(
+export function threadContextForRun<T extends { id?: string; role: string; waiting?: boolean }>(
   trigger: string,
   context: {
     messages: T[];
@@ -528,11 +528,14 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
   sourceMessageId?: string | null,
   reach: HistoryReach = runReadsThreadHistory(trigger) ? "all" : "none",
 ) {
-  // The current reaction is supplied with its target in the prompt, once.
+  // The current reaction is supplied with its target in the prompt, once. It stays in the list,
+  // marked waiting, so the summary's contiguity check still sees its seq.
   if (trigger === "reaction" && sourceMessageId) {
     context = {
       ...context,
-      messages: context.messages.filter((message) => message.id !== sourceMessageId),
+      messages: context.messages.map((message) =>
+        message.id === sourceMessageId ? { ...message, waiting: true } : message,
+      ),
     };
   }
   // The creation intro reads no history: a message that arrives during it waits and is answered
