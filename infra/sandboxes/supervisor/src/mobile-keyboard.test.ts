@@ -311,6 +311,29 @@ describe("mobile computer keyboard", () => {
     });
   });
 
+  it("counts an emoji as one Backspace and keeps a replaced emoji whole", () => {
+    expect(mobileInputChanges("___😀", "___", 3)).toEqual({
+      backspaces: 1,
+      text: "",
+    });
+    expect(mobileInputChanges("___ab😀", "___ab")).toEqual({
+      backspaces: 1,
+      text: "",
+    });
+    expect(mobileInputChanges("___😀", "___😁", 5)).toEqual({
+      backspaces: 1,
+      text: "😁",
+    });
+    expect(mobileInputChanges("___a😀", "___a😁")).toEqual({
+      backspaces: 1,
+      text: "😁",
+    });
+    expect(mobileInputChanges("___", "___😀")).toEqual({
+      backspaces: 0,
+      text: "😀",
+    });
+  });
+
   it("only enables the control in touch browsers", () => {
     expect(isTouchBrowser({ maxTouchPoints: 1 }, {})).toBe(true);
     expect(isTouchBrowser({ maxTouchPoints: 0 }, { ontouchstart: null })).toBe(true);
@@ -453,6 +476,26 @@ describe("mobile computer keyboard", () => {
     ]);
     detach();
     expect(windowTarget.rakazoComputerKeyboard).toBeUndefined();
+  });
+
+  it("sends one Backspace for a deleted emoji and the whole new emoji for a replaced one", () => {
+    const { input, inputListeners, keys } = keyboardFixture();
+    const seed = input.value;
+    input.value = `${seed}😀`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    input.value = seed;
+    inputListeners.get("input")?.({ target: input, inputType: "deleteContentBackward" });
+    input.value = `${seed}😀`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    input.value = `${seed}😁`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    expect(keys).toEqual([
+      [0x1f600, undefined, undefined],
+      [0xff08, "Backspace", undefined],
+      [0x1f600, undefined, undefined],
+      [0xff08, "Backspace", undefined],
+      [0x1f601, undefined, undefined],
+    ]);
   });
 
   it("keeps the in-page keyboard hidden when the native app supplies keys", () => {
