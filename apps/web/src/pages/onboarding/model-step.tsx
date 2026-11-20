@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@rakazo/ui-web";
-import { Check, Copy } from "lucide-react";
+import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
 import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
@@ -359,7 +359,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
     oauth,
     oauthPending,
     pasteCode,
-    popupBlocked,
+    selected,
     setPasteCode,
     signInLabel,
     submitOAuthCode,
@@ -407,59 +407,13 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
               </p>
             </>
           ) : (
-            <>
-              <p className="text-body text-muted-foreground">
-                {popupBlocked ? (
-                  <Trans>
-                    Open{" "}
-                    <a
-                      href={oauth.verificationUri}
-                      onClick={() => reportSignInStep("page_opened")}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-foreground underline"
-                    >
-                      {oauth.verificationUri.replace(/^https:\/\//, "")}
-                    </a>{" "}
-                    and enter this code:
-                  </Trans>
-                ) : (
-                  <Trans>
-                    A sign-in tab opened at{" "}
-                    <a
-                      href={oauth.verificationUri}
-                      onClick={() => reportSignInStep("page_opened")}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-foreground underline"
-                    >
-                      {oauth.verificationUri.replace(/^https:\/\//, "")}
-                    </a>
-                    . Enter this code there — this window keeps waiting:
-                  </Trans>
-                )}
-              </p>
-              <div className="mt-2 flex items-center gap-3">
-                <p className="font-mono text-heading2 tracking-[0.2em] text-foreground">
-                  {oauth.userCode}
-                </p>
-                <Button variant="outline" size="sm" onClick={() => copyOAuthCode(oauth.userCode)}>
-                  {codeCopied ? (
-                    <Check size={14} strokeWidth={1.8} aria-hidden="true" />
-                  ) : (
-                    <Copy size={14} strokeWidth={1.8} aria-hidden="true" />
-                  )}
-                  {codeCopied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-                </Button>
-              </div>
-              <p className="mt-2 text-body text-muted-foreground">
-                <Plural
-                  value={Math.ceil(oauth.expiresInSeconds / 60)}
-                  one="Waiting for sign-in — the code expires in about # minute."
-                  other="Waiting for sign-in — the code expires in about # minutes."
-                />
-              </p>
-            </>
+            <DeviceCodeSignIn
+              oauth={oauth}
+              setup={selected?.signInSetup}
+              codeCopied={codeCopied}
+              onCopyCode={copyOAuthCode}
+              onPageOpened={() => reportSignInStep("page_opened")}
+            />
           )}
           <Button
             variant="ghost"
