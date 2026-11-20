@@ -13,7 +13,17 @@ export type SecretMatcher = {
 
 const ROOT = 0;
 
-export function createSecretMatcher(values: readonly string[]): SecretMatcher {
+/**
+ * The most states the one-pass matcher builds. Its states grow with the values' combined length,
+ * which very long values (keys of thousands of characters, each in several encodings) could push
+ * past what a Map holds; past this, each value is scanned for in turn instead.
+ */
+export const MAX_SECRET_MATCHER_STATES = 1_000_000;
+
+export function createSecretMatcher(
+  values: readonly string[],
+  maxStates = MAX_SECRET_MATCHER_STATES,
+): SecretMatcher {
   // Each state's children, keyed by state and code unit in one map.
   const children = new Map<number, number>();
   const key = (state: number, code: number) => state * 0x10000 + code;
@@ -27,6 +37,7 @@ export function createSecretMatcher(values: readonly string[]): SecretMatcher {
       const edge = key(state, value.charCodeAt(index));
       let child = children.get(edge);
       if (child === undefined) {
+        if (depth.length >= maxStates) return scanningMatcher(values);
         child = depth.length;
         depth.push(index + 1);
         longest.push(0);
@@ -111,6 +122,45 @@ export function createSecretMatcher(values: readonly string[]): SecretMatcher {
         return true;
       });
       return found;
+    },
+  };
+}
+
+/** Scans for each value in turn: memory stays at the text's length, time grows with values × text. */
+function scanningMatcher(values: readonly string[]): SecretMatcher {
+  const present = values.filter(Boolean);
+  return {
+    empty: present.length === 0,
+    ranges(text) {
+      // Count matches starting and ending at each offset rather than listing every match, so a
+      // value that repeats or overlaps itself costs no more than two counters per offset.
+      let starts: Int32Array | undefined;
+      let ends: Int32Array | undefined;
+      for (const value of present) {
+        for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + 1)) {
+          starts ??= new Int32Array(text.length + 1);
+          ends ??= new Int32Array(text.length + 1);
+          starts[at] = starts[at]! + 1;
+          ends[at + value.length] = ends[at + value.length]! + 1;
+        }
+      }
+      if (!starts || !ends) return [];
+      const ranges: Array<[number, number]> = [];
+      let open = 0;
+      let start = 0;
+      for (let offset = 0; offset <= text.length; offset += 1) {
+        const ending = ends[offset]!;
+        const starting = starts[offset]!;
+        if (ending === 0 && starting === 0) continue;
+        open -= ending;
+        if (ending > 0 && open === 0) ranges.push([start, offset]);
+        if (starting > 0 && open === 0) start = offset;
+        open += starting;
+      }
+      return ranges;
+    },
+    test(text) {
+      return present.some((value) => text.includes(value));
     },
   };
 }

@@ -52,11 +52,13 @@ describe("createSecretMatcher", () => {
       const secrets = Array.from({ length: next(6) }, () => word(5));
       if (next(4) === 0) secrets.push("");
       const text = Array.from({ length: next(4) }, () => word(30)).join(secrets[0] ?? "");
-      const matcher = createSecretMatcher(secrets);
-      expect(matcher.ranges(text), JSON.stringify({ secrets, text })).toEqual(
-        scannedRanges(text, secrets),
-      );
-      expect(matcher.test(text)).toBe(scannedRanges(text, secrets).length > 0);
+      // Also past a tiny state budget, where it scans for each value in turn instead.
+      for (const matcher of [createSecretMatcher(secrets), createSecretMatcher(secrets, 3)]) {
+        expect(matcher.ranges(text), JSON.stringify({ secrets, text })).toEqual(
+          scannedRanges(text, secrets),
+        );
+        expect(matcher.test(text)).toBe(scannedRanges(text, secrets).length > 0);
+      }
     }
   });
 
@@ -70,6 +72,7 @@ describe("createSecretMatcher", () => {
     expect(createSecretMatcher(["bcdef", "ab", "a"]).ranges("abcdefg")).toEqual([[0, 6]]);
     expect(createSecretMatcher([]).ranges("anything")).toEqual([]);
     expect(createSecretMatcher(["", ""]).empty).toBe(true);
+    expect(createSecretMatcher(["", ""], 1).empty).toBe(true);
   });
 
   it("stays linear in the text with many values", () => {
