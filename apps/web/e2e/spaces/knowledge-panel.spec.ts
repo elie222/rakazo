@@ -184,6 +184,13 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   const closeSkills = () =>
     skillsDialog.getByRole("button", { name: "Close skills", exact: true }).click();
   await openSkills();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await skillsDialog.getByTestId("skill-packs").scrollIntoViewIfNeeded();
+  await expect(
+    skillsDialog.getByTestId("skill-packs").getByText("Review Kit", { exact: true }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "skills-packs-phone");
+  await page.setViewportSize({ width: 1280, height: 720 });
   const knowledge = skillsDialog.getByTestId("your-skills");
   const builtinSkill = knowledge.getByRole("button", { name: /Interrogate/ });
   await expect(builtinSkill).toBeVisible();

@@ -41,6 +41,9 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   // A skill pack has nothing to connect, so it is offered under Skills instead.
   await expect(dialog.getByText("Review Kit", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "integrations-plugins");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await captureScreenshot(page, testInfo, "integrations-plugins-phone");
+  await page.setViewportSize({ width: 1280, height: 720 });
   await dialog.getByRole("textbox", { name: "Search apps", exact: true }).fill("planning");
   const row = dialog.getByTestId("plugin-results").getByTestId("plugin-row");
   await expect(row).toHaveCount(1);
