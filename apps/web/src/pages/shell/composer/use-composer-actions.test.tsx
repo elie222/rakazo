@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { Bot, ComputerStatus, Me, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
-import { flush as flushTimer } from "@rakazo/core/test-async";
+import { deferred, flush as flushTimer } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -569,4 +569,39 @@ it("clears a quoted reply re-picked as a fresh object after a thread refresh", a
   );
   expect(latest.replyTarget).toBeNull();
   expect(latest.replyQuote).toBeNull();
+});
+
+it("shows a text send at once and keeps it until the stored message arrives", async () => {
+  const reply = deferred<{ runId: string; taskId: string; seq: number }>();
+  rpc.threads.send.mockReturnValue(reply.promise);
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello there", [], "nonce-1");
+  });
+  expect(latest.pendingSend).toEqual({
+    threadKey: "bot-1",
+    clientNonce: "nonce-1",
+    text: "hello there",
+    afterSeq: 0,
+  });
+
+  reply.resolve({ runId: "run-1", taskId: "task-1", seq: 7 });
+  await act(async () => void (await sent));
+  // The follow-up refresh brings the stored message, so nothing is left pending.
+  expect(latest.pendingSend).toBeNull();
+});
+
+it("drops a text send that fails", async () => {
+  const reply = deferred<never>();
+  rpc.threads.send.mockReturnValue(reply.promise);
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello there", [], "nonce-1");
+  });
+  expect(latest.pendingSend?.text).toBe("hello there");
+
+  reply.reject(new Error("offline"));
+  await act(async () => void (await sent));
+  expect(await sent).toBe(false);
+  expect(latest.pendingSend).toBeNull();
 });

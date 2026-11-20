@@ -48,6 +48,7 @@ import { peekBootstrapSeed } from "../lib/bootstrap";
 import { setCallMinimized, startCall, useCallSession } from "../lib/calls/call-session";
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
+import { withPendingSend } from "../lib/composer/pending-send";
 import { computersAreUnavailable } from "../lib/computers/computer-sandbox";
 import { composerModelPickerPreference } from "../lib/models/composer-model-picker-preference";
 import type { ArtifactTarget } from "../lib/pages/artifact-open";
@@ -770,6 +771,30 @@ function SpaceShell() {
     flushPendingBrowserNotifications,
   });
   const { sending, sendError, stopRun } = composer;
+  const { pendingSend } = composer;
+  const shownTranscript = useMemo(
+    () =>
+      pendingSend
+        ? foldPeerReplies(
+            withPendingSend(
+              activeSnapshot?.messages ?? [],
+              pendingSend,
+              inGroup ? groupId : active?.id,
+              activeSnapshot?.threadId,
+            ),
+            { includePeerReceipts: true },
+          )
+        : transcript,
+    [
+      active?.id,
+      activeSnapshot?.messages,
+      activeSnapshot?.threadId,
+      groupId,
+      inGroup,
+      pendingSend,
+      transcript,
+    ],
+  );
   function openChatSettings(kind: "bot" | "group", id: string) {
     const destKey =
       userId && bootstrapMe?.spaceId
@@ -1178,7 +1203,7 @@ function SpaceShell() {
               followRequest={composer.sentCount}
               artifactTarget={transcriptArtifactTarget}
               markedUnreadMessageId={read.markedUnreadMessageId}
-              transcript={transcript}
+              transcript={shownTranscript}
               showToolActivity={showToolActivity}
               olderCursor={activeSnapshot?.olderCursor ?? null}
               unreadAfterSeq={read.unreadAfterSeq}
