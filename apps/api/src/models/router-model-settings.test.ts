@@ -21,7 +21,7 @@ describe("model setup gate", () => {
     deploymentModelCredentialCipher?: string;
     savedDeploymentModel?: boolean;
     savedStrictReceipt?: boolean;
-    savedStrictReceiptAuthorUserId?: string;
+    savedStrictReceiptAuthorUserId?: string | null;
     modelLookupError?: Error;
     funding?: Pick<BillingStatus, "creditPurchasesEnabled" | "funding" | "balanceUsd">;
   }) {
@@ -54,7 +54,10 @@ describe("model setup gate", () => {
           options.savedStrictReceipt
             ? {
                 id: "msg-saved",
-                authorUserId: options.savedStrictReceiptAuthorUserId ?? "user-1",
+                authorUserId:
+                  options.savedStrictReceiptAuthorUserId !== undefined
+                    ? options.savedStrictReceiptAuthorUserId
+                    : "user-1",
                 seq: 7,
                 runId: "run-saved",
                 sourceRuns: [],
@@ -299,6 +302,25 @@ describe("model setup gate", () => {
     expect(otherMember.jobs.enqueue).not.toHaveBeenCalled();
     expect(otherMember.events.notify).not.toHaveBeenCalled();
     expect(otherMember.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
+
+    const legacy = modelGateDeps({
+      agentRuntime: "pi",
+      savedStrictReceipt: true,
+      savedStrictReceiptAuthorUserId: null,
+      modelLookupError: new SecretStoreUnavailableError(),
+    });
+    const legacyReplayed = await call(legacy.handler, legacy.actor, "threads/send", {
+      botId: "bot-1",
+      text: "Kyoto",
+      replyToMessageId: "ask-1",
+      answersQuestion: true,
+      clientNonce: "nonce-legacy",
+    });
+    expect(legacyReplayed.status).toBe(200);
+    await expect(legacyReplayed.json()).resolves.toMatchObject({
+      json: { runId: "run-saved", taskId: "task-saved", seq: 7 },
+    });
+    expect(legacy.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
 
     const fresh = modelGateDeps({
       agentRuntime: "pi",

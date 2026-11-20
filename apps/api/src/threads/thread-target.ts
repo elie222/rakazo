@@ -208,7 +208,8 @@ export async function replayExistingSend(
   if (!clientNonce) return null;
   const message = await findSendReceipt(deps.prisma, threadId, clientNonce);
   if (!message) return null;
-  if (message.authorUserId !== authorUserId) {
+  // Legacy messages saved before shared spaces have authorUserId null and keep replaying.
+  if (message.authorUserId && message.authorUserId !== authorUserId) {
     throw new ClientError("CONFLICT", "This message nonce is already in use.");
   }
   const receiptEvent = await deps.prisma.event.findFirst({

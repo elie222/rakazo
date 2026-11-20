@@ -3132,6 +3132,52 @@ describe("sendThreadMessage", () => {
     expect(raceEnqueue).not.toHaveBeenCalled();
     expect(raceNotify).not.toHaveBeenCalled();
 
+    const legacyEnqueue = vi.fn().mockResolvedValue(undefined);
+    const legacyPrisma = {
+      ...savedPrisma,
+      message: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "msg-legacy",
+          authorUserId: null,
+          seq: 7,
+          runId: "run-saved",
+          sourceRuns: [],
+        }),
+      },
+      event: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({ payload: { runIds: ["run-saved"] } })
+          .mockResolvedValueOnce({ seq: 9 }),
+      },
+      $transaction: vi.fn(),
+    } as unknown as PrismaClient;
+    await expect(
+      sendThreadMessage(
+        {
+          prisma: legacyPrisma,
+          sandbox: {} as never,
+          events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+          jobs: { enqueue: legacyEnqueue } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        target,
+        {
+          text: "Kyoto",
+          replyToMessageId: "ask-1",
+          answersQuestion: true,
+          clientNonce: "nonce-legacy",
+          noModel: true,
+        },
+      ),
+    ).resolves.toMatchObject({
+      runId: "run-saved",
+      taskId: "task-saved",
+      seq: 7,
+      runIds: ["run-saved"],
+    });
+    expect(legacyPrisma.$transaction).not.toHaveBeenCalled();
+
     const freshPrisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(),
