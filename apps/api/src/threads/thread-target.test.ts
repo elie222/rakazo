@@ -1780,10 +1780,12 @@ function groupTarget() {
 }
 
 describe("sendThreadMessage", () => {
-  it.each(["latest", "reply", "unrelated-reply"] as const)(
-    "answers a waiting question through the composer (explicit older reply: %s)",
+  it.each(["latest", "reply", "unrelated-reply", "delegated-wait-notice"] as const)(
+    "answers a waiting question through the composer (%s)",
     async (scenario) => {
       const olderReply = scenario === "reply";
+      const delegated = scenario === "delegated-wait-notice";
+      const answerSeq = delegated ? 2 : 1;
       const tx = {
         space: { findUnique: vi.fn(async () => null) },
         user: { findMany: vi.fn().mockResolvedValue([]) },
@@ -1799,7 +1801,7 @@ describe("sendThreadMessage", () => {
           create: vi.fn().mockResolvedValue({
             id: "msg-1",
             threadId: "thread-1",
-            seq: 1,
+            seq: answerSeq,
             role: "user",
             blocks: [{ kind: "text", text: "Paris" }],
             botId: null,
@@ -1813,12 +1815,31 @@ describe("sendThreadMessage", () => {
               blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
             },
           ]),
-          findFirst: vi.fn(async ({ where }: { where: { id?: string } }) => ({
-            id: olderReply && !where.id ? "newer-message" : "ask-1",
-            role: "bot",
-            botId: "bot-1",
-            blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
-          })),
+          findFirst: vi.fn(async ({ where }: { where: { id?: string; seq?: { lt: number } } }) =>
+            delegated && !where.id && where.seq?.lt === answerSeq
+              ? {
+                  id: "wait-notice",
+                  seq: 1,
+                  role: "bot",
+                  runId: "run-waiting",
+                  blocks: [
+                    {
+                      kind: "bot_message_sent",
+                      toBotId: "supervisor",
+                      toBotName: "Supervisor",
+                      text: "Paused until the user responds in my chat: Which city should I use?",
+                      intent: "status",
+                    },
+                  ],
+                }
+              : {
+                  id: olderReply && !where.id ? "newer-message" : "ask-1",
+                  seq: 0,
+                  role: "bot",
+                  botId: "bot-1",
+                  blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
+                },
+          ),
           update: vi.fn(),
         },
         run: {
@@ -1828,7 +1849,8 @@ describe("sendThreadMessage", () => {
               taskId: "task-1",
               status: "waiting_input",
               userId: "user-1",
-              trigger: "user",
+              trigger: delegated ? "bot_message" : "user",
+              sourceMessageId: delegated ? "delegated-request" : "user-request",
             },
           ]),
           findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
@@ -1867,7 +1889,7 @@ describe("sendThreadMessage", () => {
           {
             text: "Paris",
             clientNonce: "nonce-ask",
-            ...(scenario === "latest"
+            ...(scenario === "latest" || delegated
               ? {}
               : { replyToMessageId: olderReply ? "ask-1" : "unrelated-message" }),
           },
@@ -1875,7 +1897,7 @@ describe("sendThreadMessage", () => {
       ).resolves.toMatchObject({
         runId: "run-waiting",
         taskId: "task-1",
-        seq: 1,
+        seq: answerSeq,
         runIds: ["run-waiting"],
       });
       // Snapshot reads can hold the thread row lock for up to 15s; the send must wait
@@ -1909,7 +1931,12 @@ describe("sendThreadMessage", () => {
       }
       expect(tx.steeringMessage.create).not.toHaveBeenCalled();
       expect(tx.task.create).not.toHaveBeenCalled();
-      expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+      expect(enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "run.continue", payload: { runId: "run-waiting" } }),
+      );
+      expect(tx.run.updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "cancelled" }) }),
+      );
       // The composer send is the main way users talk to a bot; it must count as a message.
       expect(analytics.capture).toHaveBeenCalledExactlyOnceWith(
         "user-1",
