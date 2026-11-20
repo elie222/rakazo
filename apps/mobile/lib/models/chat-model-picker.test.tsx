@@ -947,7 +947,10 @@ describe("provider connection screen", () => {
     });
     act(() => root.render(null));
     expect(signal.aborted).toBe(true);
-    expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", { loginId: "login-fixture" });
+    expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", {
+      loginId: "login-fixture",
+      reason: "left",
+    });
     await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
   });

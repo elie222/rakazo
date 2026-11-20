@@ -1,4 +1,4 @@
-import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { isUnlistedCompatibleModel } from "@rakazo/core";
 import {
   Button,
@@ -15,6 +15,7 @@ import {
 import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
 import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
+import { PasteCodeSignIn } from "../../components/models/PasteCodeSignIn";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
 import type { OnboardingModel } from "./use-onboarding-model";
 
@@ -45,6 +46,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     needsProject,
     needsRouting,
     notice,
+    oauth,
     provider,
     providerItems,
     providerOptions,
@@ -192,7 +194,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
                 onValueChange={(value) => {
                   if (typeof value !== "string" || !value) return;
                   if (value === modelId) return;
-                  cancelOAuthAttempt();
+                  cancelOAuthAttempt("replaced");
                   setModelId(value);
                   setThinkingLevel(null);
                 }}
@@ -221,13 +223,15 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
         </p>
       ) : null}
       {error ? <p className="mt-3 text-body text-destructive">{error}</p> : null}
-      <Button
-        className="mt-6"
-        disabled={!credits && !canSaveModel}
-        onClick={() => void (credits ? fundWithCredits() : saveModel())}
-      >
-        <Trans>Continue</Trans>
-      </Button>
+      {oauth ? null : (
+        <Button
+          className="mt-6"
+          disabled={!credits && !canSaveModel}
+          onClick={() => void (credits ? fundWithCredits() : saveModel())}
+        >
+          <Trans>Continue</Trans>
+        </Button>
+      )}
     </div>
   );
 }
@@ -349,7 +353,6 @@ function CompatibleModelSelection({ model }: { model: OnboardingModel }) {
 
 /** Signing in with a subscription: the start button, then the code or link to finish. */
 function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
-  const { t } = useLingui();
   const {
     beginSelectedSubscriptionSignIn,
     cancelOAuthAttempt,
@@ -370,42 +373,13 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
       {oauth ? (
         <div className="rounded-lg border border-border px-3.5 py-3">
           {oauth.mode === "auth-url" ? (
-            <>
-              <p className="text-body text-muted-foreground">
-                <Trans>
-                  Sign in at{" "}
-                  <a
-                    href={oauth.verificationUri}
-                    onClick={() => reportSignInStep("page_opened")}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-foreground underline"
-                  >
-                    {new URL(oauth.verificationUri).hostname}
-                  </a>
-                  , then paste the code here.
-                </Trans>
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                <Input
-                  value={pasteCode}
-                  onChange={(e) => setPasteCode(e.target.value)}
-                  aria-label={t`Authorization code`}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <Button disabled={!pasteCode.trim()} onClick={() => void submitOAuthCode()}>
-                  <Trans>Submit</Trans>
-                </Button>
-              </div>
-              <p className="mt-2 text-body text-muted-foreground">
-                <Plural
-                  value={Math.ceil(oauth.expiresInSeconds / 60)}
-                  one="Waiting for sign-in — the link expires in about # minute."
-                  other="Waiting for sign-in — the link expires in about # minutes."
-                />
-              </p>
-            </>
+            <PasteCodeSignIn
+              oauth={oauth}
+              code={pasteCode}
+              onCodeChange={setPasteCode}
+              onSubmit={() => void submitOAuthCode()}
+              onPageOpened={() => reportSignInStep("page_opened")}
+            />
           ) : (
             <DeviceCodeSignIn
               oauth={oauth}

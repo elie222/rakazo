@@ -17,13 +17,14 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
+  assertNameFreeWhereAvailable,
   availableInSpace,
   IsolationError,
   isUniqueViolation,
   runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
-import { assertNameFreeWhereAvailable, userAddedAvailability } from "../spaces/name-claims.js";
+import { userAddedAvailability } from "../spaces/name-claims.js";
 
 type AgentSkillRow = {
   id: string;
