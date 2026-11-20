@@ -4904,18 +4904,34 @@ describe("a click that completes a purchase on a website", () => {
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 
-  it("asks when the check fails, and approves no click by itself", async () => {
+  it.each([
+    ["Ask", {}],
+    ["Auto", { autoReview: true }],
+    ["Never ask", { skipApprovals: true }],
+    [
+      "Never ask with a spending limit",
+      {
+        skipApprovals: true,
+        spendingLimit: { amount: 20_000, currency: "usd", period: "month" } as const,
+      },
+    ],
+  ])("refuses a press on a page it could not read, without asking, in %s", async (_mode, mode) => {
     const page = pageBrowser();
     page.provider.purchaseCheck = async () => {
       throw new Error("Page browser timed out");
     };
-    const f = fixture({ builtin: true, browser: page.provider });
+    const f = fixture({ builtin: true, browser: page.provider, ...mode });
     f.setCalls([payCall()]);
     await f.run();
     expect(page.acts).toEqual([]);
-    expect(isApprovalPausedResult(f.results[0])).toBe(true);
-    const [{ blocks }] = f.pauseRunForInput.mock.calls[0] as unknown as [{ blocks: unknown[] }];
-    expect(blocks[0]).toMatchObject({ text: "Complete a payment on this page?" });
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([
+      {
+        error:
+          "The page couldn't be read, so nothing was pressed. Reload the page or take a screenshot and try once more; if it still can't be read, stop and tell the user.",
+      },
+    ]);
+    expect(f.spending.payments).toEqual([]);
   });
 
   it("presses it without asking in Never ask", async () => {
