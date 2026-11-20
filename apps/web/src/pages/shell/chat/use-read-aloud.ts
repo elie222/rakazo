@@ -93,17 +93,20 @@ export function useReadAloud({
   speakingMessageIdRef.current = speakingMessageId;
   const callBotIdRef = useRef(callBotId);
   callBotIdRef.current = callBotId;
-  const speakMessage = useCallback((message: ThreadMessage) => {
-    if (speakingMessageIdRef.current === message.id) {
-      speaker.stop();
-      return;
-    }
-    // An active call owns the speaker; a manual read must not cut into it.
-    if (callBotIdRef.current !== undefined) return;
-    const text = speechFromBlocks(message.blocks);
-    const id = message.botId ?? activeBotId.current;
-    if (text && id) readAloud(text, { botId: id, messageId: message.id }, openVoiceSettingsNow);
-  }, [openVoiceSettingsNow]);
+  const speakMessage = useCallback(
+    (message: ThreadMessage) => {
+      if (speakingMessageIdRef.current === message.id) {
+        speaker.stop();
+        return;
+      }
+      // An active call owns the speaker; a manual read must not cut into it.
+      if (callBotIdRef.current !== undefined) return;
+      const text = speechFromBlocks(message.blocks);
+      const id = message.botId ?? activeBotId.current;
+      if (text && id) readAloud(text, { botId: id, messageId: message.id }, openVoiceSettingsNow);
+    },
+    [openVoiceSettingsNow],
+  );
 
   return { speakingMessageId, speakMessage, callHoldsSpeaker: callBotId !== undefined };
 }
