@@ -111,15 +111,19 @@ export function HostComputerPrompt({
 
   const busy = pending || checking;
 
-  // The choice is required, so the dialog stays open until one is saved.
+  // The choice is required, so the dialog stays open until one is saved. It also stays open while
+  // a save or a check runs, so that failure is shown in the dialog.
   return (
     <Dialog
       open
       onOpenChange={(next) => {
-        if (configuring) setOpen(next);
+        if (configuring && !busy) setOpen(next);
       }}
     >
-      <DialogContent showCloseButton={configuring} className="rounded-2xl sm:max-w-[440px]">
+      <DialogContent
+        showCloseButton={configuring && !busy}
+        className="rounded-2xl sm:max-w-[440px]"
+      >
         <DialogHeader>
           <DialogTitle className="text-heading2">
             <Trans>Where should bots run?</Trans>
