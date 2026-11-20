@@ -3,7 +3,11 @@ import { comparePlugins, matchesPluginQuery, pluginCategory } from "@rakazo/core
 import { z } from "zod";
 import { fetchSafeWebText } from "../web/web-ssrf.js";
 import type { PluginCompleteness, PluginTextReader } from "./plugin-connectors.js";
-import { classifyPluginFiles, parsePluginSource } from "./plugin-connectors.js";
+import {
+  classifyPluginFiles,
+  mcpPointerFromManifest,
+  parsePluginSource,
+} from "./plugin-connectors.js";
 
 const REGISTRIES = [
   {
@@ -270,14 +274,23 @@ export function createPluginMarketplace(read: PluginTextReader = publicRead) {
           const own = paths
             .filter((path) => path.startsWith(`${dir}/`))
             .map((path) => path.slice(dir.length + 1));
-          const mcpPath = own.find((path) => path === "mcp.json" || path === ".mcp.json");
+          const pointer = manifestText ? mcpPointerFromManifest(manifestText) : null;
+          const mcpPath =
+            pointer && own.includes(pointer)
+              ? pointer
+              : own.find((path) => path === "mcp.json" || path === ".mcp.json");
           const mcpText = mcpPath
             ? await cachedText(`${raw}${dir}/${mcpPath}`, 256_000, signal)
             : undefined;
           const ownSizes = new Map(
             own.map((path) => [path, sizes.get(`${dir}/${path}`) ?? 0] as const),
           );
-          const classified = classifyPluginFiles(own, mcpText ?? undefined, ownSizes);
+          const classified = classifyPluginFiles(
+            own,
+            mcpText ?? undefined,
+            ownSizes,
+            pointer && own.includes(pointer) ? pointer : undefined,
+          );
           parts = classified === "incomplete" ? null : classified;
         }
         details.set(entry.id, { manifest, parts });

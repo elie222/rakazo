@@ -111,6 +111,105 @@ describe("portable plugin parser", () => {
     expect(preview.format).toBe(format);
     expect(preview.mcpServers[0]?.transport).toBe("streamable_http");
   });
+  it.each([
+    [".cursor-plugin/plugin.json", "agents/cursor/mcp.json"],
+    [".grok-plugin/plugin.json", "servers/mcp.json"],
+  ])("follows %s to an unwrapped MCP map", (manifestPath, mcpPath) => {
+    const preview = parse([
+      {
+        path: manifestPath,
+        content: JSON.stringify({ name: "supabase", mcpServers: `./${mcpPath}` }),
+      },
+      { path: "skills/example-skill/SKILL.md", content: skill },
+      {
+        path: mcpPath,
+        content: JSON.stringify({
+          supabase: {
+            type: "http",
+            url: "https://mcp.supabase.com/mcp",
+            headers: { "X-Source-Name": "cursor-plugin", "X-Source-Version": "0.1.17" },
+          },
+        }),
+      },
+    ]);
+    expect(preview.skills).toHaveLength(1);
+    expect(preview.mcpServers).toEqual([
+      {
+        name: "supabase",
+        transport: "streamable_http",
+        endpoint: "https://mcp.supabase.com/mcp",
+        headers: { "X-Source-Name": "cursor-plugin", "X-Source-Version": "0.1.17" },
+      },
+    ]);
+  });
+  it("keeps an https server when the config also carries editor metadata", () => {
+    const preview = parse([
+      ...files({
+        figma: {
+          type: "http",
+          url: "https://mcp.figma.com/mcp",
+          headers: { "X-Figma-Plugin-Bundle": "figma_prod@2_2_211" },
+          _meta: { ideToolIconPath: "./icon.svg", ideToolTitles: { whoami: "Who Am I" } },
+        },
+      }),
+      {
+        path: ".cursor-plugin/plugin.json",
+        content: JSON.stringify({ name: "figma", mcpServers: "./.mcp.json" }),
+      },
+      {
+        path: ".mcp.json",
+        content: JSON.stringify({
+          mcpServers: {
+            figma: {
+              type: "http",
+              url: "https://mcp.figma.com/mcp",
+              headers: { "X-Figma-Plugin-Bundle": "figma_prod@2_2_211" },
+              _meta: { ideToolIconPath: "./icon.svg" },
+            },
+          },
+        }),
+      },
+    ]);
+    expect(preview.mcpServers).toEqual([
+      {
+        name: "figma",
+        transport: "streamable_http",
+        endpoint: "https://mcp.figma.com/mcp",
+        headers: { "X-Figma-Plugin-Bundle": "figma_prod@2_2_211" },
+      },
+    ]);
+    expect(preview.skills).toHaveLength(1);
+  });
+  it("rejects an MCP path that leaves the plugin and still keeps its skills", () => {
+    const preview = parse([
+      {
+        path: ".cursor-plugin/plugin.json",
+        content: JSON.stringify({ name: "example-plugin", mcpServers: "../secret.json" }),
+      },
+      { path: "skills/example-skill/SKILL.md", content: skill },
+    ]);
+    expect(preview.skills).toHaveLength(1);
+    expect(preview.mcpServers).toEqual([]);
+    expect(preview.skipped).toContainEqual(
+      expect.objectContaining({
+        kind: "mcp_invalid",
+        reason: "MCP config path must stay inside the plugin directory",
+      }),
+    );
+  });
+  it("skips a local server named in an unwrapped map and keeps the skills", () => {
+    const preview = parse([
+      {
+        path: ".grok-plugin/plugin.json",
+        content: JSON.stringify({ name: "example-plugin", mcpServers: "./servers/mcp.json" }),
+      },
+      { path: "skills/example-skill/SKILL.md", content: skill },
+      { path: "servers/mcp.json", content: JSON.stringify({ local: { command: "npx" } }) },
+    ]);
+    expect(preview.skills).toHaveLength(1);
+    expect(preview.mcpServers).toEqual([]);
+    expect(preview.skipped).toContainEqual(expect.objectContaining({ kind: "mcp_stdio" }));
+  });
   it("loads a manifestless Agent Skills catalog", () => {
     const preview = parsePluginDirectory({
       files: [
@@ -346,6 +445,22 @@ describe("portable plugin parser", () => {
     expect(
       classifyPluginFiles(["mcp.json"], JSON.stringify({ mcpServers: { x: { command: "npx" } } })),
     ).toBe("incomplete");
+    expect(
+      classifyPluginFiles(
+        ["plugin.json", "skills/a/SKILL.md", "mcp.json"],
+        JSON.stringify({ mcpServers: { x: { command: "npx" } } }),
+      ),
+    ).toEqual({ hasConnector: false, skillCount: 1 });
+    expect(
+      classifyPluginFiles(
+        ["plugin.json", "skills/a/SKILL.md", "agents/cursor/mcp.json"],
+        JSON.stringify({
+          supabase: { type: "http", url: "https://mcp.supabase.com/mcp" },
+        }),
+        undefined,
+        "agents/cursor/mcp.json",
+      ),
+    ).toEqual({ hasConnector: true, skillCount: 1 });
     expect(classifyPluginFiles(["README.md"])).toBe("incomplete");
     const refs = Array.from({ length: 5 }, (_, i) => `skills/a/references/r${i}.md`);
     const big = new Map(refs.map((path) => [path, 90_000] as const));
@@ -905,7 +1020,10 @@ describe("example plugins", () => {
       .filter((entry) => entry.isFile())
       .map((entry) => {
         const path = join(entry.parentPath, entry.name);
-        return { path: relative(root, path), content: readFileSync(path, "utf8") };
+        return {
+          path: relative(root, path).split("\\").join("/"),
+          content: readFileSync(path, "utf8"),
+        };
       });
     const plugin = parsePluginDirectory({ files, resolvedSha: SHA });
     expect(plugin).toMatchObject({ format: "agent-plugins", name, skipped: [] });

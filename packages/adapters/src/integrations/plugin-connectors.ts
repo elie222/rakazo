@@ -131,6 +131,33 @@ function hasControlCharacters(value: string): boolean {
   return [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
 }
 
+/**
+ * The MCP file a Cursor or Grok manifest points at (`"./agents/cursor/mcp.json"`), or null when
+ * `mcpServers` is missing or already the server map. An unsafe path is `"unsafe"`.
+ */
+function readMcpPointer(raw: string): string | "absent" | "unsafe" {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(raw);
+  } catch {
+    return "absent";
+  }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return "absent";
+  const pointer = (doc as Record<string, unknown>).mcpServers;
+  if (typeof pointer !== "string") return "absent";
+  try {
+    return safePath(pointer.trim().replace(/^\.\//, ""));
+  } catch {
+    return "unsafe";
+  }
+}
+
+/** A relative MCP file named by a manifest, for callers that only need a path to download. */
+export function mcpPointerFromManifest(raw: string): string | null {
+  const pointer = readMcpPointer(raw);
+  return pointer === "absent" || pointer === "unsafe" ? null : pointer;
+}
+
 function safePath(path: string): string {
   if (
     !path ||
@@ -355,6 +382,22 @@ export async function fetchGitHubRepo(
   };
 
   await download(wanted);
+
+  // A manifest can point at an MCP file that is not the root mcp.json. Download that file too.
+  const pointed: string[] = [];
+  for (const manifestPath of [".cursor-plugin/plugin.json", ".grok-plugin/plugin.json", "plugin.json"]) {
+    const entry = entryByPath.get(manifestPath);
+    if (!entry) continue;
+    const text = contents.get(entry.absolutePath);
+    if (!text) continue;
+    const pointer = mcpPointerFromManifest(text);
+    const target = pointer ? entryByPath.get(pointer) : undefined;
+    if (!target || wanted.includes(target.absolutePath) || pointed.includes(target.absolutePath))
+      continue;
+    if ((target.size ?? 0) > MAX_FILE_BYTES) continue;
+    pointed.push(target.absolutePath);
+  }
+  if (pointed.length) await download(pointed);
 
   if (!hasManifest) {
     const resourceWanted: string[] = [];
@@ -618,25 +661,81 @@ function catalogVendorOnly(endpoint: string, headers: Record<string, string>): b
   );
 }
 
+/** Wrapped `{ mcpServers: { name: server } }` or the server map itself, when the wrapper was left off. */
+function mcpServerMap(doc: Record<string, unknown>, strict: boolean): Record<string, unknown> | null {
+  if (object(doc.mcpServers)) return doc.mcpServers;
+  if (strict) return null;
+  const servers: Record<string, unknown> = {};
+  for (const [name, entry] of Object.entries(doc)) {
+    if (name.startsWith("$") || !object(entry)) continue;
+    if ("type" in entry || "url" in entry || "command" in entry) servers[name] = entry;
+  }
+  return Object.keys(servers).length ? servers : null;
+}
+
+function mcpConfigPaths(files: Map<string, string>, skipped: PluginSkippedEntry[]): string[] {
+  const pointed: string[] = [];
+  for (const manifestPath of [".cursor-plugin/plugin.json", ".grok-plugin/plugin.json", "plugin.json"]) {
+    const raw = files.get(manifestPath);
+    if (!raw) continue;
+    const pointer = readMcpPointer(raw);
+    if (pointer === "absent") continue;
+    if (pointer === "unsafe") {
+      skipped.push({
+        kind: "mcp_invalid",
+        name: manifestPath,
+        reason: "MCP config path must stay inside the plugin directory",
+      });
+      continue;
+    }
+    pointed.push(pointer);
+  }
+  if (pointed.length) return [...new Set(pointed)];
+  if (files.has("mcp.json")) return ["mcp.json"];
+  if (files.has(".mcp.json")) return [".mcp.json"];
+  const lone = [...files.keys()];
+  return lone.length === 1 && lone[0]?.endsWith(".json") ? lone : [];
+}
+
 function collectMcpServers(
   files: Map<string, string>,
   schema: string | undefined,
   skipped: PluginSkippedEntry[],
 ): PluginMcpServerEntry[] {
-  const path = schema ? "mcp.json" : files.has("mcp.json") ? "mcp.json" : ".mcp.json";
-  const raw = files.get(path);
-  if (raw === undefined) return [];
+  const out: PluginMcpServerEntry[] = [];
+  const seen = new Set<string>();
+  for (const path of mcpConfigPaths(files, skipped)) {
+    collectMcpFile(files.get(path), path, schema, skipped, out, seen);
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function collectMcpFile(
+  raw: string | undefined,
+  path: string,
+  schema: string | undefined,
+  skipped: PluginSkippedEntry[],
+  out: PluginMcpServerEntry[],
+  seen: Set<string>,
+) {
+  if (raw === undefined) {
+    skipped.push({ kind: "mcp_invalid", name: path, reason: "MCP config file was not found" });
+    return;
+  }
   let doc: unknown;
   try {
     doc = JSON.parse(raw);
   } catch {
     doc = null;
   }
+  // Agent Plugins checks the root mcp.json document. A file a manifest points at, and a map
+  // that forgot the mcpServers wrapper, only need each server's type, url, and headers.
+  const strict = Boolean(schema) && path === "mcp.json";
   if (
     !object(doc) ||
-    !object(doc.mcpServers) ||
-    (schema &&
-      (doc.$schema !== schema.replace("plugin.schema.json", "mcp.schema.json") ||
+    (strict &&
+      (!object(doc.mcpServers) ||
+        doc.$schema !== schema?.replace("plugin.schema.json", "mcp.schema.json") ||
         Object.keys(doc).some((key) => !["$schema", "mcpServers"].includes(key))))
   ) {
     skipped.push({
@@ -644,27 +743,32 @@ function collectMcpServers(
       name: path,
       reason: "Invalid or mismatched MCP configuration",
     });
-    return [];
+    return;
   }
-  const out: PluginMcpServerEntry[] = [];
-  for (const [name, entry] of Object.entries(doc.mcpServers)) {
+  const servers = mcpServerMap(doc, strict);
+  if (!servers) {
+    skipped.push({
+      kind: "mcp_invalid",
+      name: path,
+      reason: "Invalid or mismatched MCP configuration",
+    });
+    return;
+  }
+  for (const [name, entry] of Object.entries(servers)) {
     if (!object(entry)) {
       skipped.push({ kind: "mcp_invalid", name, reason: "Server must be an object" });
       continue;
     }
-    const type = entry.type ?? (!schema && entry.command ? "stdio" : undefined);
+    const type = entry.type ?? (!strict && entry.command ? "stdio" : undefined);
     if (type === "stdio") {
       skipped.push({ kind: "mcp_stdio", name, reason: "Local MCP execution is disabled" });
       continue;
     }
-    if (!["streamable-http", "sse", ...(!schema ? ["http"] : [])].includes(String(type))) {
+    if (!["streamable-http", "sse", ...(!strict ? ["http"] : [])].includes(String(type))) {
       skipped.push({ kind: "unsupported_transport", name, reason: "Unsupported MCP transport" });
       continue;
     }
-    if (schema && Object.keys(entry).some((key) => !["type", "url", "headers"].includes(key))) {
-      skipped.push({ kind: "mcp_invalid", name, reason: "Unknown MCP server field" });
-      continue;
-    }
+    if (seen.has(name)) continue;
     const transport = type === "sse" ? "sse" : "streamable_http";
     const config = McpServerConfigInput.safeParse({
       slug: "plugin-server",
@@ -706,9 +810,9 @@ function collectMcpServers(
       skipped.push({ kind: "mcp_invalid", name, reason: "Works only in the catalog's own app" });
       continue;
     }
+    seen.add(name);
     out.push({ name, transport, endpoint: config.data.endpoint, headers: config.data.headers });
   }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Pure parser; inputs are regular-file content already constrained by acquisition. */
@@ -868,6 +972,8 @@ export function classifyPluginFiles(
   paths: string[],
   mcpConfig?: string,
   sizes?: ReadonlyMap<string, number>,
+  /** Set when the manifest names an MCP file other than the root mcp.json. */
+  mcpConfigPath?: string,
 ): PluginCompleteness | "incomplete" | null {
   const hasManifest = paths.some((path) => MANIFESTS.includes(path));
   if (!hasManifest && paths.some((path) => HIDDEN_PLUGIN_MANIFEST.test(path))) return "incomplete";
@@ -913,13 +1019,21 @@ export function classifyPluginFiles(
       return "incomplete";
     skillCount++;
   }
-  const mcpPath = paths.find((path) => path === "mcp.json" || path === ".mcp.json");
+  const mcpPath =
+    mcpConfigPath && paths.includes(mcpConfigPath)
+      ? mcpConfigPath
+      : paths.find((path) => path === "mcp.json" || path === ".mcp.json");
   let servers = 0;
   if (mcpPath) {
     if (mcpConfig === undefined) return null;
     const skipped: PluginSkippedEntry[] = [];
     servers = collectMcpServers(new Map([[mcpPath, mcpConfig]]), undefined, skipped).length;
-    if (skipped.length) return "incomplete";
+    const vendorOnly = skipped.some(
+      (entry) => entry.reason === "Works only in the catalog's own app",
+    );
+    // A server that only runs inside Cursor or Grok is not offered. Any other rejected
+    // server leaves the plugin's skills, and a server that did parse, on the list.
+    if (!servers && (vendorOnly || (skipped.length > 0 && skillCount === 0))) return "incomplete";
   }
   if (!servers && !skillCount) return "incomplete";
   return { hasConnector: servers > 0, skillCount };
