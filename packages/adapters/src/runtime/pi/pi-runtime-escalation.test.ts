@@ -245,6 +245,64 @@ describe("Pi runtime model escalation between turns", () => {
     expect(failed).toHaveBeenCalledExactlyOnceWith("missing");
   });
 
+  it("refuses a move to a model that cannot take the images the run needs", async () => {
+    providerState.models.set(`${primary.provider}/${primary.id}`, {
+      ...primary,
+      input: ["text", "image"],
+    } as unknown as Record<string, unknown>);
+    const input = request();
+    const failed = vi.fn();
+    Object.assign(input, {
+      currentRunRequiresImageInput: true,
+      modelEscalation: {
+        ...escalation([{ model: { provider: backupA.provider, id: backupA.id }, reason: "x" }]),
+        failed,
+      },
+    });
+    providerState.stream
+      .mockImplementationOnce(() => toolCall(primary, "first-call"))
+      .mockImplementationOnce(() => done(primary, "Stayed."));
+
+    expect(await run(input)).toContainEqual({ type: "text", text: "Stayed." });
+    expect(streamedIds()).toEqual([primary.id, primary.id]);
+    expect(failed).toHaveBeenCalledExactlyOnceWith(backupA.id);
+  });
+
+  it("does not replay the old model's reasoning to the model it moves to", async () => {
+    const input = request();
+    Object.assign(input, {
+      modelEscalation: escalation([
+        { model: { provider: backupA.provider, id: backupA.id }, reason: "x" },
+      ]),
+    });
+    providerState.stream
+      .mockImplementationOnce(() =>
+        stream(
+          message(
+            primary,
+            [
+              { type: "thinking", thinking: "OLD-MODEL-THOUGHT", thinkingSignature: "sig" },
+              {
+                type: "toolCall",
+                id: "first-call",
+                name: "write_effect",
+                arguments: { value: "a" },
+              },
+            ],
+            "toolUse",
+          ),
+        ),
+      )
+      .mockImplementationOnce(() => done(backupA, "Done."));
+
+    await run(input);
+
+    expect(streamedIds()).toEqual([primary.id, backupA.id]);
+    expect(JSON.stringify(providerState.stream.mock.calls[1]?.[1].messages)).not.toContain(
+      "OLD-MODEL-THOUGHT",
+    );
+  });
+
   it("tells the hook when it resolves a different model than the step named", async () => {
     const input = request();
     const failed = vi.fn();

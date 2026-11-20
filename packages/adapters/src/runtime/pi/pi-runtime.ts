@@ -663,7 +663,7 @@ export class PiAgentRuntime implements AgentRuntime {
         // Between turns the escalation hook may move the main model up, switching as to a backup so
         // the transcript carries over, or add a note to the next request. A move that cannot be
         // made leaves the run on its model.
-        const escalate = async (): Promise<AgentLoopTurnUpdate | undefined> => {
+        const escalate = async (messageCount: number): Promise<AgentLoopTurnUpdate | undefined> => {
           const escalation = request.modelEscalation;
           const step = escalation?.next();
           if (!escalation || !step) return undefined;
@@ -671,11 +671,15 @@ export class PiAgentRuntime implements AgentRuntime {
             return { messages: [{ role: "user", content: step.note, timestamp: Date.now() }] };
           try {
             const target = await escalationTarget(escalation, step.model);
-            if (!target) {
+            // The next request throws on images a model cannot take, ending the run instead of
+            // falling back, so such a move is refused here.
+            if (!target || (hasCurrentImages && !target.model.input.includes("image"))) {
               escalation.failed?.(step.model.id);
               return undefined;
             }
             const left = activeStreamTarget;
+            // As for a backup, the old model's reasoning is not replayed to the new one.
+            mainFallbackState.messagesBeforeSwitch = messageCount;
             escalating = true;
             try {
               await fallbackState.onSwitch(target);
@@ -771,7 +775,17 @@ export class PiAgentRuntime implements AgentRuntime {
               agent.steer({ role: "user", content: finishedShells, timestamp: Date.now() });
           },
           prepareNextTurnWithContext: async (turn, turnSignal) => {
-            const escalated = mode === "main" ? await escalate() : undefined;
+            // A turn that ends the run has no next request, so no move is made for it.
+            const escalated =
+              mode === "main" &&
+              !turnSignal?.aborted &&
+              !isTurnEndingAfterToolBatch({
+                pausePending: host.pausePending,
+                terminatedReply,
+                toolCallBudgetExceeded: host.toolCallBudget.exceeded,
+              })
+                ? await escalate(turn.context.messages.length)
+                : undefined;
             const modeUpdate = computer
               ? {
                   context: {
