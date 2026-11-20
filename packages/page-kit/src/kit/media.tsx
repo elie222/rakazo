@@ -2,19 +2,10 @@ import { pageKitPalette } from "@rakazo/ui-tokens";
 import type { CSSProperties, ReactNode } from "react";
 import { Children, useEffect, useId, useRef, useState } from "react";
 import { LinkButton, linkUrl, ReplyButton } from "./controls.js";
+import { graphemes } from "./graphemes.js";
 import { openViaHost } from "./inline.js";
 import type { Words } from "./labels.js";
 import { useWords } from "./labels.js";
-
-const graphemeSegmenter =
-  typeof Intl.Segmenter === "function"
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : undefined;
-/** Whole user-perceived characters, so a flag or ZWJ emoji is never split. */
-const graphemes = (value: string) =>
-  graphemeSegmenter
-    ? Array.from(graphemeSegmenter.segment(value), ({ segment }) => segment)
-    : Array.from(value);
 
 const text = (value: unknown) =>
   typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
