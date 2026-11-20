@@ -169,8 +169,9 @@ export function useModelOAuthSignIn(options: {
           makeDefault: begin.makeDefault,
           ...(begin.scope ? { scope: begin.scope } : {}),
           label: begin.label,
-          // Desktop receives the loopback redirect; a browser tab cannot, so it gets a code page.
-          codePage: !desktopBridge(),
+          // A desktop that opens the browser itself receives the loopback redirect; anywhere
+          // else the person opens the page from a link, so it shows a code to paste.
+          codePage: !desktopBridge()?.oauth.open,
           surface: analyticsSurface(),
         },
         { signal: controller.signal },
@@ -179,7 +180,8 @@ export function useModelOAuthSignIn(options: {
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
       setOauth(started);
-      // A device code must be read before its page opens, so the user opens that page themselves.
+      // Only desktop opens the page here; a browser blocks a tab opened after this await,
+      // so there the card's link opens it from the user's own click.
       if (started.mode === "auth-url") {
         // Subscribe before the popup exists: a provider that is already
         // authorized can redirect before React commits the state above.
@@ -202,20 +204,6 @@ export function useModelOAuthSignIn(options: {
           await browserAuth.open(started.verificationUri);
           if (controller.signal.aborted) return;
           reportSignInStep("page_opened", started.loginId);
-        } else {
-          // noopener returns null even when the tab opens, so open a blank tab and navigate it.
-          // When the tab is blocked, the link beside the code field opens the page.
-          const popup = window.open("about:blank", "_blank");
-          if (popup) {
-            popup.opener = null;
-            // A noreferrer link suppresses the navigation request's Referer header.
-            const link = popup.document.createElement("a");
-            link.href = started.verificationUri;
-            link.rel = "noreferrer";
-            popup.document.body.append(link);
-            link.click();
-            reportSignInStep("page_opened");
-          }
         }
       }
       waitingForCode = started.mode === "auth-url";
