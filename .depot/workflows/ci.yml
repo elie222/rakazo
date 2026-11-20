@@ -1,0 +1,22 @@
+name: ci
+# Pull request test suites on Depot's runners. test-suites.yml here is a copy of
+# .github/workflows/test-suites.yml, which GitHub runs for pushes to main (Depot loads workflows
+# only from this folder; scripts/checks/kept-in-step.test.mjs keeps the two identical). Web E2E,
+# native computer, publishing and deploys stay in .github/workflows/ci.yml. Nothing here reads a
+# secret, so fork pull requests run the same way.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests
+    uses: ./.depot/workflows/test-suites.yml
+    with:
+      runner: depot-ubuntu-latest

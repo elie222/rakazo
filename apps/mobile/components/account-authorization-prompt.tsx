@@ -2,14 +2,14 @@ import { modelAccountAuthorizationReason } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { currentApiBase } from "../lib/api";
-import { modelAccountConfigQuery, modelAccountStatusQuery } from "../lib/model-account-client";
-import { queryClient } from "../lib/query";
+import { currentApiBase } from "../lib/api/api";
 import {
   currentSessionGeneration,
   loadSessionToken,
   subscribeSessionGeneration,
-} from "../lib/session";
+} from "../lib/api/session";
+import { modelAccountConfigQuery, modelAccountStatusQuery } from "../lib/model-account-client";
+import { queryClient } from "../lib/query/query";
 
 /** Native navigation keeps the previous screen and its draft in the stack. */
 export function AccountAuthorizationPrompt() {

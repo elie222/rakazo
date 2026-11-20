@@ -24,16 +24,19 @@ export const DE_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "Gib diesen Code in BotONE ein, um zu bestätigen, dass du es bist:",
   "Welcome to Rakazo": "Willkommen bei BotONE",
-  "Thanks for signing up for Rakazo.": "Danke, dass du dich bei BotONE registriert hast.",
-  "Rakazo also has apps for": "BotONE gibt es auch als App für",
-  "Questions or ideas?": "Fragen oder Ideen?",
-  "Join us on Discord": "Komm zu uns auf Discord",
-  "Rakazo is open source. If you like it,": "BotONE ist Open Source. Wenn es dir gefällt,",
-  "a star on GitHub": "hilft ein Stern auf GitHub",
-  "helps others find it.": "anderen, es zu finden.",
-  "Want to run it on your own servers?": "Möchtest du es auf deinen eigenen Servern betreiben?",
-  "Self-host Rakazo": "BotONE selbst hosten",
-  "Have any questions? Reply to this email.": "Hast du Fragen? Antworte einfach auf diese E-Mail.",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "Willkommen bei BotONE. Wer das meiste aus BotONE herausholt, macht drei Dinge:",
+  "Get the apps": "Hol dir die Apps",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "BotONE läuft auf {platforms}, damit deine Bots dich überall erreichen.",
+  "Join the community": "Werde Teil der Community",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "Sieh, was andere bauen, bekomm schnell Hilfe und sag uns auf {discord}, was wir als Nächstes bauen sollen.",
+  "Star us on GitHub": "Gib uns einen Stern auf GitHub",
+  "Rakazo is open source. {star} helps more people find it.":
+    "BotONE ist Open Source. {star} hilft mehr Menschen, es zu finden.",
+  "A star on GitHub": "Ein Stern auf GitHub",
+  "Questions? Just reply. I read every one.": "Fragen? Antworte einfach. Ich lese jede Nachricht.",
   Unsubscribe: "Abmelden",
   "Invite a friend": "Lade einen Freund ein",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
@@ -41,10 +44,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Open Rakazo": "Öffne BotONE",
   "and choose Invite friends for your link.":
     "und wähle „Freunde einladen“, um deinen Link zu erhalten.",
-  "Have any questions? Just reply to this email.":
-    "Hast du Fragen? Antworte einfach auf diese E-Mail.",
-  "If you're enjoying Rakazo,": "Wenn dir BotONE gefällt,",
-  "give us a star on GitHub": "gib uns einen Stern auf GitHub",
   "We received your Rakazo plugin": "Wir haben dein BotONE-Plugin erhalten",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Danke, dass du ein Plugin für den BotONE-Marktplatz eingereicht hast.",
@@ -75,4 +74,23 @@ export const DE_MESSAGES: Record<string, string> = {
     "Deine gespeicherten Computerdateien werden am {date} gelöscht, wenn du dein Abo nicht erneuerst.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Deine gespeicherten Computerdateien werden am {date} gelöscht, wenn du keinen Tarif wählst.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} hat dich zu {organization} auf BotONE eingeladen",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} hat dich eingeladen, {organization} auf BotONE beizutreten.",
+  "Join {organization}": "{organization} beitreten",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Diese Einladung läuft in 7 Tagen ab. Melde dich mit dieser E-Mail-Adresse an, um sie anzunehmen.",
+  "{inviter} invited you to {space} on Rakazo":
+    "{inviter} hat dich zu {space} auf BotONE eingeladen",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} hat dich eingeladen, {space} auf BotONE beizutreten.",
+  "Join {space}": "{space} beitreten",
+  "This invitation expires in 7 days.": "Diese Einladung läuft in 7 Tagen ab.",
+  "Connect a model to start using Rakazo": "Verbinde ein Modell, um mit Rakazo loszulegen",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Dein Rakazo-Tarif läuft, aber deine Bots können erst antworten, wenn ein Modell verbunden ist.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "Melde dich mit deinem Abo von {subscriptions} an oder füge einen API-Schlüssel ein.",
+  "Connect a model": "Modell verbinden",
 };

@@ -59,9 +59,9 @@ bash install-images.sh --offline
 
 ```env
 RAKAZO_IMAGE=registry.example.com/mirror/rakazo/app
-RAKAZO_IMAGE_TAG=edge
+RAKAZO_IMAGE_TAG=latest
 RAKAZO_COMPUTER_IMAGE=registry.example.com/mirror/rakazo/computer
-RAKAZO_COMPUTER_IMAGE_TAG=edge
+RAKAZO_COMPUTER_IMAGE_TAG=latest
 POSTGRES_IMAGE=registry.example.com/library/postgres@sha256:<trusted-postgres-digest>
 BUSYBOX_IMAGE=registry.example.com/library/busybox@sha256:<trusted-busybox-digest>
 ```

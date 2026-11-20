@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { UserAccessCredential } from "./configured-apps.js";
-import { readBoundedText } from "./connector-http.js";
+import { readBoundedText } from "./integrations/connector-http.js";
 import type {
   CreativeCapabilities,
   CreativeInput,

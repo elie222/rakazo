@@ -15,13 +15,13 @@ const api = vi.hoisted(() => ({
   getBot: vi.fn(),
 }));
 
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: {
     botMarketplace: { install: api.install },
     bots: { get: api.getBot },
   },
 }));
-vi.mock("../../lib/query", () => ({
+vi.mock("../../lib/query/query", () => ({
   useSpaceQueries: () => ({
     botMarketplace: {
       catalog: {
@@ -41,7 +41,7 @@ vi.mock("../../lib/query", () => ({
     },
   }),
 }));
-vi.mock("../../lib/user-error", () => ({
+vi.mock("../../lib/query/user-error", () => ({
   errorDetails: (error: unknown, fallback: string) => ({
     message: error instanceof Error ? error.message : fallback,
   }),

@@ -3,10 +3,10 @@ import type { BotExecutionConfiguration, MessageBlock } from "@rakazo/contracts"
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { AskCard } from "../../src/components/AskCard";
-import { bootstrapI18n, i18n } from "../../src/lib/i18n";
-import { queryClient } from "../../src/lib/query";
-import { ExecutionModelSection } from "../../src/pages/shell/execution-model-section";
+import { AskCard } from "../../src/components/messages/AskCard";
+import { bootstrapI18n, i18n } from "../../src/lib/locale/i18n";
+import { queryClient } from "../../src/lib/query/query";
+import { ExecutionModelSection } from "../../src/pages/shell/bots/execution-model-section";
 import "../../src/styles.css";
 
 const parameters = new URLSearchParams(location.search);

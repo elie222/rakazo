@@ -1,15 +1,21 @@
 import { useLingui } from "@lingui/react/macro";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
-import { NativeActionButton } from "../components/native-action-button";
-import { SettingsGroup, SettingsInputRow } from "../components/settings-group";
-import { rpc } from "../lib/api";
-import { mobileTokens } from "../lib/appearance";
-import { native, useThemedStyles } from "../lib/native";
-import { refreshOrganizations, switchOrganization, useOrganizations } from "../lib/organizations";
-import { errorText } from "../lib/user-error";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { SettingsGroup, SettingsInputRow } from "../components/settings/settings-group";
+import { errorText } from "../lib/api/user-error";
+import { mobileTokens } from "../lib/appearance/appearance";
+import { native, useThemedStyles } from "../lib/native/native";
+import { useSave } from "../lib/query/query";
+import { ACCOUNT_SETTINGS } from "../lib/query/settings-target";
+import type { Organization } from "../lib/spaces/organizations";
+import {
+  refreshOrganizations,
+  switchOrganization,
+  useOrganizations,
+} from "../lib/spaces/organizations";
 
 export default function NewOrganization() {
   const { t } = useLingui();
@@ -17,30 +23,36 @@ export default function NewOrganization() {
   const router = useRouter();
   const organizations = useOrganizations().data;
   const [name, setName] = useState("");
-  const [pending, setPending] = useState(false);
-  const creating = useRef(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function create() {
-    const trimmed = name.trim();
-    if (!trimmed || creating.current) return;
-    creating.current = true;
-    setPending(true);
-    setError(null);
-    try {
-      const created = await rpc("organizations/create", { name: trimmed });
-      const target = { ...created, spaceIds: [created.defaultSpaceId], canManage: true };
-      if (!(await switchOrganization(target, organizations?.organizations ?? []))) {
+  const creation = useSave({
+    // An organization belongs to the account, so opening it does not end the save that made it.
+    target: ACCOUNT_SETTINGS,
+    save: async (ask: { name: string; organizations: readonly Organization[] }, send) => {
+      const created = await send("organizations/create", { name: ask.name });
+      const target = {
+        ...created,
+        spaceIds: [created.defaultSpaceId],
+        canManage: true,
+        role: "owner" as const,
+        memberCount: 1,
+      };
+      // It exists by now, so it is opened even when this sheet has been closed meanwhile.
+      if (!(await switchOrganization(target, ask.organizations))) {
         void refreshOrganizations();
         Alert.alert(t`Could not switch spaces`, t`Try again.`);
         router.dismissAll();
         router.replace("/");
       }
-    } catch (reason) {
-      setError(errorText(reason, t`Something went wrong. Try again.`));
-      creating.current = false;
-      setPending(false);
-    }
+    },
+    closesScreen: true,
+  });
+  const pending = creation.pending;
+  const error = creation.error
+    ? errorText(creation.error, t`Something went wrong. Try again.`)
+    : null;
+
+  function create() {
+    const trimmed = name.trim();
+    if (trimmed) creation.run({ name: trimmed, organizations: organizations?.organizations ?? [] });
   }
 
   return (
@@ -57,7 +69,7 @@ export default function NewOrganization() {
           placeholder={t`Name`}
           value={name}
           onChangeText={setName}
-          onSubmitEditing={() => void create()}
+          onSubmitEditing={create}
           returnKeyType="done"
         />
       </SettingsGroup>
@@ -69,7 +81,7 @@ export default function NewOrganization() {
       <NativeActionButton
         disabled={!name.trim() || pending}
         label={pending ? t`Creating…` : t`Create`}
-        onPress={() => void create()}
+        onPress={create}
       />
     </View>
   );

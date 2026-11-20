@@ -16,10 +16,10 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, LayoutTemplate, X } from "lucide-react";
 import { useState } from "react";
-import { useSpaceQueries } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
-import type { ErrorDetails } from "../../lib/user-error";
-import { errorDetails } from "../../lib/user-error";
+import { useSpaceQueries } from "../../lib/query/query";
+import { rpc } from "../../lib/query/rpc";
+import type { ErrorDetails } from "../../lib/query/user-error";
+import { errorDetails } from "../../lib/query/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 import { ROW_HOVER } from "../integrations/plugin-marketplace";
 import { BotMarketplaceDetail } from "./bot-marketplace-detail";

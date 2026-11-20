@@ -1,4 +1,4 @@
-import type { UiLocale } from "./ui-locale";
+import type { UiLocale } from "./i18n/ui-locale";
 
 export const MODEL_ACCOUNT_MESSAGES: Partial<Record<UiLocale, Record<string, string>>> = {
   de: {

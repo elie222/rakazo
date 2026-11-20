@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll } from "vitest";
+import { pinLocalSecretStore } from "./pin-secret-store.js";
 
 const dom = (
   globalThis as typeof globalThis & {
@@ -42,6 +43,7 @@ if (!process.env.VERIFY_PROVIDERS) {
   delete process.env.EMAIL_API_KEY;
   delete process.env.SMTP_URL;
   delete process.env.BOT_EMAIL_SMTP_URL;
+  pinLocalSecretStore();
   if (!process.env.VERIFY_DATABASE) {
     delete process.env.DATABASE_URL;
     delete process.env.REALTIME_DATABASE_URL;
@@ -78,6 +80,9 @@ if (process.env.VERIFY_DATABASE) {
     const admin = createPool(owner.href);
     try {
       await admin.query(`CREATE DATABASE "${copy}" TEMPLATE "${template}"`);
+      // Timestamp columns hold UTC and SQL compares them with CURRENT_TIMESTAMP, as on the
+      // UTC servers we deploy to; a developer's Postgres otherwise takes the machine's zone.
+      await admin.query(`ALTER DATABASE "${copy}" SET timezone TO 'UTC'`);
     } finally {
       await admin.end();
     }

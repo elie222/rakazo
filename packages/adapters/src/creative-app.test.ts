@@ -8,7 +8,6 @@ import {
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { ConnectorRegistry } from "./connector-registry.js";
 import { capabilities, creativeFixture, musicInput } from "./creative.test-support.js";
 import {
   creativeCapabilitiesSchema,
@@ -20,11 +19,12 @@ import {
   creativeConnectionSchema,
   UserCreativeProvider,
 } from "./creative-provider.js";
-import { clipToolResultContent, TOOL_RESULT_TEXT_LIMIT } from "./pi-runtime-limits.js";
-import { serializeToolResult } from "./pi-runtime-tools.js";
-import type { attachWorkspaceFileToThread } from "./thread-artifacts.js";
+import { ConnectorRegistry } from "./integrations/connector-registry.js";
+import { clipToolResultContent, TOOL_RESULT_TEXT_LIMIT } from "./runtime/pi/pi-runtime-limits.js";
+import { serializeToolResult } from "./runtime/pi/tools/pi-runtime-tools.js";
+import type { attachWorkspaceFileToThread } from "./storage/thread-artifacts.js";
 
-vi.mock("./thread-artifacts.js", () => ({
+vi.mock("./storage/thread-artifacts.js", () => ({
   attachWorkspaceFileToThread: async (
     ...[deps, input]: Parameters<typeof attachWorkspaceFileToThread>
   ) => {
@@ -53,7 +53,7 @@ vi.mock("./thread-artifacts.js", () => ({
     return { artifactId: artifact.id, block: messageBlockForArtifact(artifact) };
   },
 }));
-vi.mock("./run-messages.js", () => ({
+vi.mock("./runs/assembly/run-messages.js", () => ({
   persistMessageInTransaction: async (
     tx: PrismaClient,
     run: { threadId: string },

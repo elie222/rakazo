@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { captureScreenshot, completeOnboarding, signup } from "./helpers/helpers";
 
 // Exercise the shared client with synthetic catalog/connection DTOs; no remote authorization or billing.
 test("connects and removes a configured creative app through the existing catalog", async ({

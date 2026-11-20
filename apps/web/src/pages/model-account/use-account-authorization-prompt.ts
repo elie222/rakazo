@@ -1,7 +1,7 @@
 import { modelAccountAuthorizationReason } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { authClient } from "../../lib/auth";
+import { authClient } from "../../lib/auth/auth";
 import { modelAccountConfigQuery, modelAccountStatusQuery } from "./queries";
 
 const prompted = new Set<string>();

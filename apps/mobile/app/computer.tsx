@@ -1,18 +1,22 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import { isComputerAllowanceUsed } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import {
+  COMPUTER_CONTROL_HEARTBEAT_MS,
+  COMPUTER_HEARTBEAT_MS,
   createScreenReconnect,
   displayName,
   isRetryableError,
   screenProbeUrl,
   waitForScreenPage,
 } from "@rakazo/core";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import type { RefObject } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -31,14 +35,14 @@ import {
   SafeAreaView,
 } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import { ComputerKeyboardBar } from "../components/computer-keyboard-bar";
-import { ComputerModePicker } from "../components/computer-mode-picker";
-import { GlassIconButton } from "../components/glass-icon-button";
-import { NativeActionButton } from "../components/native-action-button";
-import { currentApiBase, rpc } from "../lib/api";
-import { useAppForeground } from "../lib/app-foreground";
+import { ComputerKeyboardBar } from "../components/computers/computer-keyboard-bar";
+import { ComputerModePicker } from "../components/computers/computer-mode-picker";
+import { GlassIconButton } from "../components/native/glass-icon-button";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { currentApiBase, rpc } from "../lib/api/api";
+import { errorText } from "../lib/api/user-error";
+import { stacksAtTextScale } from "../lib/appearance/text-scale";
 import {
-  COMPUTER_HEARTBEAT_MS,
   COMPUTER_LIFECYCLE_TIMEOUT_MS,
   computerLabel,
   controlLabel,
@@ -46,34 +50,32 @@ import {
   fromScreenPage,
   isProxiedScreenPage,
   nextLoadedScreenUrl,
-  previewPlaceholder,
   retainScreenSource,
   screenPageState,
   screenPageStatus,
   screenStreamKey,
-} from "../lib/computer";
-import type { ComputerKeyboardCommand } from "../lib/computer-keyboard";
+} from "../lib/computers/computer";
+import type { ComputerKeyboardCommand } from "../lib/computers/computer-keyboard";
 import {
   computerKeyboardReadyProbe,
   computerKeyboardScript,
   createComputerKeyboardBridge,
   isComputerKeyboardReadyMessage,
   NATIVE_COMPUTER_KEYBOARD_BOOT,
-} from "../lib/computer-keyboard";
-import { tabletopLayout } from "../lib/fold-layout";
-import { useFoldRegions } from "../lib/fold-regions";
-import { useMobileTokens } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
-import { useSideInsets } from "../lib/side-insets";
-import { stacksAtTextScale } from "../lib/text-scale";
-import { useComputerBoot } from "../lib/use-computer-boot";
-import { errorText } from "../lib/user-error";
+} from "../lib/computers/computer-keyboard";
+import { useComputerBoot } from "../lib/computers/use-computer-boot";
+import { tabletopLayout } from "../lib/layout/fold-layout";
+import { useFoldRegions } from "../lib/layout/fold-regions";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { useMobileTokens } from "../lib/native/native";
+import { iosAtLeast } from "../lib/native/native-controls";
+import { useScreenHeader } from "../lib/navigation/screen-header";
+import { useAppForeground } from "../lib/platform/app-foreground";
 
 export default function Computer() {
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const tokens = useMobileTokens();
-  const navigation = useNavigation();
   const router = useRouter();
   const windowSize = useWindowDimensions();
   const stacked = stacksAtTextScale(windowSize.fontScale);
@@ -103,7 +105,7 @@ export default function Computer() {
   const [switchingCount, setSwitchingCount] = useState(0);
   const switching = switchingCount > 0;
   const [computerOpen, setComputerOpen] = useState(false);
-  // The keyboard closes on the Release tap, not when the server answers.
+  // The keyboard closes on the Hand back tap, not when the server answers.
   const [releasing, setReleasing] = useState(false);
   const autoBooted = useRef<string | null>(null);
   const screenWebViewRef = useRef<WebView<object>>(null);
@@ -170,9 +172,7 @@ export default function Computer() {
 
   const label = computerLabel(computer?.mode, name);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({ title: label });
-  }, [label, navigation]);
+  useScreenHeader({ title: label });
 
   const refresh = refreshController.refresh;
 
@@ -318,10 +318,28 @@ export default function Computer() {
       void rpc("computer/heartbeat", { botId }).catch((error: unknown) => {
         if (!isRetryableError(error)) clearInterval(timer);
       });
-    const timer = setInterval(ping, COMPUTER_HEARTBEAT_MS);
+    // Control lasts only while the app checks in, so the person holding it checks in often.
+    const timer = setInterval(
+      ping,
+      hasControl ? COMPUTER_CONTROL_HEARTBEAT_MS : COMPUTER_HEARTBEAT_MS,
+    );
     ping();
     return () => clearInterval(timer);
-  }, [botId, computer?.state, foreground]);
+  }, [botId, computer?.state, foreground, hasControl]);
+
+  // Control ends with the screen: closing it, switching bots, or leaving hands it back. The
+  // server tells the holder their lease, and the hand back names it, so a late one from an old
+  // screen never ends newer control.
+  const heldBotId = hasControl && computerOpen ? botId : undefined;
+  const heldLeaseId = heldBotId ? computer?.controlLeaseId : undefined;
+  useEffect(() => {
+    if (!heldBotId || !heldLeaseId) return;
+    return () => {
+      void rpc("computer/release", { botId: heldBotId, leaseId: heldLeaseId }).catch(
+        () => undefined,
+      );
+    };
+  }, [heldBotId, heldLeaseId]);
 
   /** Open the full window. Only an explicit Take control asks for the lease. */
   async function openComputer({ takeControl }: { takeControl: boolean }) {
@@ -366,6 +384,7 @@ export default function Computer() {
     const action = refreshController.beginAction();
     setReleasing(true);
     try {
+      // Hand back and I'm done end whatever control this person holds on the bot's screen.
       await rpc("computer/release", { botId, reason });
       if (!action.isActive()) return;
       setComputerOpen(false);
@@ -418,10 +437,10 @@ export default function Computer() {
     />
   ) : null;
   const placeholder =
-    screenError ??
+    (computer?.state === "running" || !screenOriginError ? screenError : null) ??
     (unreachableScreen
       ? t`Could not load the desktop. This device cannot reach the screen URL.`
-      : previewPlaceholder(computer?.state, booting, name, computer?.mode));
+      : computerPreviewPlaceholder(computer?.state, booting, "takeControl"));
   // Booting shows in the preview; the header and Back stay, and leaving lets the boot finish.
   const bootPending = booting || computer?.state === "booting";
   // Retrying cannot help once the hours are spent; only a plan change can.
@@ -562,7 +581,7 @@ export default function Computer() {
             ...(stacked ? { alignSelf: "stretch" } : { flex: 1 }),
           }}
         >
-          {controlLabel(computer, name, botId)}
+          {controlLabel(computer, name)}
         </Text>
         {hasControl ? (
           <ComputerReleaseActions
@@ -656,20 +675,6 @@ export default function Computer() {
                 >
                   {label}
                 </Text>
-                {hasControl ? (
-                  <View
-                    style={{
-                      borderRadius: 999,
-                      backgroundColor: tokens.muted,
-                      paddingHorizontal: 9,
-                      paddingVertical: 3,
-                    }}
-                  >
-                    <Text numberOfLines={1} style={{ color: tokens.success, fontSize: 12 }}>
-                      {t`You have control`}
-                    </Text>
-                  </View>
-                ) : null}
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 {hasControl ? (
@@ -778,7 +783,7 @@ function ComputerReleaseActions({
           { label: t`Skip`, reason: "skipped" },
           { label: t`I’m done`, reason: "done", primary: true },
         ]
-      : [{ label: t`Release` }];
+      : [{ label: t`Hand back control` }];
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       {actions.map((action) => (
@@ -828,13 +833,16 @@ function ScreenWebView({
   reportCallback.current = onScreenState;
   useEffect(() => {
     reportStarted.current = false;
-    // Only proxy pages report their state; one that never starts shows as failed.
-    if (!isProxiedScreenPage(loadedSource)) return;
-    const timer = setTimeout(() => {
-      if (!reportStarted.current) reportCallback.current?.("failed");
-    }, 15_000);
-    return () => clearTimeout(timer);
   }, [loadedSource, nativeKeyboard]);
+  // Only proxy pages report their state; one that never starts shows as failed.
+  const pageLoad = useMemo(() => ({}), [loadedSource, nativeKeyboard]);
+  useTimeout(
+    () => {
+      if (!reportStarted.current) reportCallback.current?.("failed");
+    },
+    isProxiedScreenPage(loadedSource) ? 15_000 : null,
+    pageLoad,
+  );
   return (
     <WebView
       ref={webViewRef}

@@ -4,7 +4,11 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { urlSite } from "@rakazo/core/egress";
 import LinkifyIt from "linkify-it";
 import type { ReactNode } from "react";
-import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
+
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 
 export type ChatMarkdownProps = {
   children: string;
@@ -38,27 +42,78 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Code keeps its source exactly; existing links keep their text. A mention is never placed in them.
-const CODE_MARKDOWN =
-  "```[\\s\\S]*?(?:```|$)|~~~[\\s\\S]*?(?:~~~|$)|(?:^|\\n)(?: {4}|\\t)[^\\n]*|`[^`\\n]*`";
-const CODE = new RegExp(`(${CODE_MARKDOWN})`);
-const PROTECTED_MARKDOWN = new RegExp(`(${CODE_MARKDOWN}|!?\\[[^\\]\\n]*\\]\\([^)\\n]*\\))`);
+const mentionParser = unified().use(remarkParse).use(remarkGfm);
+
+type MentionTrees = Map<string, ReturnType<typeof mentionParser.parse> | null>;
+
+function rewriteOutsideCode(
+  text: string,
+  rewrite: (part: string) => string,
+  trees: MentionTrees,
+  skipLinks = false,
+) {
+  if (trees.get(text) === null) return text;
+  try {
+    const tree = trees.get(text) ?? mentionParser.parse(text);
+    trees.set(text, tree);
+    let result = "";
+    let offset = 0;
+    function visit(node: typeof tree | (typeof tree.children)[number]) {
+      if (
+        node.type === "link" ||
+        node.type === "code" ||
+        node.type === "inlineCode" ||
+        (skipLinks &&
+          ["link", "image", "linkReference", "imageReference", "definition"].includes(node.type))
+      ) {
+        const start = node.position?.start.offset;
+        const end = node.position?.end.offset;
+        if (start !== undefined && end !== undefined) {
+          const source = text.slice(start, end);
+          result +=
+            rewrite(text.slice(offset, start)) +
+            (!skipLinks &&
+            node.type === "link" &&
+            node.url.toLowerCase().startsWith(MENTION_URL_PREFIX)
+              ? rewrite(source)
+              : source);
+          offset = end;
+        }
+        return;
+      }
+      if ("children" in node) for (const child of node.children) visit(child);
+    }
+    visit(tree);
+    return result + rewrite(text.slice(offset));
+  } catch {
+    trees.set(text, null);
+    return text;
+  }
+}
 const MODEL_MENTION_LINK = /\[([^\]\n]*)\]\(\s*<?rakazo-mention:[^)\n]*\)/gi;
 const OPENS_WITH_BLOCK = /^\s*(#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/;
 
-function linkFirstName(text: string, name: string, link: string): string | undefined {
+function linkFirstName(
+  text: string,
+  name: string,
+  link: string,
+  trees: MentionTrees,
+): string | undefined {
   const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_])${escapeRegExp(name)}(?![\\p{L}\\p{N}_])`, "u");
+  if (!pattern.test(text)) return undefined;
   let placed = false;
-  const result = text
-    .split(PROTECTED_MARKDOWN)
-    .map((part, index) => {
-      if (placed || index % 2 === 1) return part;
+  const result = rewriteOutsideCode(
+    text,
+    (part) => {
+      if (placed) return part;
       return part.replace(pattern, (_match, prefix: string) => {
         placed = true;
         return `${prefix}${link}`;
       });
-    })
-    .join("");
+    },
+    trees,
+    true,
+  );
   return placed ? result : undefined;
 }
 
@@ -70,12 +125,10 @@ export function withMentions(
   texts: readonly string[],
   mentions: readonly { id: string; name: string }[],
 ): string[] {
+  const trees: MentionTrees = new Map();
   // Only links placed here draw as mentions; ones already in the text keep just their name.
   const result = texts.map((text) =>
-    text
-      .split(CODE)
-      .map((part, index) => (index % 2 === 1 ? part : part.replace(MODEL_MENTION_LINK, "$1")))
-      .join(""),
+    rewriteOutsideCode(text, (part) => part.replace(MODEL_MENTION_LINK, "$1"), trees),
   );
   if (result.length === 0) return result;
   for (const mention of mentions) {
@@ -83,13 +136,15 @@ export function withMentions(
     if (!name) continue;
     const link = `[${name.replace(/[\\[\]*_`<>]/g, "\\$&")}](${MENTION_URL_PREFIX}${encodeURIComponent(mention.id)})`;
     const placed = result.some((text, index) => {
-      const linked = linkFirstName(text, name, link);
+      const linked = linkFirstName(text, name, link, trees);
       if (linked !== undefined) result[index] = linked;
       return linked !== undefined;
     });
     if (placed) continue;
-    const first = result[0]!;
-    result[0] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
+    const firstIndex = result.findIndex((text) => trees.get(text) !== null);
+    if (firstIndex === -1) continue;
+    const first = result[firstIndex]!;
+    result[firstIndex] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
   }
   return result;
 }
@@ -164,7 +219,8 @@ export type PlainTextPart =
   | { type: "page"; value: string; pageId: string };
 
 // The link pageReply puts before a sent reply: `[title](page:<pageId>)`, title brackets escaped.
-const PLAIN_PAGE_LINK = /\[((?:\\[\\[\]]|[^\\[\]\n])*)\]\(page:([A-Za-z0-9_-]{1,64})\)/g;
+// The bound fits any escaped title and keeps unclosed brackets from rescanning the message.
+const PLAIN_PAGE_LINK = /\[((?:\\[\\[\]]|[^\\[\]\n]){0,400})\]\(page:([A-Za-z0-9_-]{1,64})\)/g;
 
 function appendPlainText(parts: PlainTextPart[], value: string) {
   if (!value) return;
@@ -504,36 +560,45 @@ function requestLinkFavicon(source: LinkFavicons, origin: string, key: string, a
   );
 }
 
+function faviconKey(source: LinkFavicons | null, origin: string) {
+  return JSON.stringify([source?.endpoint ?? "", origin]);
+}
+
+/** Counts a link to this origin as on screen until the returned release runs. */
+function showFaviconLink(key: string) {
+  mountedFaviconLinks.set(key, (mountedFaviconLinks.get(key) ?? 0) + 1);
+  return () => {
+    const left = (mountedFaviconLinks.get(key) ?? 1) - 1;
+    if (left > 0) {
+      mountedFaviconLinks.set(key, left);
+      return;
+    }
+    mountedFaviconLinks.delete(key);
+    const retry = busyFaviconRetries.get(key);
+    if (retry === undefined) return;
+    clearTimeout(retry);
+    busyFaviconRetries.delete(key);
+    pendingFavicons.delete(key);
+  };
+}
+
+function askForFavicon(source: LinkFavicons, origin: string, key: string) {
+  if (linkFavicons.has(key) || pendingFavicons.has(key)) return;
+  if (Date.now() - (failedFavicons.get(key) ?? -Infinity) < FAILED_FAVICON_RETRY_MS) return;
+  requestLinkFavicon(source, origin, key, 1);
+}
+
 /** The icon for a link once the API has one, and a way to drop an image that turns out unusable. */
 export function useLinkFavicon(href: string): { icon: string | null; unusable: () => void } {
   const source = useContext(LinkFaviconsContext);
   const paused = useContext(LinkFaviconsPausedContext);
   const origin = linkFaviconOrigin(href);
-  const key = JSON.stringify([source?.endpoint ?? "", origin]);
+  const key = faviconKey(source, origin ?? "");
   const snapshot = () => (origin ? (linkFavicons.get(key) ?? null) : null);
   const icon = useSyncExternalStore(subscribeLinkFavicons, snapshot, snapshot);
+  useEffect(() => (origin ? showFaviconLink(key) : undefined), [key, origin]);
   useEffect(() => {
-    if (!origin) return;
-    mountedFaviconLinks.set(key, (mountedFaviconLinks.get(key) ?? 0) + 1);
-    return () => {
-      const left = (mountedFaviconLinks.get(key) ?? 1) - 1;
-      if (left > 0) {
-        mountedFaviconLinks.set(key, left);
-        return;
-      }
-      mountedFaviconLinks.delete(key);
-      const retry = busyFaviconRetries.get(key);
-      if (retry === undefined) return;
-      clearTimeout(retry);
-      busyFaviconRetries.delete(key);
-      pendingFavicons.delete(key);
-    };
-  }, [key, origin]);
-  useEffect(() => {
-    if (!source || paused || !origin) return;
-    if (linkFavicons.has(key) || pendingFavicons.has(key)) return;
-    if (Date.now() - (failedFavicons.get(key) ?? -Infinity) < FAILED_FAVICON_RETRY_MS) return;
-    requestLinkFavicon(source, origin, key, 1);
+    if (source && !paused && origin) askForFavicon(source, origin, key);
   }, [source, paused, origin, key]);
   return {
     icon,
@@ -543,15 +608,54 @@ export function useLinkFavicon(href: string): { icon: string | null; unusable: (
   };
 }
 
+/** The icons the API has for these links so far, by link. */
+export function useLinkFavicons(hrefs: readonly string[]): ReadonlyMap<string, string> {
+  const source = useContext(LinkFaviconsContext);
+  const paused = useContext(LinkFaviconsPausedContext);
+  const origins = [...new Set(hrefs.flatMap((href) => linkFaviconOrigin(href) ?? []))].sort();
+  const originList = JSON.stringify(origins);
+  // The joined icons are a string, so an unchanged answer keeps the same snapshot.
+  const snapshot = () =>
+    JSON.stringify(origins.map((origin) => linkFavicons.get(faviconKey(source, origin)) ?? null));
+  const icons = useSyncExternalStore(subscribeLinkFavicons, snapshot, snapshot);
+  useEffect(() => {
+    const shown: string[] = JSON.parse(originList);
+    const releases = shown.map((origin) => showFaviconLink(faviconKey(source, origin)));
+    return () => {
+      for (const release of releases) release();
+    };
+  }, [source, originList]);
+  useEffect(() => {
+    if (!source || paused) return;
+    for (const origin of JSON.parse(originList) as string[]) {
+      askForFavicon(source, origin, faviconKey(source, origin));
+    }
+  }, [source, paused, originList]);
+  return useMemo(() => {
+    const byOrigin = new Map<string, string>();
+    (JSON.parse(icons) as (string | null)[]).forEach((icon, index) => {
+      const origin = (JSON.parse(originList) as string[])[index];
+      if (icon && origin) byOrigin.set(origin, icon);
+    });
+    const byHref = new Map<string, string>();
+    for (const href of hrefs) {
+      const icon = byOrigin.get(linkFaviconOrigin(href) ?? "");
+      if (icon) byHref.set(href, icon);
+    }
+    return byHref;
+  }, [icons, originList, hrefs]);
+}
+
 export function closeUnterminatedFence(markdown: string): string {
   let openFence: { marker: "`" | "~"; length: number } | undefined;
 
-  for (const line of markdown.split("\n")) {
+  for (const line of markdown.split(/\r\n|\r|\n/)) {
     const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (!match?.[1]) continue;
 
     const marker = match[1][0] as "`" | "~";
     if (!openFence) {
+      if (marker === "`" && (match[2] ?? "").includes("`")) continue;
       openFence = { marker, length: match[1].length };
       continue;
     }

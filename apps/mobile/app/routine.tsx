@@ -2,45 +2,47 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "react-native";
-import { useBotEmail } from "../components/bot-email";
-import { GlassIconButton } from "../components/glass-icon-button";
-import { GrowingTextInput } from "../components/growing-text-input";
-import { MenuPickerMenu } from "../components/menu-picker";
-import { NativeActionButton } from "../components/native-action-button";
-import { RoutineEmailTrigger } from "../components/routine-email-trigger";
-import { RoutineScheduleEditor } from "../components/routine-schedule-editor";
+import { useBotEmail } from "../components/bots/bot-email";
+import { GlassIconButton } from "../components/native/glass-icon-button";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { RoutineEmailTrigger } from "../components/routines/routine-email-trigger";
+import { RoutineScheduleEditor } from "../components/routines/routine-schedule-editor";
 import {
   SettingsGroup,
   SettingsInputRow,
   SettingsLabel,
   SettingsRow,
   SettingsSwitch,
-} from "../components/settings-group";
-import { rpc } from "../lib/api";
-import { dateLocaleForUi, useUiLocale } from "../lib/i18n";
-import { native, useMobileTokens } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
-import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routine";
-import type { MobileRoutineDraft } from "../lib/routine-draft";
+} from "../components/settings/settings-group";
+import { GrowingTextInput } from "../components/ui/growing-text-input";
+import { MenuPickerMenu } from "../components/ui/menu-picker";
+import { rpc } from "../lib/api/api";
+import { errorText } from "../lib/api/user-error";
+import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
+import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native, useMobileTokens } from "../lib/native/native";
+import { iosAtLeast } from "../lib/native/native-controls";
+import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routines/routine";
+import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
   routineDraftChanged,
   routineSaveRequest,
   routineScheduleLocked,
   routineWithDraftTriggers,
-} from "../lib/routine-draft";
+} from "../lib/routines/routine-draft";
 import {
   removeBotRoutine,
   saveBotRoutine,
   setRoutineActive,
   useBotRoutines,
-} from "../lib/routine-store";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+} from "../lib/routines/routine-store";
 
 export default function RoutineDetail() {
+  const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useLingui();
@@ -51,6 +53,15 @@ export default function RoutineDetail() {
     origin?: string;
   }>();
   const router = useRouter();
+  const deletionContext = useMemo(() => ({ active: false }), [botId, routineId]);
+  useFocusEffect(
+    useCallback(() => {
+      deletionContext.active = true;
+      return () => {
+        deletionContext.active = false;
+      };
+    }, [deletionContext]),
+  );
   // Opened from the list, the routine is already known; it still reads again. A routine missing
   // from what was known before only counts as gone once that read answers.
   const {
@@ -79,7 +90,7 @@ export default function RoutineDetail() {
       style={[{ flex: 1, backgroundColor: native.groupedPage }, sideInsets]}
       contentContainerStyle={{ padding: 24, gap: 24 }}
       contentInsetAdjustmentBehavior="automatic"
-      automaticallyAdjustKeyboardInsets
+      automaticallyAdjustKeyboardInsets={!rootAvoidsKeyboard}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
@@ -96,7 +107,9 @@ export default function RoutineDetail() {
             if (creating) router.setParams({ routineId: saved.id });
             setEditing(false);
           }}
-          onDeleted={() => router.back()}
+          onDeleted={() => {
+            if (deletionContext.active) router.back();
+          }}
         />
       ) : botId && routine ? (
         <RoutineView

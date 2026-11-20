@@ -13,11 +13,11 @@ import { stableJsonValue } from "@rakazo/core/node/approval-effect-key";
 import type { ExternalEffect } from "@rakazo/db";
 import { assertRunCanWriteHistory, isUniqueViolation, parseComputerMode } from "@rakazo/db";
 import { quote } from "shell-quote";
-import { BACKGROUND_WORK_LAUNCH } from "../computer-idle.js";
-import { acquireComputerExecutionLease, provisionComputer } from "../computer-lifecycle.js";
-import { resolveBotWorkspaceCwd, resolveBotWorkspacePath } from "../computer-support.js";
-import { persistMessageInTransaction } from "../run-messages.js";
-import { attachWorkspaceFileToThread } from "../thread-artifacts.js";
+import { BACKGROUND_WORK_LAUNCH } from "./../computers/computer-idle.js";
+import { acquireComputerExecutionLease, provisionComputer } from "./../computers/computer-lifecycle.js";
+import { resolveBotWorkspaceCwd, resolveBotWorkspacePath } from "./../computers/screens/computer-support.js";
+import { persistMessageInTransaction } from "./../runs/assembly/run-messages.js";
+import { attachWorkspaceFileToThread } from "./../storage/thread-artifacts.js";
 import type { HostExecutionDeps } from "./host-execution.js";
 import { authorizedHostExecution, HostExecutionError } from "./host-execution.js";
 

@@ -1,13 +1,18 @@
 import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
-import { chatSnoozed, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
+import { chatSnoozed } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
+import { computerUpdates } from "../../lib/computers/computer-updates";
 import {
+  browserNotificationTag,
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
-} from "../../lib/browser-notifications";
-import { notificationIcon, prepareNotificationIcons } from "../../lib/notification-icon";
-import type { RpcClient } from "../../lib/rpc";
+} from "../../lib/platform/browser-notifications";
+import { notificationIcon, prepareNotificationIcons } from "../../lib/platform/notification-icon";
+import { followStream } from "../../lib/query/follow-stream";
+import type { RpcClient } from "../../lib/query/rpc";
+import { isReadChangeKind, spaceChanged } from "../../lib/query/space-changes";
+import { organizationsChanged } from "../../lib/spaces/organizations";
 
 type PendingBrowserNotification = {
   event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
@@ -31,7 +36,7 @@ type ChatAlertOptions = {
   roster?: RosterSignals;
 };
 
-export type RosterSignals = { changed: () => void; lost: () => void };
+export type RosterSignals = { changed: () => void };
 
 /** A question still arrives while a chat is snoozed; an ordinary reply waits. */
 function messageAsks(event: { type: string; payload: { blocks?: unknown } }): boolean {
@@ -90,9 +95,6 @@ export function useBrowserNotifications(
   rosterRef.current = roster;
   const shown = useRef(new Set<Notification>());
   useEffect(() => {
-    let active = true;
-    let controller: AbortController | undefined;
-    let cancelRetry: (() => void) | undefined;
     const show = (alert: ChatAlert) => {
       if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
       const isOpen = alert.groupId
@@ -119,45 +121,18 @@ export function useBrowserNotifications(
         // Some browsers only allow notifications from a service worker.
       }
     };
-    void (async () => {
-      while (active) {
-        controller = new AbortController();
-        let failure: unknown;
-        let opened = false;
-        try {
-          const stream = await rpc.notifications.subscribe(undefined, {
-            signal: controller.signal,
-          });
-          opened = true;
-          for await (const frame of stream) {
-            if (!active) return;
-            if (frame.type === "roster") rosterRef.current?.changed();
-            else if (frame.alert) show(frame.alert);
-          }
-        } catch (cause) {
-          failure = cause;
-        } finally {
-          controller.abort();
-          rosterRef.current?.lost();
-        }
-        if (!active || (failure !== undefined && !isRetryableError(failure))) return;
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(
-            resolve,
-            opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
-          );
-          cancelRetry = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-        });
-        cancelRetry = undefined;
-      }
-    })();
+    const stop = followStream(
+      (signal) => rpc.notifications.subscribe(undefined, { signal }),
+      (frame) => {
+        if (frame.type === "roster") rosterRef.current?.changed();
+        else if (frame.type === "organizations") void organizationsChanged();
+        else if (frame.type === "computerUpdates") computerUpdates.signalled();
+        else if (isReadChangeKind(frame.type)) void spaceChanged(frame.type);
+        else if (frame.alert) show(frame.alert);
+      },
+    );
     return () => {
-      active = false;
-      controller?.abort();
-      cancelRetry?.();
+      stop();
       for (const notification of shown.current) notification.close();
     };
   }, [rpc]);
@@ -243,13 +218,13 @@ export function useBrowserNotifications(
       if (snoozedOrdinaryReply(event, chatFor(pending))) return;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {
-        pendingBrowserNotifications.current.set(event.threadId, pending);
+        pendingBrowserNotifications.current.set(browserNotificationTag(event), pending);
         return;
       }
       if (deliverBrowserNotification(pending)) {
-        pendingBrowserNotifications.current.delete(event.threadId);
+        pendingBrowserNotifications.current.delete(browserNotificationTag(event));
       } else {
-        pendingBrowserNotifications.current.set(event.threadId, pending);
+        pendingBrowserNotifications.current.set(browserNotificationTag(event), pending);
       }
     },
     [deliverBrowserNotification],

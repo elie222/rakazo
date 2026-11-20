@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import type { NavigateFunction } from "react-router-dom";
 import { BrowserRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type * as SpaceSwitch from "../../lib/space-switch";
+import type * as SpaceSwitch from "./space-switch";
 import { useShellNavigation } from "./use-shell-navigation";
 import { useOpenSpaceChat } from "./use-space-switch";
 
@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   select: vi.fn(),
   cached: vi.fn(),
   call: vi.fn(),
+  leavingSession: vi.fn(),
   remount: vi.fn(),
   stop: vi.fn(),
 }));
@@ -25,15 +26,21 @@ vi.mock("../../lib/bootstrap", () => ({
 vi.mock("../../lib/bootstrap-target", () => ({
   initialBootstrapTarget: () => ({ botId: "target" }),
 }));
-vi.mock("../../lib/call-session", () => ({ getSnapshot: state.call }));
-vi.mock("../../lib/organizations", () => ({ leaveOrganization: async () => {} }));
-vi.mock("../../lib/query", () => ({
+vi.mock("../../lib/calls/call-session", () => ({
+  getSnapshot: state.call,
+  isLeavingSession: state.leavingSession,
+}));
+vi.mock("../../lib/spaces/organizations", () => ({ leaveOrganization: async () => {} }));
+vi.mock("../../lib/query/query", () => ({
   queryClient: { getQueryData: state.cached },
   spaceSeedKey: () => [],
 }));
-vi.mock("../../lib/rpc", () => ({ selectedSpaceId: () => "old-space", selectSpace: state.select }));
-vi.mock("../../lib/tts", () => ({ speaker: { stop: state.stop } }));
-vi.mock("../../lib/space-switch", async (importOriginal) => ({
+vi.mock("../../lib/query/rpc", () => ({
+  selectedSpaceId: () => "old-space",
+  selectSpace: state.select,
+}));
+vi.mock("../../lib/calls/tts", () => ({ speaker: { stop: state.stop } }));
+vi.mock("./space-switch", async (importOriginal) => ({
   ...(await importOriginal<typeof SpaceSwitch>()),
   remountShellForSpace: state.remount,
 }));
@@ -45,6 +52,13 @@ let commits: Array<() => boolean>;
 let navigationRevision: { current: number };
 let overlayRevision: { current: number };
 let navigate: ReturnType<typeof vi.fn>;
+/** Whether the latest switch says it is still on its way, and how each switch ended. */
+let live: () => boolean;
+let ended: boolean[];
+function beginSpaceSwitch(check: () => boolean) {
+  live = check;
+  return (leftSpace: boolean) => void ended.push(leftSpace);
+}
 
 function Harness() {
   open = useOpenSpaceChat({
@@ -54,6 +68,7 @@ function Harness() {
     navigationRevision,
     overlayRevision,
     closeMobileSidebar: () => {},
+    beginSpaceSwitch,
   });
   return null;
 }
@@ -73,9 +88,12 @@ beforeEach(() => {
   navigationRevision = { current: 0 };
   overlayRevision = { current: 0 };
   navigate = vi.fn();
+  live = () => false;
+  ended = [];
   state.prime.mockImplementation(() => new Promise<void>((resolve) => pending.push(resolve)));
   state.cached.mockReturnValue(undefined);
   state.call.mockReturnValue(null);
+  state.leavingSession.mockReturnValue(false);
   state.select.mockReturnValue(true);
   state.remount.mockImplementation((commit: () => boolean) => commits.push(commit));
   root = createRoot(document.createElement("div"));
@@ -99,6 +117,7 @@ describe("pending space switches", () => {
         bootstrapSpaceId: "old-space",
         userId: "user",
         closeMobileSidebar: () => {},
+        beginSpaceSwitch,
       });
       return null;
     }
@@ -162,6 +181,77 @@ describe("pending space switches", () => {
     navigationRevision.current++;
     expect(commits[0]!()).toBe(false);
     expect(navigate).not.toHaveBeenCalled();
+    expect(state.select).not.toHaveBeenCalled();
+  });
+
+  it("reports a switch as on its way until it is abandoned, then ends it", async () => {
+    act(() => open("new-space", "/app/new"));
+    expect(live()).toBe(true);
+    navigationRevision.current++;
+    expect(live()).toBe(false);
+    expect(ended).toEqual([]);
+    await ready();
+    expect(ended).toEqual([false]);
+  });
+
+  it("ends a switch that left for the other space", async () => {
+    act(() => open("new-space", "/app/new"));
+    await ready();
+    await act(async () => expect(commits[0]!()).toBe(true));
+    expect(ended).toEqual([true]);
+  });
+
+  it("ends a switch whose space could not be selected", async () => {
+    state.select.mockReturnValue(false);
+    act(() => open("new-space", "/app/new"));
+    await ready();
+    await act(async () => expect(commits[0]!()).toBe(false));
+    expect(ended).toEqual([false]);
+    expect(state.discard).toHaveBeenCalledOnce();
+  });
+
+  it("ends a switch whose commit throws", async () => {
+    state.select.mockImplementation(() => {
+      throw new Error("storage");
+    });
+    act(() => open("new-space", "/app/new"));
+    await ready();
+    await act(async () => expect(commits[0]).toThrow("storage"));
+    expect(ended).toEqual([false]);
+  });
+
+  it("ends a switch whose space failed to load and could not be reloaded into", async () => {
+    state.select.mockReturnValue(false);
+    state.prime.mockReturnValue(Promise.reject(new Error("offline")));
+    await act(async () => open("new-space", "/app/new"));
+    expect(state.remount).not.toHaveBeenCalled();
+    expect(state.select).toHaveBeenCalledWith("new-space");
+    expect(ended).toEqual([false]);
+  });
+
+  it.each(["finishes loading", "fails to load"])(
+    "selects no space when the other one %s after signing out began",
+    async (outcome) => {
+      if (outcome === "fails to load") {
+        state.prime.mockReturnValue(Promise.reject(new Error("offline")));
+      }
+      act(() => open("new-space", "/app/new"));
+      state.leavingSession.mockReturnValue(true);
+      expect(live()).toBe(false);
+      await act(async () => {
+        pending[0]?.();
+        await Promise.resolve();
+      });
+      expect(state.remount).not.toHaveBeenCalled();
+      expect(state.select).not.toHaveBeenCalled();
+      expect(ended).toEqual([false]);
+    },
+  );
+
+  it("selects no space when a call's reload is reached after signing out began", async () => {
+    state.call.mockReturnValue({});
+    state.leavingSession.mockReturnValue(true);
+    await act(async () => open("new-space", "/app/new"));
     expect(state.select).not.toHaveBeenCalled();
   });
 

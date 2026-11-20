@@ -1,6 +1,6 @@
 import * as z from "zod";
-import { BotTemplateSchema } from "./bot-template.js";
-import { BOT_NAME_MAX_LENGTH, BotSchema } from "./domain.js";
+import { BotTemplateSchema } from "./bots/bot-template.js";
+import { BOT_NAME_MAX_LENGTH, BotSchema } from "./bots/bot.js";
 
 /**
  * A marketplace listing: a reviewed bot template plus the catalog metadata the market shows.

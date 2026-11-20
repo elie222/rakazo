@@ -33,9 +33,9 @@ export default defineConfig({
         "<rootDir>/apps/mobile/lib",
       ],
       exclude: [
-        "**/locales/**",
-        "**/*.test.*",
-        "**/node_modules/**",
+        "<rootDir>/**/locales/**",
+        "<rootDir>/**/*.test.*",
+        "<rootDir>/**/node_modules/**",
         // The fork's account pages keep their own catalog below.
         "<rootDir>/apps/web/src/pages/model-account/**",
         "<rootDir>/apps/web/src/components/ModelAccount*.tsx",
@@ -48,7 +48,7 @@ export default defineConfig({
         "<rootDir>/apps/web/src/components/ModelAccount.tsx",
         "<rootDir>/apps/web/src/components/ModelAccountOnboarding.tsx",
       ],
-      exclude: ["**/locales/**", "**/*.test.*"],
+      exclude: ["<rootDir>/**/locales/**", "<rootDir>/**/*.test.*"],
     },
   ],
   compileNamespace: "es",

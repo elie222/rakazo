@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { ThreadMessage } from "@rakazo/contracts";
-import { desktopBridge } from "./desktop";
+import { desktopBridge } from "./platform/desktop";
 
 /** Resolve the device's choice on each send; a failed local send never falls through to a server run. */
 export async function selectedHostSend(input: {

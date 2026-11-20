@@ -3,8 +3,8 @@ import type { Actor } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
-import { cancelThreadRuns, finishThreadStop, stopThreadRuns } from "./thread-stop.js";
-import type { ThreadTarget } from "./thread-target.js";
+import { cancelThreadRuns, finishThreadStop, stopThreadRuns } from "./threads/thread-stop.js";
+import type { ThreadTarget } from "./threads/thread-target.js";
 
 /** The authorized thread must stop its remote processes before publishing cancellation. */
 export async function stopThreadExecutionRuns(

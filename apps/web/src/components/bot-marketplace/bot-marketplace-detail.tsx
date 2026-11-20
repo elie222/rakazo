@@ -4,7 +4,7 @@ import type { MarketplaceBot } from "@rakazo/contracts";
 import { formatCron } from "@rakazo/core";
 import { Button, Disclosure, SectionHeading } from "@rakazo/ui-web";
 import { Clock, LayoutTemplate, Plug } from "lucide-react";
-import { cronLabels } from "../../lib/cron";
+import { cronLabels } from "../../lib/routines/cron";
 
 /**
  * The listing as users see it (sketch screen 2): what it does, the apps and routines it needs,

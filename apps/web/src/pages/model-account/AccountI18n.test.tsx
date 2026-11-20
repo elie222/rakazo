@@ -12,7 +12,7 @@ vi.mock("./locales/de/messages.po?import", () => ({
 vi.mock("./locales/en/messages.po?import", () => ({
   messages: { "Model account": "Model account" },
 }));
-vi.mock("../../lib/i18n", () => ({ i18n }));
+vi.mock("../../lib/locale/i18n", () => ({ i18n }));
 
 it("switches feature translations without changing app catalogs or remounting pending work", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

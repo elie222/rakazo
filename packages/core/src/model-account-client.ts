@@ -6,7 +6,7 @@ import {
   modelAccountErrorCodeSchema,
   modelAccountStatusSchema,
 } from "@rakazo/contracts";
-import { readBoundedJsonResponse } from "./http-response.js";
+import { readBoundedJsonResponse } from "./primitives/http-response.js";
 
 export class ModelAccountClientError extends Error {
   constructor(readonly code: ModelAccountErrorCode) {

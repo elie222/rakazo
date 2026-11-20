@@ -14,13 +14,13 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@tanstack/react-query", () => ({ useQuery: () => state.me }));
 vi.mock("./model-account-client", () => ({ modelAccountConfigQuery: () => ({}) }));
-vi.mock("./query", () => ({ queryClient: {}, rpcQuery: () => ({}) }));
-vi.mock("./i18n", () => ({
+vi.mock("./query/query", () => ({ queryClient: {}, rpcQuery: () => ({}) }));
+vi.mock("./i18n/i18n", () => ({
   useI18n: () => ({ t: (text: string) => text }),
   t: (text: string) => text,
 }));
 vi.mock("react-native", () => ({ ActivityIndicator: () => <p>Loading</p> }));
-vi.mock("../components/load-failure", () => ({ LoadFailure: () => <p role="alert">Failed</p> }));
+vi.mock("../components/ui/load-failure", () => ({ LoadFailure: () => <p role="alert">Failed</p> }));
 vi.mock("expo-router", () => ({
   useSegments: () => ["(settings)", state.route],
   useLocalSearchParams: () => state.params,
@@ -28,7 +28,7 @@ vi.mock("expo-router", () => ({
 }));
 
 import { ModelAccountRoutes } from "../components/model-account-routes";
-import { closeModelConnection, openModelConnection } from "./model-connection-request";
+import { closeModelConnection, openModelConnection } from "./models/model-connection-request";
 
 afterEach(() => {
   document.body.innerHTML = "";

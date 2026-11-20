@@ -15,7 +15,7 @@ vi.mock("@tanstack/react-query", () => ({
     data: queryKey[0] === "config" ? state.config : state.status,
   }),
 }));
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/auth/auth", () => ({
   authClient: { useSession: () => ({ data: { session: { id: state.session } } }) },
 }));
 vi.mock("./queries", () => ({

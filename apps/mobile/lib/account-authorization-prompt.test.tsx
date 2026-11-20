@@ -20,9 +20,9 @@ vi.mock("expo-router", () => ({
   usePathname: () => state.path,
   useRouter: () => ({ push: state.push }),
 }));
-vi.mock("./api", () => ({ currentApiBase: () => "https://app.example.test" }));
-vi.mock("./query", () => ({ queryClient: {} }));
-vi.mock("./session", () => ({
+vi.mock("./api/api", () => ({ currentApiBase: () => "https://app.example.test" }));
+vi.mock("./query/query", () => ({ queryClient: {} }));
+vi.mock("./api/session", () => ({
   currentSessionGeneration: () => state.generation,
   subscribeSessionGeneration: () => () => {},
   loadSessionToken: async () => state.token,

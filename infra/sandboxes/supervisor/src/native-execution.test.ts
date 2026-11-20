@@ -1,4 +1,4 @@
-import { resolveSupervisorToken } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mock = vi.hoisted(() => ({ inspect: vi.fn(), handle: vi.fn(), create: vi.fn() }));

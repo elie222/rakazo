@@ -216,6 +216,32 @@ describe("parseNumericText", () => {
     }
   });
 
+  it("parses an explicit plus sign and the typographic minus", () => {
+    for (const [text, expected] of [
+      ["+5", 5],
+      ["+12%", 12],
+      ["+$5", 5],
+      ["+1,234.5", 1234.5],
+      ["+.5", 0.5],
+      ["\u22125", -5],
+      ["\u22123.2%", -3.2],
+      ["$\u22125", -5],
+    ] as const) {
+      expect(parseNumericText(text)).toBe(expected);
+    }
+  });
+
+  it("treats a delta column with signs as numeric", () => {
+    const rows = [["+12%"], ["-3%"], ["+5%"], ["\u22122%"]];
+    expect(isNumericColumn(rows, 0)).toBe(true);
+  });
+
+  it("rejects a stray or doubled sign", () => {
+    for (const text of ["+", "++5", "+-5", "-+5", "5+", "\u2212", "+(5)"]) {
+      expect(parseNumericText(text)).toBeNull();
+    }
+  });
+
   it("rejects incomplete or malformed decimals", () => {
     for (const text of [".", "-.", "(.)", "1.", "..5", ".5.0", "1,23.5"]) {
       expect(parseNumericText(text)).toBeNull();

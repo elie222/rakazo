@@ -25,26 +25,26 @@ export const JA_MESSAGES: Record<string, string> = {
   "Enter this code in Rakazo to confirm it's you:":
     "ご本人であることを確認するには、BotONEで次のコードを入力してください:",
   "Welcome to Rakazo": "BotONEへようこそ",
-  "Thanks for signing up for Rakazo.": "BotONEにご登録いただきありがとうございます。",
-  "Rakazo also has apps for": "BotONEには次のアプリもあります:",
-  "Questions or ideas?": "ご質問やアイデアはありますか？",
-  "Join us on Discord": "Discordに参加する",
-  "Rakazo is open source. If you like it,": "BotONEはオープンソースです。気に入っていただけたら、",
-  "a star on GitHub": "GitHubでのスター",
-  "helps others find it.": "が、ほかの人に見つけてもらう助けになります。",
-  "Want to run it on your own servers?": "自分のサーバで動かしたいですか？",
-  "Self-host Rakazo": "BotONEをセルフホストする",
-  "Have any questions? Reply to this email.": "ご質問があれば、このメールに返信してください。",
+  "Welcome to Rakazo. The people who get the most out of it do three things:":
+    "BotONE へようこそ。BotONE を最大限に活用している人は、次の 3 つをしています。",
+  "Get the apps": "アプリを入手する",
+  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
+    "BotONE は {platforms} で使えるので、ボットはどこにいてもあなたに連絡できます。",
+  "Join the community": "コミュニティに参加する",
+  "See what others are building, get help fast, and tell us what to build next on {discord}.":
+    "{discord} で、ほかの人が作っているものを見たり、すぐに助けを得たり、次に作ってほしいものを教えてください。",
+  "Star us on GitHub": "GitHub でスターを付ける",
+  "Rakazo is open source. {star} helps more people find it.":
+    "BotONE はオープンソースです。{star} は、より多くの人が BotONE を見つける助けになります。",
+  "A star on GitHub": "GitHub のスター",
+  "Questions? Just reply. I read every one.":
+    "質問があれば、このメールに返信してください。すべて読んでいます。",
   Unsubscribe: "配信停止",
   "Invite a friend": "友だちを招待",
   "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
     "友だちをBotONEに招待しましょう。友だちは{weeks}週間無料で使え、新しいカードで対象のサブスクリプションを始めると、あなたは1か月無料になります。",
   "Open Rakazo": "BotONEを開き",
   "and choose Invite friends for your link.": "「友だちを招待」を選ぶとリンクを取得できます。",
-  "Have any questions? Just reply to this email.":
-    "ご質問があれば、このメールに返信するだけでOKです。",
-  "If you're enjoying Rakazo,": "BotONEを気に入っていただけたら、",
-  "give us a star on GitHub": "GitHubでスターをお願いします",
   "We received your Rakazo plugin": "BotONEプラグインを受け付けました",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "BotONEマーケットプレイスにプラグインを申請いただきありがとうございます。",
@@ -73,4 +73,23 @@ export const JA_MESSAGES: Record<string, string> = {
     "再登録しない場合、保存されたコンピューターのファイルは{date}に削除されます。",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "プランを選択しない場合、保存されたコンピューターのファイルは{date}に削除されます。",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter}さんがBotONEの{organization}にあなたを招待しました",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter}さんがBotONEの{organization}への参加にあなたを招待しました。",
+  "Join {organization}": "{organization}に参加",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "この招待は7日後に期限切れになります。承諾するには、このメールアドレスでサインインしてください。",
+  "{inviter} invited you to {space} on Rakazo":
+    "{inviter}さんがBotONEの{space}にあなたを招待しました",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter}さんがBotONEの{space}への参加にあなたを招待しました。",
+  "Join {space}": "{space}に参加",
+  "This invitation expires in 7 days.": "この招待は7日後に期限切れになります。",
+  "Connect a model to start using Rakazo": "Rakazoを使い始めるにはモデルを接続してください",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Rakazoのプランは開始していますが、モデルを接続するまでボットは返信できません。",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "{subscriptions}のサブスクリプションでサインインするか、APIキーを貼り付けてください。",
+  "Connect a model": "モデルを接続",
 };

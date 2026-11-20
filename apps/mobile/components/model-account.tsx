@@ -8,12 +8,12 @@ import { ModelAccountClientError, resolveAccountNavigation } from "@rakazo/core"
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, Linking, View } from "react-native";
+import { errorText } from "../lib/api/user-error";
+import { continueWithSso } from "../lib/auth/sso";
 import { modelAccountClient as client } from "../lib/model-account-client";
 import { useI18n } from "../lib/model-account-i18n";
-import { continueWithSso } from "../lib/sso";
-import { errorText } from "../lib/user-error";
-import { MenuPickerMenu } from "./menu-picker";
-import { SettingsGroup, SettingsRow } from "./settings-group";
+import { SettingsGroup, SettingsRow } from "./settings/settings-group";
+import { MenuPickerMenu } from "./ui/menu-picker";
 
 export function ModelAccount({
   onChanged,

@@ -1,7 +1,7 @@
 import type { SandboxProvider, SecretStore } from "@rakazo/adapter-kit";
 import { createAdapterContext, supportsComputerExecution } from "@rakazo/adapter-kit";
 import type { ExecutionConnection, PrismaClient } from "@rakazo/db";
-import { toComputerRef } from "../computer-support.js";
+import { toComputerRef } from "./../computers/screens/computer-support.js";
 
 export async function executionConnectionClient(
   secrets: SecretStore,

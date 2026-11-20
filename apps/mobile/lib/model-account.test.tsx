@@ -23,14 +23,14 @@ vi.mock("@rakazo/core", async (original) => ({
     balance: mocks.balance,
   }),
 }));
-vi.mock("./api", () => ({
+vi.mock("./api/api", () => ({
   authHeaders: async () => ({}),
   currentApiBase: () => "https://app.example.test",
 }));
-vi.mock("./server-headers", () => ({ fetchServer: vi.fn() }));
-vi.mock("./sso", () => ({ continueWithSso: mocks.continueWithSso }));
-vi.mock("./session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: mocks.t }) }));
+vi.mock("./api/server-headers", () => ({ fetchServer: vi.fn() }));
+vi.mock("./auth/sso", () => ({ continueWithSso: mocks.continueWithSso }));
+vi.mock("./api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("./i18n/i18n", () => ({ useI18n: () => ({ t: mocks.t }) }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => () => void) => useEffect(callback, [callback]),
 }));
@@ -42,8 +42,8 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   AppState: { addEventListener: () => ({ remove: vi.fn() }) },
 }));
-vi.mock("../components/menu-picker", () => ({ MenuPickerMenu: () => null }));
-vi.mock("../components/settings-group", () => ({
+vi.mock("../components/ui/menu-picker", () => ({ MenuPickerMenu: () => null }));
+vi.mock("../components/settings/settings-group", () => ({
   SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) => (
     <div>
       {children}

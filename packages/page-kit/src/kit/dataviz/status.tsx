@@ -27,7 +27,13 @@ export function SourceStamp({ source }: { source?: SourceRecord }) {
   const when = known
     ? fresh
       ? words.t("updated", { ago: words.ago(now - time) })
-      : words.t("asOf", { date: words.date(time, { dateStyle: "medium" }) })
+      : words.t("asOf", {
+          date: words.date(time, {
+            dateStyle: "medium",
+            // Date-only values describe a calendar day, not a local-time instant.
+            ...(/^\d{4}-\d{2}-\d{2}$/.test(source.asOf ?? "") ? { timeZone: "UTC" } : {}),
+          }),
+        })
     : "";
   const error = typeof source.error === "string" && source.error ? source.error : "";
   const pill = source.updating

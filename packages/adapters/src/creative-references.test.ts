@@ -1,6 +1,6 @@
 import type { ConnectorCall } from "@rakazo/adapter-kit";
 import { expect, it, vi } from "vitest";
-import { ConnectorRegistry } from "./connector-registry.js";
+import { ConnectorRegistry } from "./integrations/connector-registry.js";
 import { capabilities, creativeFixture } from "./creative.test-support.js";
 import type { CreativeCapabilities } from "./creative-contracts.js";
 import { creativeReferenceSchema, creativeToolInputSchema } from "./creative-contracts.js";

@@ -6,7 +6,7 @@ import type {
 import { ExecutionModelsSchema } from "@rakazo/contracts";
 import { executionSnapshotSchema } from "@rakazo/native-runtime/wire";
 import { z } from "zod";
-import { readBodyCapped } from "../web-ssrf.js";
+import { readBodyCapped } from "./../web/web-ssrf.js";
 
 export const executionServiceDescriptionSchema = z.object({
   id: z.string().uuid(),

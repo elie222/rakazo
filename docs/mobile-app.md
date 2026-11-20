@@ -15,6 +15,12 @@ Sign in with your rakazo.com account. To use your own server instead, tap **Use 
 the sign-in screen and enter its address. For a server on your local network, follow
 [Connecting a phone on the same network](./self-host-clients.md#connecting-a-phone-on-the-same-network).
 
+Custom servers you switch to or away from are listed on that screen, so you can switch back with
+one tap (the five most recent are kept, counting the one in use; press and hold one to remove it). The app is signed in to one server at a
+time: to use another, sign out, open the server screen from the sign-in screen and pick it, then
+sign in there. Changing the server signs the device out of the previous one, as described in
+[Apps and clients](./self-host-clients.md#connect-mobile-clients).
+
 ## What you can do
 
 - Chat with bots and groups, attach photos, files or camera shots, and talk instead of typing.
@@ -42,6 +48,10 @@ Turn off **Haptics** in Settings if you don't want touch feedback.
 
 Bots notify you when they finish or need input, controlled per bot with
 **When it finishes or needs input** in its settings.
+
+On iOS, Live Activities show bots at work on the Lock Screen and in the Dynamic Island.
+They are unavailable with the App Store build connected to a self-hosted server; see
+[the APNs requirements](./self-host-clients.md#mobile-incoming-calls).
 
 On Android, **Notifications** in Settings also lets you choose which kinds you get, including a live
 working status while a bot runs.

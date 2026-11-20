@@ -33,7 +33,9 @@ test("an active Electron window keeps header dragging selection-free and control
 
   try {
     const page = await app.firstWindow();
-    const active = await app.evaluate(({ BrowserWindow }) => {
+    const active = await app.evaluate(({ app, BrowserWindow }) => {
+      // macOS only activates the window once the app itself is frontmost.
+      if (process.platform === "darwin") app.focus({ steal: true });
       const window = BrowserWindow.getAllWindows()[0];
       window?.show();
       window?.focus();

@@ -17,15 +17,15 @@ import {
 import { createAccountModelRole } from "@rakazo/core";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { AccessibilityInfo, StyleSheet, Text } from "react-native";
-import type { RpcArgs } from "../lib/api";
-import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api";
-import { mobileTokens } from "../lib/appearance";
+import type { RpcArgs } from "../lib/api/api";
+import { captureApiRequestContext, currentApiBase, rpc } from "../lib/api/api";
+import { mobileTokens } from "../lib/appearance/appearance";
 import { useI18n } from "../lib/model-account-i18n";
-import type { ModelPickerRequest } from "../lib/model-picker-selection";
-import { useThemedStyles } from "../lib/native";
-import { thinkingLevelLabel } from "../lib/thinking-level";
-import { RowMenu } from "./model-role-settings";
-import { SettingsGroup, SettingsRow } from "./settings-group";
+import type { ModelPickerRequest } from "../lib/models/model-picker-selection";
+import { thinkingLevelLabel } from "../lib/models/thinking-level";
+import { useThemedStyles } from "../lib/native/native";
+import { RowMenu } from "./models/model-role-settings";
+import { SettingsGroup, SettingsRow } from "./settings/settings-group";
 
 export function ModelRoleSettings({
   userId,

@@ -306,12 +306,13 @@ export function WeekView({
   const weekdays = weekdayNames(words);
   const first = parseDay(week);
   if (!first) return null;
+  const days = Array.from({ length: 7 }, (_, index) => addDays(first, index));
+  const visibleDays = new Set(days.map(dayKey));
   const list = (Array.isArray(events) ? events : []).filter(
-    (event) => event && title(event) && parseDay(event.date),
+    (event) => event && title(event) && parseDay(event.date) && visibleDays.has(event.date!.trim()),
   );
   const { from, to } = bounds(start, end, list);
   const todayKey = parseDay(today) ? today!.trim() : undefined;
-  const days = Array.from({ length: 7 }, (_, index) => addDays(first, index));
   return (
     <section
       className="rk-cal rk-cal-timed rk-cal-week"

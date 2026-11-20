@@ -31,9 +31,9 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { GripVertical, MoreHorizontal, Plus } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { thinkingLevelLabel } from "../../lib/model-catalog";
-import { spaceQueries } from "../../lib/query";
-import { useSpaceRpc } from "../../lib/space-rpc";
+import { thinkingLevelLabel } from "../../lib/models/model-catalog";
+import { spaceQueries } from "../../lib/query/query";
+import { useSpaceRpc } from "../../lib/query/space-rpc";
 import type { RoleModelOption } from "../model-settings/role-model-picker";
 import { RoleModelPicker } from "../model-settings/role-model-picker";
 

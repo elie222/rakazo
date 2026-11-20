@@ -2,12 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocalSearchParams, useSegments } from "expo-router";
 import type { ReactNode } from "react";
 import { ActivityIndicator } from "react-native";
+import { errorText } from "../lib/api/user-error";
 import { modelAccountConfigQuery } from "../lib/model-account-client";
 import { useI18n } from "../lib/model-account-i18n";
-import { modelConnectionRequest } from "../lib/model-connection-request";
-import { queryClient } from "../lib/query";
-import { errorText } from "../lib/user-error";
-import { LoadFailure } from "./load-failure";
+import { modelConnectionRequest } from "../lib/models/model-connection-request";
+import { queryClient } from "../lib/query/query";
+import { LoadFailure } from "./ui/load-failure";
 
 export function ModelAccountRoutes({ children }: { children: ReactNode }) {
   const segments = useSegments();

@@ -3,7 +3,7 @@ import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ModelAccountOnboarding } from "../../components/ModelAccountOnboarding";
 import { PageLoading } from "../../components/PageLoading";
-import { errorText } from "../../lib/user-error";
+import { errorText } from "../../lib/query/user-error";
 import { modelAccountConfigQuery } from "./queries";
 
 /** Account policy is needed only at model setup; other onboarding steps use the upstream flow. */

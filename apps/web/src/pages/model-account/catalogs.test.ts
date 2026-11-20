@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { formatter } from "@lingui/format-po";
 import { expect, it } from "vitest";
-import { UI_LOCALES } from "../../lib/ui-locale";
+import { UI_LOCALES } from "../../lib/locale/ui-locale";
 
 it("keeps every account catalog complete with matching source placeholders", async () => {
   const read = (locale: string) => {

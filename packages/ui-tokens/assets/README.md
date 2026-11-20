@@ -29,7 +29,7 @@ background, a rounded mask for small browser marks, and transparent splash paddi
 The notification export uses the Android monochrome silhouette. Apple packaging
 compiles the shared Icon Composer source with the platform's own mask.
 
-After exporting, run `pnpm exec tsx apps/www/scripts/render-og.mjs` to refresh the
+After exporting, run `pnpm exec tsx apps/www/src/marketing/scripts/render-og.mjs` (the private marketing pages) to refresh the
 marketing page social cards; set `CHROME_PATH` to a headless Chrome executable when
 it is not available at the script's default location.
 

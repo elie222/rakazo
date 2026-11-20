@@ -11,8 +11,10 @@ const state = vi.hoisted(() => ({
   },
 }));
 vi.mock("@tanstack/react-query", () => ({ useQuery: () => state.me }));
-vi.mock("../../lib/query", () => ({ useSpaceQueries: () => ({ me: { queryKey: () => ["me"] } }) }));
-vi.mock("../../lib/space-rpc", () => ({ useSpaceRpc: () => ({ me: vi.fn() }) }));
+vi.mock("../../lib/query/query", () => ({
+  useSpaceQueries: () => ({ me: { queryKey: () => ["me"] } }),
+}));
+vi.mock("../../lib/query/space-rpc", () => ({ useSpaceRpc: () => ({ me: vi.fn() }) }));
 vi.mock("../../components/PageLoading", () => ({ PageLoading: () => <p>Loading</p> }));
 vi.mock("./ModelAccountSettings", () => ({
   ModelAccountSettings: ({ scope }: { scope: string }) => <p>Account {scope}</p>,

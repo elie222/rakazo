@@ -1,11 +1,11 @@
 import type { AdapterContext, CommandRequest, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, expect, it, vi } from "vitest";
-import { createRunSandbox } from "../host-aware-sandbox.js";
+import { createRunSandbox } from "./../computers/sandbox/host-aware-sandbox.js";
 import { readComputerInitializationGrant } from "./initialization-auth.js";
 import { createInitializedRunSandbox } from "./sandbox.js";
 
-vi.mock("../host-aware-sandbox.js", () => ({ createRunSandbox: vi.fn() }));
+vi.mock("../computers/sandbox/host-aware-sandbox.js", () => ({ createRunSandbox: vi.fn() }));
 afterEach(() => vi.resetAllMocks());
 
 it("preserves the generic provider when initialization is disabled or the computer is local", async () => {

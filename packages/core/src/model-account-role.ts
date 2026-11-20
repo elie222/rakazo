@@ -1,7 +1,7 @@
 import type { ModelRoleChoice, ModelRoleSettings, ThinkingLevel } from "@rakazo/contracts";
 import { modelRoleChoiceKey } from "@rakazo/contracts";
-import type { ModelRoleTransport } from "./model-role-settings.js";
-import { createModelRoleSettings, modelRoleListPatch } from "./model-role-settings.js";
+import type { ModelRoleTransport } from "./models/model-role-settings.js";
+import { createModelRoleSettings, modelRoleListPatch } from "./models/model-role-settings.js";
 
 const same = (left: ModelRoleChoice, right: ModelRoleChoice) =>
   modelRoleChoiceKey(left) === modelRoleChoiceKey(right);

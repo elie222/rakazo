@@ -11,33 +11,15 @@
  *   (`DEFAULT_SOUL_MD` and `_LEGACY_TEMPLATE_SOULS`), from the file as committed at HEAD
  *   (`git show`, never the working copy), evaluated with python3.
  *
- * Offline: only local files, git and python3. `fingerprint()` must match stock.ts.
+ * Offline: only local files, git and python3. Keys come from stock.ts's own `fingerprint()`.
  */
 import { execFileSync } from "node:child_process";
+import { fingerprint, withoutFrontmatter } from "../packages/core/src/agent-import/stock.ts";
 
 const [openclaw, hermes] = process.argv.slice(2);
 if (!openclaw || !hermes) {
   console.error("usage: agent-import-defaults.mjs <openclaw-checkout> <hermes-agent-checkout>");
   process.exit(1);
-}
-
-function fingerprint(content) {
-  const text = content
-    .replace(/^\uFEFF/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const bytes = new TextEncoder().encode(text);
-  let hash = 0x811c9dc5;
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return `${hash.toString(16)}:${bytes.length}`;
-}
-
-function withoutFrontmatter(content) {
-  const text = content.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
-  return text.replace(/^---\n[\s\S]*?\n---\n/, "");
 }
 
 const git = (checkout, ...args) =>

@@ -88,7 +88,11 @@ describe("catalog gaps", () => {
   });
 
   it("writes every real translation back exactly as Lingui formats it", () => {
-    for (const locale of readdirSync(LOCALES)) {
+    // Skip generated artifacts such as messages.pot; only locale directories carry catalogs.
+    const locales = readdirSync(LOCALES, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    for (const locale of locales) {
       const catalog = readFileSync(join(LOCALES, locale, "messages.po"), "utf8");
       const blanked = catalog
         .split("\n\n")

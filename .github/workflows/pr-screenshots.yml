@@ -11,6 +11,19 @@ on:
       pull_request:
         required: true
         type: number
+    # Named, so a caller hands over these five rather than every repository secret: this job
+    # reads a pull request's text and browses its preview, so the set it could reach stays small.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+      CODEX_SUBSCRIPTION_AUTH:
+        required: false
+      GH_DEPENDENCY_UPDATES_PAT:
+        required: false
+      S3_ACCESS_KEY_ID:
+        required: false
+      S3_SECRET_ACCESS_KEY:
+        required: false
 
 permissions: {}
 

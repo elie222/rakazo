@@ -1,0 +1,67 @@
+/** Upload part size: large enough that most homes are one request, small enough to hold in memory. */
+export const PART_BYTES = 16 * 1024 * 1024;
+
+export interface ObjectStorageConnection {
+  bucket: string;
+  /** Service URL; empty uses the backend's default endpoint. */
+  endpoint?: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  /** Prepended to every key, so one bucket can hold several deployments. */
+  prefix: string;
+}
+
+/**
+ * The `OBJECT_STORAGE_*` settings every backend shares. `OBJECT_STORAGE_BUCKET` turns object
+ * storage on. Credentials are required rather than taken from an SDK's default chain, so object
+ * storage never borrows credentials configured for something else.
+ */
+export function objectStorageConnectionFromEnv(
+  env: NodeJS.ProcessEnv,
+): ObjectStorageConnection | undefined {
+  const bucket = env.OBJECT_STORAGE_BUCKET?.trim();
+  if (!bucket) return undefined;
+  const accessKeyId = env.OBJECT_STORAGE_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = env.OBJECT_STORAGE_SECRET_ACCESS_KEY?.trim();
+  if (!accessKeyId || !secretAccessKey)
+    throw new Error(
+      "OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY are required with OBJECT_STORAGE_BUCKET",
+    );
+  const endpoint = env.OBJECT_STORAGE_ENDPOINT?.trim() || undefined;
+  if (endpoint && !/^https?:\/\//.test(endpoint))
+    throw new Error("OBJECT_STORAGE_ENDPOINT must be an http(s) URL");
+  // Walk both ends: an unanchored /\/+$/ still backtracks quadratically on a slash run.
+  const rawPrefix = env.OBJECT_STORAGE_PREFIX?.trim() ?? "";
+  let start = 0;
+  let end = rawPrefix.length;
+  while (start < end && rawPrefix[start] === "/") start += 1;
+  while (end > start && rawPrefix[end - 1] === "/") end -= 1;
+  const prefix = rawPrefix.slice(start, end);
+  return { bucket, endpoint, accessKeyId, secretAccessKey, prefix: prefix ? `${prefix}/` : "" };
+}
+
+/** Regroups a stream into buffers of exactly `size` bytes, except a shorter last one. */
+export async function* parts(
+  source: AsyncIterable<Uint8Array>,
+  size: number,
+): AsyncGenerator<Buffer> {
+  let held: Buffer[] = [];
+  let length = 0;
+  for await (const chunk of source) {
+    let rest = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    while (length + rest.length >= size) {
+      const take = size - length;
+      held.push(rest.subarray(0, take));
+      yield Buffer.concat(held);
+      held = [];
+      length = 0;
+      rest = rest.subarray(take);
+    }
+    if (rest.length) {
+      // Copy: callers may reuse the buffers they yield.
+      held.push(Buffer.from(rest));
+      length += rest.length;
+    }
+  }
+  if (length) yield Buffer.concat(held);
+}

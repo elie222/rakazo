@@ -15,11 +15,11 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
-vi.mock("../lib/rpc", () => ({ rpc: {} }));
+vi.mock("../lib/query/rpc", () => ({ rpc: {} }));
 vi.mock("./vault/use-vault-contacts", () => ({ useVaultContacts: () => [] }));
 
-import type { AskBlock, AskCardProps } from "./AskCard";
-import { AskCard } from "./AskCard";
+import type { AskBlock, AskCardProps } from "./messages/AskCard";
+import { AskCard } from "./messages/AskCard";
 
 let root: Root;
 let container: HTMLDivElement;

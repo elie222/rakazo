@@ -218,6 +218,12 @@ export const translateRunError: RunErrorTranslator = (message, values) => {
         message: "{summary} Backup models failed or were unavailable for this request.",
         values,
       });
+    case "Something went wrong. Try again.":
+      return i18n._({
+        id: "Something went wrong. Try again.",
+        message: "Something went wrong. Try again.",
+        values,
+      });
     default:
       return message;
   }

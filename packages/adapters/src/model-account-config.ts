@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { parseModelSecret } from "./model-secret.js";
+import { parseModelSecret } from "./models/model-secret.js";
 import { ResellerModelAccountProvider } from "./reseller-model-account.js";
 
 const origin = z.url().refine((value) => {
