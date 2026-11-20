@@ -173,7 +173,8 @@ describe("resolveComputerWork", () => {
             },
         },
         run: {
-          findFirst: async () => (runStatus === "waiting_takeover" ? { id: "run-1" } : null),
+          findFirst: async () =>
+            runStatus === "waiting_takeover" ? { id: "run-1", userId: "user-2" } : null,
           findUnique: async () => (runStatus ? { status: runStatus } : null),
         },
       } as unknown as Parameters<typeof resolveComputerWork>[0],
@@ -195,6 +196,7 @@ describe("resolveComputerWork", () => {
       expect(await work({ runId: "run-1", live: true }, status)).toEqual({
         busyBotName: null,
         takeoverRequested: false,
+        takeoverUserId: null,
       });
     },
   );
@@ -208,7 +210,30 @@ describe("resolveComputerWork", () => {
     expect(await work({ runId: "run-1", live: true }, "waiting_takeover")).toEqual({
       busyBotName: null,
       takeoverRequested: true,
+      takeoverUserId: "user-2",
     });
+  });
+
+  it("offers Skip and I'm done only to the person the bot asked", async () => {
+    const computer = {
+      kind: "fake",
+      state: "running",
+      scope: "team",
+      controlHolder: "user",
+      controlBotId: "bot-1",
+      controlLeaseId: "lease-1",
+      controlUserId: "user-1",
+      userId: "owner",
+      homeRevision: "revision-1",
+    };
+    const waiting = await work({ runId: "run-1", live: true }, "waiting_takeover");
+    const requestedTo = (viewerId: string) =>
+      toComputerStatus("bot-1", computer, waiting, true, viewerId).takeoverRequested;
+    // user-1 holds the screen but was not asked: Hand back control, not Skip / I'm done.
+    expect(requestedTo("user-1")).toBe(false);
+    expect(requestedTo("user-2")).toBe(true);
+    // Without a viewer the status reports the request as before.
+    expect(toComputerStatus("bot-1", computer, waiting).takeoverRequested).toBe(true);
   });
 
   it("is free with no lease", async () => {
