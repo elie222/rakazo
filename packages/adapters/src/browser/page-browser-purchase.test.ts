@@ -779,6 +779,71 @@ describe("a key on the screen", () => {
     expect(ja.helper.paymentPage().purchase).toBeNull();
   });
 
+  it("does not read a membership card login as a payment card form", () => {
+    for (const label of [
+      "会员卡号",
+      "會員卡號",
+      "会員カード番号",
+      "회원카드 번호",
+      "Número de tarjeta de socio",
+      "Numéro de carte de fidélité",
+      "Mitgliedskarte Nummer",
+    ]) {
+      const login = page(`<form><label>${label}<input name="m"></label>
+        <label>安全码<input name="s"></label><button>登录</button></form>`);
+      expect(login.intent("登录"), label).toBeNull();
+      expect(login.helper.paymentPage().purchase, label).toBeNull();
+    }
+    const checkout = page(`<form><label>卡号<input name="m"></label>
+      <label>安全码<input name="s"></label><button>支付</button></form>`);
+    expect(checkout.intent("支付")?.reason).toBe("card_form");
+  });
+
+  it("keeps a French settle button guarded when it starts with a login word", () => {
+    const { intent } = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button">Se connecter et régler</button><button type="button">Connexion et règlement</button>
+      <button type="button">Anmelden und überweisen</button><button type="button">로그인 후 납부</button>
+      <button type="button">Iniciar sesión y abonar</button><button type="button">登录并缴费</button>`);
+    for (const name of [
+      "Se connecter et régler",
+      "Connexion et règlement",
+      "Anmelden und überweisen",
+      "로그인 후 납부",
+      "Iniciar sesión y abonar",
+      "登录并缴费",
+    ]) {
+      expect(intent(name)?.reason, name).toBeDefined();
+    }
+  });
+
+  it("does not let a non-paying name hide a pay label on the same control", () => {
+    const hidden = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button" aria-label="取消">支付</button><button type="button" aria-label="Annuler">Payer</button>`);
+    for (const button of hidden.win.document.querySelectorAll("button")) {
+      expect(hidden.helper.purchaseOfNode(button)?.reason).toBeDefined();
+    }
+    const plain = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button">取消</button>`);
+    expect(plain.intent("取消")).toBeNull();
+  });
+
+  it("reads a card security code acronym beside a card word, but not beside a student number", () => {
+    for (const label of ["カードCSC番号", "卡CSC码", "카드CSC", "安全码CSC", "CSC码"]) {
+      const form = page(
+        `<form><label>${label}<input name="c"></label><button>提交</button></form>`,
+      );
+      expect(form.intent("提交")?.reason, label).toBe("card_form");
+    }
+    const student = page(
+      `<form><label>学号CSC编码<input name="c"></label><button>提交</button></form>`,
+    );
+    expect(student.intent("提交")).toBeNull();
+    const saved = page(
+      `<form><label>カードCSC番号<input name="c"></label><button>購入する</button></form>`,
+    );
+    expect(saved.intent("購入する")?.reason).toBe("card_form");
+  });
+
   it("lists the order lines the checkout shows above its total, and nothing around them", () => {
     const { intent, helper } = page(`
       <header><a href="/cart">Cart · Socks $9.00</a></header>
