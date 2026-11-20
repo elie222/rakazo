@@ -46,6 +46,8 @@ export const slackMessaging = defineMessagingPlatform({
     return {
       provider: "slack",
       capabilities: { direct: true, groups: true, receipt: "reaction" },
+      // A channel is a team room, and only ever a room inside a workspace.
+      teamRooms: { requiresWorkspace: true },
       adapter,
       enrichTeamRoom: enrichSlackTeamRoom,
       redeliveryKeys: slackRedeliveryKeys,

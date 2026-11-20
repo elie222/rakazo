@@ -1,23 +1,26 @@
-import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
+import type { MessagingInboundMessage, MessagingTeamRooms } from "@rakazo/adapter-kit";
 
 /**
- * Providers whose shared rooms are team-chat rooms rather than personal group
- * chats: one conversation per channel, with the bot in it as a teammate.
+ * The team-room policy a mounted platform declares for itself, by provider id.
+ * Echoes the descriptor the surface sends, so shared routing reads a capability
+ * rather than naming a provider.
  */
-const TEAM_CHAT_PROVIDERS = new Set(["slack", "discord", "teamchat-emulator"]);
+export type TeamRoomPolicy = (provider: string) => MessagingTeamRooms | undefined;
 
 /**
  * Whether a message from a shared room belongs to the team-chat surface instead
- * of the personal group-linking one. Slack rooms carry their workspace, and a
- * Discord room is only a team room inside a guild — a DM has no guild at all.
+ * of the personal group-linking one. A platform declares which of its rooms are
+ * team rooms, and a room that exists only inside a workspace is one only there.
  */
 export function prefersTeamChatSurface(
   event: Pick<MessagingInboundMessage, "provider" | "workspaceId" | "isDirect">,
   teamChatBotId: string | undefined | null,
+  teamRooms: TeamRoomPolicy,
 ): boolean {
   if (event.isDirect || !teamChatBotId) return false;
-  if (!TEAM_CHAT_PROVIDERS.has(event.provider)) return false;
-  return event.provider !== "discord" || Boolean(event.workspaceId);
+  const rooms = teamRooms(event.provider);
+  if (!rooms) return false;
+  return !rooms.requiresWorkspace || Boolean(event.workspaceId);
 }
 
 export function settleWithTimeout(

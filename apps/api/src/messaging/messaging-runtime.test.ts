@@ -62,7 +62,14 @@ describe("inbound routing", () => {
       onInbound: (handler: (event: unknown) => Promise<void>) => handlers.push(handler),
       stopReceiving: vi.fn(async () => undefined),
       shutdown: vi.fn(async () => undefined),
-      platforms: () => [],
+      // What a mounted room-style platform declares about its rooms.
+      platforms: () => [
+        {
+          provider: "discord",
+          capabilities: { direct: true, groups: true, receipt: "reaction" },
+          teamRooms: { requiresWorkspace: true },
+        },
+      ],
       acknowledge: vi.fn(),
       handleWebhook: vi.fn(),
       startReceiving: vi.fn(async () => undefined),
@@ -75,7 +82,12 @@ describe("inbound routing", () => {
       sandbox: {} as never,
       secrets: {} as never,
       artifacts: {} as never,
-      env: { maxUploadSizeBytes: 10, messagingOpenSignup: false, ...env } as never,
+      env: {
+        maxUploadSizeBytes: 10,
+        messagingOpenSignup: false,
+        teamChatBotIds: {},
+        ...env,
+      } as never,
       messaging: messaging as never,
       messagingInstallations: undefined,
       delivery: {} as never,

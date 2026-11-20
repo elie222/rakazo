@@ -14,6 +14,7 @@ import type {
   MessagingSendRequest,
   MessagingSendResult,
   MessagingSurface,
+  MessagingTeamRooms,
 } from "@rakazo/adapter-kit";
 import { trimEndChars } from "@rakazo/contracts";
 import { deadlineSignal, withAbort } from "@rakazo/core";
@@ -83,6 +84,8 @@ const TELEGRAM_PHOTO_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "i
 export interface MessagingPlatform {
   provider: string;
   capabilities: MessagingCapabilities;
+  /** Set when the platform's shared rooms are team-chat rooms; absent for personal rooms. */
+  teamRooms?: MessagingTeamRooms;
   adapter: Adapter;
   /**
    * The adapter's own thread-id prefix when it differs from `provider`, so
@@ -273,6 +276,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       provider: platform.provider,
       capabilities: platform.capabilities,
       address: platform.address,
+      ...(platform.teamRooms ? { teamRooms: platform.teamRooms } : {}),
     }));
   }
 

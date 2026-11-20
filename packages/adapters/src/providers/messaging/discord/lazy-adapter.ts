@@ -44,6 +44,12 @@ export const DISCORD_LISTEN_WINDOW_MS = 300_000;
  */
 export const DISCORD_GATEWAY_RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
 
+/**
+ * A Gateway connection that fails to open retries well inside the five-minute
+ * window, so a recoverable start failure costs seconds of ingress, not a window.
+ */
+export const DISCORD_START_RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
+
 // The adapter logs every Gateway re-arm at info; keep only its warnings and errors.
 const discordLogger: Logger = {
   child: () => discordLogger,
@@ -109,6 +115,7 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
   private implementation: LoadedDiscordAdapter | undefined;
   private listening: ReturnType<typeof setInterval> | undefined;
   private window: AbortController | undefined;
+  private startRetry: ReturnType<typeof setTimeout> | undefined;
   private readonly retries = new Set<ReturnType<typeof setTimeout>>();
   // Channel name by channel id, learned once per channel. Discord's gateway message
   // carries no channel name, and team chat lists a conversation by the name it is
@@ -191,16 +198,17 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
    */
   private retryingChat(chat: ChatInstance): ChatInstance {
     const router = chat as ChatRouter;
-    const deliver = (
+    const deliver = async (
       adapter: Adapter,
       threadId: string,
       message: Message,
       attempt = 0,
     ): Promise<void> => {
-      // Learned alongside the delivery: the message is named by the channel's id until
-      // this lands, and by its name once a later message arrives.
+      // Read once per channel before the message is routed: team chat stores the name on the
+      // conversation when it first sees the room, and an id is not a name. A second message in
+      // the same channel is answered from the cache, and an unreadable channel stays unnamed.
       if (attempt === 0 && this.implementation) {
-        void bestEffort(
+        await bestEffort(
           "Discord channel name",
           this.rememberChannelName(this.implementation, threadId),
         );
@@ -221,7 +229,8 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
         if (delay === undefined || !this.listening) return;
         const timer = setTimeout(() => {
           this.retries.delete(timer);
-          void deliver(adapter, threadId, message, attempt + 1);
+          // The last attempt has no retry left to handle its rejection, so it ends here.
+          void deliver(adapter, threadId, message, attempt + 1).catch(() => undefined);
         }, delay);
         timer.unref?.();
         this.retries.add(timer);
@@ -241,6 +250,8 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
   async stopPolling() {
     clearInterval(this.listening);
     this.listening = undefined;
+    clearTimeout(this.startRetry);
+    this.startRetry = undefined;
     this.window?.abort();
     this.window = undefined;
     for (const timer of this.retries) clearTimeout(timer);
@@ -255,28 +266,51 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
         void bestEffort("Discord gateway delivery", task);
       },
     };
-    const listen = () => {
+    const listen = (attempt = 0) => {
+      if (!this.listening) return;
+      clearTimeout(this.startRetry);
+      this.startRetry = undefined;
       // Abort the window this one replaces: two Gateway clients logged in at once
       // would each receive every message and mint threads the other cannot stop.
       this.window?.abort();
       // A fresh window each time keeps abort listeners from piling up on one signal.
-      this.window = new AbortController();
+      const window = new AbortController();
+      this.window = window;
       adapter
-        .startGatewayListener(options, DISCORD_LISTEN_WINDOW_MS, this.window.signal)
+        .startGatewayListener(options, DISCORD_LISTEN_WINDOW_MS, window.signal)
         .then((response) => {
-          if (!response.ok) {
-            getLogger().warn("discord inbound listener did not start", {
-              status: response.status,
-            });
-          }
+          if (response.ok) return;
+          getLogger().warn("discord inbound listener did not start", {
+            status: response.status,
+            retrying: attempt < DISCORD_START_RETRY_DELAYS_MS.length,
+          });
+          retryStart(attempt);
         })
         .catch((error: unknown) => {
-          getLogger().warn("discord inbound listener failed", { error: String(error) });
+          getLogger().warn("discord inbound listener failed", {
+            error: String(error),
+            retrying: attempt < DISCORD_START_RETRY_DELAYS_MS.length,
+          });
+          retryStart(attempt);
         });
     };
-    listen();
+    /** A start that failed retries on its own, unless a newer window replaced it. */
+    const retryStart = (attempt: number) => {
+      const delay = DISCORD_START_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined || !this.listening || this.window?.signal.aborted) return;
+      clearTimeout(this.startRetry);
+      const timer = setTimeout(() => {
+        this.retries.delete(timer);
+        this.startRetry = undefined;
+        listen(attempt + 1);
+      }, delay);
+      timer.unref?.();
+      this.retries.add(timer);
+      this.startRetry = timer;
+    };
     this.listening = setInterval(listen, DISCORD_LISTEN_WINDOW_MS);
     this.listening.unref?.();
+    listen();
   }
 
   async handleWebhook(request: Request, options?: WebhookOptions) {

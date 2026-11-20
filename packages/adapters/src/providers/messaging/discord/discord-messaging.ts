@@ -37,18 +37,17 @@ export const discordMessaging = defineMessagingPlatform({
       // channel, a reply thread when the person files one, and ambient messages
       // the listen policy decides on.
       capabilities: { direct: true, groups: true, receipt: "reaction" },
+      // A guild channel is a team room; a direct message is nobody's room.
+      teamRooms: { requiresWorkspace: true },
       adapter,
       enrichTeamRoom: (raw, base) => {
         const enrichment = enrichDiscordTeamRoom(raw, base);
         if (base.isDirect) return enrichment;
         // Discord's gateway payload carries no channel name, so the name is the one the
-        // adapter learned, or the channel's id until it has: the settings list would
-        // otherwise show a column of identical "External conversation" rows.
-        return {
-          ...enrichment,
-          channelName:
-            adapter.channelNameForThread(base.threadId) ?? discordChannelLabel(base.threadId),
-        };
+        // adapter read before delivering. An unreadable channel stays unnamed: the settings
+        // list falls back to its own wording, never to the raw id.
+        const channelName = adapter.channelNameForThread(base.threadId);
+        return channelName ? { ...enrichment, channelName } : enrichment;
       },
       isPermanentSendError: discordIsPermanentSendError,
       // Forwarded events carry no vendor idempotency id outside their Discord
@@ -123,14 +122,6 @@ export function discordIsPermanentSendError(error: unknown): boolean {
     .map((value) => (value instanceof Error ? value.message : String(value ?? "")))
     .join(" ");
   return DISCORD_PERMANENT_TEXT.test(text);
-}
-
-/**
- * What an unnamed guild channel is listed as: Discord's own channel id, which at
- * least tells two channels apart where a shared placeholder would not.
- */
-export function discordChannelLabel(threadId: string): string {
-  return `#${discordPlacement(threadId)?.channelId ?? threadId}`;
 }
 
 /**

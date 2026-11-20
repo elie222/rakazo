@@ -1281,11 +1281,22 @@ export interface MessagingCapabilities {
 }
 
 /** One messaging platform behind the chat surface (sendblue, slack, …). */
+/**
+ * A platform whose shared rooms are team-chat rooms: one conversation per room, with the
+ * deployment's bot in it as a teammate, rather than a personal group chat to link.
+ */
+export interface MessagingTeamRooms {
+  /** Rooms exist only inside a workspace (a Slack workspace, a Discord guild). */
+  requiresWorkspace: boolean;
+}
+
 export interface MessagingPlatformDescriptor {
   provider: string;
   capabilities: MessagingCapabilities;
   /** The line people message to reach this deployment (a phone number), when it has one. */
   address?: string;
+  /** Set when the platform's shared rooms are team-chat rooms. */
+  teamRooms?: MessagingTeamRooms;
 }
 
 /** Send into an existing conversation, addressed by its opaque thread id. */

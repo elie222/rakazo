@@ -330,7 +330,9 @@ export class MessagingDelivery {
                 where: { runId: origin.id },
                 select: {
                   replyThreadId: true,
-                  externalConversation: { select: { conversationId: true } },
+                  externalConversation: {
+                    select: { provider: true, externalKey: true, conversationId: true },
+                  },
                 },
               });
               if (external) {

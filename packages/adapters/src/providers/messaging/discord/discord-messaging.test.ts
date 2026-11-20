@@ -17,6 +17,7 @@ import {
 import {
   DISCORD_GATEWAY_RETRY_DELAYS_MS,
   DISCORD_LISTEN_WINDOW_MS,
+  DISCORD_START_RETRY_DELAYS_MS,
   LazyDiscordAdapter,
 } from "./lazy-adapter.js";
 
@@ -31,6 +32,8 @@ const env = {
 const fake = vi.hoisted(() => ({
   created: [] as Record<string, unknown>[],
   listens: [] as { durationMs: number; signal: AbortSignal; options: WebhookOptions }[],
+  // Statuses the next Gateway starts answer with; 200 once the queue is empty.
+  startStatuses: [] as number[],
   chat: undefined as ChatInstance | undefined,
   initialize: vi.fn(async (chat: ChatInstance) => {
     fake.chat = chat;
@@ -53,7 +56,7 @@ vi.mock("@chat-adapter/discord", () => ({
         signal: AbortSignal,
       ) => {
         fake.listens.push({ durationMs, signal, options });
-        return new Response(null, { status: 200 });
+        return new Response(null, { status: fake.startStatuses.shift() ?? 200 });
       },
     };
   },
@@ -71,6 +74,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   fake.created.length = 0;
   fake.listens.length = 0;
+  fake.startStatuses.length = 0;
 });
 
 afterEach(() => {
@@ -230,13 +234,14 @@ describe("discord channel naming", () => {
   const platformFrom = () =>
     messagingPlatformsFromEnv(messagingEnvFromProcess(env), { pollInboundMessages: false })[0]!;
 
-  it("names a guild channel by its id until the name is known, and never names a DM", () => {
+  it("never names a guild channel by its id, and never names a DM", () => {
     const platform = platformFrom();
-    expect(platform.enrichTeamRoom?.(guildMessage, base)).toMatchObject({ channelName: "#C1" });
+    // Before the name is read, the conversation carries none: an id is not a name.
+    expect(platform.enrichTeamRoom?.(guildMessage, base)).not.toHaveProperty("channelName");
     // Inside a thread, the conversation is still the channel it hangs off.
-    expect(platform.enrichTeamRoom?.({}, { ...base, threadId: "discord:G1:C1:T1" })).toMatchObject({
-      channelName: "#C1",
-    });
+    expect(
+      platform.enrichTeamRoom?.({}, { ...base, threadId: "discord:G1:C1:T1" }),
+    ).not.toHaveProperty("channelName");
     expect(
       platform.enrichTeamRoom?.({}, { ...base, threadId: "discord:@me:D1", isDirect: true }),
     ).not.toHaveProperty("channelName");
@@ -348,6 +353,66 @@ describe("LazyDiscordAdapter", () => {
     expect(fake.listens[1]!.signal.aborted).toBe(true);
     await vi.advanceTimersByTimeAsync(DISCORD_LISTEN_WINDOW_MS * 3);
     expect(fake.listens).toHaveLength(2);
+  });
+
+  it("retries a Gateway start that fails, well inside the listening window", async () => {
+    fake.startStatuses.push(502, 503);
+    const adapter = new LazyDiscordAdapter({ ...config, pollInboundMessages: true });
+    await adapter.initialize({} as ChatInstance);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.listens).toHaveLength(1);
+
+    // The first retry comes seconds after the failure, not at the next window.
+    await vi.advanceTimersByTimeAsync(DISCORD_START_RETRY_DELAYS_MS[0]!);
+    expect(fake.listens).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(DISCORD_START_RETRY_DELAYS_MS[1]!);
+    expect(fake.listens).toHaveLength(3);
+    // The third start succeeds, so nothing retries again.
+    await vi.advanceTimersByTimeAsync(DISCORD_START_RETRY_DELAYS_MS[2]!);
+    expect(fake.listens).toHaveLength(3);
+    await adapter.stopPolling();
+  });
+
+  it("stops retrying a failed start once polling stops", async () => {
+    fake.startStatuses.push(502, 502, 502);
+    const adapter = new LazyDiscordAdapter({ ...config, pollInboundMessages: true });
+    await adapter.initialize({} as ChatInstance);
+    await vi.advanceTimersByTimeAsync(0);
+    await adapter.stopPolling();
+    await vi.advanceTimersByTimeAsync(DISCORD_START_RETRY_DELAYS_MS[0]! * 4);
+    expect(fake.listens).toHaveLength(1);
+  });
+
+  it("reads a channel's name before delivering the message that named it", async () => {
+    const adapter = new LazyDiscordAdapter({ ...config, pollInboundMessages: true });
+    const chat = new Chat({
+      userName: "rakazo",
+      adapters: { discord: adapter },
+      state: createMemoryState(),
+      concurrency: "concurrent",
+    });
+    const handler = vi.fn(async () => undefined);
+    chat.onNewMessage(/(?:)/, handler);
+    await chat.initialize();
+    const threadId = "discord:G1:C1";
+    const message = new Message({
+      id: "msg-named",
+      threadId,
+      text: "hello channel",
+      formatted: parseMarkdown("hello channel"),
+      author: { userId: "U1", userName: "Ada", fullName: "Ada", isBot: false, isMe: false },
+      metadata: { dateSent: new Date(), edited: false },
+      attachments: [],
+      raw: {},
+    });
+
+    await fake.chat!.handleIncomingMessage(adapter, threadId, message);
+    // The conversation is stored under the channel's name, so the lookup ran first.
+    expect(fake.fetchChannelInfo.mock.invocationCallOrder[0]).toBeLessThan(
+      handler.mock.invocationCallOrder[0]!,
+    );
+    expect(adapter.channelNameForThread(threadId)).toBe("launch");
+    await adapter.stopPolling();
   });
 
   it("retries a Gateway delivery whose processing fails, then gives up", async () => {
