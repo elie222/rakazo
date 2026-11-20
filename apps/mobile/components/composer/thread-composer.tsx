@@ -142,6 +142,7 @@ export function ThreadComposer({
   const [emptyRowHeight, setEmptyRowHeight] = useState<number>();
   // Text past one line moves the model, dictation and send to a row under it until the box empties.
   const [wrapped, setWrapped] = useState(false);
+  const stacked = Boolean(model) && wrapped;
   const draftRef = useRef(saved.text);
   const nativeSelection = useRef({ start: saved.text.length, end: saved.text.length });
   const completedSelection = useRef<number | null>(null);
@@ -163,20 +164,10 @@ export function ThreadComposer({
     setMentionBindings(next);
   }
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
-  // Dictated words follow the text that was there when the mic opened. Once someone edits the
-  // box meanwhile, later words are dropped instead of overwriting the edit.
-  const dictatedBase = useRef<string | null>(null);
-  const dictated = useRef("");
-  function showDictation(words: string, final = false) {
-    let base = dictatedBase.current;
-    if (base === null) return;
-    // Live words never overwrite an edit; a provider's one-off transcript joins the edited text.
-    if (draftRef.current !== dictated.current) {
-      if (!final) return;
-      base = draftRef.current;
-    }
-    const next = !words ? base : base.trim() ? `${base.trimEnd()} ${words}` : words;
-    dictated.current = next;
+  /** Adds a dictation's transcript after whatever the box holds now. */
+  function showDictation(words: string) {
+    const base = draftRef.current;
+    const next = base.trim() ? `${base.trimEnd()} ${words}` : words;
     draftRef.current = next;
     setDraft(next);
     const end = next.length;
@@ -189,27 +180,6 @@ export function ThreadComposer({
     setSlashQuery(null);
   }
   const dictation = useComposerDictation({ disabled: onCall, onWords: showDictation });
-  const recording = dictation.status !== "idle";
-  function toggleDictation() {
-    if (dictation.status === "idle") {
-      dictatedBase.current = draftRef.current;
-      dictated.current = draftRef.current;
-    }
-    dictation.toggle();
-  }
-  /** Drops the recording and any words it already put in the box. */
-  function discardDictation() {
-    const base = dictatedBase.current;
-    dictation.cancel();
-    if (base !== null && draftRef.current === dictated.current) showDictation("");
-    dictatedBase.current = null;
-  }
-  // Send during dictation stops it first and sends once its words are in.
-  const [sendAfterDictation, setSendAfterDictation] = useState(false);
-  function sendOrFinish() {
-    if (recording) dictation.finish(() => setSendAfterDictation(true));
-    else void send();
-  }
   // Saving waits for a pause in typing; closing the conversation or leaving the app saves at once.
   // Set while the composer holds text that storage does not have yet.
   const pendingSave = useRef<(() => boolean) | null>(null);
@@ -446,48 +416,12 @@ export function ThreadComposer({
   // button centre on it: the bar can grow past 44 (font scale, Android text metrics), and a fixed
   // bottom margin would leave them high.
   const lineHeight = Math.max(44, emptyRowHeight ?? 22 + 22 * textScale);
-  // While dictating, the recording controls take a row under the text.
-  const stacked = recording || (Boolean(model) && wrapped);
   // Lines the controls up with a single line of text; under the text they center on each other.
   const pillInset = stacked ? 0 : (lineHeight - composerPillStyle.height) / 2;
 
   const canSend = Boolean(draft.trim()) || selectedSkill !== null || attachmentIds.length > 0;
-  useEffect(() => {
-    if (!sendAfterDictation || recording) return;
-    setSendAfterDictation(false);
-    if (canSend) void send();
-  }, [sendAfterDictation, recording]);
-  // Sending resets the box, so words still being transcribed wait; send while the mic is open
-  // stops it and sends once its words are in.
-  const sendBlocked =
-    sending ||
-    sendAfterDictation ||
-    dictation.status === "transcribing" ||
-    (!canSend && dictation.status === "idle");
-
-  const sendButton = (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={t`Send`}
-      disabled={sendBlocked}
-      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-      onPress={sendOrFinish}
-      style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
-    >
-      <GlassSurface
-        tint={tokens.primary}
-        style={composerPillStyle}
-        fallbackStyle={{ backgroundColor: tokens.primary }}
-      >
-        <NativeSymbol
-          ios="arrow.up"
-          android="arrow-up"
-          size={15}
-          color={tokens.primaryForeground}
-        />
-      </GlassSurface>
-    </Pressable>
-  );
+  // Send is hidden while dictating: sending resets the box, which would drop the recording.
+  const sendBlocked = sending || !canSend;
 
   return (
     <>
@@ -660,8 +594,21 @@ export function ThreadComposer({
           }}
           fallbackStyle={styles.composerFill}
         >
+          {dictation.status === "idle" ? null : (
+            <DictationBar
+              status={dictation.status}
+              startedAt={dictation.startedAt}
+              levels={dictation.levels}
+              pillStyle={composerPillStyle}
+              height={lineHeight}
+              onCancel={dictation.cancel}
+              onFinish={dictation.toggle}
+            />
+          )}
           <View
             style={{
+              // The bar takes the box's place; the field's text is kept in the draft state.
+              display: dictation.status === "idle" ? "flex" : "none",
               flex: stacked ? undefined : 1,
               // Room for the text comes first; the model chip shrinks instead.
               minWidth: stacked ? undefined : 96,
@@ -861,17 +808,7 @@ export function ThreadComposer({
               </TextInput>
             </Pressable>
           </View>
-          {dictation.status !== "idle" ? (
-            <DictationBar
-              status={dictation.status}
-              onLevel={dictation.onLevel}
-              onCancel={discardDictation}
-              onStop={toggleDictation}
-              pillStyle={composerPillStyle}
-            >
-              {sendButton}
-            </DictationBar>
-          ) : (
+          {dictation.status === "idle" ? (
             <TrailingControls stacked={stacked}>
               {model ? (
                 <ModelChip
@@ -886,7 +823,11 @@ export function ThreadComposer({
                   accessibilityRole="button"
                   accessibilityLabel={t`Dictate`}
                   hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                  onPress={toggleDictation}
+                  onPress={() => {
+                    // The field leaves the screen while dictating, so it must not keep focus.
+                    inputRef.current?.blur();
+                    dictation.toggle();
+                  }}
                   style={{ marginBottom: pillInset }}
                 >
                   <GlassSurface
@@ -924,10 +865,30 @@ export function ThreadComposer({
                   </GlassSurface>
                 </Pressable>
               ) : (
-                sendButton
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t`Send`}
+                  disabled={sendBlocked}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  onPress={() => void send()}
+                  style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
+                >
+                  <GlassSurface
+                    tint={tokens.primary}
+                    style={composerPillStyle}
+                    fallbackStyle={{ backgroundColor: tokens.primary }}
+                  >
+                    <NativeSymbol
+                      ios="arrow.up"
+                      android="arrow-up"
+                      size={15}
+                      color={tokens.primaryForeground}
+                    />
+                  </GlassSurface>
+                </Pressable>
               )}
             </TrailingControls>
-          )}
+          ) : null}
         </GlassSurface>
       </View>
     </>

@@ -1,121 +1,178 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useNow } from "@rakazo/chat-ui/hooks";
+import { memo, useState } from "react";
 import type { ViewStyle } from "react-native";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import type { SharedValue } from "react-native-reanimated";
+import Animated, { Easing, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import type { ComposerDictationStatus } from "../../lib/composer/composer-dictation";
+import { DICTATION_LEVEL_COUNT } from "../../lib/composer/dictation-levels";
 import { useMobileTokens } from "../../lib/native/native";
 import { GlassSurface } from "../native/glass-surface";
 import { NativeSymbol } from "../native/native-symbol";
 
-const BAR_WIDTH = 3;
-const BAR_GAP = 3;
-const MAX_HEIGHT = 20;
+const BAR_HEIGHT = 28;
+const BAR_MIN_HEIGHT = 2;
+const BAR_SPACING = 5;
+const BAR_TIMING = { duration: 100, easing: Easing.out(Easing.quad) };
 
-type LevelSource = (listener: (level: number) => void) => () => void;
-
-/** The composer's controls while it dictates: discard, the live mic level, stop, then `children`. */
-export function DictationBar({
-  status,
-  onLevel,
-  onCancel,
-  onStop,
-  pillStyle,
-  children,
+const WaveformBar = memo(function WaveformBar({
+  levels,
+  index,
+  color,
 }: {
-  status: Exclude<ComposerDictationStatus, "idle">;
-  onLevel: LevelSource;
-  onCancel: () => void;
-  onStop: () => void;
-  pillStyle: ViewStyle;
-  children: ReactNode;
+  levels: SharedValue<readonly number[]>;
+  index: number;
+  color: string;
 }) {
-  const tokens = useMobileTokens();
-  const { t } = useLingui();
-  const transcribing = status === "transcribing";
-  // While the phone readies its speech model the mic is not open yet, but a tap still cancels.
-  const busy = transcribing || status === "preparing";
-  const hitSlop = { top: 8, bottom: 8, left: 4, right: 4 };
+  const style = useAnimatedStyle(() => {
+    const level = levels.value[index] ?? 0;
+    return {
+      opacity: withTiming(0.22 + level * 0.78, BAR_TIMING),
+      transform: [
+        {
+          scaleY: withTiming(
+            (BAR_MIN_HEIGHT + level * (BAR_HEIGHT - BAR_MIN_HEIGHT)) / BAR_HEIGHT,
+            BAR_TIMING,
+          ),
+        },
+      ],
+    };
+  });
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 8 }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t`Cancel dictation`}
-        hitSlop={hitSlop}
-        onPress={onCancel}
-      >
-        <GlassSurface style={pillStyle} fallbackStyle={{ backgroundColor: tokens.muted }}>
-          <NativeSymbol ios="xmark" android="close" size={15} color={tokens.foreground} />
-        </GlassSurface>
-      </Pressable>
-      {busy ? <View style={{ flex: 1 }} /> : <DictationLevels onLevel={onLevel} />}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t`Stop dictating`}
-        disabled={transcribing}
-        hitSlop={hitSlop}
-        onPress={onStop}
-      >
-        <GlassSurface style={pillStyle} fallbackStyle={{ backgroundColor: tokens.muted }}>
-          {busy ? (
-            <ActivityIndicator size="small" color={tokens.foreground} />
-          ) : (
-            <NativeSymbol ios="stop.fill" android="stop" size={13} color={tokens.foreground} />
-          )}
-        </GlassSurface>
-      </Pressable>
-      {children}
-    </View>
+    <Animated.View
+      style={[{ width: 2, height: BAR_HEIGHT, borderRadius: 1, backgroundColor: color }, style]}
+    />
   );
-}
+});
 
-/**
- * The microphone's recent loudness as a row of bars, newest on the trailing end; the slots not
- * yet heard are dots, so a silent mic still shows it is open.
- */
-function DictationLevels({ onLevel }: { onLevel: LevelSource }) {
-  const tokens = useMobileTokens();
-  const [slots, setSlots] = useState(0);
-  const [levels, setLevels] = useState<number[]>([]);
-  useEffect(
-    () =>
-      onLevel((level) => {
-        setLevels((previous) => [...previous, level].slice(-Math.max(slots, 1)));
-      }),
-    [onLevel, slots],
-  );
-  const shown = levels.slice(-slots);
+function Waveform({ levels, color }: { levels: SharedValue<readonly number[]>; color: string }) {
+  const [count, setCount] = useState(0);
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       onLayout={(event) =>
-        setSlots(Math.floor((event.nativeEvent.layout.width + BAR_GAP) / (BAR_WIDTH + BAR_GAP)))
+        setCount(
+          Math.max(
+            1,
+            Math.min(
+              DICTATION_LEVEL_COUNT,
+              Math.floor(event.nativeEvent.layout.width / BAR_SPACING),
+            ),
+          ),
+        )
       }
       style={{
         flex: 1,
-        height: MAX_HEIGHT,
+        minWidth: 0,
+        height: BAR_HEIGHT,
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "flex-end",
-        gap: BAR_GAP,
+        justifyContent: "space-between",
         overflow: "hidden",
       }}
     >
-      {Array.from({ length: slots }, (_, index) => {
-        const level = shown[index - (slots - shown.length)];
-        return (
-          <View
-            key={index}
-            style={{
-              width: BAR_WIDTH,
-              height: level === undefined ? BAR_WIDTH : Math.max(BAR_WIDTH, level * MAX_HEIGHT),
-              borderRadius: BAR_WIDTH / 2,
-              backgroundColor: level === undefined ? tokens.faintForeground : tokens.foreground,
-            }}
-          />
-        );
-      })}
+      {Array.from({ length: count }, (_, bar) => (
+        <WaveformBar
+          key={bar}
+          levels={levels}
+          index={DICTATION_LEVEL_COUNT - count + bar}
+          color={color}
+        />
+      ))}
+    </View>
+  );
+}
+
+function elapsedLabel(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/**
+ * The message box while dictating, as T3 Code shows it: cancel, the microphone's level and the
+ * time so far, and finish. The words arrive in the box once the recording is transcribed.
+ */
+export function DictationBar({
+  status,
+  startedAt,
+  levels,
+  pillStyle,
+  height,
+  onCancel,
+  onFinish,
+}: {
+  status: Exclude<ComposerDictationStatus, "idle">;
+  startedAt: number | null;
+  levels: SharedValue<readonly number[]>;
+  pillStyle: ViewStyle;
+  /** One line of the message box, so the bar keeps its height. */
+  height: number;
+  onCancel: () => void;
+  onFinish: () => void;
+}) {
+  const { t } = useLingui();
+  const tokens = useMobileTokens();
+  const recording = status === "listening";
+  const now = useNow(recording ? 1000 : null);
+  const busyLabel = status === "preparing" ? t`Preparing dictation` : t`Transcribing`;
+  return (
+    <View style={{ flex: 1, height, flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t`Cancel dictation`}
+        hitSlop={8}
+        onPress={onCancel}
+      >
+        <NativeSymbol ios="xmark" android="close" size={15} color={tokens.mutedForeground} />
+      </Pressable>
+      <View
+        style={{
+          flex: 1,
+          minWidth: 0,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          opacity: recording ? 1 : 0.4,
+        }}
+      >
+        <Waveform levels={levels} color={tokens.foreground} />
+        <Text
+          style={{
+            color: tokens.mutedForeground,
+            fontSize: 13,
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          {elapsedLabel(startedAt === null ? 0 : now - startedAt)}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={recording ? t`Finish dictation` : busyLabel}
+        accessibilityState={{ busy: !recording, disabled: !recording }}
+        disabled={!recording}
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+        onPress={onFinish}
+      >
+        <GlassSurface
+          tint={tokens.primary}
+          style={pillStyle}
+          fallbackStyle={{ backgroundColor: tokens.primary }}
+        >
+          {recording ? (
+            <NativeSymbol
+              ios="checkmark"
+              android="checkmark"
+              size={15}
+              color={tokens.primaryForeground}
+            />
+          ) : (
+            <ActivityIndicator size="small" color={tokens.primaryForeground} />
+          )}
+        </GlassSurface>
+      </Pressable>
     </View>
   );
 }

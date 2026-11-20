@@ -108,7 +108,6 @@ vi.mock("react-native", () => {
     },
     useWindowDimensions: () => dimensions,
     View: Surface,
-    ActivityIndicator: () => null,
     ScrollView: Surface,
     Text: Surface,
     Pressable: ({
@@ -221,14 +220,31 @@ vi.mock("../../lib/native/native", () => ({
 }));
 const dictation = vi.hoisted(() => ({
   status: "idle",
+  startedAt: null,
+  levels: { value: [] },
   toggle: vi.fn(),
   cancel: vi.fn(),
-  finish: vi.fn((_then: () => void) => {}),
-  onLevel: vi.fn(() => () => {}),
-  onWords: (_text: string, _final?: boolean) => {},
+  onWords: (_text: string) => {},
+}));
+vi.mock("./dictation-bar", () => ({
+  DictationBar: (props: { onCancel: () => void; onFinish: () => void }) =>
+    createElement(
+      "div",
+      { "data-testid": "dictation-bar" },
+      createElement("button", {
+        type: "button",
+        "aria-label": "Cancel dictation",
+        onClick: props.onCancel,
+      }),
+      createElement("button", {
+        type: "button",
+        "aria-label": "Finish dictation",
+        onClick: props.onFinish,
+      }),
+    ),
 }));
 vi.mock("../../lib/composer/composer-dictation", () => ({
-  useComposerDictation: (opts: { onWords: (text: string, final?: boolean) => void }) => {
+  useComposerDictation: (opts: { onWords: (text: string) => void }) => {
     dictation.onWords = opts.onWords;
     return dictation;
   },
@@ -1281,72 +1297,35 @@ describe("thread composer isolation", () => {
     expect(props.startVoiceCall).toHaveBeenCalledOnce();
   });
 
-  it("adds dictated words after the draft, and drops them once the draft is edited", () => {
+  it("adds the dictated transcript after the draft", () => {
     type("Remind me");
     press("Dictate");
     expect(dictation.toggle).toHaveBeenCalledOnce();
-    act(() => dictation.onWords("to buy"));
     act(() => dictation.onWords("to buy milk"));
     expect(container.querySelector("input")!.value).toBe("Remind me to buy milk");
-    type("Remind me to buy milk!");
-    act(() => dictation.onWords("to buy milk and eggs"));
-    expect(container.querySelector("input")!.value).toBe("Remind me to buy milk!");
   });
 
   function sendButton() {
     return container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
   }
 
-  it("shows how to stop or discard a dictation while it records", () => {
+  it("shows the dictation bar in place of the box and Send while recording", () => {
+    type("Please check");
     dictation.status = "listening";
     render();
-    expect(container.querySelector(labelled("Dictate"))).toBeNull();
-    press("Stop dictating");
-    expect(dictation.toggle).toHaveBeenCalledTimes(1);
-  });
-
-  it("sends a dictation once its words are in when Send is pressed while it records", () => {
-    type("Please");
-    press("Dictate");
-    dictation.status = "listening";
-    act(() => dictation.onWords("check"));
-    act(() => sendButton().click());
-    expect(props.send).not.toHaveBeenCalled();
-    const then = dictation.finish.mock.calls[0]![0];
-    act(() => {
-      dictation.status = "idle";
-      dictation.onWords("check the bank");
-      then();
-    });
-    expect(container.querySelector("input")!.value).toBe("Please check the bank");
-    expect(props.send).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps Send disabled while a dictation is being transcribed", () => {
-    dictation.status = "transcribing";
-    type("Please check");
-    const send = sendButton();
-    expect(send.disabled).toBe(true);
-    act(() => send.click());
-    expect(props.send).not.toHaveBeenCalled();
-    expect(dictation.finish).not.toHaveBeenCalled();
-  });
-
-  it("drops the words a discarded dictation added", () => {
-    type("Note");
-    press("Dictate");
-    dictation.status = "listening";
-    act(() => dictation.onWords("call the bank"));
+    expect(container.querySelector('[data-testid="dictation-bar"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Send"]')).toBeNull();
+    press("Finish dictation");
+    expect(dictation.toggle).toHaveBeenCalledOnce();
     press("Cancel dictation");
-    expect(dictation.cancel).toHaveBeenCalled();
-    expect(container.querySelector("input")!.value).toBe("Note");
+    expect(dictation.cancel).toHaveBeenCalledOnce();
   });
 
   it("adds a provider's transcript after text typed while it recorded", () => {
     type("Note");
     press("Dictate");
     type("Note:");
-    act(() => dictation.onWords("call the bank", true));
+    act(() => dictation.onWords("call the bank"));
     expect(container.querySelector("input")!.value).toBe("Note: call the bank");
   });
 

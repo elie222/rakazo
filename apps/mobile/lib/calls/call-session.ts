@@ -151,10 +151,10 @@ const FEED_RETRY_MAX_MS = 5_000;
 // ponytail: naive fixed-threshold endpointing on the fallback path only. Swap for a VAD
 // model if rooms with steady background noise start cutting people off mid-sentence.
 const SPEECH_LEVEL_DB = -35;
-/** A level at or under this shows as silence. */
-const SILENT_LEVEL_DB = -50;
 const SILENCE_HANG_MS = 1_200;
 const METER_POLL_MS = 200;
+/** A dictation waveform redraws this often; slower reads look like a stutter. */
+const LEVEL_POLL_MS = 80;
 /** How long a starting recorder may go without a level (web reports one once it records). */
 const METER_START_MS = 1_000;
 const MAX_CLIP_MS = 30_000;
@@ -1051,10 +1051,9 @@ let recordingTurn: AbortSignal | undefined;
 export async function recordClip(
   signal: AbortSignal,
   until?: AbortSignal,
-  /** The microphone's loudness from 0 (silence) to 1, each time it is measured. */
-  onLevel?: (level: number) => void,
+  options?: RecordOptions,
 ): Promise<CallClip | null> {
-  const audio = await recordAudio(signal, until, onLevel);
+  const audio = await recordAudio(signal, until, options);
   if (!audio) return null;
   try {
     return { base64: await new File(audio.uri).base64(), mimeType: audio.mimeType };
@@ -1064,10 +1063,19 @@ export async function recordClip(
 }
 
 /** Like `recordClip`, but leaves the recording on disk for the caller to read and delete. */
+type RecordOptions = {
+  /** Each metering read in dBFS, for a live waveform; undefined while the recorder has none. */
+  onLevel?: (decibels: number | undefined) => void;
+  /** The recorder started capturing, after any permission prompt and audio setup. */
+  onRecording?: () => void;
+  /** The clip never leaves the phone, so it keeps the recorder's full quality. */
+  onDevice?: boolean;
+};
+
 export async function recordAudio(
   signal: AbortSignal,
   until?: AbortSignal,
-  onLevel?: (level: number) => void,
+  { onLevel, onRecording, onDevice = false }: RecordOptions = {},
 ): Promise<{ uri: string; mimeType: string } | null> {
   const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
@@ -1094,44 +1102,55 @@ export async function recordAudio(
     recorder = new AudioModule.AudioRecorder({
       ...preset,
       ...platformOptions,
-      // Speech clips should stay small enough to upload over a mobile connection.
-      sampleRate: 16_000,
-      numberOfChannels: 1,
-      bitRate,
-      ...(Platform.OS === "ios" ? { bitRateStrategy: "constant" } : {}),
-      ...(Platform.OS === "web" ? { bitsPerSecond: bitRate } : {}),
+      // A clip to upload stays small enough for a mobile connection; one the phone transcribes
+      // keeps the recorder's quality, as T3 Code records it.
+      ...(onDevice
+        ? {}
+        : {
+            sampleRate: 16_000,
+            numberOfChannels: 1,
+            bitRate,
+            ...(Platform.OS === "ios" ? { bitRateStrategy: "constant" } : {}),
+            ...(Platform.OS === "web" ? { bitsPerSecond: bitRate } : {}),
+          }),
       isMeteringEnabled: true,
     });
     await recorder.prepareToRecordAsync();
     // A dictation stopped before the microphone opened has nothing to send.
     if (signal.aborted || until?.aborted) return null;
     recorder.record();
+    if (onRecording) {
+      // iOS can decline to start, such as during an audio interruption, without throwing.
+      if (!recorder.isRecording) throw new ExpectedTurnFailure(t`Could not start the microphone.`);
+      onRecording();
+    }
     let quietMs = 0;
     let metered = false;
+    const pollMs = onLevel ? LEVEL_POLL_MS : METER_POLL_MS;
     for (
       let elapsed = 0;
       elapsed < maxMs && !signal.aborted && !until?.aborted;
-      elapsed += METER_POLL_MS
+      elapsed += pollMs
     ) {
-      await abortableDelay(METER_POLL_MS, signal);
+      await abortableDelay(pollMs, signal);
       if (signal.aborted || until?.aborted) break;
       // A missing level is unknown, not 0 dB: a stand-in that loud hears speech in
       // silence and holds the clip to the cap. A recorder may still be starting; once it
       // has reported a level, or never does, nothing is left to endpoint on, so stop.
       // A dictated clip has `until` to end it, so it keeps recording.
       const level = recorder.getStatus().metering;
+      onLevel?.(level);
       if (level === undefined) {
         if (until) continue;
-        if (metered || elapsed + METER_POLL_MS >= METER_START_MS) break;
+        if (metered || elapsed + pollMs >= METER_START_MS) break;
         continue;
       }
       metered = true;
-      onLevel?.(Math.min(1, Math.max(0, (level - SILENT_LEVEL_DB) / -SILENT_LEVEL_DB)));
       if (level > SPEECH_LEVEL_DB) {
         heardSpeech = true;
         quietMs = 0;
       } else if (heardSpeech && !until) {
-        quietMs += METER_POLL_MS;
+        quietMs += pollMs;
         if (quietMs >= SILENCE_HANG_MS) break;
       }
     }

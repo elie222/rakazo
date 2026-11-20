@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
 import type { SpaceQueries } from "../../../lib/query/query";
 import { useSave } from "../../../lib/query/query";
+import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { topicsByRootMessage, unreadOpenTopicCount } from "./topics";
 
 const NO_TOPICS: TopicSummary[] = [];
@@ -12,16 +13,22 @@ const NO_TOPICS: TopicSummary[] = [];
  * and the Threads panel. `botId` is undefined in a group, which has no topics.
  */
 export function useBotTopics({
+  rpc,
   queries,
   botId,
   openTopic,
 }: {
+  rpc: ReturnType<typeof createSpaceRpc>;
   queries: SpaceQueries;
   botId: string | undefined;
   openTopic: (botId: string, topicId: string) => void;
 }) {
+  const input = { botId: botId ?? "" };
   const query = useQuery({
-    ...queries.threads.topics.queryOptions({ input: { botId: botId ?? "" } }),
+    ...queries.threads.topics.queryOptions({ input }),
+    // Every run change reads this again, and each read replaces the one in flight. Without the
+    // abort signal the replaced request finishes and is dropped instead of being aborted.
+    queryFn: () => rpc.threads.topics(input),
     enabled: Boolean(botId),
   });
   const topics = (botId && query.data?.topics) || NO_TOPICS;

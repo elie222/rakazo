@@ -6,8 +6,9 @@ import {
   VOICE_RESPONSE_TIMEOUT_MS,
 } from "@rakazo/core";
 import { useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, AppState } from "react-native";
+import { useSharedValue } from "react-native-reanimated";
 import { captureApiRequestContext, rpc } from "../api/api";
 import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
@@ -18,6 +19,7 @@ import { appleTranscriber } from "../voice/apple-transcription";
 import { loadDeviceVoiceEnabled } from "../voice/device-voice";
 import * as dictation from "../voice/dictation";
 import { ensureVoiceConsent } from "../voice/voice";
+import { QUIET_LEVELS, withLevel } from "./dictation-levels";
 
 /** A pause long enough to think in; one this long, or a mic that never hears anything, ends it. */
 const DICTATION_PAUSE_MS = 30_000;
@@ -51,14 +53,12 @@ type Session = {
   transcribing: boolean;
   /** The app is in the background while setup is still running. */
   hidden: boolean;
-  /** Runs once the words are in, when the session ends without a cancel or a failure. */
-  afterWords?: () => void;
 };
 
 /**
- * Tap to dictate into the message box, tap again to stop. It takes the same path a call would:
- * the phone's own recognizer when device voice is on (on iOS 26, a recording it transcribes
- * once you stop), otherwise the connected voice provider.
+ * Tap to dictate into the message box, then finish or cancel. On iOS 26 the phone transcribes
+ * the recording once you finish. Elsewhere it takes the path a call would: the phone's live
+ * recognizer when device voice is on, otherwise the connected voice provider.
  */
 export function useComposerDictation({
   disabled,
@@ -66,37 +66,43 @@ export function useComposerDictation({
 }: {
   /** Something else owns the microphone, such as a call. */
   disabled: boolean;
-  /**
-   * The words heard so far: called live on-device, and once with `final` after a provider
-   * transcribes, so those words are kept even if the box changed while recording.
-   */
-  onWords: (text: string, final?: boolean) => void;
+  /** The transcript, once, after the recording is transcribed. */
+  onWords: (text: string) => void;
 }) {
   const { t } = useLingui();
   const router = useRouter();
   const navigation = useNavigation();
   const [status, setStatus] = useState<ComposerDictationStatus>("idle");
+  /** When the microphone opened, for the elapsed time beside the waveform. */
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  // Read on the UI thread by the waveform, so a level never re-renders the composer.
+  const levels = useSharedValue<readonly number[]>(QUIET_LEVELS);
+  // The JS side's copy, so a new level never reads the shared value back from the UI thread.
+  const levelBuffer = useRef<readonly number[]>(QUIET_LEVELS);
   const session = useRef<Session | null>(null);
   const onWordsRef = useRef(onWords);
   onWordsRef.current = onWords;
-  const levelListeners = useRef(new Set<(level: number) => void>());
-  function reportLevel(mine: Session, level: number) {
-    if (session.current !== mine) return;
-    for (const listener of levelListeners.current) listener(level);
-  }
-  /** Follows the microphone's loudness from 0 to 1 while it is open. */
-  const onLevel = useCallback((listener: (level: number) => void) => {
-    levelListeners.current.add(listener);
-    return () => {
-      levelListeners.current.delete(listener);
-    };
-  }, []);
 
   function end(mine: Session) {
     if (session.current !== mine) return false;
     session.current = null;
     setStatus("idle");
+    setStartedAt(null);
     return true;
+  }
+
+  function pushLevel(decibels: number | undefined) {
+    levelBuffer.current = withLevel(levelBuffer.current, decibels);
+    levels.value = levelBuffer.current;
+  }
+
+  /** The microphone is capturing: the timer starts and finish is enabled. */
+  function markListening(mine: Session) {
+    if (session.current !== mine) return;
+    levelBuffer.current = QUIET_LEVELS;
+    levels.value = QUIET_LEVELS;
+    setStartedAt(Date.now());
+    setStatus("listening");
   }
 
   /** The microphone is closed. Blur and background must not drop the words still in flight. */
@@ -160,28 +166,43 @@ export function useComposerDictation({
   async function start(mine: Session) {
     const lang = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
     if (session.current !== mine) return;
-    // SpeechAnalyzer needs only the microphone, which recording asks for, so it dictates even
-    // where live recognition is off or its speech permission is denied. Its first use downloads
-    // the language's model, so the mic shows it preparing rather than listening meanwhile.
-    let onDevice: ReturnType<typeof appleTranscriber> | undefined;
-    const deviceTranscriber = () => {
-      if (!onDevice) {
-        onDevice = appleTranscriber(lang, () => setStatus("preparing"));
-        void onDevice.then(() => {
-          if (session.current === mine) setStatus("listening");
-        });
+    // As in T3 Code, the phone transcribes whenever it can, whichever voice reads replies: it
+    // needs only the microphone and keeps the audio on the phone. Its first use downloads the
+    // language's model, which the bar shows as preparing.
+    const transcribe = await appleTranscriber(lang);
+    if (session.current !== mine) return;
+    if (transcribe) {
+      if (!(await goLive(mine))) return;
+      const stopped = new AbortController();
+      mine.finish = () => {
+        stopped.abort();
+        markTranscribing(mine);
+      };
+      const audio = await recordAudio(mine.cancel.signal, stopped.signal, {
+        onLevel: (decibels) => pushLevel(decibels),
+        onRecording: () => markListening(mine),
+        onDevice: true,
+      });
+      if (!audio) {
+        end(mine);
+        return;
       }
-      return onDevice;
-    };
+      try {
+        if (session.current !== mine) return;
+        markTranscribing(mine);
+        mine.finish = () => {};
+        const text = await transcribe(audio.uri);
+        if (end(mine) && text) onWordsRef.current(text);
+      } finally {
+        deleteQuietly(audio.uri);
+      }
+      return;
+    }
     const plan = await resolveVoiceCallPlan(
       {
         loadDeviceVoiceEnabled,
         // A session dropped meanwhile must not show busy again or prompt for speech.
-        dictationAvailable: async () => {
-          if (session.current !== mine) return false;
-          if ((await deviceTranscriber()) !== null) return true;
-          return session.current === mine && dictation.available();
-        },
+        dictationAvailable: async () => session.current === mine && dictation.available(),
         loadVoiceStatus: () => rpc("voice/status"),
       },
       "dictation",
@@ -219,9 +240,10 @@ export function useComposerDictation({
         stopped.abort();
         markTranscribing(mine);
       };
-      const clip = await recordClip(mine.cancel.signal, stopped.signal, (level) =>
-        reportLevel(mine, level),
-      );
+      const clip = await recordClip(mine.cancel.signal, stopped.signal, {
+        onLevel: (decibels) => pushLevel(decibels),
+        onRecording: () => markListening(mine),
+      });
       if (session.current !== mine) return;
       // A sign-in to another account meanwhile must not send this audio with the old session.
       if (requestContext.sessionGeneration !== currentSessionGeneration()) {
@@ -249,42 +271,11 @@ export function useComposerDictation({
         deadline.dispose();
       }
       if (!end(mine) || requestContext.sessionGeneration !== currentSessionGeneration()) return;
-      if (text.trim()) onWordsRef.current(text.trim(), true);
-      mine.afterWords?.();
+      if (text.trim()) onWordsRef.current(text.trim());
       return;
     }
-    // Where the phone can transcribe a whole recording, record until the second tap and
-    // transcribe once, like a provider would, instead of listening live.
-    const transcribe = await deviceTranscriber();
-    if (session.current !== mine) return;
-    // The plan above already asked for speech recognition, so the microphone is next.
     if (!(await goLive(mine))) return;
-    if (transcribe) {
-      const stopped = new AbortController();
-      mine.finish = () => {
-        stopped.abort();
-        markTranscribing(mine);
-      };
-      const audio = await recordAudio(mine.cancel.signal, stopped.signal, (level) =>
-        reportLevel(mine, level),
-      );
-      if (!audio) {
-        if (end(mine)) mine.afterWords?.();
-        return;
-      }
-      try {
-        if (session.current !== mine) return;
-        markTranscribing(mine);
-        mine.finish = () => {};
-        const text = await transcribe(audio.uri);
-        if (!end(mine)) return;
-        if (text) onWordsRef.current(text, true);
-        mine.afterWords?.();
-      } finally {
-        deleteQuietly(audio.uri);
-      }
-      return;
-    }
+    markListening(mine);
     // A stop tap while the recognizer is still loading lands once it has started.
     let stopRequested = false;
     mine.finish = () => {
@@ -295,20 +286,12 @@ export function useComposerDictation({
       lang,
       endpointMs: DICTATION_PAUSE_MS,
       signal: mine.cancel.signal,
-      onInterim: (text) => {
-        if (session.current === mine) onWordsRef.current(text);
-      },
-      onLevel: (level) => reportLevel(mine, level),
       onFinal: (text) => {
-        if (!end(mine)) return;
-        onWordsRef.current(text);
-        mine.afterWords?.();
+        if (end(mine)) onWordsRef.current(text);
       },
       // Hearing nothing is not an error; a recognizer that broke is.
       onGiveUp: (reason) => {
-        if (!end(mine)) return;
-        if (reason === "failed") Alert.alert(t`Could not dictate`, t`Try again.`);
-        else mine.afterWords?.();
+        if (end(mine) && reason === "failed") Alert.alert(t`Could not dictate`, t`Try again.`);
       },
     });
     if (stopRequested && session.current === mine) dictation.finishListening();
@@ -320,7 +303,7 @@ export function useComposerDictation({
       return;
     }
     if (disabled) return;
-    // Until the path is chosen, a second tap cancels.
+    // Until the microphone opens, the bar shows it preparing and only cancel stops it.
     const mine: Session = {
       cancel: new AbortController(),
       finish: () => cancel(),
@@ -329,7 +312,7 @@ export function useComposerDictation({
       hidden: false,
     };
     session.current = mine;
-    setStatus("listening");
+    setStatus("preparing");
     start(mine).catch((error: unknown) => {
       mine.cancel.abort();
       if (!end(mine) || error instanceof AiConsentBlocked) return;
@@ -337,19 +320,5 @@ export function useComposerDictation({
     });
   }
 
-  /** Stops listening and keeps the words, then runs `then` once they are in. */
-  function finish(then: () => void) {
-    const mine = session.current;
-    if (!mine) return;
-    if (mine.live) {
-      mine.afterWords = then;
-      mine.finish();
-      return;
-    }
-    // Before the mic opens there are no words to wait for: drop the setup and go on.
-    cancel();
-    then();
-  }
-
-  return { status, toggle, finish, cancel, onLevel };
+  return { status, startedAt, levels, toggle, cancel };
 }

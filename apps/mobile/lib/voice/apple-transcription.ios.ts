@@ -7,11 +7,8 @@ import { File } from "expo-file-system";
  */
 export async function appleTranscriber(
   lang: string,
-  /** Called only when the phone prepares the language, which can mean downloading its model. */
-  onPreparing: () => void,
 ): Promise<((uri: string) => Promise<string>) | null> {
   if (!AppleTranscription.isAvailable(lang)) return null;
-  onPreparing();
   // isAvailable ignores the language. prepare rejects one SpeechAnalyzer lacks, so the live
   // recognizer takes it, and otherwise names the locale whose model it installed. Builds from
   // before patches/@react-native-ai__apple@0.12.0.patch name none, so the tag stands in.
