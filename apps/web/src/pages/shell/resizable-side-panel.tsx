@@ -31,9 +31,12 @@ export function ResizableSidePanel({
   open,
   panel,
   children,
+  onCoversChat,
 }: {
   open: boolean;
   panel: string;
+  /** Tells the shell when the panel is open over the chat, so it can take the chat out of the tab order. */
+  onCoversChat?: (covers: boolean) => void;
   children: ReactNode;
 }) {
   const reservedLeadingPx = useBotsSidebarWidth();
@@ -56,6 +59,12 @@ export function ResizableSidePanel({
   useEffect(() => {
     setViewportWidth(window.innerWidth);
   }, []);
+
+  const covering = open && overlay;
+  useEffect(() => {
+    onCoversChat?.(covering);
+    return () => onCoversChat?.(false);
+  }, [covering, onCoversChat]);
   useEventListener(window, "resize", () => setViewportWidth(window.innerWidth));
 
   function stopDrag(event: PointerEvent<HTMLHRElement>) {
