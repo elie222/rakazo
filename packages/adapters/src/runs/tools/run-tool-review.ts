@@ -4,6 +4,7 @@ import {
   applyJudgeDecision,
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
+  lastingWriteKind,
   redactSecrets,
 } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
@@ -38,6 +39,9 @@ export type ToolReview = {
   memberChecker: boolean;
 };
 
+/** Runs whose task is the product's own prompt: a new bot's intro, and the wrap-up after a call. */
+const PRODUCT_PROMPT_TRIGGERS = new Set(["created", "call_end"]);
+
 /**
  * Run the configured reviewer (and its backups) on a call and store its verdict on the
  * effect. Returns nothing when there is no reviewer or the run was cancelled.
@@ -66,11 +70,19 @@ export async function reviewToolCall(
     const outsideRun = run.trigger === "webhook";
     const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
     if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
-    // A new site, a memory or skill save after outside content, or an action on the bot's own
-    // computer after it, is judged on the owner's own words only: the task prompt of a webhook or
-    // bot-started run carries text someone else wrote.
+    // A new site, a write that outlives the run (a memory or skill save, a routine, the bot's own
+    // instructions), or an action on the bot's own computer after outside content, is judged on the
+    // owner's own words only: the task prompt of a webhook or bot-started run carries text someone
+    // else wrote, which must not authorize a write that later runs with the owner's trust. A new
+    // bot's intro and a call's wrap-up keep their task, the product's own prompt, which no one else
+    // wrote and which the owner's words do not reach.
     const ownerWordsOnly =
-      Boolean(newSiteUrl) || review.savedContextWrite || review.ownComputerAction;
+      Boolean(newSiteUrl) ||
+      review.ownComputerAction ||
+      (!PRODUCT_PROMPT_TRIGGERS.has(run.trigger) &&
+        Boolean(
+          lastingWriteKind({ toolName: name, args, savedContextWrite: review.savedContextWrite }),
+        ));
     const reviewArgs = newSiteUrl
       ? { url: redactSecrets(newSiteUrl, ctx.secrets) }
       : review.ownComputerAction

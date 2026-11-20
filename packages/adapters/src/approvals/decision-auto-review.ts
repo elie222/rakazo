@@ -24,7 +24,7 @@ import { passConfidenceFloor, passProbability } from "./decision-models.js";
 import type { DecisionCalibration } from "./model-descriptor.js";
 
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v9";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v10";
 
 /** A decision model's verdict and, when it answered, its probability that the action may pass. */
 export interface DecisionVerdict {
