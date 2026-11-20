@@ -714,6 +714,44 @@ describe("computer terminal and file transfer", () => {
     });
   });
 
+  it("reports the limit the sandbox itself enforced when a download is too large", async () => {
+    const { sandbox, call } = setup();
+    sandbox.readFile.mockRejectedValueOnce(new SandboxFileTooLargeError(8 * 1024 * 1024));
+    await expect(call("downloadFile", { path: "big.zip" })).resolves.toMatchObject({
+      status: 400,
+      body: { json: { message: "File exceeds the 8 MiB download limit." } },
+    });
+  });
+
+  it("holds host computers to their transfer limit and other kinds to the server limit", async () => {
+    const hostLimit = adapters.sandboxKindCapabilities("desktop").maxFileBytes ?? 0;
+    expect(hostLimit).toBeGreaterThan(0);
+    expect(hostLimit).toBeLessThan(10 * 1024 * 1024);
+    const over = Buffer.alloc(hostLimit + 1).toString("base64");
+    const host = setup({ ...controlled, kind: "desktop" });
+    await expect(
+      host.call("uploadFile", { path: "a.bin", contentBase64: over }),
+    ).resolves.toMatchObject({
+      status: 400,
+      body: { json: { message: "File exceeds the 8 MiB upload limit." } },
+    });
+    expect(host.sandbox.writeFile).not.toHaveBeenCalled();
+    await host.call("downloadFile", { path: "a.bin" });
+    expect(host.sandbox.readFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      { maxBytes: hostLimit },
+    );
+
+    const other = setup(controlled);
+    await expect(
+      other.call("uploadFile", { path: "a.bin", contentBase64: over }),
+    ).resolves.toMatchObject({
+      status: 200,
+    });
+  });
+
   it.each(["readFile", "downloadFile"] as const)(
     "reports a computer failure that only mentions a size as a fault from %s",
     async (route) => {
