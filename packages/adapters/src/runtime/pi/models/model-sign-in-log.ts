@@ -19,6 +19,7 @@ type SignInStage =
   | "replaced"
   | "interrupted"
   | "handoff_lost"
+  | "handoff_unreadable"
   | "start_failed"
   | "storage_failed";
 

@@ -2630,8 +2630,12 @@ describe("PiOAuthLogins across API processes", () => {
       provider: "anthropic",
       persist: keep,
     });
-    await local.logins.cancelProvider({ userId: "u", provider: "anthropic" });
+    const ended: PiOAuthEnded[] = [];
+    await apiProcess(store, ended).logins.cancelProvider({ userId: "u", provider: "anthropic" });
     expect(rows.has(elsewhere.loginId)).toBe(false);
+    expect(ended).toEqual([
+      expect.objectContaining({ provider: "anthropic", reason: "cancelled" }),
+    ]);
   });
 
   it("cancels a sign-in another process started", async () => {
