@@ -40,7 +40,12 @@ import {
   vaultCardUseOf,
   vaultLoginUseOf,
 } from "../../secrets/vault/vault-card-use.js";
-import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "../../tools/fleet-tools.js";
+import {
+  isFleetApprovalTool,
+  modelLabel,
+  prepareFleetRequest,
+  reachesManagedRoutines,
+} from "../../tools/fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "../../tools/lazy-tool-catalog.js";
 import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
@@ -445,11 +450,13 @@ export async function prepareToolRequest(
     const refused = await scheduleCreateRefusal(ctx, args);
     if (refused) return refusal("schedule_create_refused", refused.error);
   }
+  const managedRoutines = reachesManagedRoutines(name, args);
   const fleetWrite =
     FLEET_WRITE_TOOL_NAMES_SET.has(name) ||
     name === "archive_bot" ||
-    (name === "update_bot" && argumentGiven(args.bot_id));
-  if (fleetWrite || name === "list_fleet") {
+    (name === "update_bot" && argumentGiven(args.bot_id)) ||
+    (managedRoutines && name !== "schedule_list");
+  if (fleetWrite || name === "list_fleet" || managedRoutines) {
     if (isSubagentToolExecution(executionId))
       return refusal("helper_bot_management", "Helpers cannot use bot management tools.");
     // The run-start snapshot is not enough: the owner can turn the switch off mid-run.
@@ -458,7 +465,12 @@ export async function prepareToolRequest(
       select: { fleetManagement: true },
     });
     if (!live?.fleetManagement)
-      return refusal("tool_disabled", "This tool is disabled for this bot.");
+      return refusal(
+        "tool_disabled",
+        managedRoutines
+          ? "Bot management is off for this bot, so it reaches only its own routines."
+          : "This tool is disabled for this bot.",
+      );
     if (!ctx.source.ownerStartedRun)
       return refusal("run_not_owner_started", "Bot management tools need a run you started.");
     // Text from a channel or webhook may have asked for it, so it goes through the approval mode,

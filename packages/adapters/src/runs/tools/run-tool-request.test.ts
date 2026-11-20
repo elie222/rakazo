@@ -128,6 +128,60 @@ describe("private task tools after shared-channel messages", () => {
   );
 });
 
+describe("schedule tools on another bot's routines", () => {
+  function managedRoutineCall(input: {
+    fleetManagement?: boolean;
+    ownerStartedRun?: boolean;
+    outsideMessage?: boolean;
+  }) {
+    const ctx = {
+      deps: {
+        prisma: {
+          steeringMessage: { findFirst: async () => null },
+          bot: { findUnique: async () => ({ fleetManagement: input.fleetManagement ?? true }) },
+        },
+      },
+      run: { trigger: "user" },
+      bot: { id: "bot-1" },
+      runId: "run-1",
+      source: { messagingChannelRun: false, ownerStartedRun: input.ownerStartedRun ?? true },
+      trust: { receivedOutsideMessage: async () => input.outsideMessage ?? false },
+    };
+    return (name: string, args: Record<string, unknown>) => {
+      const request = { name, args, executionId: "call-1" } as ToolRequest;
+      return { prepared: prepareToolRequest(ctx as never, request), request };
+    };
+  }
+
+  it.each(["schedule_list", "schedule_update", "schedule_cancel"])(
+    "%s needs bot management and a run the owner started",
+    async (name) => {
+      const off = managedRoutineCall({ fleetManagement: false })(name, { bot_name: "Child" });
+      await expect(off.prepared).resolves.toEqual({
+        error: "Bot management is off for this bot, so it reaches only its own routines.",
+      });
+      const fromOthers = managedRoutineCall({ ownerStartedRun: false })(name, { bot_id: "child" });
+      await expect(fromOthers.prepared).resolves.toEqual({
+        error: "Bot management tools need a run you started.",
+      });
+      const own = managedRoutineCall({ fleetManagement: false })(name, { routineId: "r" });
+      await expect(own.prepared).resolves.toBeUndefined();
+    },
+  );
+
+  it("holds a change for approval once outside text reached the run, and never a list", async () => {
+    const call = managedRoutineCall({ outsideMessage: true });
+    for (const name of ["schedule_update", "schedule_cancel"]) {
+      const { prepared, request } = call(name, { bot_id: "child", routineId: "r" });
+      await expect(prepared).resolves.toBeUndefined();
+      expect(request).toMatchObject({ heldForApproval: true, ignoresAllowRules: true });
+    }
+    const list = call("schedule_list", { bot_id: "child" });
+    await expect(list.prepared).resolves.toBeUndefined();
+    expect(list.request.heldForApproval).toBeUndefined();
+  });
+});
+
 describe("prepareToolRequest: a saved login that asks first", () => {
   const site = "https://login.example.test";
   const secretStore = new EncryptedSecretStore("test-only-encryption-key");
