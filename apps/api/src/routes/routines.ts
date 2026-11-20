@@ -32,8 +32,8 @@ import {
   nextRoutineDate,
   routineNextRunAt,
   routineRowData,
+  routineRunNowTarget,
   routineTestRunNonce,
-  routineTestTarget,
 } from "../routines/routines.js";
 import type { RouterContext } from "./context.js";
 
@@ -365,7 +365,12 @@ export function routinesRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       testRun: authed.routines.testRun.handler(async ({ context, input }) => {
-        const target = await routineTestTarget(deps.prisma, repos, context.actor, input.routineId);
+        const target = await routineRunNowTarget(
+          deps.prisma,
+          repos,
+          context.actor,
+          input.routineId,
+        );
         const { threadId } = target;
         const nonce = input.clientNonce
           ? routineTestRunNonce(context.actor, input.clientNonce)

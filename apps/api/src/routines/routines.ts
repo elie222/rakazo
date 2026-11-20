@@ -1,6 +1,11 @@
 import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
-import { parseRoutineWatch, parseRoutineWatchState, routineRunModelPin } from "@rakazo/adapters";
+import {
+  parseRoutineWatch,
+  parseRoutineWatchState,
+  routineGroupThreadId,
+  routineRunModelPin,
+} from "@rakazo/adapters";
 import type { Actor, CreateRoutineInput, Routine } from "@rakazo/contracts";
 import { canonicalPiProviderId, RoutineEmailSendersSchema } from "@rakazo/contracts";
 import {
@@ -178,6 +183,21 @@ export async function routineTestTarget(
   const bot = await repos.getBot(actor, routine.botId);
   if (!bot.thread) throw new IsolationError();
   return { routine, botId: bot.id, threadId: bot.thread.id };
+}
+
+/**
+ * Run now: the same chat a scheduled tick would use, so a routine made in a group chat runs there.
+ * Spaces share their groups, so a member who may run the routine may see its group.
+ */
+export async function routineRunNowTarget(
+  prisma: PrismaClient,
+  repos: RouterContext["repos"],
+  actor: Actor,
+  routineId: string,
+) {
+  const target = await routineTestTarget(prisma, repos, actor, routineId);
+  const groupThreadId = await routineGroupThreadId(prisma, target.routine, target.botId);
+  return groupThreadId ? { ...target, threadId: groupThreadId } : target;
 }
 
 /**
