@@ -275,6 +275,8 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
       await call(query, ["snapshot", "--app", query, "--max-depth", "1"], signal);
       return;
     } catch (error) {
+      // On the bus with no window: launching it opens one.
+      if (error instanceof AgentDesktopError && error.code === "WINDOW_NOT_FOUND") return;
       // Any other refusal says something else about the app, so the bot hears it as it is.
       if (!(error instanceof AgentDesktopError) || error.code !== "APP_NOT_FOUND") throw error;
     }
@@ -555,6 +557,10 @@ function refusal(
     case "ACTION_NOT_SUPPORTED":
     case "INVALID_ARGS":
       return message || "That element can't do that.";
+    case "PLATFORM_NOT_SUPPORTED":
+      if (system === "Linux")
+        return "Screen control can't reach this computer's accessibility service. Ask the user to check that accessibility is turned on in their desktop session.";
+      return "Screen control failed. Try again.";
     default:
       return "Screen control failed. Try again.";
   }

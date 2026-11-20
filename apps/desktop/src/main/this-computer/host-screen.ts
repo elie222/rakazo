@@ -8,7 +8,6 @@ import {
   readlink,
   rename,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
@@ -162,6 +161,12 @@ export function screenDriverInstaller(options: {
   };
 }
 
+async function processUid(dir: string): Promise<number | undefined> {
+  const status = await readFile(path.join(dir, "status"), "utf8");
+  const real = /^Uid:\s+(\d+)/m.exec(status)?.[1];
+  return real === undefined ? undefined : Number(real);
+}
+
 /** The login session a process was started in, unless the kernel didn't record one. */
 async function loginSession(dir: string): Promise<string | undefined> {
   let id: string;
@@ -193,7 +198,8 @@ export async function runningProcessNamed(name: string, proc = "/proc"): Promise
     if (!/^\d+$/.test(entry)) continue;
     const dir = path.join(proc, entry);
     try {
-      if (uid !== undefined && (await stat(dir)).uid !== uid) continue;
+      // A process that blocks debugging has a root-owned folder, so read its owner from status.
+      if (uid !== undefined && (await processUid(dir)) !== uid) continue;
       // An app open in the user's other graphical session has no window in this one.
       const theirs = session && (await loginSession(dir));
       if (theirs && theirs !== session) continue;

@@ -206,6 +206,10 @@ describe("screen driver download", () => {
       const fake = async (pid: string, comm: string, exe: string) => {
         await mkdir(path.join(proc, pid));
         await writeFile(path.join(proc, pid, "comm"), `${comm}\n`);
+        await writeFile(
+          path.join(proc, pid, "status"),
+          `Name:\t${comm}\nUid:\t${process.getuid?.() ?? 0}\t0\t0\t0\n`,
+        );
         await symlink(exe, path.join(proc, pid, "exe"));
       };
       await fake("10", "brave", "/opt/browser/brave");
@@ -214,6 +218,10 @@ describe("screen driver download", () => {
       expect(await runningProcessNamed("Brave", proc)).toBe(true);
       expect(await runningProcessNamed("viewer-bin", proc)).toBe(true);
       expect(await runningProcessNamed("viewer", proc)).toBe(false);
+      // Another user's process doesn't count, whoever owns its folder.
+      await fake("15", "someone-else", "/usr/bin/someone-else");
+      await writeFile(path.join(proc, "15", "status"), "Uid:\t4242\t4242\t4242\t4242\n");
+      expect(await runningProcessNamed("someone-else", proc)).toBe(false);
       // A process that exits mid-scan leaves an entry whose files are gone.
       await mkdir(path.join(proc, "12"));
       expect(await runningProcessNamed("missing", proc)).toBe(false);
@@ -237,6 +245,10 @@ describe("screen driver download", () => {
       const fake = async (pid: string, comm: string, session: string) => {
         await mkdir(path.join(proc, pid));
         await writeFile(path.join(proc, pid, "comm"), `${comm}\n`);
+        await writeFile(
+          path.join(proc, pid, "status"),
+          `Name:\t${comm}\nUid:\t${process.getuid?.() ?? 0}\t0\t0\t0\n`,
+        );
         await writeFile(path.join(proc, pid, "sessionid"), session);
         await symlink(`/usr/bin/${comm}`, path.join(proc, pid, "exe"));
       };
@@ -250,6 +262,7 @@ describe("screen driver download", () => {
       // A process whose session can't be read stops the scan rather than counting as unrecorded.
       await mkdir(path.join(proc, "13"));
       await writeFile(path.join(proc, "13", "comm"), "unreadable\n");
+      await writeFile(path.join(proc, "13", "status"), `Uid:\t${process.getuid?.() ?? 0}\n`);
       await mkdir(path.join(proc, "13", "sessionid"));
       await expect(runningProcessNamed("unreadable", proc)).rejects.toThrow();
     } finally {

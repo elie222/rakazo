@@ -330,6 +330,13 @@ describe("agent-desktop host screen", () => {
     expect(observed.tree).toContain("[1]");
   });
 
+  it("tells the bot when Linux's accessibility service can't be reached", async () => {
+    const { screen } = cli({ "list-windows": () => refused("PLATFORM_NOT_SUPPORTED") }, "Linux");
+    await expect(screen.observe(scope, "notepad")).rejects.toThrow(
+      "Screen control can't reach this computer's accessibility service.",
+    );
+  });
+
   it("names Linux, not Windows, in what the bot reads on Linux", async () => {
     const { screen } = cli({}, "Linux");
     await screen.observe(scope, "notepad");
@@ -366,6 +373,7 @@ describe("agent-desktop host screen", () => {
       const { screen } = cli(
         {
           "list-windows": () => ok(launched ? notepad : []),
+          snapshot: (args) => (args.includes("--app") ? refused("WINDOW_NOT_FOUND") : ok(snapshot)),
           launch: () => {
             launched = true;
             return ok({ app: "notepad", pid: 41 });
