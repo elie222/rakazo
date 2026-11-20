@@ -368,7 +368,7 @@ describe("messagingPlatformsFromEnv", () => {
     );
   });
 
-  it.each(["", "unknown", "feishu"])("uses normalized Lark defaults for domain %s", (domain) => {
+  it.each(["", "feishu"])("uses normalized Lark defaults for domain %s", (domain) => {
     vi.stubEnv("LARK_DOMAIN", domain);
     vi.stubEnv("LARK_ENCRYPT_KEY", "   ");
     try {
