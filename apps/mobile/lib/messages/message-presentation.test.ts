@@ -47,6 +47,7 @@ describe("mobile message presentation", () => {
         text: "Hello from the group",
       },
       { kind: "routine_event", change: "created", name: "Morning joke" },
+      { kind: "open_work_event", itemId: "item-1", title: "Compare vendors" },
     ] as MessageBlock[];
 
     for (const block of blocks) expect(isCenteredAgentEvent([block])).toBe(true);

@@ -211,6 +211,15 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     name: z.string().max(200),
   }),
   /**
+   * The bot added an item to its open work. The title only, never the notes, and no `text` field
+   * on purpose: clients word the row, and the model never sees it.
+   */
+  z.object({
+    kind: z.literal("open_work_event"),
+    itemId: z.string(),
+    title: z.string().max(200),
+  }),
+  /**
    * Marks a user message as what woke the bot (a webhook, an email, a chat message). Its text
    * block is the bot's full prompt, so chats, previews and search leave the message out.
    */

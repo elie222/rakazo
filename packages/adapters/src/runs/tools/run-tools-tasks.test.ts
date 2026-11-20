@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+
+const notice = vi.hoisted(() => ({ postOpenWorkNotice: vi.fn(async () => undefined) }));
+vi.mock("../../tasks/open-work-notice.js", () => notice);
+
 import type { RunContext } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { taskTools } from "./run-tools-tasks.js";
@@ -48,6 +52,55 @@ function groupRun() {
     ({ name, args, finish: async (result: unknown) => result }) as unknown as ToolCall;
   return { ctx, call, deleteMany };
 }
+
+describe("scratchpad_add", () => {
+  const add = async (args: Record<string, unknown>, trigger = "user") => {
+    notice.postOpenWorkNotice.mockClear();
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "item-1",
+      botId: "b",
+      ...data,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    }));
+    const ctx = {
+      deps: { prisma: { scratchpadItem: { create } } },
+      run: { id: "run-1", spaceId: "s", userId: "u", trigger },
+      bot: { id: "b" },
+      thread: { id: "thread-1" },
+    } as unknown as RunContext;
+    const call = {
+      name: "scratchpad_add",
+      args,
+      finish: async (result: unknown) => result,
+    } as unknown as ToolCall;
+    return taskTools.scratchpad_add!(ctx, call);
+  };
+
+  it("leaves a row in the run's chat naming the saved item", async () => {
+    await add({ title: " Compare vendors ", notes: "private detail" });
+    expect(notice.postOpenWorkNotice).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      spaceId: "s",
+      threadId: "thread-1",
+      botId: "b",
+      itemId: "item-1",
+      title: "Compare vendors",
+    });
+  });
+
+  it("leaves no row for a refused item or one saved as already done", async () => {
+    await expect(add({ title: "" })).resolves.toEqual({ error: "title is required." });
+    await add({ title: "Shipped", status: "done" });
+    expect(notice.postOpenWorkNotice).not.toHaveBeenCalled();
+  });
+
+  it("leaves no row for background ticket work, which stays out of the chat", async () => {
+    await expect(add({ title: "Compare vendors" }, "tickets")).resolves.toMatchObject({
+      item: { title: "Compare vendors" },
+    });
+    expect(notice.postOpenWorkNotice).not.toHaveBeenCalled();
+  });
+});
 
 describe("routine tools in a group run", () => {
   it("lists the bot's routines from every chat and marks the group's own", async () => {

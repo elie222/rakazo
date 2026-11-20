@@ -613,6 +613,16 @@ code-b
       },
     ];
   }
+  const openWork = /add to your open work:\s*([^\n<&]+)/i.exec(words);
+  if (openWork) {
+    return [
+      {
+        assistant: "noted for later.",
+        toolCalls: [{ name: "scratchpad_add", args: { title: openWork[1]!.trim() } }],
+        complete: true,
+      },
+    ];
+  }
   if (
     lower.includes("create a space") ||
     lower.includes("create space") ||

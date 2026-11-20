@@ -33,8 +33,8 @@ import {
   userMentionTargets,
 } from "../../lib/messages/message-mentions";
 import { messagePresentationSegments } from "../../lib/messages/message-presentation";
-import type { RoutineEventBlock } from "../../lib/messages/routine-event-label";
-import { routineEventLabel } from "../../lib/messages/routine-event-label";
+import type { OpenWorkEventBlock, RoutineEventBlock } from "../../lib/messages/routine-event-label";
+import { openWorkEventLabel, routineEventLabel } from "../../lib/messages/routine-event-label";
 import type { UserBubble } from "../../lib/messages/user-bubble";
 import { withUserBubble } from "../../lib/messages/user-bubble";
 import { useResolvedAppearance } from "../../lib/native/native";
@@ -399,7 +399,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     );
   }
   const routineEvents = message.blocks.filter(
-    (block): block is RoutineEventBlock => block.kind === "routine_event",
+    (block): block is RoutineEventBlock | OpenWorkEventBlock =>
+      block.kind === "routine_event" || block.kind === "open_work_event",
   );
   if (routineEvents.length > 0 && routineEvents.length === message.blocks.length) {
     return (
@@ -409,10 +410,10 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       >
         {routineEvents.map((block, index) => (
           <Text
-            key={`${block.change}-${index}`}
+            key={`${block.kind}-${index}`}
             style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}
           >
-            {routineEventLabel(block)}
+            {block.kind === "routine_event" ? routineEventLabel(block) : openWorkEventLabel(block)}
           </Text>
         ))}
       </Pressable>

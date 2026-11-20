@@ -3,6 +3,13 @@ import type { MessageBlock } from "@rakazo/contracts";
 
 export type RoutineEventBlock = Extract<MessageBlock, { kind: "routine_event" }>;
 
+export type OpenWorkEventBlock = Extract<MessageBlock, { kind: "open_work_event" }>;
+
+/** The words of an open-work row in the chat. */
+export function openWorkEventLabel({ title }: OpenWorkEventBlock): string {
+  return t`Added to open work "${title}"`;
+}
+
 /** The words of a routine row in the chat. */
 export function routineEventLabel({ change, name }: RoutineEventBlock): string {
   switch (change) {
