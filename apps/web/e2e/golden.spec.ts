@@ -325,6 +325,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(
     toolSources.getByText(/GraphQL\s*https:\/\/graphql\.example\.test\/graphql/),
   ).toBeVisible();
+  // Each Remove button is described by its own source name, so identical buttons tell apart.
+  await expect(
+    toolSources
+      .getByTestId("tool-source")
+      .filter({ hasText: "Browser API" })
+      .getByRole("button", { name: "Remove", exact: true }),
+  ).toHaveAccessibleDescription("Browser API");
   await captureScreenshot(page, testInfo, "02-graphql-installed");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
