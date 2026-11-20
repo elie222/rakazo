@@ -80,6 +80,17 @@ export function useSpaceRoster({
     meMissingRef.current = true;
     setBootstrapMe(null);
   }, []);
+  // An account arriving another way (a settings save) is newer than a pending re-read, and a
+  // shell that is gone must not apply its account over the next one's.
+  useEffect(() => {
+    if (bootstrapMe) meMissingRef.current = false;
+  }, [bootstrapMe]);
+  useEffect(
+    () => () => {
+      meMissingRef.current = false;
+    },
+    [],
+  );
   const callsEnabledRef = useRef(false);
   useEffect(() => {
     callsEnabledRef.current = bootstrapMe?.phoneCallsEnabled === true;
@@ -109,8 +120,9 @@ export function useSpaceRoster({
       const preserveBotOrder = savingBotOrderRef.current || pendingBotOrderRef.current !== null;
       const archivedRequest = includeArchived ? ++archivedBotsRefreshEpoch.current : null;
       if (meMissingRef.current) {
-        // Apart from the roster, so a failing account read cannot hold it back; the flag stays
-        // set on failure, and the next re-read tries again.
+        // Apart from the roster, so a failing account read cannot hold it back. The RPC client
+        // reports a transport failure and the API a server one; the flag stays set, so the next
+        // re-read tries again.
         void rpc.me().then(
           (me) => {
             if (!meMissingRef.current) return;
