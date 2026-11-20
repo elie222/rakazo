@@ -21,7 +21,7 @@ export const SOFT_DETAILS_CRITERIA = {
 /**
  * The product's general prompt with a variant's rubric swapped in and its extra situation added as
  * data. Requests judged by a specific rubric (a new site, a lasting write, the bot's own computer)
- * keep the product's own; only the general one says "Use ask only when".
+ * keep the product's own.
  */
 export function variantPrompt(
   basePrompt: string,
@@ -34,7 +34,7 @@ export function variantPrompt(
   escapeData: (value: string) => string,
 ): string {
   let prompt = basePrompt;
-  if (input.rubric && input.general && /^Use ask only when: /m.test(prompt))
+  if (input.rubric && input.general)
     prompt = prompt
       .replace(/^Use pass when: .*$/m, `Use pass when: ${input.rubric.pass}.`)
       .replace(/^Use ask only when: .*$/m, `Use ask when: ${input.rubric.ask}.`);

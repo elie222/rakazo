@@ -35,11 +35,7 @@ const productRequest: DecisionRequest = {
   model: "m",
   state: { toolName: "GMAIL_SEND_EMAIL", userTask: "yes" },
   questions: {
-    decision: {
-      type: "choice",
-      instructions: "Should this bot action run without asking its owner first?",
-      criteria: { pass: "p", ask: "a" },
-    },
+    decision: { type: "choice", instructions: "Run it?", criteria: { pass: "p", ask: "a" } },
   },
 };
 
@@ -89,17 +85,20 @@ describe("approval variants", () => {
     expect(seen[0]!.state).toMatchObject({ userTask: "yes", earlierSteps: expect.any(Array) });
     expect(seen[0]!.questions.decision!.criteria).toEqual(SOFT_DETAILS_CRITERIA);
     expect(seen[0]!.questions.decision!.instructions).toContain("earlierSteps");
-    // A specific question (a new site, a lasting write) keeps the product's own rubric.
     await provider.decide(
-      {
-        ...productRequest,
-        questions: {
-          decision: { ...productRequest.questions.decision!, instructions: "Can it fetch this?" },
-        },
-      },
+      { ...productRequest, state: { ...productRequest.state, newSite: true } },
       context,
     );
     expect(seen[1]!.questions.decision!.criteria).toEqual({ pass: "p", ask: "a" });
+    // So does a lasting write, such as the bot's own instructions.
+    await provider.decide(
+      {
+        ...productRequest,
+        state: { ...productRequest.state, toolName: "update_bot", args: { instructions: "i" } },
+      },
+      context,
+    );
+    expect(seen[2]!.questions.decision!.criteria).toEqual({ pass: "p", ask: "a" });
   });
 
   it("builds the same variant for a plain model's prompt", () => {
@@ -118,10 +117,14 @@ describe("approval variants", () => {
         escape,
       ),
     ).toBe(base);
-    // So does a lasting write, whose prompt has no general "ask only when" line.
-    const lasting = "Use pass when: P.\nUse ask when: A.\ntool: x";
-    expect(variantPromptFor(lasting, planted, parseApprovalVariant("lean-ask"), asData)).toBe(
-      lasting,
-    );
+    // So does a lasting write.
+    expect(
+      variantPromptFor(
+        base,
+        { ...planted, toolName: "schedule_create", args: { prompt: "p" } },
+        parseApprovalVariant("lean-ask"),
+        escape,
+      ),
+    ).toBe(base);
   });
 });

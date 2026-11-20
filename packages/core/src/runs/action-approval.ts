@@ -362,6 +362,35 @@ export async function savedContextWriteNeedsReview(
   );
 }
 
+export type LastingWrite = "memory" | "routine" | "instructions";
+
+/**
+ * The write that outlives the run an Auto Review is about, which gets its own narrow question:
+ * a memory or skill save after outside content, a routine's words, or the bot's own instructions.
+ * A routine update writes its words only when it changes its prompt or events; a pause or a new
+ * time does not. A child bot's instructions always ask its owner, unreviewed.
+ */
+export function lastingWriteKind(input: {
+  toolName: string;
+  args: Record<string, unknown>;
+  newSite?: boolean;
+  savedContextWrite?: boolean;
+  ownComputerAction?: boolean;
+}): LastingWrite | undefined {
+  if (input.newSite || input.ownComputerAction) return undefined;
+  if (input.savedContextWrite) return "memory";
+  if (input.toolName === "schedule_create" || input.toolName === "create_child_routine")
+    return "routine";
+  if (
+    input.toolName === "schedule_update" &&
+    (Boolean(input.args.prompt) || Boolean(input.args.on))
+  )
+    return "routine";
+  if (input.toolName === "update_bot" && typeof input.args.instructions === "string")
+    return "instructions";
+  return undefined;
+}
+
 /** What open_path opens as a page rather than a workspace file, as its handler decides. */
 const HTTP_LINK = /^https?:\/\//i;
 /** Page actions that put text or files the bot chose into the page. */

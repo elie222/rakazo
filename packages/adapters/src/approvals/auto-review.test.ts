@@ -430,6 +430,14 @@ describe("buildAutoReviewPrompt", () => {
     });
     expect(instructions).toContain(`Use ask when: ${INSTRUCTIONS_WRITE_ASK}.`);
     expect(instructions).toContain("previousInstructions in tool_args are the current ones");
+    // A lasting write is judged against the owner's request, which can come late in a long message.
+    const late = buildAutoReviewPrompt({
+      ...base,
+      userTask: `${"Some context about the shop. ".repeat(30)}Also add a weekly sales routine.`,
+      toolName: "schedule_create",
+      args: { prompt: "Every Monday, summarize sales for the owner." },
+    });
+    expect(late).toContain("Also add a weekly sales routine.");
     // Any other change to the bot keeps the general question.
     const model = buildAutoReviewPrompt({ ...base, toolName: "update_bot", args: { model: "m" } });
     expect(model).toContain(`Use pass when: ${AUTO_REVIEW_PASS}.`);

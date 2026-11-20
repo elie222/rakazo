@@ -17,6 +17,7 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
+  lastingWriteKind,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
   ownComputerActionNeedsReview,
@@ -955,6 +956,43 @@ describe("connectorReadRequiresApproval", () => {
 
   it("asks before a read on a new connector once the run is tainted", () => {
     expect(connectorReadRequiresApproval({ tainted: true, connectorTrusted: false })).toBe(true);
+  });
+});
+
+describe("lastingWriteKind", () => {
+  it("names the write that outlives the run", () => {
+    expect(lastingWriteKind({ toolName: "remember", args: {}, savedContextWrite: true })).toBe(
+      "memory",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "create_child_routine", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { on: "email" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "update_bot", args: { instructions: "i" } })).toBe(
+      "instructions",
+    );
+  });
+
+  it("leaves pauses, new times, other settings and other paths to their own rubric", () => {
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { active: false } })).toBe(
+      undefined,
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { cron: "0 9 * * *" } })).toBe(
+      undefined,
+    );
+    expect(lastingWriteKind({ toolName: "update_bot", args: { model: "m" } })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "set_child_instructions", args: { instructions: "i" } }),
+    ).toBe(undefined);
+    expect(lastingWriteKind({ toolName: "remember", args: {} })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" }, newSite: true }),
+    ).toBe(undefined);
   });
 });
 
