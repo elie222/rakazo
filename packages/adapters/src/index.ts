@@ -224,6 +224,7 @@ export * from "./runtime/context/scratchpad-context.js";
 export * from "./runtime/pi/models/pi-catalog-availability.js";
 export * from "./runtime/pi/models/pi-codex-catalog.js";
 export * from "./runtime/pi/models/pi-credentials.js";
+export { liveModelCatalogEnabled } from "./runtime/pi/models/pi-live-cache.js";
 export * from "./runtime/pi/models/pi-live-catalog.js";
 export * from "./runtime/pi/models/pi-live-model.js";
 export * from "./runtime/pi/models/pi-models.js";

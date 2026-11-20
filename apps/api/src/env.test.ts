@@ -387,6 +387,14 @@ describe("OIDC environment", () => {
       );
     }
   });
+  it("refuses a RAKAZO_LIVE_MODEL_CATALOG value it can't read at startup", () => {
+    for (const value of ["off", "false", "0", "no", "on", ""]) {
+      expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: "disabled" })).toThrow(
+      "RAKAZO_LIVE_MODEL_CATALOG must be on or off",
+    );
+  });
   it("reads USER_DEVICES_ENABLED strictly and refuses a value it can't read", () => {
     expect(loadEnv(base).userDevicesEnabled).toBe(true);
     for (const value of ["", "  ", "true", "TRUE", "1"]) {
