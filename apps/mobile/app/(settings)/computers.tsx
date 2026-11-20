@@ -54,8 +54,27 @@ export default function ComputersSettings() {
   });
   const resize = useSave({
     stale: [cloudRead.queryKey],
-    save: ({ computerId, size }: { computerId: string; size: ComputerSize }, send) =>
-      send("cloudComputers/setSize", { computerId, size }),
+    save: async ({ computerId, size }: { computerId: string; size: ComputerSize }, send) => {
+      const saved = await send("cloudComputers/setSize", { computerId, size });
+      // Keep the confirmed choice if the next read fails, not a list fetched before the save.
+      await queryClient.cancelQueries({ queryKey: cloudRead.queryKey, exact: true });
+      queryClient.setQueryData(cloudRead.queryKey, (listed) => {
+        if (!listed?.computers.some((computer) => computer.id === computerId)) return;
+        return {
+          ...listed,
+          computers: listed.computers.map((computer) =>
+            computer.id === computerId
+              ? {
+                  ...computer,
+                  size: listed.available.includes(size) ? size : computer.size,
+                  savedSize: size,
+                }
+              : computer,
+          ),
+        };
+      });
+      return saved;
+    },
     onSaved: (_saved, { computerId }) => setResized(computerId),
     onFailed: () => Alert.alert(t`Could not change computer size`),
   });
