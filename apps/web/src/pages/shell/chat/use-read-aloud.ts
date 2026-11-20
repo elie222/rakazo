@@ -44,7 +44,8 @@ export function useReadAloud({
 }) {
   const openVoiceSettingsRef = useRef(openVoiceSettings);
   openVoiceSettingsRef.current = openVoiceSettings;
-  // The toast can outlive the render that started the read, so it opens settings through the latest callback.
+  // The toast can outlive the render that started the read, so it opens settings through the
+  // latest callback.
   const openVoiceSettingsNow = useCallback(() => openVoiceSettingsRef.current(), []);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const autoSpoken = useRef<string | null>(null);
@@ -85,6 +86,7 @@ export function useReadAloud({
     active?.autoSpeak,
     active?.id,
     callBotId,
+    openVoiceSettingsNow,
   ]);
 
   const speakingMessageIdRef = useRef(speakingMessageId);
