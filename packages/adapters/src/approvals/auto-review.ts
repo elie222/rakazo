@@ -281,6 +281,8 @@ const IPV6_WORD =
  * keep its host.
  */
 function addressesIn(text: string, shown: string): string[] | undefined {
+  // Whole words only: a look-alike in the shown part must not hide an address left out.
+  const shownWords = new Set(shown.split(WORD_SEPARATORS));
   const found = new Set<string>();
   // Bare names are listed but never decide the cut: code and file names (`setup.py`,
   // `self.name`) read as host names too, and a long heredoc holds many.
@@ -289,7 +291,7 @@ function addressesIn(text: string, shown: string): string[] | undefined {
     // More than the list holds could hide the one that matters behind decoys.
     if (found.size > MAX_LEFT_OUT_ADDRESSES) return undefined;
     // One the reviewer already sees whole in the start or end was not left out.
-    if (!word || shown.includes(word)) continue;
+    if (!word || shownWords.has(word)) continue;
     if (
       URL_WORD.test(word) ||
       USER_AT_HOST_WORD.test(word) ||

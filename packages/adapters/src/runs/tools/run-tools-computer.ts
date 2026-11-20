@@ -250,11 +250,12 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   // A refused step reports no address, which leaves the last one the run saw.
   const raw = ctx.providers.browser;
   const seen = <T extends { url?: string; ok?: boolean; uncertain?: boolean }>(result: T) => {
-    if (result.url) {
-      ctx.state.pageUrl = result.url;
-      // A failed or unsure step reports the page it asked for, not the one the browser shows.
-      ctx.state.pageUrlUncertain = result.ok === false || result.uncertain === true;
-    }
+    // A failed or unsure step may have moved the page, and reports the page it asked for, not the
+    // one the browser shows; only a step that went through says where the page now is.
+    const unsure = result.ok === false || result.uncertain === true;
+    if (result.url) ctx.state.pageUrl = result.url;
+    if (unsure) ctx.state.pageUrlUncertain = true;
+    else if (result.url) ctx.state.pageUrlUncertain = false;
     return result;
   };
   const pageUrlTrackingBrowser: BrowserProvider = {
