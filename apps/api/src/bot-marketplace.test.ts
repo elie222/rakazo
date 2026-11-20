@@ -3,6 +3,7 @@ import {
   AgentImportCreateInput,
   isBotMarketplaceChanged,
   MarketplaceBotSchema,
+  marketplaceBotIntro,
   marketplaceBotTemplate,
 } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
@@ -416,6 +417,73 @@ describe("marketplace install semantics", () => {
       expect.objectContaining({ source: "marketplace", importKey: "marketplace:morning-briefing" }),
     ]);
     expect(routines).toEqual([expect.objectContaining({ active: false })]);
+  });
+
+  it("posts the listing's intro and first question as the bot's first message", async () => {
+    const messages: { blocks: { kind: string; text?: string }[] }[] = [];
+    const db = transactionalDb();
+    const tx = new Proxy(db as object, {
+      get: (target, prop) =>
+        prop === "message"
+          ? {
+              create: async (args: { data: { blocks: { kind: string; text?: string }[] } }) => {
+                messages.push(args.data);
+                return { id: `message-${messages.length}`, ...args.data };
+              },
+            }
+          : (target as Record<string, unknown>)[prop as string],
+    });
+    const withIntro = MarketplaceBotSchema.parse({
+      ...listing,
+      intro: "I brief you every weekday morning.",
+      firstQuestion: "Which city should I watch?",
+    });
+    await createBotFromTemplateDefinition(
+      services({
+        createBot: async (_actor, input) => {
+          await input.seed(tx as never, bot.id);
+          return bot;
+        },
+      }),
+      async () => [],
+      member,
+      marketplaceBotTemplate(withIntro),
+      { version: withIntro.version },
+      { ...options, intro: marketplaceBotIntro(withIntro) },
+    );
+    expect(messages[0]?.blocks).toEqual([
+      { kind: "text", text: "I brief you every weekday morning.\n\nWhich city should I watch?" },
+    ]);
+  });
+
+  it("stays silent when the listing has no intro", async () => {
+    const messages: unknown[] = [];
+    const db = transactionalDb();
+    const tx = new Proxy(db as object, {
+      get: (target, prop) =>
+        prop === "message"
+          ? {
+              create: async (args: { data: unknown }) => {
+                messages.push(args.data);
+                return { id: "message-1" };
+              },
+            }
+          : (target as Record<string, unknown>)[prop as string],
+    });
+    await createBotFromTemplateDefinition(
+      services({
+        createBot: async (_actor, input) => {
+          await input.seed(tx as never, bot.id);
+          return bot;
+        },
+      }),
+      async () => [],
+      member,
+      marketplaceBotTemplate(listing),
+      { version: listing.version },
+      { ...options, intro: marketplaceBotIntro(listing) },
+    );
+    expect(messages.every((data) => JSON.stringify(data).includes("import_setup"))).toBe(true);
   });
 
   it("returns the existing bot on a retry without creating again", async () => {

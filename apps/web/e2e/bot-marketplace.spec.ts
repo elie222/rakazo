@@ -116,6 +116,7 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
   await market.getByTestId("market-row").click();
   const detail = market.getByTestId("bot-marketplace-detail");
   await expect(detail.getByRole("heading", { name: "Morning briefing" })).toBeVisible();
+  await expect(detail.getByText("A scannable morning briefing.", { exact: true })).toBeVisible();
   await expect(detail.getByText("Gmail", { exact: true })).toBeVisible();
   await expect(detail.getByText(/paused until you turn it on$/)).toBeVisible();
   await expect(detail.getByText("Demo data, not your real content.")).toBeVisible();
@@ -126,6 +127,14 @@ test("ops publishes a bot; a user adds it from the market and uses it", async ({
   await expect(member).toHaveURL(/\/app\/[^/?]+/);
   const botId = new URL(member.url()).pathname.split("/").pop()!;
   await expect(member.getByTestId("import-setup-card")).toBeVisible();
+  // The listing's fixed intro and first question open the chat, with no model run.
+  const botMessages = member.getByTestId("message-bot-bubble");
+  await expect(
+    botMessages.getByText(
+      "I brief you every weekday morning. Nothing is sent without your confirmation.",
+    ),
+  ).toBeVisible();
+  await expect(botMessages.getByText("Which city should I watch the weather for?")).toBeVisible();
   const routines = await rpc<Routine[]>(member, "routines/list", { botId });
   expect(routines.map((routine) => [routine.name, routine.active])).toEqual([
     ["Morning briefing", false],

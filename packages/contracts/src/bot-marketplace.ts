@@ -2,6 +2,9 @@ import * as z from "zod";
 import { BOT_NAME_MAX_LENGTH, BotSchema } from "./bots/bot.js";
 import { BotTemplateSchema } from "./bots/bot-template.js";
 
+/** A listing's links open in the user's browser, so only web addresses are accepted. */
+const httpUrl = z.url({ protocol: /^https?$/ }).max(500);
+
 /**
  * A marketplace listing: a reviewed bot template plus the catalog metadata the market shows.
  * Strict like the template it extends, with no field for keys, memory, history, models or
@@ -11,7 +14,7 @@ import { BotTemplateSchema } from "./bots/bot-template.js";
 export const MarketplaceBotSchema = BotTemplateSchema.extend({
   author: z.strictObject({
     name: z.string().min(1).max(100),
-    url: z.string().url().max(500).optional(),
+    url: httpUrl.optional(),
   }),
   license: z.string().min(1).max(80),
   category: z.enum(["personal", "engineering", "sales", "operations"]),
@@ -19,10 +22,10 @@ export const MarketplaceBotSchema = BotTemplateSchema.extend({
   tagline: z.string().min(1).max(160),
   outcomes: z.array(z.string().min(1).max(240)).min(1).max(12),
   setupMinutes: z.number().int().min(1).max(240).optional(),
-  homepage: z.string().url().max(500).optional(),
+  homepage: httpUrl.optional(),
   tags: z.array(z.string().min(1).max(80)).max(30).default([]),
   versionNote: z.string().max(500).optional(),
-  /** The bot's first message after install; absent means the bot stays silent. */
+  /** The bot's first message after install. */
   intro: z.string().min(1).max(2000).optional(),
   /** Appended to the intro: the first thing the bot asks the user. */
   firstQuestion: z.string().min(1).max(500).optional(),
@@ -49,6 +52,14 @@ export function marketplaceBotTemplate(listing: MarketplaceBot) {
     routines: listing.routines,
     apps: listing.apps,
   };
+}
+
+/**
+ * What the bot says first after install: the intro, then its first question. Fixed copy, posted
+ * without running a model; a listing with neither leaves the bot silent.
+ */
+export function marketplaceBotIntro(listing: MarketplaceBot): string | undefined {
+  return [listing.intro, listing.firstQuestion].filter(Boolean).join("\n\n") || undefined;
 }
 
 export const MarketplaceBotCatalogInput = z.strictObject({
