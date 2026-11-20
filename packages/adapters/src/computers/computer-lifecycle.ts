@@ -192,6 +192,17 @@ export class ComputerSpaceDeletingError extends ComputerBusyError {}
 export { toComputerRef } from "./screens/computer-support.js";
 
 /**
+ * A reference to a running computer that, if a call has to wake it, starts at its planned size.
+ * Kept out of the screen helpers, which the desktop app bundles without the database.
+ */
+export async function wakeableComputerRef(
+  prisma: Pick<PrismaClient, "computer">,
+  computer: { id: string; homeKey: string; kind: string; providerRef: string | null },
+): Promise<ComputerRef> {
+  return { ...toComputerRef(computer), startSize: await planComputerSize(prisma, computer.id) };
+}
+
+/**
  * The owner's time zone and app language for the computer's clock and browser, so pages see the
  * account's instead of the server's. Unknown, or unreadable, leaves the provider's defaults: a
  * computer still starts without them.
