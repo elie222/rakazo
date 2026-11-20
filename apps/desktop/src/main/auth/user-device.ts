@@ -15,7 +15,7 @@ import {
   USER_DEVICE_SESSION_PATH,
 } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
-import { parseRetryAfter } from "@rakazo/core";
+import { isRetryableError, parseRetryAfter } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { readPrivateFile, writePrivateFile } from "../setup/setup-store.js";
 
@@ -27,7 +27,6 @@ export interface DeviceTokenCipher {
 
 const MAX_DEVICE_FILE_BYTES = 8 * 1024;
 const MAX_TOKEN_LENGTH = 1024;
-const PAIRING_REFUSALS = new Set([400, 403, 404, 409, 413, 415, 422]);
 
 export interface PairedDevice {
   token: string;
@@ -362,15 +361,17 @@ export function createUserDeviceAccess(deps: {
       });
       if (!response.ok) {
         await response.body?.cancel();
-        if (PAIRING_REFUSALS.has(response.status)) unavailable.add(origin);
-        if (response.status === 401 || PAIRING_REFUSALS.has(response.status)) {
-          pairingRetryAfter.delete(origin);
-          pairingKeys.delete(origin);
-        } else {
+        // A server error, timeout or rate limit can clear up, so a later page load asks again; any
+        // other answer won't change on retry. Signed out (401): the next load after sign-in retries.
+        if (isRetryableError({ status: response.status })) {
           pairingRetryAfter.set(
             origin,
             Date.now() + (parseRetryAfter(response.headers.get("retry-after")) ?? 5_000),
           );
+        } else {
+          if (response.status !== 401) unavailable.add(origin);
+          pairingRetryAfter.delete(origin);
+          pairingKeys.delete(origin);
         }
         return;
       }

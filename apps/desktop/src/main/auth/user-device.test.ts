@@ -1,6 +1,7 @@
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { MAX_RETRY_AFTER_MS } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -504,12 +505,15 @@ describe("remote computer access", () => {
     await access.pair();
     expect(clients).toHaveLength(1);
 
+    vi.useFakeTimers({ toFake: ["Date"] });
     const refused = setup({ fetch });
-    for (const refusal of [400, 403, 404, 409, 413, 415, 422]) {
+    for (const refusal of [400, 403, 404, 405, 409, 413, 415, 422, 426]) {
       status = refusal;
       const target = `https://refused-${refusal}.example.com`;
       await refused.access.select(target);
       await refused.access.pair();
+      // Past any retry delay, so only a remembered refusal keeps the second load from asking.
+      vi.setSystemTime(Date.now() + MAX_RETRY_AFTER_MS + 1);
       await refused.access.pair();
       expect(fetch.mock.calls.filter(([url]) => url.startsWith(target))).toHaveLength(1);
     }
