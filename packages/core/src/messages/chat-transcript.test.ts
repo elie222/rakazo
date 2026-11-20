@@ -19,6 +19,7 @@ const transcript = (messages: ThreadMessage[]) =>
     messages,
     speaker: (item) => (item.role === "user" ? "You" : "Ada"),
     time: (createdAt) => createdAt.slice(0, 16).replace("T", " "),
+    routineEvent: (change, name) => `${change} routine "${name}"`,
   });
 
 describe("chatTranscriptMarkdown", () => {
@@ -138,6 +139,17 @@ describe("chatTranscriptMarkdown", () => {
       message("bot", [{ kind: "text", text: "Done" }]),
     ]);
     expect(text).toBe("# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\nDone\n");
+  });
+
+  it("words each routine event by its change, not only its name", () => {
+    const text = transcript([
+      message("bot", [{ kind: "routine_event", change: "created", name: "Digest" }]),
+      message("bot", [{ kind: "routine_event", change: "disabled", name: "Digest" }]),
+      message("bot", [{ kind: "routine_event", change: "deleted", name: "Digest" }]),
+    ]);
+    expect(text).toContain('created routine "Digest"');
+    expect(text).toContain('disabled routine "Digest"');
+    expect(text).toContain('deleted routine "Digest"');
   });
 
   it("is just the title for an empty chat", () => {

@@ -1,14 +1,18 @@
 import { useLingui } from "@lingui/react/macro";
+import { ORPCError } from "@orpc/client";
 import type { Bot, BotSection, Group } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
+import { isConnectionFailure } from "@rakazo/core/user-error";
 import { ContextMenu, toast } from "@rakazo/ui-web";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Suspense, useEffect } from "react";
 import { lazyOverlay } from "../../../components/ErrorBoundary";
 import { exportChat } from "../../../lib/chat/export-chat";
+import { reportClientError } from "../../../lib/platform/monitoring";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import type { ShellDialogsState } from "../shell-dialogs";
 import type { SnoozeChat } from "../sidebar/use-chat-snooze";
+import { useRoutineEventLabel } from "./routine-event-row";
 import { resolveTranscriptMemberName } from "./transcript-member-name";
 import type { useChatRead } from "./use-chat-read";
 
@@ -75,6 +79,7 @@ export function ChatContextMenu({
   group,
   bots,
   archivedBots,
+  meId,
   sections,
   spaceId,
   onClose,
@@ -91,6 +96,8 @@ export function ChatContextMenu({
   /** The Space's bots and archived bots, to name group messages from bots that left the group. */
   bots: readonly Bot[];
   archivedBots: readonly Bot[];
+  /** The signed-in person, so their own messages read as "You" as the chat shows them. */
+  meId?: string;
   sections: BotSection[];
   spaceId: string | undefined;
   onClose: () => void;
@@ -102,6 +109,7 @@ export function ChatContextMenu({
   navigate: (path: string) => void;
 }) {
   const { t, i18n } = useLingui();
+  const routineEvent = useRoutineEventLabel();
   const chat = bot ?? group;
   if (!chat) return null;
   const target = bot
@@ -173,12 +181,19 @@ export function ChatContextMenu({
         void exportChat({
           rpc,
           target,
-          labels: { you: t`You`, system: t`System` },
+          labels: { you: t`You`, system: t`System`, routineEvent },
+          meId,
           time: (createdAt) =>
             i18n.date(new Date(createdAt), { dateStyle: "medium", timeStyle: "short" }),
           memberName: (botId) =>
             resolveTranscriptMemberName({ botId, members: group?.members, bots, archivedBots }),
-        }).catch(() => toast.error(t`Could not export chat`));
+        }).catch((error: unknown) => {
+          // The API logs its own failures, and a dropped connection is the network, not a bug.
+          if (!(error instanceof ORPCError) && !isConnectionFailure(error)) {
+            reportClientError(error, "chat.export");
+          }
+          toast.error(t`Could not export chat`);
+        });
       }}
       onClear={() => {
         dialogs.setClearTarget(target);

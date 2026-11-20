@@ -1,4 +1,4 @@
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageBlock, RoutineEventChange } from "@rakazo/contracts";
 import { isRetiredImportSetup, isToolActivityBlock } from "../runs/tool-activity.js";
 import { projectMessageReactions } from "./message-reactions.js";
 import { channelMessageLine } from "./message-text.js";
@@ -14,7 +14,10 @@ type TranscriptMessage = {
 };
 
 /** A block as the chat shows it, in words; empty for what the chat leaves out. */
-function blockMarkdown(block: MessageBlock): string {
+function blockMarkdown(
+  block: MessageBlock,
+  routineEvent: (change: RoutineEventChange, name: string) => string,
+): string {
   if (isToolActivityBlock(block) || isRetiredImportSetup(block)) return "";
   switch (block.kind) {
     case "text":
@@ -49,12 +52,13 @@ function blockMarkdown(block: MessageBlock): string {
       return block.reason;
     case "subagent":
       return [block.name, block.result ?? block.task].filter(Boolean).join(": ");
+    case "routine_event":
+      return routineEvent(block.change, block.name);
     case "chart":
     case "child_bot":
     case "app_connect":
     case "mcp_approval":
     case "skill_draft":
-    case "routine_event":
       return block.name;
     case "app":
       return `${block.server}: ${block.tool}`;
@@ -81,6 +85,8 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   speaker: (message: T) => string;
   /** When the message was sent, as the person reads dates. */
   time: (createdAt: string) => string;
+  /** A routine's creation, change, switch or deletion, in the reader's words. */
+  routineEvent: (change: RoutineEventChange, name: string) => string;
 }): string {
   // Folded as the chat folds them: work a bot did for another bot stays under its receipt, and an
   // emoji-only reply shows under the message it reacts to.
@@ -89,7 +95,7 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   );
   const entries = visibleMessages.flatMap((message) => {
     const body = message.blocks
-      .map((block) => blockMarkdown(block).trim())
+      .map((block) => blockMarkdown(block, options.routineEvent).trim())
       .filter(Boolean)
       .join("\n");
     if (!body) return [];

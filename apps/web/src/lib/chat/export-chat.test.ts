@@ -37,7 +37,11 @@ const group = {
     { botId: "bot-2", name: "Lee", color: "ink" },
   ],
 } as Group;
-const labels = { you: "You", system: "System" };
+const labels = {
+  you: "You",
+  system: "System",
+  routineEvent: (change: string, name: string) => `${change} routine "${name}"`,
+};
 const time = (createdAt: string) => createdAt.slice(11, 16);
 const noMembers = () => undefined;
 
@@ -72,6 +76,7 @@ describe("exportChat", () => {
       labels,
       time,
       memberName: noMembers,
+      meId: "u_me",
     });
 
     expect(messages.mock.calls.map(([input]) => input)).toEqual([
@@ -87,6 +92,29 @@ describe("exportChat", () => {
     expect(file.text).toContain("**Dana** · 01:00\n\nHi");
     expect(file.text).toContain("**You** · 03:00\n\nSummarize my inbox");
     expect(file.text).toContain("**Ada** · 02:00\n\nHello Dana");
+  });
+
+  it("names your own messages You, as the chat does", async () => {
+    const { rpc } = rpcWith([
+      {
+        messages: [
+          message("Mine", { author: { id: "u_me", name: "Dana" } }, "user"),
+          message("Theirs", { author: { id: "u_2", name: "Lee" } }, "user"),
+        ],
+        olderCursor: null,
+      },
+    ]);
+    await exportChat({
+      rpc,
+      target: { kind: "bot", chat: bot },
+      labels,
+      time,
+      memberName: noMembers,
+      meId: "u_me",
+    });
+    const { text } = exported();
+    expect(text).toMatch(/\*\*You\*\* · \d\d:\d\d\n\nMine/);
+    expect(text).toMatch(/\*\*Lee\*\* · \d\d:\d\d\n\nTheirs/);
   });
 
   it("names each group message for the bot that wrote it", async () => {
@@ -111,7 +139,11 @@ describe("exportChat", () => {
         archivedBots: [{ id: "bot-8", name: "Old Ada" }],
       });
     await exportChat({ rpc, target: { kind: "group", chat: group }, labels, time, memberName });
-    expect(messages).toHaveBeenCalledWith({ groupId: "group-1" });
+    // The read now also carries the export's deadline signal, which is the change under test.
+    expect(messages).toHaveBeenCalledWith(
+      { groupId: "group-1" },
+      { signal: expect.any(AbortSignal) },
+    );
     const { name, text } = exported();
     expect(name).toBe("launch-crew-chat.md");
     expect(text).toMatch(/\*\*Lee\*\* · \d\d:\d\d\n\nFrom Lee/);
@@ -119,6 +151,51 @@ describe("exportChat", () => {
     expect(text).toMatch(/\*\*Old Ada\*\* · \d\d:\d\d\n\nFrom an archived bot/);
     expect(text).toMatch(/\*\*Deleted bot\*\* · \d\d:\d\d\n\nFrom a removed bot/);
     expect(text).toMatch(/\*\*System\*\* · \d\d:\d\d\n\nNotice/);
+  });
+
+  it("gives up on a page that never answers, saving nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      const messages = vi.fn(() => new Promise<never>(() => {}));
+      const rpc = { threads: { messages } } as unknown as RpcClient;
+      const outcome = exportChat({
+        rpc,
+        target: { kind: "bot", chat: bot },
+        labels,
+        time,
+        memberName: noMembers,
+      }).then(
+        () => "saved",
+        (error: Error) => error.message,
+      );
+      await vi.advanceTimersByTimeAsync(15_000);
+      await expect(outcome).resolves.toBe("Peer history page timed out.");
+      expect(download).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("words a routine's event in the chat's words", async () => {
+    const { rpc } = rpcWith([
+      {
+        messages: [
+          message("Digest is on", {}),
+          message("", {
+            blocks: [{ kind: "routine_event", change: "disabled", name: "Digest" }],
+          }),
+        ],
+        olderCursor: null,
+      },
+    ]);
+    await exportChat({
+      rpc,
+      target: { kind: "bot", chat: bot },
+      labels,
+      time,
+      memberName: noMembers,
+    });
+    expect(exported().text).toContain('disabled routine "Digest"');
   });
 
   it("saves nothing when a page fails to load", async () => {
