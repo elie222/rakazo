@@ -1046,6 +1046,9 @@ model Bot {
   thinkingLevel     String?
   disabledBuiltinTools String[] @default([])
   webhookSecretId   String?
+  /// A signing secret the webhook sender generated; `webhookSignature` says how it signs.
+  webhookSigningSecretId String?
+  webhookSignature  Json?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
   crossSpaceCommunication Boolean @default(true)

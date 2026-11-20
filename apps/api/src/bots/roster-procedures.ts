@@ -35,6 +35,8 @@ export const ROSTER_PROCEDURES: Record<string, RosterScope> = {
   "bots.restore": actorSpace,
   "bots.remove": actorSpace,
   "bots.rotateWebhookSecret": actorSpace,
+  "bots.setWebhookSignature": actorSpace,
+  "bots.clearWebhookSignature": actorSpace,
   "onboarding.firstBot": actorSpace,
   "groups.create": actorSpace,
   "groups.duplicate": actorSpace,

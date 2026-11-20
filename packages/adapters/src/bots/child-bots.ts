@@ -237,6 +237,7 @@ type LifecycleBot = {
   archivedAt: Date | null;
   computerId?: string | null;
   webhookSecretId?: string | null;
+  webhookSigningSecretId?: string | null;
 };
 
 /** Management stays within the current space, whichever member created the bot. */
@@ -439,8 +440,10 @@ export async function destroyBot(
   // Deleting the bot deletes its thread, so this waits out snapshot reads holding that row.
   const deletion = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<Array<{ id: string; webhookSecretId: string | null }>>`
-        SELECT id, "webhookSecretId"
+      const locked = await tx.$queryRaw<
+        Array<{ id: string; webhookSecretId: string | null; webhookSigningSecretId: string | null }>
+      >`
+        SELECT id, "webhookSecretId", "webhookSigningSecretId"
         FROM bots
         WHERE id = ${bot.id} AND "spaceId" = ${bot.spaceId}
         FOR UPDATE
@@ -449,6 +452,8 @@ export async function destroyBot(
       // it owns the deletion and the cleanup that follows.
       if (locked.length === 0) return null;
       const webhookSecretId = locked[0]?.webhookSecretId ?? bot.webhookSecretId ?? null;
+      const webhookSigningSecretId =
+        locked[0]?.webhookSigningSecretId ?? bot.webhookSigningSecretId ?? null;
       const { deleteMemories } = options;
       // The thread cascades with the bot; retain its namespace only when deletion was requested.
       const directMemory =
@@ -513,6 +518,11 @@ export async function destroyBot(
       if (webhookSecretId) {
         await tx.secret.deleteMany({
           where: { id: webhookSecretId, kind: "webhook", spaceId: bot.spaceId },
+        });
+      }
+      if (webhookSigningSecretId) {
+        await tx.secret.deleteMany({
+          where: { id: webhookSigningSecretId, kind: "webhook_signing", spaceId: bot.spaceId },
         });
       }
       if (dedicated) await tx.computer.delete({ where: { id: dedicated.id } });

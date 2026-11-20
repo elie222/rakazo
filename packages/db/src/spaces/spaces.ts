@@ -429,6 +429,7 @@ export async function listClaimedSpaceBots(
       archivedAt: true,
       computerId: true,
       webhookSecretId: true,
+      webhookSigningSecretId: true,
     },
     orderBy: { createdAt: "asc" },
   });

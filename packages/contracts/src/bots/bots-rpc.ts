@@ -13,6 +13,7 @@ import {
 } from "../integrations/agent-import-setup.js";
 import { VaultImportInput, VaultImportResult } from "../integrations/vault-import.js";
 import { MemoryProviderDescriptorSchema } from "../models/provider-settings.js";
+import { SetWebhookSignatureInput, WebhookSignatureSchema } from "../routines/webhook-signature.js";
 import { botId } from "../rpc/inputs.js";
 import { settingsScopeInput } from "../settings-scope.js";
 import { SpaceMemoryConfigSchema } from "../spaces/space.js";
@@ -102,6 +103,10 @@ export const botsRpc = {
       }),
     ),
     revealWebhookSecret: oc.input(botId).output(z.object({ secret: z.string() })),
+    setWebhookSignature: oc
+      .input(SetWebhookSignatureInput)
+      .output(z.object({ webhookSignature: WebhookSignatureSchema })),
+    clearWebhookSignature: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
   botSections: {
     list: oc.output(z.array(BotSectionSchema)),

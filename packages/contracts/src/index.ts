@@ -70,6 +70,7 @@ export * from "./models/voice-connection-ui.js";
 export * from "./models/voice-errors.js";
 export * from "./routines/routine.js";
 export * from "./routines/routine-watch.js";
+export * from "./routines/webhook-signature.js";
 export * from "./rpc/app-contract.js";
 export * from "./runs/runs.js";
 export * from "./settings-scope.js";

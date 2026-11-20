@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { ComputerModeSchema } from "../computers/computer.js";
 import { Id, ReplyModeSchema, ThinkingLevelSchema } from "../ids.js";
+import { WebhookSignatureSchema } from "../routines/webhook-signature.js";
 import { TEAM_CHAT_RULES_MAX_LENGTH } from "../threads/external-conversations.js";
 import { BotSettingsValuesSchema } from "../threads/message-blocks.js";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
@@ -70,6 +71,8 @@ export const BotSchema = z.object({
   replyMode: ReplyModeSchema.default("chat"),
   disabledBuiltinTools: z.array(z.string()).default([]),
   webhookConfigured: z.boolean(),
+  /** How the sender signs deliveries, once the creator saved its signing secret. */
+  webhookSignature: WebhookSignatureSchema.nullable().optional(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
   spawnKey: z.string().nullable(),
   /** The bot is ringing the user right now. */

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
+import type { Routine, RoutineEmailSenders, WebhookSignature } from "@rakazo/contracts";
 import { ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
 import {
   Button,
@@ -23,15 +23,17 @@ import {
   MessageSquare,
   MoreHorizontal,
   RefreshCw,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { BotEmailAddressField } from "../../../components/BotEmailAddressField";
 import { InfoTooltip } from "../../../components/InfoTooltip";
 import { authClient } from "../../../lib/auth/auth";
 import { useCopyText } from "../../../lib/copy-text";
 import type { RoutineWatchDraft } from "../../../lib/routines/routine-draft";
+import { useWebhookSignatureLabel, WebhookSignatureDialog } from "./webhook-signature-dialog";
 
 export function WatchTriggerCard({
   watch,
@@ -307,6 +309,7 @@ export function InboundTriggerCard({
   onRotate,
   onReveal,
   onHide,
+  signing,
 }: {
   kind: "webhook" | "github";
   saved: boolean;
@@ -317,8 +320,16 @@ export function InboundTriggerCard({
   onRotate: () => void;
   onReveal: () => void;
   onHide: () => void;
+  /** A secret the sender generated, for senders that sign deliveries instead. */
+  signing?: {
+    botId: string;
+    signature: WebhookSignature | null;
+    onSaved: (botId: string, signature: WebhookSignature | null) => void;
+  };
 }) {
   const { t } = useLingui();
+  const signatureLabel = useWebhookSignatureLabel();
+  const [signingOpen, setSigningOpen] = useState(false);
   const hidden = "••••••••";
   const credential =
     kind === "github"
@@ -355,6 +366,12 @@ export function InboundTriggerCard({
                 <RefreshCw />
                 <Trans>Rotate key</Trans>
               </DropdownMenuItem>
+              {signing ? (
+                <DropdownMenuItem onClick={() => setSigningOpen(true)}>
+                  <ShieldCheck />
+                  <Trans>Signing secret</Trans>
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
@@ -382,12 +399,28 @@ export function InboundTriggerCard({
               {secret ? <EyeOff /> : <Eye />}
             </Button>
           </CopyRow>
+          {signing?.signature ? (
+            <CopyRow
+              label={t`Signed`}
+              value={signatureLabel(signing.signature.scheme)}
+              copyable={false}
+            />
+          ) : null}
         </div>
       ) : (
         <p className="mt-1.5 px-0.5 text-body-sm text-muted-foreground">
           <Trans>Available after saving</Trans>
         </p>
       )}
+      {signing ? (
+        <WebhookSignatureDialog
+          open={signingOpen}
+          onOpenChange={setSigningOpen}
+          botId={signing.botId}
+          signature={signing.signature}
+          onSaved={signing.onSaved}
+        />
+      ) : null}
     </div>
   );
 }
@@ -408,7 +441,7 @@ function CopyRow({
   const { t } = useLingui();
   const [copied, copy] = useCopyText();
   return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-muted py-0.5 pr-0.5 pl-2.5">
+    <div className="flex min-h-7 items-center gap-0.5 rounded-lg bg-muted py-0.5 pr-0.5 pl-2.5">
       <span className="w-14 shrink-0 text-label text-muted-foreground">{label}</span>
       <span className="min-w-0 flex-1 truncate font-mono text-label text-foreground/75">
         {value}

@@ -85,6 +85,7 @@ import { resumeRoutinesAfterRestore } from "../routines/routine-resume.js";
 import { changedBotSettings } from "../telemetry/bot-setting-analytics.js";
 import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
 import { loadMessagePage } from "../threads/thread-message-pages.js";
+import { saveWebhookSigningSecret } from "../webhooks/webhook-signing-secret.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
 
@@ -723,6 +724,32 @@ export function botsRoutes(ctx: RouterContext) {
         });
         return { secret };
       }),
+      setWebhookSignature: authed.bots.setWebhookSignature.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        // Webhook runs act as the bot's creator, so only the creator decides who may start them.
+        if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
+        await saveWebhookSigningSecret({ prisma: deps.prisma, secretStore: deps.secrets }, bot, {
+          signature: input.signature,
+          secret: input.secret,
+          context: {
+            operationId: "bots.setWebhookSignature",
+            traceId: "bots.setWebhookSignature",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            signal: context.signal ?? new AbortController().signal,
+          },
+        });
+        return { webhookSignature: input.signature };
+      }),
+      clearWebhookSignature: authed.bots.clearWebhookSignature.handler(
+        async ({ context, input }) => {
+          const bot = await repos.getBot(context.actor, input.botId);
+          if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
+          const store = { prisma: deps.prisma, secretStore: deps.secrets };
+          await saveWebhookSigningSecret(store, bot, null);
+          return { ok: true as const };
+        },
+      ),
     },
     groups: {
       create: authed.groups.create.handler(async ({ context, input }) =>

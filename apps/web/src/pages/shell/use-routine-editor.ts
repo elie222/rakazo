@@ -155,6 +155,7 @@ export function useRoutineEditor({
               : `/api/v1/bots/${active.id}/webhook`,
           secret: routineWebhookSecret,
           configured: active.webhookConfigured || Boolean(routineWebhookSecret),
+          signature: active.webhookSignature ?? null,
         },
         githubPath:
           typeof window !== "undefined"
@@ -206,6 +207,10 @@ export function useRoutineEditor({
           bumpWebhookKeyGeneration(active.id);
           hideWebhookSecret(active.id);
         },
+        onWebhookSignatureSaved: (botId, webhookSignature) =>
+          setBots((current) =>
+            current.map((bot) => (bot.id === botId ? { ...bot, webhookSignature } : bot)),
+          ),
         onSave: async () => {
           if (routineSavePending.current) return;
           const targetBotId = active.id;
