@@ -332,13 +332,27 @@ describe("controls", () => {
     expect(host.textContent).not.toContain("Choose a region");
   });
 
-  it("reports typed text and makes number inputs numeric, with a number pad on phones", () => {
+  it("offers the decimal pad only when a number can't go negative", () => {
+    const view = render(<Input value={1} type="number" min={0} />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("decimal");
+    expect(q<HTMLInputElement>("input")!.min).toBe("0");
+    view.rerender(<Input value={1} type="number" min={-5} />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("");
+    view.rerender(<Input value={1} type="number" />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("");
+    // Pages are written as plain JavaScript, so a min given as text still counts.
+    view.rerender(<Input value={1} type="number" min={"0" as unknown as number} />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("decimal");
+    view.rerender(<Input value="a" type="text" min={0} />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("");
+  });
+
+  it("reports typed text and makes number inputs numeric", () => {
     const onChange = vi.fn();
     render(<Input label="Seats" value={12} type="number" onChange={onChange} />);
     const input = q<HTMLInputElement>("input")!;
     expect(input.value).toBe("12");
     expect(input.type).toBe("number");
-    expect(input.inputMode).toBe("decimal");
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
       setter.call(input, "13");
