@@ -1,0 +1,142 @@
+name: desktop server deploy
+
+# Fork only. Once ci's tests pass on main, builds the server bundle on Apple silicon and swaps it
+# into the Rakazo desktop install at DEPLOY_SSH_HOST over Tailscale, which restarts that app.
+# A manual run deploys main's tip without waiting on tests, for example after the desktop app
+# updated itself back to the official server. See docs/fork-desktop-deploy.md.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Each run builds what it was started for; a burst of merges leaves only the newest waiting.
+concurrency:
+  group: desktop-server-deploy
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Passing tests on main's tip
+    if: >-
+      github.event.repository.fork &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sha: ${{ steps.gate.outputs.sha }}
+    steps:
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          head="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            echo "sha=$head" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$RUN_SHA" != "$head" ]]; then
+            echo "main moved past $RUN_SHA; its own ci run deploys." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Only the tests gate the deploy, as in upstream's own: image publishing and the mobile
+          # update report on their own.
+          jobs="$(gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/jobs" \
+            --jq '.jobs[] | select(.name | startswith("Tests")) | "\(.conclusion) \(.name)"')"
+          if [[ -z "$jobs" ]] || grep -v -E '^(success|skipped) ' <<< "$jobs"; then
+            echo "Tests did not pass for $RUN_SHA; not deploying." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "sha=$RUN_SHA" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build the server bundle
+    needs: gate
+    if: needs.gate.outputs.sha != ''
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      # The run's own commit, main's tip when it started, rather than a ref from another job, so
+      # code from anywhere but main never runs with main's cache.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Require the commit the gate passed
+        env:
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SHA"
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install the server's dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: >-
+          pnpm install --frozen-lockfile --filter rakazo --filter "@rakazo/api..."
+          --filter "@rakazo/worker..." --filter "@rakazo/web..."
+      - name: Build
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          pnpm db:generate
+          pnpm --filter @rakazo/web build
+          node scripts/build-server-bundle.mjs "$RUNNER_TEMP/server-bundle"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: server-bundle
+          path: ${{ runner.temp }}/server-bundle/*.tar.xz
+          compression-level: 0
+          retention-days: 3
+
+  deploy:
+    name: Swap it into the desktop install
+    needs: [gate, build]
+    # Tailscale trusts GitHub's OIDC token only from this main-only environment, so no tailnet
+    # secret is stored and a workflow on another branch cannot join the tailnet.
+    environment: desktop-deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/fork
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: server-bundle
+          path: ${{ runner.temp }}/server-bundle
+      - uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:rakazo-deploy
+          ping: ${{ secrets.DEPLOY_SSH_HOST }}
+      - name: Copy the bundle over and swap it in
+        env:
+          TARGET: ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          set -euo pipefail
+          ssh_opts=(-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ServerAliveInterval=30)
+          bundle="$(ls "$RUNNER_TEMP"/server-bundle/*.tar.xz)"
+          remote="/tmp/$(basename "$bundle")"
+          scp "${ssh_opts[@]}" "$bundle" "$TARGET:$remote"
+          ssh "${ssh_opts[@]}" "$TARGET" bash -s -- "$remote" < scripts/fork/deploy-desktop-server.sh

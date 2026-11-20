@@ -1,0 +1,50 @@
+name: upstream sync
+
+# Fork only. Merges upstream's main into this fork's main every morning, so the fork's own
+# changes ride on the newest Rakazo. A clean merge pushes straight to main, where ci runs the tests
+# that gate the mobile update and the desktop server deploy. A conflict fails this run: merge
+# upstream/main into a branch by hand and open a PR, merged with a merge commit, never a squash.
+on:
+  schedule:
+    - cron: "17 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge upstream main
+    if: github.event.repository.fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Merge upstream main
+        env:
+          # A GITHUB_TOKEN push starts no workflows and cannot change workflow files, and an
+          # upstream merge needs both.
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "Add a SYNC_TOKEN secret (see docs/fork-desktop-deploy.md)." >&2
+            exit 1
+          fi
+          if result="$(gh api -X POST "repos/$REPO/merge-upstream" -f branch=main 2>&1)"; then
+            echo "$result" | jq -r '.message' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### Upstream sync needs a hand"
+            echo
+            echo "$result"
+            echo
+            echo "Merge upstream/main into a branch, resolve the conflicts, and merge its PR with a merge commit."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$result" >&2
+          exit 1
