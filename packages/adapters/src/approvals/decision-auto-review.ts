@@ -24,7 +24,7 @@ import { passConfidenceFloor } from "./decision-models.js";
 import type { DecisionCalibration } from "./model-descriptor.js";
 
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v11";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v12";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(
     private readonly options: {
