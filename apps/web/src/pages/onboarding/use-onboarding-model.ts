@@ -22,6 +22,7 @@ const ENDPOINT_PRESET_OPTION = "endpoint-preset:";
 type ProviderAuth = "sign-in" | "key";
 /** Where billing is on, a new account first picks how it pays for its model. */
 export type ConnectWay = "credits" | "subscription" | "key";
+type ProviderOption = { value: string; label: string };
 
 const MAIN_PROVIDER_OPTIONS: ReadonlyArray<{ provider: string; auth?: ProviderAuth }> = [
   { provider: "openai-codex" },
@@ -168,16 +169,35 @@ export function useOnboardingModel({
       (option) => option.value,
       (option) => option.label,
     );
+    // Hosted onboarding splits each provider that offers sign-in into its subscription and its key.
+    const restSubscriptions: ProviderOption[] = [];
+    const keyRest = rest.flatMap((option) => {
+      const entry = byId.get(option.value);
+      if (entry?.signIn === undefined) return [option];
+      restSubscriptions.push({
+        value: providerOptionValue(option.value, "sign-in"),
+        label: option.label,
+      });
+      return entry.auth === "oauth"
+        ? []
+        : [{ ...option, value: providerOptionValue(option.value, "key") }];
+    });
     return {
       main,
       rest,
-      subscriptions: main.filter((option) => option.subscription),
+      subscriptions: [...main.filter((option) => option.subscription), ...restSubscriptions],
       keyMain: main.filter((option) => !option.subscription),
+      keyRest,
     };
   }, [providers, t]);
   // Base UI Select.Value only resolves labels when Root gets `items`.
   const providerItems = useMemo(
-    () => [...providerOptions.main, ...providerOptions.rest],
+    () => [
+      ...providerOptions.main,
+      ...providerOptions.rest,
+      ...providerOptions.subscriptions,
+      ...providerOptions.keyRest,
+    ],
     [providerOptions],
   );
   const modelItems = useMemo(

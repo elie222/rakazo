@@ -66,6 +66,21 @@ const hostedCatalog = [
   },
   { provider: "openai", providerName: "OpenAI", id: "gpt-model", label: "GPT model" },
   { provider: "mistral", providerName: "Mistral", id: "mistral-model", label: "Mistral model" },
+  {
+    provider: "github-copilot",
+    providerName: "GitHub Copilot",
+    id: "copilot-model",
+    label: "Copilot model",
+    auth: "oauth",
+    signIn: "device-code",
+  },
+  {
+    provider: "xai",
+    providerName: "xAI",
+    id: "grok-model",
+    label: "Grok model",
+    signIn: "device-code",
+  },
 ];
 
 beforeEach(() => {
@@ -265,7 +280,13 @@ it("starts a hosted account by choosing credits, a subscription, or an API key",
   expect(button("Continue")?.disabled).toBe(true);
 
   await act(async () => choice("Use a subscription")!.click());
-  expect(choice("ChatGPT subscription")).not.toBeNull();
+  expect(
+    [
+      ...document.querySelectorAll(
+        '[role="radiogroup"][aria-label="Use a subscription"] [role="radio"]',
+      ),
+    ].map((radio) => radio.closest('[data-slot="field-label"]')?.textContent),
+  ).toEqual(["ChatGPT subscription", "Claude subscription", "GitHub Copilot", "xAI"]);
   await act(async () => choice("Claude subscription")!.click());
   expect(checked()).toEqual(["Use a subscription", "Claude subscription"]);
   expect(button("Sign in")).toBeDefined();
@@ -277,7 +298,7 @@ it("starts a hosted account by choosing credits, a subscription, or an API key",
   await act(async () => providerPicker()!.click());
   expect(
     [...document.querySelectorAll('[role="option"]')].map((option) => option.textContent),
-  ).toEqual(["OpenAI API", "Anthropic API", "Mistral"]);
+  ).toEqual(["OpenAI API", "Anthropic API", "Mistral", "xAI"]);
   await act(async () =>
     [...document.querySelectorAll<HTMLElement>('[role="option"]')]
       .find((option) => option.textContent === "OpenAI API")!
@@ -317,7 +338,9 @@ it("keeps the provider list for self-hosted accounts", async () => {
     "Claude subscription",
     "OpenAI API",
     "Anthropic API",
+    "GitHub Copilot",
     "Mistral",
+    "xAI",
   ]);
   act(() => root.unmount());
 });

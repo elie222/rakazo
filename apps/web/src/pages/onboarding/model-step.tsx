@@ -82,7 +82,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
       {billingEnabled && connectWay === "key" ? (
         <ProviderSelect
           model={model}
-          options={{ main: model.providerOptions.keyMain, rest: model.providerOptions.rest }}
+          options={{ main: model.providerOptions.keyMain, rest: model.providerOptions.keyRest }}
         />
       ) : null}
       {provider ? (
