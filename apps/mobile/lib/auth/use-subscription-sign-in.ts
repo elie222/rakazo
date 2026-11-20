@@ -102,6 +102,7 @@ export function useSubscriptionSignIn({
   const cancelOAuth = useCallback(() => {
     const loginId = oauthLoginIdRef.current;
     oauthLoginIdRef.current = null;
+    oauthCodeSubmittingRef.current = false;
     cancelModelOAuthAttempt(oauthAbortRef, () => {
       setOauth(null);
       setOauthPending(false);
@@ -215,7 +216,8 @@ export function useSubscriptionSignIn({
         error: errorText(err, t`Could not finish sign-in`),
       });
     } finally {
-      oauthCodeSubmittingRef.current = false;
+      // A newer sign-in started by Start over owns the guard now; leave it alone.
+      if (oauthAbortRef.current === controller) oauthCodeSubmittingRef.current = false;
       if (!retryable) {
         finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
       }

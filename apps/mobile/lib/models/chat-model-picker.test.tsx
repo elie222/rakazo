@@ -42,6 +42,8 @@ const mocks = vi.hoisted(() => ({
   alert: vi.fn(),
   prompt: vi.fn(),
   completeOAuth: vi.fn(),
+  submitOAuthCode: vi.fn(),
+  pasteBackSignIn: false,
   rpc: vi.fn(),
   dismissKeyboard: vi.fn(),
   listProps: {} as Record<string, unknown>,
@@ -155,6 +157,14 @@ vi.mock("../api/api", () => ({
         hasKey: true,
       };
     }
+    if (procedure === "models/beginOAuth" && mocks.pasteBackSignIn)
+      return {
+        loginId: `login-${mocks.rpc.mock.calls.filter(([name]) => name === "models/beginOAuth").length}`,
+        mode: "auth-url",
+        verificationUri: "https://example.com/authorize",
+        expiresInSeconds: 600,
+      };
+    if (procedure === "models/submitOAuthCode") return mocks.submitOAuthCode(input);
     if (procedure === "models/beginOAuth")
       return {
         loginId: "login-fixture",
@@ -619,6 +629,7 @@ beforeEach(() => {
   mocks.savedGatewayId = "gateway-fixture";
   mocks.vendorLabels = false;
   mocks.subscriptionSignIn = false;
+  mocks.pasteBackSignIn = false;
   mocks.reconnectRequired = false;
   mocks.secondConnection = false;
   mocks.backups = [];
@@ -950,6 +961,26 @@ describe("provider connection screen", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", { loginId: "login-fixture" });
     await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
+  });
+  it("lets a new sign-in submit its code while the one it replaced is still submitting", async () => {
+    mocks.connected = false;
+    mocks.subscriptionSignIn = true;
+    mocks.pasteBackSignIn = true;
+    mocks.completeOAuth.mockReturnValue(new Promise(() => {}));
+    const firstSubmit = deferred<unknown>();
+    mocks.submitOAuthCode.mockReturnValueOnce(firstSubmit.promise);
+    await renderConnection();
+    await act(async () => buttonWithText("Sign in")!.click());
+    editField("Code from example.com", "first-code");
+    await act(async () => buttonWithText("Submit")!.click());
+    await act(async () => buttonWithText("Start over")!.click());
+    editField("Code from example.com", "second-code");
+    await act(async () => buttonWithText("Submit")!.click());
+    await act(async () => firstSubmit.reject(new Error("aborted")));
+    expect(mocks.submitOAuthCode.mock.calls.map(([input]) => input)).toEqual([
+      { loginId: "login-1", code: "first-code" },
+      { loginId: "login-2", code: "second-code" },
+    ]);
   });
 });
 
