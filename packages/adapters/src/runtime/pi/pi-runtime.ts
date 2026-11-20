@@ -494,6 +494,7 @@ export class PiAgentRuntime implements AgentRuntime {
                       operationKind: request.usageOperationKind ?? "answer",
                       userId: context?.userId,
                       runId: request.runId,
+                      billing: target.config.billing,
                     },
                     {
                       ...usageHooks,
