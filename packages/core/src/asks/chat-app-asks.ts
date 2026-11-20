@@ -11,7 +11,10 @@ export const CHAT_APP_ASK_NOTE = "(Answer in the app.)";
  * as an approval, a secret or an instruction change, keeps to its title: only its card can answer
  * it, and its detail can hold a command, a diff or tool input. An answered one adds nothing.
  */
-export function chatAppAskText(block: MessageBlock): string | undefined {
+export function chatAppAskText(
+  block: MessageBlock,
+  options: { appUrl?: string } = {},
+): string | undefined {
   if (block.kind !== "ask" || block.status === "answered") return undefined;
   const lines = isQuestionAskBlock(block)
     ? [
@@ -19,7 +22,20 @@ export function chatAppAskText(block: MessageBlock): string | undefined {
         ...(block.actions ?? []).map((action, index) => `${index + 1}. ${action.label}`),
       ]
     : [];
-  return [block.text.trim(), ...lines, CHAT_APP_ASK_NOTE].filter(Boolean).join("\n");
+  const note = chatAppAskNote(options.appUrl, isQuestionAskBlock(block));
+  return [block.text.trim(), ...lines, note].filter(Boolean).join("\n");
+}
+
+/**
+ * Where to answer an ask. With the bot's chat in the app, the note links to it, so an ask sent
+ * to a chat app is one tap from its card. Only an http(s) link is used.
+ */
+export function chatAppAskNote(appUrl?: string, question = false): string {
+  if (!appUrl || !/^https?:\/\//.test(appUrl)) return CHAT_APP_ASK_NOTE;
+  // The link ends the line on its own, so chat apps make it tappable.
+  return question
+    ? `To answer, open the app: ${appUrl}`
+    : `To approve or decline, open the app: ${appUrl}`;
 }
 
 /** What a chat app adds to a request to take over the bot's computer screen. */

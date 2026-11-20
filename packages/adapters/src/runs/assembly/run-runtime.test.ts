@@ -74,6 +74,13 @@ describe("runRuntimeEnvFromProcess", () => {
     expect(runRuntimeEnvFromProcess(source)).toEqual(previousWorkerValues(source));
   });
 
+  it("reads the web origin, leaving it unset when blank", () => {
+    const env = (WEB_ORIGIN?: string) => runRuntimeEnvFromProcess({ NODE_ENV: "test", WEB_ORIGIN });
+    expect(env(" https://app.example.test ").webOrigin).toBe("https://app.example.test");
+    expect(env("  ").webOrigin).toBeUndefined();
+    expect(env().webOrigin).toBeUndefined();
+  });
+
   it("reads the computer save limit and rejects a bad one", () => {
     const env = (WORKSPACE_SAVE_MAX_GB?: string) =>
       runRuntimeEnvFromProcess({ NODE_ENV: "test", WORKSPACE_SAVE_MAX_GB });
