@@ -23,6 +23,7 @@ import { errorText } from "../../api/user-error";
 import { artifactCacheSession } from "../../artifacts/artifact-cache-session";
 import { integrationsCacheScope } from "../../integrations/integrations-cache";
 import { askToAddModel } from "../../models/model-settings";
+import { foregroundCalendarDeviceKey } from "../../personal-calendar/device-calendar-key";
 import { hasSavedUnsentSends, outboxDisk } from "./outbox-disk";
 import type { OutboxScope } from "./thread-feedback";
 import {
@@ -114,6 +115,7 @@ export function prepareUnsentSends(): Promise<void> {
 }
 // Configure the wipe before bootstrap can replace credentials or the saved server.
 configureUnsentSends({
+  foregroundCalendarDeviceKey,
   request: async (proc, body, options, spaceId) => {
     const generation = currentSessionGeneration();
     const context = await captureApiRequestContext();

@@ -9,7 +9,6 @@ import {
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RpcOptions, rpc } from "../../api/api";
 import type { PickedAttachment } from "../../composer/pick-attachments";
-import { foregroundCalendarDeviceKey } from "../../personal-calendar/device-calendar-key";
 
 export type ComposerSnapshot = {
   promptText: string;
@@ -67,6 +66,7 @@ export async function deliverSend(
   payload: SendPayload,
   attempt: SendAttempt,
   request: typeof rpc,
+  foregroundCalendarDeviceKey?: () => string | undefined,
 ): Promise<number | undefined> {
   const { plan, groupTarget, botTarget, reroutedToGroup, attachments } = payload;
   const target = groupTarget ? { groupId: groupTarget } : { botId: botTarget! };
@@ -99,7 +99,7 @@ export async function deliverSend(
     }
     artifactIds.push(id);
   }
-  const deviceKey = groupTarget ? undefined : foregroundCalendarDeviceKey();
+  const deviceKey = groupTarget ? undefined : foregroundCalendarDeviceKey?.();
   const message = {
     ...target,
     clientNonce: attempt.clientNonce,
@@ -139,6 +139,7 @@ type Config = {
     spaceId: string | null,
   ): Promise<unknown>;
   scope(): OutboxScope | null;
+  foregroundCalendarDeviceKey?(): string | undefined;
   serverReachable(): boolean;
   /** True while a password change may have revoked the session before replacing it. */
   passwordChanging(): boolean;
@@ -399,7 +400,12 @@ export function sendWaitingMessages(force = false): Promise<void> {
             return config!.request(proc, body, options, attempt.spaceId);
           }) as typeof rpc;
           if (!memoryOnly.has(attempt)) await config.disk.hydrate(attempt);
-          const seq = await deliverSend(attempt.payload, attempt, request);
+          const seq = await deliverSend(
+            attempt.payload,
+            attempt,
+            request,
+            config.foregroundCalendarDeviceKey,
+          );
           // The retry under the new session gets the same seq back for the same nonce.
           if (stale()) {
             requeue(attempt);
