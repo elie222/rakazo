@@ -1,5 +1,5 @@
 import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import * as Application from "expo-application";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import * as SecureStore from "expo-secure-store";
