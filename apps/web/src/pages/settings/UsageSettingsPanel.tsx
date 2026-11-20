@@ -30,7 +30,9 @@ import type { RefObject } from "react";
 import { useEffect, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
 
-type Totals = Pick<UsageBreakdownModel, UsageTotalField | "incomplete">;
+type Totals = Partial<Record<UsageTotalField, number | null>> &
+  Partial<Pick<UsageBreakdownModel, "apiCostEstimated">> &
+  Pick<UsageBreakdownModel, "incomplete">;
 
 export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivElement | null> }) {
   const { t, i18n } = useLingui();
@@ -63,13 +65,18 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const total = (totals: Totals | undefined, field: UsageTotalField) => {
     const value = totals?.[field];
     if (value == null) return "—";
-    if (field !== "costUsd") {
+    if (field !== "costUsd" && field !== "apiCostUsd") {
       const text = count.format(value);
       return totals?.incomplete?.includes(field) ? `${text}+` : text;
     }
     // A floor rounds down, so it never claims more than the calls that report a cost.
     if (totals?.incomplete?.includes(field)) return `${usd.format(floorCents(value))}+`;
     return value > 0 && value < 0.01 ? `<${usd.format(0.01)}` : usd.format(value);
+  };
+  // Calls without a cost of their own (a subscription's) are priced at list rates, so it's approximate.
+  const apiCost = (totals: Totals | undefined) => {
+    const text = total(totals, "apiCostUsd");
+    return totals?.apiCostEstimated ? `≈${text}` : text;
   };
 
   const ranges: { id: UsageDateRange; label: string }[] = [
@@ -186,7 +193,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
         {[
           { label: t`Runs`, value: number(totals?.runs) },
           { label: t`Tokens`, value: total(totals, "totalTokens") },
-          { label: t`Cost`, value: total(totals, "costUsd") },
+          { label: t`Cost`, value: apiCost(totals) },
         ].map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
             <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
@@ -218,7 +225,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                   : { month: "short", day: "numeric", timeZone: "UTC" },
               );
               const labelled = overTime.length <= 8 || index === 0 || index === overTime.length - 1;
-              const label = t`${day}: ${total(point, "totalTokens")} tokens, ${total(point, "costUsd")}`;
+              const label = t`${day}: ${total(point, "totalTokens")} tokens, ${apiCost(point)}`;
               return (
                 <Tooltip key={point.date}>
                   <TooltipTrigger
@@ -281,7 +288,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                   <TableCell className="text-right tabular-nums">
                     {total(row, "outputTokens")}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{total(row, "costUsd")}</TableCell>
+                  <TableCell className="text-right tabular-nums">{apiCost(row)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

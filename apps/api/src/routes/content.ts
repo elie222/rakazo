@@ -1,7 +1,14 @@
 import type { UsageOperationKind } from "@rakazo/adapter-kit";
-import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
+import type { UnpricedUsage } from "@rakazo/adapters";
+import {
+  modelListCost,
+  planLimitsReader,
+  readMemberPlanLimits,
+  resolveBotWorkspacePath,
+  USAGE_TOKEN_BUCKETS,
+} from "@rakazo/adapters";
 import type { ExportManifest, UsageTotalField } from "@rakazo/contracts";
-import { attachmentMaxBytes, resolveBotAvatarSet, UsageTotalFieldSchema } from "@rakazo/contracts";
+import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   ClientError,
@@ -26,6 +33,58 @@ import { loadAllMessages } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
+
+/** The totals summed straight from usage rows; the API cost is priced from them per model. */
+const SUMMED_FIELDS = [
+  "inputTokens",
+  "outputTokens",
+  "totalTokens",
+  "costUsd",
+] as const satisfies readonly UsageTotalField[];
+type SummedField = (typeof SUMMED_FIELDS)[number];
+
+/** A model's API cost: its calls' own costs, plus the calls without one at its list price. */
+function withApiCost<
+  T extends {
+    provider: string;
+    model: string;
+    costUsd: number | null;
+    incomplete: UsageTotalField[];
+  },
+>(group: T, unpriced: UnpricedUsage | undefined) {
+  const listed = !unpriced?.calls
+    ? { usd: 0, complete: true }
+    : // Calls with no token counts at all leave nothing to price.
+      USAGE_TOKEN_BUCKETS.some((bucket) => unpriced.counted[bucket] > 0)
+      ? modelListCost(group.provider, group.model, unpriced)
+      : null;
+  return {
+    ...group,
+    apiCostUsd: listed === null ? group.costUsd : (group.costUsd ?? 0) + listed.usd,
+    apiCostEstimated: (listed?.usd ?? 0) > 0,
+    incomplete: listed?.complete ? group.incomplete : [...group.incomplete, "apiCostUsd" as const],
+  };
+}
+
+/** The models' API costs added up; null only when there are models and none has one. */
+function withTotalApiCost<T extends { incomplete: UsageTotalField[] }>(
+  totals: T,
+  models: readonly {
+    apiCostUsd: number | null;
+    apiCostEstimated: boolean;
+    incomplete: readonly UsageTotalField[];
+  }[],
+) {
+  const known = models.flatMap((model) => (model.apiCostUsd === null ? [] : [model.apiCostUsd]));
+  return {
+    ...totals,
+    apiCostUsd: models.length && !known.length ? null : known.reduce((sum, cost) => sum + cost, 0),
+    apiCostEstimated: models.some((model) => model.apiCostEstimated),
+    incomplete: models.some((model) => model.incomplete.includes("apiCostUsd"))
+      ? [...totals.incomplete, "apiCostUsd" as const]
+      : totals.incomplete,
+  };
+}
 
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
@@ -164,9 +223,9 @@ export function contentRoutes(ctx: RouterContext) {
           outputTokens: true,
           totalTokens: true,
           costUsd: true,
-        } as const satisfies Record<UsageTotalField, true>;
+        } as const satisfies Record<SummedField, true>;
         const counts = { _all: true, ...sums } as const;
-        const [result, modelGroups, runGroups] = await Promise.all([
+        const [result, modelGroups, unpricedGroups, runGroups] = await Promise.all([
           deps.prisma.usageRecord.aggregate({ where, _sum: sums, _count: counts }),
           deps.prisma.usageRecord.groupBy({
             by: ["provider", "model"],
@@ -174,34 +233,62 @@ export function contentRoutes(ctx: RouterContext) {
             _sum: sums,
             _count: counts,
           }),
+          deps.prisma.usageRecord.groupBy({
+            by: ["provider", "model"],
+            where: { ...where, costUsd: null },
+            _sum: {
+              inputTokens: true,
+              outputTokens: true,
+              cacheReadTokens: true,
+              cacheWriteTokens: true,
+            },
+            _count: {
+              _all: true,
+              inputTokens: true,
+              outputTokens: true,
+              cacheReadTokens: true,
+              cacheWriteTokens: true,
+            },
+          }),
           deps.prisma.usageRecord.groupBy({ by: ["runId", "parentRunId"], where }),
         ]);
+        const unpriced = new Map(
+          unpricedGroups.map((group) => [
+            JSON.stringify([group.provider, group.model]),
+            {
+              calls: group._count._all,
+              counted: group._count,
+              tokens: {
+                inputTokens: group._sum.inputTokens ?? 0,
+                outputTokens: group._sum.outputTokens ?? 0,
+                cacheReadTokens: group._sum.cacheReadTokens ?? 0,
+                cacheWriteTokens: group._sum.cacheWriteTokens ?? 0,
+              },
+            },
+          ]),
+        );
         const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
           .size;
         // A total that skips rows without a count understates, so it says which ones do.
         const knownSums = (group: {
-          _sum: Record<UsageTotalField, number | null>;
+          _sum: Record<SummedField, number | null>;
           _count: Record<keyof typeof counts, number>;
         }) => ({
           ...group._sum,
           modelCalls: group._count._all,
-          incomplete: UsageTotalFieldSchema.options.filter(
-            (field) => group._count[field] < group._count._all,
-          ),
+          incomplete: SUMMED_FIELDS.filter((field) => group._count[field] < group._count._all),
         });
-        return {
-          ...knownSums(result),
-          runs,
-          models: modelGroups
-            .map((group) => ({
-              provider: group.provider,
-              model: group.model,
-              ...knownSums(group),
-            }))
-            .sort(
-              (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
+        const models = modelGroups
+          .map((group) =>
+            withApiCost(
+              { provider: group.provider, model: group.model, ...knownSums(group) },
+              unpriced.get(JSON.stringify([group.provider, group.model])),
             ),
-        };
+          )
+          .sort(
+            (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
+          );
+        return { ...withTotalApiCost(knownSums(result), models), runs, models };
       }),
       breakdown: authed.usage.breakdown.handler(async ({ context, input }) => {
         const where = {
@@ -248,8 +335,21 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: number | null;
           costComplete: boolean;
         };
-        type ModelRow = TotalsRow & { provider: string; model: string };
-        type TimeRow = Omit<TotalsRow, "runs"> & { bucket: string };
+        type UnpricedRow = {
+          provider: string;
+          model: string;
+          unpricedCalls: bigint | number;
+          unpricedInputCounted: bigint | number;
+          unpricedOutputCounted: bigint | number;
+          unpricedCacheReadCounted: bigint | number;
+          unpricedCacheWriteCounted: bigint | number;
+          unpricedInput: number;
+          unpricedOutput: number;
+          unpricedCacheRead: number;
+          unpricedCacheWrite: number;
+        };
+        type ModelRow = TotalsRow & UnpricedRow;
+        type TimeRow = Omit<TotalsRow, "runs"> & UnpricedRow & { bucket: string };
         type BotRow = TotalsRow & { botId: string; name: string | null; deleted: boolean };
 
         const toNum = (v: bigint | number | null | undefined) =>
@@ -257,7 +357,7 @@ export function contentRoutes(ctx: RouterContext) {
         const toNullableInt = (v: number | bigint | null) =>
           v == null ? null : Math.round(toNum(v));
         const totalsOf = (row: TotalsRow) => {
-          const complete: Record<UsageTotalField, boolean> = {
+          const complete: Record<SummedField, boolean> = {
             inputTokens: row.inputComplete,
             outputTokens: row.outputComplete,
             totalTokens: row.totalComplete,
@@ -270,10 +370,37 @@ export function contentRoutes(ctx: RouterContext) {
             outputTokens: toNullableInt(row.outputTokens),
             totalTokens: toNullableInt(row.totalTokens),
             costUsd: row.costUsd,
-            incomplete: UsageTotalFieldSchema.options.filter((field) => !complete[field]),
+            incomplete: SUMMED_FIELDS.filter((field) => !complete[field]),
           };
         };
 
+        const unpricedOf = (row: UnpricedRow): UnpricedUsage => ({
+          calls: toNum(row.unpricedCalls),
+          counted: {
+            inputTokens: toNum(row.unpricedInputCounted),
+            outputTokens: toNum(row.unpricedOutputCounted),
+            cacheReadTokens: toNum(row.unpricedCacheReadCounted),
+            cacheWriteTokens: toNum(row.unpricedCacheWriteCounted),
+          },
+          tokens: {
+            inputTokens: row.unpricedInput,
+            outputTokens: row.unpricedOutput,
+            cacheReadTokens: row.unpricedCacheRead,
+            cacheWriteTokens: row.unpricedCacheWrite,
+          },
+        });
+        // A model's calls without a cost of their own, for pricing at its list rates.
+        const unpricedSelect = Prisma.sql`
+          COUNT(*) FILTER (WHERE u."costUsd" IS NULL)::bigint AS "unpricedCalls",
+          COUNT(u."inputTokens") FILTER (WHERE u."costUsd" IS NULL)::bigint AS "unpricedInputCounted",
+          COUNT(u."outputTokens") FILTER (WHERE u."costUsd" IS NULL)::bigint AS "unpricedOutputCounted",
+          COUNT(u."cacheReadTokens") FILTER (WHERE u."costUsd" IS NULL)::bigint AS "unpricedCacheReadCounted",
+          COUNT(u."cacheWriteTokens") FILTER (WHERE u."costUsd" IS NULL)::bigint AS "unpricedCacheWriteCounted",
+          COALESCE(SUM(u."inputTokens") FILTER (WHERE u."costUsd" IS NULL), 0)::double precision AS "unpricedInput",
+          COALESCE(SUM(u."outputTokens") FILTER (WHERE u."costUsd" IS NULL), 0)::double precision AS "unpricedOutput",
+          COALESCE(SUM(u."cacheReadTokens") FILTER (WHERE u."costUsd" IS NULL), 0)::double precision AS "unpricedCacheRead",
+          COALESCE(SUM(u."cacheWriteTokens") FILTER (WHERE u."costUsd" IS NULL), 0)::double precision AS "unpricedCacheWrite"
+        `;
         const totalsSelect = Prisma.sql`
           COUNT(*)::bigint AS "modelCalls",
           COUNT(DISTINCT COALESCE(u."parentRunId", u."runId")) FILTER (WHERE COALESCE(u."parentRunId", u."runId") IS NOT NULL)::bigint AS runs,
@@ -298,7 +425,7 @@ export function contentRoutes(ctx: RouterContext) {
               ${rangeFilter} ${modelFilter} ${botFilter}
           `),
                 tx.$queryRaw<ModelRow[]>(Prisma.sql`
-            SELECT u.provider, u.model, ${totalsSelect}
+            SELECT u.provider, u.model, ${totalsSelect}, ${unpricedSelect}
             FROM usage_records u
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
@@ -307,6 +434,7 @@ export function contentRoutes(ctx: RouterContext) {
           `),
                 tx.$queryRaw<TimeRow[]>(Prisma.sql`
             SELECT to_char(u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'YYYY-MM-DD') AS bucket,
+              u.provider, u.model, ${unpricedSelect},
               COUNT(*)::bigint AS "modelCalls",
               SUM(u."inputTokens")::double precision AS "inputTokens",
               BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
@@ -319,7 +447,7 @@ export function contentRoutes(ctx: RouterContext) {
             FROM usage_records u
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
-            GROUP BY bucket
+            GROUP BY bucket, u.provider, u.model
             ORDER BY bucket ASC
           `),
                 // The selectors list everything used in the range, so any bot/model pair stays selectable.
@@ -380,22 +508,39 @@ export function contentRoutes(ctx: RouterContext) {
 
         const nextDay = (day: string) =>
           new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-        const points = new Map(
-          timeRows.map((row) => {
-            const t = totalsOf({ ...row, runs: 0 });
-            return [
-              row.bucket,
-              {
-                modelCalls: t.modelCalls,
-                inputTokens: t.inputTokens,
-                outputTokens: t.outputTokens,
-                totalTokens: t.totalTokens,
-                costUsd: t.costUsd,
-                incomplete: t.incomplete,
-              },
-            ] as const;
-          }),
-        );
+        type Point = {
+          modelCalls: number;
+          inputTokens: number | null;
+          outputTokens: number | null;
+          totalTokens: number | null;
+          costUsd: number | null;
+          apiCostUsd: number | null;
+          apiCostEstimated: boolean;
+          incomplete: UsageTotalField[];
+        };
+        const add = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : a + b);
+        const merge = (a: Point, b: Point): Point => ({
+          modelCalls: a.modelCalls + b.modelCalls,
+          inputTokens: add(a.inputTokens, b.inputTokens),
+          outputTokens: add(a.outputTokens, b.outputTokens),
+          totalTokens: add(a.totalTokens, b.totalTokens),
+          costUsd: add(a.costUsd, b.costUsd),
+          apiCostUsd: add(a.apiCostUsd, b.apiCostUsd),
+          apiCostEstimated: a.apiCostEstimated || b.apiCostEstimated,
+          incomplete: [...new Set([...a.incomplete, ...b.incomplete])],
+        });
+        // Each day arrives split by model, since list prices are per model.
+        const points = new Map<string, Point>();
+        for (const row of timeRows) {
+          const { runs: _runs, ...t } = totalsOf({ ...row, runs: 0 });
+          const {
+            provider: _provider,
+            model: _model,
+            ...point
+          } = withApiCost({ provider: row.provider, model: row.model, ...t }, unpricedOf(row));
+          const previous = points.get(row.bucket);
+          points.set(row.bucket, previous ? merge(previous, point) : point);
+        }
         const firstDay = since ? localDay(since) : timeRows[0]?.bucket;
         const lastDay = localDay(now);
         const overTimeUnit =
@@ -404,23 +549,16 @@ export function contentRoutes(ctx: RouterContext) {
           Date.parse(lastDay) - Date.parse(firstDay) > 60 * 86_400_000
             ? "month"
             : "day";
-        type Point = {
-          modelCalls: number;
-          inputTokens: number | null;
-          outputTokens: number | null;
-          totalTokens: number | null;
-          costUsd: number | null;
-          incomplete: UsageTotalField[];
-        };
         const empty: Point = {
           modelCalls: 0,
           inputTokens: 0,
           outputTokens: 0,
           totalTokens: 0,
           costUsd: 0,
+          apiCostUsd: 0,
+          apiCostEstimated: false,
           incomplete: [],
         };
-        const add = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : a + b);
         const overTime: ({ date: string } & Point)[] = [];
         // Every day or month in the range gets a point, so quiet stretches show as gaps.
         for (
@@ -437,35 +575,22 @@ export function contentRoutes(ctx: RouterContext) {
           }
           // A quiet day adds nothing, so a month whose calls lack a figure still reads unknown.
           if (!point) continue;
-          if (last.modelCalls === 0) {
-            Object.assign(last, point);
-            continue;
-          }
-          last.modelCalls += point.modelCalls;
-          last.inputTokens = add(last.inputTokens, point.inputTokens);
-          last.outputTokens = add(last.outputTokens, point.outputTokens);
-          last.totalTokens = add(last.totalTokens, point.totalTokens);
-          last.costUsd = add(last.costUsd, point.costUsd);
-          last.incomplete = [...new Set([...last.incomplete, ...point.incomplete])];
+          overTime[overTime.length - 1] = {
+            date,
+            ...(last.modelCalls === 0 ? point : merge(last, point)),
+          };
         }
+
+        const models = modelRows.map((row) => {
+          const { runs: _runs, ...t } = totalsOf({ ...row, runs: 0 });
+          return withApiCost({ provider: row.provider, model: row.model, ...t }, unpricedOf(row));
+        });
 
         return {
           range: input.range,
-          totals,
+          totals: withTotalApiCost(totals, models),
           modelOptions: modelOptionRows.map(({ provider, model }) => ({ provider, model })),
-          models: modelRows.map((row) => {
-            const t = totalsOf({ ...row, runs: 0 });
-            return {
-              provider: row.provider,
-              model: row.model,
-              modelCalls: t.modelCalls,
-              inputTokens: t.inputTokens,
-              outputTokens: t.outputTokens,
-              totalTokens: t.totalTokens,
-              costUsd: t.costUsd,
-              incomplete: t.incomplete,
-            };
-          }),
+          models,
           overTimeUnit,
           overTime,
           bots: botRows.map((row) => ({

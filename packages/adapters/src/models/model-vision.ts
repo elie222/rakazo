@@ -71,7 +71,7 @@ export function updateModelImageCapabilities(
 
 let catalogModelsCache: Models | undefined;
 
-function catalogModels(): Models {
+export function catalogModels(): Models {
   // Same catalog the runtime calls, including configured compatible providers.
   catalogModelsCache ??= registerOpenAiCompatibleCatalog(
     registerLocalProvider(applyPiModelCompatibility(builtinModels())),

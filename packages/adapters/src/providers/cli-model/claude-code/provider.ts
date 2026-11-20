@@ -42,6 +42,11 @@ export function claudeCodeModel(id: string, models: Models): Model<Api> {
   };
 }
 
+/** The plan covers Claude Code's usage; at list price it costs what the same Anthropic model does. */
+export function claudeCodeListPrice(id: string, models: Models) {
+  return models.getModel("anthropic", id)?.cost;
+}
+
 /** The deployment model, then any others the operator lists in `RAKAZO_CLAUDE_CODE_MODELS`. */
 export function claudeCodeModelIds(
   defaultModel: string,

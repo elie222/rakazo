@@ -57,6 +57,8 @@ const point = (modelCalls: number, totalTokens: number, costUsd: number | null) 
   outputTokens: 1,
   totalTokens,
   costUsd,
+  apiCostUsd: costUsd,
+  apiCostEstimated: false,
   incomplete: [] as UsageTotalField[],
 });
 
@@ -217,14 +219,14 @@ it("does not show the previous selection's numbers while the next one loads", as
   }
 });
 
-it("marks totals that leave out calls without a count as a floor", async () => {
+it("marks totals that leave out calls as a floor, and list-priced cost as an estimate", async () => {
   const panel = await renderPanel();
   try {
     breakdown.fetch.mockImplementation(async (input: Input) => {
       const usage = usageFor(input);
       return {
         ...usage,
-        totals: { ...usage.totals, costUsd: 0.29, incomplete: ["totalTokens", "costUsd"] },
+        totals: { ...usage.totals, apiCostUsd: 0.29, incomplete: ["totalTokens", "apiCostUsd"] },
       };
     });
     await panel.pick("Today");
@@ -235,11 +237,26 @@ it("marks totals that leave out calls without a count as a floor", async () => {
       const usage = usageFor(input);
       return {
         ...usage,
-        totals: { ...usage.totals, costUsd: 0.289999999999, incomplete: ["costUsd"] },
+        totals: { ...usage.totals, apiCostUsd: 0.289999999999, incomplete: ["apiCostUsd"] },
       };
     });
     await panel.pick("7 days");
     expect(panel.totals()).toEqual(["3", "467", "$0.28+"]);
+
+    breakdown.fetch.mockImplementation(async (input: Input) => {
+      const usage = usageFor(input);
+      return {
+        ...usage,
+        totals: {
+          ...usage.totals,
+          apiCostUsd: 7490.03,
+          apiCostEstimated: true,
+          incomplete: ["costUsd"],
+        },
+      };
+    });
+    await panel.pick("All time");
+    expect(panel.totals()).toEqual(["3", "467", "≈$7,490.03"]);
   } finally {
     await panel.unmount();
   }

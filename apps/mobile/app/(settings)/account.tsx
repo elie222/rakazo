@@ -148,15 +148,22 @@ export default function Account() {
     totals.totalTokens == null
       ? "—"
       : floor(totals, "totalTokens", count.format(totals.totalTokens));
-  const cost = ({ costUsd, incomplete }: Pick<UsageSummary, "costUsd" | "incomplete">) =>
-    costUsd == null
-      ? undefined
-      : // A floor rounds down, so it never claims more than the calls that report a cost.
-        incomplete?.includes("costUsd")
-        ? `${usd.format(floorCents(costUsd))}+`
-        : costUsd > 0 && costUsd < 0.01
-          ? `<${usd.format(0.01)}`
-          : usd.format(costUsd);
+  // Calls without a cost of their own (a subscription's) are priced at list rates, so it's
+  // approximate; a floor rounds down, so it never claims more than the calls it counts.
+  const cost = (
+    totals: Pick<UsageSummary, "costUsd" | "apiCostUsd" | "apiCostEstimated" | "incomplete">,
+  ) => {
+    // A server from before API cost sends only the real cost.
+    const field = totals.apiCostUsd === undefined ? "costUsd" : "apiCostUsd";
+    const value = totals[field];
+    if (value == null) return undefined;
+    const text = totals.incomplete?.includes(field)
+      ? `${usd.format(floorCents(value))}+`
+      : value > 0 && value < 0.01
+        ? `<${usd.format(0.01)}`
+        : usd.format(value);
+    return totals.apiCostEstimated ? `≈${text}` : text;
+  };
   const usageBlock = (
     <SettingsRow
       key="usage"
