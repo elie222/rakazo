@@ -1724,6 +1724,30 @@ describe("userTurnInstructions", () => {
     expect(clause).toMatch(/untrusted/);
     expect(clause).not.toContain("Instructions edits");
     expect(clause).toContain("any bot in your current space");
+    expect(clause).not.toContain("Subagents cannot use bot management tools");
+    const delegating = (disabledBuiltinTools?: ReadonlySet<string>) =>
+      userTurnInstructions({
+        ...base,
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        offeredFleetTools: ["set_child_instructions"],
+        backgroundHelpersAllowed: true,
+        disabledBuiltinTools,
+      }).join("\n");
+    expect(delegating()).toContain(
+      "Subagents cannot use bot management tools; make these changes yourself.",
+    );
+    expect(delegating(new Set(["run_subagent"]))).not.toContain(
+      "Subagents cannot use bot management tools",
+    );
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
     expect(narrowed).not.toContain("needs the owner's approval");
     expect(narrowed).not.toContain("set_child_instructions");
