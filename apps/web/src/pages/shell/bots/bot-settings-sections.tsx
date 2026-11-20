@@ -457,6 +457,7 @@ export function ApprovalModeRow({
           id={id}
           data-testid="bot-approval-mode"
           aria-label={t`Approval mode`}
+          className="w-fit max-w-2/3"
           value={value ?? ""}
           disabled={disabled}
           onValueChange={(next) => onChange(next === "" ? null : (next as ApprovalMode))}
@@ -634,6 +635,7 @@ export function ConversationCompactionRow({
           id={id}
           data-testid="bot-conversation-compaction"
           aria-label={t`Compact conversation`}
+          className="w-fit max-w-2/3"
           value={mode}
           disabled={disabled}
           onValueChange={(next) => {
