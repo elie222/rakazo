@@ -2,6 +2,7 @@ import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 import { runLoginKind } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import type { TerminatingToolResult } from "../../approvals/approval-effect.js";
 import {
@@ -59,7 +60,7 @@ import { fleetPrepareDeps } from "../turn/run-model.js";
 import { refusal } from "../turn/tool-refusal.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
 import { holdSharedPageSave } from "./run-tools-pages.js";
-import { scheduleCreateRefusal } from "./run-tools-tasks.js";
+import { scheduleCreateRefusal, scheduleUpdateCardSummary } from "./run-tools-tasks.js";
 import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 
 /** A tool call resolved to the tool it runs and the exact request an approval covers. */
@@ -444,6 +445,25 @@ export async function prepareToolRequest(
   if (name === "schedule_create" && nextApprovedTool !== name) {
     const refused = await scheduleCreateRefusal(ctx, args);
     if (refused) return refusal("schedule_create_refused", refused.error);
+  }
+  // Before the gate, so a card that does show carries the routine's current values as diff
+  // lines. The model's own `expected` is stripped here, on every path: the baseline the
+  // handler conflicts against is only ever the row read here, never what the call typed, so
+  // an edit that fails to resolve still gets its real error instead of a baseline conflict.
+  if (name === "schedule_update" && nextApprovedTool !== name) {
+    const { expected: _modelExpected, ...given } = args;
+    args = given;
+    request.args = given;
+    const prepared = await bestEffort(
+      "build the schedule_update card summary",
+      scheduleUpdateCardSummary(ctx, args),
+    );
+    if (prepared) {
+      if ("summary" in prepared) request.fleetSummary = prepared.summary;
+      request.args = prepared.canonical;
+      request.effectRequest = prepared.canonical;
+      args = prepared.canonical;
+    }
   }
   const fleetWrite =
     FLEET_WRITE_TOOL_NAMES_SET.has(name) ||

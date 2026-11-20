@@ -110,9 +110,16 @@ describe("private task tools after shared-channel messages", () => {
     "keeps %s task tools available without a channel message",
     async (trigger) => {
       const ctx = {
-        deps: { prisma: { steeringMessage: { findFirst: async () => null } } },
-        run: { trigger },
+        deps: {
+          prisma: {
+            steeringMessage: { findFirst: async () => null },
+            // The schedule_update card step reads the routine; none here.
+            routine: { findFirst: async () => null },
+          },
+        },
+        run: {},
         bot: {},
+        thread: { id: "thread-1", groupId: null },
         runId: "run-1",
         source: { messagingChannelRun: false },
       };
@@ -126,6 +133,206 @@ describe("private task tools after shared-channel messages", () => {
       }
     },
   );
+});
+
+describe("prepareToolRequest: the schedule_update approval card", () => {
+  const weekly = {
+    id: "routine-1",
+    name: "Groceries",
+    prompt: "Order the usual groceries",
+    crons: ["0 10 * * 1"],
+    timezone: "Europe/Berlin",
+    active: true,
+    watch: null,
+    nextRunAt: new Date("2026-10-26T09:00:00.000Z"),
+  };
+
+  function updateCall(args: Record<string, unknown>, routine: unknown = weekly) {
+    const ctx = {
+      deps: {
+        prisma: {
+          steeringMessage: { findFirst: async () => null },
+          routine: { findFirst: vi.fn(async () => routine) },
+        },
+      },
+      run: { spaceId: "ws-1", userId: "user-1", trigger: "user" },
+      bot: { id: "bot-1" },
+      thread: { id: "thread-1", groupId: null },
+      runId: "run-1",
+      source: { messagingChannelRun: false },
+    };
+    const request = {
+      name: "schedule_update",
+      args,
+      executionId: "call-1",
+      nextApprovedTool: undefined,
+    } as ToolRequest;
+    return { ctx, request, findFirst: ctx.deps.prisma.routine.findFirst };
+  }
+
+  it("attaches the change as diff lines, read from the stored routine", async () => {
+    const { ctx, request, findFirst } = updateCall({
+      routineId: "routine-1",
+      prompt: "Order less",
+    });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        id: "routine-1",
+        bot: { archivedAt: null },
+      },
+    });
+    expect(request.fleetSummary).toEqual({
+      title: "Update routine “Groceries”?",
+      lines: ["prompt:", "- Order the usual groceries", "+ Order less"],
+    });
+    // The approval covers the row's before-values for exactly the fields the call writes.
+    expect(request.args).toMatchObject({
+      routineId: "routine-1",
+      prompt: "Order less",
+      expected: { prompt: "Order the usual groceries" },
+    });
+    expect(request.args).not.toHaveProperty("expected.name");
+    expect(request.effectRequest).toBe(request.args);
+  });
+
+  it("carries no stored prompt in a timing-only edit's canonical args", async () => {
+    const { ctx, request } = updateCall({ routineId: "routine-1", active: false });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    // A review provider reading these args never sees the stored prompt.
+    expect(JSON.stringify(request.args)).not.toContain("Order the usual groceries");
+    expect(request.args).not.toHaveProperty("expected");
+  });
+
+  it("shows the plain card for an events edit, pinning only the text fields", async () => {
+    const { ctx, request } = updateCall({
+      routineId: "routine-1",
+      prompt: "Order less",
+      on: { webhook: true },
+    });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    // Events resolve against the database when the handler runs, so no diff summary is built;
+    // the prompt the call rewrites is still pinned as the approval's before-value.
+    expect(request.fleetSummary).toBeUndefined();
+    expect(request.args).toMatchObject({
+      on: { webhook: true },
+      expected: { prompt: "Order the usual groceries" },
+    });
+  });
+
+  it("drops a model-supplied baseline and pins it from the row instead", async () => {
+    const { ctx, request } = updateCall({
+      routineId: "routine-1",
+      name: "Groceries",
+      prompt: "Order less",
+      expected: { name: "Forged", prompt: "Forged" },
+    });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.args).toMatchObject({
+      expected: { name: "Groceries", prompt: "Order the usual groceries" },
+    });
+  });
+
+  it("strips a model-supplied baseline even when no card can be built", async () => {
+    // A plan that cannot resolve: the forged baseline must not reach the handler, so the call
+    // surfaces its real validation error instead of a misleading baseline conflict.
+    const failing = updateCall({
+      routineId: "routine-1",
+      schedule: { cron: "not a cron" },
+      expected: { name: "Forged", prompt: "Forged" },
+    });
+    await expect(
+      prepareToolRequest(failing.ctx as never, failing.request),
+    ).resolves.toBeUndefined();
+    expect(failing.request.fleetSummary).toBeUndefined();
+    expect(failing.request.args).not.toHaveProperty("expected");
+
+    const missing = updateCall({ routineId: "gone", expected: { name: "Forged" } }, null);
+    await expect(
+      prepareToolRequest(missing.ctx as never, missing.request),
+    ).resolves.toBeUndefined();
+    expect(missing.request.args).not.toHaveProperty("expected");
+  });
+
+  it("passes a relative delay through and pins only the before-values", async () => {
+    vi.useFakeTimers({ now: new Date("2026-10-20T00:00:00.000Z") });
+    try {
+      const { ctx, request } = updateCall({ routineId: "routine-1", delayMinutes: 10 });
+      await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+      // The delay is not turned into an absolute time: an approval answered after the moment
+      // it resolved must still run, so the handler resolves it fresh, as schedule_create does.
+      expect(request.args).toMatchObject({ routineId: "routine-1", delayMinutes: 10 });
+      expect(request.args).not.toHaveProperty("runAt");
+      expect(request.args).not.toHaveProperty("expected");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a pausing or paused one-shot retime's delay in the canonical args", async () => {
+    vi.useFakeTimers({ now: new Date("2026-10-20T00:00:00.000Z") });
+    try {
+      for (const [args, row] of [
+        [{ routineId: "routine-1", delayMinutes: 30, active: false }, weekly],
+        [
+          { routineId: "routine-1", delaySeconds: 30 },
+          { ...weekly, active: false, nextRunAt: null },
+        ],
+      ] as const) {
+        const { ctx, request } = updateCall(args as Record<string, unknown>, row);
+        await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+        expect(request.args).toMatchObject(args);
+        expect(request.args).not.toHaveProperty("runAt");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clips a long old prompt so the new text stays on the card", async () => {
+    const long = { ...weekly, prompt: `${"long old line\n".repeat(600)}` };
+    const { ctx, request } = updateCall({ routineId: "routine-1", prompt: "Order less" }, long);
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    const detail = request.fleetSummary?.lines.join("\n") ?? "";
+    expect(detail).toContain("+ Order less");
+    expect(detail.length).toBeLessThan(2_000);
+  });
+
+  it("keeps a routine name's line breaks out of the card title", async () => {
+    const named = { ...weekly, name: "Daily\n# not a heading" };
+    const { ctx, request } = updateCall({ routineId: "routine-1", prompt: "Order less" }, named);
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.title).toBe("Update routine “Daily # not a heading”?");
+  });
+
+  it("attaches no summary when the routine is missing or the plan fails", async () => {
+    const missing = updateCall({ routineId: "gone", prompt: "Order less" }, null);
+    await expect(
+      prepareToolRequest(missing.ctx as never, missing.request),
+    ).resolves.toBeUndefined();
+    expect(missing.request.fleetSummary).toBeUndefined();
+
+    const failing = updateCall({ routineId: "routine-1", schedule: { cron: "not a cron" } });
+    await expect(
+      prepareToolRequest(failing.ctx as never, failing.request),
+    ).resolves.toBeUndefined();
+    expect(failing.request.fleetSummary).toBeUndefined();
+  });
+
+  it("shows the summary on the card the gate builds", async () => {
+    const { ctx, request } = updateCall({ routineId: "routine-1", active: false });
+    await prepareToolRequest(ctx as never, request);
+    const block = buildApprovalAskBlock("effect-1", "schedule_update", request.args, [], {
+      summary: request.fleetSummary,
+    });
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: "Update routine “Groceries”?",
+      detail: "active:\n- true\n+ false\nnextRun:\n- Monday, 2026-10-26 10:00 (UTC+01:00)\n+ none",
+    });
+  });
 });
 
 describe("prepareToolRequest: a saved login that asks first", () => {
