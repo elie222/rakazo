@@ -56,7 +56,6 @@ import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../auth/
 import { requireAdmin } from "../auth/admins.js";
 import type { BillingService } from "../billing/billing.js";
 import {
-  accountVoiceCatalog,
   disconnectVoiceCredential,
   effectiveVoiceStatus,
   loadDefaultVoiceCredential,
@@ -67,11 +66,11 @@ import {
   toVoiceStatus,
   updateVoiceSpeechModel,
   voiceContext,
-  voiceCredentialHasKey,
   voiceCredentialServer,
   voiceProviderFor,
   withVoiceConnection,
 } from "../calls/voice.js";
+import { accountVoiceCatalog, voiceCredentialLink } from "../calls/voice-model-connection.js";
 import {
   recordCreditsChoice,
   recordSignInStep,
@@ -603,7 +602,7 @@ export function accountRoutes(ctx: RouterContext) {
               voiceId: preference?.voiceId ?? "",
               speechModel: preference?.speechModel ?? "",
               server: await voiceCredentialServer(deps, context.actor, row),
-              hasKey: await voiceCredentialHasKey(deps, context.actor, row),
+              ...(await voiceCredentialLink(deps, context.actor, row)),
             });
           }),
         );
@@ -612,6 +611,7 @@ export function accountRoutes(ctx: RouterContext) {
         persistVoiceCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
+          modelCredentialId: input.modelCredentialId,
           voiceId: input.voiceId,
           speechModel: input.speechModel,
           baseUrl: input.baseUrl,

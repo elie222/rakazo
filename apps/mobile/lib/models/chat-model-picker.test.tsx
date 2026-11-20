@@ -163,6 +163,15 @@ vi.mock("../api/api", () => ({
         userCode: "FIXTURE",
         expiresInSeconds: 600,
       };
+    if (procedure === "models/finishOAuth")
+      return {
+        id: CREDENTIAL_ID,
+        provider: "openrouter",
+        label: "OpenRouter",
+        modelId: "vendor/model-1",
+        hasKey: false,
+        authKind: "oauth",
+      };
     if (procedure === "models/completeOAuth") return mocks.completeOAuth(options?.signal);
     if (procedure === "bots/update") return mocks.update(input);
     if (procedure === "models/role") {
@@ -947,6 +956,41 @@ describe("provider connection screen", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", { loginId: "login-fixture" });
     await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
+  });
+
+  it("hands a finished sign-in to the screen that opened it and returns there", async () => {
+    mocks.connected = false;
+    mocks.subscriptionSignIn = true;
+    mocks.completeOAuth.mockResolvedValueOnce({ status: "ready" });
+    const onSaved = vi.fn();
+    await renderConnection({ onSaved });
+    await act(async () => buttonWithText("Sign in")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/beginOAuth",
+      expect.objectContaining({ provider: "openrouter", credentialId: null, makeDefault: false }),
+    );
+    expect(onSaved).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("hands a saved API key to the screen that opened it and returns there", async () => {
+    mocks.connected = false;
+    const onSaved = vi.fn();
+    await renderConnection({ onSaved });
+    editField("API key", "fixture-key");
+    await act(async () => buttonWithText("Connect API key")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/connect",
+      expect.objectContaining({
+        provider: "openrouter",
+        apiKey: "fixture-key",
+        makeDefault: false,
+      }),
+    );
+    expect(onSaved).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(mocks.replace).not.toHaveBeenCalled();
   });
 });
 

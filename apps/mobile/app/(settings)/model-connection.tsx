@@ -237,7 +237,7 @@ export default function ModelConnection() {
     onSaved: adoptSavedCredential,
     modelId,
     load,
-    finishConnecting,
+    finishConnecting: finishSaved,
     publishFeedback,
     clearFeedback,
   });
@@ -418,7 +418,7 @@ export default function ModelConnection() {
       setApiKey("");
       let refreshGeneration = loadGeneration.current;
       try {
-        if (!savingWithoutKey && (await finishConnecting(activeModelId, saved.id))) return;
+        if (!savingWithoutKey && (await finishSaved(activeModelId, saved.id))) return;
         const refresh = load({ modelId });
         refreshGeneration = loadGeneration.current;
         await refresh;
@@ -452,6 +452,17 @@ export default function ModelConnection() {
     });
     if (next) router.replace(next);
     else router.back();
+    return true;
+  }
+
+  /** A connection saved for another screen, by sign-in or key, continues there. */
+  async function finishSaved(
+    connectedModelId: string,
+    connectedCredentialId: string,
+  ): Promise<boolean> {
+    if (!request?.onSaved) return finishConnecting(connectedModelId, connectedCredentialId);
+    request.onSaved(connectedCredentialId);
+    router.back();
     return true;
   }
 

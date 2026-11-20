@@ -14,10 +14,11 @@ import {
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { isCancelledError } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { DisclosureRow } from "../../components/models/model-connection-fields";
 import { NativeActionButton } from "../../components/native/native-action-button";
 import { NativeSwitch } from "../../components/native/native-switch";
 import { LoadFailure } from "../../components/ui/load-failure";
@@ -34,6 +35,10 @@ import {
   saveWaitSoundEnabled,
 } from "../../lib/calls/call-sounds";
 import { useSideInsets } from "../../lib/layout/side-insets";
+import {
+  closeModelConnection,
+  openModelConnection,
+} from "../../lib/models/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { queryClient, rpcQuery } from "../../lib/query/query";
 import type { SettingsTarget } from "../../lib/query/settings-target";
@@ -92,6 +97,7 @@ export default function VoiceSettings() {
   const params = useLocalSearchParams<{ spaceId?: string }>();
   const target = useMemo(() => settingsTarget(params.spaceId), [params.spaceId]);
   const rpc = useMemo(() => settingsRpc(target), [target]);
+  const router = useRouter();
   const scope = target.scope;
   const deviceSettings = scope === "account";
   const sideInsets = useSideInsets();
@@ -115,6 +121,8 @@ export default function VoiceSettings() {
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
+  // The provider whose API key form is unfolded below its model connection choices.
+  const [keyFormProvider, setKeyFormProvider] = useState<string | null>(null);
   // The connection fields as last rendered, read when a connect finishes.
   const connection = useRef({
     speechModel,
@@ -389,17 +397,59 @@ export default function VoiceSettings() {
     };
   }, [listsSpeechModels, provider, target]);
   const keyless = Boolean(selected?.keyless);
-  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+  const { linked, canConnect, modelConnections, modelSignIn } = voiceConnectionForm({
     entry: selected,
     credential,
     apiKey,
     baseUrl,
   });
+  const offersModelConnection = modelConnections.length > 0 || Boolean(modelSignIn);
+  const showKeyForm = !offersModelConnection || keyFormProvider === provider;
 
-  async function connect() {
-    if (!selected || !canConnect) return;
+  // The Models sign-in this screen opened, which connects voice once it saves a connection.
+  const signInRequest = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      if (signInRequest.current) closeModelConnection(signInRequest.current);
+    },
+    [],
+  );
+  // Coming back here ends the sign-in this screen opened, so the button can open a new one.
+  useFocusEffect(
+    useCallback(() => {
+      if (signInRequest.current) closeModelConnection(signInRequest.current);
+      signInRequest.current = null;
+    }, []),
+  );
+
+  function signIn() {
+    // A second tap while the sign-in screen opens must not replace the request it reads.
+    if (!selected || signInRequest.current) return;
+    const requestId = openModelConnection({
+      provider: selected.id,
+      credentialId: null,
+      makeDefault: false,
+      target,
+      onSaved: (credentialId) => void connectSignedIn(credentialId),
+    });
+    signInRequest.current = requestId;
+    router.push({ pathname: "/model-connection", params: { requestId } });
+  }
+
+  /**
+   * The sign-in already saved the model connection; when voice cannot connect through it, read
+   * the catalog again so it shows as a connection to use instead of another sign-in.
+   */
+  async function connectSignedIn(credentialId: string) {
+    if (await connect(credentialId)) return;
+    await load(selected?.id, { keepForm: true }).catch(() => undefined);
+  }
+
+  /** Connects with the typed key, or through one of the account's model connections. */
+  async function connect(modelCredentialId?: string): Promise<boolean> {
+    if (!selected || !(modelCredentialId || canConnect)) return false;
     // What this connect carries; anything typed after this point was not saved.
-    const sentApiKey = apiKey;
+    const sentApiKey = modelCredentialId ? "" : apiKey;
     const sentSttApiKey = sttApiKey;
     const sent = connection.current;
     setPending("connect");
@@ -410,6 +460,7 @@ export default function VoiceSettings() {
         provider: selected.id,
         scope,
         apiKey: sentApiKey.trim(),
+        modelCredentialId,
         // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
         ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
@@ -461,8 +512,10 @@ export default function VoiceSettings() {
       await load(selected.id, { keepForm: true }).catch((err: unknown) =>
         setError(errorText(err, t`Could not load voice settings`)),
       );
+      return true;
     } catch (err) {
       setError(errorText(err, t`Could not connect`));
+      return false;
     } finally {
       setPending(null);
     }
@@ -656,7 +709,31 @@ export default function VoiceSettings() {
                 textContentType="URL"
               />
             ) : null}
-            {keyless || linked ? null : (
+            {modelConnections.map(({ id, label }) => (
+              <NativeActionButton
+                key={id}
+                disabled={pending !== null}
+                label={t`Use ${label}`}
+                onPress={() => void connect(id)}
+              />
+            ))}
+            {modelSignIn ? (
+              <NativeActionButton
+                disabled={pending !== null}
+                label={modelSignIn}
+                onPress={signIn}
+              />
+            ) : null}
+            {offersModelConnection && !linked ? (
+              <DisclosureRow
+                label={t`Or paste an API key`}
+                expanded={showKeyForm}
+                onPress={() =>
+                  setKeyFormProvider((current) => (current === provider ? null : provider))
+                }
+              />
+            ) : null}
+            {keyless || linked || !showKeyForm ? null : (
               <TextInput
                 accessibilityLabel={t`API key`}
                 autoCapitalize="none"
@@ -667,7 +744,7 @@ export default function VoiceSettings() {
                 // The key belongs to this address, so a refresh must not swap it.
                 onChangeText={edit("baseUrl", setApiKey)}
                 placeholder={
-                  selfHosted || keyOptional
+                  selfHosted
                     ? t`Optional`
                     : credential
                       ? t`Paste a replacement key`
@@ -737,7 +814,7 @@ export default function VoiceSettings() {
                 ) : null}
               </>
             ) : null}
-            {(keyless && credential) || linked ? null : (
+            {(keyless && credential) || linked || !showKeyForm ? null : (
               <NativeActionButton
                 disabled={pending !== null || !canConnect}
                 label={
