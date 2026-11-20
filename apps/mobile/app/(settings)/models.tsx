@@ -3,11 +3,12 @@ import {
   canonicalPiProviderId,
   compatibleEndpointPresets,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { isFirstModelConnection, popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
-import { providerDisplayName } from "@rakazo/i18n/model-provider";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -176,7 +177,7 @@ export default function Models() {
       if (grouped.has(entry.provider)) continue;
       grouped.set(entry.provider, {
         id: entry.provider,
-        name: providerDisplayName(entry),
+        name: providerDisplayName(localizeModelEntry(entry)),
       });
     }
     const all = [...grouped.values()];

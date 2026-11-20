@@ -1,11 +1,8 @@
 import { i18n } from "@lingui/core";
+import { connectedBackupOptions, providerDisplayName } from "@rakazo/contracts";
+import { botModelState, connectedModelChoices } from "@rakazo/core";
 import { afterEach, expect, it } from "vitest";
-import {
-  botModelState,
-  connectedBackupOptions,
-  connectedModelChoices,
-  providerDisplayName,
-} from "./model-provider";
+import { localizeModelEntry } from "./model-provider";
 
 afterEach(() => i18n.activate("en"));
 
@@ -21,27 +18,27 @@ it("localizes descriptor subscription names and leaves API names alone", () => {
     label: "Model",
     billing: "",
   };
-  expect(providerDisplayName(entry, "oauth")).toBe("Example Abonnement");
-  expect(providerDisplayName(entry, "api_key")).toBe("Example");
-  const [option] = connectedBackupOptions(
-    [entry],
-    [
-      {
-        id: "credential",
-        provider: "example",
-        label: "Example",
-        hasKey: true,
-        isDefault: true,
-        authKind: "oauth",
-      },
-    ],
-  );
+  expect(providerDisplayName(localizeModelEntry(entry), "oauth")).toBe("Example Abonnement");
+  expect(providerDisplayName(localizeModelEntry(entry), "api_key")).toBe("Example");
+  const [option] = connectedBackupOptions([entry].map(localizeModelEntry), [
+    {
+      id: "credential",
+      provider: "example",
+      label: "Example",
+      hasKey: true,
+      isDefault: true,
+      authKind: "oauth",
+    },
+  ]);
   expect(option).toMatchObject({
     providerName: "Example Abonnement",
     connectionName: "Example Abonnement",
   });
   expect(
-    providerDisplayName({ ...entry, subscriptionName: "Untranslated subscription" }, "oauth"),
+    providerDisplayName(
+      localizeModelEntry({ ...entry, subscriptionName: "Untranslated subscription" }),
+      "oauth",
+    ),
   ).toBe("Untranslated subscription");
 });
 
@@ -73,25 +70,31 @@ it("refreshes subscription names and chat choices when the language changes", ()
     ["en", "Example subscription"],
   ]) {
     i18n.activate(locale!);
-    expect(providerDisplayName(entry, "oauth")).toBe(expected);
+    expect(providerDisplayName(localizeModelEntry(entry), "oauth")).toBe(expected);
     expect(
-      connectedModelChoices([{ ...credentials[0]!, enabledModelIds: ["custom"] }], [entry])[0],
+      connectedModelChoices(
+        [{ ...credentials[0]!, enabledModelIds: ["custom"] }],
+        [entry].map(localizeModelEntry),
+      )[0],
     ).toMatchObject({ providerLabel: expected, label: `custom (${expected})` });
     expect(
       botModelState({
         credentials,
-        catalog: [entry],
+        catalog: [entry].map(localizeModelEntry),
         me: null,
         modelKey: "example::model",
         spaceDefaultLabel: "Default",
       }).choices.find((choice) => choice.key === "example::model"),
     ).toMatchObject({ label: `Model (${expected})` });
-    expect(connectedModelChoices(credentials, [entry])[0]).toMatchObject({
+    expect(connectedModelChoices(credentials, [entry].map(localizeModelEntry))[0]).toMatchObject({
       providerLabel: expected,
       label: `Model (${expected})`,
     });
     expect(
-      connectedModelChoices([{ ...credentials[0]!, authKind: "api_key" }], [entry])[0],
+      connectedModelChoices(
+        [{ ...credentials[0]!, authKind: "api_key" }],
+        [entry].map(localizeModelEntry),
+      )[0],
     ).toMatchObject({ providerLabel: "Example", label: "Model (Example)" });
   }
 });
@@ -130,10 +133,10 @@ it("labels chat choices by the serving credential regardless of list order", () 
     expect(
       connectedModelChoices(
         credentials.map((credential) => ({ ...credential, modelId: "model" })),
-        [entry],
+        [entry].map(localizeModelEntry),
       )[0],
     ).toMatchObject({ providerLabel: "Example", label: "Model (Example)" });
-    expect(connectedModelChoices(credentials, [entry])[0]).toMatchObject({
+    expect(connectedModelChoices(credentials, [entry].map(localizeModelEntry))[0]).toMatchObject({
       providerLabel: "Example",
       label: "Model (Example)",
     });
@@ -143,7 +146,7 @@ it("labels chat choices by the serving credential regardless of list order", () 
           ...credential,
           modelId: credential.id === "oauth" ? "model" : undefined,
         })),
-        [entry],
+        [entry].map(localizeModelEntry),
       )[0],
     ).toMatchObject({
       providerLabel: "Example subscription",

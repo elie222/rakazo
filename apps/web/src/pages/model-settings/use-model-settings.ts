@@ -3,6 +3,7 @@ import type { Me, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
   connectionDisplayName,
   modelRoutingDirty,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -17,7 +18,7 @@ import {
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
-import { providerDisplayName } from "@rakazo/i18n/model-provider";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
@@ -245,7 +246,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       [...grouped].map(([id, entries]) => ({
         id,
         name: providerDisplayName(
-          entries[0] ?? { provider: id },
+          localizeModelEntry(entries[0] ?? { provider: id }),
           credentials.find((entry) => entry.provider === id)?.authKind,
         ),
         entries,

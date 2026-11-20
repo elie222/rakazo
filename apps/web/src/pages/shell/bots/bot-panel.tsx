@@ -7,8 +7,8 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
-import { modelOptionKey } from "@rakazo/core";
-import { botModelState } from "@rakazo/i18n/model-provider";
+import { botModelState, modelOptionKey } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   DropdownMenu,
@@ -283,7 +283,13 @@ export function BotSettings({
     choices: modelChoices,
     thinkingLevels: thinkingOptions,
     defaultThinkingLevel,
-  } = botModelState({ credentials, catalog, me, modelKey, spaceDefaultLabel: t`Space default` });
+  } = botModelState({
+    credentials,
+    catalog: catalog.map(localizeModelEntry),
+    me,
+    modelKey,
+    spaceDefaultLabel: t`Space default`,
+  });
 
   async function executeSave(
     patchOverrides?: {

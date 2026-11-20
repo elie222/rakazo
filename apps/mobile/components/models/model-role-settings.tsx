@@ -15,9 +15,11 @@ import type {
 } from "@rakazo/contracts";
 import {
   backupChoiceKey,
+  connectedBackupOptions,
   connectionDisplayName,
   MAX_MODEL_BACKUPS,
   modelRoleChoiceKey,
+  providerDisplayName,
   withConnectionName,
 } from "@rakazo/contracts";
 import {
@@ -28,7 +30,7 @@ import {
   modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
-import { connectedBackupOptions, providerDisplayName } from "@rakazo/i18n/model-provider";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -144,7 +146,11 @@ export function ModelRoleSettings({
   const busy = state.busy || state.stale || !settings;
   const entryFor = (choice: ModelRoleChoice) =>
     catalogEntryFor(state.catalog, choice.provider, choice.modelId);
-  const options = connectedBackupOptions(state.catalog, credentials, role === "computer");
+  const options = connectedBackupOptions(
+    state.catalog.map(localizeModelEntry),
+    credentials,
+    role === "computer",
+  );
   const optionFor = (choice: ModelRoleChoice) =>
     options.find((option) => backupChoiceKey(option) === backupChoiceKey(choice));
   const modelLabel = (choice: ModelRoleChoice) =>
@@ -153,7 +159,7 @@ export function ModelRoleSettings({
     const entry = entryFor(choice);
     return entry
       ? providerDisplayName(
-          entry,
+          localizeModelEntry(entry),
           choice.credentialId ? connectionFor(choice)?.authKind : undefined,
         )
       : providerNameFallback(choice);
@@ -241,7 +247,11 @@ export function ModelRoleSettings({
   function pickerRequest(slot: Slot, narrowed?: Narrowed): ModelPickerRequest {
     const primarySlot = isPrimarySlot(slot);
     const all = narrowed
-      ? connectedBackupOptions(narrowed.catalog, narrowed.credentials, role === "computer")
+      ? connectedBackupOptions(
+          narrowed.catalog.map(localizeModelEntry),
+          narrowed.credentials,
+          role === "computer",
+        )
       : options;
     const pool = all.filter(
       (option) => !narrowed || option.credentialId === narrowed.choice.credentialId,

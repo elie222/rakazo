@@ -8,7 +8,7 @@ import type {
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
-import { MAX_MODEL_BACKUPS, modelRoleChoiceKey } from "@rakazo/contracts";
+import { connectedBackupOptions, MAX_MODEL_BACKUPS, modelRoleChoiceKey } from "@rakazo/contracts";
 import {
   catalogEntryFor,
   connectionForModelChoice,
@@ -17,7 +17,7 @@ import {
   modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
-import { connectedBackupOptions } from "@rakazo/i18n/model-provider";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   DropdownMenu,
@@ -196,7 +196,7 @@ export function ModelRoleSettings({
     catalogEntryFor(state.catalog, choice.provider, choice.modelId);
   // Grouped by the connection that runs them.
   const options: RoleModelOption[] = connectedBackupOptions(
-    state.catalog,
+    state.catalog.map(localizeModelEntry),
     credentials,
     role === "computer",
   ).map((choice) => ({

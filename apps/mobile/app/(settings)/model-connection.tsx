@@ -9,6 +9,7 @@ import {
   modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -24,7 +25,7 @@ import {
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
-import { providerDisplayName } from "@rakazo/i18n/model-provider";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -279,7 +280,9 @@ export default function ModelConnection() {
     }, [cancelInFlightWork, load]),
   );
 
-  const providerName = selected ? providerDisplayName(selected, credential?.authKind) : "";
+  const providerName = selected
+    ? providerDisplayName(localizeModelEntry(selected), credential?.authKind)
+    : "";
   const selectedProviderLabel = credential
     ? connectionDisplayName(credential, providerName, [
         selected?.providerName ?? selected?.provider ?? "",
