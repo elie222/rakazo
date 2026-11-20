@@ -47,11 +47,7 @@ import {
 } from "../../models/model-provider-allowlist.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
-import {
-  parseModelSecret,
-  STORED_MODEL_SECRET_BILLING,
-  secretValuesToRedact,
-} from "../../models/model-secret.js";
+import { modelBilling, parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
@@ -236,8 +232,8 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     (!operatorFunded && !credential
       ? approvedModelCreditOffering(provider, args[5])?.id
       : undefined);
-  material.billing =
-    callObserver || fundingOfferingId ? "credits" : (material.billing ?? "deployment");
+  if (callObserver || fundingOfferingId) material.billing = modelBilling({ credits: true });
+  material.billing ??= modelBilling({});
   return {
     ...material,
     apiKey,
@@ -428,7 +424,7 @@ async function resolveModelKeyMaterial(
           : undefined,
         retireOAuth: retire,
         ownCredential: true,
-        billing: STORED_MODEL_SECRET_BILLING[resolved.secret.kind],
+        billing: modelBilling({ secret: resolved.secret }),
         redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey].filter(
           (value): value is string => Boolean(value),
         ),

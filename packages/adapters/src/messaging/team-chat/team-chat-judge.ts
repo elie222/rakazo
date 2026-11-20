@@ -22,7 +22,7 @@ import {
   modelProviderAllowlist,
 } from "../../models/model-provider-allowlist.js";
 import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
-import { STORED_MODEL_SECRET_BILLING, secretValuesToRedact } from "../../models/model-secret.js";
+import { modelBilling, secretValuesToRedact } from "../../models/model-secret.js";
 import {
   hasHostedModelCredits,
   validateCreditOfferingChoice,
@@ -293,7 +293,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           ...material,
           ...(apiKey ? { apiKey } : {}),
           callObserver,
-          billing: callObserver || material ? "credits" : "deployment",
+          billing: modelBilling({ credits: Boolean(callObserver || material) }),
         },
       };
     }
@@ -319,7 +319,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     );
     const parsed = auth.secret;
     const modelSettings = connectionModelSettings(parsed, provider, modelId, credential);
-    const billing = STORED_MODEL_SECRET_BILLING[parsed.kind];
+    const billing = modelBilling({ secret: parsed });
     const limit = {
       ...(modelSettings.maxTokens !== undefined ? { maxTokens: modelSettings.maxTokens } : {}),
       ...(modelSettings.contextWindow !== undefined

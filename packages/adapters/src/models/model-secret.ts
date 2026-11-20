@@ -321,8 +321,17 @@ export function secretValuesToRedact(secret: StoredModelSecret): string[] {
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
 }
 
-export const STORED_MODEL_SECRET_BILLING = {
+const STORED_MODEL_SECRET_BILLING = {
   oauth: "subscription",
   api_key: "api_key",
   openai_compatible: "custom_endpoint",
 } as const satisfies Record<StoredModelSecret["kind"], ModelBilling>;
+
+/** Who pays for a call: credits when metered, else the user's stored connection, else the deployment. */
+export function modelBilling(funding: {
+  credits?: boolean;
+  secret?: Pick<StoredModelSecret, "kind">;
+}): ModelBilling {
+  if (funding.credits) return "credits";
+  return funding.secret ? STORED_MODEL_SECRET_BILLING[funding.secret.kind] : "deployment";
+}
