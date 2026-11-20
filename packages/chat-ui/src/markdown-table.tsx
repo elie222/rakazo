@@ -89,6 +89,7 @@ export const TableCard = memo(function TableCard({
   const announceTimer = useRef<number | undefined>(undefined);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogScrollRef = useRef<HTMLElement>(null);
 
   const copied = copiedNow && copiedSignature === dataSignature;
 
@@ -175,6 +176,12 @@ export const TableCard = memo(function TableCard({
     />
   );
 
+  const goToPage = (next: number) => {
+    setPage(next);
+    if (expanded && dialogScrollRef.current) dialogScrollRef.current.scrollTop = 0;
+    announce(copy.pageOf(next + 1, pageCount));
+  };
+
   const pager = showPagination ? (
     <div className="rk-table-footer">
       <span className="rk-table-range">
@@ -189,10 +196,7 @@ export const TableCard = memo(function TableCard({
         className="rk-table-tool"
         aria-label={copy.previousPage}
         disabled={safePage === 0}
-        onClick={() => {
-          setPage(safePage - 1);
-          announce(copy.pageOf(safePage, pageCount));
-        }}
+        onClick={() => goToPage(safePage - 1)}
       >
         <ChevronLeftIcon />
       </button>
@@ -201,10 +205,7 @@ export const TableCard = memo(function TableCard({
         className="rk-table-tool"
         aria-label={copy.nextPage}
         disabled={safePage >= pageCount - 1}
-        onClick={() => {
-          setPage(safePage + 1);
-          announce(copy.pageOf(safePage + 2, pageCount));
-        }}
+        onClick={() => goToPage(safePage + 1)}
       >
         <ChevronRightIcon />
       </button>
@@ -292,6 +293,7 @@ export const TableCard = memo(function TableCard({
         {/* biome-ignore-start lint/a11y/noNoninteractiveTabindex: a scrollable region must
             be keyboard-focusable (WCAG 2.1.1 / axe scrollable-region-focusable). */}
         <section
+          ref={dialogScrollRef}
           className="rk-table-scroll rk-table-dialog-scroll"
           aria-label={copy.table}
           tabIndex={0}
