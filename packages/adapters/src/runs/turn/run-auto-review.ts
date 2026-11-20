@@ -11,7 +11,13 @@ import { createAutoReviewProvider } from "../../approvals/auto-review-factory.js
 import { CheckerConnectionUnavailableError } from "../../approvals/auto-review-failures.js";
 import { DecisionAutoReviewProvider } from "../../approvals/decision-auto-review.js";
 import { decisionModel } from "../../approvals/decision-models.js";
+import type { DecisionModelDescriptor } from "../../approvals/model-descriptor.js";
 import { operatorReviewObserver } from "../../approvals/operator-review-usage.js";
+import {
+  autoReviewShadowModel,
+  recordShadowReview,
+  ShadowedAutoReviewProvider,
+} from "../../approvals/shadow-review.js";
 import { DataRetentionRefusedError } from "../../models/endpoints/data-retention.js";
 import {
   findConnectedModelCredential,
@@ -38,6 +44,8 @@ export async function autoReviewCheckerProvider(
     threadId: string;
     /** Names the reviewed action on the review's usage records. */
     operationId: string;
+    /** The reviewed action's effect, which a shadow review's record names. */
+    effectId?: string;
   },
   options: {
     injectedReview?: AutoReviewProvider;
@@ -46,7 +54,7 @@ export async function autoReviewCheckerProvider(
   },
   checker: AutoReviewChecker,
 ): Promise<AutoReviewProvider> {
-  const { runId, spaceId, userId, botId, threadId, operationId } = scope;
+  const { runId, spaceId, userId, botId, threadId, operationId, effectId } = scope;
   const { injectedReview, memberChecker, registerSecrets } = options;
   if (injectedReview) return injectedReview;
   const deploymentChoice = !memberChecker && !checker.credentialId && !checker.creditOfferingId;
@@ -77,16 +85,17 @@ export async function autoReviewCheckerProvider(
           { credentialId: checker.credentialId },
         );
   const operatorFunded = hosted && !reviewCredential;
+  const attribution = {
+    spaceId,
+    userId,
+    botId,
+    runId,
+    parentRunId: runId,
+    operationId,
+    operationKind: "setup" as const,
+  };
   const operatorObserver = operatorFunded
-    ? operatorReviewObserver(deps.prisma, {
-        spaceId,
-        userId,
-        botId,
-        runId,
-        parentRunId: runId,
-        operationId,
-        operationKind: "setup",
-      })
+    ? operatorReviewObserver(deps.prisma, attribution)
     : undefined;
   const onUsage = (event: Extract<AgentRuntimeEvent, { type: "usage" }>) =>
     recordUsage(deps.prisma, event, {
@@ -137,18 +146,41 @@ export async function autoReviewCheckerProvider(
   if (decision && judgeKey?.zeroDataRetention && !decision.dataRetentionControl) {
     throw new DataRetentionRefusedError("Selected checker cannot restrict data retention");
   }
-  if (decision)
-    return new DecisionAutoReviewProvider({
-      provider: decision.create({
+  const decisionReviewer = (
+    model: DecisionModelDescriptor,
+    id: string,
+    observer: typeof callObserver,
+  ) =>
+    new DecisionAutoReviewProvider({
+      provider: model.create({
         apiKey: deploymentKey ?? judgeKey?.apiKey ?? "",
         ...(judgeKey?.zeroDataRetention ? { zeroDataRetention: true } : {}),
-        callObserver,
+        callObserver: observer,
         onUsage: operatorFunded ? undefined : onUsage,
       }),
       providerId: checker.provider,
-      model: checker.model,
-      calibration: decision.calibration,
+      model: id,
+      calibration: model.calibration,
     });
+  if (decision) {
+    const reviewer = decisionReviewer(decision, checker.model, callObserver);
+    // Only the included reviewer runs a deployment's trial model, on the same operator key and
+    // built like it, so it is sent under the same data retention rule.
+    const shadow = included && deploymentKey ? autoReviewShadowModel(decision) : undefined;
+    if (!shadow) return reviewer;
+    return new ShadowedAutoReviewProvider({
+      primary: reviewer,
+      shadow: decisionReviewer(
+        shadow,
+        shadow.id,
+        operatorReviewObserver(deps.prisma, {
+          ...attribution,
+          operationId: `shadow:${operationId}`,
+        }),
+      ),
+      record: (review) => recordShadowReview({ spaceId, runId, threadId, effectId }, review),
+    });
+  }
   if (!judgeKey) throw new CheckerConnectionUnavailableError();
   return createAutoReviewProvider("llm", {
     llm: {
