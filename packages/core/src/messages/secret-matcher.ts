@@ -18,9 +18,42 @@ const ROOT = 0;
  * which very long values (keys of thousands of characters, each in several encodings) could push
  * past what a Map holds; past this, each value is scanned for in turn instead.
  */
-export const MAX_SECRET_MATCHER_STATES = 1_000_000;
+const MAX_SECRET_MATCHER_STATES = 1_000_000;
 
-export function createSecretMatcher(
+/**
+ * Scanned work, in values × text code units, worth one code unit of building the one-pass
+ * matcher: building costs about a Map write per code unit of the values, a scan a compare.
+ */
+const BUILD_COST = 8;
+
+/**
+ * Scans for each value in turn until the scans have cost about what building the one-pass matcher
+ * would, then builds it. A short text checked against a fresh list, as a field's check is, costs
+ * what one scan always did; long texts, or many over one list, get the one-pass matcher.
+ */
+export function createSecretMatcher(values: readonly string[]): SecretMatcher {
+  const scanning = scanningMatcher(values);
+  if (scanning.empty) return scanning;
+  const present = values.filter(Boolean);
+  const budget = present.reduce((total, value) => total + value.length, 0) * BUILD_COST;
+  let scanned = 0;
+  let indexed: SecretMatcher | undefined;
+  const pick = (text: string) => {
+    if (indexed) return indexed;
+    scanned += text.length * present.length;
+    if (scanned <= budget) return scanning;
+    indexed = createIndexedMatcher(present);
+    return indexed;
+  };
+  return {
+    empty: false,
+    ranges: (text) => pick(text).ranges(text),
+    test: (text) => pick(text).test(text),
+  };
+}
+
+/** The one-pass matcher, or past `maxStates` states the per-value scan. */
+export function createIndexedMatcher(
   values: readonly string[],
   maxStates = MAX_SECRET_MATCHER_STATES,
 ): SecretMatcher {

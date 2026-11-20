@@ -1,7 +1,7 @@
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { createStreamingRedactor, redactedRanges, redactSecrets } from "./events.js";
-import { createSecretMatcher } from "./secret-matcher.js";
+import { createIndexedMatcher, createSecretMatcher } from "./secret-matcher.js";
 
 /** The per-value scan the matcher replaced, kept to check it finds the same stretches. */
 function scannedRanges(value: string, secrets: string[]): Array<[number, number]> {
@@ -52,8 +52,13 @@ describe("createSecretMatcher", () => {
       const secrets = Array.from({ length: next(6) }, () => word(5));
       if (next(4) === 0) secrets.push("");
       const text = Array.from({ length: next(4) }, () => word(30)).join(secrets[0] ?? "");
-      // Also past a tiny state budget, where it scans for each value in turn instead.
-      for (const matcher of [createSecretMatcher(secrets), createSecretMatcher(secrets, 3)]) {
+      // The one-pass matcher, past a tiny state budget where it scans for each value instead,
+      // and the matcher that picks between them.
+      for (const matcher of [
+        createIndexedMatcher(secrets),
+        createIndexedMatcher(secrets, 3),
+        createSecretMatcher(secrets),
+      ]) {
         expect(matcher.ranges(text), JSON.stringify({ secrets, text })).toEqual(
           scannedRanges(text, secrets),
         );
@@ -63,16 +68,16 @@ describe("createSecretMatcher", () => {
   });
 
   it("merges overlapping matches and keeps touching ones apart", () => {
-    const matcher = createSecretMatcher(["abc", "cde", "xy", "y"]);
+    const matcher = createIndexedMatcher(["abc", "cde", "xy", "y"]);
     expect(matcher.ranges("abcde xyxy")).toEqual([
       [0, 5],
       [6, 8],
       [8, 10],
     ]);
-    expect(createSecretMatcher(["bcdef", "ab", "a"]).ranges("abcdefg")).toEqual([[0, 6]]);
+    expect(createIndexedMatcher(["bcdef", "ab", "a"]).ranges("abcdefg")).toEqual([[0, 6]]);
     expect(createSecretMatcher([]).ranges("anything")).toEqual([]);
     expect(createSecretMatcher(["", ""]).empty).toBe(true);
-    expect(createSecretMatcher(["", ""], 1).empty).toBe(true);
+    expect(createIndexedMatcher(["", ""], 1).empty).toBe(true);
   });
 
   it("stays linear in the text with many values", () => {
