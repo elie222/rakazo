@@ -5,8 +5,12 @@ teammate.
 
 ## Start a group chat
 
-Choose **Create** (the **+** at the top of the sidebar), then **New group chat**. Name the group,
-pick 2 to 10 bots and choose **Create group**.
+On web and desktop, choose **Create** (the **+** at the top of the sidebar), then
+**New group chat**. Name the group, pick 2 to 10 bots and choose **Create group**.
+
+On mobile, tap **Create** (**+**) in the chat list, then **New group chat**. Pick 2 to 10 bots and
+tap **Next**. Enter a name and tap **Create**, or leave it blank and tap **Skip** to use the default
+name based on the selected bots.
 
 Each bot keeps its own memory, computer and instructions; the group only shares the conversation.
 
