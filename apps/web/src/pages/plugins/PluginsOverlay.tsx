@@ -438,19 +438,17 @@ export function PluginsOverlay({
                   <Trans>Templates</Trans>
                 </Button>
               ) : null}
-              {browsing || view === "manage" ? (
-                <AddMenu
-                  presets={sourcePresets}
-                  onGithub={() => openAddView("github")}
-                  onSource={beginSource}
-                  onBrowseMcp={() => {
-                    setPublicCatalogQuery("");
-                    openAddView("browseMcp");
-                  }}
-                  onDomainSearch={catalogFeedEnabled ? () => openAddView("domain") : undefined}
-                  onOpenMcp={onOpenMcp}
-                />
-              ) : null}
+              <AddMenu
+                presets={sourcePresets}
+                onGithub={() => openAddView("github")}
+                onSource={beginSource}
+                onBrowseMcp={() => {
+                  setPublicCatalogQuery("");
+                  openAddView("browseMcp");
+                }}
+                onDomainSearch={catalogFeedEnabled ? () => openAddView("domain") : undefined}
+                onOpenMcp={onOpenMcp}
+              />
             </div>
           ) : null}
           <DialogClose
