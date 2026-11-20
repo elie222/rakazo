@@ -766,10 +766,28 @@ describe("Telegram groups", () => {
     ]);
   });
 
-  it("keeps group chats on by default and for any other value", () => {
-    for (const telegramGroups of [undefined, "on"]) {
+  it("keeps group chats on by default and for on, true and 1", () => {
+    for (const telegramGroups of [undefined, "", "on", " TRUE ", "1"]) {
       const { surface } = createGroupSurface({ telegramGroups });
       expect(surface.platforms().every(({ capabilities }) => capabilities.groups)).toBe(true);
+    }
+  });
+
+  it("turns group chats off for off, false and 0 in any case", () => {
+    for (const telegramGroups of ["off", "OFF", " False ", "0"]) {
+      const { surface } = createGroupSurface({ telegramGroups });
+      expect(surface.platforms().map(({ capabilities }) => capabilities.groups)).toEqual([
+        false,
+        false,
+      ]);
+    }
+  });
+
+  it("refuses a TELEGRAM_GROUPS value it cannot read, instead of leaving groups on", () => {
+    for (const telegramGroups of ["no", "disabled", "flase"]) {
+      expect(() => createGroupSurface({ telegramGroups })).toThrow(
+        "TELEGRAM_GROUPS must be on or off",
+      );
     }
   });
 
