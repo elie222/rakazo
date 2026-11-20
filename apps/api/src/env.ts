@@ -9,6 +9,7 @@ import {
   apnsVoipConfig,
   autoReviewMinConfidence,
   deploymentLabsFromEnv,
+  liveModelCatalogEnabled,
   mcpStdioOptionsFromEnv,
   messagingEnvFromProcess,
   resolveCloudAgentProvider,
@@ -223,6 +224,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     throw new Error("SIGNUPS_ENABLED must be true or false");
   // Fail at boot rather than on the first review, which would quietly ask every time.
   autoReviewMinConfidence(source);
+  liveModelCatalogEnabled(source);
   const passwordAuth = source.AUTH_PASSWORD_ENABLED !== "false";
   if (!passwordAuth && !issuer)
     throw new Error("AUTH_PASSWORD_ENABLED=false requires OIDC configuration");

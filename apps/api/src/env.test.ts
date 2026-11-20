@@ -387,6 +387,14 @@ describe("OIDC environment", () => {
       );
     }
   });
+  it("refuses a RAKAZO_LIVE_MODEL_CATALOG value it can't read at startup", () => {
+    for (const value of ["off", "false", "0", "no", "on", ""]) {
+      expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: "disabled" })).toThrow(
+      "RAKAZO_LIVE_MODEL_CATALOG must be on or off",
+    );
+  });
   it("defaults to SSO with no policy bypass", () => {
     expect(loadEnv({ ...base, ...oidc }).oidc).toMatchObject({
       name: "SSO",

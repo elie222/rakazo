@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { JobPublisher, JobQueueOrder, JobWorkerHost } from "@rakazo/adapter-kit";
-import { unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import { liveModelCatalogEnabled, unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { configuredMeetingMedia } from "@rakazo/adapters/meeting-media";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
@@ -154,6 +154,8 @@ async function main() {
     analytics,
     runSecretWriter: createRunSecretWriter(secrets),
   });
+  // Fail at boot rather than on the first catalog read, which would fail a run.
+  liveModelCatalogEnabled(process.env);
   const env = runRuntimeEnvFromProcess(process.env);
   const boardEvents = createBoardEvents(realtime);
   const runtime =
