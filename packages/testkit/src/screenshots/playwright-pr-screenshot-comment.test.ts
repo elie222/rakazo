@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { PlaywrightPrCommentScreenshot } from "./playwright-pr-screenshot-comment.js";
+import type {
+  PlaywrightPrCommentScreenshot,
+  PrChangedFile,
+} from "./playwright-pr-screenshot-comment.js";
 import {
   buildPlaywrightPrScreenshotComment,
   PLAYWRIGHT_PR_SCREENSHOT_COMMENT_MARKER,
@@ -62,7 +65,9 @@ describe("screenshotMatchesSpecStem", () => {
 describe("selectPlaywrightPrFeatureFrames", () => {
   it("lists NEW checkpoints before CHANGED ones", () => {
     const selection = selectPlaywrightPrFeatureFrames({
-      changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
+      changedFiles: [
+        specChange("apps/web/e2e/tool-activity-shell.spec.ts", "shell-idle", "shell-live"),
+      ],
       screenshots: [
         screenshot({
           comparison: "changed",
@@ -96,7 +101,9 @@ describe("selectPlaywrightPrFeatureFrames", () => {
 
   it("skips NEW checkpoints from specs outside the PR diff", () => {
     const selection = selectPlaywrightPrFeatureFrames({
-      changedPaths: ["apps/web/e2e/settings/plugin-marketplace.spec.ts"],
+      changedFiles: [
+        specChange("apps/web/e2e/settings/plugin-marketplace.spec.ts", "group-mentions"),
+      ],
       screenshots: [
         screenshot({
           comparison: "new",
@@ -112,7 +119,9 @@ describe("selectPlaywrightPrFeatureFrames", () => {
 
   it("includes CHANGED checkpoints only when their spec is in the PR diff", () => {
     const selection = selectPlaywrightPrFeatureFrames({
-      changedPaths: ["apps/web/e2e/tool-activity-disclosure.spec.ts"],
+      changedFiles: [
+        specChange("apps/web/e2e/tool-activity-disclosure.spec.ts", "complete", "other"),
+      ],
       screenshots: [
         screenshot({
           comparison: "changed",
@@ -144,9 +153,51 @@ describe("selectPlaywrightPrFeatureFrames", () => {
     expect(selection.omittedCount).toBe(0);
   });
 
+  it("skips checkpoints in a touched spec that the diff does not name", () => {
+    const selection = selectPlaywrightPrFeatureFrames({
+      changedFiles: [
+        {
+          filename: "apps/web/e2e/account/billing-paywall.spec.ts",
+          patch: [
+            '-  await captureScreenshot(page, testInfo, "billing-add-credits");',
+            '+  await page.getByRole("button", { name: "Apply now" }).click();',
+            "+  await captureScreenshot(",
+            "+    page,",
+            "+    testInfo,",
+            '+    "billing-byok-yearly",',
+            "+  );",
+            '   await captureScreenshot(page, testInfo, "billing-credit-balance");',
+          ].join("\n"),
+        },
+      ],
+      screenshots: [
+        screenshot({
+          comparison: "new",
+          fileName: "images/001-yearly.png",
+          source: "account-billing-paywall-x-chromium/billing-byok-yearly.png",
+          title: "billing byok yearly",
+        }),
+        screenshot({
+          comparison: "new",
+          fileName: "images/002-menu.png",
+          source: "account-billing-paywall-x-chromium/billing-account-menu.png",
+          title: "billing account menu",
+        }),
+        screenshot({
+          comparison: "changed",
+          fileName: "images/003-balance.png",
+          source: "account-billing-paywall-x-chromium/billing-credit-balance.png",
+          title: "billing credit balance",
+        }),
+      ],
+    });
+
+    expect(selection.frames.map((frame) => frame.title)).toEqual(["billing byok yearly"]);
+  });
+
   it("returns an empty selection for suite-vs-main drift only", () => {
     const selection = selectPlaywrightPrFeatureFrames({
-      changedPaths: ["apps/web/src/components/ToolActivity.tsx"],
+      changedFiles: [{ filename: "apps/web/src/components/ToolActivity.tsx" }],
       screenshots: [
         screenshot({
           comparison: "changed",
@@ -177,7 +228,12 @@ describe("selectPlaywrightPrFeatureFrames", () => {
     );
 
     const selection = selectPlaywrightPrFeatureFrames({
-      changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
+      changedFiles: [
+        {
+          filename: "apps/web/e2e/tool-activity-shell.spec.ts",
+          patch: TEMPLATE_FRAME_CAPTURE,
+        },
+      ],
       limit: 8,
       screenshots,
     });
@@ -209,7 +265,12 @@ describe("buildPlaywrightPrScreenshotComment", () => {
   it("shows NEW frames inline and keeps gallery links secondary", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
-      changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
+      changedFiles: [
+        specChange(
+          "apps/web/e2e/tool-activity-shell.spec.ts",
+          "shell-live-collapsed-desktop-1440x900",
+        ),
+      ],
       screenshots: [
         screenshot({
           comparison: "new",
@@ -237,9 +298,12 @@ describe("buildPlaywrightPrScreenshotComment", () => {
   it("includes spec-touched CHANGED frames after NEW frames", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
-      changedPaths: [
-        "apps/web/e2e/tool-activity-disclosure.spec.ts",
-        "apps/web/e2e/tool-activity-shell.spec.ts",
+      changedFiles: [
+        specChange(
+          "apps/web/e2e/tool-activity-disclosure.spec.ts",
+          "complete-collapsed-desktop-1440x900",
+        ),
+        specChange("apps/web/e2e/tool-activity-shell.spec.ts", "shell-live"),
       ],
       screenshots: [
         screenshot({
@@ -274,7 +338,7 @@ describe("buildPlaywrightPrScreenshotComment", () => {
   it("says so in one line when only suite drift remains", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
-      changedPaths: ["apps/web/src/components/ToolActivity.tsx"],
+      changedFiles: [{ filename: "apps/web/src/components/ToolActivity.tsx" }],
       screenshots: [
         screenshot({
           comparison: "changed",
@@ -303,7 +367,12 @@ describe("buildPlaywrightPrScreenshotComment", () => {
 
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
-      changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
+      changedFiles: [
+        {
+          filename: "apps/web/e2e/tool-activity-shell.spec.ts",
+          patch: TEMPLATE_FRAME_CAPTURE,
+        },
+      ],
       screenshots,
     });
 
@@ -317,7 +386,9 @@ describe("buildPlaywrightPrScreenshotComment", () => {
   it("neutralizes Markdown and HTML syntax in contributor-controlled titles", () => {
     const body = buildPlaywrightPrScreenshotComment({
       ...urls,
-      changedPaths: ["apps/web/e2e/tool-activity-shell.spec.ts"],
+      changedFiles: [
+        specChange("apps/web/e2e/tool-activity-shell.spec.ts", "checkpoint", "crafted"),
+      ],
       screenshots: [
         screenshot({
           comparison: "new",
@@ -339,6 +410,15 @@ describe("buildPlaywrightPrScreenshotComment", () => {
     expect(body).not.toContain("<details>");
   });
 });
+
+const TEMPLATE_FRAME_CAPTURE = `+  await captureScreenshot(page, testInfo, \`frame-\${index}\`);`;
+
+function specChange(filename: string, ...names: string[]): PrChangedFile {
+  return {
+    filename,
+    patch: names.map((name) => `+  await captureScreenshot(page, testInfo, "${name}");`).join("\n"),
+  };
+}
 
 function screenshot(
   overrides: Partial<PlaywrightPrCommentScreenshot> = {},

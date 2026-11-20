@@ -18,7 +18,42 @@ export type PlaywrightPrFeatureFrameSelection = {
   omittedCount: number;
 };
 
+export type PrChangedFile = { filename: string; patch?: string };
+
 const SPEC_FILE_PATTERN = /^(.*)\.spec\.[cm]?[jt]sx?$/i;
+const STRING_LITERAL = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
+const CAPTURE_NAME = /^[a-z0-9][a-z0-9._-]*$/i;
+
+type CaptureNames = { exact: Set<string>; prefixes: string[] };
+
+// A checkpoint belongs to this PR only when the PR adds or edits the line naming it, as in
+// captureScreenshot(page, testInfo, "billing-account-menu"). Template names match by their
+// literal prefix.
+export function captureNamesFromChangedFiles(files: readonly PrChangedFile[]): CaptureNames {
+  const exact = new Set<string>();
+  const prefixes = new Set<string>();
+  for (const file of files) {
+    if (!SPEC_FILE_PATTERN.test(file.filename) || !file.patch) continue;
+    for (const line of file.patch.split("\n")) {
+      if (!line.startsWith("+") || line.startsWith("+++")) continue;
+      for (const [, quote, value = ""] of line.matchAll(STRING_LITERAL)) {
+        const templateStart = quote === "`" ? value.indexOf("${") : -1;
+        if (templateStart < 0) {
+          if (CAPTURE_NAME.test(value)) exact.add(value.toLowerCase());
+          continue;
+        }
+        const prefix = value.slice(0, templateStart);
+        if (prefix.length >= 2 && CAPTURE_NAME.test(prefix)) prefixes.add(prefix.toLowerCase());
+      }
+    }
+  }
+  return { exact, prefixes: [...prefixes] };
+}
+
+function screenshotNamedByChange(source: string, names: CaptureNames): boolean {
+  const name = (source.split(/[\\/]/).at(-1) ?? source).replace(/\.png$/i, "").toLowerCase();
+  return names.exact.has(name) || names.prefixes.some((prefix) => name.startsWith(prefix));
+}
 
 export function specStemsFromChangedPaths(changedPaths: readonly string[]): string[] {
   const stems = new Set<string>();
@@ -42,18 +77,20 @@ export function screenshotMatchesSpecStem(source: string, specStem: string): boo
 }
 
 export function selectPlaywrightPrFeatureFrames(input: {
-  changedPaths: readonly string[];
+  changedFiles: readonly PrChangedFile[];
   limit?: number;
   screenshots: readonly PlaywrightPrCommentScreenshot[];
 }): PlaywrightPrFeatureFrameSelection {
   const limit = input.limit ?? PLAYWRIGHT_PR_FEATURE_FRAME_LIMIT;
-  const stems = specStemsFromChangedPaths(input.changedPaths);
-  // The main baseline can trail main by hours, so checkpoints other merged PRs added also
-  // look new. Only specs this PR touched say anything about this PR.
+  const stems = specStemsFromChangedPaths(input.changedFiles.map((file) => file.filename));
+  const names = captureNamesFromChangedFiles(input.changedFiles);
+  // The main baseline can trail main by hours, so checkpoints other merged PRs added look new
+  // and unrelated ones look changed. Only checkpoints this PR's diff names are about this PR.
   const checkpoints = input.screenshots.filter(
     (screenshot) =>
       screenshot.captureType === "checkpoint" &&
-      stems.some((stem) => screenshotMatchesSpecStem(screenshot.source, stem)),
+      stems.some((stem) => screenshotMatchesSpecStem(screenshot.source, stem)) &&
+      screenshotNamedByChange(screenshot.source, names),
   );
   const frames: PlaywrightPrFeatureFrame[] = [
     ...checkpoints
@@ -71,7 +108,7 @@ export function selectPlaywrightPrFeatureFrames(input: {
 }
 
 export function buildPlaywrightPrScreenshotComment(input: {
-  changedPaths: readonly string[];
+  changedFiles: readonly PrChangedFile[];
   dashboardUrl: string;
   galleryUrl: string;
   limit?: number;
