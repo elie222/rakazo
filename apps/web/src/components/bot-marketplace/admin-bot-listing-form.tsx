@@ -13,6 +13,7 @@ import {
   OptionSelect,
   Textarea,
 } from "@rakazo/ui-web";
+import { ArrowLeft } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { useId, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -275,9 +276,20 @@ export function AdminBotListingForm({ row }: { row: MarketplaceBotAdminRow | nul
             </span>
           </nav>
           <div className="flex items-start justify-between gap-4">
-            <h1 className="text-heading1 font-semibold text-foreground">
-              {row ? <Trans>Edit listing</Trans> : <Trans>New listing</Trans>}
-            </h1>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t`Back to Bot market`}
+                onClick={() => navigate("/admin/bots")}
+              >
+                <ArrowLeft className="size-4 rtl:rotate-180" />
+              </Button>
+              <h1 className="text-heading1 font-semibold text-foreground">
+                {row ? <Trans>Edit listing</Trans> : <Trans>New listing</Trans>}
+              </h1>
+            </div>
             {dirty || !row ? (
               <span className="pt-2 text-body-sm text-muted-foreground">
                 <Trans>Unsaved</Trans>

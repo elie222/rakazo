@@ -249,6 +249,14 @@ it("leaves out a skill that is unticked", async () => {
   );
 });
 
+it("goes back to the market list from the header", async () => {
+  await open(null);
+  const back = scope().querySelector<HTMLElement>('[aria-label="Back to Bot market"]');
+  if (!back) throw new Error("Missing back button");
+  await click(back);
+  expect(api.navigate).toHaveBeenCalledWith("/admin/bots");
+});
+
 it("keeps a typed name when another bot is chosen", async () => {
   await open(null);
   await fill("Display name", "My briefing");
