@@ -987,6 +987,9 @@ describe("lastingWriteKind", () => {
     );
     expect(lastingWriteKind({ toolName: "update_bot", args: { model: "m" } })).toBe(undefined);
     expect(
+      lastingWriteKind({ toolName: "update_bot", args: { model: "m", instructions: "  " } }),
+    ).toBe(undefined);
+    expect(
       lastingWriteKind({ toolName: "set_child_instructions", args: { instructions: "i" } }),
     ).toBe(undefined);
     expect(lastingWriteKind({ toolName: "remember", args: {} })).toBe(undefined);

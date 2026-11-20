@@ -368,7 +368,8 @@ export type LastingWrite = "memory" | "routine" | "instructions";
  * The write that outlives the run an Auto Review is about, which gets its own narrow question:
  * a memory or skill save after outside content, a routine's words, or the bot's own instructions.
  * A routine update writes its words only when it changes its prompt or events; a pause or a new
- * time does not. A child bot's instructions always ask its owner, unreviewed.
+ * time does not. A child bot's instructions always ask its owner, unreviewed. Each is judged on the
+ * owner's own words only.
  */
 export function lastingWriteKind(input: {
   toolName: string;
@@ -386,7 +387,12 @@ export function lastingWriteKind(input: {
     (Boolean(input.args.prompt) || Boolean(input.args.on))
   )
     return "routine";
-  if (input.toolName === "update_bot" && typeof input.args.instructions === "string")
+  // A blank value leaves the instructions as they are, as the update itself treats it.
+  if (
+    input.toolName === "update_bot" &&
+    typeof input.args.instructions === "string" &&
+    input.args.instructions.trim()
+  )
     return "instructions";
   return undefined;
 }

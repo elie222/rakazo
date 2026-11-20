@@ -4,6 +4,7 @@ import {
   applyJudgeDecision,
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
+  lastingWriteKind,
   redactSecrets,
 } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
@@ -66,11 +67,16 @@ export async function reviewToolCall(
     const outsideRun = run.trigger === "webhook";
     const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
     if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
-    // A new site, a memory or skill save after outside content, or an action on the bot's own
-    // computer after it, is judged on the owner's own words only: the task prompt of a webhook or
-    // bot-started run carries text someone else wrote.
+    // A new site, a write that outlives the run (a memory or skill save, a routine, the bot's own
+    // instructions), or an action on the bot's own computer after outside content, is judged on the
+    // owner's own words only: the task prompt of a webhook or bot-started run carries text someone
+    // else wrote, which must not authorize a write that later runs with the owner's trust.
     const ownerWordsOnly =
-      Boolean(newSiteUrl) || review.savedContextWrite || review.ownComputerAction;
+      Boolean(newSiteUrl) ||
+      review.ownComputerAction ||
+      Boolean(
+        lastingWriteKind({ toolName: name, args, savedContextWrite: review.savedContextWrite }),
+      );
     const reviewArgs = newSiteUrl
       ? { url: redactSecrets(newSiteUrl, ctx.secrets) }
       : review.ownComputerAction
