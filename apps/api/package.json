@@ -14,6 +14,7 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/api/src",
     "db:migrate": "tsx src/cli/migrate-database.ts",
+    "marketplace:seed": "tsx src/cli/seed-marketplace.ts",
     "db:deploy": "node --enable-source-maps dist/cli/migrate-database.js",
     "secrets:infisical": "tsx src/cli/secrets-infisical.ts",
     "content-encryption": "tsx src/cli/content-encryption.ts",

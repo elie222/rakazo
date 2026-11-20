@@ -173,6 +173,8 @@ export async function createBotFromTemplateDefinition<PreparedKey>(
     changedReason: string;
     /** What the idempotency digest covers; stable across versions of one definition. */
     digest: unknown;
+    /** Fixed text the new bot posts first, without running a model. */
+    intro?: string;
   },
   signal?: AbortSignal,
 ) {
@@ -201,7 +203,10 @@ export async function createBotFromTemplateDefinition<PreparedKey>(
           data: { reason: options.changedReason },
         });
       }
-      request.cards = templateAppCards(template, template.apps.length ? await appCatalog() : []);
+      request.cards = [
+        ...(options.intro ? [{ kind: "text" as const, text: options.intro }] : []),
+        ...templateAppCards(template, template.apps.length ? await appCatalog() : []),
+      ];
       const built = templatePlan(template, await savedTimeZone(services.prisma, actor));
       built.plan.source = options.source;
       // A skill an earlier copy of this bot added, still unchanged (perhaps renamed on a clash),

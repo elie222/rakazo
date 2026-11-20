@@ -4,6 +4,7 @@ import {
   BOT_MARKETPLACE_CHANGED,
   BOT_MARKETPLACE_IMPORT_KEY_PREFIX,
   MarketplaceBotSchema,
+  marketplaceBotIntro,
   marketplaceBotTemplate,
 } from "@rakazo/contracts";
 import type { Prisma } from "@rakazo/db";
@@ -160,6 +161,7 @@ export function botMarketplaceRoutes(ctx: RouterContext) {
             source: "marketplace",
             changedReason: BOT_MARKETPLACE_CHANGED,
             digest: { marketplaceSlug: row.slug },
+            intro: marketplaceBotIntro(listing),
           },
           context.signal,
         );

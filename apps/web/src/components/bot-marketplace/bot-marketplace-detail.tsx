@@ -43,9 +43,28 @@ export function BotMarketplaceDetail({
         </span>
         <div className="min-w-0">
           <h2 className="text-heading2 font-semibold text-foreground">{listing.name}</h2>
-          <p className="text-body-sm text-muted-foreground">{listing.author.name}</p>
+          <p className="flex flex-wrap justify-center gap-x-2 text-body-sm text-muted-foreground">
+            {listing.author.url ? (
+              <a
+                href={listing.author.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-foreground underline"
+              >
+                {listing.author.name}
+              </a>
+            ) : (
+              <span>{listing.author.name}</span>
+            )}
+            <span>{listing.license}</span>
+          </p>
         </div>
         <p className="max-w-[54ch] text-body text-muted-foreground">{listing.description}</p>
+        <ul className="max-w-[54ch] list-disc space-y-1 ps-5 text-start text-body">
+          {listing.outcomes.map((outcome) => (
+            <li key={outcome}>{outcome}</li>
+          ))}
+        </ul>
       </div>
 
       <ul className="divide-y divide-border/60 rounded-xl border border-border/70">

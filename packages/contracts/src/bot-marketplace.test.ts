@@ -5,6 +5,7 @@ import {
   MarketplaceBotAdminUpdateInput,
   MarketplaceBotInstallInput,
   MarketplaceBotSchema,
+  marketplaceBotIntro,
   marketplaceBotTemplate,
 } from "./bot-marketplace.js";
 
@@ -33,6 +34,22 @@ describe("MarketplaceBotSchema", () => {
     const parsed = MarketplaceBotSchema.parse(listing);
     expect(parsed.tags).toEqual([]);
     expect(parsed.intro).toBe(listing.intro);
+  });
+
+  it("links only to web addresses", () => {
+    for (const url of ["javascript:alert(1)", "data:text/html,x", "ftp://example.test/a"]) {
+      expect(
+        MarketplaceBotSchema.safeParse({ ...listing, author: { name: "A", url } }).success,
+      ).toBe(false);
+      expect(MarketplaceBotSchema.safeParse({ ...listing, homepage: url }).success).toBe(false);
+    }
+    expect(
+      MarketplaceBotSchema.safeParse({
+        ...listing,
+        author: { name: "A", url: "https://example.test/a" },
+        homepage: "http://example.test",
+      }).success,
+    ).toBe(true);
   });
 
   it("keeps the template's no-secrets boundary", () => {
@@ -103,4 +120,20 @@ it("recognises the changed-listing refusal", () => {
   expect(isBotMarketplaceChanged({ data: { reason: BOT_MARKETPLACE_CHANGED } })).toBe(true);
   expect(isBotMarketplaceChanged({ data: { reason: "template_changed" } })).toBe(false);
   expect(isBotMarketplaceChanged(null)).toBe(false);
+});
+
+describe("marketplaceBotIntro", () => {
+  const parsed = MarketplaceBotSchema.parse(listing);
+
+  it("puts the first question after the intro", () => {
+    expect(marketplaceBotIntro(parsed)).toBe(`${listing.intro}\n\n${listing.firstQuestion}`);
+  });
+
+  it("speaks with either one alone and stays silent with neither", () => {
+    expect(marketplaceBotIntro({ ...parsed, firstQuestion: undefined })).toBe(listing.intro);
+    expect(marketplaceBotIntro({ ...parsed, intro: undefined })).toBe(listing.firstQuestion);
+    expect(marketplaceBotIntro({ ...parsed, intro: undefined, firstQuestion: undefined })).toBe(
+      undefined,
+    );
+  });
 });

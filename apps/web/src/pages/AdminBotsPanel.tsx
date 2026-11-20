@@ -38,7 +38,7 @@ const NEW_LISTING = {
   skills: [],
   routines: [],
   apps: [],
-  author: { name: "Rakazo Team" },
+  author: { name: "BotONE Team" },
   license: "Apache-2.0",
   category: "personal",
   tagline: "One line, result-oriented.",
