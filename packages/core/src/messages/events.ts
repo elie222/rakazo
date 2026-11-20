@@ -651,6 +651,9 @@ export function subagentBlockFromPayload(
   );
 }
 
+/** What redaction writes in place of a secret. */
+export const REDACTED_MARKER = "[redacted]";
+
 /** Shorter lines, or lines with spaces such as a key's BEGIN header, also appear in ordinary text. */
 const MIN_SECRET_LINE_LENGTH = 16;
 
@@ -708,7 +711,7 @@ export function redactSecrets(value: string, secrets: readonly string[]): string
   let output = "";
   let offset = 0;
   for (const [start, end] of redactedRanges(value, secrets)) {
-    output += `${value.slice(offset, start)}[redacted]`;
+    output += `${value.slice(offset, start)}${REDACTED_MARKER}`;
     offset = end;
   }
   return output + value.slice(offset);
@@ -721,7 +724,7 @@ export function redactSecretsAfter(before: string, text: string, secrets: string
   let offset = before.length;
   for (const [start, end] of redactedRanges(value, secrets)) {
     if (end <= offset) continue;
-    output += `${value.slice(offset, Math.max(start, offset))}[redacted]`;
+    output += `${value.slice(offset, Math.max(start, offset))}${REDACTED_MARKER}`;
     offset = end;
   }
   return output + value.slice(offset);
@@ -828,7 +831,7 @@ export function createStreamingRedactor(secrets: string[]) {
       output = "";
       for (const [start, end] of matcher.ranges(buffer)) {
         if (start >= cut) break;
-        if (start >= offset) output += `${buffer.slice(offset, start)}[redacted]`;
+        if (start >= offset) output += `${buffer.slice(offset, start)}${REDACTED_MARKER}`;
         offset = Math.max(offset, end);
       }
       output += buffer.slice(Math.min(offset, cut), cut);
