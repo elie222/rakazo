@@ -109,7 +109,7 @@ export function CompatibleModelFields({
             className="mt-2 text-foreground"
             value={modelId}
             onValueChange={(value) => {
-              cancelOAuthAttempt();
+              cancelOAuthAttempt("replaced");
               selectionRevisionRef.current += 1;
               setModelId(value);
               setError(null);
@@ -125,7 +125,7 @@ export function CompatibleModelFields({
           <Input
             value={modelId}
             onChange={(event) => {
-              cancelOAuthAttempt();
+              cancelOAuthAttempt("replaced");
               selectionRevisionRef.current += 1;
               setModelId(event.target.value);
               setError(null);
