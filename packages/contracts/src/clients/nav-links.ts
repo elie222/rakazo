@@ -8,12 +8,28 @@ import * as z from "zod";
 /** App-owned paths a link must not frame. */
 const RESERVED_PREFIXES = ["/app", "/api", "/rpc", "/novnc", "/health"];
 
+const BASE = "http://rakazo.invalid";
+
+/**
+ * The path as a proxy may route it: percent-decoded, lower-cased and resolved again, so `/API`,
+ * `/%61pi` and `/x/..%2fapi` count as `/api`. Undefined when the encoding is malformed.
+ */
+function routedPathname(pathname: string): string | undefined {
+  try {
+    return new URL(decodeURIComponent(pathname).toLowerCase(), BASE).pathname;
+  } catch {
+    return undefined;
+  }
+}
+
 function isSameOriginPath(path: string) {
   if (!path.startsWith("/") || path.startsWith("//") || /[\\\s]/.test(path)) return false;
-  const url = new URL(path, "http://rakazo.invalid");
-  if (url.origin !== "http://rakazo.invalid") return false;
+  const url = new URL(path, BASE);
+  if (url.origin !== BASE) return false;
+  const pathname = routedPathname(url.pathname);
+  if (pathname === undefined) return false;
   return !RESERVED_PREFIXES.some(
-    (prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`),
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }
 
