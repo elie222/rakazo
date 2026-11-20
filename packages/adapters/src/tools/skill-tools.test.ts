@@ -13,12 +13,20 @@ import {
 type Scope = {
   spaceId?: string;
   userId?: string;
+  name?: { equals: string } | string;
+  NOT?: { id: string };
   OR?: Array<{ spaceId?: string; allSpaces?: boolean }>;
 };
 /** The owner's rows here: added in this space or available in all of the owner's spaces. */
 function inScope(row: Record<string, unknown>, where: Scope): boolean {
   if (where.userId && row.userId !== where.userId) return false;
   if (where.spaceId && row.spaceId !== where.spaceId) return false;
+  if (
+    typeof where.name === "object" &&
+    String(row.name).toLowerCase() !== where.name.equals.toLowerCase()
+  )
+    return false;
+  if (where.NOT && row.id === where.NOT.id) return false;
   if (
     where.OR &&
     !where.OR.some(
@@ -41,7 +49,14 @@ function makePrisma(
       ),
       findFirst: vi.fn(async ({ where }: { where: Scope & { id: string } }) => {
         const row = store.find((item) => item.id === where.id && inScope(item, where));
-        return row ? { files: row.files ?? null } : null;
+        return row
+          ? {
+              files: row.files ?? null,
+              spaceId: row.spaceId,
+              allSpaces: row.allSpaces === true,
+              availableIn: [],
+            }
+          : null;
       }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row = {
@@ -88,11 +103,6 @@ function makePrisma(
         const [removed] = store.splice(index, 1);
         return removed;
       }),
-      findUniqueOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => {
-        const row = store.find((item) => item.id === where.id);
-        if (!row) throw new Error("missing");
-        return { spaceId: row.spaceId, allSpaces: row.allSpaces === true, availableIn: [] };
-      }),
       deleteMany: vi.fn(async ({ where }: { where: Scope & Record<string, unknown> }) => {
         const index = store.findIndex(
           (row) => row.id === where.id && inScope(row, where) && row.source === where.source,
@@ -121,6 +131,7 @@ function makePrisma(
         },
       ),
     },
+    $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => [{ bypass: null, key: null, login: "test" }]),
     _store: store,
     _routines: routines,
@@ -332,6 +343,31 @@ describe("skill tools", () => {
       ok: true,
     });
     expect(prisma._store).toHaveLength(0);
+  });
+
+  it("refuses a rename that would clash with a skill in another space it reaches", async () => {
+    const skill = (id: string, spaceId: string, name: string, allSpaces: boolean) => ({
+      id,
+      spaceId,
+      userId: "user-1",
+      allSpaces,
+      name,
+      description: "d",
+      content: buildSkillMd({ name, description: "d", body: "b" }),
+      source: "user",
+    });
+    prisma = makePrisma([
+      skill("shared", "ws-1", "Shared", true),
+      skill("local", "ws-2", "Taken", false),
+    ]);
+    const result = await skillUpdateFromTool(prisma as never, owner, {
+      name: "Shared",
+      newName: "Taken",
+    });
+    expect(result).toEqual({
+      error: "A skill with that name already exists in one of these spaces.",
+    });
+    expect(prisma._store[0]?.name).toBe("Shared");
   });
 
   it("leaves routines alone when another rename got there first", async () => {

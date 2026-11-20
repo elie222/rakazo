@@ -10,7 +10,9 @@ import {
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
+  assertNameFreeWhereAvailable,
   availableInSpace,
+  NameTakenError,
   runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
@@ -333,6 +335,15 @@ export async function skillUpdateFromTool(
   try {
     // Re-scope mutate to owner + user source so a stale id cannot cross tenants.
     const changed = await prisma.$transaction(async (tx) => {
+      const row = await tx.agentSkill.findFirst({
+        where: { id: existing.id, ...availableInSpace(owner) },
+        select: { spaceId: true, allSpaces: true, availableIn: AVAILABILITY_SELECT },
+      });
+      if (!row) return null;
+      const availability = spaceAvailability(row);
+      if (nextName.toLowerCase() !== existing.name.toLowerCase()) {
+        await assertNameFreeWhereAvailable(tx, "skill", owner, nextName, availability, existing.id);
+      }
       const updated = await tx.agentSkill.updateMany({
         where: {
           id: existing.id,
@@ -349,11 +360,6 @@ export async function skillUpdateFromTool(
       });
       if (updated.count !== 1) return null;
       if (!renamed) return [];
-      const row = await tx.agentSkill.findUniqueOrThrow({
-        where: { id: existing.id },
-        select: { spaceId: true, allSpaces: true, availableIn: AVAILABILITY_SELECT },
-      });
-      const { allSpaces, spaceIds } = spaceAvailability(row);
       // The owner's routines in the other spaces the skill is available in sit outside this run's
       // space, so read them by owner as the settings screen does.
       return runAsSystemInTransaction(
@@ -362,7 +368,10 @@ export async function skillUpdateFromTool(
         () =>
           renameSkillInRoutines(
             tx,
-            { userId: owner.userId, spaceIds: allSpaces ? null : spaceIds },
+            {
+              userId: owner.userId,
+              spaceIds: availability.allSpaces ? null : availability.spaceIds,
+            },
             existing.name,
             nextName,
           ),
@@ -372,7 +381,8 @@ export async function skillUpdateFromTool(
       return { error: "Could not update skill. It may have changed; read it and try again." };
     await signalRenamedRoutines(events, changed);
     return { ok: true, id: existing.id, name: nextName, description: nextDescription };
-  } catch {
+  } catch (error) {
+    if (error instanceof NameTakenError) return { error: error.message };
     return { error: "Could not update skill." };
   }
 }
