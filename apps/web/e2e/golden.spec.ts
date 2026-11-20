@@ -154,7 +154,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const gmailRow = featured
     .getByText("Gmail", { exact: true })
     .locator("xpath=ancestor::*[.//button][1]");
-  await gmailRow.getByRole("button", { name: "Add", exact: true }).click();
+  await gmailRow.getByRole("button", { name: "Add Gmail", exact: true }).click();
   await expect(gmailRow.getByRole("button", { name: "Added", exact: true })).toBeVisible();
   await expect(page.getByTestId("connection-tile-gmail")).toBeVisible();
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
@@ -217,14 +217,14 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     .getByTestId("featured-connectors")
     .getByText("Gmail", { exact: true })
     .locator("xpath=ancestor::*[.//button][1]");
-  await expect(gmailRowEmpty.getByRole("button", { name: "Add", exact: true })).toBeVisible();
+  await expect(gmailRowEmpty.getByRole("button", { name: "Add Gmail", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 
   const linearRow = page
     .getByText("Linear", { exact: true })
     .locator("xpath=ancestor::*[.//button][1]");
   const connectPopup = page.waitForEvent("popup");
-  await linearRow.getByRole("button", { name: "Add", exact: true }).click();
+  await linearRow.getByRole("button", { name: "Add Linear", exact: true }).click();
   const popup = await connectPopup;
   await popup.close();
   await expect(linearRow.getByRole("button", { name: "Added", exact: true })).toBeVisible();
@@ -233,7 +233,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(linearDetail).toBeVisible();
   await linearDetail.getByRole("button", { name: "Uninstall", exact: true }).click();
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
-  await expect(linearRow.getByRole("button", { name: "Add", exact: true })).toBeVisible();
+  await expect(linearRow.getByRole("button", { name: "Add Linear", exact: true })).toBeVisible();
 
   // Custom sources live behind one menu: GitHub, then MCP → OpenAPI → GraphQL → Executor.
   await page.getByRole("button", { name: "Add custom", exact: true }).click();
@@ -325,6 +325,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(
     toolSources.getByText(/GraphQL\s*https:\/\/graphql\.example\.test\/graphql/),
   ).toBeVisible();
+  // Each Remove button is described by its own source name, so identical buttons tell apart.
+  await expect(
+    toolSources
+      .getByTestId("tool-source")
+      .filter({ hasText: "Browser API" })
+      .getByRole("button", { name: "Remove", exact: true }),
+  ).toHaveAccessibleDescription("Browser API");
   await captureScreenshot(page, testInfo, "02-graphql-installed");
 
   await page.getByRole("button", { name: "Close integrations" }).click();

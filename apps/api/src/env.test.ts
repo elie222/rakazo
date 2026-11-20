@@ -2,7 +2,8 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadEnv, parseExtraAuthOrigins, withEnvOverrides } from "./env.js";
 
 const base = {
@@ -387,6 +388,14 @@ describe("OIDC environment", () => {
       );
     }
   });
+  it("refuses a RAKAZO_LIVE_MODEL_CATALOG value it can't read at startup", () => {
+    for (const value of ["off", "false", "0", "no", "on", ""]) {
+      expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: "disabled" })).toThrow(
+      "RAKAZO_LIVE_MODEL_CATALOG must be on or off",
+    );
+  });
   it("reads USER_DEVICES_ENABLED strictly and refuses a value it can't read", () => {
     expect(loadEnv(base).userDevicesEnabled).toBe(true);
     for (const value of ["", "  ", "true", "TRUE", "1"]) {
@@ -600,5 +609,26 @@ describe("RAKAZO_EXTRA_AUTH_ORIGINS", () => {
         "http://example.com,ftp://host,rakazo://,not a url,https://host/path,https://u:p@host,*",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("SANDBOX_COMMAND_TIMEOUT_MS", () => {
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+
+  it("warns at startup when the value is above the maximum", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    loadEnv({ ...base, SANDBOX_COMMAND_TIMEOUT_MS: "7200000" });
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({ level: "warn", maximumMs: 3_600_000 });
+  });
+
+  it.each([undefined, "300000", "3600000", "0", "invalid"])("stays quiet for %s", (value) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    loadEnv({ ...base, SANDBOX_COMMAND_TIMEOUT_MS: value });
+    expect(sink.events).toEqual([]);
   });
 });

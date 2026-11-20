@@ -20,7 +20,7 @@ export function useSearch(query: string) {
     const abort = new AbortController();
     searchAbort.current = abort;
     return () => abort.abort();
-  }, [query, attempt]);
+  }, [trimmed, attempt]);
   useTimeout(
     () => {
       const abort = searchAbort.current;
@@ -37,7 +37,7 @@ export function useSearch(query: string) {
         });
     },
     trimmed ? 200 : null,
-    `${query}\n${attempt}`,
+    `${trimmed}\n${attempt}`,
   );
   return { hits, loading, error, retry: () => setAttempt((value) => value + 1) };
 }

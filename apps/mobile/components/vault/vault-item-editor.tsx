@@ -1,7 +1,13 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ContactFields, VaultKind, VaultPolicy, VaultRevealed } from "@rakazo/contracts";
-import { commandVariableName, decodeLoginSecret, VAULT_ALSO_ON_LIMIT } from "@rakazo/contracts";
+import {
+  commandVariableName,
+  decodeLoginSecret,
+  VAULT_ALSO_ON_LIMIT,
+  VaultItemNote,
+  VaultItemTitle,
+} from "@rakazo/contracts";
 import { vaultAccessControls, vaultLoginSave } from "@rakazo/core";
 import { secretAnswerErrorText, vaultPolicyLabels } from "@rakazo/i18n/vault";
 import type { ReactNode } from "react";
@@ -547,12 +553,16 @@ export function VaultItemEditor({
                   placeholder: kind === "contact" ? t`Home` : item?.title,
                   autoCapitalize: "sentences",
                   ...noAutofill,
+                  // The longest title the server accepts; a longer one fails the whole save.
+                  maxLength: VaultItemTitle.maxLength ?? undefined,
                 },
               )}
               <View style={styles.separator} />
               {field(t`When to use`, draft.note, (note) => update({ note }), {
                 autoCapitalize: "sentences",
                 ...noAutofill,
+                // The longest note the server accepts; a longer one fails the whole save.
+                maxLength: VaultItemNote.maxLength ?? undefined,
               })}
             </View>
           )}
