@@ -101,7 +101,8 @@ export function ComposerModelPicker({
           const inUse = thinking ?? defaultThinkingLevel;
           const current = thinkingLevels.findIndex((level) => level === inUse);
           const next = thinkingLevels[(current + 1) % thinkingLevels.length];
-          if (next === undefined) return false;
+          // A model with one level has nowhere to step, and saving it would stop following the default.
+          if (next === undefined || next === inUse) return false;
           saveThinking.run(next);
           return true;
         }

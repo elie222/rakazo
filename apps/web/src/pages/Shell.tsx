@@ -93,6 +93,7 @@ import { Composer } from "./shell/composer/composer";
 import { ComposerModelPicker } from "./shell/composer/composer-model-picker";
 import { useComposerActions } from "./shell/composer/use-composer-actions";
 import { useComposerMentions } from "./shell/composer/use-composer-mentions";
+import { useComposerModelShortcuts } from "./shell/composer/use-composer-model-shortcuts";
 import { ComputerOverlay } from "./shell/computers/computer-overlay";
 import { ComputerPanel } from "./shell/computers/computer-panel";
 import { useComputerControls, useComputerState } from "./shell/computers/use-computer";
@@ -102,7 +103,6 @@ import { rightPanelStorageKey } from "./shell/right-panel-state";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import type { SettingsSection } from "./shell/shell-overlay-url";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
-import type { ShellShortcut } from "./shell/shell-shortcuts";
 import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
 import { ArchivedChats } from "./shell/sidebar/archived-chats";
@@ -135,10 +135,6 @@ export function ShellPage() {
   // A new key per space switch, so nothing from the previous space survives it.
   const spaceEpoch = useSpaceEpoch();
   return <SpaceShell key={spaceEpoch} />;
-}
-
-function isModelShortcut(shortcut: ShellShortcut) {
-  return shortcut.type === "model-picker" || shortcut.type === "thinking-level";
 }
 
 function SpaceShell() {
@@ -335,12 +331,6 @@ function SpaceShell() {
   );
   const dialogs = useShellDialogs();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // The bot whose model list the keyboard opened, so switching bots leaves the next one closed.
-  const [modelPickerBotId, setModelPickerBotId] = useState<string | null>(null);
-  const thinkingStepRef = useRef<(() => boolean) | null>(null);
-  const registerThinkingStep = useCallback((step: (() => boolean) | null) => {
-    thinkingStepRef.current = step;
-  }, []);
   const [findOpen, setFindOpen] = useState(false);
   const findInputRef = useRef<HTMLInputElement>(null);
   const chatColumnRef = useRef<HTMLDivElement>(null);
@@ -389,11 +379,14 @@ function SpaceShell() {
         return true;
       }
       // The open model list is a dialog too, but its own chords still close it or step its thinking.
-      const modelListOpen = Boolean(active && modelPickerBotId === active.id);
-      // The command menu picks its own Cmd/Ctrl+1–9 from what it lists.
-      if (hasOpenDialog(document, true) && !(modelListOpen && isModelShortcut(shortcut))) {
-        return false;
+      if (
+        (shortcut.type === "model-picker" || shortcut.type === "thinking-level") &&
+        modelShortcuts.open
+      ) {
+        return modelShortcuts.run(shortcut.type);
       }
+      // The command menu picks its own Cmd/Ctrl+1–9 from what it lists.
+      if (hasOpenDialog(document, true)) return false;
       switch (shortcut.type) {
         case "new-group":
           // A space without bots has nobody to add, and the side panel needs a chat to open in.
@@ -410,12 +403,8 @@ function SpaceShell() {
         case "focus-composer":
           return focusComposer();
         case "model-picker":
-          if (!showComposerModel || !active || inGroup) return false;
-          setModelPickerBotId((open) => (open === active.id ? null : active.id));
-          return true;
         case "thinking-level":
-          if (!showComposerModel || inGroup) return false;
-          return thinkingStepRef.current?.() ?? false;
+          return modelShortcuts.run(shortcut.type);
         case "quote-selection":
           if (mobileSidebarOpen || (isMobileSidebar && panel)) return false;
           return quoteShortcutRef.current?.() ?? false;
@@ -581,6 +570,10 @@ function SpaceShell() {
       : (queryClient.getQueryData(queries.skills.list.queryKey({ input: { botId: active.id } })) ??
         []);
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
+  const modelShortcuts = useComposerModelShortcuts({
+    botId: inGroup ? undefined : active?.id,
+    enabled: showComposerModel && !recordingSkill,
+  });
 
   const sidebarSpaces = useMemo(
     () =>
@@ -1260,9 +1253,7 @@ function SpaceShell() {
                   <ComposerModelPicker
                     bot={active}
                     disabled={Boolean(recordingSkill)}
-                    open={modelPickerBotId === active.id && !recordingSkill}
-                    onOpenChange={(open) => setModelPickerBotId(open ? active.id : null)}
-                    onThinkingStepChange={registerThinkingStep}
+                    {...modelShortcuts.pickerProps}
                     onConnect={() => openSettings("models")}
                     onSaved={(updated) =>
                       setBots((current) =>

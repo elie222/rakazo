@@ -17,6 +17,7 @@ vi.mock("../../../lib/query/rpc", () => {
       list: vi.fn(async () => [
         { provider: "acme", id: "fast", label: "Fast", thinkingLevels: ["low", "high"] },
         { provider: "acme", id: "smart", label: "Smart" },
+        { provider: "acme", id: "steady", label: "Steady", thinkingLevels: ["medium"] },
       ]),
     },
     me: vi.fn(async () => ({ defaultProvider: "acme", defaultModel: "fast" })),
@@ -182,6 +183,31 @@ describe("ComposerModelPicker", () => {
         <QueryClientProvider client={client}>
           <ComposerModelPicker
             bot={{ ...bot, modelProvider: "acme", modelId: "smart" } as Bot}
+            onSaved={vi.fn()}
+            onConnect={vi.fn()}
+            onThinkingStepChange={(next) => {
+              registered.step = next;
+            }}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(container.querySelector('button[aria-label^="Model"]')).not.toBeNull(),
+    );
+    vi.mocked(rpc.bots.update).mockClear();
+    expect(registered.step?.()).toBe(false);
+    expect(rpc.bots.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps a one-level model on its default rather than saving the same level", async () => {
+    const registered: { step: (() => boolean) | null } = { step: null };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker
+            bot={{ ...bot, modelProvider: "acme", modelId: "steady" } as Bot}
             onSaved={vi.fn()}
             onConnect={vi.fn()}
             onThinkingStepChange={(next) => {
