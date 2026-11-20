@@ -30,9 +30,16 @@ export type MemoryDocument = z.infer<typeof MemoryDocumentSchema>;
 
 /** One nightly consolidation, as the Memory page lists it. */
 export const MemoryDreamStatusSchema = z.enum(["queued", "completed", "failed"]);
+/**
+ * Why a consolidation ran: the chat went quiet, messages piled up, the notes filled up, the
+ * daily review, or a person asked. Rows written before reasons existed read as "idle".
+ */
+export const MemoryDreamReasonSchema = z.enum(["idle", "batch", "tidy", "review", "manual"]);
+export type MemoryDreamReason = z.infer<typeof MemoryDreamReasonSchema>;
 export const MemoryDreamSchema = z.object({
   id: Id,
   status: MemoryDreamStatusSchema,
+  reason: MemoryDreamReasonSchema.default("idle"),
   summary: z.string().nullable(),
   changedPaths: z.array(z.string()),
   /** Lines the run added to the notes, one fact per line. */

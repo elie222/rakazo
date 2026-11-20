@@ -88,6 +88,17 @@ function dreamStatusLabel(
   return dream.errorKind === "spending" ? t`Stopped at the spending limit` : t`Interrupted`;
 }
 
+/** Why the dream ran, when a person would ask: a tidy, the daily review, or their own request. */
+function dreamReasonLabel(
+  t: (parts: TemplateStringsArray, ...values: unknown[]) => string,
+  dream: MemoryDream,
+): string | null {
+  if (dream.reason === "tidy") return t`Tidy`;
+  if (dream.reason === "review") return t`Review`;
+  if (dream.reason === "manual") return t`Manual`;
+  return null;
+}
+
 /** The nightly consolidations, newest first, with what each one changed. */
 export function DreamsList({ botId, memoryOff }: { botId: string; memoryOff: boolean }) {
   const { t } = useLingui();
@@ -135,8 +146,11 @@ export function DreamsList({ botId, memoryOff }: { botId: string; memoryOff: boo
             <li key={dream.id} className="rounded-xl bg-muted/50 px-4 py-3">
               <div className="flex items-baseline justify-between gap-3 text-body">
                 <span>{new Date(dream.createdAt).toLocaleString()}</span>
-                <span className="text-body-sm text-muted-foreground">
-                  {dreamStatusLabel(t, dream)}
+                <span className="flex items-baseline gap-2 text-body-sm text-muted-foreground">
+                  {dreamReasonLabel(t, dream) ? (
+                    <span>{dreamReasonLabel(t, dream)}</span>
+                  ) : null}
+                  <span>{dreamStatusLabel(t, dream)}</span>
                 </span>
               </div>
               {dream.summary ? (

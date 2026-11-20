@@ -1,11 +1,17 @@
+import { createHash } from "node:crypto";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { RetryJobLaterError } from "@rakazo/adapter-kit";
-import type { MemoryDream } from "@rakazo/contracts";
+import type { MemoryDream, MemoryDreamReason } from "@rakazo/contracts";
+import { MEMORY_INDEX_PATH, MEMORY_TOKEN_CAPS } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   blocksToAgentHistoryText,
   ClientError,
   MEMORY_DREAM_TRIGGER,
+  memoryTokenCount,
+  validTimezoneOrUtc,
+  wallClock,
+  zonedDateTime,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { storedMessageBlocks } from "@rakazo/db";
@@ -19,6 +25,10 @@ export const DREAM_IDLE_MS = 5 * 60_000;
 export const DREAM_BATCH_MESSAGES = 8;
 /** A person may ask for a dream this soon after one started; the run itself still takes minutes. */
 export const MANUAL_DREAM_MIN_INTERVAL_MS = 10 * 60_000;
+/** A tidy waits this long after the previous dream, so a full memory is not rewritten in a loop. */
+export const MEMORY_TIDY_MIN_INTERVAL_MS = 6 * 60 * 60_000;
+/** The share of the bot's own notes that makes a tidy due. */
+export const MEMORY_TIDY_FULL_RATIO = 0.9;
 /** A dream run this old is treated as lost, and its backup job starts it again. */
 export const MEMORY_DREAM_TIMEOUT_MS = 15 * 60_000;
 /** Bots one sweep considers; each needs its own reads and transaction. */
@@ -37,13 +47,30 @@ export type MemoryDreamSkipReason =
   | "no-new-messages"
   | "waiting"
   | "too-soon"
-  | "already-dreamed";
+  | "already-dreamed"
+  | "empty";
 
 type DreamDeps = {
   prisma: PrismaClient;
   jobs: Pick<JobPublisher, "enqueue" | "enqueueIn">;
   now?: () => Date;
 };
+
+/** A stable fingerprint of the notes, so a tidy runs only after they change. */
+function memoryTidiedHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+/** The owner's calendar day, which bounds one review. */
+function localDay(instant: Date, timezone: string): string {
+  return wallClock(instant, timezone).slice(0, 10);
+}
+
+function dreamReason(value: string | null): MemoryDreamReason {
+  return value === "batch" || value === "tidy" || value === "review" || value === "manual"
+    ? value
+    : "idle";
+}
 
 /** Meaningful note lines: no blanks, and surrounding space is not part of the fact. */
 function noteLines(content: string): string[] {
@@ -113,6 +140,9 @@ async function startMemoryDream(
     spaceId: string;
     userId: string;
     botName: string;
+    reason: MemoryDreamReason;
+    /** The owner's zone, which dates a review's notes. */
+    timezone: string;
     threadId: string;
     useOwnMemory: boolean;
     useSharedMemory: boolean;
@@ -147,11 +177,16 @@ async function startMemoryDream(
     .map((document) => ({ path: document.path, content: document.content }));
   const prompt = memoryDreamPrompt({
     botName: input.botName,
+    reason: input.reason,
     includeOwn: input.useOwnMemory,
     includeShared: input.useSharedMemory,
     ownMemory,
     sharedMemory,
     messages,
+    reviewDate:
+      input.reason === "review"
+        ? { day: localDay(input.now, input.timezone), timezone: input.timezone }
+        : undefined,
   });
   const cooldownStart = new Date(input.now.getTime() - input.cooldownMs);
   const started = await deps.prisma.$transaction(async (tx) => {
@@ -202,6 +237,7 @@ async function startMemoryDream(
         threadId: hiddenThread.id,
         runId: run.id,
         status: "queued",
+        reason: input.reason,
         sourceSeq: input.sourceSeq,
       },
       select: { id: true },
@@ -222,8 +258,9 @@ async function startMemoryDream(
 
 /**
  * One scheduler pass: bots with something new to consolidate once they have been quiet for a
- * while, or at once when enough user messages are waiting. Skips are logged by reason, never
- * with message content.
+ * while, or at once when enough user messages are waiting. With nothing new, a nearly full
+ * memory is tidied and each owner's day gets one review. Skips are logged by reason, never with
+ * message content.
  */
 export async function reconcileMemoryDreams(deps: DreamDeps): Promise<void> {
   const now = deps.now?.() ?? new Date();
@@ -243,9 +280,17 @@ export async function reconcileMemoryDreams(deps: DreamDeps): Promise<void> {
       name: true,
       useOwnMemory: true,
       useSharedMemory: true,
+      memoryTidiedHash: true,
       thread: { select: { id: true } },
     },
   });
+  const owners = await deps.prisma.user.findMany({
+    where: { id: { in: [...new Set(bots.map((bot) => bot.userId))] } },
+    select: { id: true, timezone: true },
+  });
+  const timezones = new Map(
+    owners.map((owner) => [owner.id, validTimezoneOrUtc(owner.timezone ?? "UTC")]),
+  );
   for (const bot of bots) {
     const threadId = bot.thread?.id;
     if (!threadId) continue;
@@ -255,40 +300,131 @@ export async function reconcileMemoryDreams(deps: DreamDeps): Promise<void> {
       skip("off");
       continue;
     }
+    const timezone = timezones.get(bot.userId) ?? "UTC";
     const last = await deps.prisma.memoryDream.findFirst({
       where: { botId: bot.id, status: "completed" },
       orderBy: { createdAt: "desc" },
-      select: { sourceSeq: true },
+      select: { sourceSeq: true, createdAt: true },
     });
     const messages = await recentUserMessages(deps.prisma, threadId, last?.sourceSeq ?? null);
-    if (!messages.length) {
-      skip("no-new-messages");
+    if (messages.length) {
+      // New messages are worth more than a tidy: they consolidate, and the brief merges too.
+      const lastMessageAt = messages[messages.length - 1]!.createdAt;
+      const quiet = now.getTime() - lastMessageAt.getTime() >= DREAM_IDLE_MS;
+      const reason: MemoryDreamReason | null =
+        messages.length >= DREAM_BATCH_MESSAGES ? "batch" : quiet ? "idle" : null;
+      if (!reason) {
+        skip("waiting");
+        continue;
+      }
+      const source = messages[messages.length - 1]!;
+      await start(deps, bot, {
+        reason,
+        timezone,
+        threadId,
+        sinceSeq: last?.sourceSeq ?? null,
+        sourceMessageId: source.id,
+        sourceSeq: source.seq,
+        cooldownMs: DREAM_IDLE_MS,
+        now,
+      });
       continue;
     }
-    const lastMessageAt = messages[messages.length - 1]!.createdAt;
-    const quiet = now.getTime() - lastMessageAt.getTime() >= DREAM_IDLE_MS;
-    if (!quiet && messages.length < DREAM_BATCH_MESSAGES) {
-      skip("waiting");
+    const own = bot.useOwnMemory
+      ? await deps.prisma.memoryDocument.findFirst({
+          where: { spaceId: bot.spaceId, scope: "bot", botId: bot.id, path: MEMORY_INDEX_PATH },
+          select: { content: true },
+        })
+      : null;
+    const ownTokens = own ? memoryTokenCount(own.content) : 0;
+    const tidyDue =
+      own !== null &&
+      ownTokens >= MEMORY_TOKEN_CAPS.bot * MEMORY_TIDY_FULL_RATIO &&
+      memoryTidiedHash(own.content) !== bot.memoryTidiedHash;
+    if (tidyDue) {
+      await start(deps, bot, {
+        reason: "tidy",
+        timezone,
+        threadId,
+        sinceSeq: last?.sourceSeq ?? null,
+        sourceMessageId: null,
+        sourceSeq: last?.sourceSeq ?? null,
+        cooldownMs: MEMORY_TIDY_MIN_INTERVAL_MS,
+        now,
+      });
       continue;
     }
-    const source = messages[messages.length - 1]!;
-    const result = await startMemoryDream(deps, {
-      botId: bot.id,
-      spaceId: bot.spaceId,
-      userId: bot.userId,
-      botName: bot.name,
+    const day = localDay(now, timezone);
+    if (last && localDay(last.createdAt, timezone) === day) {
+      skip("already-dreamed");
+      continue;
+    }
+    const shared = bot.useSharedMemory
+      ? await deps.prisma.memoryDocument.findMany({
+          where: { spaceId: bot.spaceId, scope: "user" },
+          select: { content: true },
+        })
+      : [];
+    if (ownTokens === 0 && !shared.some((document) => document.content.trim().length > 0)) {
+      skip("empty");
+      continue;
+    }
+    const midnight = zonedDateTime(`${day}T00:00`, timezone);
+    if (!midnight) continue;
+    await start(deps, bot, {
+      reason: "review",
+      timezone,
       threadId,
-      useOwnMemory: bot.useOwnMemory,
-      useSharedMemory: bot.useSharedMemory,
       sinceSeq: last?.sourceSeq ?? null,
-      sourceMessageId: source.id,
-      sourceSeq: source.seq,
-      cooldownMs: DREAM_IDLE_MS,
+      sourceMessageId: null,
+      sourceSeq: last?.sourceSeq ?? null,
+      // One review a day: any dream since the owner's midnight covers it.
+      cooldownMs: now.getTime() - midnight.getTime(),
       now,
     });
-    if (result === "too-soon") skip("too-soon");
-    else getLogger().info("memory.dream.started", { "bot.id": bot.id, "space.id": bot.spaceId });
   }
+}
+
+/** Starts one dream for a scheduled bot and logs why, never with message content. */
+async function start(
+  deps: DreamDeps,
+  bot: {
+    id: string;
+    spaceId: string;
+    userId: string;
+    name: string;
+    useOwnMemory: boolean;
+    useSharedMemory: boolean;
+  },
+  input: {
+    reason: MemoryDreamReason;
+    timezone: string;
+    threadId: string;
+    sinceSeq: number | null;
+    sourceMessageId: string | null;
+    sourceSeq: number | null;
+    cooldownMs: number;
+    now: Date;
+  },
+): Promise<void> {
+  const result = await startMemoryDream(deps, {
+    botId: bot.id,
+    spaceId: bot.spaceId,
+    userId: bot.userId,
+    botName: bot.name,
+    useOwnMemory: bot.useOwnMemory,
+    useSharedMemory: bot.useSharedMemory,
+    ...input,
+  });
+  if (result === "too-soon") {
+    getLogger().debug("memory.dream.skipped", { "bot.id": bot.id, reason: "too-soon" });
+    return;
+  }
+  getLogger().info("memory.dream.started", {
+    "bot.id": bot.id,
+    "space.id": bot.spaceId,
+    reason: input.reason,
+  });
 }
 
 /** Settles a dream's record from the run that finished it, once. */
@@ -299,7 +435,7 @@ export async function recordMemoryDream(
 ): Promise<void> {
   const dream = await prisma.memoryDream.findUnique({
     where: { runId: run.id },
-    select: { id: true, status: true },
+    select: { id: true, status: true, botId: true, spaceId: true },
   });
   if (!dream || dream.status !== "queued") return;
   const revisions = await prisma.memoryRevision.findMany({
@@ -325,18 +461,36 @@ export async function recordMemoryDream(
     archived.push(...diff.archived);
   }
   const summary = outcome.summary?.trim();
-  await prisma.memoryDream.update({
-    where: { id: dream.id },
-    data: {
-      status: outcome.status,
-      summary: summary ? summary.slice(0, 2_000) : null,
-      changedPaths,
-      added: [...new Set(added)].slice(0, MEMORY_DREAM_LINE_LIMIT),
-      archived: [...new Set(archived)].slice(0, MEMORY_DREAM_LINE_LIMIT),
-      errorKind: outcome.errorKind ?? null,
-      startedAt: run.startedAt ?? null,
-      finishedAt: new Date(),
-    },
+  // The notes as the dream left them: a tidy runs only after they change, so a pass that
+  // changed nothing still records the hash instead of retrying every sweep.
+  await prisma.$transaction(async (tx) => {
+    await tx.memoryDream.update({
+      where: { id: dream.id },
+      data: {
+        status: outcome.status,
+        summary: summary ? summary.slice(0, 2_000) : null,
+        changedPaths,
+        added: [...new Set(added)].slice(0, MEMORY_DREAM_LINE_LIMIT),
+        archived: [...new Set(archived)].slice(0, MEMORY_DREAM_LINE_LIMIT),
+        errorKind: outcome.errorKind ?? null,
+        startedAt: run.startedAt ?? null,
+        finishedAt: new Date(),
+      },
+    });
+    if (outcome.status !== "completed") return;
+    const index = await tx.memoryDocument.findFirst({
+      where: {
+        spaceId: dream.spaceId,
+        scope: "bot",
+        botId: dream.botId,
+        path: MEMORY_INDEX_PATH,
+      },
+      select: { content: true },
+    });
+    await tx.bot.update({
+      where: { id: dream.botId },
+      data: { memoryTidiedHash: index ? memoryTidiedHash(index.content) : null },
+    });
   });
 }
 
@@ -413,6 +567,7 @@ export async function listMemoryDreams(
     select: {
       id: true,
       status: true,
+      reason: true,
       summary: true,
       changedPaths: true,
       added: true,
@@ -429,6 +584,7 @@ export async function listMemoryDreams(
 function toMemoryDream(row: {
   id: string;
   status: string;
+  reason: string | null;
   summary: string | null;
   changedPaths: string[];
   added: string[];
@@ -442,6 +598,7 @@ function toMemoryDream(row: {
     id: row.id,
     status:
       row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : "queued",
+    reason: dreamReason(row.reason),
     summary: row.summary,
     changedPaths: row.changedPaths,
     added: row.added,
@@ -492,11 +649,17 @@ export async function startManualMemoryDream(
   const now = deps.now?.() ?? new Date();
   const messages = await recentUserMessages(deps.prisma, bot.thread.id, null);
   const source = messages[messages.length - 1];
+  const owner = await deps.prisma.user.findUnique({
+    where: { id: bot.userId },
+    select: { timezone: true },
+  });
   const started = await startMemoryDream(deps, {
     botId: bot.id,
     spaceId: bot.spaceId,
     userId: bot.userId,
     botName: bot.name,
+    reason: "manual",
+    timezone: validTimezoneOrUtc(owner?.timezone ?? "UTC"),
     threadId: bot.thread.id,
     useOwnMemory: bot.useOwnMemory,
     useSharedMemory: bot.useSharedMemory,
@@ -513,6 +676,7 @@ export async function startManualMemoryDream(
     select: {
       id: true,
       status: true,
+      reason: true,
       summary: true,
       changedPaths: true,
       added: true,

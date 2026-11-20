@@ -22,6 +22,17 @@ function statusLabel(
   return dream.errorKind === "spending" ? t`Stopped at the spending limit` : t`Interrupted`;
 }
 
+/** Why the dream ran, when a person would ask: a tidy, the daily review, or their own request. */
+function reasonLabel(
+  t: (parts: TemplateStringsArray, ...values: unknown[]) => string,
+  dream: MemoryDream,
+): string | null {
+  if (dream.reason === "tidy") return t`Tidy`;
+  if (dream.reason === "review") return t`Review`;
+  if (dream.reason === "manual") return t`Manual`;
+  return null;
+}
+
 /** The bot's consolidations, newest first; the whole list lives on the web. */
 export function BotDreamsSection({ botId, memoryOff }: { botId: string; memoryOff: boolean }) {
   const { t } = useLingui();
@@ -51,6 +62,17 @@ export function BotDreamsSection({ botId, memoryOff }: { botId: string; memoryOf
               detail={dream.summary ?? undefined}
               value={statusLabel(t, dream)}
             />
+            {reasonLabel(t, dream) ? (
+              <Text
+                style={{
+                  color: tokens.mutedForeground,
+                  ...typeScale.caption,
+                  paddingHorizontal: 16,
+                }}
+              >
+                {reasonLabel(t, dream)}
+              </Text>
+            ) : null}
             {dream.added.slice(0, DREAM_LINE_LIMIT).map((line) => (
               <Text
                 key={`a-${line}`}

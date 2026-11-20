@@ -392,6 +392,7 @@ describe("bot settings device voice menu", () => {
       {
         id: "dream-1",
         status: "completed",
+        reason: "review",
         summary: null,
         changedPaths: ["MEMORY.md"],
         added: ["Likes tea.", "Second.", "Third."],
@@ -409,6 +410,8 @@ describe("bot settings device voice menu", () => {
     expect(container.textContent).toContain("− Old note.");
     expect(container.textContent).not.toContain("− Oldest.");
     expect(container.textContent).toContain("…");
+    expect(container.textContent).toContain("Review");
+    expect(container.textContent).toContain("Done");
     expect(container.textContent).toContain(
       "Between chats the bot tidies its memory from your own words.",
     );

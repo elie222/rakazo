@@ -17,6 +17,21 @@ describe("MemoryDreamSchema", () => {
     ).toMatchObject({ status: "completed", summary: "Moved to Lisbon." });
   });
 
+  it("reads a row written before reasons existed as idle", () => {
+    expect(
+      MemoryDreamSchema.parse({
+        id: "dream-1",
+        status: "completed",
+        summary: null,
+        changedPaths: [],
+        errorKind: null,
+        startedAt: null,
+        finishedAt: null,
+        createdAt: "2026-02-02T23:30:00.000Z",
+      }).reason,
+    ).toBe("idle");
+  });
+
   it("refuses an unknown status", () => {
     expect(
       MemoryDreamSchema.safeParse({

@@ -54,6 +54,7 @@ function render(memoryOff = false) {
 const dream = (overrides: Partial<MemoryDream> = {}): MemoryDream => ({
   id: "dream-1",
   status: "completed",
+  reason: "idle",
   summary: "Moved to Lisbon.",
   changedPaths: ["MEMORY.md"],
   added: ["Likes tea."],
@@ -92,6 +93,20 @@ describe("DreamsList", () => {
     expect(container.textContent).toContain("− Old note.");
     // No raw ids reach the screen.
     expect(container.innerHTML).not.toContain("dream-1");
+  });
+
+  it("says why a dream ran", () => {
+    dreams.push(
+      dream({ id: "dream-1", reason: "tidy", summary: null }),
+      dream({ id: "dream-2", reason: "review", summary: null }),
+      dream({ id: "dream-3", reason: "manual", summary: null }),
+      dream({ id: "dream-4", reason: "idle", summary: null }),
+    );
+    const rows = render().querySelectorAll("li");
+    expect(rows[0]?.textContent).toContain("Tidy");
+    expect(rows[1]?.textContent).toContain("Review");
+    expect(rows[2]?.textContent).toContain("Manual");
+    expect(rows[3]?.textContent).not.toContain("Manual");
   });
 
   it("starts a dream now and says what it costs", async () => {

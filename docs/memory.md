@@ -23,10 +23,12 @@ every bot in the space shares. Each bank has a switch; turned off, the bot neith
 it, and the other bank keeps working.
 
 **Dreams** consolidate the bot's memory from your own words: once the chat has been quiet for five
-minutes, or at once when eight of your messages are waiting. The **Dreams** tab lists each run —
-when it ran, the lines it added (`+`) and removed (`−`), and why it stopped if it could not finish.
-Dreams run only while at least one bank is on. **Dream now** runs one consolidation immediately
-instead of waiting for a quiet chat.
+minutes, or at once when eight of your messages are waiting. A bot whose own notes reach ninety
+percent of their token budget is tidied first, and once a day the notes get a review that dates
+anything still written in the future tense. The **Dreams** tab lists each run — when it ran, why it
+ran (**Tidy**, **Review** or **Manual**), the lines it added (`+`) and removed (`−`), and why it
+stopped if it could not finish. Dreams run only while at least one bank is on. **Dream now** runs
+one consolidation immediately instead of waiting for a quiet chat.
 
 ## Shared memory
 

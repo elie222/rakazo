@@ -1024,6 +1024,8 @@ model Bot {
   /// Whether this bot's own notes and the Space's shared notes reach its prompt.
   useOwnMemory      Boolean @default(true)
   useSharedMemory   Boolean @default(true)
+  /// Hash of MEMORY.md the last dream left behind, so a tidy runs only after the notes change.
+  memoryTidiedHash  String?
   parent            Bot?              @relation("BotChildren", fields: [parentBotId], references: [id], onDelete: SetNull)
   children          Bot[]             @relation("BotChildren")
   createdAt         DateTime          @default(now())
@@ -1845,6 +1847,8 @@ model MemoryDream {
   run          Run?      @relation(fields: [runId], references: [id], onDelete: SetNull)
   /// "queued", "completed" or "failed".
   status       String    @default("queued")
+  /// Why the dream ran: "idle", "batch", "tidy", "review" or "manual"; null on older rows.
+  reason       String?
   summary      String?
   changedPaths String[]  @default([])
   /// Lines the run added and removed from the notes, one fact per line.

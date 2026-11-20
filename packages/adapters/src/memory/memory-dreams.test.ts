@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { RetryJobLaterError } from "@rakazo/adapter-kit";
 import type { ClientError } from "@rakazo/core";
@@ -41,17 +42,27 @@ function dreamPrisma(
   options: {
     bots?: ReturnType<typeof bot>[];
     messages?: Array<{ id: string; seq: number; blocks: unknown[] }>;
-    lastDream?: { sourceSeq: number | null } | null;
+    lastDream?: { sourceSeq: number | null; createdAt?: Date } | null;
     existingDream?: { id: string; status: string } | null;
+    ownMemory?: string | null;
+    sharedMemory?: string[];
+    tidiedHash?: string | null;
     txError?: Error;
   } = {},
 ) {
+  const ownDocument = options.ownMemory ? { content: options.ownMemory } : null;
+  const existingDream = options.existingDream
+    ? { botId: "bot-1", spaceId: "space-1", ...options.existingDream }
+    : null;
   const tx = {
     $queryRaw: vi.fn(async () => []) as ReturnType<typeof vi.fn>,
     memoryDream: {
       findFirst: vi.fn(async () => options.existingDream ?? null),
       create: vi.fn(async () => ({ id: "dream-1" })),
+      update: vi.fn(async () => ({})),
     },
+    memoryDocument: { findFirst: vi.fn(async () => ownDocument) },
+    bot: { update: vi.fn(async () => ({})) },
     thread: { create: vi.fn(async () => ({ id: "dream-thread" })) },
     task: { create: vi.fn(async () => ({ id: "dream-task" })) },
     run: { create: vi.fn(async () => ({ id: "dream-run" })) },
@@ -65,18 +76,25 @@ function dreamPrisma(
       findUnique: vi.fn(async () => null) as ReturnType<typeof vi.fn>,
       findFirst: vi.fn(async () => null) as ReturnType<typeof vi.fn>,
     },
-    user: { findMany: vi.fn(async () => [{ id: "user-1", timezone: "UTC" }]) },
-    memoryDocument: { findMany: vi.fn(async () => []) },
+    user: {
+      findMany: vi.fn(async () => [{ id: "user-1", timezone: "UTC" }]),
+      findUnique: vi.fn(async () => ({ timezone: "UTC" })),
+    },
+    memoryDocument: {
+      findFirst: vi.fn(async () => ownDocument),
+      findMany: vi.fn(async () => (options.sharedMemory ?? []).map((content) => ({ content }))),
+    },
     message: { findMany: vi.fn(async () => options.messages ?? []) },
     memoryDream: {
       findFirst: vi.fn(async () => options.lastDream ?? null),
-      findUnique: vi.fn(async () => options.existingDream ?? null) as ReturnType<typeof vi.fn>,
+      findUnique: vi.fn(async () => existingDream) as ReturnType<typeof vi.fn>,
       update: vi.fn(async () => ({})),
       deleteMany: vi.fn(async () => ({ count: 0 })),
       findMany: vi.fn(async () => []) as ReturnType<typeof vi.fn>,
       findUniqueOrThrow: vi.fn(async () => ({
         id: "dream-1",
         status: "queued",
+        reason: "idle",
         summary: null,
         changedPaths: [],
         added: [],
@@ -101,8 +119,8 @@ function dreamPrisma(
   type Mock = ReturnType<typeof vi.fn>;
   type Raw = {
     bot: { findMany: Mock; findFirst: Mock };
-    user: { findMany: Mock };
-    memoryDocument: { findMany: Mock };
+    user: { findMany: Mock; findUnique: Mock };
+    memoryDocument: { findFirst: Mock; findMany: Mock };
     message: { findMany: Mock };
     memoryDream: {
       findFirst: Mock;
@@ -208,11 +226,76 @@ describe("reconcileMemoryDreams", () => {
     expect(tx.run.create).not.toHaveBeenCalled();
     expect(jobs.enqueue).not.toHaveBeenCalled();
   });
+
+  // Eight hundred five-character lines: the bot's own notes exactly at their 1,200-token cap.
+  const fullMemory = "xxxxx\n".repeat(800);
+
+  it("tidies a nearly full memory whose notes changed", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma({
+      bots: [bot({ memoryTidiedHash: "an older hash" })],
+      ownMemory: fullMemory,
+    });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    expect(tx.memoryDream.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ reason: "tidy" }) }),
+    );
+  });
+
+  it("skips the tidy while the notes are unchanged", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma({
+      bots: [bot({ memoryTidiedHash: createHash("sha256").update(fullMemory).digest("hex") })],
+      ownMemory: fullMemory,
+      lastDream: { sourceSeq: 5, createdAt: new Date(NOW.getTime() - 60 * 60_000) },
+    });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    expect(tx.memoryDream.create).not.toHaveBeenCalled();
+  });
+
+  it("waits six hours between tidies", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma({
+      bots: [bot({ memoryTidiedHash: "an older hash" })],
+      ownMemory: fullMemory,
+      existingDream: { id: "earlier", status: "completed" },
+    });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    expect(tx.memoryDream.create).not.toHaveBeenCalled();
+  });
+
+  it("reviews the notes once a day", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma({ sharedMemory: ["Likes tea."] });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    expect(tx.memoryDream.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ reason: "review" }) }),
+    );
+  });
+
+  it("skips the review when a dream already ran today", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma({
+      lastDream: { sourceSeq: 5, createdAt: new Date(NOW.getTime() - 60 * 60_000) },
+      sharedMemory: ["Likes tea."],
+    });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    expect(tx.memoryDream.create).not.toHaveBeenCalled();
+  });
+
+  it("skips the review while the notes are empty", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma();
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    expect(tx.memoryDream.create).not.toHaveBeenCalled();
+  });
 });
 
 describe("recordMemoryDream", () => {
   it("records the summary and the documents the run changed", async () => {
-    const { prisma, raw } = dreamPrisma({ existingDream: { id: "dream-1", status: "queued" } });
+    const { prisma, raw, tx } = dreamPrisma({
+      existingDream: { id: "dream-1", status: "queued" },
+    });
     raw.memoryRevision.findMany.mockResolvedValueOnce([
       {
         documentId: "doc-1",
@@ -235,7 +318,7 @@ describe("recordMemoryDream", () => {
       { id: "run-1", startedAt: new Date("2026-02-02T23:30:00.000Z") },
       { status: "completed", summary: "Moved to Lisbon." },
     );
-    expect(raw.memoryDream.update).toHaveBeenCalledWith({
+    expect(tx.memoryDream.update).toHaveBeenCalledWith({
       where: { id: "dream-1" },
       data: expect.objectContaining({
         status: "completed",
@@ -247,10 +330,27 @@ describe("recordMemoryDream", () => {
     });
   });
 
-  it("does nothing once the dream is settled", async () => {
-    const { prisma, raw } = dreamPrisma({ existingDream: { id: "dream-1", status: "completed" } });
+  it("fingerprints the notes the dream left behind", async () => {
+    const { prisma, tx } = dreamPrisma({
+      existingDream: { id: "dream-1", status: "queued" },
+      ownMemory: "Moved to Lisbon.\n",
+    });
     await recordMemoryDream(prisma, { id: "run-1" }, { status: "completed" });
-    expect(raw.memoryDream.update).not.toHaveBeenCalled();
+    expect(tx.bot.update).toHaveBeenCalledWith({
+      where: { id: "bot-1" },
+      data: {
+        memoryTidiedHash: createHash("sha256").update("Moved to Lisbon.\n").digest("hex"),
+      },
+    });
+  });
+
+  it("does nothing once the dream is settled", async () => {
+    const { prisma, tx } = dreamPrisma({
+      existingDream: { id: "dream-1", status: "completed" },
+    });
+    await recordMemoryDream(prisma, { id: "run-1" }, { status: "completed" });
+    expect(tx.memoryDream.update).not.toHaveBeenCalled();
+    expect(tx.bot.update).not.toHaveBeenCalled();
   });
 });
 
@@ -272,7 +372,9 @@ describe("settleMemoryDream", () => {
 
   it("settles from a run that already ended", async () => {
     const jobs = jobPublisher();
-    const { prisma, raw } = dreamPrisma({ existingDream: { id: "dream-1", status: "queued" } });
+    const { prisma, raw, tx } = dreamPrisma({
+      existingDream: { id: "dream-1", status: "queued" },
+    });
     raw.memoryDream.findUnique.mockResolvedValueOnce({
       id: "dream-1",
       runId: "run-1",
@@ -280,7 +382,7 @@ describe("settleMemoryDream", () => {
     });
     raw.run.findUnique.mockResolvedValueOnce({ id: "run-1", status: "failed", startedAt: null });
     await settleMemoryDream({ prisma, jobs }, "dream-1");
-    expect(raw.memoryDream.update).toHaveBeenCalledWith(
+    expect(tx.memoryDream.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: "failed", errorKind: "interrupted" }),
       }),
@@ -321,6 +423,7 @@ describe("listMemoryDreams", () => {
       {
         id: "dream-1",
         status: "completed",
+        reason: "tidy",
         summary: "Moved.",
         changedPaths: ["MEMORY.md"],
         errorKind: null,
@@ -334,6 +437,7 @@ describe("listMemoryDreams", () => {
         {
           id: "dream-1",
           status: "completed",
+          reason: "tidy",
           summary: "Moved.",
           changedPaths: ["MEMORY.md"],
           errorKind: null,
