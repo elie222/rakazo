@@ -19,6 +19,53 @@ describe("search helpers", () => {
     ]);
   });
 
+  it("drops paired bold markers and deduplicates the resulting link", () => {
+    const url = "https://example.com/docs";
+    expect(extractLinksFromText(`See **${url}**. Also see ${url}.`)).toEqual([url]);
+  });
+
+  it.each([".", ",", ";", ":", "!", "?"])(
+    "keeps trailing %s inside a bold link and trims surrounding punctuation",
+    (punctuation) => {
+      const url = "https://example.com/report";
+      expect(
+        extractLinksFromText(`See **${url}${punctuation}**. Also see ${url}${punctuation}.`),
+      ).toEqual([`${url}${punctuation}`, url]);
+    },
+  );
+
+  it("keeps stars and balanced parentheses in a bold link", () => {
+    const url = "https://example.com/a_(b)/*.md?pattern=*";
+    expect(extractLinksFromText(`(**${url}**).`)).toEqual([url]);
+  });
+
+  it("keeps stars in links without a matching bold opener", () => {
+    expect(
+      extractLinksFromText(
+        String.raw`https://example.com/docs** https://example.com/*.md \**https://example.com/raw**`,
+      ),
+    ).toEqual([
+      "https://example.com/docs**",
+      "https://example.com/*.md",
+      "https://example.com/raw**",
+    ]);
+  });
+
+  it("keeps literal stars when escaped or directly wrapped in code delimiters", () => {
+    expect(extractLinksFromText(String.raw`**https://example.com/raw\**`)).toEqual([
+      String.raw`https://example.com/raw\**`,
+    ]);
+    expect(extractLinksFromText("`**https://example.com/raw**`")).toEqual([
+      "https://example.com/raw**",
+    ]);
+  });
+
+  it("ignores a bare scheme inside bold markers", () => {
+    expect(extractLinksFromText("**https://** https://example.com/docs")).toEqual([
+      "https://example.com/docs",
+    ]);
+  });
+
   it.each(["`", "``", "```"])("excludes %s code delimiters and deduplicates links", (delimiter) => {
     const url = "https://example.com/docs";
     expect(extractLinksFromText(`${url} ${delimiter}${url}${delimiter}`)).toEqual([url]);
@@ -108,6 +155,44 @@ describe("search helpers", () => {
     ["[https://[2001:db8::1]/guide],", "https://[2001:db8::1]/guide"],
   ])("handles thousands of adjacent wrapped links without recursing: %s", (wrapped, url) => {
     expect(extractLinksFromText(wrapped.repeat(50_000))).toEqual([url]);
+  });
+
+  it.each([
+    ["详情见https://a.com/x。后面", "https://a.com/x"],
+    ["请访问（https://a.com/x）。", "https://a.com/x"],
+    ["「https://a.com/x」", "https://a.com/x"],
+    ["『https://a.com/x』", "https://a.com/x"],
+    ["【https://a.com/x】", "https://a.com/x"],
+    ["《https://a.com/x》", "https://a.com/x"],
+    ["见https://a.com/x，或https://b.com/y、https://c.com/z；", "https://a.com/x"],
+    ["‘https://a.com/x’", "https://a.com/x"],
+    ["“https://a.com/x”", "https://a.com/x"],
+    ["«https://a.com/x»", "https://a.com/x"],
+  ])("stops a link at CJK punctuation and quotes: %s", (text, url) => {
+    expect(extractLinksFromText(text)[0]).toBe(url);
+  });
+
+  it("splits full-width separated links without merging them", () => {
+    expect(extractLinksFromText("见https://a.com/x，或https://b.com/y、https://c.com/z；")).toEqual(
+      ["https://a.com/x", "https://b.com/y", "https://c.com/z"],
+    );
+  });
+
+  it.each([
+    "https://zh.wikipedia.org/wiki/中文",
+    "https://ja.wikipedia.org/wiki/東京",
+    "https://ko.wikipedia.org/wiki/서울",
+  ])("keeps CJK letters inside a link path: %s", (url) => {
+    expect(extractLinksFromText(`阅读${url}。`)).toEqual([url]);
+  });
+
+  it("keeps an apostrophe inside a bare link path", () => {
+    expect(extractLinksFromText("see https://example.com/O’Connor.")).toEqual([
+      "https://example.com/O’Connor",
+    ]);
+    expect(extractLinksFromText("see ‘https://example.com/O’Connor’.")).toEqual([
+      "https://example.com/O’Connor",
+    ]);
   });
 
   it("matches case-insensitive substrings", () => {

@@ -73,13 +73,18 @@ export const accountRpc = {
   security: {
     events: oc.input(SecurityEventListInputSchema).output(z.array(SecurityEventSchema)),
   },
-  /** The organization's audit log, newest first. Organization owners and admins only. */
+  /** The organization's audit log, newest first: everyone's for owners and admins, a member's own otherwise. */
   audit: {
     events: oc.input(AuditEventListInputSchema).output(AuditEventPageSchema),
   },
   onboarding: {
     /** Record the optional signup survey; an empty submission marks it skipped. */
     signupSurvey: oc.input(SignupSurveySchema).output(z.object({ ok: z.literal(true) })),
+    /**
+     * The Space's first-run bot, created and greeted when the Space has never held a chat; null
+     * once it has (or had) other bots, so deleting them never brings it back.
+     */
+    firstBot: oc.output(z.object({ botId: Id.nullable() })),
     /** Seed the first-run greeting into the bot's thread (focus card is separate). */
     start: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Post the focus choice card when the thread is still idle. */

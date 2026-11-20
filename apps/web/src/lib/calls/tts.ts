@@ -1,6 +1,8 @@
 import { t } from "@lingui/core/macro";
 import type { SettingsScope } from "@rakazo/contracts";
+import type { SpeechFeed } from "@rakazo/core";
 import {
+  createSpeechFeed,
   readVoiceAudio,
   readVoiceError,
   requestDeadline,
@@ -34,19 +36,29 @@ interface SpeakOptions {
 
 const IDLE: SpeechSnapshot = { status: "idle" };
 const SILENT_CLIP =
-  "data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+  "data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 type PlaybackEnd = "ended" | "stopped" | "blocked" | "failed";
+
+/** A clip the browser would not play: autoplay blocked, or audio it cannot decode. */
+class PlaybackError extends Error {
+  constructor(readonly blocked: boolean) {
+    super(t`Could not play that clip.`);
+  }
+}
 
 export class Speaker {
   private snapshot: SpeechSnapshot = IDLE;
   private watchers = new Set<(s: SpeechSnapshot) => void>();
-  private token = 0;
   private audio: HTMLAudioElement | null = null;
   private objectUrl: string | null = null;
   private settlePlayback: ((end: PlaybackEnd) => void) | null = null;
-  private request: AbortController | null = null;
   private served: string | null = null;
+  private feed: SpeechFeed | null = null;
+  /** Texts the current feed has not finished saying. */
+  private queued = 0;
+  /** The message the speech under way reads, for the thread to show and stop it. */
+  private messageId: string | undefined;
 
   subscribe(fn: (s: SpeechSnapshot) => void): () => void {
     this.watchers.add(fn);
@@ -76,9 +88,9 @@ export class Speaker {
   }
 
   stop() {
-    this.token += 1;
-    this.request?.abort();
-    this.request = null;
+    this.feed?.stop();
+    this.feed = null;
+    this.queued = 0;
     if (this.settlePlayback) this.settlePlayback("stopped");
     else this.teardownAudio();
     if (this.snapshot.status !== "idle" || this.snapshot.error) this.set(IDLE);
@@ -109,73 +121,71 @@ export class Speaker {
   }
 
   /** Resolves with this request's failure text; stopping or superseding it resolves with none. */
-  async speak(text: string, opts: SpeakOptions = {}): Promise<string | undefined> {
+  speak(text: string, opts: SpeakOptions = {}): Promise<string | undefined> {
     this.stop();
-    const mine = this.token;
-    const controller = new AbortController();
-    this.request = controller;
-    const live = () => this.token === mine && !controller.signal.aborted;
-    const spaceId = opts.spaceId ?? selectedSpaceId();
-
     this.served = null;
-    this.set({ status: "preparing", botId: opts.botId, messageId: opts.messageId });
-    let utterances: string[];
-    try {
-      utterances = await withAbort(
-        this.prepare(text, opts, controller.signal, spaceId),
-        controller.signal,
-      );
-    } catch (error) {
-      const failure = live() ? errorText(error) : undefined;
-      if (failure) this.set({ ...IDLE, error: failure });
-      if (this.request === controller) this.request = null;
-      return failure;
-    }
-    if (!live()) return;
-    if (!utterances.length) {
-      this.set(IDLE);
-      if (this.request === controller) this.request = null;
-      return;
-    }
+    return this.queue(text, opts);
+  }
 
-    type Rendered = { blob: Blob; error?: never } | { blob?: never; error: unknown };
-    const render = (utterance: string): Promise<Rendered> =>
-      this.render(utterance, opts, controller.signal, spaceId).then(
-        (blob) => ({ blob }),
-        (error: unknown) => ({ error }),
-      );
-    let next: Promise<Rendered> | null = render(utterances[0] ?? "");
-    for (let i = 0; i < utterances.length; i += 1) {
-      const current = next;
-      next = i + 1 < utterances.length ? render(utterances[i + 1] ?? "") : null;
-      if (!current) break;
-      const rendered = await current;
-      if ("error" in rendered) {
-        const failure = live() ? errorText(rendered.error) : undefined;
-        if (failure) this.set({ ...IDLE, error: failure });
-        if (this.request === controller) this.request = null;
-        return failure;
-      }
-      if (!live()) return;
-      this.set({
-        status: "speaking",
-        botId: opts.botId,
-        messageId: opts.messageId,
-        caption: utterances[i],
-      });
-      const end = await this.play(rendered.blob, live);
-      if (end !== "ended" || !live()) {
-        const failure =
-          live() && (end === "failed" || end === "blocked")
-            ? t`Could not play that clip.`
-            : undefined;
-        if (live()) this.set(failure ? { ...IDLE, error: failure } : IDLE);
-        if (this.request === controller) this.request = null;
-        return end === "blocked" ? undefined : failure;
-      }
+  /**
+   * Says `text` once everything already queued has been said, as a call does with a reply it
+   * speaks while the bot still writes it. Settles like `speak`. Options apply when nothing is
+   * queued or still playing; later text joins the speech already under way.
+   */
+  async queue(text: string, opts: SpeakOptions = {}): Promise<string | undefined> {
+    // Speech that already played to the end does not carry its options, such as the message
+    // it read, over to this text.
+    if (!this.feed || this.feed.stopped || this.queued === 0) {
+      this.feed?.stop();
+      this.feed = this.newFeed(opts);
+      this.messageId = opts.messageId;
     }
-    if (live()) this.set(IDLE);
-    if (this.request === controller) this.request = null;
+    const feed = this.feed;
+    if (this.snapshot.status === "idle") {
+      this.set({ status: "preparing", botId: opts.botId, messageId: this.messageId });
+    }
+    this.queued += 1;
+    try {
+      await feed.push(text);
+    } catch (error) {
+      if (this.feed !== feed) return undefined;
+      this.feed = null;
+      this.queued = 0;
+      const failure = error instanceof PlaybackError ? error.message : errorText(error);
+      this.set({ ...IDLE, error: failure });
+      // A blocked autoplay shows in the speech state; a toast for it would only repeat it.
+      return error instanceof PlaybackError && error.blocked ? undefined : failure;
+    }
+    // Stopped, or replaced by newer speech, which owns the state now.
+    if (this.feed !== feed) return undefined;
+    this.queued -= 1;
+    if (this.queued === 0) this.set(IDLE);
+    return undefined;
+  }
+
+  /** The speech under way now reads this message, such as a reply said before it landed. */
+  relabel(messageId: string) {
+    if (!this.feed) return;
+    this.messageId = messageId;
+    if (this.snapshot.status !== "idle") this.set({ ...this.snapshot, messageId });
+  }
+
+  private newFeed(opts: SpeakOptions): SpeechFeed {
+    const spaceId = opts.spaceId ?? selectedSpaceId();
+    return createSpeechFeed<Blob>({
+      prepare: (text, signal) => withAbort(this.prepare(text, opts, signal, spaceId), signal),
+      render: (utterance, signal) => this.render(utterance, opts, signal, spaceId),
+      play: async (blob, utterance, signal) => {
+        this.set({
+          status: "speaking",
+          botId: opts.botId,
+          messageId: this.messageId,
+          caption: utterance,
+        });
+        const end = await this.play(blob, signal);
+        if (end === "failed" || end === "blocked") throw new PlaybackError(end === "blocked");
+      },
+    });
   }
 
   private async prepare(
@@ -241,9 +251,9 @@ export class Speaker {
     }
   }
 
-  private play(blob: Blob, live: () => boolean): Promise<PlaybackEnd> {
+  private play(blob: Blob, signal: AbortSignal): Promise<PlaybackEnd> {
     return new Promise((resolve) => {
-      if (!live()) return resolve("stopped");
+      if (signal.aborted) return resolve("stopped");
       this.teardownAudio();
       const url = URL.createObjectURL(blob);
       const audio = this.element();
@@ -255,10 +265,13 @@ export class Speaker {
         settled = true;
         audio.onended = null;
         audio.onerror = null;
+        signal.removeEventListener("abort", stopped);
         if (this.settlePlayback === done) this.settlePlayback = null;
         this.teardownAudio();
         resolve(end);
       };
+      const stopped = () => done("stopped");
+      signal.addEventListener("abort", stopped);
       this.settlePlayback = done;
       audio.onended = () => done("ended");
       audio.onerror = () => done("failed");

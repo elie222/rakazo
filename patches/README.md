@@ -19,6 +19,16 @@ its connection.
 
 Introduced in #2703.
 
+## `expo-speech@58.0.4.patch`
+
+Mobile speech: `Speech.speak` started the native call and dropped its promise,
+so a voice iOS could not load (or text over the length limit) rejected with
+nothing listening. The app saw an unhandled rejection, and read-aloud waiting
+for `onDone` or `onError` never finished. The patch passes that rejection to the
+utterance's `onError` and clears its callbacks. Drop once expo-speech reports a
+rejected `speak` through `onError` itself — check a speak with an unknown voice
+identifier calls `onError`.
+
 ## `fflate@0.8.3.patch`
 
 Streaming `Deflate` (which `ZipDeflate` uses for account exports): on the first

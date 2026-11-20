@@ -60,15 +60,21 @@ vi.mock("react-native", () => ({
   ScrollView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   TextInput: ({
+    accessibilityLabel,
+    placeholder,
     value,
     onChangeText,
     onSubmitEditing,
   }: {
+    accessibilityLabel?: string;
+    placeholder?: string;
     value: string;
     onChangeText: (value: string) => void;
     onSubmitEditing: () => void;
   }) => (
     <input
+      aria-label={accessibilityLabel}
+      placeholder={placeholder}
       value={value}
       onChange={(event) => onChangeText(event.target.value)}
       onKeyDown={(event) => {
@@ -133,6 +139,17 @@ async function type(value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+
+it.each(["", "Work"])("keeps the Name label when the field contains %j", async (value) => {
+  if (value) await type(value);
+  const input = container.querySelector("input");
+
+  expect(input?.getAttribute("aria-label")).toBe("Name");
+  expect(input?.placeholder).toBe("Customer support");
+  expect(input?.value).toBe(value);
+  expect(container.querySelector("button")?.disabled).toBe(!value);
+  expect(state.rpc).not.toHaveBeenCalled();
+});
 
 it("confirms space creation once after the server accepts the trimmed name", async () => {
   let finish!: Deferred<{ id: string; name: string }>;

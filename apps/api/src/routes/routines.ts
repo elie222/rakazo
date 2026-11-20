@@ -1,9 +1,11 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
-  finishRoutineHandover,
   parseRoutineWatch,
+  postRoutineNotice,
   RoutineWatchError,
+  routineEditChange,
+  routineEdited,
   stableStringify,
   validateRoutineWatch,
   wakeRun,
@@ -25,12 +27,13 @@ import {
   createRoutineTestRun,
   firstWatchCheck,
   listRoutinesDto,
-  mapRoutine,
   nextRoutineDate,
   routineNextRunAt,
   routineRowData,
   routineTestRunNonce,
   routineTestTarget,
+  routineView,
+  routineViews,
 } from "../routines/routines.js";
 import type { RouterContext } from "./context.js";
 
@@ -66,9 +69,10 @@ export function routinesRoutes(ctx: RouterContext) {
         const rows = await deps.prisma.routine.findMany({
           where: { botId: { in: bots.map((bot) => bot.id) }, spaceId: actor.spaceId },
         });
+        const views = await routineViews(deps.prisma, actor, rows);
         return bots.map((bot) => ({
           botId: bot.id,
-          routines: rows.filter((row) => row.botId === bot.id).map(mapRoutine),
+          routines: views.filter((routine) => routine.botId === bot.id),
         }));
       }),
       history: authed.routines.history.handler(async ({ context, input }) =>
@@ -90,7 +94,14 @@ export function routinesRoutes(ctx: RouterContext) {
           data: routineRowData(context.actor, input, routineNextRunAt(input)),
         });
         await announceRoutine(context.actor, bot, row);
-        return mapRoutine(row);
+        await postRoutineNotice(deps, {
+          spaceId: context.actor.spaceId,
+          threadId: row.threadId ?? bot.thread?.id,
+          botId: bot.id,
+          change: "created",
+          name: row.name,
+        });
+        return await routineView(deps.prisma, context.actor, row);
       }),
       update: authed.routines.update.handler(async ({ context, input }) => {
         // Archived bots keep their routines paused, so resolve an active parent before any write.
@@ -102,6 +113,14 @@ export function routinesRoutes(ctx: RouterContext) {
           },
         });
         if (!existing) throw new ORPCError("NOT_FOUND");
+        // A routine runs with its owner's accounts, so only they change what it does. Anyone in
+        // the Space may still turn it on or off, which keeps it theirs.
+        if (existing.userId !== context.actor.userId) {
+          const { routineId: _routineId, active: _active, ...changes } = input;
+          if (Object.values(changes).some((value) => value !== undefined)) {
+            throw new ClientError("FORBIDDEN", "Only the routine's owner can change it.");
+          }
+        }
         const bot = await repos.getBot(context.actor, existing.botId);
         const active = input.active ?? existing.active;
         const crons = input.crons ?? existing.crons;
@@ -251,13 +270,13 @@ export function routinesRoutes(ctx: RouterContext) {
               ...(writesActive ? { active: existing.active } : {}),
             },
             data: {
-              // A routine runs with its owner's accounts, so whoever edits it takes it over.
-              userId: context.actor.userId,
               name: input.name,
               prompt: input.prompt,
               crons: input.crons,
               timezone: input.timezone,
               active: input.active,
+              // An explicit on or off is the member's own choice, so a restore must not undo it.
+              ...(input.active !== undefined ? { resumeOnRestore: false } : {}),
               notify: input.notify,
               // What a watch read is not the owner's words, so it never runs as a turn in the chat.
               inChat: watch ? false : input.inChat,
@@ -266,14 +285,11 @@ export function routinesRoutes(ctx: RouterContext) {
               messageProvider: input.messageProvider,
               emailSenders: input.emailSenders,
               ...(touchesModel ? { modelProvider, modelId, thinkingLevel } : {}),
-              // A changed watch starts from a fresh baseline, and so does one that now reads
-              // a different person's accounts.
+              // A changed watch starts from a fresh baseline.
               ...(input.watch === undefined
                 ? {}
                 : { watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull }),
-              ...(watchChanged || existing.userId !== context.actor.userId
-                ? { watchState: Prisma.DbNull }
-                : {}),
+              ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
               ...(writesSchedule ? { nextRunAt } : {}),
             },
           })
@@ -295,13 +311,6 @@ export function routinesRoutes(ctx: RouterContext) {
             }
             throw error;
           });
-        if (existing.userId !== context.actor.userId) {
-          await finishRoutineHandover(deps, {
-            id: row.id,
-            previousUserId: existing.userId,
-            userId: context.actor.userId,
-          });
-        }
         if (bot.thread) {
           await deps.events.append({
             spaceId: context.actor.spaceId,
@@ -324,16 +333,32 @@ export function routinesRoutes(ctx: RouterContext) {
             await deps.jobs.cancel(routineJobKey(row.id));
           }
         }
-        return mapRoutine(row);
+        if (routineEdited(existing, row)) {
+          await postRoutineNotice(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: existing.threadId ?? bot.thread?.id,
+            botId: bot.id,
+            change: routineEditChange(existing, row),
+            name: row.name,
+          });
+        }
+        return await routineView(deps.prisma, context.actor, row);
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
-        // Any member can change a routine, so any member can delete one.
+        // Any member can delete a routine, as they can turn it off.
         const existing = await deps.prisma.routine.findFirst({
           where: { id: input.routineId, spaceId: context.actor.spaceId },
         });
         if (!existing) throw new IsolationError();
         await deps.prisma.routine.delete({ where: { id: existing.id } });
         await deps.jobs.cancel(routineJobKey(existing.id));
+        await postRoutineNotice(deps, {
+          spaceId: context.actor.spaceId,
+          threadId: existing.threadId,
+          botId: existing.botId,
+          change: "deleted",
+          name: existing.name,
+        });
         return { ok: true as const };
       }),
       testRun: authed.routines.testRun.handler(async ({ context, input }) => {

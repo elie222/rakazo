@@ -15,6 +15,12 @@ test("a group a bot creates after approval appears in the sidebar without a relo
   await page.waitForURL(/\/app\/[^/]+$/);
   const chiefId = activeBotId(page);
   await rpc(page, "bots/update", { botId: chiefId, fleetManagement: true });
+  // Creating a group runs without a card by default; this rule keeps the card this test shows.
+  await rpc(page, "approvalRules/set", {
+    effect: "require_approval",
+    matchKind: "tool",
+    matchValue: "create_group",
+  });
   for (const name of ["Alpha", "Beta"]) {
     await rpc(page, "bots/create", { name, description: "", notifyOnFinish: true });
   }

@@ -29,6 +29,7 @@ export const InstructionVersionSchema = z.object({
 });
 
 export const BotSchema = z.object({
+  meetingsEnabled: z.boolean().optional(),
   id: Id,
   spaceId: Id,
   name: z.string(),

@@ -1,6 +1,6 @@
 import { ph, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { ChatMarkdown, MarkdownLongPressContext, withBlockMentions } from "@rakazo/chat-ui/native";
+import { MarkdownLongPressContext, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
 import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
@@ -32,7 +32,13 @@ import {
   UserMentionsContext,
   userMentionTargets,
 } from "../../lib/messages/message-mentions";
-import { messagePresentationSegments } from "../../lib/messages/message-presentation";
+import {
+  hasMessageSenderContent,
+  messagePresentationSegments,
+  splitMessageBlocks,
+} from "../../lib/messages/message-presentation";
+import type { RoutineEventBlock } from "../../lib/messages/routine-event-label";
+import { routineEventLabel } from "../../lib/messages/routine-event-label";
 import type { UserBubble } from "../../lib/messages/user-bubble";
 import { withUserBubble } from "../../lib/messages/user-bubble";
 import { useResolvedAppearance } from "../../lib/native/native";
@@ -47,13 +53,14 @@ import { ComputerCard } from "../cards/ComputerCard";
 import { ChangeUndo, isUndoableChange } from "../cards/change-undo";
 import { ImportSetupCard } from "../cards/ImportSetupCard";
 import { McpApprovalCard } from "../cards/McpApprovalCard";
+import { OutgoingDraftCard } from "../cards/OutgoingDraftCard";
 import { ToolQuestionCard } from "../cards/ToolQuestionCard";
 import { AudioAttachment } from "../media/audio-attachment";
 import type { ImageArtifactPreviewTarget } from "../media/image-artifact-viewer";
 import { InlineImageAttachment } from "../media/inline-image-attachment";
 import { MessageMentions } from "../messages/bot-mention";
 import { MessageCaption } from "../messages/message-caption";
-import { NativeSymbol } from "../native/native-symbol";
+import { AgentEventLabel } from "./agent-event-label";
 import { AskBlock } from "./ask-block";
 import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";
@@ -150,19 +157,19 @@ function isOwnCardBlock(block: MessageBlock): boolean {
   );
 }
 
+function pieceShowsSender(blocks: readonly MessageBlock[]): boolean {
+  return !blocks.some(isOwnCardBlock) && hasMessageSenderContent(blocks);
+}
+
+export function hasSenderLabelContent(message: { blocks: MessageBlock[] }): boolean {
+  return splitMessageBlocks(message.blocks, isOwnCardBlock).some(pieceShowsSender);
+}
+
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   const { message } = props;
-  if (!message.blocks.some(isOwnCardBlock)) return <MessageBubbleContent {...props} />;
-
-  const pieces: MessageBlock[][] = [];
-  for (const block of message.blocks) {
-    const previous = pieces.at(-1);
-    if (isOwnCardBlock(block) || !previous || isOwnCardBlock(previous[0]!)) {
-      pieces.push([block]);
-    } else {
-      previous.push(block);
-    }
-  }
+  const pieces = splitMessageBlocks(message.blocks, isOwnCardBlock);
+  if (pieces[0] === message.blocks) return <MessageBubbleContent {...props} />;
+  const firstContent = pieces.findIndex(pieceShowsSender);
   const content = pieces.map((blocks, index) => {
     const first = blocks[0]!;
     if (first.kind === "page")
@@ -198,11 +205,7 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
         // A saved running card is a background helper's; a live one belongs to this turn.
         stopHelper={
           first.kind === "subagent" && message.botId && !message.id.startsWith("subagent:")
-            ? {
-                botId: message.botId,
-                messageId: message.id,
-                ...(props.topicId ? { topicId: props.topicId } : {}),
-              }
+            ? { botId: message.botId, messageId: message.id, topicId: props.topicId }
             : undefined
         }
       />
@@ -210,6 +213,7 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
       <MessageBubbleContent
         {...props}
         key={`content-${index}`}
+        hideSenderLabel={props.hideSenderLabel || index !== firstContent}
         message={{ ...message, blocks }}
         onAnswer={(_, ...answer) => props.onAnswer(message, ...answer)}
       />
@@ -226,6 +230,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   botId,
   authorName,
   botName,
+  hideSenderLabel,
   showBotSenderName,
   bots,
   groupId,
@@ -250,6 +255,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   /** Someone else in a shared space wrote this message: named and set apart. */
   authorName?: string;
   botName?: string;
+  hideSenderLabel?: boolean;
   showBotSenderName: boolean;
   bots: MobileBot[];
   groupId?: string;
@@ -284,6 +290,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const { t } = useLingui();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const outgoing = message.role === "user" && !authorName;
+  const showSpeaker = !hideSenderLabel && (showBotSenderName || Boolean(authorName));
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -402,6 +409,26 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       </Pressable>
     );
   }
+  const routineEvents = message.blocks.filter(
+    (block): block is RoutineEventBlock => block.kind === "routine_event",
+  );
+  if (routineEvents.length > 0 && routineEvents.length === message.blocks.length) {
+    return (
+      <Pressable
+        {...actionProps}
+        style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
+      >
+        {routineEvents.map((block, index) => (
+          <Text
+            key={`${block.change}-${index}`}
+            style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}
+          >
+            {routineEventLabel(block)}
+          </Text>
+        ))}
+      </Pressable>
+    );
+  }
   const inlineCardCount = appConnectBlocks.length + mcpApprovalBlocks.length;
   if (inlineCardCount > 0 && inlineCardCount === message.blocks.length) {
     return (
@@ -447,12 +474,20 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             // No percentage width: the iOS menu host has no definite width to resolve it against.
             maxWidth: 576,
             borderRadius: 18,
-            backgroundColor: tokens.card,
-            paddingHorizontal: 16,
-            paddingVertical: 14,
+            backgroundColor: askBlock.outgoingDraft ? undefined : tokens.card,
+            paddingHorizontal: askBlock.outgoingDraft ? 0 : 16,
+            paddingVertical: askBlock.outgoingDraft ? 0 : 14,
           }}
         >
-          {isUndoableChange(askBlock) ? (
+          {askBlock.outgoingDraft ? (
+            <OutgoingDraftCard
+              block={askBlock}
+              messageId={message.id}
+              runId={message.runId}
+              target={artifactTarget}
+              canAnswer={canAnswer}
+            />
+          ) : isUndoableChange(askBlock) ? (
             <ChangeUndo block={askBlock} />
           ) : (
             <>
@@ -515,15 +550,17 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     fontWeight: fontWeight.medium,
                   }}
                 >
-                  {askBlock.instructionUpdate
-                    ? askBlock.answer === "deny"
-                      ? t`Dismissed`
-                      : t`Allowed once`
-                    : formatApprovalAnswer(
-                        askBlock.answer,
-                        askBlock.actions,
-                        isApprovalAskBlock(askBlock),
-                      )}
+                  {askBlock.expired
+                    ? t`Expired`
+                    : askBlock.instructionUpdate
+                      ? askBlock.answer === "deny"
+                        ? t`Dismissed`
+                        : t`Allowed once`
+                      : formatApprovalAnswer(
+                          askBlock.answer,
+                          askBlock.actions,
+                          isApprovalAskBlock(askBlock),
+                        )}
                 </Text>
               ) : question && canAnswer ? null : canAnswer && onAnswer ? (
                 <AskActions
@@ -601,9 +638,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     } as const;
     return (
       <View style={hasInlineImages ? { maxWidth: "100%", gap: 8 } : bubbleStyle}>
-        {((showBotSenderName || authorName) && speaker) || caption ? (
+        {(showSpeaker && speaker) || caption ? (
           <View style={hasInlineImages ? bubbleStyle : undefined}>
-            {(showBotSenderName || authorName) && speaker ? (
+            {showSpeaker && speaker ? (
               <Text
                 style={{ color: speakerColor ?? tokens.mutedForeground, ...typeScale.footnote }}
               >
@@ -749,7 +786,6 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     message.role === "bot" ? (botDisplayName(members, bots, message.botId) ?? botName) : authorName;
   const speakerColor =
     message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
-  const showSpeaker = showBotSenderName || Boolean(authorName);
   const firstContent = segments.findIndex((segment) => segment.kind === "content");
   const choiceBlocks = message.blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "choice" }> => block.kind === "choice",
@@ -907,60 +943,5 @@ function MessageTextCard({
         streaming={message.id.startsWith("progress:")}
       />
     </Surface>
-  );
-}
-
-function AgentEventLabel({
-  label,
-  detail,
-  expanded,
-  onToggle,
-  actionProps,
-}: {
-  label: string;
-  detail?: string;
-  expanded: boolean;
-  onToggle: () => void;
-  actionProps: MessageActionProps;
-}) {
-  const colorScheme = useResolvedAppearance();
-  const tokens = mobileTokens();
-  const { t } = useLingui();
-  return (
-    <Pressable
-      {...actionProps}
-      onPress={onToggle}
-      accessibilityRole="button"
-      accessibilityLabel={expanded ? t`Hide ${label}` : t`Show ${label}`}
-      style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
-    >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-        <NativeSymbol
-          ios="arrow.left.arrow.right"
-          android="swap-horizontal"
-          size={12}
-          color={tokens.mutedForeground}
-        />
-        <Text style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}>
-          {label}
-        </Text>
-      </View>
-      {expanded && detail ? (
-        <View
-          style={{
-            width: "100%",
-            marginTop: 6,
-            borderRadius: 14,
-            backgroundColor: tokens.card,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
-          }}
-        >
-          <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
-            {detail}
-          </ChatMarkdown>
-        </View>
-      ) : null}
-    </Pressable>
   );
 }

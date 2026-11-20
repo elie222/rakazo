@@ -622,6 +622,70 @@ describeIntegration("agent import", () => {
     expect((await raw(app, other, "routines/list", { botId: bot.id })).status).not.toBe(200);
   });
 
+  it("honors a deployment model provider allowlist on connect and import", async () => {
+    const savedAllowlist = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = "google";
+    try {
+      const cookie = await signup(app, `import-allowlist-${stamp}@rakazo.test`, "Allowlist User");
+      const user = await db.user.findUniqueOrThrow({
+        where: { email: `import-allowlist-${stamp}@rakazo.test` },
+      });
+      const botsBefore = await db.bot.count();
+
+      const refused = await raw(app, cookie, "models/connect", {
+        provider: "anthropic",
+        apiKey: "placeholder-anthropic-key",
+      });
+      expect(refused.status).toBe(400);
+      expect(await refused.text()).toContain("This model provider is not allowed on this server.");
+      expect(
+        await db.userModelCredential.count({ where: { userId: user.id, provider: "anthropic" } }),
+      ).toBe(0);
+
+      // The account default does not move to a provider the list refuses either.
+      const setDefault = await raw(app, cookie, "models/setDefault", {
+        provider: "anthropic",
+        modelId: "claude-haiku-5-5",
+      });
+      expect(setDefault.status).toBe(400);
+      expect(await setDefault.text()).toContain(
+        "This model provider is not allowed on this server.",
+      );
+
+      const setBackups = await raw(app, cookie, "models/setBackups", [
+        { provider: "anthropic", modelId: "claude-haiku-5-5" },
+      ]);
+      expect(setBackups.status).toBe(400);
+      expect(await setBackups.text()).toContain(
+        "This model provider is not allowed on this server.",
+      );
+
+      const preview = await rpc<AgentImportPlan>(app, cookie, "bots/importPreview", {
+        files: settingsHome,
+      });
+      expect(preview.model?.status).toBe("unknown");
+
+      const create = await raw(app, cookie, "bots/importCreate", {
+        files: settingsHome,
+        includeSecrets: true,
+        name: "Allowlisted",
+        selection: {
+          instructions: [],
+          memory: [],
+          skills: [],
+          model: true,
+          mcpServers: [],
+          routines: [],
+        },
+      });
+      expect(create.status).toBe(400);
+      expect(await db.bot.count()).toBe(botsBefore);
+    } finally {
+      if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
+      else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
+    }
+  });
+
   it("writes nothing at all when the last write of the import fails", async () => {
     const cookie = await signup(app, `import-rollback-${stamp}@rakazo.test`, "Rollback User");
     const firstBot = await rpc<Bot>(app, cookie, "bots/create", { name: "First" });

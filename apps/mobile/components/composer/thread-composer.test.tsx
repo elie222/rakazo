@@ -231,8 +231,16 @@ vi.mock("./dictation-bar", () => ({
     createElement(
       "div",
       { "data-testid": "dictation-bar" },
-      createElement("button", { "aria-label": "Cancel dictation", onClick: props.onCancel }),
-      createElement("button", { "aria-label": "Finish dictation", onClick: props.onFinish }),
+      createElement("button", {
+        type: "button",
+        "aria-label": "Cancel dictation",
+        onClick: props.onCancel,
+      }),
+      createElement("button", {
+        type: "button",
+        "aria-label": "Finish dictation",
+        onClick: props.onFinish,
+      }),
     ),
 }));
 vi.mock("../../lib/composer/composer-dictation", () => ({

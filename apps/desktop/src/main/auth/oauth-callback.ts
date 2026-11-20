@@ -40,6 +40,26 @@ export function mcpOAuthCallbackFrom(
 }
 
 /**
+ * An MCP sign-in sent back to a loopback address the provider refused, or the user declined:
+ * the redirect carries an error and no code. Reported so the app stops waiting on a window
+ * showing an address nothing answers.
+ */
+export function mcpLoopbackRefusalFrom(url: string): { code: null; state: string } | undefined {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (target.protocol !== "http:" || !LOOPBACK_HOSTS.has(target.hostname)) return undefined;
+  if (target.searchParams.has("code") || !target.searchParams.get("error")?.trim())
+    return undefined;
+  if (target.searchParams.getAll("state").length !== 1) return undefined;
+  const state = target.searchParams.get("state")?.trim();
+  return state ? { code: null, state } : undefined;
+}
+
+/**
  * Loopback-redirect providers (e.g. `http://localhost:53692/callback`) put the
  * code in a URL the address-bar-less sign-in popup cannot show, so the main
  * process reads it from the navigation instead.

@@ -14,6 +14,7 @@ import {
   cardExpiry,
   isIdentityConfirmationRequired,
   newVaultImportRows,
+  sendVaultImport,
   VAULT_KINDS,
   vaultImportCounts,
   vaultImportProblems,
@@ -278,11 +279,10 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
       setPending(true);
       try {
         await beforeChange();
-        // Each login is encrypted and saved in turn: 100 took about 4 s without a database.
-        const result = await rpc(
-          "vault/import",
-          { scope, rows: plan.rows },
-          { timeoutMs: IMPORT_TIMEOUT_MS },
+        // Each login is encrypted and saved in turn: a batch of 100 took about 4 s without a
+        // database.
+        const result = await sendVaultImport(plan.rows, (rows) =>
+          rpc("vault/import", { scope, rows }, { timeoutMs: IMPORT_TIMEOUT_MS }),
         );
         const reminder = t`Delete the exported file now. It holds your passwords unencrypted.`;
         // Not over another screen the person has moved to, as a value shown from here isn't.

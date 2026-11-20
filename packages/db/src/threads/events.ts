@@ -35,7 +35,7 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "../database/transaction-retry.js";
-import { contentEncryptionOf } from "../encryption/content-encryption.js";
+import { contentEncryptionOf, loadSpaceContentKeys } from "../encryption/content-encryption.js";
 import { cancelRunsInTransaction, conversationRunsWhere } from "../runs/cancel-runs.js";
 import { HOLDS_CHAT } from "../runs/chat-holding-runs.js";
 import { deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
@@ -246,6 +246,8 @@ export interface SendUserMessageResult {
   seq: number;
   taskId: string | null;
   runId: string | null;
+  /** A replay of a message history retention deleted: messageId no longer exists. */
+  pruned?: true;
 }
 
 export function createThreadEvents(
@@ -452,7 +454,22 @@ export async function sendUserMessage(
         },
       },
     });
-    if (!message) return null;
+    if (!message) {
+      const pruned = await prisma.prunedMessageNonce.findUnique({
+        where: {
+          threadId_clientNonce: { threadId: input.threadId, clientNonce: input.clientNonce },
+        },
+      });
+      return pruned
+        ? {
+            messageId: pruned.messageId,
+            seq: pruned.seq,
+            taskId: null,
+            runId: null,
+            pruned: true as const,
+          }
+        : null;
+    }
     const created = await prisma.run.findFirst({
       where: { sourceMessageId: message.id },
       orderBy: { createdAt: "asc" },
@@ -470,6 +487,7 @@ export async function sendUserMessage(
   const existing = await replay();
   if (existing) return existing;
 
+  await loadSpaceContentKeys(prisma, input.spaceId);
   const commit = () =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Webhooks, texts and other bots can reach a Space until its teardown finishes; one being
@@ -813,6 +831,7 @@ async function finalizeRunOnce(
   continuationRunId: string | null;
   firstResponse: boolean;
 } | null> {
+  await loadSpaceContentKeys(prisma, input.spaceId);
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
     let writableRun: { startedAt: Date | null; userId: string } | undefined;

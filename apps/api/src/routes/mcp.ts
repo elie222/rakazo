@@ -114,7 +114,13 @@ export function mcpRoutes(ctx: RouterContext) {
   /** Starts a sign-in on the registered web callback; `botId` gets the server once it finishes. */
   async function beginMcpOAuth(
     actor: Actor,
-    input: { serverId: string; redirectUri?: string; client?: McpOAuthClientKind; botId?: string },
+    input: {
+      serverId: string;
+      redirectUri?: string;
+      client?: McpOAuthClientKind;
+      botId?: string;
+      capturesLoopback?: boolean;
+    },
   ) {
     // The web origin, or an extra one the operator trusts (a phone reaching it over a tailnet).
     const allowedRedirects = [deps.env.webOrigin, ...(deps.env.extraAuthOrigins ?? [])].map(
@@ -235,6 +241,7 @@ export function mcpRoutes(ctx: RouterContext) {
             redirectUri: input.redirectUri,
             client: input.client,
             botId: input.botId,
+            capturesLoopback: input.capturesLoopback,
           });
           if (signIn.status !== "authorization_required" && input.botId)
             await approveMcpAssignment(actor, { botId: input.botId, serverId });

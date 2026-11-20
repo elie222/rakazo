@@ -6,6 +6,7 @@ import type {
   BackgroundJobHandlers,
   BackgroundJobPayloads,
   JobPublisher,
+  JobQueueOrder,
   MediaGenerationProvider,
   PaymentWalletProvider,
   SandboxProvider,
@@ -14,6 +15,7 @@ import type {
 import {
   memoryRetainTurnJob,
   memoryRetainTurnRecoveryJobKey,
+  RetryJobLaterError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
@@ -21,6 +23,7 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { expireApprovalCard } from "../../approvals/approval-expiry.js";
 import { expireTaughtSkillTeaching } from "../../bots/teaching-session.js";
 import { settleCallRequest } from "../../calls/call-request.js";
 import type {
@@ -49,6 +52,7 @@ import {
 } from "../../memory/conversation-memory.js";
 import { retryConversationMemoryPurge } from "../../memory/conversation-memory-cleanup.js";
 import type { MemoryProviderResolver } from "../../memory/memory-provider-factory.js";
+import { settleInboundMessage } from "../../messaging/intake/settle-inbound.js";
 import type { MessagingDelivery } from "../../messaging/messaging-delivery.js";
 import type { TeamChat } from "../../messaging/team-chat/team-chat.js";
 import type { ExpoPushProvider } from "../../notifications/expo-push.js";
@@ -98,7 +102,7 @@ export function createBackgroundJobHandlers(deps: {
   sandbox: SandboxProvider;
   home: AgentHomeStore;
   artifacts: ArtifactStore;
-  jobs: JobPublisher;
+  jobs: JobPublisher & JobQueueOrder;
   events: ThreadEvents;
   workerId: string;
   runtime: AgentRuntime;
@@ -116,6 +120,8 @@ export function createBackgroundJobHandlers(deps: {
   mediaGeneration?: MediaGenerationProvider;
   maxUploadSizeBytes?: number;
   /** Sends a lifecycle mail; absent where account mail is not configured, and the job is dropped. */
+  meetingCalendarSync?: (job: BackgroundJobPayloads["meeting.calendar-sync"]) => Promise<void>;
+  meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
   lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
 }): BackgroundJobHandlers {
   const delivery = deps.messagingDelivery;
@@ -134,6 +140,8 @@ export function createBackgroundJobHandlers(deps: {
     deps.prisma.cloudAgent.findUnique({ where: { id: agentId }, select: OWNER });
   const purchase = ({ purchaseId }: { purchaseId: string }) =>
     deps.prisma.purchase.findUnique({ where: { id: purchaseId }, select: OWNER });
+  const messagingIdentity = ({ identityId }: { identityId: string }) =>
+    deps.prisma.messagingIdentity.findUnique({ where: { id: identityId }, select: OWNER });
   const mediaJob = async ({ jobId }: { jobId: string }) =>
     (
       await deps.prisma.externalEffect.findUnique({
@@ -171,6 +179,11 @@ export function createBackgroundJobHandlers(deps: {
     "messaging.reply": async ({ runId }) => {
       await delivery?.deliverRun(runId);
     },
+    "messaging.inbound_settle": asOwner(messagingIdentity, async (payload) => {
+      // Fail rather than finish, so the queue keeps the job for a process that can reply.
+      if (!delivery) throw new Error("inbound message settling has no messaging delivery");
+      await settleInboundMessage({ ...deps, delivery }, payload);
+    }),
     "secret.cleanup": async (cleanup) => {
       await retrySecretCleanup(cleanupDeps, cleanup);
     },
@@ -261,6 +274,9 @@ export function createBackgroundJobHandlers(deps: {
     "run.forget-secrets": asOwner(run, async ({ runId }) => {
       await expireRunSecrets({ ...deps, now: new Date() }, runId);
     }),
+    "approval.expire": asOwner(run, async (payload) => {
+      await expireApprovalCard(deps, payload);
+    }),
     "call.expire": asOwner(thread, async (payload) => {
       await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });
     }),
@@ -276,6 +292,14 @@ export function createBackgroundJobHandlers(deps: {
         payload,
       );
     }),
+    "meeting.calendar-sync": async (payload) => {
+      if (!deps.meetingCalendarSync) throw new RetryJobLaterError(60_000);
+      await deps.meetingCalendarSync(payload);
+    },
+    "meeting.work": async (payload) => {
+      if (!deps.meetingWork) throw new RetryJobLaterError(60_000);
+      await deps.meetingWork(payload);
+    },
     "purchase.poll": asOwner(purchase, async (payload) => {
       await pollPurchase(
         {

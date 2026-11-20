@@ -633,15 +633,30 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
   );
 
   it.each([
-    ["unoffered-tool", "feedback"],
-    ["wrong-prefix", "mcp__other__lookup"],
-    ["bare-tool", "lookup"],
-  ])("passes a %s call through for the agent loop to answer", async (scenario, name) => {
-    fakeClaude(scenario);
-    const { events, message } = await run(hello);
-    expect(message.stopReason).toBe("toolUse");
-    expect(message.content).toMatchObject([{ type: "toolCall", name }]);
-    expect(events.at(-1)?.type).toBe("done");
+    ["unoffered-tool", "feedback_not_offered"],
+    ["wrong-prefix", "mcp__other__lookup_not_offered"],
+    ["bare-tool", "lookup_not_offered"],
+  ])(
+    "hands a %s call to the agent loop as %s, which no tool answers to",
+    async (scenario, expected) => {
+      fakeClaude(scenario);
+      const { message } = await run(hello);
+      expect(message.stopReason).toBe("toolUse");
+      const calls = message.content.filter((part) => part.type === "toolCall");
+      expect(calls.map((call) => call.name)).toEqual([expected]);
+      expect(hello.tools?.some((tool) => tool.name === expected)).toBe(false);
+    },
+  );
+  it("never renames an unoffered call onto an offered tool", async () => {
+    fakeClaude("unoffered-tool");
+    const decoy = {
+      name: "feedback_not_offered",
+      description: "A tool whose name an unoffered call must not take.",
+      parameters: { type: "object", properties: {} },
+    };
+    const { message } = await run({ ...hello, tools: [...tools, decoy] });
+    const calls = message.content.filter((part) => part.type === "toolCall");
+    expect(calls.map((call) => call.name)).toEqual(["feedback_not_offered2"]);
   });
 
   it("redacts secrets from the CLI's error output", async () => {

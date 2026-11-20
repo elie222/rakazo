@@ -38,8 +38,8 @@ export const routinesRpc = {
         z
           .object({
             routineId: Id,
-            name: z.string().optional(),
-            prompt: z.string().optional(),
+            name: z.string().min(1).optional(),
+            prompt: z.string().min(1).optional(),
             crons: z.array(z.string().min(1)).optional(),
             timezone: TimeZoneSchema.optional(),
             active: z.boolean().optional(),

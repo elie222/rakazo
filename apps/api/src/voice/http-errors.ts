@@ -5,7 +5,7 @@ import type { VoiceAccountErrorCode } from "@rakazo/contracts";
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { IsolationError } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { getLogContext, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context } from "hono";
 import { clientErrorStatus } from "../client-error-status.js";
@@ -24,8 +24,9 @@ export function voiceHttpError(c: Context, error: unknown) {
   }
   if (error instanceof ClientError) {
     const status = clientErrorStatus(error.kind);
-    // An outage the caller is told to wait out is still a failure to look at.
-    if (status >= 500) {
+    // An outage the caller is told to wait out is still a failure to look at, unless its thrower
+    // logged it as expected.
+    if (status >= 500 && !getLogContext()["error.expected"]) {
       getLogger().error("voice request unavailable", {
         route: c.req.path,
         reason: error.cause instanceof Error ? error.cause.name : error.kind,

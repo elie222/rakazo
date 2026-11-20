@@ -42,7 +42,7 @@ Admins can switch new computers to Wuying without editing the environment.
 
 1. Make yourself an admin: add your account's email to `RAKAZO_ADMIN_EMAILS` in `.env`, set
    `COMPUTER_SETTINGS_ENABLED=true`, and restart the API. The email must be verified.
-2. Open **Settings → Computer**.
+2. Open **Settings → Computers**.
 3. Under **New computers run on**, choose **Wuying**.
 4. Fill in the desktop ID, end user ID, region (defaults to `cn-hangzhou`), AccessKey ID and
    secret, MCP gateway URL and MCP token, then **Save**.
@@ -60,7 +60,7 @@ they are used.
 
 ### Each account's own desktop
 
-Every account can use **Settings → Computer**; admins expand **My computers** below the deployment
+Every account can use **Settings → Computers**; admins expand **My computers** below the deployment
 form. This sets where that account's own Team Computers run: **Default** keeps them on
 the deployment's computers (the admin's choice above, or `SANDBOX_PROVIDER`), and **Wuying** runs
 them on a desktop the account brings, with its own AccessKey and MCP gateway. The same checks run

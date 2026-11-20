@@ -229,6 +229,26 @@ describe("reasoning efforts an endpoint refuses", () => {
     });
   });
 
+  it.each([
+    ["reasoning.effort", "Supported values are:"],
+    ["reasoning_effort", "Supported values are:"],
+    ["reasoning.effort", "Must be one of:"],
+    ["reasoning_effort", "Must be one of:"],
+  ])("reads choices when parameter %s follows wording %s", (param, wording) => {
+    const error = `Compatible API error (400): ${JSON.stringify({
+      message: `Unsupported value: 'minimal' is not supported with this model. ${wording} 'medium'.`,
+      type: "invalid_request_error",
+      param,
+      code: "unsupported_value",
+    })}`;
+    const levels = acceptedReasoningEfforts(model({ off: "none" }), error);
+    expect(getSupportedThinkingLevels(model(levels))).toEqual(["off", "medium"]);
+    expect(clampThinkingLevel(model(levels), "minimal")).toBe("medium");
+    expect(
+      acceptedReasoningEfforts(model({ off: "none" }), error.replace(param, "response_format")),
+    ).toBeUndefined();
+  });
+
   it("reads a list that follows a colon instead of the word are", () => {
     const levels = acceptedReasoningEfforts(
       model({ off: "none" }),

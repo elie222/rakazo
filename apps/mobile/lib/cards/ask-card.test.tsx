@@ -42,7 +42,30 @@ vi.mock("react-native", async () => {
       ? Object.assign({}, ...style.map(flatten))
       : ((style as CSSProperties) ?? {});
   return {
+    ActivityIndicator: () => null,
     Platform: { OS: "ios" },
+    Pressable: ({
+      children,
+      onPress,
+      disabled,
+      accessibilityState,
+    }: {
+      children?: ReactNode;
+      onPress?: () => void;
+      disabled?: boolean;
+      accessibilityState?: { selected?: boolean };
+    }) =>
+      createElement(
+        "button",
+        {
+          type: "button",
+          onClick: onPress,
+          disabled,
+          "data-row": "true",
+          "data-selected": accessibilityState?.selected?.toString(),
+        },
+        children,
+      ),
     StyleSheet: { create: <T,>(styles: T) => styles },
     View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
       createElement("div", { style: flatten(style) }, children),
@@ -662,7 +685,7 @@ it.each([
   },
 );
 
-it("stacks option buttons in a non-wrapping full-width column and keeps approvals in a wrapping row", async () => {
+it("stacks option rows in a non-wrapping full-width column and keeps approvals in a wrapping row", async () => {
   const actions = [
     { id: "choice-1", label: "Plan a trip" },
     { id: "choice-2", label: "Write something" },
@@ -675,7 +698,8 @@ it("stacks option buttons in a non-wrapping full-width column and keeps approval
     );
     const buttons = [...container.querySelectorAll("button")];
     const row = buttons[0]!.parentElement!;
-    expect(buttons.map((b) => b.getAttribute("data-fill"))).toEqual(
+    // Question options are full-width rows; approvals stay native buttons sized to their label.
+    expect(buttons.map((b) => b.getAttribute(approval ? "data-fill" : "data-row"))).toEqual(
       approval ? ["false", "false"] : ["true", "true"],
     );
     expect(row.style.flexDirection).toBe(approval ? "row" : "column");

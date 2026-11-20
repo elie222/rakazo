@@ -1,11 +1,11 @@
 import type * as Core from "@rakazo/core";
 import type * as Db from "@rakazo/db";
-import { recordAuditEvent } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { gateToolCall } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
 
 const plans = vi.hoisted(() => [] as string[]);
+const reviewOnly = vi.hoisted(() => [] as (boolean | undefined)[]);
 vi.mock("@rakazo/core", async (importOriginal) => {
   const core = await importOriginal<typeof Core>();
   return {
@@ -13,6 +13,7 @@ vi.mock("@rakazo/core", async (importOriginal) => {
     planActionGate: (input: Parameters<typeof core.planActionGate>[0]) => {
       const plan = core.planActionGate(input);
       plans.push(plan);
+      reviewOnly.push(input.reviewOnly);
       return plan;
     },
   };
@@ -59,6 +60,8 @@ function gate(options: {
     replayEffectToolName: "browser_act",
     fleetSummary: undefined,
     heldForApproval: false,
+    settingsChange: false,
+    ignoresAllowRules: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: options.asks === false ? undefined : loginUse,
@@ -98,27 +101,95 @@ describe("gateToolCall: a login that asks first", () => {
     plans.length = 0;
   });
 
-  it("asks the user every time, in Never ask and over an Always allow rule", async () => {
-    for (const options of [{}, { neverAsk: true }, { rule: "always_allow" as const }]) {
+  it("asks the user every time in Ask and Auto, even over an Always allow rule", async () => {
+    for (const options of [{}, { rule: "always_allow" as const }]) {
       plans.length = 0;
       expect(await gate(options)).toBe("asks the user");
       expect(plans).toEqual(["ask"]);
     }
-    // The same call without such a login runs in Never ask, without asking.
+  });
+
+  it("runs it without asking in Never ask", async () => {
     plans.length = 0;
-    await gate({ neverAsk: true, asks: false });
+    await gate({ neverAsk: true });
     expect(plans).toEqual(["allow"]);
   });
 
-  it("is refused by a rule that blocks the tool, and in a webhook run, as a card is", async () => {
+  it("asks in a webhook run too, where the card expires if nobody answers", async () => {
+    plans.length = 0;
+    expect(await gate({ trigger: "webhook" })).toBe("asks the user");
+    expect(plans).toEqual(["ask"]);
+  });
+
+  it("is refused by a rule that blocks the tool", async () => {
     expect(await gate({ rule: "deny" })).toEqual({
       result: { error: expect.stringContaining("is blocked in this space") },
     });
-    expect(await gate({ trigger: "webhook" })).toEqual({
-      result: { error: expect.stringContaining("a webhook run cannot ask") },
-    });
-    expect(recordAuditEvent).toHaveBeenLastCalledWith(
-      expect.objectContaining({ outcome: "denied", metadata: { reason: "login_unattended" } }),
-    );
+  });
+});
+
+describe("gateToolCall: typing into a page after outside content, in Auto", () => {
+  const typed = (
+    state: { pageUrl?: string; pageUrlUncertain?: boolean },
+    actions: Record<string, unknown>[] = [{ kind: "fill", ref: "e2", text: "12 Rua Nova" }],
+  ) => {
+    const args = { actions };
+    const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
+    const request = {
+      name: "browser_act",
+      args,
+      executionId,
+      connectorCall: { tool: "browser_act", args, executionId, route: undefined },
+      effectRequest: args,
+      replayEffectToolName: "browser_act",
+      heldForApproval: false,
+      settingsChange: false,
+      ignoresAllowRules: false,
+    } as unknown as ToolRequest;
+    const ctx = {
+      deps: { prisma: {}, autoReview: {} },
+      run: { id: "run-1", userId: "user-1", spaceId: "space-1", trigger: "user" },
+      runId: "run-1",
+      bot: { id: "bot-1", name: "Helper" },
+      thread: { id: "thread-1" },
+      context: { signal: new AbortController().signal },
+      source: { ownerStartedRun: true },
+      tools: { connector: new Map(), connectedPlugins: [] },
+      state: {
+        ...state,
+        tainted: true,
+        effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
+      },
+      trust: {
+        searchResultUrls: new Set<string>(),
+        loadTrustedSites: async () => new Set(["example.com"]),
+        loadApprovalRules: async () => [],
+        loadAutoReviewPreference: async () => ({ enabled: true, skipApprovals: false }),
+      },
+    };
+    return gateToolCall(ctx as never, request, undefined).catch(() => undefined);
+  };
+
+  beforeEach(() => {
+    reviewOnly.length = 0;
+  });
+
+  it("leaves typing on a site the run was given alone, and judges it once a desktop action may have moved the page", async () => {
+    await typed({ pageUrl: "https://shop.example.com/address" });
+    await typed({ pageUrl: "https://shop.example.com/address", pageUrlUncertain: true });
+    await typed({ pageUrl: "https://forms.example.net/" });
+    expect(reviewOnly).toEqual([false, true, true]);
+  });
+
+  it("judges typing after a click in the same call, which can leave the page", async () => {
+    await typed({ pageUrl: "https://shop.example.com/address" }, [
+      { kind: "fill", ref: "e2", text: "12 Rua Nova" },
+      { kind: "click", ref: "e3" },
+    ]);
+    await typed({ pageUrl: "https://shop.example.com/address" }, [
+      { kind: "click", ref: "e9" },
+      { kind: "fill", ref: "e2", text: "12 Rua Nova" },
+    ]);
+    expect(reviewOnly).toEqual([false, true]);
   });
 });
