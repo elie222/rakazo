@@ -648,7 +648,12 @@ function SpaceShell() {
     [active?.id, groupId, inGroup],
   );
   const topicBotId = inGroup ? undefined : active?.id;
-  const topics = useBotTopics({ queries, botId: topicBotId, openTopic: rightPanel.openTopic });
+  const topics = useBotTopics({
+    rpc,
+    queries,
+    botId: topicBotId,
+    openTopic: rightPanel.openTopic,
+  });
   const openTopicPanel = useCallback(
     (topicId: string) => {
       if (topicBotId) rightPanel.openTopic(topicBotId, topicId);
