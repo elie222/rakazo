@@ -1204,6 +1204,56 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("tells the model why a built-in the run was not offered is unavailable", async () => {
+    const runWithUnavailable = (unavailableToolReasons?: Record<string, string>) => {
+      fakeAgentState.invoke = {
+        name: "use_tool",
+        args: { name: "message_bot", arguments: { bot_id: "b2", message: "hi" } },
+      };
+      const executeTool = vi.fn(async () => ({ ok: true }));
+      return {
+        executeTool,
+        run: async () => {
+          for await (const _event of new PiAgentRuntime().run(
+            {
+              botId: "b",
+              threadId: "t",
+              runId: "r",
+              prompt: "tell the other bot",
+              instructions: "",
+              history: [],
+              // A deferred tool exposes use_tool, through which the model names message_bot.
+              tools: [updateBotTool, scheduleCancelTool],
+              unavailableToolReasons,
+              model: { provider: "test", id: "dispatch-test-model" },
+              executeTool,
+            },
+            {
+              operationId: "1",
+              traceId: "1",
+              spaceId: "w",
+              userId: "u",
+              signal: new AbortController().signal,
+            },
+          )) {
+            // Exhaust the runtime event stream so tool execution completes.
+          }
+        },
+      };
+    };
+
+    const reason =
+      "message_bot is not available in group threads. Use handoff_to_bot with the group_id and the member's bot_id instead.";
+    const withReason = runWithUnavailable({ message_bot: reason });
+    await expect(withReason.run()).rejects.toThrow(reason);
+    expect(withReason.executeTool).not.toHaveBeenCalled();
+
+    const withoutReason = runWithUnavailable();
+    await expect(withoutReason.run()).rejects.toThrow(
+      "message_bot is not available. Use a name find_tool lists.",
+    );
+  });
+
   it("runs schedule tools, remember and request_secret sequentially", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const runtime = new PiAgentRuntime();

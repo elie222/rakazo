@@ -64,6 +64,7 @@ import {
   BUILTIN_AGENT_TOOL_NAMES,
   offersAgentConnectionTools,
   selectBuiltinToolsForRun,
+  unavailableBuiltinToolReasons,
 } from "../tools/run-tool-selection.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
@@ -812,6 +813,15 @@ export async function selectRunTools(
     run.trigger === "created"
       ? strategicBuiltins
       : [...strategicBuiltins, ...strategicConnectorTools];
+  // Reasons come from the bot's own settings, not the handoff_to_bot entry added above.
+  const unavailableToolReasons = unavailableBuiltinToolReasons(
+    {
+      groupId: conversationThread.groupId,
+      trigger: run.trigger,
+      disabledBuiltinTools: bot.disabledBuiltinTools,
+    },
+    tools,
+  );
   const taskCatalogInstruction = tools.some((tool) => tool.name === "task_catalog")
     ? TASK_CATALOG_GUIDANCE
     : undefined;
@@ -830,6 +840,7 @@ export async function selectRunTools(
     initiallyTainted,
     initialOutsideText,
     tools,
+    unavailableToolReasons,
     taskCatalogInstruction,
     approvedEffects,
     approvedEffectReplays,
