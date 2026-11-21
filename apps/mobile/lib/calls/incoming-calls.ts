@@ -10,6 +10,7 @@ import {
   respondToIncomingCall,
   retryDelayMs,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
@@ -344,9 +345,11 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
 
 async function drainNative() {
   const generation = currentSessionGeneration();
+  const startedFeed = feed;
+  const stale = () => feed !== startedFeed || !running || generation !== currentSessionGeneration();
   const state = await native?.incomingState();
   // A sign-out during the read belongs to the old session; the new one drains for itself.
-  if (!state || !running || generation !== currentSessionGeneration()) return;
+  if (!state || stale()) return;
   try {
     // Answers first: an answer expires with its ring, while showing other rings can wait for the roster.
     for (const action of state.actions) {
@@ -378,8 +381,11 @@ async function drainNative() {
   }
   for (const ring of state.ringing ?? []) {
     if (!callIsRinging(ring)) continue;
-    const bot = await callerFor(ring.botId, ring.callId).catch(() => null);
-    if (bot === undefined || !running || generation !== currentSessionGeneration()) return;
+    const bot = await bestEffort(
+      "look up a native ringing caller",
+      callerFor(ring.botId, ring.callId),
+    );
+    if (stale()) return;
     // A ring the stream listed and then dropped has ended, for example answered on another
     // phone while the answers above were joining; the older native state must not bring it back.
     pruneEndedCalls();
