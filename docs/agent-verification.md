@@ -350,9 +350,11 @@ names the differences and exits with status 1. This includes a suite recorded
 on only one side. Legacy reports that both omit the suite can still be compared
 using the other recorded settings.
 
-The check covers settings recorded in the JSON. When collecting a report pair,
-keep the full model and judge connections consistent, including settings such
-as endpoints and judge token limits.
+The check covers settings recorded in the JSON. Reports record the judge's
+output token limit, reasoning settings and a short hash of its endpoint, never
+the URL itself. Reports from before that show these as unknown instead of
+failing, so check them by hand. The bot's own endpoint is not recorded: keep
+its model connection the same when collecting a report pair.
 
 The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied

@@ -38,6 +38,15 @@ const ReportSchema = z.looseObject({
       model: z.string(),
       rubricVersion: z.string(),
       pricing: z.unknown(),
+      // Reports from before these were recorded leave them unknown.
+      settings: z
+        .object({
+          endpoint: z.string().nullable(),
+          maxOutputTokens: positiveInteger.nullable(),
+          reasoning: z.boolean().nullable(),
+          thinkingLevel: z.string().nullable(),
+        })
+        .optional(),
     })
     .nullish()
     .transform((judge) => judge ?? null),
@@ -47,6 +56,8 @@ const ReportSchema = z.looseObject({
     .transform((totals) => totals?.costUsd ?? null),
   trials: z.array(TrialSchema).nonempty(),
 });
+
+type Report = z.infer<typeof ReportSchema>;
 
 /** Recorded settings that must match for an outcome change to mean anything. */
 const COMPARED_SETTINGS = [
@@ -79,9 +90,22 @@ async function main(args: string[]) {
     readReport(baselinePath, "Baseline"),
     readReport(candidatePath, "Candidate"),
   ]);
+  // Judge settings are compared one by one below, since older reports lack them.
+  const setting = (report: Report, key: (typeof COMPARED_SETTINGS)[number]) =>
+    key === "judge" && report.judge ? { ...report.judge, settings: undefined } : report[key];
   const differences: string[] = COMPARED_SETTINGS.filter(
-    (key) => !isDeepStrictEqual(baseline.report[key], candidate.report[key]),
+    (key) => !isDeepStrictEqual(setting(baseline.report, key), setting(candidate.report, key)),
   );
+  const judges = { baseline: baseline.report.judge, candidate: candidate.report.judge };
+  const unrecordedJudgeSettings = Object.entries(judges)
+    .filter(([, judge]) => judge && !judge.settings)
+    .map(([label]) => label);
+  const [before, after] = [judges.baseline?.settings, judges.candidate?.settings];
+  if (before && after) {
+    for (const key of Object.keys(before) as Array<keyof typeof before>) {
+      if (before[key] !== after[key]) differences.push(`judge.${key}`);
+    }
+  }
   for (const key of ["trials", "timeoutMs", "maxToolCalls"] as const) {
     if (baseline.report.controls[key] !== candidate.report.controls[key]) {
       differences.push(`controls.${key}`);
@@ -108,6 +132,11 @@ async function main(args: string[]) {
     regressions.push(formatTrial(trial) + (provenance.length ? ` [${provenance.join(", ")}]` : ""));
   }
 
+  if (unrecordedJudgeSettings.length) {
+    console.log(
+      `Judge endpoint, output limit and reasoning settings: unknown in ${unrecordedJudgeSettings.join(" and ")}`,
+    );
+  }
   const baselineNotRun = notRun(baseline.trials);
   printTrials("Regressions (passed -> failed):", regressions);
   printTrials("Not run in candidate:", notRun(candidate.trials));
