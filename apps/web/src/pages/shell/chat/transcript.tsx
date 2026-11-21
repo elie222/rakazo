@@ -708,7 +708,7 @@ export const Transcript = memo(function Transcript({
                                 block.kind === "mcp_approval" ||
                                 block.kind === "tool_question",
                             )
-                          ? "relative w-full min-w-0 max-w-xl"
+                          ? "relative w-full min-w-0 max-w-[min(calc(100%_-_8rem),36rem)] [@media(hover:none)]:max-w-xl"
                           : `relative ${
                               message.blocks.some(
                                 (block) =>
