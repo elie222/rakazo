@@ -754,8 +754,9 @@ async function railwayFetch(
   if (typeof createdId === "string") onCreated?.(createdId);
   // Never attach upstream error bodies (which may echo credentials) to SDK errors. Keep only a
   // coarse code so a missing sandbox or a full sandbox cap stays distinguishable.
-  const failed = !response.ok || body.errors?.length || !body.data;
-  const codes = (body.errors ?? []).map(railwayErrorCode);
+  const errors = Array.isArray(body.errors) ? body.errors : [];
+  const failed = !response.ok || errors.length || !body.data;
+  const codes = errors.map(railwayErrorCode);
   const code = failed
     ? codes.includes("LIMIT_EXCEEDED")
       ? "LIMIT_EXCEEDED"
