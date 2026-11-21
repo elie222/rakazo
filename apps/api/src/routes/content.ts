@@ -548,7 +548,7 @@ export function contentRoutes(ctx: RouterContext) {
     },
     runs: {
       list: authed.runs.list.handler(async ({ context, input }) => ({
-        runs: await listSpaceRuns(deps.prisma, context.actor, input.filter),
+        runs: await listSpaceRuns(deps.prisma, context.actor, input.filter, input.status),
       })),
     },
   };

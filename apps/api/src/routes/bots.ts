@@ -2,13 +2,10 @@ import { ORPCError } from "@orpc/server";
 import {
   archiveBot,
   carriedBotModelPin,
-  checkpointAndStopComputer,
   defaultVaultItemTitle,
-  endTeachingWithLease,
   forgetBotSecret,
   forgetPageShareSecrets,
   groupsRemovedByDeletingBot,
-  hasActiveComputerControl,
   importedLoginValue,
   isSecretAlreadySaved,
   LoginAlreadySavedError,
@@ -23,7 +20,7 @@ import {
   stopCancelledGroupRuns,
   storeBotSecret,
   storeBotWebhookKey,
-  toComputerRef,
+  switchBotComputer,
   VaultFullError,
   VaultItemRefusedError,
   VaultRetryError,
@@ -48,15 +45,13 @@ import {
   vaultImportLogin,
   vaultImportOrigin,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns, displayName } from "@rakazo/core";
+import { ClientError, displayName } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   botProfileLabelsChanged,
   commitBotUpdate,
-  expireComputerExecutionLeases,
   IsolationError,
   isRecordNotFound,
-  recordComputerRunEnd,
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
   settingsTarget,
@@ -534,75 +529,18 @@ export function botsRoutes(ctx: RouterContext) {
         return (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId)!;
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.computer) throw new IsolationError();
-        const currentMode = bot.computer.scope === "dedicated" ? "dedicated" : "team";
-        if (currentMode === input.mode) {
-          return repos.setBotComputer(context.actor, bot.id, input.mode);
-        }
-        const claimed = await deps.prisma.$transaction(async (tx) => {
-          await tx.$queryRaw`SELECT id FROM computers WHERE id = ${bot.computerId} FOR UPDATE`;
-          return tx.bot.updateMany({
-            where: { id: bot.id, computerSwitching: false, computer: { maintenanceId: null } },
-            data: { computerSwitching: true },
-          });
-        });
-        if (claimed.count !== 1) throw new ORPCError("CONFLICT");
-        try {
-          const active = await deps.prisma.run.findFirst({
-            where: {
-              botId: bot.id,
-              status: { in: [...ACTIVE_RUN_STATUSES] },
-              ...computerUsingRuns(),
-            },
-            select: { id: true },
-          });
-          if (active) {
-            throw new ORPCError("BAD_REQUEST", { message: "Stop the bot first" });
-          }
-          if (bot.computer.controlBotId === bot.id && hasActiveComputerControl(bot.computer)) {
-            throw new ORPCError("BAD_REQUEST", { message: "Release the computer first" });
-          }
-          if (bot.computer.scope === "dedicated" && bot.computer.providerRef) {
-            const ctx = computerContext(context.actor, bot.id, "computer.switch");
-            const ref = toComputerRef(bot.computer);
-            if (bot.computer.state === "running") {
-              await checkpointAndStopComputer(deps, bot.computer, ref, ctx);
-            }
-            await expireComputerExecutionLeases(deps.prisma, {
-              computerId: bot.computer.id,
-              botId: bot.id,
-            });
-            await deps.prisma.computer.update({
-              where: { id: bot.computer.id },
-              data: {
-                state: "stopped",
-                controlHolder: "none",
-                controlLeaseId: null,
-                controlUserId: null,
-                controlLeaseExpiresAt: null,
-                controlBotId: null,
-              },
-            });
-            await recordComputerRunEnd(deps.prisma, bot.computer, "stopped");
-            await endTeachingWithLease(deps, context.actor.spaceId, bot.computer.controlLeaseId);
-          }
-          const updated = await repos.setBotComputer(context.actor, bot.id, input.mode);
+        const { bot, switched } = await switchBotComputer(
+          { ...deps, repos },
+          context.actor,
+          input.botId,
+          input.mode,
+        );
+        if (switched)
           deps.analytics?.capture(context.actor.userId, {
             name: "bot_setting_changed",
             setting: "computer",
           });
-          return updated;
-        } catch (error) {
-          // Removing the bot mid-switch also deletes its dedicated computer.
-          if (isRecordNotFound(error)) throw new ClientError("NOT_FOUND", "Not Found");
-          throw error;
-        } finally {
-          await deps.prisma.bot.updateMany({
-            where: { id: bot.id },
-            data: { computerSwitching: false },
-          });
-        }
+        return bot;
       }),
       archive: authed.bots.archive.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });

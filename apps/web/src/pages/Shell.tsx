@@ -103,7 +103,12 @@ import { rightPanelStorageKey } from "./shell/right-panel-state";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import type { SettingsSection } from "./shell/shell-overlay-url";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
-import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
+import {
+  cycleBotId,
+  findPanelAction,
+  isApplePlatform,
+  useShellShortcuts,
+} from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
 import { ArchivedChats } from "./shell/sidebar/archived-chats";
 import { focusSidebarSearch, ShellSidebar } from "./shell/sidebar/shell-sidebar";
@@ -265,6 +270,7 @@ function SpaceShell() {
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
   const [panelCoversChat, setPanelCoversChat] = useState(false);
+  const [panelOverlays, setPanelOverlays] = useState(false);
   const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [botMenu, setBotMenu] = useState<ChatMenuTarget | null>(null);
@@ -416,11 +422,16 @@ function SpaceShell() {
           return quoteShortcutRef.current?.() ?? false;
         case "find":
           if (!active && !activeGroup) return false;
-          // On a narrow window the drawer makes the chat inert and a side panel covers it, so
-          // either would hide the bar. A panel holding a form keeps its input instead.
-          if (isMobileSidebar && panel) {
-            if (!chatPanelOpen) return false;
-            setPanel(null);
+          // The drawer makes the chat inert and a side panel can cover it, so either would hide
+          // the bar. A panel holding a form keeps its input instead.
+          {
+            const action = findPanelAction(
+              isMobileSidebar || panelOverlays,
+              !!panel,
+              chatPanelOpen,
+            );
+            if (action === "refuse") return false;
+            if (action === "close-panel") setPanel(null);
           }
           setMobileSidebarOpen(false);
           setFindOpen(true);
@@ -550,6 +561,7 @@ function SpaceShell() {
     timezone: bootstrapMe?.timezone,
     setBots,
     refreshThread,
+    openGroup: (id) => navigate(`/app/g/${id}`),
     setPanel,
     messageProviders: messagingProviders,
   });
@@ -1352,6 +1364,7 @@ function SpaceShell() {
         refreshGroupThread={refreshGroupThread}
         discardChatAttachments={composer.discardThreadAttachments}
         onCoversChat={setPanelCoversChat}
+        onOverlays={setPanelOverlays}
         computerOpen={computerOpen}
         computerPanel={
           active ? (
