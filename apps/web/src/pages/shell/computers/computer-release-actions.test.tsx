@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ComputerReleaseReason } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -24,14 +25,6 @@ import { ComputerReleaseActions } from "./computer-release-actions";
 
 let container: HTMLDivElement;
 let root: Root;
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
 
 function button(label: string): HTMLButtonElement | undefined {
   return [...container.querySelectorAll("button")].find((item) => item.textContent === label);
