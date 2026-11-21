@@ -37,6 +37,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import { CallCard, CallReturnBar } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
@@ -59,10 +60,6 @@ import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { useDesktopBadge } from "../lib/platform/use-desktop-badge";
 import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
 import {
-  readBotsSidebarCollapsed,
-  writeBotsSidebarCollapsed,
-} from "../lib/preferences/bots-sidebar-pref";
-import {
   lastChatKey,
   lastChatOf,
   queryClient,
@@ -74,6 +71,7 @@ import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
 import { errorText } from "../lib/query/user-error";
 import { routineNeedsOneShotArm } from "../lib/routines/routine-draft";
+import { useAppSidebar } from "./shell/app-rail";
 import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
 import type { ImportSetupTarget } from "./shell/bots/import-setup-card";
 import { useTeaching } from "./shell/bots/use-teaching";
@@ -111,7 +109,11 @@ import {
 } from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
 import { ArchivedChats } from "./shell/sidebar/archived-chats";
-import { focusSidebarSearch, ShellSidebar } from "./shell/sidebar/shell-sidebar";
+import {
+  focusSidebarSearch,
+  ShellSidebar,
+  ShellSidebarFooter,
+} from "./shell/sidebar/shell-sidebar";
 import { BotsSidebarLayout } from "./shell/sidebar/sidebar-layout";
 import { SidebarRoster } from "./shell/sidebar/sidebar-roster";
 import { SnoozedChats } from "./shell/sidebar/snoozed-chats";
@@ -207,15 +209,15 @@ function SpaceShell() {
     refreshBots,
   });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
-  // Read while rendering, so returning to chats does not animate the sidebar shut.
-  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(() =>
-    readBotsSidebarCollapsed(userId),
-  );
-  const [sidebarCollapsedFor, setSidebarCollapsedFor] = useState(userId);
-  if (sidebarCollapsedFor !== userId) {
-    setSidebarCollapsedFor(userId);
-    setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
-  }
+  const {
+    listCollapsed: botsSidebarCollapsed,
+    previewListCollapsed,
+    railWidth,
+    railFooterNode,
+    setListCollapsed: setBotsSidebarCollapsed,
+  } = useAppSidebar();
+  // The rail decides where the footer lives, so the two can never disagree at a breakpoint.
+  const railOnScreen = railWidth > 0;
   const search = useSidebarSearch({ rpc, navigate });
   const thread = useThreadState();
   const { snapshot } = thread;
@@ -267,12 +269,12 @@ function SpaceShell() {
   };
   const voiceStatus: VoiceStatus | null =
     useQuery(queries.voice.status.queryOptions()).data ?? null;
-  const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
+  const { mobileSidebarOpen, setMobileSidebarOpen, closeMobileSidebar, swipeHandlers } =
+    useMobileSidebar();
   const isMobileSidebar = useIsMobile();
   const [panelCoversChat, setPanelCoversChat] = useState(false);
   const [panelOverlays, setPanelOverlays] = useState(false);
   const pages = usePagesForChat();
-  const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [botMenu, setBotMenu] = useState<ChatMenuTarget | null>(null);
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
   const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
@@ -619,11 +621,11 @@ function SpaceShell() {
     () =>
       sidebarGroupsForSpaces(
         sidebarSpaces,
-        miniSidebar ? "" : search.query,
+        search.query,
         { pinned: t`Pinned`, unassigned: t`Unassigned` },
         snoozeNow,
       ),
-    [sidebarSpaces, search.query, miniSidebar, t, snoozeNow],
+    [sidebarSpaces, search.query, t, snoozeNow],
   );
   // The Dock badge ignores the roster search box: a filter must not hide unread chats.
   const unreadChatCount = useMemo(
@@ -924,10 +926,7 @@ function SpaceShell() {
     closeComputer: () => setComputerOpen(false),
   });
 
-  function setBotsSidebarCollapsedPref(collapsed: boolean) {
-    setBotsSidebarCollapsed(collapsed);
-    writeBotsSidebarCollapsed(userId, collapsed);
-  }
+  const setBotsSidebarCollapsedPref = setBotsSidebarCollapsed;
 
   function openSettings(section: SettingsSection = "general", spaceId: string | null = null) {
     setOverlay({ kind: "settings", section, spaceId });
@@ -1012,12 +1011,28 @@ function SpaceShell() {
         ? bots.some((bot) => bot.id === target.id)
         : groups.some((group) => group.id === target.id),
   };
+  const sidebarFooter = (
+    <ShellSidebarFooter
+      mini={railOnScreen}
+      logos={footerLogos}
+      user={session.data?.user}
+      boardEnabled={hasLab(bootstrapMe?.labs, "board")}
+      navLinks={desktopBridge() ? [] : (bootstrapMe?.navLinks ?? [])}
+      closeMobileSidebar={() => setMobileSidebarOpen(false)}
+      navigate={navigate}
+      openSettings={openSettings}
+      openIntegrations={() => setOverlay({ kind: "integrations" })}
+      openSkills={() => setOverlay({ kind: "skills" })}
+      openSpaceChat={openSpaceChat}
+    />
+  );
   const shell = (
     <BotsSidebarLayout
       userId={userId}
       collapsed={botsSidebarCollapsed}
       onCollapsedChange={setBotsSidebarCollapsedPref}
-      onPreviewCollapsedChange={setBotsSidebarCollapsed}
+      onPreviewCollapsedChange={previewListCollapsed}
+      reservedWidth={railWidth}
       computerOpen={computerOpen}
       data-testid="shell-root"
       data-ready={shellReady}
@@ -1053,9 +1068,9 @@ function SpaceShell() {
         isMobile={isMobileSidebar}
         mobileOpen={mobileSidebarOpen}
         setMobileOpen={setMobileSidebarOpen}
+        onCloseMobile={closeMobileSidebar}
         density={botsSidebarDensity}
         collapsed={botsSidebarCollapsed}
-        mini={miniSidebar}
         setCollapsedPref={setBotsSidebarCollapsedPref}
         createMenuOpen={createMenuOpen}
         setCreateMenuOpen={setCreateMenuOpen}
@@ -1071,7 +1086,7 @@ function SpaceShell() {
         chatMenu={chatMenu}
         roster={
           <SidebarRoster
-            mini={miniSidebar}
+            mini={railOnScreen && botsSidebarCollapsed}
             sidebarGroups={sidebarGroups}
             collapsedSidebarSections={collapsedSidebarSections}
             bootstrapMe={bootstrapMe}
@@ -1127,15 +1142,9 @@ function SpaceShell() {
             />
           </>
         }
-        footerLogos={footerLogos}
-        user={session.data?.user}
-        boardEnabled={hasLab(bootstrapMe?.labs, "board")}
-        navLinks={desktopBridge() ? [] : (bootstrapMe?.navLinks ?? [])}
-        openSettings={openSettings}
-        openIntegrations={() => setOverlay({ kind: "integrations" })}
-        openSkills={() => setOverlay({ kind: "skills" })}
-        openSpaceChat={openSpaceChat}
+        footer={railOnScreen ? null : sidebarFooter}
       />
+      {railOnScreen && railFooterNode ? createPortal(sidebarFooter, railFooterNode) : null}
 
       {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}
       <main

@@ -145,7 +145,7 @@ export function BotLookPicker({
                 onClick={() => onChange(botLookWithColor(value, color))}
                 aria-label={t`Color ${color}`}
                 aria-pressed={selected}
-                className={`size-6 rounded-full border transition-transform hover:scale-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-ring ${
+                className={`size-6 rounded-full border transition-transform hover:scale-110 active:scale-[0.97] motion-reduce:active:scale-100 focus-visible:ring-2 focus-visible:ring-ring ${
                   selected
                     ? "scale-105 border-transparent ring-2 ring-foreground ring-offset-2 ring-offset-popover"
                     : "border-border"

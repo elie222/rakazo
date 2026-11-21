@@ -54,6 +54,10 @@
   --page-tile-line: #626262;
   --primary-hover: #dbdbdb;
   --primary-disabled: #f5f5f521;
+  --shadow-outline: 0 0 0 1px rgb(255 255 255 / 0.08);
+  --shadow-control: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-popover: 0 4px 16px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4);
   --radius: 0.75rem;
 }
 
@@ -110,5 +114,9 @@
   --page-tile-line: #a1a1a6;
   --primary-hover: #363636;
   --primary-disabled: #1c1c1c26;
+  --shadow-outline: 0 0 0 1px rgb(0 0 0 / 0.06);
+  --shadow-control: 0 1px 2px rgb(0 0 0 / 0.06);
+  --shadow-popover: 0 4px 16px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / 0.14), 0 2px 8px rgb(0 0 0 / 0.06);
   --radius: 0.75rem;
 }

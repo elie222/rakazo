@@ -16,6 +16,7 @@ export function BotsSidebarLayout({
   collapsed,
   onCollapsedChange,
   onPreviewCollapsedChange,
+  reservedWidth = 0,
   computerOpen,
   children,
   ...props
@@ -24,6 +25,7 @@ export function BotsSidebarLayout({
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   onPreviewCollapsedChange: (collapsed: boolean) => void;
+  reservedWidth?: number;
   computerOpen: boolean;
 }) {
   const { t } = useLingui();
@@ -32,6 +34,7 @@ export function BotsSidebarLayout({
     collapsed,
     onCollapsedChange,
     onPreviewCollapsedChange,
+    reservedWidth,
   });
   return (
     <SidebarWidthContext value={width}>
@@ -46,7 +49,7 @@ export function BotsSidebarLayout({
       >
         {children}
         {/* The full-screen computer covers the sidebar, so its edge must not catch clicks there. */}
-        {computerOpen ? null : (
+        {computerOpen || (collapsed && !resizing) ? null : (
           <hr
             {...handleProps}
             data-testid="bots-sidebar-edge"

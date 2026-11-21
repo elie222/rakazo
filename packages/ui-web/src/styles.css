@@ -38,11 +38,37 @@
   --text-display: 32px;
   --text-display--line-height: 40px;
   --text-display--letter-spacing: -0.02em;
+
+  /* Motion: state changes and entrances share one curve, so every control moves alike. */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --motion-micro: 150ms;
+  --motion-floating: 150ms;
+  --motion-layout: 200ms;
+  --motion-pop: 450ms;
+  --motion-sweep: 1.6s;
 }
 
 /* The system font reads light at 400 on macOS; regular text uses 420 there. Medium and semibold stay. */
 :root[data-os="mac"] {
   --font-weight-normal: 420;
+}
+
+/* Shadow utilities read the generated tokens; naming them in `@theme` would self-reference. */
+@utility shadow-outline {
+  box-shadow: var(--shadow-outline);
+}
+
+@utility shadow-control {
+  box-shadow: var(--shadow-control);
+}
+
+@utility shadow-popover {
+  box-shadow: var(--shadow-popover);
+}
+
+@utility shadow-dialog {
+  box-shadow: var(--shadow-dialog);
 }
 
 @theme inline {

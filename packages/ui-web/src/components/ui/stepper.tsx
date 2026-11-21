@@ -127,7 +127,7 @@ function Stepper({
                 type="button"
                 aria-labelledby={complete ? `${titleId} ${statusId}` : titleId}
                 onClick={() => onSelect(step.id)}
-                className="absolute inset-0 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="absolute inset-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               />
             ) : null}
           </li>

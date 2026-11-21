@@ -30,7 +30,7 @@ const STATUS_WARNINGS: ReadonlySet<AgentImportWarning> = new Set([
 const headingClass = "text-body text-foreground";
 const sectionClass = "border-b border-border/60";
 const triggerClass =
-  "group flex min-h-11 w-full cursor-pointer items-center gap-1 rounded-sm text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
+  "group flex min-h-11 w-full cursor-pointer items-center gap-1 rounded-sm text-start outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 /**
  * What a read source would import: the new bot's name, then one row per kind of thing, with
@@ -79,7 +79,7 @@ export function AgentImportPlanReview({
             disabled={disabled}
             onCheckedChange={(checked) => toggle(id, checked)}
           />
-          <CollapsibleTrigger className="group flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-sm text-start text-body text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+          <CollapsibleTrigger className="group flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-sm text-start text-body text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
             <span className="truncate" dir="auto">
               {title}
             </span>

@@ -26,7 +26,7 @@ function Disclosure({
     <Collapsible data-slot="disclosure" className={cn("group/disclosure", className)} {...props}>
       <CollapsibleTrigger
         className={cn(
-          "flex w-fit cursor-pointer items-center gap-1.5 rounded-md text-start outline-none select-none focus-visible:ring-3 focus-visible:ring-ring/50",
+          "flex w-fit cursor-pointer items-center gap-1.5 rounded-md text-start outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/50",
           summaryClassName,
         )}
       >

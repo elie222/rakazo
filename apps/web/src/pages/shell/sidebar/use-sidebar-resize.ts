@@ -10,6 +10,7 @@ import {
   writeBotsSidebarWidth,
 } from "../../../lib/preferences/bots-sidebar-pref";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { focusChatListRestore } from "./focus-chat-list";
 
 function direction() {
   return document.documentElement.dir === "rtl" ? -1 : 1;
@@ -20,15 +21,20 @@ export function useSidebarResize({
   collapsed,
   onCollapsedChange,
   onPreviewCollapsedChange,
+  reservedWidth = 0,
 }: {
   userId: string | null | undefined;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   onPreviewCollapsedChange: (collapsed: boolean) => void;
+  /** Width the primary rail takes from the viewport, so the list never squeezes the chat. */
+  reservedWidth?: number;
 }) {
   const [preferredWidth, setPreferredWidth] = useState(() => readBotsSidebarWidth(userId));
   // Only the limit is kept, so resizing the window re-renders the shell only when it changes.
-  const [maxWidth, setMaxWidth] = useState(() => maximumBotsSidebarWidth(window.innerWidth));
+  const [maxWidth, setMaxWidth] = useState(() =>
+    maximumBotsSidebarWidth(window.innerWidth, reservedWidth),
+  );
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const drag = useRef<{
     pointerId: number;
@@ -53,7 +59,13 @@ export function useSidebarResize({
     setDragWidth(null);
   }, [userId]);
 
-  useEventListener(window, "resize", () => setMaxWidth(maximumBotsSidebarWidth(window.innerWidth)));
+  useEffect(() => {
+    setMaxWidth(maximumBotsSidebarWidth(window.innerWidth, reservedWidth));
+  }, [reservedWidth]);
+
+  useEventListener(window, "resize", () =>
+    setMaxWidth(maximumBotsSidebarWidth(window.innerWidth, reservedWidth)),
+  );
 
   function commit(next: number) {
     if (next < BOTS_SIDEBAR_SNAP_WIDTH) {
@@ -64,6 +76,15 @@ export function useSidebarResize({
     setPreferredWidth(expanded);
     writeBotsSidebarWidth(userId, expanded);
     onCollapsedChange(false);
+  }
+
+  /** A keyboard collapse removes the focused handle, so focus moves to the rail's restore action. */
+  function commitFromKeyboard(next: number) {
+    const collapsing = next < BOTS_SIDEBAR_SNAP_WIDTH;
+    commit(next);
+    if (collapsing) {
+      focusChatListRestore();
+    }
   }
 
   function release(event: PointerEvent<HTMLElement>) {
@@ -142,7 +163,7 @@ export function useSidebarResize({
         event.preventDefault();
         const step = (event.key === "ArrowRight" ? 32 : -32) * direction();
         const next = width + step;
-        commit(
+        commitFromKeyboard(
           step < 0 && next < BOTS_SIDEBAR_MIN_WIDTH
             ? BOTS_SIDEBAR_MINI_WIDTH
             : next < BOTS_SIDEBAR_SNAP_WIDTH && step > 0
@@ -151,13 +172,14 @@ export function useSidebarResize({
         );
       } else if (event.key === "Home") {
         event.preventDefault();
-        commit(BOTS_SIDEBAR_MINI_WIDTH);
+        commitFromKeyboard(BOTS_SIDEBAR_MINI_WIDTH);
       } else if (event.key === "End") {
         event.preventDefault();
         commit(maxWidth);
       } else if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        onCollapsedChange(!collapsed);
+        if (collapsed) onCollapsedChange(false);
+        else commitFromKeyboard(BOTS_SIDEBAR_MINI_WIDTH);
       }
     },
   };

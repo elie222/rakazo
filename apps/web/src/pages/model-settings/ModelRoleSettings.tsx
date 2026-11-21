@@ -331,7 +331,7 @@ export function ModelRoleSettings({
   const pickerTrigger = (label: string, sub?: string) => (
     <button
       type="button"
-      className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md py-1 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md py-1 text-start outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <span className="truncate text-body-lg text-foreground">{label}</span>
       {sub ? <span className="truncate text-body-sm text-muted-foreground">{sub}</span> : null}
@@ -555,7 +555,7 @@ export function ModelRoleSettings({
               trigger={
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   <Plus className="size-4" aria-hidden />
                   <Trans>Add fallback</Trans>
