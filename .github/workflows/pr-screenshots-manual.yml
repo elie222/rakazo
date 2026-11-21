@@ -10,7 +10,10 @@ on:
         required: true
         type: number
 
-permissions: {}
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
 
 jobs:
   head:
@@ -31,7 +34,6 @@ jobs:
           echo "sha=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .head.sha)" >> "$GITHUB_OUTPUT"
 
   screenshots:
-    name: screenshots (${{ inputs.pr }})
     needs: head
     uses: ./.github/workflows/pr-screenshots.yml
     permissions:
