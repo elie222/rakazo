@@ -40,6 +40,7 @@ describe("VoiceChatCard", () => {
     container?.remove();
     root = undefined;
     container = undefined;
+    vi.useRealTimers();
   });
 
   function render(revealMessageId?: string) {
@@ -146,5 +147,60 @@ describe("VoiceChatCard", () => {
     act(() => container?.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click());
     expect(container.textContent).toContain("Hi, it's about the report.");
     expect(container.textContent).toContain("On it");
+  });
+
+  function ringingGroup(status: "ringing" | "answered"): VoiceChatGroup {
+    return {
+      kind: "voiceChat",
+      key: "call:call-4",
+      callId: "call-4",
+      messages: [
+        {
+          id: "request-4",
+          role: "bot",
+          blocks: [
+            {
+              kind: "call_request",
+              callId: "call-4",
+              reason: "Send the report",
+              opening: "Hi!",
+              status,
+              expiresAt: "2026-10-14T18:30:45Z",
+              ...(status === "answered" ? { durationSeconds: 42 } : {}),
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  function renderCard(next: VoiceChatGroup) {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    act(() => root?.render(<VoiceChatCard group={next} />));
+    return container;
+  }
+
+  it("turns a ringing call into a missed call when it rings out, without a server update", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-14T18:30:00Z"));
+    const card = renderCard(ringingGroup("ringing"));
+    expect(card.textContent).toContain("Calling you…");
+
+    act(() => vi.advanceTimersByTime(44_000));
+    expect(card.textContent).toContain("Calling you…");
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(card.textContent).toContain("Missed call");
+    expect(card.textContent).not.toContain("Calling you…");
+  });
+
+  it("schedules no timer for a call that is no longer ringing", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-14T18:30:00Z"));
+    renderCard(ringingGroup("answered"));
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

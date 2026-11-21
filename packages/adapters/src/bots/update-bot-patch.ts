@@ -1,4 +1,5 @@
 import { BOT_DESCRIPTION_MAX_LENGTH, BOT_NAME_MAX_LENGTH } from "@rakazo/contracts";
+import { argumentGiven } from "@rakazo/core";
 
 export type UpdateBotPatch = {
   name?: string;
@@ -137,8 +138,4 @@ export function ignoredFieldsNote(fields: Record<string, unknown>): string | und
   return `This was a read, so these were not applied: ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}. To change one, call update_bot with just that field and no instructions_offset.`;
 }
 
-/** Providers send omitted optional fields as null or blank; only anything else counts as given. */
-export function argumentGiven(value: unknown): boolean {
-  if (value === undefined || value === null) return false;
-  return typeof value !== "string" || value.trim().length > 0;
-}
+export { argumentGiven };
