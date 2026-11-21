@@ -181,3 +181,42 @@ it("does not claim Saved for a draft edited while the save is in flight", async 
   );
   expect(host.textContent).toContain("Saved");
 });
+
+it("lets the rollup hours be cleared and retyped, and reverts an empty field on blur", async () => {
+  const onSave = vi.fn(async () => {});
+  await act(async () =>
+    root.render(
+      <ExternalConversationSettings
+        conversation={{
+          ...conversation,
+          automatedSenderPolicies: { "bot-9": { name: "Deploys", mode: "rollup", rollupHours: 6 } },
+        }}
+        bot={bot}
+        onSave={onSave}
+      />,
+    ),
+  );
+  const hours = document.querySelector<HTMLInputElement>('input[type="number"]')!;
+  const type = (text: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(hours, text);
+      hours.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+  await type("");
+  expect(hours.value).toBe("");
+  await type("1");
+  await type("12");
+  expect(hours.value).toBe("12");
+  await act(async () => button("Save").click());
+  expect(onSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      automatedSenderPolicies: { "bot-9": { name: "Deploys", mode: "rollup", rollupHours: 12 } },
+    }),
+    client,
+  );
+
+  await type("");
+  await act(async () => hours.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+  expect(hours.value).toBe("12");
+});

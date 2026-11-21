@@ -3,8 +3,15 @@ import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { Ticket, TicketStatus } from "@rakazo/contracts";
 import { TICKET_STATUSES } from "@rakazo/contracts";
-import { useRef, useState } from "react";
-import { Platform, RefreshControl, ScrollView, StyleSheet, Text } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+} from "react-native";
 import {
   SettingsGroup,
   SettingsRow,
@@ -14,23 +21,29 @@ import type { ResolvedAppearance } from "../appearance/appearance";
 import { useSideInsets } from "../layout/side-insets";
 import { native, useResolvedAppearance, useThemedStyles } from "../native/native";
 import type { BoardSection } from "./board";
-import { ticketStatusLabel } from "./board";
+import { boardRefreshFailure, ticketStatusLabel } from "./board";
 
 export type BoardListProps = {
   sections: BoardSection[];
   /** A failed refresh while older tickets are still shown. */
   error: string;
+  /** Counts failed loads, so a repeat of the same error is announced again. */
+  refreshFailures: number;
   onMove: (ticket: Ticket, status: TicketStatus) => void;
   onRefresh: () => Promise<void>;
 };
 
 /** Settings-style groups, one per column; iOS renders the same groups as a SwiftUI list. */
-export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps) {
+export function BoardList({ sections, error, refreshFailures, onMove, onRefresh }: BoardListProps) {
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
   const sideInsets = useSideInsets();
   const colorScheme = useResolvedAppearance();
   const [refreshing, setRefreshing] = useState(false);
+  // A failed refresh leaves older tickets on screen, so tell screen readers it failed.
+  useEffect(() => {
+    if (error) AccessibilityInfo.announceForAccessibility(boardRefreshFailure(error));
+  }, [error, refreshFailures]);
   return (
     <ScrollView
       style={[styles.screen, sideInsets]}
@@ -46,7 +59,11 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
         />
       }
     >
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {boardRefreshFailure(error)}
+        </Text>
+      ) : null}
       {sections.map((section) => (
         <SettingsGroup key={section.status} label={ticketStatusLabel(section.status)}>
           {section.tickets.map((ticket) => (

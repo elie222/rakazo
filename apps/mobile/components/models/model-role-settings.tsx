@@ -16,8 +16,8 @@ import type {
 import {
   backupChoiceKey,
   connectedBackupOptions,
-  connectionDisplayName,
   MAX_MODEL_BACKUPS,
+  modelConnectionNames,
   modelRoleChoiceKey,
   withConnectionName,
 } from "@rakazo/contracts";
@@ -29,6 +29,7 @@ import {
   modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -144,30 +145,38 @@ export function ModelRoleSettings({
   const busy = state.busy || state.stale || !settings;
   const entryFor = (choice: ModelRoleChoice) =>
     catalogEntryFor(state.catalog, choice.provider, choice.modelId);
-  const options = connectedBackupOptions(state.catalog, credentials, role === "computer");
+  const options = connectedBackupOptions(
+    state.catalog.map(localizeModelEntry),
+    credentials,
+    role === "computer",
+  );
   const optionFor = (choice: ModelRoleChoice) =>
     options.find((option) => backupChoiceKey(option) === backupChoiceKey(choice));
   const modelLabel = (choice: ModelRoleChoice) =>
     entryFor(choice)?.label ?? optionFor(choice)?.label ?? choice.modelId;
-  const providerName = (choice: ModelRoleChoice) =>
-    entryFor(choice)?.providerName ??
+  const providerNameFallback = (choice: ModelRoleChoice) =>
     optionFor(choice)?.providerName ??
     providers.find((provider) => provider.id === choice.provider)?.name ??
     choice.provider;
+  /** The row's own connection, or the provider's newest for rows that name none. */
+  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
+  const namesFor = (choice: ModelRoleChoice) =>
+    modelConnectionNames(
+      localizeModelEntry(
+        entryFor(choice) ?? {
+          provider: choice.provider,
+          providerName: providerNameFallback(choice),
+        },
+      ),
+      choice.credentialId ? connectionFor(choice) : undefined,
+    );
   // What runs when the member chose no first model; named in the empty row.
   const deployment = state.settings?.deploymentPrimary ?? null;
   const deploymentName = deployment ? modelLabel(deployment) : null;
   // The deployment pays for its default, so it reads as included rather than as a provider bill.
   const included = state.settings?.deploymentIncluded ? t`Included` : undefined;
-  /** The row's own connection, or the provider's newest for rows that name none. */
-  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
-  const connectionName = (choice: ModelRoleChoice) => {
-    if (choice.creditOfferingId) return t`Rakazo credits`;
-    const connection = choice.credentialId ? connectionFor(choice) : undefined;
-    return connection
-      ? connectionDisplayName(connection, providerName(choice))
-      : providerName(choice);
-  };
+  const connectionName = (choice: ModelRoleChoice) =>
+    choice.creditOfferingId ? t`Rakazo credits` : namesFor(choice).connectionName;
   const isPrimarySlot = (slot: Slot) => slot === "empty" || (slot === 0 && primary !== null);
 
   const thinkingLevels =
@@ -231,7 +240,11 @@ export function ModelRoleSettings({
   function pickerRequest(slot: Slot, narrowed?: Narrowed): ModelPickerRequest {
     const primarySlot = isPrimarySlot(slot);
     const all = narrowed
-      ? connectedBackupOptions(narrowed.catalog, narrowed.credentials, role === "computer")
+      ? connectedBackupOptions(
+          narrowed.catalog.map(localizeModelEntry),
+          narrowed.credentials,
+          role === "computer",
+        )
       : options;
     const pool = all.filter(
       (option) => !narrowed || option.credentialId === narrowed.choice.credentialId,
@@ -381,7 +394,7 @@ export function ModelRoleSettings({
           key="empty"
           leading={ordered ? number(0) : undefined}
           title={deploymentName ?? defaultLabel}
-          detail={deployment ? (included ?? providerName(deployment)) : undefined}
+          detail={deployment ? (included ?? namesFor(deployment).providerName) : undefined}
           disabled={busy}
           onPress={() => pick("empty")}
         />
