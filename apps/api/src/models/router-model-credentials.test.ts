@@ -397,6 +397,78 @@ describe("model credential persistence", () => {
     expect(roles.createMany).not.toHaveBeenCalled();
   });
 
+  it("keeps the main model when an existing connection is saved without makeDefault", async () => {
+    const { deps, handler } = persistDeps();
+    const saved = {
+      id: "cred-saved",
+      userId: actor.userId,
+      provider: "test-provider",
+      label: "Saved",
+      secretId: "secret-saved",
+    };
+    const credentials = deps.prisma.userModelCredential as unknown as Record<
+      string,
+      ReturnType<typeof vi.fn>
+    >;
+    credentials.findFirst!.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id === saved.id ? saved : null,
+    );
+    credentials.update = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      ...saved,
+      ...data,
+    }));
+    credentials.count = vi.fn().mockResolvedValue(0);
+    Object.assign(deps.prisma, { secret: { findFirst: vi.fn().mockResolvedValue(null) } });
+    // Another provider runs the main model.
+    const tx = withModelRoles(
+      {
+        userModelCredential: credentials,
+        userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
+        userModelPreference: deps.prisma.userModelPreference,
+        secret: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: "new-secret" }),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+      },
+      [mainRole({ userId: actor.userId }, "other-provider", "other-model")],
+    );
+    const roles = (
+      tx as unknown as { userModelRoleChoice: { createMany: ReturnType<typeof vi.fn> } }
+    ).userModelRoleChoice;
+    const transaction = deps.prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
+    transaction.mockImplementation(async (fn) => fn(tx));
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "saved-model",
+      credentialId: saved.id,
+    });
+
+    expect(response.status).toBe(200);
+    expect(credentials.update).toHaveBeenCalled();
+    expect(roles.createMany).not.toHaveBeenCalled();
+  });
+
+  it("still makes a first connection the main model when makeDefault is omitted", async () => {
+    const { deps, handler } = persistDeps();
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "only-model",
+    });
+
+    expect(response.status).toBe(200);
+    const roles = deps.prisma.userModelRoleChoice as unknown as {
+      createMany: ReturnType<typeof vi.fn>;
+    };
+    expect(roles.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ role: "main", modelId: "only-model" })],
+    });
+  });
+
   it("makes the connection's model the main model when asked, through the role table", async () => {
     const { upsert, deps, handler } = persistDeps();
 

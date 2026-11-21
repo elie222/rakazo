@@ -308,7 +308,7 @@ export const ModelConnectInputSchema = z
     modelId: z.string().optional(),
     reasoning: z.boolean().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
-    /** False keeps the current main model; omitted means true. */
+    /** False keeps the current main model; omitted means true for a new connection, false for an existing one. */
     makeDefault: z.boolean().optional(),
     /** Where makeDefault sets the main model; omitted means whichever applies in the Space. */
     scope: SettingsScopeSchema.optional(),
