@@ -549,6 +549,7 @@ export function SidebarRoster({
                   <ListRow
                     key={`${item.kind}:${item.chat.id}`}
                     active={selected || rosterDropKey === rowDropKey}
+                    current={selected}
                     data-flip-key={`${item.kind}:${item.chat.id}`}
                     className={cn(
                       "group/row",

@@ -4,7 +4,7 @@ import { cn } from "@rakazo/ui-web/lib/utils";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { createContext, useContext } from "react";
 
-const ListRowActiveContext = createContext(false);
+const ListRowCurrentContext = createContext(false);
 
 /**
  * A navigation row with a stable 56px rhythm. The row itself is a plain wrapper so the
@@ -12,6 +12,7 @@ const ListRowActiveContext = createContext(false);
  */
 function ListRow({
   active = false,
+  current = active,
   tone = "sidebar",
   actions,
   fade = "32px",
@@ -21,6 +22,8 @@ function ListRow({
   ...props
 }: ComponentProps<"div"> & {
   active?: boolean;
+  /** Whether this row is the page the reader is on; a drop target is active but not current. */
+  current?: boolean;
   /** The surface the row sits on: the sidebar, or a page body. */
   tone?: "sidebar" | "surface";
   actions?: ReactNode;
@@ -28,7 +31,7 @@ function ListRow({
   fade?: string;
 }) {
   return (
-    <ListRowActiveContext value={active}>
+    <ListRowCurrentContext value={current}>
       <div
         data-slot="list-row"
         data-active={active || undefined}
@@ -54,7 +57,7 @@ function ListRow({
         {children}
         {actions}
       </div>
-    </ListRowActiveContext>
+    </ListRowCurrentContext>
   );
 }
 
@@ -68,14 +71,14 @@ function ListRowLink({
   "aria-current": ariaCurrent,
   ...props
 }: useRender.ComponentProps<"a"> & ComponentProps<"a">) {
-  const active = useContext(ListRowActiveContext);
+  const current = useContext(ListRowCurrentContext);
   return useRender({
     defaultTagName: "a",
     props: mergeProps<"a">(
       {
-        "aria-current": ariaCurrent ?? (active ? "page" : undefined),
+        "aria-current": ariaCurrent ?? (current ? "page" : undefined),
         className: cn(
-          "relative flex min-h-14 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-inherit outline-none",
+          "relative flex min-h-14 w-full min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-start text-inherit outline-none",
           "focus-visible:ring-2 focus-visible:ring-ring/50",
           className,
         ),

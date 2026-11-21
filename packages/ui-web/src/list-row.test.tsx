@@ -64,6 +64,20 @@ describe("ListRow", () => {
     expect(host.querySelector('[data-slot="list-row-status"]')).toBeNull();
     act(() => root.unmount());
   });
+
+  it("marks only the current row as the page, not a drag target", () => {
+    const { host, root } = render(
+      <ListRow active current={false}>
+        <ListRowLink href="/drop-target">Drop here</ListRowLink>
+      </ListRow>,
+    );
+    expect(host.querySelector('[data-slot="list-row"]')?.getAttribute("data-active")).toBe("true");
+    expect(host.querySelector('[data-slot="list-row-link"]')?.getAttribute("aria-current")).toBe(
+      null,
+    );
+    act(() => root.unmount());
+  });
+
   it("announces its status when given a localized label", () => {
     const { host, root } = render(<ListRowStatus working label="Running" />);
     expect(host.querySelector('[data-slot="list-row-status"]')?.textContent).toContain("Running");
