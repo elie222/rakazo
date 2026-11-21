@@ -208,20 +208,26 @@ describeWithDatabase("API authorization and resource isolation", () => {
     await rpc(app, owner, "bots/archive", { botId: archived.id }, space.id);
     const botIds = [own.id, other.id, archived.id, cross.id, "missing-bot"];
     // Members of one space share its bots and routines; archived and other-space bots stay out.
-    const ownRows = await rpc<unknown[]>(app, owner, "routines/list", { botId: own.id }, space.id);
-    const peerRows = await rpc<unknown[]>(
-      app,
-      peer,
-      "routines/list",
-      { botId: other.id },
-      space.id,
-    );
-    const shared = [
-      { botId: own.id, routines: ownRows },
-      { botId: other.id, routines: peerRows },
+    // Each row says whether the viewer is who it runs as, so a viewer's batch matches their own reads.
+    const listFor = async (cookie: string) => [
+      {
+        botId: own.id,
+        routines: await rpc<unknown[]>(app, cookie, "routines/list", { botId: own.id }, space.id),
+      },
+      {
+        botId: other.id,
+        routines: await rpc<unknown[]>(app, cookie, "routines/list", { botId: other.id }, space.id),
+      },
     ];
-    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, space.id)).toEqual(shared);
-    expect(await rpc(app, peer, "routines/listForMentions", { botIds }, space.id)).toEqual(shared);
+    const ownerShared = await listFor(owner);
+    const peerShared = await listFor(peer);
+    expect(peerShared).not.toEqual(ownerShared);
+    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, space.id)).toEqual(
+      ownerShared,
+    );
+    expect(await rpc(app, peer, "routines/listForMentions", { botIds }, space.id)).toEqual(
+      peerShared,
+    );
     const crossRows = await rpc<unknown[]>(
       app,
       owner,
@@ -360,6 +366,29 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/messages", { botId: "missing-bot", before: 1 }],
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
+      [
+        "threads/nativeCalendarPending",
+        { botId: "missing-bot", deviceKey: "00000000-0000-4000-8000-000000000000" },
+      ],
+      [
+        "threads/nativeCalendarClaim",
+        {
+          id: "missing",
+          runId: "missing",
+          threadId: "missing",
+          deviceKey: "00000000-0000-4000-8000-000000000000",
+        },
+      ],
+      [
+        "threads/nativeCalendarResult",
+        {
+          id: "missing",
+          runId: "missing",
+          threadId: "missing",
+          deviceKey: "00000000-0000-4000-8000-000000000000",
+          response: { status: "cancelled" },
+        },
+      ],
       ["threads/send", { groupId: "missing-group", text: "Nope" }],
       [
         "threads/sendWithRoutines",
@@ -487,6 +516,17 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["artifacts/get"],
       ["artifacts/getById"],
       ["artifacts/remove"],
+      ["pageReviews/list"],
+      ["pageReviews/get"],
+      ["pageReviews/grants"],
+      ["pageReviews/grant"],
+      ["pageReviews/revoke"],
+      ["pageReviews/comments"],
+      ["pageReviews/comment"],
+      ["pageReviews/resolve"],
+      ["pageReviews/askRevision"],
+      ["pageReviews/draft"],
+      ["pageReviews/publish"],
       ["pages/list"],
       ["pages/get"],
       ["pages/rename"],

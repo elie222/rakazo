@@ -187,7 +187,7 @@ export function SpendingLimitSettings() {
           </form>
         ) : null}
         {save.error ? (
-          <p className="mt-1 text-body-sm text-destructive">
+          <p role="alert" className="mt-1 text-body-sm text-destructive">
             {errorText(save.error, t`Could not save spending limit`)}
           </p>
         ) : null}

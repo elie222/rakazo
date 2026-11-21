@@ -100,8 +100,12 @@ export function telegramBotsFromEnv(
   return bots;
 }
 
+/** Unset or blank keeps group chats on. Any other value must be one of these, or startup fails. */
 function telegramGroupsEnabled(setting: string | undefined): boolean {
-  return setting?.toLowerCase() !== "off";
+  const value = setting?.trim().toLowerCase();
+  if (!value || value === "on" || value === "true" || value === "1") return true;
+  if (value === "off" || value === "false" || value === "0") return false;
+  throw new Error("TELEGRAM_GROUPS must be on or off");
 }
 
 function telegramPlatform(

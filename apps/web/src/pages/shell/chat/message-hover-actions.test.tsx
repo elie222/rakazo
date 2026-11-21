@@ -167,3 +167,30 @@ it("drops the copied confirmation when the message changes before it ends", asyn
   expect(container.querySelector('[role="status"]')).toBe(status);
   expect(status?.textContent).toBe("");
 });
+
+it("names the action group after the message so each message's buttons are told apart", () => {
+  const group = container.querySelector('[role="group"]');
+  expect(group?.getAttribute("aria-label")).toMatch(/^Message actions, \S/);
+  expect(group?.querySelector('button[aria-label="Reply"]')).not.toBeNull();
+
+  const other = document.createElement("div");
+  document.body.appendChild(other);
+  const otherRoot = createRoot(other);
+  act(() =>
+    otherRoot.render(
+      <MessageHoverActions
+        message={{ ...message, id: "m2", createdAt: "2020-01-02T15:04:00.000Z" }}
+        side="start"
+        speakerName="Ada"
+        onReply={vi.fn()}
+        onMarkUnread={vi.fn()}
+        onReact={vi.fn<(message: ThreadMessage, reaction: MessageReaction) => Promise<void>>()}
+      />,
+    ),
+  );
+  const otherLabel = other.querySelector('[role="group"]')?.getAttribute("aria-label");
+  expect(otherLabel).toContain("Ada");
+  expect(otherLabel).not.toBe(group?.getAttribute("aria-label"));
+  act(() => otherRoot.unmount());
+  other.remove();
+});
