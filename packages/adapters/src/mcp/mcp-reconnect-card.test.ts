@@ -128,6 +128,13 @@ describe("MCP reconnect card", () => {
     expect(stored).toHaveLength(2);
   });
 
+  it("posts nothing while a recent row that may have held the open card lost entries", async () => {
+    const f = fixture();
+    stored.unshift({ blocks: [{ kind: "text", text: "hi" }, "garbled"], clientNonce: "other" });
+    expect(await f.post()).toBe(false);
+    expect(stored).toHaveLength(1);
+  });
+
   it("posts nothing for a run that no longer exists or a transport it cannot show", async () => {
     expect(await fixture(null).post()).toBe(false);
     expect(await fixture().post("run", { ...server, transport: "carrier-pigeon" })).toBe(false);

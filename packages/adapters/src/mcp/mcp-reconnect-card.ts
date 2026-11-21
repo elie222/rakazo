@@ -4,7 +4,7 @@ import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
-  storedMessageBlocks,
+  readMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { McpReauthorizationRequiredError } from "./mcp-oauth.js";
@@ -62,11 +62,19 @@ export async function postMcpReconnectCard(
       orderBy: { createdAt: "desc" },
       take: RECENT_MESSAGES,
     });
-    const newest = recent
-      .flatMap((message) => storedMessageBlocks(message))
-      .find((candidate) => candidate.kind === "mcp_approval" && candidate.serverId === server.id);
-    // A connected card is an earlier outage the user already fixed; this is a new one.
-    if (newest?.kind === "mcp_approval" && newest.status !== "connected") return null;
+    for (const message of recent) {
+      const { blocks, intact } = readMessageBlocks(message);
+      const card = blocks.find(
+        (candidate) => candidate.kind === "mcp_approval" && candidate.serverId === server.id,
+      );
+      // A connected card is an earlier outage the user already fixed; this is a new one.
+      if (card?.kind === "mcp_approval") {
+        if (card.status !== "connected") return null;
+        break;
+      }
+      // A row that lost entries may have held the open card, so do not post another.
+      if (!intact) return null;
+    }
     const message = await createThreadMessageInTransaction(tx, {
       threadId: run.threadId,
       botId: run.botId,

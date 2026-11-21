@@ -644,6 +644,7 @@ export class McpConnector implements ConnectorProvider {
           // server shared with every bot would otherwise put a card in every bot's chat.
           if (
             events?.notify &&
+            !context.signal.aborted &&
             context.runId &&
             context.botId &&
             "botId" in assignment &&
@@ -1287,7 +1288,9 @@ export class McpConnector implements ConnectorProvider {
           const tokens = await provider?.tokens();
           const expiresAt = accessTokenExpiresAt(material.oauth);
           if (!tokens || (expiresAt !== undefined && Date.now() >= expiresAt))
-            throw new McpReauthorizationRequiredError(server.id);
+            throw provider?.renewalPending
+              ? new McpConnectFailure("MCP sign-in could not be renewed yet", "unreachable")
+              : new McpReauthorizationRequiredError(server.id);
           values = {
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token,
