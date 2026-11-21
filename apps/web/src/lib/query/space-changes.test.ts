@@ -88,3 +88,20 @@ it("keeps a saved page edit when cancelling an older read and the refresh fails"
     client.clear();
   }
 });
+
+it("does not cancel an unobserved routine read owned by chat synchronization", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const first = deferred<string[]>();
+  const read = client.fetchQuery({
+    queryKey: key("routines", "list"),
+    queryFn: () => first.promise,
+  });
+  const result = read.then(
+    (data) => ({ data }),
+    (error: unknown) => ({ error }),
+  );
+  await spaceChanged("routines", client);
+  first.resolve(["updated routine"]);
+  expect(await result).toEqual({ data: ["updated routine"] });
+  client.clear();
+});
