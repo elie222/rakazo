@@ -51,9 +51,11 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
         await writeSaved(queryClient, workRead.queryKey, (items) => [item, ...(items ?? [])]);
       } else if (action.kind === "reopen") {
         const item = await send("scratchpad/update", { itemId: action.itemId, status: "open" });
-        await writeSaved(queryClient, workRead.queryKey, (items) =>
-          (items ?? []).map((entry) => (entry.id === item.id ? item : entry)),
-        );
+        // Just updated, so it leads the list, as the server orders it.
+        await writeSaved(queryClient, workRead.queryKey, (items) => [
+          item,
+          ...(items ?? []).filter((entry) => entry.id !== item.id),
+        ]);
       } else {
         await send("scratchpad/update", { itemId: action.itemId, status: "done" });
         await writeSaved(queryClient, workRead.queryKey, (items) =>
