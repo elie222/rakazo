@@ -52,13 +52,18 @@ function setup(rows: SavedSkillRow[] = []) {
       }
       return row[key as keyof typeof row] === value;
     });
+  const project = (row: SavedSkillRow, omit?: { files?: boolean }) => {
+    const copy = { ...row };
+    if (omit?.files) delete (copy as Partial<SavedSkillRow>).files;
+    return copy;
+  };
   const agentSkill = {
-    findMany: vi.fn(async ({ where }: { where: Where }) =>
-      rows.filter((row) => matches(row, where)).map((row) => ({ ...row })),
+    findMany: vi.fn(async ({ where, omit }: { where: Where; omit?: { files?: boolean } }) =>
+      rows.filter((row) => matches(row, where)).map((row) => project(row, omit)),
     ),
-    findFirst: vi.fn(async ({ where }: { where: Where }) => {
+    findFirst: vi.fn(async ({ where, omit }: { where: Where; omit?: { files?: boolean } }) => {
       const row = rows.find((row) => matches(row, where));
-      return row ? { ...row } : null;
+      return row ? project(row, omit) : null;
     }),
     updateMany: vi.fn(async ({ where, data }: { where: Where; data: object }) => {
       const row = rows.find((row) => matches(row, where));
@@ -523,5 +528,26 @@ describe("personal skill attachments", () => {
       "does not match its schema",
     );
     expect(row.files).toEqual(files);
+  });
+
+  it("omits attachment blobs from skill lookups and loads them only for file updates", async () => {
+    const row = savedSkill("Review", "user", { "references/notes.md": "Stored" });
+    const { agentSkill, service } = setup([row]);
+
+    await service.get(actor, { skillId });
+    expect(agentSkill.findFirst).toHaveBeenLastCalledWith(
+      expect.objectContaining({ omit: { files: true } }),
+    );
+
+    await service.get(actor, { name: "Review" });
+    expect(agentSkill.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ omit: { files: true } }),
+    );
+
+    agentSkill.findFirst.mockClear();
+    await service.update(actor, { skillId, file });
+    expect(agentSkill.findFirst).toHaveBeenCalledTimes(2);
+    expect(agentSkill.findFirst.mock.calls[0]?.[0]).not.toHaveProperty("omit");
+    expect(agentSkill.findFirst.mock.calls[1]?.[0]).toMatchObject({ omit: { files: true } });
   });
 });

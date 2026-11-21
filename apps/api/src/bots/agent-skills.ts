@@ -156,6 +156,20 @@ export function createAgentSkillsService(
   async function owned(actor: Actor, skillId: string, db: Prisma.TransactionClient = prisma) {
     const row = await db.agentSkill.findFirst({
       where: { id: skillId, ...availableInSpace(actor) },
+      omit: { files: true },
+      include: { availableIn: AVAILABILITY_SELECT },
+    });
+    if (!row) throw new IsolationError();
+    return row;
+  }
+
+  async function ownedWithFiles(
+    actor: Actor,
+    skillId: string,
+    db: Prisma.TransactionClient = prisma,
+  ) {
+    const row = await db.agentSkill.findFirst({
+      where: { id: skillId, ...availableInSpace(actor) },
       include: { availableIn: AVAILABILITY_SELECT },
     });
     if (!row) throw new IsolationError();
@@ -169,7 +183,7 @@ export function createAgentSkillsService(
   ): Promise<AgentSkill> {
     return withTransactionRetry(() =>
       prisma.$transaction(async (tx) => {
-        const existing = await owned(actor, skillId, tx);
+        const existing = await ownedWithFiles(actor, skillId, tx);
         if (existing.source !== "user") {
           throw new ClientError("BAD_REQUEST", "Only personal skills can have files updated.");
         }
@@ -258,6 +272,7 @@ export function createAgentSkillsService(
       const name = input.name?.trim() ?? "";
       const rows = await prisma.agentSkill.findMany({
         where: availableInSpace(actor),
+        omit: { files: true },
         include: { availableIn: AVAILABILITY_SELECT },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       });
