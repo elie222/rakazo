@@ -216,6 +216,10 @@ describe("signInFailureText", () => {
     ],
     ["The provider said the device code expired", "This code expired. Start again."],
     ["Token request timed out", "Sign-in failed. Start again."],
+    [
+      "Device sign-in token exchange failed (status 400, request_failed).",
+      "Sign-in is unavailable right now. Try again in a minute.",
+    ],
   ])("shows fixed text for %s", (message, text) => {
     expect(signInFailureText(signInFailure(message))).toBe(text);
   });

@@ -75,7 +75,8 @@ function refusalClass(message: string): AnalyticsModelSignInErrorClass {
   if (/state mismatch|missing authorization code|invalid_grant|invalid code/i.test(message)) {
     return "invalid_code";
   }
-  if (/could not reach the provider/i.test(message)) return "unavailable";
+  // The provider's 400 `request_failed` asks the client to retry later.
+  if (/could not reach the provider|\brequest_failed\b/i.test(message)) return "unavailable";
   const match = HTTP_STATUS.exec(message);
   const status = Number(match?.[1] ?? match?.[2] ?? match?.[3]);
   if (status === 429) return "rate_limited";
