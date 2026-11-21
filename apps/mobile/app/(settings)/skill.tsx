@@ -17,6 +17,7 @@ import { NativeActionButton } from "../../components/native/native-action-button
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { useSideInsets } from "../../lib/layout/side-insets";
+import { announceToScreenReader } from "../../lib/native/announce";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
@@ -47,6 +48,8 @@ function SkillEditor({ id }: { id?: string }) {
   const loading = skillQuery.isFetching && !skill;
   const [edited, setDraft] = useState<string | null>(null);
   const draft = edited ?? skill?.content ?? (id ? "" : NEW_SKILL_TEMPLATE);
+  const saveFailure = (failure: Error) => errorText(failure, t`Could not save skill`);
+  const deleteFailure = (failure: Error) => errorText(failure, t`Could not delete skill`);
 
   const save = useSave({
     save: async (content: string, send) => {
@@ -58,17 +61,19 @@ function SkillEditor({ id }: { id?: string }) {
       if (saved) queryClient.setQueryData(skillRead.queryKey, saved);
       else router.back();
     },
+    onFailed: (failure) => announceToScreenReader(saveFailure(failure)),
   });
   const remove = useSave({
     save: (skillId: string, send) => send("agentSkills/remove", { skillId }),
     onSaved: () => router.back(),
+    onFailed: (failure) => announceToScreenReader(deleteFailure(failure)),
     closesScreen: true,
   });
   const busy = save.pending || remove.pending;
   const error = save.error
-    ? errorText(save.error, t`Could not save skill`)
+    ? saveFailure(save.error)
     : remove.error
-      ? errorText(remove.error, t`Could not delete skill`)
+      ? deleteFailure(remove.error)
       : skillQuery.error
         ? errorText(skillQuery.error, t`Could not load skill`)
         : null;

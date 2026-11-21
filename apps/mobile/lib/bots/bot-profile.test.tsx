@@ -1028,12 +1028,12 @@ describe("routines screen", () => {
     expect(switchFor("Morning digest")!.checked).toBe(true);
   });
 
-  it("disables the switch and delete for a routine another member created", async () => {
+  it("keeps the switch and delete for a routine only another member can change", async () => {
     profileRpc(async () => [{ ...digest(), editable: false }]);
     await render(createElement(RoutinesScreen));
-    expect(switchFor("Morning digest")!.disabled).toBe(true);
+    expect(switchFor("Morning digest")!.disabled).toBe(false);
     rowFor("Morning digest, On")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
-    expect(alert).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalled();
   });
 
   it("asks before deleting and removes the row only once the server confirms", async () => {

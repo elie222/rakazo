@@ -1,7 +1,7 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import type { BillingStatus, ComputerSize } from "@rakazo/contracts";
-import { COMPUTER_SIZE_SPECS } from "@rakazo/contracts";
+import { COMPUTER_SIZE_SPECS, SANDBOX_SIZE_HOURLY_COST_MICROS } from "@rakazo/contracts";
 
 export function tierComputerDescription(offer: NonNullable<BillingStatus["byokTiers"]>[number]) {
   const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
@@ -11,15 +11,32 @@ export function tierComputerDescription(offer: NonNullable<BillingStatus["byokTi
     : t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
 }
 
-export function computerSizeLabel(size: ComputerSize, withUsage = false): string {
+export function tierComputerSummary(offer: NonNullable<BillingStatus["byokTiers"]>[number]) {
+  if (!offer.computerSizeChoice) return tierComputerDescription(offer);
+  const hours = new Intl.NumberFormat(i18n.locale || "en").format(offer.computerHours);
+  if (offer.computerSize === "standard") return t`${hours} bot computer hours/month`;
+  const size = offer.computerSize === "large" ? t`Large` : t`Extra large`;
+  return t`${hours} bot computer hours/month at Standard size · Up to ${size}`;
+}
+
+/** The size's name with how many times faster than Standard it uses computer hours. */
+export function computerSizeLabel(size: ComputerSize): string {
+  const rate = SANDBOX_SIZE_HOURLY_COST_MICROS[size] / SANDBOX_SIZE_HOURLY_COST_MICROS.standard;
   switch (size) {
     case "standard":
       return t`Standard`;
     case "large":
-      return withUsage ? t`Large · 2× usage` : t`Large`;
+      return t`Large (uses ${rate}× hours)`;
     case "xlarge":
-      return withUsage ? t`Extra large · 4× usage` : t`Extra large`;
+      return t`Extra large (uses ${rate}× hours)`;
   }
+}
+
+/** A Space's Team Computer, or a private computer by the bot it belongs to. */
+export function computerName(computer: { scope: "team" | "dedicated"; botName: string | null }) {
+  return computer.scope === "team"
+    ? i18n._({ id: "ZrvL3B", message: "Team Computer" })
+    : (computer.botName ?? i18n._({ id: "vNFOXs", message: "Private Computer" }));
 }
 
 type UsageRead = {
@@ -55,10 +72,7 @@ export function computerUsageDetails({ data, isError }: UsageRead, locale: strin
   });
   const rows = data.computers.map((computer) => ({
     id: computer.id,
-    label:
-      computer.scope === "team"
-        ? i18n._({ id: "ZrvL3B", message: "Team Computer" })
-        : (computer.botName ?? i18n._({ id: "vNFOXs", message: "Private Computer" })),
+    label: computerName(computer),
     hours: hours.format(computer.hours),
   }));
   if (data.otherHours > 0) {

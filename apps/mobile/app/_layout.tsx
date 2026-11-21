@@ -23,7 +23,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Platform, ScrollView, StyleSheet, View } from "react-native";
+import { I18nManager, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardAvoidingView, KeyboardProvider } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -75,7 +75,7 @@ import { InboxBesideContext } from "../lib/layout/side-insets";
 import {
   chooseInboxWidth,
   closesSplitPane,
-  inboxPaneWidth,
+  inboxPaneWidthDuringDrag,
   loadInboxWidth,
   useSplitView,
 } from "../lib/layout/split-view";
@@ -163,7 +163,12 @@ function SplitFrame({ children }: { children: ReactNode }) {
       dragStart.current = paneWidth.value;
     })
     .onUpdate((event) => {
-      paneWidth.value = inboxPaneWidth(windowWidth, dragStart.current + event.translationX);
+      paneWidth.value = inboxPaneWidthDuringDrag(
+        windowWidth,
+        dragStart.current,
+        event.translationX,
+        I18nManager.isRTL,
+      );
     })
     .onEnd((_event, success) => {
       if (success) chooseInboxWidth(paneWidth.value);
@@ -551,6 +556,8 @@ function LayoutContent() {
                       <Stack.Screen name="artifacts" options={glassHeaderOptions(t`Artifacts`)} />
                       <Stack.Screen name="artifact" options={{ title: t`Artifact` }} />
                       <Stack.Screen name="pages" options={glassHeaderOptions(t`Pages`)} />
+                      <Stack.Screen name="shared-pages" />
+                      <Stack.Screen name="page-review" options={glassHeaderOptions(t`Page`)} />
                       <Stack.Screen
                         name="page"
                         options={{
@@ -565,7 +572,7 @@ function LayoutContent() {
                       <Stack.Screen
                         name="page-share"
                         options={{
-                          headerShown: false,
+                          title: t`Share`,
                           presentation: "formSheet",
                           sheetAllowedDetents: [0.6, 1],
                           sheetGrabberVisible: true,

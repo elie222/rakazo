@@ -45,6 +45,8 @@ export type PiCatalogEntry = {
   recommended?: boolean;
   provider: string;
   providerName: string;
+  subscriptionName?: string;
+  subscriptionNameId?: string;
   id: string;
   label: string;
   billing: string;
@@ -53,6 +55,7 @@ export type PiCatalogEntry = {
   authHint?: string;
   subscription: boolean;
   signIn?: ModelOAuthSignInMode;
+  signInSetup?: { label: string; url: string };
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
   defaultCapabilities?: { images?: boolean; reasoning?: boolean; thinkingLevels?: ThinkingLevel[] };
@@ -284,6 +287,8 @@ function buildPiCatalog(): PiCatalogEntry[] {
       entries.push({
         provider: provider.id,
         providerName,
+        subscriptionName: definition?.subscriptionName,
+        subscriptionNameId: definition?.subscriptionNameId,
         id: model.id,
         recommended: isRecommendedCatalogModel(provider.id, model.id),
         label: catalogModelLabel(model.id, model.name, modelIds),
@@ -294,6 +299,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
           provider.id === OPENAI_COMPATIBLE_PROVIDER_ID ? "Custom server" : signInMeta?.hint,
         subscription,
         signIn: signInMeta?.mode,
+        signInSetup: signInMeta?.setup,
         reasoning: Boolean(model.reasoning),
         thinkingLevels,
         // Compatibility metadata does not prove a model is served by a user's

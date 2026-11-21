@@ -381,6 +381,7 @@ class CodexConfigTest(unittest.TestCase):
             self.assertIn("browser_take_screenshot", allowed)
             self.assertNotIn("browser_evaluate", allowed)
             self.assertNotIn("browser_file_upload", allowed)
+            self.assertEqual(config["mcp_servers"]["playwright"]["default_tools_approval_mode"], "approve")
             self.assertEqual(json.loads((root / "schema.json").read_text())["required"], ["screenshots", "complete"])
             output = io.StringIO()
             with contextlib.redirect_stdout(output):

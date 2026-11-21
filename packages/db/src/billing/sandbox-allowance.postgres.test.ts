@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsTenant } from "../database/row-security.js";
-import { sandboxRunHours, sandboxRunHoursByComputer } from "./sandbox-allowance.js";
+import {
+  grantComputerAllowance,
+  sandboxAllowancePlan,
+  sandboxRunHours,
+  sandboxRunHoursByComputer,
+} from "./sandbox-allowance.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
@@ -99,5 +104,146 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
       ]),
     );
     expect(byComputer).toHaveLength(3);
+  });
+
+  it("adds a grant to the period it was made in and not to the next one", async () => {
+    const periodStart = new Date("2026-03-05T00:00:00.000Z");
+    const settings = await prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { modelCreditsEnabled: true },
+    });
+    await prisma.deploymentSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", modelCreditsEnabled: true },
+      update: { modelCreditsEnabled: true },
+    });
+    await prisma.billingAccount.create({
+      data: {
+        organizationId,
+        customerId: `customer-${suffix}`,
+        status: "active",
+        byokTier: "pro",
+        byokPriceCents: 4_000,
+        byokInterval: "month",
+        currentPeriodStartsAt: periodStart,
+        currentPeriodEndsAt: new Date("2026-04-05T00:00:00.000Z"),
+      },
+    });
+    try {
+      expect(await sandboxAllowancePlan(prisma, organizationId, now)).toMatchObject({
+        limitCents: 2_000,
+        extraCents: 0,
+      });
+      await grantComputerAllowance(prisma, organizationId, 2_500);
+      const grant = await prisma.computerAllowanceGrant.findFirstOrThrow({
+        where: { organizationId },
+      });
+      // Granted during this period.
+      await prisma.computerAllowanceGrant.update({
+        where: { id: grant.id },
+        data: { createdAt: new Date("2026-03-09T00:00:00.000Z") },
+      });
+      const during = await sandboxAllowancePlan(prisma, organizationId, now);
+      expect(during).toMatchObject({ limitCents: 4_500, extraCents: 2_500 });
+      expect(
+        await prisma.billingAuditEvent.findUnique({
+          where: { source: `computer-allowance:${grant.id}` },
+          select: { kind: true, organizationId: true, amountMicros: true },
+        }),
+      ).toEqual({ kind: "computer_allowance_granted", organizationId, amountMicros: 0n });
+
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          currentPeriodStartsAt: new Date("2026-04-05T00:00:00.000Z"),
+          currentPeriodEndsAt: new Date("2026-05-05T00:00:00.000Z"),
+        },
+      });
+      const next = await sandboxAllowancePlan(
+        prisma,
+        organizationId,
+        new Date("2026-04-10T00:00:00.000Z"),
+      );
+      expect(next).toMatchObject({ limitCents: 2_000, extraCents: 0 });
+
+      // An operator can still give a cancelled trial hours; the period renews nothing for it.
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          status: "trialing",
+          cancelAtPeriodEnd: true,
+          currentPeriodStartsAt: new Date("2026-06-01T00:00:00.000Z"),
+          currentPeriodEndsAt: new Date("2026-06-15T00:00:00.000Z"),
+        },
+      });
+      await prisma.computerAllowanceGrant.create({
+        data: { organizationId, amountCents: 1_000, createdAt: new Date("2026-06-03T00:00:00Z") },
+      });
+      expect(
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-06-05T00:00:00Z")),
+      ).toMatchObject({ limitCents: 1_000, extraCents: 1_000, resetsAt: null });
+
+      // Once the plan lapses into granted credit, grants from its paid periods stay spent.
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          status: "canceled",
+          cancelAtPeriodEnd: false,
+          byokTier: null,
+          byokPriceCents: null,
+          creditAmountCents: null,
+          currentPeriodStartsAt: new Date("2026-07-01T00:00:00.000Z"),
+          currentPeriodEndsAt: new Date("2026-08-01T00:00:00.000Z"),
+        },
+      });
+      await prisma.accessGrant.create({
+        data: {
+          email: `pool-${organizationId}@rakazo.test`,
+          organizationId,
+          creditCents: 5_000,
+          appliedAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      });
+      await prisma.computerAllowanceGrant.create({
+        data: { organizationId, amountCents: 300, createdAt: new Date("2026-08-02T00:00:00Z") },
+      });
+      expect(
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-08-05T00:00:00Z")),
+      ).toMatchObject({ limitCents: 1_000 + 300, extraCents: 300 });
+
+      // A plan that stopped mid-period still has a future end; a grant after it stopped counts.
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          currentPeriodStartsAt: new Date("2026-08-01T00:00:00.000Z"),
+          currentPeriodEndsAt: new Date("2026-09-01T00:00:00.000Z"),
+        },
+      });
+      await prisma.computerAllowanceGrant.create({
+        data: { organizationId, amountCents: 200, createdAt: new Date("2026-08-10T00:00:00Z") },
+      });
+      expect(
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-08-12T00:00:00Z")),
+      ).toMatchObject({ limitCents: 1_000 + 500, extraCents: 500 });
+
+      // A lapsed yearly plan renewed monthly, so only grants from its last month still count.
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          byokInterval: "year",
+          currentPeriodStartsAt: new Date("2026-01-20T00:00:00.000Z"),
+          currentPeriodEndsAt: new Date("2027-01-20T00:00:00.000Z"),
+        },
+      });
+      expect(
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-08-25T00:00:00Z")),
+      ).toMatchObject({ limitCents: 1_000, extraCents: 0 });
+    } finally {
+      await prisma.billingAccount.deleteMany({ where: { organizationId } });
+      await prisma.accessGrant.deleteMany({ where: { organizationId } });
+      if (settings)
+        await prisma.deploymentSettings.update({ where: { id: "default" }, data: settings });
+      else await prisma.deploymentSettings.delete({ where: { id: "default" } });
+    }
   });
 });

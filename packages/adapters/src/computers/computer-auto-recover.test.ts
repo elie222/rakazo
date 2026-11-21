@@ -92,6 +92,7 @@ async function damagedComputer(damage: "resume_heals" | "persists" = "resume_hea
     updatedAt: new Date(),
   };
   const computer = {
+    findUnique: vi.fn().mockResolvedValue(null),
     findUniqueOrThrow: vi.fn(async () => ({ ...row })),
     updateMany: vi.fn(async ({ where, data }) => {
       const matches = ["id", "state", "providerRef", "kind", "updatedAt"].every(

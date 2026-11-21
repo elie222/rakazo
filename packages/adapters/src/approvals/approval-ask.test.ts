@@ -4,7 +4,16 @@ import {
   approvalDetailLength,
   buildApprovalAskBlock,
   readableToolName,
+  truncate,
 } from "./approval-ask.js";
+
+describe("truncate", () => {
+  it("does not leave half an emoji before the ellipsis", () => {
+    const cut = truncate(`${"a".repeat(9)}😀tail`, 10);
+    expect(cut).toBe(`${"a".repeat(9)}…`);
+    expect(() => encodeURIComponent(cut)).not.toThrow();
+  });
+});
 
 describe("buildApprovalAskBlock", () => {
   it("binds the approval to its effect and redacts secrets", () => {
@@ -257,7 +266,7 @@ describe("bot management approval cards", () => {
       actions:
         toolName === "set_child_instructions"
           ? [
-              { id: "allow", label: "Allow once" },
+              { id: "allow", label: "Apply now" },
               { id: "deny", label: "Deny" },
             ]
           : [

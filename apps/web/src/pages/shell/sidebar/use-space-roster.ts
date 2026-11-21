@@ -14,7 +14,7 @@ import { replaceEqualDeep } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { takeInitialBootstrap } from "../../../lib/bootstrap";
+import { applyAccountCapabilities, takeInitialBootstrap } from "../../../lib/bootstrap";
 import {
   initialBootstrapTarget,
   linkedBotRoute,
@@ -73,6 +73,24 @@ export function useSpaceRoster({
   // A failed first load falls back to the shell, whose re-reads and footer can still recover.
   const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null | undefined>(seed?.me);
+  // Set when the first load failed without a seed: roster re-reads then fetch the account too,
+  // or what it decides (Labs, Billing, ...) would stay hidden until a reload.
+  const meMissingRef = useRef(false);
+  const accountLoadFailed = useCallback(() => {
+    meMissingRef.current = true;
+    setBootstrapMe(null);
+  }, []);
+  // An account arriving another way (a settings save) is newer than a pending re-read, and a
+  // shell that is gone must not apply its account over the next one's.
+  useEffect(() => {
+    if (bootstrapMe) meMissingRef.current = false;
+  }, [bootstrapMe]);
+  useEffect(
+    () => () => {
+      meMissingRef.current = false;
+    },
+    [],
+  );
   const callsEnabledRef = useRef(false);
   useEffect(() => {
     callsEnabledRef.current = bootstrapMe?.phoneCallsEnabled === true;
@@ -101,6 +119,20 @@ export function useSpaceRoster({
       const botOrderEpoch = botOrderEpochRef.current;
       const preserveBotOrder = savingBotOrderRef.current || pendingBotOrderRef.current !== null;
       const archivedRequest = includeArchived ? ++archivedBotsRefreshEpoch.current : null;
+      if (meMissingRef.current) {
+        // Apart from the roster, so a failing account read cannot hold it back. The RPC client
+        // reports a transport failure and the API a server one; the flag stays set, so the next
+        // re-read tries again.
+        void rpc.me().then(
+          (me) => {
+            if (!meMissingRef.current) return;
+            meMissingRef.current = false;
+            applyAccountCapabilities(me);
+            setBootstrapMe((previous) => previous ?? me);
+          },
+          () => {},
+        );
+      }
       const [navigation, archived, archivedGroupList] = await Promise.all([
         rpc.spaces.list(),
         includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
@@ -250,6 +282,7 @@ export function useSpaceRoster({
     setInitialLoadFailed,
     bootstrapMe,
     setBootstrapMe,
+    accountLoadFailed,
     callsEnabledRef,
     botsRefreshApplied,
     switchingSpace,
@@ -315,6 +348,7 @@ export function useSpaceBootstrap({
     setInitialLoadFailed,
     bootstrapMe,
     setBootstrapMe,
+    accountLoadFailed,
     callsEnabledRef,
     botsRefreshApplied,
     switchingSpace,
@@ -440,7 +474,7 @@ export function useSpaceBootstrap({
       })
       .catch(() => {
         if (cancelled) return;
-        if (!seed) setBootstrapMe(null);
+        if (!seed) accountLoadFailed();
         return refreshBots(true).catch(() => {
           if (!cancelled) setInitialLoadFailed(true);
         });
