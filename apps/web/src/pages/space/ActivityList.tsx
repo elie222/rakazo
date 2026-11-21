@@ -299,6 +299,7 @@ function ActivityFilters({
                   data-testid="activity-date-from"
                   type="date"
                   value={filters.dateRange.from}
+                  max={filters.dateRange.to || undefined}
                   onChange={(event) =>
                     onChange({
                       ...filters,
@@ -317,6 +318,7 @@ function ActivityFilters({
                   data-testid="activity-date-to"
                   type="date"
                   value={filters.dateRange.to}
+                  min={filters.dateRange.from || undefined}
                   onChange={(event) =>
                     onChange({
                       ...filters,
