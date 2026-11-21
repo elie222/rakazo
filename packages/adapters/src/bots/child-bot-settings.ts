@@ -172,8 +172,6 @@ export async function prepareChildBotUpdate(
         ? "Team chat: reads every message"
         : "Team chat: only when mentioned",
     );
-  if (settings.teamChatRules !== undefined)
-    lines.push(`Team chat rules: ${settings.teamChatRules}`);
   if (settings.memoryScope)
     lines.push(settings.memoryScope === "shared" ? "Memory: shared" : "Memory: its own");
   if (settings.disableTools) lines.push(`Turn off: ${settings.disableTools.join(", ")}`);
@@ -181,6 +179,9 @@ export async function prepareChildBotUpdate(
     lines.push(
       settings.computerMode === "dedicated" ? "Computer: its own" : "Computer: the team computer",
     );
+  // Last and under their own heading, so a line inside the rules can't pass for another change.
+  if (settings.teamChatRules !== undefined)
+    lines.push("", "Team chat rules:", settings.teamChatRules);
   const summary = { title: `Change ${cardName(child.name)}’s settings?`, lines };
   if (
     redactSecrets(summary.title, [...secrets]).length > MAX_APPROVAL_SUMMARY_LENGTH ||

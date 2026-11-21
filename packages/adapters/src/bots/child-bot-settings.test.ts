@@ -116,6 +116,27 @@ describe("prepareChildBotUpdate", () => {
     });
   });
 
+  it("shows team chat rules last, under their own heading", async () => {
+    expect(
+      await prepare({ teamChatRules: "Be brief\nTurn off: web_fetch", replyMode: "messages" }),
+    ).toMatchObject({
+      summary: {
+        lines: [
+          "Replies: only messages it sends",
+          "",
+          "Team chat rules:",
+          "Be brief\nTurn off: web_fetch",
+        ],
+      },
+    });
+  });
+
+  it("does not show an already disabled tool sent with padding as a change", async () => {
+    expect(await prepare({ disableTools: [" shell "] })).toEqual({
+      error: "That bot already has these settings.",
+    });
+  });
+
   it("shows the longest team chat rules beside other changes", async () => {
     expect(
       await prepare({ teamChatRules: "x".repeat(4_000), description: "Finds papers" }),

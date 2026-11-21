@@ -112,7 +112,9 @@ export function parseBotSettingsPatch(
   if (argumentGiven(disableTools) && !Array.isArray(disableTools))
     return { error: "disableTools must be a list of tool names." };
   const added = Array.isArray(disableTools)
-    ? [...new Set(disableTools)].filter((name) => !bot.disabledBuiltinTools.includes(name))
+    ? [
+        ...new Set(disableTools.map((name) => (typeof name === "string" ? name.trim() : name))),
+      ].filter((name) => !bot.disabledBuiltinTools.includes(name))
     : [];
   const given = (key: string) => (argumentGiven(args[key]) ? args[key] : undefined);
   const parsed = UpdateBotInput.safeParse({
