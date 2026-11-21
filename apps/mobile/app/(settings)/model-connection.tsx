@@ -569,6 +569,7 @@ export default function ModelConnection() {
             style={{ marginTop: 12 }}
           >
             <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
+            {signInSetup.note ? <Text style={styles.secondary}>{signInSetup.note}</Text> : null}
           </Pressable>
         ) : null}
         {subscriptionSignIn ? (
