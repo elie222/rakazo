@@ -224,6 +224,19 @@ it("sends a Teams meeting link and its passcode to the provider", async () => {
   });
 });
 
+it("accepts 16-digit Teams meeting IDs", () => {
+  expect(
+    parseMeetingUrl("https://teams.microsoft.com/meet/1234567890123456?p=fakePasscode"),
+  ).toEqual({
+    platform: "microsoft_teams",
+    url: "https://teams.microsoft.com/meet/1234567890123456?p=fakePasscode",
+    key: "1234567890123456",
+  });
+  expect(() => parseMeetingUrl("https://teams.microsoft.com/meet/123456789012345678901")).toThrow(
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+  );
+});
+
 it("preserves Teams meeting context and rejects look-alike or non-meeting links", () => {
   const path = "/l/meetup-join/19%3Ameeting_Fake%2Bthread%40thread.v2/0";
   const context = "%7B%22Tid%22%3A%22fake-tenant%22%7D";

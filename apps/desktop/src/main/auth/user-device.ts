@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
@@ -15,6 +15,7 @@ import {
   USER_DEVICE_SESSION_PATH,
 } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
+import { isRetryableError, parseRetryAfter } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { readPrivateFile, writePrivateFile } from "../setup/setup-store.js";
 
@@ -169,6 +170,8 @@ export function createUserDeviceAccess(deps: {
   const unavailable = new Set<string>();
   const prompts = new Map<string, Promise<boolean>>();
   const pairings = new Map<string, Promise<void>>();
+  const pairingKeys = new Map<string, string>();
+  const pairingRetryAfter = new Map<string, number>();
   /** Saved tokens not yet tied to a sign-in this launch; pairings from before that was recorded. */
   const untied = new Map<string, string>();
   const tying = new Map<string, { again: boolean }>();
@@ -327,6 +330,7 @@ export function createUserDeviceAccess(deps: {
 
   function pairOnce(origin: string) {
     if (paired.has(origin) || unavailable.has(origin)) return Promise.resolve();
+    if ((pairingRetryAfter.get(origin) ?? 0) > Date.now()) return Promise.resolve();
     let pairing = pairings.get(origin);
     if (!pairing) {
       pairing = pairWith(origin).finally(() => pairings.delete(origin));
@@ -341,19 +345,34 @@ export function createUserDeviceAccess(deps: {
       return;
     }
     let device: PairedDevice;
+    let pairingKey = pairingKeys.get(origin);
+    if (!pairingKey) {
+      pairingKey = randomBytes(32).toString("hex");
+      pairingKeys.set(origin, pairingKey);
+    }
     try {
       const response = await deps.fetch(new URL(USER_DEVICE_PAIR_PATH, origin).href, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(await deps.device()),
+        body: JSON.stringify({ ...(await deps.device()), pairingKey }),
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
       });
       if (!response.ok) {
         await response.body?.cancel();
-        // Signed out: the next page load after sign-in tries again.
-        if (response.status !== 401) unavailable.add(origin);
+        // A server error, timeout or rate limit can clear up, so a later page load asks again; any
+        // other answer won't change on retry. Signed out (401): the next load after sign-in retries.
+        if (isRetryableError({ status: response.status })) {
+          pairingRetryAfter.set(
+            origin,
+            Date.now() + (parseRetryAfter(response.headers.get("retry-after")) ?? 5_000),
+          );
+        } else {
+          if (response.status !== 401) unavailable.add(origin);
+          pairingRetryAfter.delete(origin);
+          pairingKeys.delete(origin);
+        }
         return;
       }
       const body = (await response.json()) as Partial<
@@ -365,22 +384,27 @@ export function createUserDeviceAccess(deps: {
         body.token.length > MAX_TOKEN_LENGTH ||
         typeof body.deviceId !== "string"
       ) {
+        pairingKeys.delete(origin);
         unavailable.add(origin);
         return;
       }
       device = { token: body.token, deviceId: body.deviceId, userId: optionalString(body.userId) };
     } catch {
+      pairingRetryAfter.set(origin, Date.now() + 5_000);
       return;
     }
+    pairingRetryAfter.delete(origin);
     try {
       await removals.get(origin);
       await savePairedDevice(deps.userDataDir, origin, device, deps.cipher);
     } catch {
       // A token that cannot be kept must not stay valid on the server.
       await revokeToken(origin, device.token);
+      pairingKeys.delete(origin);
       unavailable.add(origin);
       return;
     }
+    pairingKeys.delete(origin);
     paired.set(origin, { deviceId: device.deviceId, userId: device.userId });
     if (current === origin) start(origin, device.token);
   }
@@ -447,6 +471,7 @@ export function createUserDeviceAccess(deps: {
       if (!isAllowed(origin) && !(await ask(origin))) return;
       if (changes.get(origin) !== seen && consent.get(origin)?.consent !== "allowed") return;
       unavailable.delete(origin);
+      pairingRetryAfter.delete(origin);
       await pairOnce(origin);
       if (!paired.has(origin)) throw new Error("Could not pair this computer");
       if (changes.get(origin) !== seen) return;

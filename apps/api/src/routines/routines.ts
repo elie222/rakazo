@@ -1,6 +1,12 @@
 import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
-import { parseRoutineWatch, parseRoutineWatchState, routineRunModelPin } from "@rakazo/adapters";
+import {
+  firstWatchCheck,
+  parseRoutineWatch,
+  parseRoutineWatchState,
+  routineGroupThreadId,
+  routineRunModelPin,
+} from "@rakazo/adapters";
 import type { Actor, CreateRoutineInput, Routine } from "@rakazo/contracts";
 import { canonicalPiProviderId, RoutineEmailSendersSchema } from "@rakazo/contracts";
 import {
@@ -76,11 +82,6 @@ export function nextRoutineDate(crons: string[], timezone: string): Date {
   }
   if (!next) throw new ORPCError("BAD_REQUEST", { message: "Enter a valid cron expression." });
   return next;
-}
-
-/** A new or re-armed watch takes its first reading a moment from now. */
-export function firstWatchCheck(): Date {
-  return new Date(Date.now() + 2_000);
 }
 
 export function mapRoutine(row: {
@@ -232,11 +233,52 @@ export async function routineTestTarget(
 }
 
 /**
+ * Run now: the same chat a scheduled tick would use, so a routine made in a group chat runs there.
+ * Spaces share their groups, so a member who may run the routine may see its group.
+ */
+export async function routineRunNowTarget(
+  prisma: PrismaClient,
+  repos: RouterContext["repos"],
+  actor: Actor,
+  routineId: string,
+) {
+  const target = await routineTestTarget(prisma, repos, actor, routineId);
+  const groupThreadId = await routineGroupThreadId(prisma, target.routine, target.botId);
+  return groupThreadId ? { ...target, threadId: groupThreadId } : target;
+}
+
+/**
  * The run key of a test run. The caller's id keeps another member from ever taking it, and the
  * previous release wrote `routine-test:<client nonce>` as given, so it can never write this prefix.
  */
 export function routineTestRunNonce(actor: Actor, clientNonce: string): string {
   return `routine-run:${actor.userId}:${clientNonce}`;
+}
+
+/** A test run and the group chat it went to, null when it ran in the bot's own chat. */
+const testRunSelect = { id: true, thread: { select: { groupId: true } } } as const;
+
+/**
+ * The run a nonce already created. The database keeps a nonce unique across the Space, so the
+ * lookup is never narrowed to a thread: a retry must find the original run even after its group
+ * was archived and the target moved to the bot's chat.
+ */
+export async function findRoutineTestRun(
+  db: Pick<PrismaClient, "run">,
+  actor: Actor,
+  routineId: string,
+  nonce: string | undefined,
+) {
+  if (!nonce) return null;
+  return db.run.findFirst({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      routineId,
+      clientNonce: nonce,
+    },
+    select: testRunSelect,
+  });
 }
 
 /** Task + run commit together; a run already saved under the nonce fails the insert. */
@@ -276,6 +318,6 @@ export async function createRoutineTestRun(
       ...routineRunModelPin(currentModel),
       clientNonce: nonce,
     },
-    select: { id: true, status: true },
+    select: { ...testRunSelect, status: true },
   });
 }

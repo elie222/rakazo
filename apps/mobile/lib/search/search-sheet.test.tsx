@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SearchSheet from "../../app/search";
 import { selectSpace } from "../api/api-server";
 import type { InboxSpace } from "../inbox/inbox-spaces";
+import type * as Search from "./search";
 import { searchKindLabel } from "./search-sheet";
 
 const state = vi.hoisted(() => ({
@@ -87,7 +88,10 @@ vi.mock("../api/api", () => ({
   currentApiBase: () => state.apiBase,
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => state.generation }));
-vi.mock("./search", () => ({ querySpaceSearch: state.search }));
+vi.mock("./search", async (importOriginal) => ({
+  ...(await importOriginal<typeof Search>()),
+  querySpaceSearch: state.search,
+}));
 vi.mock("./search-inbox", () => ({
   getSearchInbox: () => spaces,
   subscribeSearchInbox: () => () => {},

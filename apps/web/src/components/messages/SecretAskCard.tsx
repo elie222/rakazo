@@ -296,7 +296,10 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
           </div>
         </form>
       ) : null}
-      {error ? <p className="mt-2.5 text-body-sm text-destructive">{error}</p> : null}
+      {/* Always mounted so a screen reader announces the text when a failure fills it in; it is unstyled, so takes no space, while empty. */}
+      <p role="alert" className={error ? "mt-2.5 text-body-sm text-destructive" : undefined}>
+        {error}
+      </p>
       {editorProps && editorOpen ? (
         form === "card" ? (
           <CardEditor {...editorProps} />

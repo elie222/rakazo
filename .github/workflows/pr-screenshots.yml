@@ -224,15 +224,24 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
         run: |
           set -euo pipefail
+          # The token shares its hourly API limit with other automation. Codex rotates the login,
+          # so skip the capture unless there is room left to save the rotated one afterwards.
+          remaining="$(gh api rate_limit --jq .resources.core.remaining)"
+          if (( remaining < 100 )); then
+            reset="$(gh api rate_limit --jq '.resources.core.reset | todate')"
+            echo "::warning::Skipped the screenshot agent: the token that saves the subscription login has $remaining GitHub API calls left until $reset. The stored login is unchanged."
+            exit 0
+          fi
           install -d -m 700 "$RUNNER_TEMP/screenshot-codex"
           printf '%s' "$CODEX_SUBSCRIPTION_AUTH" | python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-codex/auth.json"
           # Verify write-back before Codex can rotate the refresh token.
           gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/screenshot-codex/auth.json"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
           sudo install -o codex-screenshots -g codex-screenshots -m 600 \
             "$RUNNER_TEMP/screenshot-codex/auth.json" /home/codex-screenshots/.codex/auth.json
       - name: Run Codex screenshot agent
         id: codex
-        if: steps.auth.outcome == 'success'
+        if: steps.auth.outputs.ready == 'true'
         env:
           CODEX_HOME: /home/codex-screenshots/.codex
           PROMPT: ${{ needs.screenshot-context.outputs.prompt }}
@@ -266,7 +275,7 @@ jobs:
           result=$(sudo -n -u codex-screenshots head -c 65537 /srv/pr-screenshot-agent/result.json | jq -c .)
           echo "result=$result" >> "$GITHUB_OUTPUT"
       - name: Persist refreshed subscription login
-        if: always() && steps.auth.outcome == 'success'
+        if: always() && steps.auth.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
         run: |

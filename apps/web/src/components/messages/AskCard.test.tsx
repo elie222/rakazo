@@ -500,6 +500,23 @@ it("sizes approval buttons like the other card buttons", async () => {
   }
 });
 
+it("says Apply now on the card whose approval replaces a bot's instructions", async () => {
+  await render({
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Replace the instructions of Scout?",
+    detail: "Old length: 0 characters\nNew length: 16 characters\n\nPlan the offsite",
+    detailFormat: "code",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Apply now" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+  expect(button("Apply now")).toBeTruthy();
+  expect(button("Allow once")).toBeUndefined();
+});
+
 it("offers Always allow only when the approval card does", async () => {
   const card: AskBlock = {
     kind: "ask",

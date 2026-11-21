@@ -66,7 +66,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("secret_request", false)).toBe(true);
     expect(toolRequiresApproval("forget_secret", false)).toBe(true);
     expect(toolRequiresApproval("forget_memory", false)).toBe(true);
+    expect(toolRequiresApproval("delete_shared_memory", false)).toBe(true);
     expect(toolRequiresApproval("skill_delete", false)).toBe(true);
+    expect(toolRequiresApproval("remove_mcp_server", false)).toBe(true);
     expect(toolRequiresApproval("list_secrets", false)).toBe(false);
     // A random value the bot cannot read exposes nothing, and never replaces a saved credential.
     expect(toolRequiresApproval("generate_secret", false)).toBe(false);
