@@ -67,10 +67,10 @@ export async function findPendingRoutineTick(
     task: { status: "queued" },
   };
   // The prompt is encrypted under a fresh IV each time, so it is compared once read back, a page
-  // at a time until a page of matches, so work under an older prompt never hides a match.
+  // at a time until one holds a match, so work under an older prompt never hides it.
   const candidates: Array<{ id: string; taskId: string; leaseFence: number; updatedAt: Date }> = [];
   let cursor: string | undefined;
-  while (candidates.length < PAGE) {
+  while (!candidates.length) {
     const page = await tx.run.findMany({
       where: pristine,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -85,7 +85,7 @@ export async function findPendingRoutineTick(
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
     for (const { task, ...candidate } of page)
-      if (task.prompt === config.prompt && candidates.length < PAGE) candidates.push(candidate);
+      if (task.prompt === config.prompt) candidates.push(candidate);
     if (page.length < PAGE) break;
     cursor = page.at(-1)!.id;
   }

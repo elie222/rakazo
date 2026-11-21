@@ -144,6 +144,7 @@ const TABLES: TableSpec[] = [
     delegate: "task",
     columns: ["prompt"],
     json: false,
+    updatedAt: true,
     scan: (cursor, limit) => Prisma.sql`
       SELECT id, jsonb_build_array(prompt) AS values, "spaceId", "threadId" AS owner FROM tasks
       WHERE id > ${cursor} ORDER BY id LIMIT ${limit}`,
