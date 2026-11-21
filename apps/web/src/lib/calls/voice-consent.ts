@@ -33,7 +33,7 @@ export function cancelVoiceConsent() {
   invalidateVoiceConsent();
   for (const request of [...requests]) request.finish(false);
 }
-function prompt(
+export function promptDataConsent(
   recipient: AiRecipient,
   privacyUrl?: string,
   signal?: AbortSignal,
@@ -77,7 +77,7 @@ export async function ensureVoiceConsent(
         { signal },
       ),
     prompt: async (recipient, privacyUrl) => {
-      if (!(await prompt(recipient, privacyUrl, signal)))
+      if (!(await promptDataConsent(recipient, privacyUrl, signal)))
         throw new Error(t`Voice data sharing was not allowed.`);
       return true;
     },

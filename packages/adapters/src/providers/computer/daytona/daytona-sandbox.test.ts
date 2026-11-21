@@ -15,6 +15,7 @@ import {
   DaytonaTimeoutError,
 } from "@daytona/sdk";
 import type { PageBrowserCommand } from "@rakazo/adapter-kit";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { deferred } from "@rakazo/core/test-async";
 import { parse } from "shell-quote";
@@ -307,6 +308,64 @@ describe("DaytonaSandboxProvider", () => {
     expect(visited).not.toContain("/home/daytona/rakazo-home/.cache");
     expect(visited).not.toContain("/home/daytona/rakazo-home/.yarn/cache");
     expect(visited).not.toContain("/home/daytona/rakazo-home/.browser-profiles/chromium/Cache");
+  });
+
+  it("refuses an over-limit home before downloading any of its files", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.writeFile(computer, { path: "notes.txt", content: Buffer.from("ok") }, context);
+    await provider.writeFile(computer, { path: "model.bin", content: Buffer.alloc(10) }, context);
+    await provider.writeFile(
+      computer,
+      { path: ".cache/uv/data", content: Buffer.alloc(100) },
+      context,
+    );
+    const download = vi.spyOn(fixture.sandbox.fs, "downloadFile");
+    const exportWith = async (limits: { maxBytes: number; maxFiles: number }) => {
+      const files = [];
+      for await (const file of provider.exportWorkspace(computer, context, limits)) {
+        files.push(file.path);
+      }
+      return files;
+    };
+
+    await expect(exportWith({ maxBytes: 4, maxFiles: 10 })).rejects.toEqual(
+      new WorkspaceTooLargeError("bytes"),
+    );
+    await expect(exportWith({ maxBytes: 100, maxFiles: 1 })).rejects.toEqual(
+      new WorkspaceTooLargeError("files"),
+    );
+    expect(download).not.toHaveBeenCalled();
+    // Exactly at both limits is allowed; the skipped cache does not count.
+    expect((await exportWith({ maxBytes: 12, maxFiles: 2 })).sort()).toEqual([
+      "model.bin",
+      "notes.txt",
+    ]);
+  });
+
+  it("counts files in every folder before downloading a folder past the limit", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.writeFile(computer, { path: "notes.txt", content: Buffer.from("ok") }, context);
+    await provider.writeFile(
+      computer,
+      { path: "models/model.bin", content: Buffer.alloc(10) },
+      context,
+    );
+    const download = vi.spyOn(fixture.sandbox.fs, "downloadFile");
+    const limits = { maxBytes: 4, maxFiles: 10 };
+    const exporting = async () => {
+      const files = [];
+      for await (const file of provider.exportWorkspace(computer, context, limits)) {
+        files.push(file.path);
+      }
+      return files;
+    };
+
+    await expect(exporting()).rejects.toEqual(new WorkspaceTooLargeError("bytes"));
+    expect(download.mock.calls.map(([target]) => target.split("/").at(-1))).toEqual(["notes.txt"]);
   });
 
   it("omits snapshot from create() when unset", async () => {

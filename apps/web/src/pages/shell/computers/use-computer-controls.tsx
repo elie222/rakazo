@@ -242,9 +242,16 @@ export function useComputerControls({
     }).catch(() => undefined);
   }, [computerBlockedByRun]);
 
-  useEventListener(computerOpen ? window : null, "keydown", (event) => {
-    if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229)
+  useEventListener(computerOpen ? document : null, "keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !event.defaultPrevented &&
+      !event.isComposing &&
+      event.keyCode !== 229
+    ) {
+      event.preventDefault();
       setComputerOpen(false);
+    }
   });
 
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);

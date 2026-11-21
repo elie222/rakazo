@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { Id } from "../ids.js";
+import { NativeCalendarDeviceKey } from "../personal-calendar/personal-calendar.js";
 import { ATTACHMENT_COUNT_CEILING } from "./attachments.js";
 import { REPLY_QUOTE_MAX_LENGTH, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "./thread.js";
 
@@ -38,6 +39,7 @@ const threadSendFields = threadTarget.safeExtend({
     .optional(),
   replyToMessageId: Id.optional(),
   replyQuote: z.string().trim().min(1).max(REPLY_QUOTE_MAX_LENGTH).optional(),
+  nativeCalendarDeviceKey: NativeCalendarDeviceKey.optional(),
   /** Sent from the open page: a reply to its card that quotes nothing. */
   fromPage: z.literal(true).optional(),
   clientNonce: z.string().min(1).max(200).optional(),

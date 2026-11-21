@@ -11,6 +11,14 @@ export function tierComputerDescription(offer: NonNullable<BillingStatus["byokTi
     : t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
 }
 
+export function tierComputerSummary(offer: NonNullable<BillingStatus["byokTiers"]>[number]) {
+  if (!offer.computerSizeChoice) return tierComputerDescription(offer);
+  const hours = new Intl.NumberFormat(i18n.locale || "en").format(offer.computerHours);
+  if (offer.computerSize === "standard") return t`${hours} bot computer hours/month`;
+  const size = offer.computerSize === "large" ? t`Large` : t`Extra large`;
+  return t`${hours} bot computer hours/month at Standard size · Up to ${size}`;
+}
+
 /** The size's name with how many times faster than Standard it uses computer hours. */
 export function computerSizeLabel(size: ComputerSize): string {
   const rate = SANDBOX_SIZE_HOURLY_COST_MICROS[size] / SANDBOX_SIZE_HOURLY_COST_MICROS.standard;

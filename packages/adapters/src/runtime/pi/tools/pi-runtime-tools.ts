@@ -23,7 +23,7 @@ import type { FinishedShellCommand } from "../../../computers/sandbox/shell-comm
 import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
-import { textContentArg } from "../../../runs/turn/tool-text.js";
+import { settleMsArg, textContentArg } from "../../../runs/turn/tool-text.js";
 import {
   connectionIdArgument,
   credentialArgument,
@@ -63,13 +63,15 @@ const AGENT_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const MAX_AGENT_TOOL_NAME_LENGTH = 64;
 const FALLBACK_AGENT_TOOL_NAME = "connector_tool";
 
-/** Optional self-host fuse. Unset, empty, or 0 means unlimited (default). */
+/** Optional self-host fuse. Unset, empty, or 0 means unlimited (default); anything else must be a whole number. */
 export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.MAX_TOOL_CALLS_PER_TURN?.trim();
   if (!raw) return 0;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-  return Math.floor(parsed);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)))
+    throw new Error(
+      `MAX_TOOL_CALLS_PER_TURN must be a whole number of 0 or more (0 or unset means unlimited), got "${raw}"`,
+    );
+  return Number(raw);
 }
 
 export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
@@ -125,7 +127,10 @@ function useToolAgentTool(
           ]),
           response: host.modelResponses,
         });
-        throw new Error(`${name} is not available. Use a name find_tool lists.`);
+        throw new Error(
+          host.request.unavailableToolReasons?.[name] ??
+            `${name} is not available. Use a name find_tool lists.`,
+        );
       }
       const prepared = tool.prepareArguments?.(args ?? {}) ?? args ?? {};
       const validated = validateToolArguments(tool, {
@@ -438,8 +443,8 @@ function toAgentTool(
       if (tool.name === "computer_act") {
         return {
           actions: Array.isArray(raw.actions) ? raw.actions : [],
-          observe: raw.observe === undefined ? true : Boolean(raw.observe),
-          settle_ms: Number(raw.settle_ms ?? 350),
+          observe: raw.observe == null ? true : Boolean(raw.observe),
+          settle_ms: settleMsArg(raw.settle_ms),
         };
       }
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };

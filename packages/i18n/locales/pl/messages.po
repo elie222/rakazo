@@ -6747,6 +6747,10 @@ msgstr "Wczytywanie ustawień pamięci…"
 msgid "Loading model catalog…"
 msgstr "Wczytywanie katalogu modeli…"
 
+#: apps/web/src/components/pages/PageNotice.tsx
+msgid "Loading page…"
+msgstr "Wczytywanie strony…"
+
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
 msgstr "Wczytywanie wtyczek…"
@@ -12146,6 +12150,10 @@ msgstr "Zobacz źródło"
 #: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "View transcript"
 msgstr "Pokaż transkrypcję"
+
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "View transcript: {platform}, {time}"
+msgstr "Pokaż transkrypcję: {platform}, {time}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx

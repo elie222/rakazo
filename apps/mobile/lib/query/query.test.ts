@@ -69,6 +69,22 @@ describe("rpcQuery keys", () => {
     scope.apiBase = "https://other.example.test";
     expect(new Set([first, otherSession, key()]).size).toBe(3);
   });
+
+  it("invalidates newest and older comments for just the changed Page", async () => {
+    const pageId = "page-a";
+    const newest = accountRpcQuery("pageReviews/comments", { pageId, cursor: undefined });
+    const older = accountRpcQuery("pageReviews/comments", { pageId, cursor: "older" });
+    const other = accountRpcQuery("pageReviews/comments", { pageId: "page-b", cursor: "older" });
+    const changed = accountRpcQuery("pageReviews/comments", { pageId });
+    for (const read of [newest, older, other])
+      queryClient.setQueryData(read.queryKey, { items: [], nextCursor: null });
+
+    await queryClient.invalidateQueries({ queryKey: changed.queryKey });
+
+    expect(queryClient.getQueryState(newest.queryKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(older.queryKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(other.queryKey)?.isInvalidated).toBe(false);
+  });
 });
 
 describe("resetRpcQueries", () => {

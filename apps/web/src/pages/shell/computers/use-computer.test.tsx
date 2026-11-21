@@ -24,6 +24,8 @@ vi.mock("../../../components/computers/ComputerMaintenanceActions", () => ({
   ComputerMaintenanceActions: () => <button type="button">Recover computer</button>,
 }));
 
+import { ComposerReplyPreview } from "../chat/chat-context";
+
 import type { ComputerState } from "./use-computer";
 import { useComputerControls, useComputerState } from "./use-computer";
 
@@ -258,6 +260,80 @@ it("shows a proxied screen's error only after its reloads stop connecting", asyn
   }
   expect(state.screenLoadError).toBe("Could not connect to the computer screen");
   expect(container.querySelector("iframe")).toBeNull();
+});
+
+/** The frame a viewer sees: the held predecessor is drawn aria-hidden beneath the live one. */
+const liveFrame = () => container.querySelector<HTMLIFrameElement>("iframe:not([aria-hidden])");
+
+it("reads a fresh screen URL when a reconnect probe refuses the stale one", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stale/vnc.html" });
+  await read();
+  await report("connected");
+  // The screen rotated its sign-in: the stale page is refused, and the screen now names another.
+  screenAnswer = () => ({ url: "/novnc/session/view/2.fresh/vnc.html" });
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+  expect(liveFrame()?.dataset.src).toContain("2.fresh");
+});
+
+it("remounts a dropped screen whose probe loads, without a fresh read", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.restart/vnc.html" });
+  await read();
+  await report("connected");
+  const before = liveFrame();
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+  expect(liveFrame()).not.toBe(before);
+  expect(liveFrame()?.dataset.src).toContain("1.restart");
+});
+
+it("remounts the stale screen when a refused reconnect reads the same URL", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stale/vnc.html" });
+  await read();
+  await report("connected");
+  const before = liveFrame();
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+  expect(liveFrame()).not.toBe(before);
+  expect(liveFrame()?.dataset.src).toContain("1.stale");
+});
+
+it("remounts the stale screen when a refused reconnect's fresh read never settles", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stale/vnc.html" });
+  await read();
+  await report("connected");
+  const before = liveFrame();
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+  screenUrl.mockImplementationOnce(() => new Promise<ScreenAnswer>(() => undefined));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000 + SCREEN_FRAME_LOAD_TIMEOUT_MS);
+  });
+  expect(liveFrame()).not.toBe(before);
+  // A later drop reconnects again rather than waiting on the hung read: the same link loads
+  // in a new frame once its probe answers.
+  const remounted = liveFrame();
+  await report("connected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCREEN_RECONNECT_STABLE_MS);
+  });
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5_000);
+  });
+  expect(liveFrame()).not.toBe(remounted);
+  expect(screenUrl).toHaveBeenCalledTimes(2);
 });
 
 it("keeps one reconnect while its screen read is still pending", async () => {
@@ -624,6 +700,7 @@ it("reads no screen for a failed control call of a bot that is no longer shown",
 });
 
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
+  const dismissReply = vi.fn();
   function Controls() {
     state = useComputerState({
       rpc: {} as never,
@@ -647,7 +724,12 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
       onUpgrade: vi.fn(),
     });
     // Stands in for the view's "Teach a task" goal box, whose popover lets a composing Escape bubble.
-    return <textarea aria-label="Goal" />;
+    return (
+      <>
+        <textarea aria-label="Goal" />
+        <ComposerReplyPreview author="Helper" text="Quote" onDismiss={dismissReply} />
+      </>
+    );
   }
   await act(async () => root.render(<Controls />));
   await act(async () => state.setComputerOpen(true));
@@ -656,11 +738,19 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
     act(async () => {
       goal.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, ...init }));
     });
+  const consume = (event: Event) => event.preventDefault();
+  goal.addEventListener("keydown", consume);
+  await press({ cancelable: true });
+  goal.removeEventListener("keydown", consume);
+  expect(state.computerOpen).toBe(true);
   await press({ isComposing: true });
   await press({ keyCode: 229 });
   expect(state.computerOpen).toBe(true);
-  await press();
+  await press({ cancelable: true });
   expect(state.computerOpen).toBe(false);
+  expect(dismissReply).not.toHaveBeenCalled();
+  await press({ cancelable: true });
+  expect(dismissReply).toHaveBeenCalledOnce();
 });
 
 it("reads a running computer's screen for the bot panel without keeping it awake or waking it", async () => {

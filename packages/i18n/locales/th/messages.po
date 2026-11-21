@@ -6741,6 +6741,10 @@ msgstr "กำลังโหลดการตั้งค่าความจ
 msgid "Loading model catalog…"
 msgstr "กำลังโหลดแคตตาล็อกโมเดล…"
 
+#: apps/web/src/components/pages/PageNotice.tsx
+msgid "Loading page…"
+msgstr "กำลังโหลดหน้า…"
+
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Loading plugins…"
 msgstr "กำลังโหลดปลั๊กอิน…"
@@ -12140,6 +12144,10 @@ msgstr "ดูซอร์สโค้ด"
 #: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "View transcript"
 msgstr "ดูสคริปต์"
+
+#: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
+msgid "View transcript: {platform}, {time}"
+msgstr "ดูบทถอดเสียง: {platform}, {time}"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
