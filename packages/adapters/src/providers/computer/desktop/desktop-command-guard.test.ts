@@ -709,3 +709,26 @@ describe("killall5", () => {
     expect(protectedComputerLifecycleRefusal(command)).toBe("protected command killall5");
   });
 });
+
+describe("digit-only special parameters", () => {
+  it.each([
+    'python3 report.py; echo "exit: $?"',
+    "ls missing-file 2>/dev/null; echo $?",
+    "grep -c invoice notes.txt; test $? -eq 0 && echo found",
+    'echo "args: $#"',
+  ])("runs %s", (command) => {
+    expect(protectedComputerLifecycleRefusal(command)).toBeUndefined();
+  });
+
+  it("still refuses protected commands that use them", () => {
+    expect(protectedComputerLifecycleRefusal("pkill chromium; echo $?")).toBe(
+      "protected command pkill",
+    );
+    expect(protectedComputerLifecycleRefusal("kill $?")).toBe("protected command kill");
+  });
+
+  it("still refuses process ids it cannot see", () => {
+    expect(protectedComputerLifecycleRefusal("sleep 5 & echo $!")).toMatch(/unresolved variable/);
+    expect(protectedComputerLifecycleRefusal("echo $$")).toMatch(/unresolved variable/);
+  });
+});
