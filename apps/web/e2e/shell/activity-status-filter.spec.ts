@@ -7,14 +7,15 @@ test("Activity can find a failure before the same chat's latest success", async 
   await signup(page, `activity-status-${Date.now()}@rakazo.test`, "password12", "Activity");
   await completeOnboarding(page);
   const composer = page.getByPlaceholder("Message Chief");
+  const send = page.getByRole("button", { name: "Send", exact: true });
   const earlier = "Which checks could fail this run?";
   const later = "Summarize the launch notes";
   await composer.fill(earlier);
-  await composer.press("Enter");
+  await send.click();
   await expect(page.getByTestId("composer-error")).toBeVisible();
   await page.getByTestId("composer-error-dismiss").click();
   await composer.fill(later);
-  await composer.press("Enter");
+  await send.click();
 
   await page.getByRole("button", { name: "Activity", exact: true }).click();
   const aside = page.locator("aside").first();
