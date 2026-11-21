@@ -20,7 +20,8 @@ export const SOFT_DETAILS_CRITERIA = {
 
 /**
  * The product's general prompt with a variant's rubric swapped in and its extra situation added as
- * data. Requests judged by a specific rubric (a new site, a memory save) keep the product's own.
+ * data. Requests judged by a specific rubric (a new site, a lasting write, the bot's own computer)
+ * keep the product's own.
  */
 export function variantPrompt(
   basePrompt: string,

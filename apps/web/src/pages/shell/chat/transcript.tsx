@@ -10,6 +10,7 @@ import type {
 } from "@rakazo/contracts";
 import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
 import {
+  continuedSenderMessageIds,
   expandPeerReplies,
   groupVoiceChats,
   isPeerReceiptBlocks,
@@ -47,7 +48,11 @@ import {
 } from "../../../lib/chat/quote-selection";
 import { messageHasVisibleBlocks } from "../../../lib/chat/tool-activity-view";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../../lib/chat/transcript-layout";
-import { transcriptIsNearEnd, transcriptMovedDown } from "../../../lib/chat/transcript-scroll";
+import {
+  replyStartScrollTop,
+  transcriptIsNearEnd,
+  transcriptMovedDown,
+} from "../../../lib/chat/transcript-scroll";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { projectPageCards } from "../../../lib/pages/page-cards";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
@@ -57,6 +62,7 @@ import { isEditableTarget } from "../shell-shortcuts";
 import { TimeSeparator, UnreadDivider } from "./chat-context";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
+import { useReplyAnnouncement } from "./use-reply-announcement";
 
 /** Bubbles stop at a readable line length instead of stretching with wide windows. */
 export function bubbleFrameWidth(role: ThreadMessage["role"]) {
@@ -174,6 +180,10 @@ export const Transcript = memo(function Transcript({
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
   const following = useRef(true);
+  // The messages loaded when the reader last sent: following stops at the first reply row after them.
+  const messagesBeforeReply = useRef<ReadonlySet<string> | null>(null);
+  // Where a reply's start is held. Its own scroll may land near the end and must not re-follow.
+  const heldAt = useRef<number | null>(null);
   const jumpScrolling = useRef(false);
   const autoScrolling = useRef(false);
   const lastScrollTop = useRef<number | null>(null);
@@ -194,6 +204,12 @@ export const Transcript = memo(function Transcript({
   const messages = useMemo(
     () => expandPeerReplies(transcript, expandedPeerMarkers),
     [transcript, expandedPeerMarkers],
+  );
+  const announcement = useReplyAnnouncement(
+    messages,
+    (message) =>
+      (message.botId ? (peerBot(message.botId)?.name ?? memberName?.(message.botId)) : undefined) ??
+      t`Bot`,
   );
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
@@ -271,6 +287,7 @@ export const Transcript = memo(function Transcript({
       item.kind === "voiceChat" || messageHasVisibleBlocks(item.message.blocks, showToolActivity),
   );
   const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
+  const continuedSenderIds = continuedSenderMessageIds(shownItems, separatorIds, unreadDividerId);
   const workingLabel =
     liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
   const [quoteDraft, setQuoteDraft] = useState<{
@@ -369,7 +386,12 @@ export const Transcript = memo(function Transcript({
   // latest message, so new messages keep following; scrolling away beyond it does not.
   const followIfNearEnd = useCallback(() => {
     const element = scrollRef.current;
-    if (element && !jumpScrolling.current && transcriptIsNearEnd(element)) {
+    if (
+      element &&
+      !jumpScrolling.current &&
+      !isHeld(element, heldAt.current) &&
+      transcriptIsNearEnd(element)
+    ) {
       following.current = true;
     }
   }, [scrollRef]);
@@ -401,8 +423,9 @@ export const Transcript = memo(function Transcript({
   useEventListener(document, "selectionchange", () => {
     if (!selectingWithMouse.current) evaluateSelection();
   });
-  useEventListener(document, "keydown", (event) => {
-    if (event.key === "Escape") setQuoteDraft(null);
+  // On window, so a handler on document (the phone drawer closing) consumes the key first.
+  useEventListener(window, "keydown", (event) => {
+    if (event.key === "Escape" && !event.defaultPrevented) setQuoteDraft(null);
   });
   // A drag that ends outside the window never fires document mouseup; reset
   // the flag on blur so keyboard selections keep working afterwards.
@@ -423,6 +446,8 @@ export const Transcript = memo(function Transcript({
     if (!element) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     following.current = true;
+    messagesBeforeReply.current = null;
+    heldAt.current = null;
     autoScrolling.current = !reducedMotion;
     setAtEnd(true);
     element.scrollTo({
@@ -462,6 +487,7 @@ export const Transcript = memo(function Transcript({
     if (!element || !row) return;
     scrolledJump.current = scrollRequest.nonce;
     following.current = false;
+    messagesBeforeReply.current = null;
     autoScrolling.current = false;
     jumpScrolling.current = true;
     setJumpScroll(scrollRequest.nonce);
@@ -485,14 +511,42 @@ export const Transcript = memo(function Transcript({
   useLayoutEffect(() => {
     if (followedRequest.current === followRequest) return;
     followedRequest.current = followRequest;
+    messagesBeforeReply.current = new Set(messages.map((message) => message.id));
+    heldAt.current = null;
     snapToEnd();
-  }, [followRequest, snapToEnd]);
+  }, [followRequest, messages, snapToEnd]);
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
-    if (following.current) snapToEnd();
+    const replyRow =
+      element && following.current
+        ? firstReplyRow(element, messages, messagesBeforeReply.current)
+        : null;
+    const replyTop =
+      element && replyRow
+        ? replyStartScrollTop(
+            element,
+            replyRow,
+            Number.parseFloat(getComputedStyle(element).scrollPaddingTop) || 0,
+          )
+        : null;
+    if (element && replyTop !== null) {
+      // The reply no longer fits: hold its first line at the top and let the reader scroll on.
+      following.current = false;
+      messagesBeforeReply.current = null;
+      autoScrolling.current = false;
+      setAtEnd(false);
+      element.scrollTo({ top: replyTop, behavior: "auto" });
+      heldAt.current = element.scrollTop;
+    } else if (following.current) {
+      snapToEnd();
+      // A finished reply that fit leaves later messages to follow to the end as before.
+      if (replyRow && !running) messagesBeforeReply.current = null;
+    }
     // Content can grow below a reader who is not following without any scroll event.
-    else if (element) setAtEnd(transcriptIsNearEnd(element));
+    else if (element) {
+      setAtEnd(transcriptIsNearEnd(element) && !isHeld(element, heldAt.current));
+    }
   }, [messages, running, showTail, scrollRef, snapToEnd]);
 
   useLayoutEffect(() => {
@@ -528,11 +582,15 @@ export const Transcript = memo(function Transcript({
           lastScrollTop.current = event.currentTarget.scrollTop;
           autoScrolling.current = false;
           following.current = false;
+          messagesBeforeReply.current = null;
+          heldAt.current = null;
         }}
         onTouchStart={(event) => {
           lastScrollTop.current = event.currentTarget.scrollTop;
           autoScrolling.current = false;
           following.current = false;
+          messagesBeforeReply.current = null;
+          heldAt.current = null;
         }}
         onScrollEnd={() => {
           followIfNearEnd();
@@ -543,6 +601,8 @@ export const Transcript = memo(function Transcript({
             lastScrollTop.current = event.currentTarget.scrollTop;
             autoScrolling.current = false;
             following.current = false;
+            messagesBeforeReply.current = null;
+            heldAt.current = null;
           }
         }}
         onScroll={(event) => {
@@ -552,10 +612,11 @@ export const Transcript = memo(function Transcript({
           );
           lastScrollTop.current = event.currentTarget.scrollTop;
           const nearEnd = transcriptIsNearEnd(event.currentTarget);
-          setAtEnd(nearEnd);
+          const held = isHeld(event.currentTarget, heldAt.current);
+          setAtEnd(nearEnd && !held);
           // A jump scroll owns the viewport until its animation settles; its
           // own near-end crossings must not re-arm tail-following.
-          if (jumpScrolling.current) return;
+          if (jumpScrolling.current || held) return;
           if (nearEnd) {
             if (scrolledDown) following.current = true;
             if (autoScrolling.current) {
@@ -647,7 +708,7 @@ export const Transcript = memo(function Transcript({
                                 block.kind === "mcp_approval" ||
                                 block.kind === "tool_question",
                             )
-                          ? "relative w-full min-w-0 max-w-xl"
+                          ? "relative w-full min-w-0 max-w-[min(calc(100%_-_8rem),36rem)] [@media(hover:none)]:max-w-xl"
                           : `relative ${
                               message.blocks.some(
                                 (block) =>
@@ -675,6 +736,7 @@ export const Transcript = memo(function Transcript({
                       onOpenBot={onOpenBot}
                       onOpenPeerMessages={onOpenPeerMessages}
                       peerExchange={exchanges.lines.get(message.id)}
+                      hideSenderLabel={continuedSenderIds.has(message.id)}
                       onAnswer={onAnswer}
                       speakerName={
                         peerReceipt
@@ -739,6 +801,9 @@ export const Transcript = memo(function Transcript({
           <ActiveBotGlyph bots={workingBots} label={workingLabel} />
         ) : null}
       </div>
+      <span role="status" data-testid="reply-announcement" className="sr-only">
+        {announcement}
+      </span>
       {quoteDraft ? <QuoteSelectionButton range={quoteDraft.range} onQuote={applyQuote} /> : null}
       <Button
         ref={jumpButtonRef}
@@ -757,6 +822,26 @@ export const Transcript = memo(function Transcript({
     </div>
   );
 });
+
+/** The first reply row shown after the last of the messages in `before`; older history never counts. */
+function firstReplyRow(
+  element: HTMLElement,
+  messages: ThreadMessage[],
+  before: ReadonlySet<string> | null,
+): HTMLElement | null {
+  if (!before) return null;
+  const start = messages.findLastIndex((message) => before.has(message.id)) + 1;
+  for (const message of messages.slice(start)) {
+    if (message.role === "user") continue;
+    const row = element.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(message.id)}"]`);
+    if (row) return row;
+  }
+  return null;
+}
+
+function isHeld(element: HTMLElement, heldAt: number | null): boolean {
+  return heldAt !== null && Math.abs(element.scrollTop - heldAt) < 1;
+}
 
 /**
  * Floating Quote action anchored to the selection's bounding rect. Measures

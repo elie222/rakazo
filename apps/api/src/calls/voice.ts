@@ -15,6 +15,7 @@ import {
   openAiCompatibleVoiceServer,
   resolveVoiceKey,
   serializeOpenAiCompatibleVoiceSecret,
+  VoiceProviderUnavailableError,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
 import type { Actor, SettingsScope, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
@@ -39,7 +40,8 @@ import {
   voicePreferenceTarget,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
+import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
@@ -313,6 +315,15 @@ export async function withVoiceConnection<T>(
   try {
     return await run();
   } catch (error) {
+    const outage = voiceOutage(error);
+    if (outage) {
+      getLogger().warn("voice provider unavailable", {
+        provider,
+        reason: outage.cause instanceof Error ? outage.cause.name : "server error",
+      });
+      markExpectedFailure();
+      throw outage;
+    }
     if (!linked) throw error;
     const name = voiceCatalogEntry(provider)?.name ?? provider;
     if (error instanceof VoiceAccountError) {
@@ -333,6 +344,14 @@ export async function withVoiceConnection<T>(
       `Couldn't use the ${name} connection from Models. Try again.`,
     );
   }
+}
+
+/** A provider outage or a request it left unanswered past its deadline, as one error to wait out. */
+function voiceOutage(error: unknown): VoiceProviderUnavailableError | undefined {
+  if (error instanceof VoiceProviderUnavailableError) return error;
+  if (error instanceof Error && error.name === "TimeoutError")
+    return new VoiceProviderUnavailableError(undefined, { cause: error });
+  return undefined;
 }
 
 /** The connection and the bearer its provider takes, read from a model connection if linked. */
@@ -501,7 +520,10 @@ export async function persistVoiceCredential(
     const voices = await withVoiceConnection(
       input.provider,
       isModelConnectionVoiceSecret(plaintext),
-      () => provider.listVoices(apiKey, voiceContext(actor, input.signal)),
+      () =>
+        provider.listVoices(apiKey, voiceContext(actor, input.signal), {
+          model: requestedSpeechModel ?? undefined,
+        }),
     );
     voiceId = voices[0]?.id ?? "";
     validVoiceIds = voices.map((voice) => voice.id);
@@ -637,12 +659,21 @@ export async function disconnectVoiceCredential(
 export async function updateVoiceSpeechModel(
   deps: VoiceDeps,
   actor: Actor,
-  input: { provider: string; speechModel: string; scope?: SettingsScope },
+  input: { provider: string; speechModel: string; scope?: SettingsScope; signal?: AbortSignal },
 ): Promise<VoiceCredential> {
-  if (!voiceCatalogEntry(input.provider)?.speechModel) {
+  const entry = voiceCatalogEntry(input.provider);
+  if (!entry?.speechModel) {
     throw new ORPCError("BAD_REQUEST", { message: "This voice provider has no speech model." });
   }
   const speechModel = speechModelValue(input.speechModel);
+  // A model has its own voices, so one the new model lacks is replaced in the same save.
+  // The voices only pick a replacement, so a listing that fails does not block saving the model.
+  const modelVoices = entry.speechModels
+    ? await bestEffort(
+        "list the voices of a speech model",
+        voicesOfSpeechModel(deps, actor, input, speechModel),
+      )
+    : undefined;
   return withTransactionRetry(() =>
     deps.prisma.$transaction(
       async (tx) => {
@@ -661,7 +692,14 @@ export async function updateVoiceSpeechModel(
         if (!preference && speechModel === null) {
           return toVoiceCredential({ ...found, isDefault: false, voiceId: "", speechModel: "" });
         }
-        const saved = await saveVoicePreference(tx, target, found.id, { speechModel });
+        const replacement =
+          modelVoices?.length && !modelVoices.some((voice) => voice.id === preference?.voiceId)
+            ? modelVoices[0]?.id
+            : undefined;
+        const saved = await saveVoicePreference(tx, target, found.id, {
+          speechModel,
+          ...(replacement ? { voiceId: replacement } : {}),
+        });
         return toVoiceCredential({
           ...found,
           isDefault: saved.isDefault,
@@ -671,6 +709,22 @@ export async function updateVoiceSpeechModel(
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
+  );
+}
+
+async function voicesOfSpeechModel(
+  deps: VoiceDeps,
+  actor: Actor,
+  input: { provider: string; scope?: SettingsScope; signal?: AbortSignal },
+  speechModel: string | null,
+) {
+  const loaded = await loadVoiceCredential(deps, actor, input.provider, input.scope, input.signal);
+  if (!loaded) return undefined;
+  const provider = await voiceProviderFor(deps, input.provider);
+  return withVoiceConnection(input.provider, loaded.linked, () =>
+    provider.listVoices(loaded.apiKey, voiceContext(actor, input.signal), {
+      model: speechModel ?? undefined,
+    }),
   );
 }
 

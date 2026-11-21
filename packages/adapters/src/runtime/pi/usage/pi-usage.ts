@@ -12,6 +12,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type {
   AgentRuntimeEvent,
   AgentUsage,
+  ModelBilling,
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
@@ -37,6 +38,8 @@ const sseObserved = new WeakSet<ReportedUsageFields>();
 const dispatchedRequests = new WeakSet<ReportedUsageFields>();
 const reportedCosts = new WeakMap<ReportedUsageFields, number>();
 const reportedValues = new WeakMap<ReportedUsageFields, Map<keyof AgentUsage, number>>();
+/** Calls whose reported prompt count includes any cache reads, itemized or not. */
+const cacheInclusivePrompts = new WeakSet<ReportedUsageFields>();
 export function normalizePiUsage(
   usage: Partial<Usage> | undefined,
   model: Pick<Model<Api>, "cost">,
@@ -77,7 +80,11 @@ export function normalizePiUsage(
     ) &&
     inputTokens !== null &&
     outputTokens !== null &&
-    (model.cost.cacheRead === 0 || cacheReadTokens !== null) &&
+    // A prompt count that includes cache reads prices any it does not itemize at the full
+    // input rate: exact when nothing was cached, and never below the real cost.
+    (model.cost.cacheRead === 0 ||
+      cacheReadTokens !== null ||
+      cacheInclusivePrompts.has(reported)) &&
     (model.cost.cacheWrite === 0 || cacheWriteTokens !== null);
   const providerCost = reportedCosts.get(reported);
   return {
@@ -172,6 +179,7 @@ async function observeUsageEvent(
       usage.prompt_tokens !== undefined ||
       event.response !== undefined ||
       usage.input_tokens_details !== undefined;
+    if (typeof rawInput === "number" && includesCache) cacheInclusivePrompts.add(reported);
     const rawRead =
       usage.prompt_tokens_details?.cached_tokens ??
       usage.input_tokens_details?.cached_tokens ??
@@ -339,6 +347,7 @@ export function observedPiStream(
     agentId?: string;
     userId?: string;
     runId?: string;
+    billing?: ModelBilling;
   } = {
     operationKind: "answer",
   },
@@ -354,6 +363,9 @@ export function observedPiStream(
 ) {
   const stream = createAssistantMessageEventStream();
   const reported: ReportedUsageFields = new Set();
+  // Pi's Google adapters count every prompt token the response does not report as cached as input.
+  if (model.api === "google-generative-ai" || model.api === "google-vertex")
+    cacheInclusivePrompts.add(reported);
   const callId = randomUUID();
   const emitUsage = async (usage: AgentUsage, operationKind = attribution.operationKind) => {
     const event = {
@@ -364,6 +376,7 @@ export function observedPiStream(
       callId,
       agentId: attribution.agentId,
       operationKind,
+      billing: attribution.billing,
     };
     try {
       await hooks?.recordUsage?.(event);

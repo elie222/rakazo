@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
-import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
+import { refreshQueriesAfterSignal } from "@rakazo/core";
+import type { DataTag, QueryFilters, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiRequestContext, RpcArgs } from "../api/api";
@@ -78,6 +79,22 @@ export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceI
 /** One rpc read of the signed-in user's own data, the same in every space: cached once per session. */
 export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>) {
   return scopedRpcQuery(sessionScope, proc, input);
+}
+
+/**
+ * A read of the signed-in user's own data that is not an rpc, cached once per session like
+ * `accountRpcQuery`. An answer that arrives after the session changed is refused.
+ */
+export function accountQuery<T>(name: string, read: () => Promise<T>) {
+  const scope = sessionScope();
+  const queryKey = [...scope, name] as unknown as DataTag<QueryKey, T, Error>;
+  const queryFn: QueryFunction<T> = async () => {
+    const answer = await read();
+    if (sessionScope().join("\n") !== scope.join("\n"))
+      throw new Error(t`Something went wrong. Try again.`);
+    return answer;
+  };
+  return { queryKey, queryFn };
 }
 
 /**
@@ -236,6 +253,15 @@ export function clearQueries(): void {
  */
 export function resetRpcQueries(proc: RpcPath): Promise<void> {
   return queryClient.resetQueries({ predicate: (query) => query.queryKey.includes(proc) });
+}
+
+/**
+ * Reads one procedure again, in every Space and for every input, while its readers keep showing
+ * the answer they have until the new one arrives.
+ */
+export function refreshRpcQueries(proc: RpcPath): Promise<void> {
+  const filters: QueryFilters = { predicate: (query) => query.queryKey.includes(proc) };
+  return refreshQueriesAfterSignal(queryClient, filters);
 }
 
 /** Forgets the reads sent to these Spaces, as when leaving their organization. */

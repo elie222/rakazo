@@ -40,6 +40,10 @@ const HOUR_MS = 60 * 60_000;
 const SUBMISSIONS_PER_IP_PER_HOUR = 10;
 // Anyone can type any address, so one inbox gets at most a few confirmations a day.
 const CONFIRMATIONS_PER_EMAIL_PER_DAY = 3;
+// Submissions are public and each one mails every admin, so one operator inbox gets a bounded
+// number of review notices a day. Past it the submission is still queued for review; only the
+// mail is skipped, which keeps a flood from burying the operator's inbox.
+const ADMIN_NOTICES_PER_EMAIL_PER_DAY = 20;
 const CLAIM_LINK_MS = 24 * HOUR_MS;
 
 type EmailDeps = Pick<RouterDeps, "email" | "onEmailError">;
@@ -139,9 +143,11 @@ export function pluginSubmissionRoutes(
   const app = new Hono();
   const submissions = windowCounter(HOUR_MS);
   const confirmations = windowCounter(24 * HOUR_MS);
+  const adminNotices = windowCounter(24 * HOUR_MS);
   const notifyAdmins = (row: PluginSubmissionRow) => {
     const reviewUrl = new URL("/admin/plugins", deps.webOrigin).href;
     for (const admin of deps.adminEmails) {
+      if (adminNotices(admin.trim().toLowerCase()) > ADMIN_NOTICES_PER_EMAIL_PER_DAY) continue;
       sendLater(deps, pluginSubmissionAdminEmail(admin, row, reviewUrl));
     }
   };

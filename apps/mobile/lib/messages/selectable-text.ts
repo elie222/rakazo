@@ -12,21 +12,23 @@ const INDENTED = /^(?: {4}|\t)/;
 
 type Line = { text: string; code: boolean };
 
+type TableRow = { cells: string[]; wrapped: boolean };
+
 /** Table cells, split on pipes that are neither escaped nor inside an inline code span. */
-function tableCells(line: string): string[] | null {
+function tableRow(line: string): TableRow | null {
   const trimmed = line.trim();
-  if (trimmed.length < 3 || !trimmed.startsWith("|") || !trimmed.endsWith("|")) return null;
+  if (trimmed.length < 2 || !trimmed.includes("|")) return null;
+  const leadingPipe = trimmed.startsWith("|");
   const cells: string[] = [];
   let cell = "";
   let fence = 0;
-  const body = trimmed.slice(1, -1);
-  for (let i = 0; i < body.length; i++) {
-    const char = body[i] ?? "";
-    if (char === "\\" && i + 1 < body.length) {
-      cell += char + body[++i];
+  for (let i = leadingPipe ? 1 : 0; i < trimmed.length; i++) {
+    const char = trimmed[i] ?? "";
+    if (char === "\\" && i + 1 < trimmed.length) {
+      cell += char + trimmed[++i];
     } else if (char === "`") {
       let run = 1;
-      while (body[i + run] === "`") run++;
+      while (trimmed[i + run] === "`") run++;
       cell += "`".repeat(run);
       i += run - 1;
       fence = fence === 0 ? run : fence === run ? 0 : fence;
@@ -37,14 +39,20 @@ function tableCells(line: string): string[] | null {
       cell += char;
     }
   }
-  cells.push(cell);
-  return cells;
+  if (cells.length === 0 && !leadingPipe) return null;
+  const trailingPipe = cell === "" && cells.length > 0;
+  if (!trailingPipe) cells.push(cell);
+  return { cells, wrapped: leadingPipe && trailingPipe && trimmed.length > 2 };
 }
 
-/** `| --- | :-: |`: every cell is hyphens with optional colons. Linear in the line. */
-function isDelimiterRow(line: string): boolean {
-  const cells = tableCells(line);
-  return cells?.every((cell) => DELIMITER_CELL.test(cell.trim())) ?? false;
+function isDelimiterRow(cells: string[]): boolean {
+  return cells.every((cell) => DELIMITER_CELL.test(cell.trim()));
+}
+
+function convertTableCell(cell: string): string {
+  const text = cell.trim();
+  // A dash-only cell can look like a horizontal rule to the preview helper.
+  return DELIMITER_CELL.test(text) ? text : convert(text);
 }
 
 function convert(line: string): string {
@@ -109,24 +117,29 @@ export function selectableTextFromMarkdown(markdown: string): string {
       continue;
     }
     previousCode = false;
+    if (i === tableDelimiterAt) continue;
 
     const bullet = line.match(BULLET);
     const numbered = bullet ? null : line.match(NUMBERED);
     if (bullet || numbered) inList = true;
     else if (!/^\s/.test(line)) inList = false;
 
-    if (i === tableDelimiterAt) continue;
     if (RULE.test(line)) {
       lines.push({ text: "", code: false });
       previousBlank = true;
+      inTable = false;
       continue;
     }
-    // A table separator only follows a table's header row; `| - | - |` later in
-    // the table, or anywhere else, is data.
-    if (tableCells(line) === null) inTable = false;
-    else if (!inTable && isDelimiterRow(source[i + 1] ?? "")) {
-      tableDelimiterAt = i + 1;
-      inTable = true;
+    const startsBlock = bullet || numbered || /^ {0,3}(?:>|#{1,6}(?:\s|$))/.test(line);
+    if (startsBlock) inTable = false;
+    const row = startsBlock ? null : tableRow(line);
+    // A table can have a body row without pipes, so only a new block ends it.
+    if (row && !inTable) {
+      const next = tableRow(source[i + 1] ?? "");
+      if (next?.cells.length === row.cells.length && isDelimiterRow(next.cells)) {
+        tableDelimiterAt = i + 1;
+        inTable = true;
+      }
     }
 
     previousBlank = false;
@@ -135,11 +148,9 @@ export function selectableTextFromMarkdown(markdown: string): string {
     } else if (numbered) {
       lines.push({ text: `${numbered[1]} ${convert(numbered[2] ?? "")}`, code: false });
     } else {
-      // Cells are converted one by one: the preview helper reads a lone
-      // `| - | - |` row as a separator and would drop it.
-      const cells = tableCells(line);
+      const cells = row && (inTable || row.wrapped || isDelimiterRow(row.cells)) ? row.cells : null;
       lines.push({
-        text: cells ? cells.map((cell) => convert(cell.trim())).join(" | ") : convert(line),
+        text: cells ? cells.map(convertTableCell).join(" | ") : convert(line),
         code: false,
       });
     }

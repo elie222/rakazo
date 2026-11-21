@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeSandboxProvider } from "@rakazo/adapters";
+import { LOCAL_SIGNUP_COOKIE, localSignupKey } from "@rakazo/core/node/local-signup";
 import { runAsSystem } from "@rakazo/db";
 import { expect, it } from "vitest";
 import { createApp } from "../app.js";
@@ -9,9 +10,11 @@ import { createApp } from "../app.js";
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
 const webOrigin = "http://127.0.0.1:5173";
 
-// Needs a database of its own: the first account is whichever signs up first.
-it.skipIf(!databaseUrl || !process.env.COPY_TEST_DATABASE)(
-  "the app-managed stack on this computer admits only its first account",
+const stackToken = "cd".repeat(32);
+const appCookie = `${LOCAL_SIGNUP_COOKIE}=${localSignupKey(stackToken)}`;
+
+it.skipIf(!databaseUrl)(
+  "the app-managed stack on this computer admits accounts only from the desktop app",
   async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "rakazo-desktop-accounts-"));
     const handles = await createApp({
@@ -19,7 +22,7 @@ it.skipIf(!databaseUrl || !process.env.COPY_TEST_DATABASE)(
       dataDir,
       sandboxProvider: "docker",
       sandbox: new FakeSandboxProvider(),
-      desktopStackToken: "cd".repeat(32),
+      desktopStackToken: stackToken,
       agentRuntime: "scripted",
       wakeupDriver: "memory",
       signupsEnabled: "true",
@@ -27,40 +30,48 @@ it.skipIf(!databaseUrl || !process.env.COPY_TEST_DATABASE)(
       webOrigin,
       authUrl: webOrigin,
     });
-    // Another local user reaches the loopback port without a browser, so without an Origin.
-    const post = (path: string, body: object, origin?: string) =>
+    const post = (path: string, body: object, headers: Record<string, string> = {}) =>
       handles.app.request(`/api/auth${path}`, {
         method: "POST",
-        headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
+        headers: { "content-type": "application/json", origin: webOrigin, ...headers },
         body: JSON.stringify(body),
       });
+    const registrationOpen = async (headers: Record<string, string> = {}) => {
+      const response = await handles.app.request("/api/auth/capabilities", { headers });
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      return (await response.json()).registrationOpen;
+    };
+    const account = (email: string) => ({ email, password: "test-password-123", name: "Local" });
+    const suffix = Math.random().toString(36).slice(2);
+    const owner = account(`owner-${suffix}@example.test`);
+    const second = account(`second-${suffix}@example.test`);
+    const stranger = account(`stranger-${suffix}@example.test`);
     try {
-      // Two first signups at once: exactly one becomes the account.
-      const first = ["owner@example.test", "racer@example.test"].map((email) => ({
-        email,
-        password: "test-password-123",
-      }));
-      const signups = await Promise.all(
-        first.map((account) => post("/sign-up/email", { ...account, name: "First" }, webOrigin)),
-      );
-      expect(signups.filter((response) => response.status === 200)).toHaveLength(1);
-      const owner = first[signups.findIndex((response) => response.status === 200)]!;
-      const loser = first.find((account) => account !== owner)!;
-      expect((await post("/sign-in/email", loser, webOrigin)).status).toBeGreaterThanOrEqual(400);
+      expect(await registrationOpen()).toBe(false);
+      expect(await registrationOpen({ cookie: appCookie })).toBe(true);
 
-      const stranger = await post("/sign-up/email", {
-        email: "stranger@example.test",
-        password: "test-password-123",
-        name: "Stranger",
-      });
-      expect(stranger.status).toBe(400);
-      expect(await stranger.json()).toMatchObject({ code: "REGISTRATION_CLOSED" });
+      // A browser or another local user reaches the loopback port, but never with the app's cookie.
+      const refused = await post("/sign-up/email", stranger);
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toMatchObject({ code: "REGISTRATION_CLOSED" });
+      expect(
+        (
+          await post("/sign-up/email", stranger, {
+            cookie: `${LOCAL_SIGNUP_COOKIE}=${"0".repeat(64)}`,
+          })
+        ).status,
+      ).toBe(400);
+
+      expect((await post("/sign-up/email", owner, { cookie: appCookie })).status).toBe(200);
+      expect((await post("/sign-up/email", second, { cookie: appCookie })).status).toBe(200);
       const strangers = await runAsSystem("count refused accounts", () =>
-        handles.prisma.user.count({ where: { email: "stranger@example.test" } }),
+        handles.prisma.user.count({ where: { email: stranger.email } }),
       );
       expect(strangers).toBe(0);
 
-      expect((await post("/sign-in/email", owner, webOrigin)).status).toBe(200);
+      // Existing accounts sign in from anywhere that reaches the server, such as the phone app.
+      expect((await post("/sign-in/email", owner)).status).toBe(200);
+      expect((await post("/sign-in/email", second)).status).toBe(200);
     } finally {
       await handles.stop();
       await rm(dataDir, { recursive: true, force: true });

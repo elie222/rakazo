@@ -17,6 +17,7 @@ import {
 } from "./i18n.js";
 import { ES_MESSAGES } from "./locales/es.js";
 import { PL_MESSAGES } from "./locales/pl.js";
+import { TH_MESSAGES } from "./locales/th.js";
 import { readUiLocale, writeUiLocale } from "./setup/setup-store.js";
 
 const srcDir = path.resolve(import.meta.dirname, "..");
@@ -68,6 +69,10 @@ describe("desktop language", () => {
     [null, "pl-PL", "pl"],
     [null, "pl_PL", "pl"],
     ["en", "pl-PL", "en"],
+    ["th", "en-US", "th"],
+    [null, "th-TH", "th"],
+    [null, "th_TH", "th"],
+    ["en", "th-TH", "en"],
     // The app offers languages the desktop has no catalog for yet; those read English.
     ["it", "es-CL", "en"],
     [null, "it-IT", "en"],
@@ -95,6 +100,15 @@ describe("desktop language", () => {
     expect(t("Check for Updates…")).toBe("Sprawdź aktualizacje…");
     expect(t("Rakazo {version} is ready to install.", { version: "1.2.0" })).toBe(
       "Rakazo 1.2.0 jest gotowe do zainstalowania.",
+    );
+  });
+
+  it("uses the Thai catalog at startup and interpolates native messages", () => {
+    expect(startDesktopLocale("th-TH", "en-US")).toBe("th");
+    expect(desktopMessages()).toBe(TH_MESSAGES);
+    expect(t("Check for Updates…")).toBe("ตรวจสอบการอัปเดต…");
+    expect(t("Rakazo {version} is ready to install.", { version: "1.2.0" })).toBe(
+      "Rakazo 1.2.0 พร้อมติดตั้งแล้ว",
     );
   });
 
