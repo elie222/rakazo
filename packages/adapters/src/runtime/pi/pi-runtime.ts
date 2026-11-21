@@ -703,12 +703,22 @@ export class PiAgentRuntime implements AgentRuntime {
               }
               handBackFailed = true;
             }
+            // A pause, terminating result, or budget stop ends the turn even when Pi 1.6+ also
+            // records synthetic aborted results for trailing calls, so the loop does not claim
+            // steering or start an aborted follow-up request. An external abort still lets the
+            // run fail.
+            if (
+              !signal.aborted &&
+              (host.pausePending || Boolean(terminatedReply) || host.toolCallBudget.exceeded)
+            ) {
+              return { action: "end" };
+            }
             // Steered, so the output reaches the next model request like a tool result. A
             // follow-up waits until the model stops and then costs one model turn each.
             if (finishedShells)
               agent.steer({ role: "user", content: finishedShells, timestamp: Date.now() });
           },
-          prepareNextTurnWithContext: async (turn) => {
+          prepareNextTurnWithContext: async (turn, turnSignal) => {
             const update = computer
               ? {
                   context: {
@@ -727,10 +737,16 @@ export class PiAgentRuntime implements AgentRuntime {
                 }
               : undefined;
             if (!request.claimSteering) return update;
-            // The turn is ending at a terminating result that aborted the agent; no
+            // The turn is ending at an abort, pause, terminating result, or budget stop; no
             // model request would answer a follow-up claimed now, and a completed run
             // deletes its claimed steering. Leave the message queued for the next run.
-            if (terminatedReply && !host.pausePending) return update;
+            if (
+              turnSignal?.aborted ||
+              host.pausePending ||
+              terminatedReply ||
+              host.toolCallBudget.exceeded
+            )
+              return update;
             const steering = await request.claimSteering([...seenSteeringIds]);
             if (steering.length === 0) return update;
             seenSteeringIds.push(...steering.map((item) => item.id));
@@ -831,6 +847,11 @@ export class PiAgentRuntime implements AgentRuntime {
           const checkpoint = turnCheckpointAt(toolCallId);
           const { messages } = checkpoint;
           await request.onCheckpoint(() => {
+            // Sequential batches publish each prior toolResult into state before the next
+            // call starts; any other unresolved call in a sequential batch is an unstarted tail.
+            if (checkpoint.executionMode === "sequential") {
+              return serializeTurnCheckpoint(checkpoint);
+            }
             const unresolved = new Set(unresolvedTurnCheckpointCalls(messages));
             const siblings = messages.flatMap((message) =>
               message.role === "assistant"
@@ -886,11 +907,17 @@ export class PiAgentRuntime implements AgentRuntime {
         // Text streamed before this point is tool-turn narration. Only text after
         // it counts as the final reply, including when the completed message omits it.
         let streamedBeforePendingFinal = 0;
-        agent.subscribe(async (event) => {
+        agent.subscribe(async (event, turnSignal) => {
           if (event.type === "tool_execution_end" && isTerminatingReplyResult(event.result)) {
             terminatedReply = terminatingReplyText(event.result) ?? terminatedReply;
           }
-          if (event.type === "tool_execution_end" && !event.result.terminate) {
+          if (
+            event.type === "tool_execution_end" &&
+            !event.result.terminate &&
+            // Pi 1.6+ omits durationMs on synthetic "Operation aborted" results for calls that
+            // never executed; executed parallel failures still carry durationMs and stay kept.
+            !(event.isError && event.durationMs === undefined && turnSignal?.aborted)
+          ) {
             finishedCalls.set(event.toolCallId, {
               role: "toolResult",
               toolCallId: event.toolCallId,
@@ -911,7 +938,9 @@ export class PiAgentRuntime implements AgentRuntime {
           if (event.type === "tool_execution_start") {
             stopThinking();
             finishedCalls.delete(event.toolCallId);
-            if (host.toolCallBudget.exceeded) return;
+            // Pi 1.6+ still emits start/end for trailing calls after abort so it can record
+            // "Operation aborted"; skip activity and counting for calls that will not execute.
+            if (turnSignal?.aborted || host.toolCallBudget.exceeded) return;
             toolCalls += 1;
             // Live activity feedback: without this the thread shows a bare
             // "working…" for the whole tool call with nothing actionable.

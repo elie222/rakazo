@@ -435,6 +435,7 @@ describe("Pi runtime transport", () => {
         messages: [{ role: "user", content: "ping", timestamp: 0 }],
       } as Context,
       {
+        maxRetries: 0,
         fetch: async (_input, init) => {
           // Pi compresses Codex SSE bodies with zstd when the runtime offers it.
           const raw = init?.body;
