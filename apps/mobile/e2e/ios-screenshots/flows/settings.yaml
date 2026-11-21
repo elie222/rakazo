@@ -15,6 +15,17 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 01-account
+- openLink: "rakazo:///computers"
+- extendedWaitUntil:
+    visible: "No paired computers"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-computers-empty
+- openLink: "rakazo:///account"
+- extendedWaitUntil:
+    visible: "General"
+    timeout: 15000
 - tapOn: "General"
 - extendedWaitUntil:
     visible: "Stream replies"

@@ -174,13 +174,15 @@ export function redact(text: string, secrets: readonly string[] = []): string {
  * What a trial was graded on, as JSON. Configured secrets and credential-shaped tokens are removed;
  * synthetic fixture paths, links and addresses stay, because a regrade must see what the live grade
  * saw (recall checks rerun recorded commands against fixture paths). Maps and Sets (an app's
- * drafts) are tagged so `restoreEvidence` gives judges the same shapes back.
+ * drafts) and Dates (a service's clock) are tagged so `restoreEvidence` gives judges the same shapes back.
  */
 export function evidenceSnapshot(value: unknown, secrets: readonly string[]): unknown {
   return JSON.parse(
-    JSON.stringify(value, (_, v) =>
-      v instanceof Map ? { $map: [...v] } : v instanceof Set ? { $set: [...v] } : v,
-    ),
+    JSON.stringify(value, function (this: Record<string, unknown>, key, v) {
+      // A Date reaches the replacer as its ISO string already; the holder still has the Date.
+      if (this[key] instanceof Date) return { $date: v };
+      return v instanceof Map ? { $map: [...v] } : v instanceof Set ? { $set: [...v] } : v;
+    }),
     (_, v) => (typeof v === "string" ? withoutCredentials(v, secrets) : v),
   );
 }
@@ -194,12 +196,35 @@ function withoutCredentials(text: string, secrets: readonly string[]) {
 
 export function restoreEvidence(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value), (_, v) =>
-    v && typeof v === "object" && Array.isArray(v.$map)
-      ? new Map(v.$map)
-      : v && typeof v === "object" && Array.isArray(v.$set)
-        ? new Set(v.$set)
-        : v,
+    v && typeof v === "object" && typeof v.$date === "string"
+      ? new Date(v.$date)
+      : v && typeof v === "object" && Array.isArray(v.$map)
+        ? new Map(v.$map)
+        : v && typeof v === "object" && Array.isArray(v.$set)
+          ? new Set(v.$set)
+          : v,
   );
+}
+
+/**
+ * Without a judge, trials of judged cases stay not-run (unqualified, never a pass) with `reason`,
+ * so the cases checked in code still run. Returns the held-back case ids.
+ */
+export function holdBackJudged(
+  trials: TrialResult[],
+  judged: ReadonlySet<string>,
+  reason: string,
+): Set<string> {
+  for (const trial of trials) if (judged.has(trial.caseId)) trial.reason = reason;
+  return new Set(trials.filter((t) => judged.has(t.caseId)).map((t) => t.caseId));
+}
+
+/** Gives the stop reason to trials not yet scheduled, keeping the reason a held-back trial already has. */
+export function stopRemaining(trials: TrialResult[], heldBack: ReadonlySet<string>): void {
+  for (const trial of trials)
+    if (!heldBack.has(trial.caseId))
+      trial.reason =
+        "Not run because graceful stop was requested; the in-flight workflow drained before scheduling stopped";
 }
 
 export function emptyTrial(caseId: string, trial: number): TrialResult {

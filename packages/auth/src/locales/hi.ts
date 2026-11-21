@@ -70,4 +70,28 @@ export const HI_MESSAGES: Record<string, string> = {
     "आपकी सहेजी गई कंप्यूटर फ़ाइलें {date} को हटा दी जाएँगी, जब तक आप फिर से सदस्यता नहीं लेते।",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "आपकी सहेजी गई कंप्यूटर फ़ाइलें {date} को हटा दी जाएँगी, जब तक आप कोई प्लान नहीं चुनते।",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} ने आपको Rakazo पर {organization} में आमंत्रित किया",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} ने आपको Rakazo पर {organization} से जुड़ने के लिए आमंत्रित किया है।",
+  "Join {organization}": "{organization} से जुड़ें",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "यह आमंत्रण 7 दिनों में समाप्त हो जाएगा। इसे स्वीकार करने के लिए इसी ईमेल पते से साइन इन करें।",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} ने आपको Rakazo पर {space} में आमंत्रित किया",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} ने आपको Rakazo पर {space} से जुड़ने के लिए आमंत्रित किया है।",
+  "Join {space}": "{space} से जुड़ें",
+  "This invitation expires in 7 days.": "यह आमंत्रण 7 दिनों में समाप्त हो जाएगा।",
+  "Connect a model to start using Rakazo": "Rakazo का उपयोग शुरू करने के लिए एक मॉडल कनेक्ट करें",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "आपका Rakazo प्लान शुरू हो गया है, लेकिन जब तक कोई मॉडल कनेक्ट नहीं होता, आपके बॉट जवाब नहीं दे सकते।",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "अपने {subscriptions} सब्सक्रिप्शन से साइन इन करें, या API कुंजी पेस्ट करें।",
+  "Connect a model": "मॉडल कनेक्ट करें",
+  "Bring your old assistant to Rakazo": "अपने पुराने असिस्टेंट को Rakazo में लाएँ",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "क्या आपने {assistants} में पहले से कोई असिस्टेंट सेट अप किया है? Rakazo उसके निर्देश, मेमोरी, स्किल और रूटीन एक नए बॉट के रूप में ला सकता है, ताकि आपको फिर से शुरू न करना पड़े।",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "यह किसी भी दूसरे असिस्टेंट के साथ भी काम करता है: उसे एक प्रॉम्प्ट भेजें और उसका जवाब पेस्ट करें।",
+  "Import an agent": "एजेंट इंपोर्ट करें",
 };

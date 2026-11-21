@@ -57,7 +57,7 @@ function errorFacts(value: unknown) {
   visit(value, 0);
   for (const detail of text) {
     for (const match of detail.matchAll(
-      /(?:\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*[:=]?\s*|\bapi error\s*\(\s*|^\s*)([45]\d{2})\b/gi,
+      /(?:\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*(?:[:=]\s*)?|\bapi error\s*\(\s*|^\s*)([45]\d{2})\b/gi,
     )) {
       statuses.add(Number(match[1]));
     }
@@ -80,6 +80,9 @@ const EXHAUSTION_SIGNAL =
  */
 const NOT_EXHAUSTION =
   /not (?:yet )?(?:reached|hit)|unsupported parameter|invalid[ _](?:api[ _]key|parameter|param|input|argument|tool|schema|credential)|validation|must be|context[ _-](?:length|window)|too many tokens|model not found|bad request|unauthori[sz]ed|forbidden|access denied|permission (?:is )?(?:denied|refused|declined)|(?:expired|revoked|missing) (?:api )?(?:key|credential|token)|(?:api )?(?:key|credential|token) (?:expired|revoked|missing)|authentication (?:failed|failure|denied|expired|invalid)|abort|cancel|\bper[- ](?:second|minute)\b|\b(?:rpm|tpm)\b|concurrent/;
+
+/** OpenAI's explicit code and wording for an organization with no prepaid credits left. */
+const OPENAI_CREDITS_EXHAUSTED = /\bcredit_balance_exhausted\b|\byou have no credits remaining\b/;
 
 /**
  * Providers report an exhausted account as 400, 402 or 403 depending on the vendor. A 4xx
@@ -106,6 +109,8 @@ export function isModelCredentialRejected(error: unknown): boolean {
 
 /** A provider's sign-in service answers 400 `request_failed` when it asks the client to retry. */
 export function isSignInRetryRequest(error: unknown): boolean {
+  if (error instanceof Error && (error as { code?: unknown }).code === "request_failed")
+    return true;
   return /"error"\s*:\s*"request_failed"/.test(
     error instanceof Error ? error.message : String(error),
   );
@@ -126,9 +131,13 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   if (statuses.has(400)) return false;
   // The ChatGPT subscription (Codex) runtime reports an exhausted usage window without a status.
   if (/you have hit your chatgpt usage limit/.test(text)) return true;
+  // OpenAI reports spent prepaid API credits as `credit_balance_exhausted`. Inside a stream that
+  // already answered 200 the error carries no status, so only that explicit code or wording counts.
+  if (statuses.size === 0 && OPENAI_CREDITS_EXHAUSTED.test(text) && !NOT_EXHAUSTION.test(text))
+    return true;
   if (
     [400, 401, 403].some((status) => statuses.has(status)) ||
-    /\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*[:=]?\s*(?:400|401|403)\b/.test(
+    /\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*(?:[:=]\s*)?(?:400|401|403)\b/.test(
       text,
     )
   ) {
@@ -169,7 +178,7 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   )
     return true;
   if ([...statuses].some((status) => status >= 400 && status < 600)) return false;
-  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server[ _]error|upstream error|an error occurred while processing your request|could not complete this request\. please retry|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended (?:without (?:a )?finish[_ ]reason|before \w+)|json error injected into sse stream|stream interrupted|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
+  return /rate.?limit|too many requests|resource.?exhausted|request limit reached|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server[ _]error|internal error during token generation|upstream error|an error occurred while processing your request|could not complete this request\. please retry|gateway timeout|timed? out|timeout|connection (?:error|reset|refused)|network[ _]error|max retries exceeded|stream ended (?:without (?:a )?finish[_ ]reason|before \w+)|json error injected into sse stream|stream interrupted|incomplete json segment at the end|\bterminated\b|fetch failed|socket hang up|econnreset|econnrefused|etimedout|websocket closed/.test(
     text,
   );
 }
@@ -194,7 +203,7 @@ export function isTransientModelError(error: unknown): boolean {
     );
   return (
     isRetryableProviderUnavailable(error) &&
-    !/insufficient_quota|exceeded your current quota|quota exhausted|(?:chatgpt|5-hour|weekly(?: \(7-day\))?|monthly) usage limit|credit balance|insufficient (?:funds|balance|credits)|out of budget/.test(
+    !/insufficient_quota|credit_balance_exhausted|no credits remaining|exceeded your current quota|quota exhausted|(?:chatgpt|5-hour|weekly(?: \(7-day\))?|monthly) usage limit|credit balance|insufficient (?:funds|balance|credits)|out of budget/.test(
       text,
     ) &&
     // OpenAI's per-minute limits link to billing as a way to raise them.

@@ -48,3 +48,21 @@ Known gaps:
 We support security fixes on the current `main` branch and the latest release (beta).
 
 There is no bug bounty program at this time.
+
+## Dependency and image security checks
+
+The Dependency security workflow audits the full workspace, including build and release tooling,
+on pull requests and daily. High and Critical registry advisories fail the check. A package-count
+assertion rejects incomplete audits, including scans of only the package-manager document in the
+multi-document lockfile, and audits that omit its package-manager dependencies.
+
+Image validation scans the app, computer and updater built for a pull request. Daily scans also
+inspect both published Linux architectures for main and the latest published version release
+(including betas), using read-only registry access for private packages. Artifacts retain the full vulnerability inventory,
+image identity, scanner/database versions and a CycloneDX SBOM. Image scans are reporting checks:
+OS advisories and bundled tools still require applicability review, including findings without
+available fixes. A passing build or dependency audit is not a clean image-security verdict.
+
+Keep Node and Debian base images pinned by digest and apply available same-release OS upgrades
+when rebuilding. Keep npm available for managed stdio integrations, but update its bundled copy
+separately from workspace overrides. Do not suppress a finding solely because it is in tooling.

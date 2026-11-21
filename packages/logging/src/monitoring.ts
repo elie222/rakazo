@@ -225,7 +225,9 @@ export type ClientOperation =
   | "desktop.renderer"
   | "desktop.child"
   | "desktop.menu"
-  | "desktop.unresponsive";
+  | "desktop.ipc"
+  | "desktop.unresponsive"
+  | "account.import.refresh";
 
 export interface ClientErrorReporter {
   capture(error: unknown, operation: ClientOperation, tags?: Record<string, string>): void;

@@ -98,10 +98,7 @@ export function whenLabel(triggers: DemoTrigger[]) {
  * so an explicit daily 9:00 AM choice is not overwritten by the stale seed.
  */
 export function resolveRoutineWhen(triggers: DemoTrigger[], sourceWhen?: string): string {
-  if (
-    sourceWhen &&
-    JSON.stringify(triggers) === JSON.stringify([parseWhen(sourceWhen)])
-  ) {
+  if (sourceWhen && JSON.stringify(triggers) === JSON.stringify([parseWhen(sourceWhen)])) {
     return sourceWhen;
   }
   return whenLabel(triggers);

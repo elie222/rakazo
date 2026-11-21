@@ -5,7 +5,7 @@ import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contract
 import type { ModelSettingsFields } from "@rakazo/core";
 import {
   catalogEntryFor,
-  connectionModels,
+  connectionServesModel,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
   modelHasOwnSettings,
@@ -13,8 +13,9 @@ import {
   modelSettingsFields,
   modelSettingsRequest,
 } from "@rakazo/core";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -24,21 +25,55 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LimitField } from "../../components/model-connection-fields";
-import { createModelsStyles } from "../../components/model-connection-styles";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSwitch } from "../../components/native-switch";
-import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
-import { native, useThemedStyles } from "../../lib/native";
-import { settingsRpc, settingsTarget } from "../../lib/settings-target";
-import { errorText } from "../../lib/user-error";
+import { LimitField } from "../../components/models/model-connection-fields";
+import { createModelsStyles } from "../../components/models/model-connection-styles";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSwitch } from "../../components/native/native-switch";
+import type { MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { formRead, queryClient, targetRpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import type { SettingsTarget } from "../../lib/query/settings-target";
+import { settingsTarget } from "../../lib/query/settings-target";
+
+type ModelRoute = { credentialId: string; modelId: string; spaceId?: string };
+
+/** The connection and the model's catalog entry, or null once the connection no longer runs the model. */
+type ModelRead = { credential: MobileModelCredential; entry: MobileModel | undefined } | null;
+
+/** The connection and the catalog as one read, so the form never shows one without the other. */
+function modelRead(
+  target: SettingsTarget,
+  { credentialId, modelId }: ModelRoute,
+  notFound: string,
+) {
+  const credentialsRead = targetRpcQuery(target, "models/credentials");
+  const catalogRead = targetRpcQuery(target, "models/list");
+  const queryFn: QueryFunction<ModelRead> = async (context) => {
+    const [credentials, catalog] = await Promise.all([
+      credentialsRead.queryFn(context),
+      catalogRead.queryFn(context),
+    ]);
+    const credential = credentials.find((item) => item.id === credentialId);
+    if (!credential) throw new Error(notFound);
+    if (!connectionServesModel(credential, catalog, modelId)) return null;
+    return { credential, entry: catalogEntryFor(catalog, credential.provider, modelId) };
+  };
+  return {
+    queryKey: [
+      ...credentialsRead.queryKey,
+      "models/list",
+      credentialId,
+      modelId,
+    ] as unknown as DataTag<QueryKey, ModelRead, Error>,
+    queryFn,
+  };
+}
 
 /** One model's own settings on the connection that runs it. */
 export default function ModelSettingsScreen() {
-  const styles = useThemedStyles(createModelsStyles);
-  const navigation = useNavigation();
-  const router = useRouter();
-  const { t } = useLingui();
   const {
     credentialId = "",
     modelId = "",
@@ -48,47 +83,78 @@ export default function ModelSettingsScreen() {
     modelId?: string;
     spaceId?: string;
   }>();
-  const rpc = useMemo(() => settingsRpc(settingsTarget(spaceId)), [spaceId]);
-  const [credential, setCredential] = useState<MobileModelCredential | null>(null);
-  const [entry, setEntry] = useState<MobileModel | undefined>();
-  const [fields, setFields] = useState<ModelSettingsFields | null>(null);
-  const [pending, setPending] = useState(false);
+  // Keyed by what it edits, so another model never starts from this one's unsaved edits.
+  return (
+    <ModelSettingsForm
+      key={JSON.stringify([spaceId, credentialId, modelId])}
+      credentialId={credentialId}
+      modelId={modelId}
+      spaceId={spaceId}
+    />
+  );
+}
+
+function ModelSettingsForm(route: ModelRoute) {
+  const { credentialId, modelId, spaceId } = route;
+  const styles = useThemedStyles(createModelsStyles);
+  const router = useRouter();
+  const { t } = useLingui();
+  const target = useMemo(() => settingsTarget(spaceId), [spaceId]);
+  // Every read answers with its own object, so an edit can tell which read it was made on.
+  const read = {
+    ...formRead(modelRead(target, route, t`Connection not found`)),
+    structuralSharing: false,
+  };
+  // Read again on each return to the screen. Not on app foreground: a read replaces the draft.
+  const query = useScreenQuery(read, { onForeground: false });
+  // A copy read before this screen opened is not what the form may start from.
+  const loaded = query.isFetchedAfterMount ? query.data : undefined;
+  // Edits belong to the read they were made on; the next one starts from what is saved.
+  const [draft, setDraft] = useState<{ on: ModelRead; fields: ModelSettingsFields } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    const [credentials, catalog] = await Promise.all([
-      rpc("models/credentials"),
-      rpc("models/list"),
-    ]);
-    const next = credentials.find((item) => item.id === credentialId);
-    if (!next) throw new Error(t`Connection not found`);
-    if (!connectionModels(next, catalog).some((entry) => entry.id === modelId)) {
-      setFields(null);
-      router.replace({ pathname: "/models", params: spaceId ? { spaceId } : {} });
-      return;
-    }
-    const nextEntry = catalogEntryFor(catalog, next.provider, modelId);
-    setCredential(next);
-    setEntry(nextEntry);
-    setFields(modelSettingsFields(credentialModelSettings(next, modelId), nextEntry));
-    setError(null);
-  }, [credentialId, modelId, rpc, router, spaceId, t]);
+  const readError = query.isError ? errorText(query.error, t`Could not load model settings`) : null;
+  const reading = query.isFetching;
+  // What a read settles as: its failure shows until an edit or a read that succeeds.
+  useEffect(() => {
+    if (!reading) setError(readError);
+  }, [reading, readError]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void load().catch((err: unknown) =>
-        setError(errorText(err, t`Could not load model settings`)),
+  const removed = loaded === null;
+  useEffect(() => {
+    if (removed) router.replace({ pathname: "/models", params: spaceId ? { spaceId } : {} });
+  }, [removed, router, spaceId]);
+
+  function announce(next: { error?: string; notice?: string }) {
+    setError(next.error ?? null);
+    setNotice(next.notice ?? null);
+    const message = next.error ?? next.notice;
+    if (message) AccessibilityInfo.announceForAccessibility(message);
+  }
+
+  const change = useSave({
+    target,
+    save: (settings: ModelSettings, send) =>
+      send("models/saveModelSettings", { credentialId, modelId, settings }),
+    stale: [read.queryKey],
+    onSaved: () => {
+      const reread = queryClient.getQueryState(read.queryKey);
+      announce(
+        reread?.status === "error"
+          ? { error: errorText(reread.error, t`Could not load model settings`) }
+          : { notice: t`Saved.` },
       );
-    }, [load, t]),
-  );
+    },
+    onFailed: (err) => announce({ error: errorText(err, t`Could not save model settings`) }),
+  });
+  const pending = change.pending;
 
+  const entry = loaded?.entry;
   const title = entry?.label ?? modelId;
-  useLayoutEffect(() => {
-    if (title) navigation.setOptions({ title });
-  }, [navigation, title]);
+  useScreenHeader({ title: title || undefined });
 
-  if (!credential || !fields) {
+  if (!loaded) {
     return (
       <SafeAreaView edges={["bottom"]} style={[styles.screen, styles.centered]}>
         {error ? (
@@ -100,8 +166,11 @@ export default function ModelSettingsScreen() {
     );
   }
 
+  const shown = loaded;
+  const { credential } = shown;
   const provider = credential.provider;
   const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry);
+  const fields = draft?.on === shown ? draft.fields : saved;
   const dirty = (Object.keys(fields) as (keyof ModelSettingsFields)[]).some(
     (key) => fields[key] !== saved[key],
   );
@@ -109,20 +178,15 @@ export default function ModelSettingsScreen() {
   const capabilities = modelCapabilitiesConfigurable(provider, entry);
 
   function update(patch: Partial<ModelSettingsFields>) {
-    setFields((current) => (current ? { ...current, ...patch } : current));
+    setDraft((current) => ({
+      on: shown,
+      fields: { ...(current?.on === shown ? current.fields : saved), ...patch },
+    }));
     setError(null);
     setNotice(null);
   }
 
-  function announce(next: { error?: string; notice?: string }) {
-    setError(next.error ?? null);
-    setNotice(next.notice ?? null);
-    const message = next.error ?? next.notice;
-    if (message) AccessibilityInfo.announceForAccessibility(message);
-  }
-
-  async function save() {
-    if (!fields || !credential) return;
+  function save() {
     Keyboard.dismiss();
     const request = modelSettingsRequest({ fields, provider, entry });
     if (request.status === "invalid") {
@@ -138,27 +202,7 @@ export default function ModelSettingsScreen() {
       });
       return;
     }
-    await persist(request.settings);
-  }
-
-  async function persist(settings: ModelSettings) {
-    if (!credential) return;
-    setPending(true);
-    try {
-      await rpc("models/saveModelSettings", { credentialId: credential.id, modelId, settings });
-    } catch (err) {
-      announce({ error: errorText(err, t`Could not save model settings`) });
-      setPending(false);
-      return;
-    }
-    try {
-      await load();
-      announce({ notice: t`Saved.` });
-    } catch (err) {
-      announce({ error: errorText(err, t`Could not load model settings`) });
-    } finally {
-      setPending(false);
-    }
+    change.run(request.settings);
   }
 
   return (
@@ -220,7 +264,7 @@ export default function ModelSettingsScreen() {
           <NativeActionButton
             disabled={pending}
             label={pending ? t`Saving…` : t`Save`}
-            onPress={() => void save()}
+            onPress={save}
             style={{ marginTop: 12 }}
           />
         ) : null}
@@ -229,7 +273,7 @@ export default function ModelSettingsScreen() {
             disabled={pending}
             fill={false}
             label={t`Reset to defaults`}
-            onPress={() => void persist({})}
+            onPress={() => change.run({})}
             prominence="secondary"
             variant="text"
           />

@@ -14,7 +14,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { encodeTerminalInput, encodeTerminalResize } from "@rakazo/contracts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { interactiveScreenCommand, screenPorts, startTerminalCommand } from "./desktop-runtime.js";
 import { TERMINAL_SERVER_PROGRAM } from "./terminal-server.js";
 
@@ -45,9 +45,10 @@ async function startServer(asUser?: { uid: number; gid: number }) {
     server.kill("SIGKILL");
     rmSync(root, { recursive: true, force: true });
   });
-  for (let i = 0; i < 100 && !existsSync(socket); i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
+  await vi.waitFor(() => expect(existsSync(socket)).toBe(true), {
+    timeout: 10_000,
+    interval: 20,
+  });
   return { root, socket, state, server };
 }
 
@@ -58,13 +59,14 @@ function connect(socket: string) {
   client.on("data", (chunk) => {
     output += chunk.toString("utf8");
   });
-  const waitFor = async (pattern: RegExp) => {
-    for (let i = 0; i < 250; i += 1) {
-      if (pattern.test(output)) return output;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    throw new Error(`terminal output did not match ${pattern}: ${output}`);
-  };
+  const waitFor = (pattern: RegExp) =>
+    vi.waitFor(
+      () => {
+        expect(output).toMatch(pattern);
+        return output;
+      },
+      { timeout: 5_000, interval: 20 },
+    );
   const closed = new Promise((resolve) => client.on("close", resolve));
   return { client, waitFor, closed };
 }
@@ -106,10 +108,10 @@ describe("terminal server", () => {
     expect(readdirSync(state)).toHaveLength(2);
     // Stopping the terminal signals every session; each removes its identity files.
     spawnSync("pkill", ["-TERM", "-f", socket]);
-    for (let i = 0; i < 100 && readdirSync(state).length > 0; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    expect(readdirSync(state)).toEqual([]);
+    await vi.waitFor(() => expect(readdirSync(state)).toEqual([]), {
+      timeout: 10_000,
+      interval: 20,
+    });
   });
 });
 

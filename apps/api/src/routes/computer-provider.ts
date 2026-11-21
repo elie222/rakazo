@@ -3,7 +3,7 @@ import {
   getComputerProviderSettings,
   updateAccountComputerSettings,
   updateComputerProviderSettings,
-} from "../computer-provider-config.js";
+} from "../computers/computer-provider-config.js";
 import type { RouterContext } from "./context.js";
 
 export function computerProviderRoutes(ctx: RouterContext) {

@@ -13,6 +13,7 @@ import { nl } from "./locales/nl.js";
 import { pl } from "./locales/pl.js";
 import { ptBR } from "./locales/pt-BR.js";
 import { ru } from "./locales/ru.js";
+import { th } from "./locales/th.js";
 import { tr } from "./locales/tr.js";
 import { zhCN } from "./locales/zh-CN.js";
 import { zhTW } from "./locales/zh-TW.js";
@@ -38,6 +39,7 @@ export const PAGE_LOCALES = [
   "pl",
   "pt-BR",
   "ru",
+  "th",
   "tr",
   "zh-CN",
   "zh-TW",
@@ -56,6 +58,7 @@ export const PAGE_MESSAGES: Record<PageLocale, Messages> = {
   pl,
   "pt-BR": ptBR,
   ru,
+  th,
   tr,
   "zh-CN": zhCN,
   "zh-TW": zhTW,

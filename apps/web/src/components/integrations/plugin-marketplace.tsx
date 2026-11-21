@@ -8,14 +8,14 @@ import type {
   PluginPreview,
 } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
-import { installedPluginParts } from "@rakazo/core";
+import { installedPluginParts, pluginSite } from "@rakazo/core";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { connectMcpOauth } from "../../lib/mcp-connect";
-import { rpc } from "../../lib/rpc";
-import type { ErrorDetails } from "../../lib/user-error";
-import { errorDetails } from "../../lib/user-error";
+import { connectMcpOauth } from "../../lib/integrations/mcp-connect";
+import { rpc } from "../../lib/query/rpc";
+import type { ErrorDetails } from "../../lib/query/user-error";
+import { errorDetails } from "../../lib/query/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 import { AvailabilityControl, reachesOtherSpaces, useOwnSpaces } from "./space-availability";
 
@@ -37,19 +37,6 @@ export function pluginSelection(entry: PluginMarketplaceEntry): PluginSelection 
     logo: entry.logo,
     site: pluginSite(entry),
   };
-}
-
-/** GitHub homepages would give every plugin the same mark, so they never stand in for a site. */
-function pluginSite(entry: Pick<PluginMarketplaceEntry, "homepage" | "domains">): string | null {
-  const domain = entry.domains[0]?.replace(/^https?:\/\//, "");
-  if (domain) return `https://${domain}`;
-  try {
-    return entry.homepage && !new URL(entry.homepage).hostname.endsWith("github.com")
-      ? entry.homepage
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 export function PluginLogo({
@@ -79,6 +66,7 @@ export function PluginLogo({
     />
   ) : (
     <div
+      aria-hidden="true"
       className={`${box} grid shrink-0 place-items-center border border-border/60 bg-favicon-plate font-semibold text-foreground`}
     >
       {Array.from(name)[0]?.toUpperCase()}
@@ -111,6 +99,7 @@ export function PluginRow({
   installed: boolean;
   onOpen: () => void;
 }) {
+  const { t } = useLingui();
   return (
     <div data-testid="plugin-row" className={`${ROW_SHELL} ${ROW_HOVER}`}>
       <button type="button" onClick={onOpen} className={ROW_BUTTON}>
@@ -122,7 +111,13 @@ export function PluginRow({
           ) : null}
         </span>
       </button>
-      <Button type="button" variant="secondary" size="sm" onClick={onOpen}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        aria-label={installed ? t`Added: ${name}` : t`Add ${name}`}
+        onClick={onOpen}
+      >
         {installed ? <Trans>Added</Trans> : <Trans>Add</Trans>}
       </Button>
     </div>

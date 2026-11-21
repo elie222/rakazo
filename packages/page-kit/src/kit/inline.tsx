@@ -110,8 +110,10 @@ export function inlineMarkup(text: string): ReactNode[] {
       boundary(index - 1) &&
       /^(?:https?:\/\/|www\.[\p{L}\p{N}])/u.test(text.slice(index, index + 8))
     ) {
+      const previous = text[index - 1];
+      const closingQuote = previous === "“" ? "”" : previous === "‘" ? "’" : undefined;
       let end = index;
-      while (end < text.length && !URL_END.test(text[end]!)) end++;
+      while (end < text.length && text[end] !== closingQuote && !URL_END.test(text[end]!)) end++;
       const raw = withoutTrailingPunctuation(text.slice(index, end));
       const href = webUrl(char === "w" ? `https://${raw}` : raw);
       if (href) {

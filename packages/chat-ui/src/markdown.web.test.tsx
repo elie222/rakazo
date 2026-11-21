@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -172,14 +174,12 @@ async function renderLinks(
 
 describe("web markdown website links", () => {
   it("isolates cached misses and pending answers when the API endpoint changes", async () => {
-    let resolveOld!: (answer: { icon: string | null }) => void;
-    const oldLoad = vi.fn<LinkFavicons["load"]>((origin) =>
-      origin.includes("pending")
-        ? new Promise((resolve) => {
-            resolveOld = resolve;
-          })
-        : Promise.resolve({ icon: null }),
-    );
+    let oldAnswer: Deferred<{ icon: string | null }> | undefined;
+    const oldLoad = vi.fn<LinkFavicons["load"]>((origin) => {
+      if (!origin.includes("pending")) return Promise.resolve({ icon: null });
+      oldAnswer = deferred();
+      return oldAnswer.promise;
+    });
     const newLoad = vi.fn<LinkFavicons["load"]>(async () => ({ icon: ICON }));
     const view = await renderLinks(
       "[Miss](https://scope-miss.example.test/) [Pending](https://scope-pending.example.test/)",
@@ -190,7 +190,7 @@ describe("web markdown website links", () => {
     expect(newLoad).toHaveBeenCalledTimes(2);
     expect(view.container.querySelectorAll("a img")).toHaveLength(2);
     await act(async () => {
-      resolveOld({ icon: null });
+      oldAnswer!.resolve({ icon: null });
     });
     expect(view.container.querySelectorAll("a img")).toHaveLength(2);
     await view.cleanup();
@@ -248,15 +248,18 @@ describe("web markdown website links", () => {
   });
 
   it("shows the globe until an icon arrives, and when there is none", async () => {
-    let resolve: (answer: { icon: string | null }) => void = () => undefined;
+    let answer: Deferred<{ icon: string | null }> | undefined;
     const view = await renderLinks("[Docs](https://icon-c.example.test/docs)", {
-      load: () => new Promise((done) => (resolve = done)),
+      load: () => {
+        answer = deferred();
+        return answer.promise;
+      },
     });
     const tile = () => view.container.querySelector(".rk-chat-link-tile");
     expect(tile()?.querySelector("svg")).not.toBeNull();
     expect(tile()?.classList.contains("rk-chat-link-tile-icon")).toBe(false);
     await act(async () => {
-      resolve({ icon: null });
+      answer?.resolve({ icon: null });
     });
     expect(tile()?.querySelector("img")).toBeNull();
     expect(tile()?.querySelector("svg")).not.toBeNull();
@@ -803,6 +806,23 @@ describe("web markdown mentions", () => {
     expect(html).toContain('<b data-id="bot-1">Planner</b>');
     expect(html).toContain("<span>Other</span>");
     expect(html).not.toContain("<a");
+  });
+
+  it("keeps a mention added in front of the text out of a selection, but not one in the text", () => {
+    const renderMention = (_id: string, name: string) => <b>{name}</b>;
+    const added = renderToStaticMarkup(
+      <ChatMarkdown renderMention={renderMention}>
+        {"[Reporter](rakazo-mention:bot-1#added) I set up the weekly report."}
+      </ChatMarkdown>,
+    );
+    expect(added).toContain('<span class="select-none"><b>Reporter</b></span>');
+    const named = renderToStaticMarkup(
+      <ChatMarkdown renderMention={renderMention}>
+        {"[Reporter](rakazo-mention:bot-1) is ready."}
+      </ChatMarkdown>,
+    );
+    expect(named).toContain("<b>Reporter</b>");
+    expect(named).not.toContain("select-none");
   });
 });
 

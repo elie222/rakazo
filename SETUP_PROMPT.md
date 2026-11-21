@@ -1,6 +1,7 @@
 # Set up Rakazo with a coding agent
 
-Copy one of the prompts below into a coding agent.
+Prefer no self-hosting? Use [Rakazo Cloud](https://app.rakazo.com).
+Otherwise, copy the relevant prompt below into a coding agent.
 
 ## Published images (no checkout)
 
@@ -8,6 +9,8 @@ Prefer this when the user wants a running web UI with Docker only (no Node/pnpm 
 
 ```text
 Set up Rakazo from published GHCR images and leave the web UI running.
+
+Unless I explicitly chose self-hosting, offer https://app.rakazo.com first. If I choose Cloud, stop without installing anything.
 
 Work like a careful onboarding engineer: perform the setup yourself, explain only decisions or blockers, and verify the product through the UI.
 
@@ -27,9 +30,11 @@ Before making changes, ask me these concise questions:
    - Defer model setup and verify infrastructure only. Make clear that bots cannot answer until a model is connected.
 3. Do I want remote computers instead of local Docker? If yes, choose E2B (`E2B_API_KEY`), Daytona (`DAYTONA_API_KEY`), or Boat (`BOAT_API_KEY`) and set `SANDBOX_PROVIDER` accordingly. If no, keep the default `SANDBOX_PROVIDER=docker` (local computers via the in-stack supervisor).
 
-Ask which email address I want for the initial account. Do not create an administrator: app accounts never administer the server, and signup order grants no privileges. Keep server configuration in `.env`; manage logs and updates through server tooling. If email delivery is unavailable, keep `SIGNUPS_ENABLED=false`, create the intended ordinary account using the server-side `bootstrap-owner` command documented in `docs/self-host-accounts.md`, and never verify a public signup without either mailbox proof or the matching existing password.
+Ask which email address I want for the initial account. Do not create an administrator: app accounts never administer the server, and signup order grants no privileges. Keep server configuration in `.env`; manage logs and updates through server tooling. If email delivery is unavailable or signup is already disabled, keep `SIGNUPS_ENABLED=false`, create the intended ordinary account using the server-side `bootstrap-owner` command documented in `docs/self-host-accounts.md`, and never verify a public signup without either mailbox proof or the matching existing password.
 
 Do not ask me to invent secrets; generate strong random values with openssl yourself.
+
+Before public exposure, establish whether registration is private or intentionally public. For private deployments with email delivery, set `SIGNUP_ALLOWLIST` and require mailbox verification; otherwise use the documented private bootstrap. Enable unrestricted signup only by explicit request, since accounts may consume deployment resources.
 
 Preflight:
 
@@ -54,13 +59,16 @@ Setup:
    `docs/self-host-restricted-network.md#digest-verified-hub-mirror-startup`; use that section's
    explicit pull, digest-check, and no-repull start sequence instead of Setup step 5.
 5. Run `bash install-images.sh`. It preserves `.env`, pulls the images, and starts the stack.
-6. Wait until api, web, and supervisor are healthy. Default image tag is `edge` (amd64 + arm64). Do not pin `latest` unless that tag exists in GHCR.
+6. Wait until api, web, and supervisor are healthy. New installs default to `latest`, which follows
+   stable releases only (amd64 + arm64). A stable release must exist; do not fall back to `edge`
+   or another main build. Preserve existing image pins. Automatic updates remain disabled unless
+   I explicitly ask to enable them.
 
 Verification:
 
 - Request `http://127.0.0.1:3100/internal/health`. Require `ok: true` and `sandbox: "docker"` (or the remote provider you configured). A missing `SANDBOX_SUPERVISOR_TOKEN` is a setup failure: Compose will not start the supervisor; restore the token and recreate the stack. Do not treat `sandbox: "none"` as success for this path.
 - Open `http://127.0.0.1:5173`, sign in to the intended account (or create a nonprivileged test account with fake data only if registration is deliberately enabled), and complete first-run onboarding.
-- If a model is connected, send a harmless test message. Open the Agent computer pane and confirm the Docker computer reaches `running` and renders its desktop.
+- If a model is connected, send a harmless test message. In the bot's chat, select its name in the header to open the bot panel. Under **Computer**, choose **Open** on the preview (or **Wake** if it is asleep), then confirm the Docker computer reaches `running` and renders its desktop.
 
 When finished, report the directory path, effective Docker/Compose versions, configured options without secrets, app URL, health result, and how to stop without deleting volumes (`docker compose … down` without `-v`).
 ```
@@ -73,6 +81,8 @@ Use this for development, Docker sandboxes on the host, or Electron.
 Set up Rakazo locally and leave it running in a usable state.
 
 Repository: https://github.com/elie222/rakazo.git
+
+Unless I explicitly chose self-hosting, offer https://app.rakazo.com first. If I choose Cloud, stop without installing anything.
 
 Work like a careful onboarding engineer: perform the setup yourself, explain only decisions or blockers, and verify the product through the UI rather than stopping after dependency installation.
 
@@ -93,9 +103,11 @@ Before making changes, ask me these concise questions:
    - Defer model setup and verify infrastructure only. Make clear that bots cannot answer until a model is connected.
 3. Do I want a managed app catalog? If yes, choose Composio (`COMPOSIO_API_KEY`) or Pipedream Connect (`PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, and `PIPEDREAM_PROJECT_ID`); otherwise leave them empty. Explain that this is optional and that users can still add HTTPS MCP or OpenAPI sources in the app.
 4. Set up the web app only (recommended), or also launch the Electron desktop shell after the web stack works?
-5. Which email should the initial ordinary account use? There is no administrator account or first-signup privilege. Keep deployment configuration in `.env` and server operations in deployment tooling. Without email delivery, keep `SIGNUPS_ENABLED=false` and create that account privately with the documented server-side bootstrap command; never treat an unverified public signup as proof of identity.
+5. Which email should the initial ordinary account use? There is no administrator account or first-signup privilege. Keep deployment configuration in `.env` and server operations in deployment tooling. Without email delivery or when signup is already disabled, keep `SIGNUPS_ENABLED=false` and create that account privately with the documented server-side bootstrap command; never treat an unverified public signup as proof of identity.
 
 Generate the required application secrets with openssl; do not ask me to invent them. If I choose an API key, let me enter it through an available secure secret mechanism or directly into `.env`; never echo it back. OAuth or device-code sign-in must remain under my control.
+
+Before public exposure, establish whether registration is private or intentionally public. For private deployments with email delivery, set `SIGNUP_ALLOWLIST` and require mailbox verification; otherwise use the documented private bootstrap. Enable unrestricted signup only by explicit request, since accounts may consume deployment resources.
 
 Preflight:
 
@@ -135,9 +147,9 @@ Verification:
 
 - Request `http://127.0.0.1:3100/internal/health`. Require `ok: true`, `runtime: "pi"`, `sandbox: "docker"`, `jobs: "graphile"`, and `realtime: "postgres"`. Expect `integrations` to include `"composio"` only when its key was configured and `"pipedream"` only when all Pipedream settings were configured. `revision` is `null` unless `GIT_SHA` is set.
 - Open `http://127.0.0.1:5173` in a browser. If browser automation is available, use it for non-sensitive steps; otherwise give me the exact UI steps.
-- Create a local test account with clearly fake data, complete first-run onboarding, and create a test bot. Do not use personal data.
+- Sign in to the intended account, complete first-run onboarding, and create a test bot. Create a fake test account only if registration is deliberately enabled.
 - If a model is connected, send a harmless test message and confirm the bot replies. If model setup was deferred, explicitly report that the stack is healthy but a first message will fail until a provider is configured; do not call the setup fully usable without that caveat.
-- Open the Agent computer pane and confirm the Docker computer reaches `running` and renders its desktop.
+- In the bot's chat, select its name in the header to open the bot panel. Under **Computer**, choose **Open** on the preview (or **Wake** if it is asleep), then confirm the Docker computer reaches `running` and renders its desktop.
 - Open Integrations. If neither managed catalog was configured, confirm the view still offers HTTPS MCP and OpenAPI sources. If one was configured, verify its app catalog loads without exposing any key or client secret.
 - Run `pnpm test` and `pnpm check`. Report failures with the relevant output; do not claim success if either fails.
 - If I requested Electron, leave the web stack running and then launch `pnpm --filter @rakazo/desktop dev`. Verify the shell loads the same app. Let me make the Docker-versus-This-Mac choice because This Mac grants bots access under my OS account.

@@ -1,6 +1,7 @@
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./rpc", () => {
+vi.mock("./query/rpc", () => {
   // Query keys walk the client's procedure paths; these tests never call through it.
   const client = (): unknown => new Proxy(() => undefined, { get: () => client() });
   return {
@@ -10,9 +11,9 @@ vi.mock("./rpc", () => {
     rpcForSpace: client,
   };
 });
-vi.mock("./performance", () => ({ markOnce: vi.fn() }));
+vi.mock("./platform/performance", () => ({ markOnce: vi.fn() }));
 
-import { rpc, selectedSpaceId } from "./rpc";
+import { rpc, selectedSpaceId } from "./query/rpc";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -32,6 +33,29 @@ describe("bootstrap upload configuration", () => {
       expect(getMaxUploadSizeBytes()).toBe(maxUploadSizeBytes ?? 10 * 1024 * 1024);
     },
   );
+});
+
+describe("the first load of a group link", () => {
+  it("asks which Space holds the group, and asks again for another group", async () => {
+    vi.stubGlobal("window", { location: { pathname: "/app/g/group-1" } });
+    const first = { me: {}, groupSpaceId: "space-b" } as Awaited<ReturnType<typeof rpc.bootstrap>>;
+    vi.mocked(rpc.bootstrap).mockReset().mockResolvedValue(first);
+    const { takeInitialBootstrap } = await import("./bootstrap");
+    expect(rpc.bootstrap).toHaveBeenCalledWith({ groupId: "group-1" });
+    await expect(takeInitialBootstrap(undefined, "group-1")).resolves.toEqual(first);
+    expect(rpc.bootstrap).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not answer for a group it did not ask about", async () => {
+    vi.stubGlobal("window", { location: { pathname: "/app/g/group-1" } });
+    vi.mocked(rpc.bootstrap)
+      .mockReset()
+      .mockResolvedValue({ me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>);
+    const { takeInitialBootstrap } = await import("./bootstrap");
+    await takeInitialBootstrap(undefined, "group-2");
+    expect(rpc.bootstrap).toHaveBeenLastCalledWith({ groupId: "group-2" });
+    expect(rpc.bootstrap).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("switching spaces in place", () => {
@@ -95,7 +119,7 @@ describe("revisiting a space", () => {
     vi.mocked(rpc.bootstrap)
       .mockReset()
       .mockResolvedValue({ me: {} } as Awaited<ReturnType<typeof rpc.bootstrap>>);
-    const { queryClient, spaceSeedKey } = await import("./query");
+    const { queryClient, spaceSeedKey } = await import("./query/query");
     const { peekBootstrapSeed, primeSpaceBootstrap } = await import("./bootstrap");
     // Left while showing bot-b1; the switch back targets bot-b2.
     const left = { me: { spaceId: "space-b" }, thread: { botId: "bot-b1" } } as Awaited<
@@ -158,12 +182,12 @@ describe("primed space isolation", () => {
   it("does not let a superseded response overwrite the selected space's capabilities", async () => {
     vi.stubGlobal("window", { location: { pathname: "/sign-in" } });
     type Bootstrap = Awaited<ReturnType<typeof rpc.bootstrap>>;
-    let resolveOld = (_value: Bootstrap) => {};
-    const old = new Promise<Bootstrap>((resolve) => {
-      resolveOld = resolve;
-    });
+    const old = deferred<Bootstrap>();
     const current = { me: { labs: ["board"], maxUploadSizeBytes: 4321 } } as Bootstrap;
-    vi.mocked(rpc.bootstrap).mockReset().mockReturnValueOnce(old).mockResolvedValue(current);
+    vi.mocked(rpc.bootstrap)
+      .mockReset()
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValue(current);
     vi.mocked(selectedSpaceId).mockReturnValue("space-c");
     const {
       primeSpaceBootstrap,
@@ -176,7 +200,7 @@ describe("primed space isolation", () => {
     await primeSpaceBootstrap("space-c");
     discardPrimedBootstrap(superseded);
     await expect(takeInitialBootstrap()).resolves.toBe(current);
-    resolveOld({ me: { maxUploadSizeBytes: 1234 } } as Bootstrap);
+    old.resolve({ me: { maxUploadSizeBytes: 1234 } } as Bootstrap);
     await superseded;
     expect(getMaxUploadSizeBytes()).toBe(4321);
     expect(getLabs()).toEqual(["board"]);

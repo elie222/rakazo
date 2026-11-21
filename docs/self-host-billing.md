@@ -10,15 +10,16 @@ monthly model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-u
 amounts. Monthly credits expire at the end of their service period; one-time top-ups do not expire.
 The hosted computer is included in both paths, and monthly credits include the own-key plan.
 
-`BYOK_TIERS` in `@rakazo/contracts` sets the own-key plan's tiers: Standard, Pro and Max, each with
-a monthly and yearly price, a monthly computer allowance and a computer size. New organizations
+`BYOK_TIERS` in `@rakazo/contracts` sets the own-key plan's tiers: Standard, Pro, Max and Ultra, each with
+a monthly and yearly price, a monthly computer allowance and a maximum computer size. New organizations
 start on Standard; existing subscribers keep the price they signed up at. A `null` Standard monthly
 price makes the plan free, hides the other tiers, and ends paid own-key subscriptions at their
-period end; a `null` yearly price offers that tier monthly only, and a `null` monthly price on Pro
-or Max hides it. Billing reads a plan's tier from its price's lookup key, which Rakazo creates as
+period end; a `null` yearly price offers that tier monthly only, and a `null` monthly price on another
+tier hides it. Billing reads a plan's tier from its price's lookup key, which Rakazo creates as
 `rakazo_byok_<tier>_<monthly|yearly>_<cents>` (Standard's keys name no tier), so keep those keys
-on any price you create by hand. Before selling a tier, make sure the sandbox account can run its
-computer size; a computer that cannot start at its size starts at its current one.
+on any price you create by hand. Computers default to Standard and apply the organization's
+selection on the next start. Before selling a tier, make sure the sandbox account can run its
+larger sizes. If a computer cannot resize, it starts at its current size.
 
 Subscribers can change tier from Billing at the same interval, and monthly subscribers can switch
 to yearly, which charges the yearly price less the unused part of the month. A tier change charges
@@ -91,6 +92,19 @@ row and sum their indexed journal. Automatic assignment and timed caps are not e
 Deploy the API and worker changes before relying on enforcement; the previous release ignores
 the new nullable setting while a rolling deployment finishes.
 
+## Extra computer allowance
+
+An operator can give an organization extra computer allowance, in US dollars, for its current
+period only. It adds to whatever its plan includes, is recorded in the billing journal, and does
+not carry into the next period. From the API container, run:
+
+```sh
+node dist/cli/computer-allowance.js grant <organization-id> 10
+node dist/cli/computer-allowance.js status <organization-id>
+```
+
+Both print the period's allowance, the extra granted, and when it resets. Billing shows the hours left.
+
 ## Accounting
 
 Postgres owns accounting. `billing_audit_events` is an append-only journal enforced by database
@@ -118,9 +132,15 @@ deployment credential; no Redis or external accounting service is required.
 The adapter pins Stripe API `2026-09-30.endive`. Configure webhook destinations for your own account,
 using snapshot payloads on the same API version. Subscribe to all `customer.subscription` events,
 `customer.deleted`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
-`invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.dispute.created`, and
-`charge.dispute.closed`. Credit Checkout restricts payment methods to cards. New subscriptions
+`invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.dispute.created`,
+`charge.dispute.closed`, `charge.dispute.funds_withdrawn`, and `charge.dispute.funds_reinstated`.
+Credits a dispute holds back return if it is won. Credit Checkout restricts payment methods to cards. New subscriptions
 explicitly retain classic billing mode so API upgrades do not change invoice/proration behavior.
+
+A subscription whose charge failed (past due, unpaid or paused) has no access until the payment
+goes through; its owner is sent to the billing portal to update the card, and Stripe's own retry
+and cancellation settings decide when it ends. A plan counts as paid once an invoice that charged
+something is paid, not when a trial turns active.
 
 For local testing, forward Stripe test events to `/api/v1/billing/webhook`. Use the signing secret
 from `stripe listen` and test API credentials; keep them in an ignored environment file.

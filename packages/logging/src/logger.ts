@@ -2,7 +2,7 @@ import { enrichLogContext, getLogContext, runWithLogContext } from "./context.js
 import { redactBindings, redactSensitiveText } from "./redaction.js";
 import { markReportedError } from "./reported-errors.js";
 import { serializeError } from "./serialize-error.js";
-import { guardedFlush, guardedWrite } from "./sink-guard.js";
+import { guardedFlush, guardedWrite, reportDroppedLine } from "./sink-guard.js";
 import type {
   CreateLoggerOptions,
   EmitLevel,
@@ -84,6 +84,15 @@ class LoggerImpl implements Logger {
 
   private emit(level: EmitLevel, message: string, bindings?: LogBindings, error?: unknown): void {
     if (LOG_LEVELS[level] < LOG_LEVELS[this.level]) return;
+    // A binding that throws while it is read loses only its own line, never the caller's work.
+    try {
+      this.write(level, message, bindings, error);
+    } catch (failure) {
+      reportDroppedLine(failure);
+    }
+  }
+
+  private write(level: EmitLevel, message: string, bindings?: LogBindings, error?: unknown): void {
     const combined = { ...this.localBindings, ...getLogContext(), ...bindings };
     const merged = redactBindings(combined);
     const event: LogEvent = {

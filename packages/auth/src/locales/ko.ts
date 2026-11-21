@@ -72,4 +72,28 @@ export const KO_MESSAGES: Record<string, string> = {
     "다시 구독하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "플랜을 선택하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter}님이 Rakazo의 {organization}에 초대했습니다",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter}님이 Rakazo의 {organization}에 참여하도록 초대했습니다.",
+  "Join {organization}": "{organization} 참여하기",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "이 초대는 7일 후에 만료됩니다. 수락하려면 이 이메일 주소로 로그인하세요.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter}님이 Rakazo의 {space}에 초대했습니다",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter}님이 Rakazo의 {space}에 참여하도록 초대했습니다.",
+  "Join {space}": "{space} 참여하기",
+  "This invitation expires in 7 days.": "이 초대는 7일 후에 만료됩니다.",
+  "Connect a model to start using Rakazo": "Rakazo를 시작하려면 모델을 연결하세요",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Rakazo 요금제가 시작되었지만, 모델을 연결해야 봇이 답변할 수 있습니다.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "{subscriptions} 구독으로 로그인하거나 API 키를 붙여넣으세요.",
+  "Connect a model": "모델 연결",
+  "Bring your old assistant to Rakazo": "기존 어시스턴트를 Rakazo로 가져오세요",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "{assistants}에서 이미 어시스턴트를 설정하셨나요? Rakazo가 그 지침, 메모리, 스킬, 루틴을 새 봇으로 가져올 수 있어 처음부터 다시 시작하지 않아도 됩니다.",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "다른 어시스턴트에서도 됩니다. 프롬프트 하나를 보내고 답변을 붙여넣으세요.",
+  "Import an agent": "에이전트 가져오기",
 };

@@ -3,8 +3,8 @@ import type { SkillPlaybook } from "@rakazo/contracts";
 import { formatSkillRunPrompt } from "@rakazo/core";
 import { Button, Input, Label, Textarea } from "@rakazo/ui-web";
 import { useEffect, useId, useRef, useState } from "react";
-import { rpc } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import { rpc } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 import { BuiCard } from "../ai/primitives";
 
 type SkillDraftBlock = {
@@ -193,7 +193,11 @@ export function SkillDraftCard({
           <Trans>Add to routine</Trans>
         </Button>
       </div>
-      {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-label text-destructive">
+          {error}
+        </p>
+      ) : null}
     </BuiCard>
   );
 }

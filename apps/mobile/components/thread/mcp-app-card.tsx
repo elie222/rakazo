@@ -1,17 +1,18 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
 import { MCP_APP_MIME_TYPE } from "@rakazo/contracts";
 import { createMcpAppHost, mcpAppCsp, mcpAppDocument, mcpAppShellDocument } from "@rakazo/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { currentApiBase } from "../../lib/api";
-import type { MobileArtifactTarget } from "../../lib/artifact-open";
-import { textMobileArtifact } from "../../lib/artifact-open";
-import { offerComposerText } from "../../lib/composer-offer";
-import { useUiLocale } from "../../lib/i18n";
-import { useMobileTokens, useResolvedAppearance } from "../../lib/native";
-import { pageActionAllowed, pageMessage, pageTapStart } from "../../lib/pages";
-import { SandboxedHtmlPreview } from "../sandboxed-html-preview";
+import { currentApiBase } from "../../lib/api/api";
+import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
+import { textMobileArtifact } from "../../lib/artifacts/artifact-open";
+import { offerComposerText } from "../../lib/composer/composer-offer";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { useMobileTokens, useResolvedAppearance } from "../../lib/native/native";
+import { pageActionAllowed, pageMessage, pageTapStart } from "../../lib/pages/pages";
+import { SandboxedHtmlPreview } from "../media/sandboxed-html-preview";
 
 type AppBlock = Extract<MessageBlock, { kind: "app" }>;
 
@@ -59,11 +60,7 @@ export function McpAppCard({ block, target }: { block: AppBlock; target: MobileA
     // The artifact is immutable; the target only names where it is read from.
   }, [block.artifactId]);
 
-  useEffect(() => {
-    if (!html || started) return;
-    const timer = setTimeout(() => setFailed(true), START_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [html, started]);
+  useTimeout(() => setFailed(true), !html || started ? null : START_TIMEOUT_MS, html);
 
   const excludeHosts = useMemo(apiHost, []);
   // A refetched message is a new object with the same values; the app's session must outlive it.

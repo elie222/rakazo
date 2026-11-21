@@ -9,15 +9,8 @@ import {
   isCatalogItemConnected,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import type { NativeStackNavigationOptions } from "expo-router";
-import {
-  Redirect,
-  useFocusEffect,
-  useLocalSearchParams,
-  useNavigation,
-  useRouter,
-} from "expo-router";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -29,26 +22,28 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { PluginIcon } from "../../components/plugin-icon";
-import { SkillSymbol } from "../../components/skill-symbol";
+import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { SkillSymbol } from "../../components/integrations/skill-symbol";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
 import {
   reachesOtherSpaces,
   SpaceAvailabilityPicker,
   useOwnSpaces,
-} from "../../components/space-availability";
-import { rpc } from "../../lib/api";
-import { mobileTokens } from "../../lib/appearance";
-import { loadLastBotId } from "../../lib/last-bot";
-import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import type { PluginParams } from "../../lib/plugin-marketplace";
-import { sourceHref } from "../../lib/plugin-marketplace";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../components/settings/space-availability";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { loadLastBotId } from "../../lib/inbox/last-bot";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
+import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
+import { sourceHref } from "../../lib/integrations/plugin-marketplace";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { openExternalUrl } from "../../lib/platform/open-url";
+import type { SaveSend } from "../../lib/query/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
 
 const SKILLS_SHOWN = 5;
 
@@ -60,7 +55,6 @@ export default function PluginRoute() {
 
 function PluginScreen() {
   const params = useLocalSearchParams<PluginParams>();
-  const navigation = useNavigation();
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
@@ -116,7 +110,12 @@ function PluginScreen() {
     installs.find((row) => row.kind === "plugin" && row.source === source);
   const previewRead = rpcQuery("capabilities/pluginPreview", { source: params.source });
   const previewQuery = useQuery(
-    { ...previewRead, enabled: loaded && !savedAs(params.installedSource) },
+    {
+      ...previewRead,
+      enabled: loaded && !savedAs(params.installedSource),
+      // The plugin's publisher can change it at any time, so every visit reads it again.
+      staleTime: 0,
+    },
     queryClient,
   );
   const preview = previewQuery.data ?? null;
@@ -132,7 +131,10 @@ function PluginScreen() {
   const everywhere = reachesOtherSpaces(install?.availability, useOwnSpaces().length);
 
   const change = useSave({
-    save: (action: { key: string; failure: string; act: () => Promise<unknown> }) => action.act(),
+    save: (
+      action: { key: string; failure: string; act: (send: SaveSend) => Promise<unknown> },
+      send,
+    ) => action.act(send),
     stale: reads,
   });
   const pending = change.pending ? (change.input?.key ?? null) : null;
@@ -143,17 +145,17 @@ function PluginScreen() {
       : loadFailure
         ? errorText(loadFailure, t`Could not load plugin`)
         : null;
-  const run = (key: string, act: () => Promise<unknown>, failure: string) =>
+  const run = (key: string, act: (send: SaveSend) => Promise<unknown>, failure: string) =>
     change.run({ key, failure, act });
 
   /** The first part installs the plugin; later changes keep its pinned version. */
   const setParts = (key: string, next: PluginPart[], failure: string) =>
     run(
       key,
-      async () => {
-        if (install) await rpc("capabilities/pluginParts", { id: install.id, parts: next });
+      async (send) => {
+        if (install) await send("capabilities/pluginParts", { id: install.id, parts: next });
         else if (preview)
-          await rpc("capabilities/install", {
+          await send("capabilities/install", {
             kind: "plugin",
             name: preview.name,
             source: preview.pinnedSource ?? params.source,
@@ -179,10 +181,10 @@ function PluginScreen() {
     managedApp &&
     run(
       "header",
-      async () => {
+      async (send) => {
         const result = await connectCatalogItem(managedApp, connections, {
-          begin: (input) => rpc("connections/begin", input),
-          complete: (input) => rpc("connections/complete", input),
+          begin: (input) => send("connections/begin", input),
+          complete: (input) => send("connections/complete", input),
           openUrl: (url) => Linking.openURL(url),
           signal: new AbortController().signal,
         });
@@ -192,7 +194,7 @@ function PluginScreen() {
             t`Finish connecting in the browser, then refresh this page.`,
           );
         else if (botId)
-          void rpc("onboarding/appConnected", {
+          void send("onboarding/appConnected", {
             botId,
             provider: managedApp.slug,
             connectorId: managedApp.connectorId,
@@ -204,15 +206,8 @@ function PluginScreen() {
   const signIn = (server: McpServer) =>
     run(
       server.id,
-      async () => {
-        const { webUrl } = await rpc("integrationSetup/get");
-        const started = await rpc("mcp/oauth/begin", {
-          serverId: server.id,
-          redirectUri: new URL("/mcp/oauth/callback", webUrl).toString(),
-        });
-        if (started.status === "authorization_required")
-          await Linking.openURL(started.authorizationUrl);
-        else if (started.status === "authorization_not_requested")
+      async (send) => {
+        if ((await signInToMcpServer(send, server.id)) === "authorization_not_requested")
           setNoAuth((current) => new Set([...current, server.id]));
       },
       t`Could not sign in`,
@@ -221,13 +216,14 @@ function PluginScreen() {
   const enable = (server: McpServer) =>
     run(
       server.id,
-      () => rpc("mcp/assignments/approve", { botId, serverId: server.id }),
+      (send) => send("mcp/assignments/approve", { botId, serverId: server.id }),
       t`Could not enable tools`,
     );
 
   const busy = Boolean(pending);
   const parsed = install ? PluginPreviewSchema.safeParse(install.config) : null;
   const detail = parsed?.success ? parsed.data : preview;
+  const source = sourceHref(params.installedSource, detail?.resolvedSha);
   // An ignored manifest field loses nothing, so it isn't reported. A skill left out for repeating
   // a built-in one says why, since the user still has that skill.
   const notAdded = [
@@ -283,46 +279,16 @@ function PluginScreen() {
             void setParts("header", toggle(headerPart, true), t`Could not install plugin`),
           destructive: false,
         };
-  const actionDisabled = busy || (managed ? !managedApp : !ready);
-
-  // The header reads the latest action through a ref, so it only re-renders when it looks different.
-  const actionRef = useRef(action);
-  actionRef.current = action;
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: params.name,
-      headerRight: iosAtLeast(26)
-        ? undefined
-        : () => (
-            <NativeActionButton
-              disabled={actionDisabled}
-              fill={false}
-              label={action.label}
-              onPress={() => void actionRef.current.onPress()}
-              prominence={
-                action.destructive ? "destructive" : managedConnected ? "secondary" : "primary"
-              }
-            />
-          ),
-      ...(iosAtLeast(26)
-        ? {
-            unstable_headerRightItems: () => [
-              {
-                type: "button" as const,
-                label: action.label,
-                ...(action.destructive
-                  ? { tintColor: mobileTokens().destructive }
-                  : managedConnected
-                    ? {}
-                    : { variant: "prominent" as const, tintColor: mobileTokens().primary }),
-                disabled: actionDisabled,
-                onPress: () => void actionRef.current.onPress(),
-              },
-            ],
-          }
-        : {}),
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, params.name, action.label, action.destructive, actionDisabled, managedConnected]);
+  useScreenHeader({
+    title: params.name,
+    action: {
+      label: action.label,
+      prominence: action.destructive ? "destructive" : managedConnected ? "secondary" : "primary",
+      disabled: managed ? !managedApp : !ready,
+      busy,
+      onPress: action.onPress,
+    },
+  });
 
   const description = detail?.description || params.description;
   const skills = detail?.skills ?? [];
@@ -342,22 +308,22 @@ function PluginScreen() {
             <Text numberOfLines={2} style={styles.name}>
               {params.name}
             </Text>
-            <Pressable
-              accessibilityRole="link"
-              hitSlop={8}
-              onPress={() =>
-                void Linking.openURL(sourceHref(params.installedSource, detail?.resolvedSha))
-              }
-              style={styles.sourceLink}
-            >
-              <Text style={styles.secondary}>{t`View source`}</Text>
-              <NativeSymbol
-                android="open-outline"
-                color={native.secondaryLabel}
-                ios="arrow.up.right"
-                size={12}
-              />
-            </Pressable>
+            {source ? (
+              <Pressable
+                accessibilityRole="link"
+                hitSlop={8}
+                onPress={() => void openExternalUrl(source)}
+                style={styles.sourceLink}
+              >
+                <Text style={styles.secondary}>{t`View source`}</Text>
+                <NativeSymbol
+                  android="open-outline"
+                  color={native.secondaryLabel}
+                  ios="arrow.up.right"
+                  size={12}
+                />
+              </Pressable>
+            ) : null}
           </View>
         </View>
 
@@ -367,9 +333,7 @@ function PluginScreen() {
             kind="install"
             id={install.id}
             availability={install.availability}
-            onChanged={() =>
-              Promise.all(reads.map((queryKey) => queryClient.invalidateQueries({ queryKey })))
-            }
+            stale={reads}
           />
         ) : null}
 

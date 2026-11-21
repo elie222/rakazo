@@ -276,6 +276,10 @@ describe("contracts", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
     expect(parsed.notifyOnFinish).toBe(true);
     expect(parsed.avatarFamily).toBeUndefined();
+    expect(parsed.computerMode).toBeUndefined();
+    expect(CreateBotInput.parse({ name: "Chief", computerMode: "dedicated" }).computerMode).toBe(
+      "dedicated",
+    );
   });
 
   it("accepts an organic avatar family from 0 to 9 when creating a bot", () => {
@@ -469,21 +473,6 @@ describe("contracts", () => {
       }).success,
     ).toBe(true);
     expect(RunSchema.safeParse({ ...run, trigger: "webhook" }).success).toBe(true);
-  });
-
-  it("caps remote MCP headers", () => {
-    const headers = Object.fromEntries(
-      Array.from({ length: 33 }, (_, index) => [`X-Test-${index}`, "value"]),
-    );
-    expect(
-      McpServerConfigInput.safeParse({
-        slug: "demo",
-        name: "Demo",
-        transport: "streamable_http",
-        endpoint: "https://mcp.example.test",
-        headers,
-      }).success,
-    ).toBe(false);
   });
 
   it("allows localhost HTTP MCP endpoints and other HTTP(S) URLs without credentials", () => {

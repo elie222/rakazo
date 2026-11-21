@@ -23,7 +23,6 @@ import {
   otherAuthor,
   workingRoutineName,
 } from "@rakazo/core";
-import { writeSaved } from "@rakazo/core/query";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
@@ -39,82 +38,100 @@ import {
   useState,
 } from "react";
 import { useParams } from "react-router-dom";
-import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
 import { CallCard, CallReturnBar } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
+import { ComputerUpdateProgress } from "../components/computers/ComputerUpdateProgress";
 import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
-import type { ArtifactTarget } from "../lib/artifact-open";
-import { authClient } from "../lib/auth";
+import { authClient } from "../lib/auth/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
-import { botsSidebarDensityPreference } from "../lib/bots-sidebar-density-pref";
-import { readBotsSidebarCollapsed, writeBotsSidebarCollapsed } from "../lib/bots-sidebar-pref";
-import { setCallMinimized, startCall, useCallSession } from "../lib/call-session";
-import { composerEnterToSendPreference } from "../lib/composer-enter-to-send-pref";
-import { computersAreUnavailable } from "../lib/computer-sandbox";
-import { desktopBridge } from "../lib/desktop";
-import { hasOpenDialog } from "../lib/has-open-dialog";
-import { PagesProvider, usePagesForChat } from "../lib/pages";
-import { markAfterPaint, markOnce } from "../lib/performance";
-import { usePreloadRecoveryState } from "../lib/preload-recovery";
-import { lastChatKey, lastChatOf, queryClient, spaceQueries, spaceSeedKey } from "../lib/query";
-import type { Panel } from "../lib/right-panel-state";
-import { rightPanelStorageKey } from "../lib/right-panel-state";
-import { createSpaceRpc, selectedSpaceId } from "../lib/rpc";
-import { SpaceRpcProvider } from "../lib/space-rpc";
-import { markShellReady, useSpaceEpoch } from "../lib/space-switch";
-import { toolActivityPreference } from "../lib/tool-activity-preference";
-import { useDesktopBadge } from "../lib/use-desktop-badge";
-import { errorText } from "../lib/user-error";
-import { HostComputerPrompt } from "./HostComputerPrompt";
-import { RoutineList } from "./RoutineList";
-import { ArchivedChats } from "./shell/archived-chats";
-import type { ChatMenuState, ChatMenuTarget } from "./shell/chat-context-menu";
-import { ChatContextMenu } from "./shell/chat-context-menu";
-import { ChatFindBar } from "./shell/chat-find-bar";
-import { ChatHeader } from "./shell/chat-header";
-import { FALLBACK_BOT_COLOR } from "./shell/chat-shared";
-import { Composer } from "./shell/composer";
-import { ComputerOverlay } from "./shell/computer-overlay";
-import { ComputerPanel } from "./shell/computer-panel";
-import type { CreateBotDialogInput } from "./shell/create-bot-dialog";
-import type { ImportSetupTarget } from "./shell/import-setup-card";
+import { setCallMinimized, startCall, useCallSession } from "../lib/calls/call-session";
+import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
+import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
+import { computersAreUnavailable } from "../lib/computers/computer-sandbox";
+import { composerModelPickerPreference } from "../lib/models/composer-model-picker-preference";
+import type { ArtifactTarget } from "../lib/pages/artifact-open";
+import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
+import { desktopBridge } from "../lib/platform/desktop";
+import { hasOpenDialog } from "../lib/platform/has-open-dialog";
+import { markAfterPaint, markOnce } from "../lib/platform/performance";
+import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
+import { useDesktopBadge } from "../lib/platform/use-desktop-badge";
+import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
+import {
+  readBotsSidebarCollapsed,
+  writeBotsSidebarCollapsed,
+} from "../lib/preferences/bots-sidebar-pref";
+import {
+  lastChatKey,
+  lastChatOf,
+  queryClient,
+  spaceQueries,
+  spaceSeedKey,
+} from "../lib/query/query";
+import type { RpcClient } from "../lib/query/rpc";
+import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
+import { SpaceRpcProvider } from "../lib/query/space-rpc";
+import { errorText } from "../lib/query/user-error";
+import { routineNeedsOneShotArm } from "../lib/routines/routine-draft";
+import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
+import type { ImportSetupTarget } from "./shell/bots/import-setup-card";
+import { useTeaching } from "./shell/bots/use-teaching";
+import type { ChatMenuState, ChatMenuTarget } from "./shell/chat/chat-context-menu";
+import { ChatContextMenu } from "./shell/chat/chat-context-menu";
+import { ChatFindBar } from "./shell/chat/chat-find-bar";
+import { ChatHeader } from "./shell/chat/chat-header";
+import { FALLBACK_BOT_COLOR } from "./shell/chat/chat-shared";
+import { Transcript } from "./shell/chat/transcript";
+import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./shell/chat/transcript-member-name";
+import { useChatRead } from "./shell/chat/use-chat-read";
+import { useMessageJump } from "./shell/chat/use-message-jump";
+import { useReadAloud } from "./shell/chat/use-read-aloud";
+import { useThreadState } from "./shell/chat/use-thread-state";
+import { useThreadSync } from "./shell/chat/use-thread-sync";
+import { Composer } from "./shell/composer/composer";
+import { ComposerModelPicker } from "./shell/composer/composer-model-picker";
+import { useComposerActions } from "./shell/composer/use-composer-actions";
+import { useComposerMentions } from "./shell/composer/use-composer-mentions";
+import { useComposerModelShortcuts } from "./shell/composer/use-composer-model-shortcuts";
+import { ComputerOverlay } from "./shell/computers/computer-overlay";
+import { ComputerPanel } from "./shell/computers/computer-panel";
+import { useComputerControls, useComputerState } from "./shell/computers/use-computer";
+import { HostComputerPrompt } from "./shell/host-computer-prompt";
 import { KeyboardShortcutsDialog } from "./shell/keyboard-shortcuts-dialog";
+import { rightPanelStorageKey } from "./shell/right-panel-state";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
+import type { SettingsSection } from "./shell/shell-overlay-url";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
-import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
-import { focusSidebarSearch, ShellSidebar } from "./shell/shell-sidebar";
+import {
+  cycleBotId,
+  findPanelAction,
+  isApplePlatform,
+  useShellShortcuts,
+} from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
-import { BotsSidebarLayout } from "./shell/sidebar-layout";
-import { SidebarRoster } from "./shell/sidebar-roster";
-import { SnoozedChats } from "./shell/snoozed-chats";
-import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
-import { Transcript } from "./shell/transcript";
-import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./shell/transcript-member-name";
+import { ArchivedChats } from "./shell/sidebar/archived-chats";
+import { focusSidebarSearch, ShellSidebar } from "./shell/sidebar/shell-sidebar";
+import { BotsSidebarLayout } from "./shell/sidebar/sidebar-layout";
+import { SidebarRoster } from "./shell/sidebar/sidebar-roster";
+import { SnoozedChats } from "./shell/sidebar/snoozed-chats";
+import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/sidebar/space-sidebar";
+import { useChatSnooze } from "./shell/sidebar/use-chat-snooze";
+import { useMobileSidebar } from "./shell/sidebar/use-mobile-sidebar";
+import { useSidebarExpansion } from "./shell/sidebar/use-sidebar-expansion";
+import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
+import { useSnoozeClock } from "./shell/sidebar/use-snooze-clock";
+import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/sidebar/use-space-roster";
+import { markShellReady, useSpaceEpoch } from "./shell/space-switch";
+import { TimezonePrompt } from "./shell/timezone-prompt";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
-import { useChatRead } from "./shell/use-chat-read";
-import { useChatSnooze } from "./shell/use-chat-snooze";
-import { useComposerActions } from "./shell/use-composer-actions";
-import { useComposerMentions } from "./shell/use-composer-mentions";
-import { useComputerControls, useComputerState } from "./shell/use-computer";
-import { useMessageJump } from "./shell/use-message-jump";
-import { useMobileSidebar } from "./shell/use-mobile-sidebar";
 import { usePaletteActions } from "./shell/use-palette-actions";
-import { useReadAloud } from "./shell/use-read-aloud";
 import { useReportedUiLocale } from "./shell/use-reported-ui-locale";
 import { useRightPanel, useRightPanelRestore } from "./shell/use-right-panel";
 import { useRoutineEditor } from "./shell/use-routine-editor";
 import { useShellNavigation } from "./shell/use-shell-navigation";
-import { useSidebarExpansion } from "./shell/use-sidebar-expansion";
-import { useSidebarSearch } from "./shell/use-sidebar-search";
-import { useSnoozeClock } from "./shell/use-snooze-clock";
 import { useSpaceActions } from "./shell/use-space-actions";
-import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/use-space-roster";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
-import { useTeaching } from "./shell/use-teaching";
-import { useThreadState } from "./shell/use-thread-state";
-import { useThreadSync } from "./shell/use-thread-sync";
-import type { SettingsSection } from "./shell-overlay";
 
 const NO_AGENT_SKILLS: AgentSkillCatalogEntry[] = [];
 const NO_PROVIDERS: string[] = [];
@@ -156,7 +173,7 @@ function SpaceShell() {
     setOverlay,
   } = useShellNavigation();
   const queries = spaceQueries(userId ?? null, shellSpaceId);
-  const roster = useSpaceRoster({ rpc, seed, botId, groupId, navigate, redirectKeepingOverlay });
+  const roster = useSpaceRoster({ rpc, seed, navigate, redirectKeepingOverlay });
   const {
     groups,
     setGroups,
@@ -167,6 +184,7 @@ function SpaceShell() {
     botSections,
     spaces,
     setSpaces,
+    firstBotDue,
     archivedBots,
     archivedGroups,
     initialBotsLoaded,
@@ -189,32 +207,30 @@ function SpaceShell() {
     refreshBots,
   });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
-  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
-  useEffect(() => {
+  // Read while rendering, so returning to chats does not animate the sidebar shut.
+  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(() =>
+    readBotsSidebarCollapsed(userId),
+  );
+  const [sidebarCollapsedFor, setSidebarCollapsedFor] = useState(userId);
+  if (sidebarCollapsedFor !== userId) {
+    setSidebarCollapsedFor(userId);
     setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
-  }, [userId]);
+  }
   const search = useSidebarSearch({ rpc, navigate });
   const thread = useThreadState();
   const { snapshot } = thread;
   const showToolActivity = toolActivityPreference.use();
   const botsSidebarDensity = botsSidebarDensityPreference.use();
   const enterToSend = composerEnterToSendPreference.use();
+  const showComposerModel = composerModelPickerPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
-  const lastBotTab = useRef<Panel>("routines");
-  if (panel === "routines" || panel === "computer" || panel === "pages" || panel === "settings")
-    lastBotTab.current = panel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
     peerBotName: string;
   } | null>("peerConversation", null);
   const agentSkillsQuery = useQuery(queries.agentSkills.list.queryOptions());
   const agentSkills = agentSkillsQuery.data ?? NO_AGENT_SKILLS;
-  const setAgentSkills = useCallback(
-    (skills: AgentSkillCatalogEntry[]) =>
-      void writeSaved(queryClient, queries.agentSkills.list.queryKey(), () => skills),
-    [queries],
-  );
   const refreshAgentSkills = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queries.agentSkills.list.queryKey() });
   }, [queries]);
@@ -253,6 +269,8 @@ function SpaceShell() {
     useQuery(queries.voice.status.queryOptions()).data ?? null;
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
+  const [panelCoversChat, setPanelCoversChat] = useState(false);
+  const [panelOverlays, setPanelOverlays] = useState(false);
   const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [botMenu, setBotMenu] = useState<ChatMenuTarget | null>(null);
@@ -275,11 +293,7 @@ function SpaceShell() {
   const inGroup = Boolean(groupId);
   const chatPanelOpen = inGroup
     ? panel === "group-settings"
-    : panel === "computer" ||
-      panel === "routines" ||
-      panel === "pages" ||
-      panel === "settings" ||
-      panel === "routine";
+    : panel === "routines" || panel === "pages" || panel === "settings" || panel === "routine";
   // Until the route names the chat reopened from cache, that chat stands in for it.
   const routeChat = botId || groupId ? undefined : startChat;
   const active =
@@ -334,6 +348,17 @@ function SpaceShell() {
   const chatColumnRef = useRef<HTMLDivElement>(null);
   // Matches belong to the chat they were found in.
   useEffect(() => setFindOpen(false), [botId, groupId]);
+  const quoteShortcutRef = useRef<(() => boolean) | null>(null);
+  const registerQuoteShortcut = useCallback((handler: (() => boolean) | null) => {
+    quoteShortcutRef.current = handler;
+  }, []);
+  const focusComposer = useCallback(() => {
+    const composer = document.querySelector<HTMLTextAreaElement>(
+      'textarea[name="chat-message"]:not(:disabled)',
+    );
+    composer?.focus();
+    return Boolean(composer);
+  }, []);
   useShellShortcuts({
     run: (shortcut) => {
       switch (shortcut.type) {
@@ -365,6 +390,13 @@ function SpaceShell() {
         focusSidebarSearch();
         return true;
       }
+      // The open model list is a dialog too, but its own chords still close it or step its thinking.
+      if (
+        (shortcut.type === "model-picker" || shortcut.type === "thinking-level") &&
+        modelShortcuts.open
+      ) {
+        return modelShortcuts.run(shortcut.type);
+      }
       // The command menu picks its own Cmd/Ctrl+1–9 from what it lists.
       if (hasOpenDialog(document, true)) return false;
       switch (shortcut.type) {
@@ -382,13 +414,24 @@ function SpaceShell() {
           return toggleChatPanel();
         case "focus-composer":
           return focusComposer();
+        case "model-picker":
+        case "thinking-level":
+          return modelShortcuts.run(shortcut.type);
+        case "quote-selection":
+          if (mobileSidebarOpen || (isMobileSidebar && panel)) return false;
+          return quoteShortcutRef.current?.() ?? false;
         case "find":
           if (!active && !activeGroup) return false;
-          // On a narrow window the drawer makes the chat inert and a side panel covers it, so
-          // either would hide the bar. A panel holding a form keeps its input instead.
-          if (isMobileSidebar && panel) {
-            if (!chatPanelOpen) return false;
-            setPanel(null);
+          // The drawer makes the chat inert and a side panel can cover it, so either would hide
+          // the bar. A panel holding a form keeps its input instead.
+          {
+            const action = findPanelAction(
+              isMobileSidebar || panelOverlays,
+              !!panel,
+              chatPanelOpen,
+            );
+            if (action === "refuse") return false;
+            if (action === "close-panel") setPanel(null);
           }
           setMobileSidebarOpen(false);
           setFindOpen(true);
@@ -412,18 +455,11 @@ function SpaceShell() {
       focusComposer();
     },
   });
-  function focusComposer() {
-    const composer = document.querySelector<HTMLTextAreaElement>(
-      'textarea[name="chat-message"]:not(:disabled)',
-    );
-    composer?.focus();
-    return Boolean(composer);
-  }
   function toggleChatPanel() {
     if (chatPanelOpen) setPanel(null);
     else if (inGroup) setPanel("group-settings");
     else if (active) {
-      setPanel(lastBotTab.current);
+      setPanel("settings");
       // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
       void refreshThread(active.id).catch(() => undefined);
     } else return false;
@@ -431,7 +467,6 @@ function SpaceShell() {
   }
   const openSpaceChatRef = useRef<(spaceId: string, path: string) => void>(() => {});
   const rosterSignals = useSpaceBootstrap({
-    rpc,
     roster,
     thread,
     commitComputer,
@@ -534,6 +569,8 @@ function SpaceShell() {
     inGroup || !active || thread.routinesBotId === active.id
       ? undefined
       : queryClient.getQueryData(queries.routines.list.queryKey({ input: { botId: active.id } }));
+  // The on/off choice still to send for each routine whose switch was just pressed.
+  const routineToggles = useRef(new Map<string, boolean>());
   const activeRoutines =
     inGroup || !active
       ? []
@@ -550,6 +587,10 @@ function SpaceShell() {
       : (queryClient.getQueryData(queries.skills.list.queryKey({ input: { botId: active.id } })) ??
         []);
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
+  const modelShortcuts = useComposerModelShortcuts({
+    botId: inGroup ? undefined : active?.id,
+    enabled: showComposerModel && !recordingSkill,
+  });
 
   const sidebarSpaces = useMemo(
     () =>
@@ -597,6 +638,7 @@ function SpaceShell() {
     navigationRevision,
     overlayRevision,
     closeMobileSidebar: () => setMobileSidebarOpen(false),
+    beginSpaceSwitch: roster.beginSpaceSwitch,
   });
   useLayoutEffect(() => {
     openSpaceChatRef.current = openSpaceChat;
@@ -610,7 +652,10 @@ function SpaceShell() {
       ? snapshot
       : null;
   const currentRuns = activeThreadRuns(activeSnapshot);
-  const answerableAskIds = useMemo(() => answerableAskMessageIds(activeSnapshot), [activeSnapshot]);
+  const answerableAskIds = useMemo(
+    () => answerableAskMessageIds(activeSnapshot, userId),
+    [activeSnapshot, userId],
+  );
   const dismissableAskIds = useMemo(
     () => dismissableAskMessageIds(activeSnapshot, userId),
     [activeSnapshot, userId],
@@ -665,6 +710,19 @@ function SpaceShell() {
     integrationsOpen: overlay?.kind === "integrations",
     initialBotsLoaded,
   });
+  // Not while the shell is leaving: a roster with nothing anywhere is on its way to onboarding,
+  // and a reopened group chat is on its way to that group.
+  const showNewBotPrompt =
+    initialBotsLoaded &&
+    bots.length === 0 &&
+    !activeGroup &&
+    !routeChat?.groupId &&
+    (groups.length > 0 ||
+      archivedBots.length > 0 ||
+      archivedGroups.length > 0 ||
+      spaces.some((space) => space.hasContent) ||
+      // Someone who has chatted before, in a new organization: nothing is on its way to them.
+      !firstBotDue);
   const shellReady =
     initialBotsLoaded &&
     (inGroup
@@ -806,10 +864,26 @@ function SpaceShell() {
   );
   const quoteMessage = useCallback(
     (message: ThreadMessage, quote: string) => {
+      if (
+        computerOpen ||
+        mobileSidebarOpen ||
+        (isMobileSidebar && panel) ||
+        hasOpenDialog(document, true)
+      )
+        return;
       composer.setReplyTarget(message);
       composer.setReplyQuote(quote);
+      focusComposer();
     },
-    [composer.setReplyQuote, composer.setReplyTarget],
+    [
+      composer.setReplyQuote,
+      composer.setReplyTarget,
+      focusComposer,
+      computerOpen,
+      mobileSidebarOpen,
+      isMobileSidebar,
+      panel,
+    ],
   );
   const markMessageUnread = useCallback(
     (message: ThreadMessage) => {
@@ -898,9 +972,9 @@ function SpaceShell() {
     setPanel(null);
   }
 
-  async function createBot(input: CreateBotDialogInput) {
+  async function createBot(input: CreateBotDialogInput, client: RpcClient) {
     const isFirstBot = botsRef.current.length === 0;
-    const bot = await rpc.bots.create({ ...input, notifyOnFinish: true });
+    const bot = await client.bots.create({ ...input, notifyOnFinish: true });
     openCreatedBot(bot);
     dialogs.setCreateBotOpen(false);
     await composer.startFocusPrompt(bot.id, isFirstBot);
@@ -957,6 +1031,23 @@ function SpaceShell() {
       />
       {bootstrapMe !== undefined ? (
         <HostComputerPrompt initialMe={bootstrapMe ?? undefined} onMeUpdated={setBootstrapMe} />
+      ) : null}
+      {userId && bootstrapMe ? (
+        <TimezonePrompt
+          key={userId}
+          userId={userId}
+          timezone={bootstrapMe.timezone}
+          onSaved={(me, adopted) =>
+            setBootstrapMe((prev) =>
+              // An adoption only fills an empty zone, so it never replaces a newer pick.
+              !prev
+                ? me
+                : adopted && prev.timezone != null
+                  ? prev
+                  : { ...prev, timezone: me.timezone },
+            )
+          }
+        />
       ) : null}
       <ShellSidebar
         isMobile={isMobileSidebar}
@@ -1050,7 +1141,7 @@ function SpaceShell() {
       <main
         data-space-switch="main"
         aria-hidden={mobileSidebarOpen || undefined}
-        inert={mobileSidebarOpen}
+        inert={mobileSidebarOpen || panelCoversChat}
         className="isolate flex min-w-0 flex-1 flex-col bg-background"
       >
         {/* Inside main so the composer and its menus stay above it. */}
@@ -1063,7 +1154,11 @@ function SpaceShell() {
         ) : null}
         <CallReturnBar />
         {/* The header floats so the transcript scrolls under its buttons. */}
-        <div ref={chatColumnRef} className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={chatColumnRef}
+          data-finding={findOpen || undefined}
+          className="relative flex min-h-0 flex-1 flex-col"
+        >
           {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
           <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
           {findOpen ? (
@@ -1084,6 +1179,7 @@ function SpaceShell() {
             activeGroup={activeGroup}
             activeSnapshot={activeSnapshot}
             phoneCallsEnabled={Boolean(bootstrapMe?.phoneCallsEnabled)}
+            meetingsEnabled={Boolean(bootstrapMe?.meetingsEnabled)}
             voiceReady={Boolean(voiceStatus?.ready)}
             inCall={Boolean(active) && call?.botId === active?.id}
             panelOpen={chatPanelOpen}
@@ -1097,7 +1193,7 @@ function SpaceShell() {
               callBot(bot);
             }}
           />
-          {!active && !activeGroup && initialBotsLoaded ? (
+          {showNewBotPrompt ? (
             <div className="grid flex-1 place-items-center">
               <Button onClick={() => dialogs.setCreateBotOpen(true)}>
                 <Plus size={16} aria-hidden="true" />
@@ -1136,6 +1232,7 @@ function SpaceShell() {
               onReply={replyToMessage}
               onMarkUnread={markMessageUnread}
               onQuote={quoteMessage}
+              onQuoteShortcutChange={registerQuoteShortcut}
               onReact={composer.reactToMessage}
               onJumpToMessage={jumpToReplyMessage}
               onOpenPeerMessages={openPeerMessages}
@@ -1168,6 +1265,21 @@ function SpaceShell() {
               draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
               enterToSend={enterToSend}
               sendColors={userBubble}
+              modelPicker={
+                showComposerModel && active && !inGroup ? (
+                  <ComposerModelPicker
+                    bot={active}
+                    disabled={Boolean(recordingSkill)}
+                    {...modelShortcuts.pickerProps}
+                    onConnect={() => openSettings("models")}
+                    onSaved={(updated) =>
+                      setBots((current) =>
+                        current.map((bot) => (bot.id === updated.id ? updated : bot)),
+                      )
+                    }
+                  />
+                ) : undefined
+              }
               activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
               running={composerRunning}
               disabled={Boolean(recordingSkill)}
@@ -1248,10 +1360,10 @@ function SpaceShell() {
         setGroups={setGroups}
         navigate={navigate}
         refreshBots={refreshBots}
-        refreshThread={refreshThread}
         refreshGroupThread={refreshGroupThread}
         discardChatAttachments={composer.discardThreadAttachments}
-        computer={computer}
+        onCoversChat={setPanelCoversChat}
+        onOverlays={setPanelOverlays}
         computerOpen={computerOpen}
         computerPanel={
           active ? (
@@ -1259,7 +1371,7 @@ function SpaceShell() {
               bot={active}
               computer={computer}
               computerOpen={computerOpen}
-              embeddedScreenUrl={computerControls.embeddedScreenUrl}
+              embeddedScreenUrl={panel === "settings" ? computerControls.embeddedScreenUrl : null}
               screenFrameKey={computerState.screenFrameKey}
               heldScreen={computerState.heldScreen}
               screenFrameRef={computerState.setScreenFrame}
@@ -1302,27 +1414,50 @@ function SpaceShell() {
             />
           ) : null
         }
-        routinesPanel={
-          <RoutineList
-            routines={activeRoutines}
-            loaded={routinesLoaded}
-            runningRoutineId={
-              snapshot?.run && isActive(snapshot.run.status)
-                ? (snapshot.run.routineId ?? undefined)
-                : undefined
+        routineList={{
+          routines: activeRoutines,
+          loaded: routinesLoaded,
+          runningRoutineId:
+            snapshot?.run && isActive(snapshot.run.status)
+              ? (snapshot.run.routineId ?? undefined)
+              : undefined,
+          onCreate: () => startRoutine(),
+          onEdit: startRoutine,
+          onStop: () => void stopRun(),
+          onToggle: (routine, on) => {
+            // A one-shot that never ran needs a run time, which only its editor can take.
+            if (on && routineNeedsOneShotArm(routine, routine.crons)) {
+              startRoutine(routine);
+              return;
             }
-            onCreate={() => startRoutine()}
-            onEdit={startRoutine}
-            onStop={() => void stopRun()}
-          />
-        }
+            thread.setRoutines((current) =>
+              current.map((item) => (item.id === routine.id ? { ...item, active: on } : item)),
+            );
+            // One update per routine at a time, so quick presses cannot race; the last one wins.
+            const queued = routineToggles.current.get(routine.id);
+            routineToggles.current.set(routine.id, on);
+            if (queued !== undefined) return;
+            void (async () => {
+              let sent: boolean | undefined;
+              try {
+                while (routineToggles.current.get(routine.id) !== sent) {
+                  sent = routineToggles.current.get(routine.id);
+                  await rpc.routines.update({ routineId: routine.id, active: sent });
+                }
+              } catch (error) {
+                composer.setSendError(errorText(error));
+              } finally {
+                routineToggles.current.delete(routine.id);
+                // Another bot opened since must not have its own refresh superseded.
+                if (activeBotId.current === routine.botId)
+                  void refreshThread(routine.botId).catch(() => undefined);
+              }
+            })();
+          },
+        }}
         routineEditorProps={routineEditorProps}
         openBot={openBot}
-        openCreatedBot={openCreatedBot}
         modelFocusRequest={modelFocusRequest}
-        openSettings={openSettings}
-        memoryProviderConfigured={memoryProviderConfig != null}
-        setAgentSkills={setAgentSkills}
         onClearBot={(bot) => dialogs.setClearTarget({ kind: "bot", chat: bot })}
       />
 
@@ -1358,8 +1493,13 @@ function SpaceShell() {
           setOverlay={setOverlay}
           activeBotId={activeBotId.current}
           stdioEnabled={bootstrapMe?.mcpStdioEnabled === true}
+          messagingEnabled={messagingSurfaceEnabled}
           onConnectedAppsChange={setFooterLogos}
-          onOpenBot={openCreatedBot}
+          onOpenBot={(bot) => {
+            openCreatedBot(bot);
+            // As after any new bot: the Space's sections and counts come from the server.
+            void refreshBots().catch(() => undefined);
+          }}
         />
       </Suspense>
 
@@ -1376,7 +1516,6 @@ function SpaceShell() {
           removeSpace={removeSpace}
           leftSpace={leftSpace}
           refreshSpaces={() => refreshBots()}
-          openAgentImport={() => setPanel("import-agent")}
           alive={alive}
           user={session.data?.user}
           refetchSession={() => session.refetch({ query: { disableCookieCache: true } })}
@@ -1396,6 +1535,7 @@ function SpaceShell() {
         onOpenChange={setShortcutsOpen}
         host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
         dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
+        modelPicker={showComposerModel}
       />
 
       {computerOpen && computerBot ? (
@@ -1428,7 +1568,7 @@ function SpaceShell() {
     </BotsSidebarLayout>
   );
 
-  // Empty chrome until the first bot list lands would flash "Select a bot" before the chat.
+  // Render nothing until the first bot list lands so the chat chrome does not flash a bot-less state.
   return (
     <SpaceRpcProvider spaceId={shellSpaceId}>
       {initialBotsLoaded || initialLoadFailed ? (

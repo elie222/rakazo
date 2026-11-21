@@ -49,7 +49,7 @@ existed; the egress row shows the result with it.
 | Memory                                                      | One computer with Chromium: about 970 MB host RSS (2 GB cap). Database VM: about 540 MB (1 GB cap). API + worker + web: under 245 MB (measured with native Postgres) |
 
 The live provider test is `VERIFY_LOCAL_VM=1 LOCAL_VM_CLI=<path to container> pnpm exec vitest run
-packages/adapters/src/apple-container-sandbox.test.ts`. It is skipped by default and in CI.
+packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.test.ts`. It is skipped by default and in CI.
 
 Not verified: a model-driven bot run on the VM computer, the in-app screen viewer in Electron, the
 terminal over the screen gateway, sleep/wake of the Mac with VMs running, Intel or macOS 15
@@ -148,7 +148,7 @@ person to update or quit it.
 
 ### The `local-vm` provider
 
-`packages/adapters/src/apple-container-sandbox.ts` (about 400 lines, mostly delegating to the
+`packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.ts` (about 400 lines, mostly delegating to the
 shared `ExecComputer` and `LinuxDesktop`), selected with `SANDBOX_PROVIDER=local-vm`:
 
 - **Provision**: a new name per start, a network of the same name, then `container run --detach`

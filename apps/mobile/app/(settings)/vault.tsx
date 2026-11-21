@@ -14,6 +14,7 @@ import {
   cardExpiry,
   isIdentityConfirmationRequired,
   newVaultImportRows,
+  sendVaultImport,
   VAULT_KINDS,
   vaultImportCounts,
   vaultImportProblems,
@@ -24,6 +25,7 @@ import {
   vaultBotsNote,
   vaultImportProblemLines,
   vaultImportText,
+  vaultOwnSpaceNote,
   vaultSaveNotice,
 } from "@rakazo/i18n/vault";
 import { useQuery } from "@tanstack/react-query";
@@ -33,27 +35,27 @@ import { useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BotEmailAddressesGroup } from "../../components/bot-email";
-import { useIdentityConfirmation } from "../../components/confirm-identity";
-import { ListSearchInput } from "../../components/list-search-input";
-import { LoadFailure } from "../../components/load-failure";
-import { LongPressMenu } from "../../components/long-press-menu";
-import { NativeSegmentedControl } from "../../components/native-segmented-control";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { VaultItemEditor } from "../../components/vault-item-editor";
-import { VaultItemSheet } from "../../components/vault-item-sheet";
-import { VaultTile } from "../../components/vault-tile";
-import { mobileTokens } from "../../lib/appearance";
-import { presentMessageActionSheet } from "../../lib/message-action-sheet";
-import type { MobileBot } from "../../lib/mobile-types";
-import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { settingsRpc, settingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
-import type { VaultBots, VaultItem, VaultSave } from "../../lib/vault";
+import { BotEmailAddressesGroup } from "../../components/bots/bot-email";
+import { NativeSegmentedControl } from "../../components/native/native-segmented-control";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { ListSearchInput } from "../../components/ui/list-search-input";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { LongPressMenu } from "../../components/ui/long-press-menu";
+import { useIdentityConfirmation } from "../../components/vault/confirm-identity";
+import { VaultItemEditor } from "../../components/vault/vault-item-editor";
+import { VaultItemSheet } from "../../components/vault/vault-item-sheet";
+import { VaultTile } from "../../components/vault/vault-tile";
+import type { MobileBot } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { presentMessageActionSheet } from "../../lib/messages/message-action-sheet";
+import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
+import { iosAtLeast } from "../../lib/native/native-controls";
+import { queryClient, rpcQuery } from "../../lib/query/query";
+import { settingsRpc, settingsTarget } from "../../lib/query/settings-target";
+import type { VaultBots, VaultItem, VaultSave } from "../../lib/vault/vault";
 import {
   billingChoices,
   filterVaultItems,
@@ -64,8 +66,8 @@ import {
   vaultKindSymbol,
   vaultKindsPresent,
   withItem,
-} from "../../lib/vault";
-import { pickVaultCsv } from "../../lib/vault-import";
+} from "../../lib/vault/vault";
+import { pickVaultCsv } from "../../lib/vault/vault-import";
 
 type RowAction = "edit" | "remove";
 const IMPORT = "import";
@@ -102,6 +104,12 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
   );
   const listQuery = useQuery(listRead, queryClient);
   const { refetch: refetchList } = listQuery;
+  const overrides = useQuery(
+    { ...rpcQuery("spaceSettings/overrides"), enabled: scope === "account" },
+    queryClient,
+  );
+  const { refetch: refetchOverrides } = overrides;
+  const ownVault = scope === "account" && Boolean(overrides.data?.includes("credentials"));
   // Null until the first read lands.
   const items = listQuery.data ?? null;
   const loadError = listQuery.error
@@ -142,7 +150,8 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     useCallback(() => {
       setError(null);
       void refetchList();
-    }, [refetchList]),
+      if (scope === "account") void refetchOverrides();
+    }, [refetchList, refetchOverrides, scope]),
   );
 
   useEffect(() => {
@@ -153,22 +162,6 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     void rpc("vault/activity", { scope, name: opened })
       .then((list) => {
         if (current) setUses({ key: `${scope}:${opened}`, list });
-      })
-      .catch(() => undefined);
-    return () => {
-      current = false;
-    };
-  }, [opened, rpc, scope]);
-
-  // Whether this Space keeps its own vault, so an opened account item says its bots can't use it.
-  const [ownVault, setOwnVault] = useState(false);
-  useEffect(() => {
-    setOwnVault(false);
-    if (!opened || scope !== "account") return;
-    let current = true;
-    void rpc("spaceSettings/overrides")
-      .then((overrides) => {
-        if (current) setOwnVault(overrides.includes("credentials"));
       })
       .catch(() => undefined);
     return () => {
@@ -286,11 +279,10 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
       setPending(true);
       try {
         await beforeChange();
-        // Each login is encrypted and saved in turn: 100 took about 4 s without a database.
-        const result = await rpc(
-          "vault/import",
-          { scope, rows: plan.rows },
-          { timeoutMs: IMPORT_TIMEOUT_MS },
+        // Each login is encrypted and saved in turn: a batch of 100 took about 4 s without a
+        // database.
+        const result = await sendVaultImport(plan.rows, (rows) =>
+          rpc("vault/import", { scope, rows }, { timeoutMs: IMPORT_TIMEOUT_MS }),
         );
         const reminder = t`Delete the exported file now. It holds your passwords unencrypted.`;
         // Not over another screen the person has moved to, as a value shown from here isn't.
@@ -476,6 +468,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
             onRetry={() => {
               setError(null);
               void refetchList();
+              if (scope === "account") void refetchOverrides();
             }}
           />
         ) : null}
@@ -521,6 +514,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
             ]}
           />
         ) : null}
+        {ownVault ? <Text style={styles.note}>{vaultOwnSpaceNote()}</Text> : null}
         {items && items.length === 0 ? (
           <Text style={styles.empty}>{t`Nothing saved yet.`}</Text>
         ) : null}
@@ -641,6 +635,7 @@ function createStyles() {
     screen: { flex: 1, backgroundColor: native.groupedPage },
     content: { width: "100%", padding: 20, gap: 16, paddingBottom: 40 },
     error: { color: tokens.destructive, fontSize: 14 },
+    note: { color: native.secondaryLabel, fontSize: 14 },
     empty: { color: native.secondaryLabel, fontSize: 15, textAlign: "center", paddingVertical: 24 },
     add: { flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-end", padding: 8 },
     addLabel: { color: native.label, fontSize: 17 },

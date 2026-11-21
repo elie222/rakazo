@@ -3,13 +3,13 @@ import type { Ticket, TicketStatus } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
-import { BoardList } from "../components/board-list";
-import { LoadFailure } from "../components/load-failure";
-import { rpc } from "../lib/api";
-import { boardSections } from "../lib/board";
-import { native, useThemedStyles } from "../lib/native";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { LoadFailure } from "../components/ui/load-failure";
+import { rpc } from "../lib/api/api";
+import { errorText } from "../lib/api/user-error";
+import { boardSections } from "../lib/board/board";
+import { BoardList } from "../lib/board/board-list";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native, useThemedStyles } from "../lib/native/native";
 
 /** The Space's ticket board: every column, with the status changed in place. */
 export default function BoardScreen() {
@@ -18,6 +18,7 @@ export default function BoardScreen() {
   const sideInsets = useSideInsets();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [error, setError] = useState("");
+  const [refreshFailures, setRefreshFailures] = useState(0);
   const [loading, setLoading] = useState(true);
   const live = useRef(true);
   // A load that started before a later load, a move, or a blur must not overwrite newer rows.
@@ -34,6 +35,7 @@ export default function BoardScreen() {
     } catch (cause) {
       if (current !== generation.current) return;
       setError(errorText(cause, t`Try again.`));
+      setRefreshFailures((count) => count + 1);
     } finally {
       if (current === generation.current) setLoading(false);
     }
@@ -90,6 +92,7 @@ export default function BoardScreen() {
     <BoardList
       sections={boardSections(tickets)}
       error={error}
+      refreshFailures={refreshFailures}
       onMove={(ticket, status) => void move(ticket, status)}
       onRefresh={load}
     />

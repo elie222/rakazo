@@ -1,10 +1,11 @@
 /// <reference path="./linkify-it.d.ts" />
 
 import type { MessageBlock } from "@rakazo/contracts";
+import { httpUrl } from "@rakazo/contracts";
 import { urlSite } from "@rakazo/core/egress";
 import LinkifyIt from "linkify-it";
 import type { ReactNode } from "react";
-import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -27,12 +28,25 @@ export function markdownPageId(href: string | undefined): string | undefined {
 }
 
 const MENTION_URL_PREFIX = "rakazo-mention:";
+// Ends a mention the renderer put in front of text that doesn't name the bot. An encoded id
+// never holds a `#`, so the mark can't be part of one.
+const ADDED_MENTION_MARK = "#added";
+
+/** Whether a mention link was put in front of the text, so its name isn't part of the message. */
+export function markdownMentionAdded(href: string | undefined): boolean {
+  return Boolean(href?.startsWith(MENTION_URL_PREFIX) && href.endsWith(ADDED_MENTION_MARK));
+}
 
 /** The id of a mention link, if this href is one. */
 export function markdownMentionId(href: string | undefined): string | undefined {
   if (!href?.startsWith(MENTION_URL_PREFIX)) return undefined;
+  const id = href.slice(MENTION_URL_PREFIX.length);
   try {
-    return decodeURIComponent(href.slice(MENTION_URL_PREFIX.length)) || undefined;
+    return (
+      decodeURIComponent(
+        id.endsWith(ADDED_MENTION_MARK) ? id.slice(0, -ADDED_MENTION_MARK.length) : id,
+      ) || undefined
+    );
   } catch {
     return undefined;
   }
@@ -144,7 +158,10 @@ export function withMentions(
     const firstIndex = result.findIndex((text) => trees.get(text) !== null);
     if (firstIndex === -1) continue;
     const first = result[firstIndex]!;
-    result[firstIndex] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
+    const added = `${link.slice(0, -1)}${ADDED_MENTION_MARK})`;
+    result[firstIndex] = OPENS_WITH_BLOCK.test(first)
+      ? `${added}\n\n${first}`
+      : `${added} ${first}`;
   }
   return result;
 }
@@ -219,7 +236,8 @@ export type PlainTextPart =
   | { type: "page"; value: string; pageId: string };
 
 // The link pageReply puts before a sent reply: `[title](page:<pageId>)`, title brackets escaped.
-const PLAIN_PAGE_LINK = /\[((?:\\[\\[\]]|[^\\[\]\n])*)\]\(page:([A-Za-z0-9_-]{1,64})\)/g;
+// The bound fits any escaped title and keeps unclosed brackets from rescanning the message.
+const PLAIN_PAGE_LINK = /\[((?:\\[\\[\]]|[^\\[\]\n]){0,400})\]\(page:([A-Za-z0-9_-]{1,64})\)/g;
 
 function appendPlainText(parts: PlainTextPart[], value: string) {
   if (!value) return;
@@ -427,62 +445,6 @@ export function markRemoteImageLoaded(href: string): void {
   loadedRemoteImages.add(href);
 }
 
-const SHORT_LINK_LABEL_MAX = 40;
-const SHORT_LINK_PATH_MIN = 12;
-// Control and format characters (bidi overrides, zero-width joiners and spaces, the BOM) that a
-// decoded path could use to disguise itself.
-const HIDDEN_PATH_CHARACTERS = /[\p{Cc}\p{Cf}]/gu;
-
-function httpUrl(href: string): URL | undefined {
-  try {
-    const url = new URL(href);
-    return url.protocol === "http:" || url.protocol === "https:" ? url : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function decodedUrl(value: string): string {
-  try {
-    return decodeURI(value);
-  } catch {
-    return value;
-  }
-}
-
-function comparableUrl(value: string): string {
-  return value
-    .trim()
-    .replace(/^https?:\/\//i, "")
-    .replace(/\/$/, "")
-    .toLowerCase();
-}
-
-/**
- * The words a link shows. An author's label stays as written; a bare URL (an autolink, or a
- * label that just repeats the address) shortens to host and path, like `x.com/elonmusk`. The
- * host is what tells a reader where the link goes, so it is never cut and stays in its ASCII
- * (punycode) form; only a long path is trimmed.
- */
-export function linkLabel(text: string, href: string): string {
-  const url = httpUrl(href);
-  // Some parsers show an autolink with its escapes decoded (`caf%C3%A9` as `café`), so a label
-  // that matches the decoded address is bare too.
-  const label = comparableUrl(text);
-  if (!url || (label !== comparableUrl(href) && label !== comparableUrl(decodedUrl(href)))) {
-    return text;
-  }
-  const host = url.host.replace(/^www\./i, "");
-  const path = decodedUrl(url.pathname.replace(/\/+$/, "")).replace(HIDDEN_PATH_CHARACTERS, "");
-  const room = Math.max(SHORT_LINK_LABEL_MAX - host.length, SHORT_LINK_PATH_MIN);
-  if (path.length <= room) return `${host}${path}`;
-  let end = room - 1;
-  const before = path.charCodeAt(end - 1);
-  const after = path.charCodeAt(end);
-  if (before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff) end--;
-  return `${host}${path.slice(0, end)}…`;
-}
-
 /** The origin a link's site icon is looked up by, or undefined for links that get no icon. */
 export function linkFaviconOrigin(href: string): string | undefined {
   return httpUrl(href)?.origin;
@@ -559,36 +521,45 @@ function requestLinkFavicon(source: LinkFavicons, origin: string, key: string, a
   );
 }
 
+function faviconKey(source: LinkFavicons | null, origin: string) {
+  return JSON.stringify([source?.endpoint ?? "", origin]);
+}
+
+/** Counts a link to this origin as on screen until the returned release runs. */
+function showFaviconLink(key: string) {
+  mountedFaviconLinks.set(key, (mountedFaviconLinks.get(key) ?? 0) + 1);
+  return () => {
+    const left = (mountedFaviconLinks.get(key) ?? 1) - 1;
+    if (left > 0) {
+      mountedFaviconLinks.set(key, left);
+      return;
+    }
+    mountedFaviconLinks.delete(key);
+    const retry = busyFaviconRetries.get(key);
+    if (retry === undefined) return;
+    clearTimeout(retry);
+    busyFaviconRetries.delete(key);
+    pendingFavicons.delete(key);
+  };
+}
+
+function askForFavicon(source: LinkFavicons, origin: string, key: string) {
+  if (linkFavicons.has(key) || pendingFavicons.has(key)) return;
+  if (Date.now() - (failedFavicons.get(key) ?? -Infinity) < FAILED_FAVICON_RETRY_MS) return;
+  requestLinkFavicon(source, origin, key, 1);
+}
+
 /** The icon for a link once the API has one, and a way to drop an image that turns out unusable. */
 export function useLinkFavicon(href: string): { icon: string | null; unusable: () => void } {
   const source = useContext(LinkFaviconsContext);
   const paused = useContext(LinkFaviconsPausedContext);
   const origin = linkFaviconOrigin(href);
-  const key = JSON.stringify([source?.endpoint ?? "", origin]);
+  const key = faviconKey(source, origin ?? "");
   const snapshot = () => (origin ? (linkFavicons.get(key) ?? null) : null);
   const icon = useSyncExternalStore(subscribeLinkFavicons, snapshot, snapshot);
+  useEffect(() => (origin ? showFaviconLink(key) : undefined), [key, origin]);
   useEffect(() => {
-    if (!origin) return;
-    mountedFaviconLinks.set(key, (mountedFaviconLinks.get(key) ?? 0) + 1);
-    return () => {
-      const left = (mountedFaviconLinks.get(key) ?? 1) - 1;
-      if (left > 0) {
-        mountedFaviconLinks.set(key, left);
-        return;
-      }
-      mountedFaviconLinks.delete(key);
-      const retry = busyFaviconRetries.get(key);
-      if (retry === undefined) return;
-      clearTimeout(retry);
-      busyFaviconRetries.delete(key);
-      pendingFavicons.delete(key);
-    };
-  }, [key, origin]);
-  useEffect(() => {
-    if (!source || paused || !origin) return;
-    if (linkFavicons.has(key) || pendingFavicons.has(key)) return;
-    if (Date.now() - (failedFavicons.get(key) ?? -Infinity) < FAILED_FAVICON_RETRY_MS) return;
-    requestLinkFavicon(source, origin, key, 1);
+    if (source && !paused && origin) askForFavicon(source, origin, key);
   }, [source, paused, origin, key]);
   return {
     icon,
@@ -596,6 +567,44 @@ export function useLinkFavicon(href: string): { icon: string | null; unusable: (
       if (origin) setLinkFavicon(key, null);
     },
   };
+}
+
+/** The icons the API has for these links so far, by link. */
+export function useLinkFavicons(hrefs: readonly string[]): ReadonlyMap<string, string> {
+  const source = useContext(LinkFaviconsContext);
+  const paused = useContext(LinkFaviconsPausedContext);
+  const origins = [...new Set(hrefs.flatMap((href) => linkFaviconOrigin(href) ?? []))].sort();
+  const originList = JSON.stringify(origins);
+  // The joined icons are a string, so an unchanged answer keeps the same snapshot.
+  const snapshot = () =>
+    JSON.stringify(origins.map((origin) => linkFavicons.get(faviconKey(source, origin)) ?? null));
+  const icons = useSyncExternalStore(subscribeLinkFavicons, snapshot, snapshot);
+  useEffect(() => {
+    const shown: string[] = JSON.parse(originList);
+    const releases = shown.map((origin) => showFaviconLink(faviconKey(source, origin)));
+    return () => {
+      for (const release of releases) release();
+    };
+  }, [source, originList]);
+  useEffect(() => {
+    if (!source || paused) return;
+    for (const origin of JSON.parse(originList) as string[]) {
+      askForFavicon(source, origin, faviconKey(source, origin));
+    }
+  }, [source, paused, originList]);
+  return useMemo(() => {
+    const byOrigin = new Map<string, string>();
+    (JSON.parse(icons) as (string | null)[]).forEach((icon, index) => {
+      const origin = (JSON.parse(originList) as string[])[index];
+      if (icon && origin) byOrigin.set(origin, icon);
+    });
+    const byHref = new Map<string, string>();
+    for (const href of hrefs) {
+      const icon = byOrigin.get(linkFaviconOrigin(href) ?? "");
+      if (icon) byHref.set(href, icon);
+    }
+    return byHref;
+  }, [icons, originList, hrefs]);
 }
 
 export function closeUnterminatedFence(markdown: string): string {

@@ -9,6 +9,11 @@
       "development": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./best-effort": {
+      "types": "./src/best-effort.ts",
+      "development": "./src/best-effort.ts",
+      "default": "./src/best-effort.ts"
+    },
     "./hono": {
       "types": "./src/hono.ts",
       "development": "./src/hono.ts",
@@ -36,6 +41,7 @@
     "hono": "4.13.17"
   },
   "devDependencies": {
+    "fast-check": "4.10.2",
     "typescript": "7.0.2",
     "vitest": "5.1.0"
   }

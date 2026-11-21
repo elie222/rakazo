@@ -1,10 +1,19 @@
 import { ORPCError } from "@orpc/server";
 import { createAdapterContext, runJobKey } from "@rakazo/adapter-kit";
-import { settleCallRequest, wakeRun } from "@rakazo/adapters";
+import {
+  claimNativeCalendar,
+  finishNativeCalendar,
+  getActiveTeachingSession,
+  nativeCalendarDeviceDigest,
+  pendingNativeCalendar,
+  settleCallRequest,
+  wakeRun,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   CALL_CLIENT_NONCE_PREFIX,
+  ClientError,
   callClientNonce,
   expandSkillReferencesInPrompt,
   MODEL_REQUIRED_SEND_ERROR,
@@ -13,6 +22,7 @@ import {
 import type { Prisma } from "@rakazo/db";
 import {
   AnswerTooLongError,
+  answerToolQuestion,
   appendEventInTransaction,
   createExternalConversationRepos,
   createThreadMessageInTransaction,
@@ -24,37 +34,41 @@ import {
   touchGroupUpdatedAt,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
-import { answerComputerRequest } from "../computer-control.js";
+import { bestEffort, getLogger } from "@rakazo/logging";
+import { HANG_UP_PROMPT } from "../bots/hidden-turns.prompt.js";
+import { assertTeachingSendAllowed } from "../bots/taught-skills.js";
+import { answerComputerRequest } from "../computers/computer-control.js";
 import type { RouterDeps } from "../router.js";
-import { createRoutineTestRun, routineTestRunNonce, routineTestTarget } from "../routines.js";
-import { assertTeachingSendAllowed } from "../taught-skills.js";
-import { purgeClearedThreadMemory } from "../thread-memory.js";
+import {
+  createRoutineTestRun,
+  routineTestRunNonce,
+  routineTestTarget,
+} from "../routines/routines.js";
+import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
 import {
   isBackgroundRun,
   isPeerRun,
   loadMessagePage,
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
-} from "../thread-message-pages.js";
-import { reactToThreadMessage } from "../thread-reactions.js";
+} from "../threads/thread-message-pages.js";
+import { reactToThreadMessage } from "../threads/thread-reactions.js";
 import {
   markThreadRead,
   markThreadUnreadFrom,
   setThreadSnooze,
   setThreadUnreadState,
-} from "../thread-read-state.js";
-import { threadSnapshot } from "../thread-snapshot.js";
-import { isStopMessage, stopThreadRuns } from "../thread-stop.js";
-import type { ThreadTarget } from "../thread-target.js";
+} from "../threads/thread-read-state.js";
+import { threadSnapshot } from "../threads/thread-snapshot.js";
+import { isStopMessage, stopThreadRuns } from "../threads/thread-stop.js";
+import type { ThreadTarget } from "../threads/thread-target.js";
 import {
   replyParentBotId,
   resolveThreadTarget,
   sendTargetBotIds,
   sendThreadMessage,
   threadHead,
-} from "../thread-target.js";
-import { mapBotSecretInputError } from "./bots.js";
+} from "../threads/thread-target.js";
 import type { RouterContext } from "./context.js";
 import {
   botsRunOwnModels,
@@ -70,10 +84,6 @@ import {
 export function callMarkerClientNonce(callId: string): string {
   return `${CALL_CLIENT_NONCE_PREFIX}${callId}:marker`;
 }
-
-/** The card is closed by a marker; the run that follows finishes whatever the call left open. */
-const HANG_UP_PROMPT =
-  "The voice call just ended because the user hung up. First call end_call with a short title for the call (leave farewell empty). Then, if anything the user asked for during the call is still unfinished, complete it now as a normal chat reply with full formatting. If nothing is pending, reply with one short sentence.";
 
 /** A send with routines that already has runs saved under its nonce. */
 class SavedSubmission extends Error {}
@@ -98,6 +108,20 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
   };
 }
 
+function calendarDevice(
+  { actor, nativeSessionId }: { actor: Actor; nativeSessionId?: string },
+  key: string,
+) {
+  return nativeSessionId
+    ? {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        sessionId: nativeSessionId,
+        deviceDigest: nativeCalendarDeviceDigest(key),
+      }
+    : undefined;
+}
+
 export function threadsRoutes(ctx: RouterContext) {
   const { deps, authed, callsEnabled, codexCatalog, repos, agentSkills } = ctx;
   /** The bot a reaction can wake: the thread's bot, or in a group the bot that wrote the message. */
@@ -112,8 +136,13 @@ export function threadsRoutes(ctx: RouterContext) {
         )?.botId ?? target.memberBotIds[0]!);
   const send = async (
     actor: Actor,
-    input: Parameters<typeof sendThreadMessage>[3] & { botId?: string; groupId?: string },
+    input: Parameters<typeof sendThreadMessage>[3] & {
+      botId?: string;
+      groupId?: string;
+      nativeCalendarDeviceKey?: string;
+    },
     startRoutines?: Parameters<typeof sendThreadMessage>[5],
+    nativeSessionId?: string,
   ) => {
     const setup = await modelSetup(deps, actor);
     const target = await resolveThreadTarget(deps.prisma, actor, input);
@@ -135,6 +164,7 @@ export function threadsRoutes(ctx: RouterContext) {
     const deployment = setup.hasDeployment
       ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
       : null;
+    const deviceKey = nativeSessionId && target.kind === "bot" && input.nativeCalendarDeviceKey;
     return sendThreadMessage(
       {
         ...deps,
@@ -150,12 +180,17 @@ export function threadsRoutes(ctx: RouterContext) {
       },
       actor,
       target,
-      { ...input, noModel },
+      {
+        ...input,
+        noModel,
+        nativeCalendarSessionId: deviceKey ? nativeSessionId : undefined,
+        nativeCalendarDeviceDigest: deviceKey ? nativeCalendarDeviceDigest(deviceKey) : undefined,
+      },
       takeoverReleaser(deps, actor, target),
       startRoutines,
     ).catch((error: unknown) => {
       if (error instanceof AttachmentValidationError) {
-        throw new ORPCError("BAD_REQUEST", { message: error.message });
+        throw new ClientError("BAD_REQUEST", error.message);
       }
       throw error;
     });
@@ -216,7 +251,27 @@ export function threadsRoutes(ctx: RouterContext) {
           yield event;
         }
       }),
-      send: authed.threads.send.handler(({ context, input }) => send(context.actor, input)),
+      send: authed.threads.send.handler(({ context, input }) =>
+        send(context.actor, input, undefined, context.nativeSessionId),
+      ),
+      nativeCalendarPending: authed.threads.nativeCalendarPending.handler(({ context, input }) => {
+        const device = calendarDevice(context, input.deviceKey);
+        return device ? pendingNativeCalendar(deps.prisma, device, input.botId) : [];
+      }),
+      nativeCalendarClaim: authed.threads.nativeCalendarClaim.handler(({ context, input }) => {
+        const device = calendarDevice(context, input.deviceKey);
+        return device ? claimNativeCalendar(deps.prisma, device, input) : null;
+      }),
+      nativeCalendarResult: authed.threads.nativeCalendarResult.handler(
+        async ({ context, input }) => {
+          const device = calendarDevice(context, input.deviceKey);
+          return {
+            accepted: device
+              ? await finishNativeCalendar(deps, device, input, input.response)
+              : false,
+          };
+        },
+      ),
       sendWithRoutines: authed.threads.sendWithRoutines.handler(async ({ context, input }) => {
         const { actor } = context;
         // The same checks as routines/testRun, all before anything is written.
@@ -257,7 +312,7 @@ export function threadsRoutes(ctx: RouterContext) {
         try {
           if (input.text?.trim() || input.artifactIds?.length) {
             // A saved message for this nonce is replayed before any of this runs.
-            sent = await send(actor, input, startRoutines);
+            sent = await send(actor, input, startRoutines, context.nativeSessionId);
           } else {
             // Only the routines: they all commit or none does.
             const started = await withTransactionRetry(() =>
@@ -288,10 +343,7 @@ export function threadsRoutes(ctx: RouterContext) {
               await reactedBotId(target, input.messageId),
             ]))) &&
           (target.kind !== "bot" ||
-            (await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId).then(
-              () => true,
-              () => false,
-            )));
+            !(await getActiveTeachingSession(deps.prisma, context.actor.spaceId, target.botId)));
         const result = await reactToThreadMessage(
           deps,
           context.actor,
@@ -612,9 +664,8 @@ export function threadsRoutes(ctx: RouterContext) {
           })
           .catch((error: unknown) => {
             if (error instanceof AnswerTooLongError)
-              throw new ORPCError("BAD_REQUEST", { message: error.message });
-            // A typed credential its destination cannot carry (e.g. a header with a line break).
-            throw mapBotSecretInputError(error);
+              throw new ClientError("BAD_REQUEST", error.message);
+            throw error;
           });
         if (!answered) {
           throw new ORPCError("CONFLICT", {
@@ -622,6 +673,25 @@ export function threadsRoutes(ctx: RouterContext) {
           });
         }
         await wakeRun(deps.jobs, input.runId);
+        return { ok: true as const };
+      }),
+      answerToolQuestion: authed.threads.answerToolQuestion.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const committed = await answerToolQuestion(deps.prisma, {
+          spaceId: context.actor.spaceId,
+          threadId: target.threadId,
+          messageId: input.messageId,
+          userId: context.actor.userId,
+          action: input.action,
+          values: input.values,
+        });
+        // The call waiting on this card hears it through the thread's events, wherever it runs.
+        // The answer is saved: a missed signal only delays it to the waiting call's re-read.
+        if (committed)
+          await bestEffort(
+            "tool question notify",
+            deps.events.notify(committed.threadId, committed.seq),
+          );
         return { ok: true as const };
       }),
       markRead: authed.threads.markRead.handler(async ({ context, input }) => {

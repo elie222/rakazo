@@ -74,4 +74,29 @@ export const TR_MESSAGES: Record<string, string> = {
     "Yeniden abone olmazsan kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Bir plan seçmezsen kayıtlı bilgisayar dosyaların {date} tarihinde silinecek.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} sizi Rakazo'da {organization} kuruluşuna davet etti",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} sizi Rakazo'da {organization} kuruluşuna katılmaya davet etti.",
+  "Join {organization}": "{organization} kuruluşuna katıl",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Bu davetin süresi 7 gün içinde dolar. Kabul etmek için bu e-posta adresiyle oturum açın.",
+  "{inviter} invited you to {space} on Rakazo":
+    "{inviter} sizi Rakazo'da {space} alanına davet etti",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} sizi Rakazo'da {space} alanına katılmaya davet etti.",
+  "Join {space}": "{space} alanına katıl",
+  "This invitation expires in 7 days.": "Bu davetin süresi 7 gün içinde dolar.",
+  "Connect a model to start using Rakazo": "Rakazo’yu kullanmaya başlamak için bir model bağlayın",
+  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
+    "Rakazo planınız başladı, ancak bir model bağlanana kadar botlarınız yanıt veremez.",
+  "Sign in with your {subscriptions} subscription, or paste an API key.":
+    "{subscriptions} aboneliğinizle oturum açın veya bir API anahtarı yapıştırın.",
+  "Connect a model": "Model bağla",
+  "Bring your old assistant to Rakazo": "Eski asistanınızı Rakazo'ya taşıyın",
+  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
+    "{assistants} üzerinde zaten bir asistan kurdunuz mu? Rakazo onun talimatlarını, belleğini, becerilerini ve rutinlerini yeni bir bot olarak getirebilir; böylece baştan başlamazsınız.",
+  "It works for any other assistant too: send it one prompt and paste its reply.":
+    "Başka herhangi bir asistanla da çalışır: ona tek bir istem gönderin ve yanıtını yapıştırın.",
+  "Import an agent": "Ajan içe aktar",
 };

@@ -2,8 +2,8 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { IntegrationCatalogResult, IntegrationCatalogSurface } from "@rakazo/contracts";
 import { Button, Input } from "@rakazo/ui-web";
 import { useState } from "react";
-import { rpc } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import { rpc } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 import { ViewTitle } from "./parts";
 
 export type DomainSearchState = ReturnType<typeof useDomainSearch>;

@@ -1,7 +1,8 @@
 import type { AgentImportFile } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
-import { parseSkillMd } from "../agent-skill.js";
+import { parseSkillMd } from "../skills/agent-skill.js";
 import {
   AGENT_IMPORT_PROMPT,
   agentImportFolder,
@@ -15,6 +16,7 @@ import {
   parseDotEnv,
   readAgentImportConfig,
   readAgentImportFolder,
+  renameSkillMd,
   resolveAgentImportNames,
   stripAgentImportSecrets,
 } from "./index.js";
@@ -408,6 +410,30 @@ describe("skill files", () => {
     expect(renamed.skills[0]!.content).toBe(
       original.replace("name: arxiv\r\n", "name: arxiv-2\r\n"),
     );
+  });
+
+  it.each(['"name"', "'name'"])("renames a colliding skill with the YAML key %s", (key) => {
+    const markdown = (name: string) =>
+      [
+        "\uFEFF---",
+        "metadata:",
+        `  ${key}: Nested`,
+        `${key}: ${name}`,
+        "description: Check the weather.",
+        "---",
+        "",
+        `${key}: Weather`,
+      ].join("\r\n");
+    const result = plan([
+      { path: "workspace/skills/weather/SKILL.md", content: markdown("Weather") },
+    ]);
+    const renamed = resolveAgentImportNames(result, {
+      spaceMemoryPaths: [],
+      skillNames: ["Weather"],
+    });
+
+    expect(renamed.skills[0]).toMatchObject({ name: "Weather-2", content: markdown("Weather-2") });
+    expect(parseSkillMd(renamed.skills[0]!.content)).toMatchObject({ name: "Weather-2" });
   });
 
   it("renames by rewriting only the name line", () => {
@@ -999,8 +1025,89 @@ describe("dotenv parsing", () => {
     ["'placeholder-key'", "placeholder-key"],
     ["placeholder-key # comment", "placeholder-key"],
     ["placeholder#key", "placeholder#key"],
+    ['"a"b" # comment', 'a"b'],
+    ['"a\\" # b" # comment', 'a\\" # b'],
+    ["'a' b # comment", "'a' b"],
+    ["  placeholder-key  \t# comment", "placeholder-key"],
   ])("reads OPENAI_API_KEY=%s", (value, expected) => {
     expect(parseDotEnv(`OPENAI_API_KEY=${value}`)).toEqual({ OPENAI_API_KEY: expected });
+  });
+
+  it.each([
+    `A=${"\t".repeat(200_000)}x`,
+    `A='${"'#".repeat(100_000)}x`,
+    `A="${'"#'.repeat(100_000)}x`,
+    `A=x${"\t".repeat(200_000)}x`,
+  ])("reads a long adversarial line quickly", (line) => {
+    expectLinearTime(() => parseDotEnv(line));
+  });
+});
+
+describe("renameSkillMd", () => {
+  it.each([
+    ["name", "\n"],
+    ['"name"', "\r\n"],
+  ])("replaces a block scalar for %s and keeps the line endings", (key, newline) => {
+    const original = ["---", `${key}: |`, "  Old", "  name", "", "description: d", "---", "Body"];
+    const expected = ["---", `${key}: New`, "description: d", "---", "Body"];
+    expect(renameSkillMd(original.join(newline), "New")).toBe(expected.join(newline));
+  });
+
+  it.each([["\n"], ["\r\n"]])(
+    "replaces a plain scalar on the next line and keeps the line endings",
+    (newline) => {
+      const original = ["---", "name:", "  old", "description: d", "---", "Body"];
+      const expected = ["---", 'name: "new: x"', "description: d", "---", "Body"];
+      const renamed = renameSkillMd(original.join(newline), "new: x");
+      expect(renamed).toBe(expected.join(newline));
+      expect(parseSkillMd(renamed)).toMatchObject({ name: "new: x", description: "d" });
+    },
+  );
+
+  it("replaces a plain scalar that spans two indented lines", () => {
+    const original = ["---", "name:", "  old", "  name", "description: d", "---", "Body"];
+    const expected = ["---", "name: New", "description: d", "---", "Body"];
+    expect(renameSkillMd(original.join("\n"), "New")).toBe(expected.join("\n"));
+  });
+
+  it("replaces a next-line name after a blank line", () => {
+    const original = "---\nname:\n\n  old\ndescription: d\n---\nBody";
+    expect(renameSkillMd(original, "New")).toBe("---\nname: New\ndescription: d\n---\nBody");
+  });
+
+  it("keeps indented comment lines under a commented name", () => {
+    const original = "---\nname: # set below\n  # keep this note\ndescription: d\n---\nBody";
+    expect(renameSkillMd(original, "New")).toBe(
+      "---\nname: New\n  # keep this note\ndescription: d\n---\nBody",
+    );
+  });
+
+  it("stays fast on many blank lines and indented comments", () => {
+    const original = `---\nname:\n${"\n  #\n".repeat(50_000)}description: d\n---\nBody`;
+    expectLinearTime(() => renameSkillMd(original, "New"));
+  });
+
+  it("replaces only the name line when the empty name is followed by a key", () => {
+    const original = ["---", "name:", "description: d", "---", "Body"];
+    const expected = ["---", "name: New", "description: d", "---", "Body"];
+    expect(renameSkillMd(original.join("\n"), "New")).toBe(expected.join("\n"));
+  });
+
+  it("renames a file with leading blank lines, leading spaces, or a trailing-space fence", () => {
+    expect(renameSkillMd("\n---\nname: Old\ndescription: d\n---\nBody", "New")).toBe(
+      "\n---\nname: New\ndescription: d\n---\nBody",
+    );
+    expect(renameSkillMd("  --- \nname: Old\ndescription: d\n---  \nBody", "New")).toBe(
+      "  --- \nname: New\ndescription: d\n---  \nBody",
+    );
+    expect(renameSkillMd("\uFEFF\n---\nname: Old\ndescription: d\n----\n---\nBody", "New")).toBe(
+      "\uFEFF\n---\nname: New\ndescription: d\n----\n---\nBody",
+    );
+  });
+
+  it("stays fast on a long indented block", () => {
+    const content = `---\nname: >\n${"\t".repeat(200_000)}\u2028\n---\n`;
+    expectLinearTime(() => renameSkillMd(content, "New"));
   });
 });
 

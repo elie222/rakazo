@@ -10,6 +10,7 @@ directory, so a copied database dump, backup or disk does not reveal it.
 | Chat messages                                                                                                                                                                                                                | `messages.blocks`                                                             |
 | Thread events (they repeat message content)                                                                                                                                                                                  | `events.payload`                                                              |
 | Compacted history summaries                                                                                                                                                                                                  | `threads.historyCompactionSummary`                                            |
+| Text of a direct message whose files are still downloading, in its backup job                                                                                                                                                | `graphile_worker.jobs` (`payload.text`)                                       |
 | Memory documents and their revisions                                                                                                                                                                                         | `memory_documents.content`, `memory_revisions.content`                        |
 | Uploaded and generated files                                                                                                                                                                                                 | `DATA_DIR/artifacts/<space>/<file>`                                           |
 | Bot computer homes kept in [object storage](./self-host-storage.md#bot-homes-in-object-storage) (always, whatever `CONTENT_ENCRYPTION` says)                                                                                 | `homes/<id>/<revision>` in the bucket                                         |
@@ -237,7 +238,7 @@ process has just added.
 
 Rotation is not finished when `rotate --reencrypt` exits. Each API and worker
 process keeps the key versions it has read in memory for up to ten minutes
-(the default `ttlMs` of `ContentKeyRing` in `packages/db/src/content-keys.ts`).
+(the default `ttlMs` of `ContentKeyRing` in `packages/db/src/encryption/content-keys.ts`).
 For that long after a rotation, it may still seal new content and new vault
 saves with the previous version. Those stay under that version until the next
 `reencrypt`. An interrupted run also leaves items under the previous version.
@@ -331,6 +332,6 @@ without a key manager stops startup with the variable's name.
 
 Other key managers implement the `KeyProvider` interface in
 `@rakazo/adapter-kit` (`activeKeyId`, `wrap`, `unwrap`), pass the shared suite in
-`packages/adapters/src/key-provider-conformance.test.ts`, and are selected in
+`packages/adapters/src/secrets/key-provider-conformance.test.ts`, and are selected in
 `keyManagerFromEnv`. A provider only wraps 32-byte data keys: one per space
 key and one per wrapped setting, never per stored message or file.
