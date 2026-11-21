@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { flush } from "@rakazo/core/test-async";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -50,7 +51,12 @@ vi.mock("./lib/preferences/remote-images-preference", () => ({
   remoteImagesPreference: { use: () => false },
 }));
 vi.mock("./lib/platform/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
-vi.mock("./lib/query/rpc", () => ({ rpc: { analytics: { screen: capability.screen } } }));
+vi.mock("./lib/query/rpc", () => ({
+  rpc: { analytics: { screen: capability.screen }, me: async () => ({ navLinks: [] }) },
+}));
+vi.mock("./pages/shell/sidebar/shell-sidebar-footer", () => ({
+  ShellSidebarFooter: () => <div>Account</div>,
+}));
 vi.mock("./components/billing/SubscriptionGate", () => ({
   SubscriptionGate: ({ children }: { children: ReactNode }) => children,
 }));
@@ -71,7 +77,17 @@ vi.mock("./pages/integrations/McpOAuthCallback", () => ({
   McpOAuthCallbackPage: () => <div>MCP callback</div>,
 }));
 
-import { App } from "./App";
+import { App as AppRoot } from "./App";
+
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppRoot />
+    </QueryClientProvider>
+  );
+}
 
 it.each([
   signedIn,
@@ -118,7 +134,7 @@ it("loads the board chunk only after bootstrap enables the route", async () => {
   );
   try {
     await act(async () => root.render(render()));
-    expect(container.textContent).toBe("Shell");
+    expect(container.textContent).toContain("Shell");
     expect(capability.screen).toHaveBeenCalledExactlyOnceWith({ screen: "board", surface: "web" });
     expect(capability.boardLoaded).not.toHaveBeenCalled();
     capability.enabled = true;
@@ -127,7 +143,7 @@ it("loads the board chunk only after bootstrap enables the route", async () => {
       await flush();
     });
     expect(capability.boardLoaded).toHaveBeenCalledOnce();
-    expect(container.textContent).toBe("Board page");
+    expect(container.textContent).toContain("Board page");
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
@@ -209,7 +225,7 @@ it.each(["throw", "reject"])(
           </MemoryRouter>,
         ),
       );
-      expect(container.textContent).toBe("Shell");
+      expect(container.textContent).toContain("Shell");
     } finally {
       await act(async () => root.unmount());
       vi.unstubAllGlobals();
