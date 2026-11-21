@@ -257,6 +257,30 @@ describe("local history retrieval", () => {
     expect(middle.messages[0]!.textOffset).toBe(1999);
     expect(middle.messages[0]!.text.startsWith("😀")).toBe(true);
   });
+  it("uses original offsets for search matches after expanding lowercase characters", async () => {
+    const { mock, prisma } = db();
+    const term = "ledger-indexer";
+    const original = `${"İ".repeat(1000)} ${term} ${"x".repeat(900)}`;
+    mock.$queryRaw.mockResolvedValue([row(1, original)]);
+
+    const result = await searchHistory(prisma, scope, { query: term });
+    const message = result.messages[0]!;
+    expect(message.text).toContain(term);
+    expect(message.textOffset).toBe(original.indexOf(term) - 40);
+    const next = message.textOffset + message.text.length;
+    expect(message.text).toBe(original.slice(message.textOffset, next));
+    expect(message.nextTextOffset).toBe(next);
+
+    const continued = await readHistory(prisma, scope, {
+      messageId: message.messageId,
+      textOffset: message.nextTextOffset!,
+    });
+    expect(continued.messages[0]).toMatchObject({
+      text: original.slice(next),
+      textOffset: next,
+      nextTextOffset: null,
+    });
+  });
   it("keeps search excerpt starts and snapshot topics on Unicode boundaries", async () => {
     const { mock, prisma } = db();
     const text = `${"z".repeat(10)}😀${"a".repeat(39)}needle`;

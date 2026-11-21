@@ -5,7 +5,12 @@ import {
   HISTORY_ATTACHMENTS_PER_RESPONSE,
   HistoryQueriesSchema,
 } from "@rakazo/contracts";
-import { attachmentComputerPath, shortenedTextLength, textBoundary } from "@rakazo/core";
+import {
+  attachmentComputerPath,
+  originalLowercaseOffset,
+  shortenedTextLength,
+  textBoundary,
+} from "@rakazo/core";
 import { LISTED_ARTIFACT } from "../artifacts/artifact-versions.js";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
@@ -245,7 +250,11 @@ function reference(row: HistoryRow, query = "", maxLength = 800, textOffset = 0)
       ? (query.split(/\s+/).find((term) => text.toLowerCase().includes(term.toLowerCase())) ??
         query)
       : query;
-  if (query) textOffset = Math.max(0, text.toLowerCase().indexOf(matchedTerm.toLowerCase()) - 40);
+  if (query) {
+    const lower = text.toLowerCase();
+    const index = originalLowercaseOffset(text, lower, lower.indexOf(matchedTerm.toLowerCase()));
+    textOffset = Math.max(0, index - 40);
+  }
   textOffset = textBoundary(text, textOffset);
   const excerpt = text.slice(textOffset, textBoundary(text, textOffset + maxLength));
   const nextTextOffset =
