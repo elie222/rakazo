@@ -87,7 +87,7 @@ describe("day-one referral email", () => {
     expect(f.deps.email.send).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "alex@example.com",
-        subject: "Invite a friend",
+        subject: "Invite a friend to Rakazo",
         headers: {
           "List-Unsubscribe": `<${unsubscribeUrl(origin, secret, "user-1")}>`,
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

@@ -54,6 +54,9 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lo
 # Normalize modes: a restrictive host umask (e.g. 077 on hardened hosts) would otherwise
 # leave the copied tree unreadable to USER node at runtime.
 COPY --chmod=755 . .
+# Published images carry the hosted email copy (infra/compose/fetch-email-copy.sh); a copy that
+# would fall back anywhere fails the build here rather than at send time.
+RUN [ ! -d email-copy ] || node packages/auth/scripts/check-email-copy.ts email-copy
 RUN pnpm --filter @rakazo/db generate
 RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
@@ -82,6 +85,7 @@ RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-tem
 RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ARG GIT_SHA
 ENV NODE_ENV=production
+ENV EMAIL_COPY_DIR=/app/email-copy
 ENV GIT_SHA=$GIT_SHA
 EXPOSE 3100 5173 7091
 # The signal on which a replaced API lets its chat turns end before it exits (apps/api/src/http/drain.ts).

@@ -21,26 +21,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
     "此驗證碼將在十分鐘後失效。如果你沒有要求刪除，請忽略這封郵件。",
   "Your Rakazo confirmation code": "你的 Rakazo 確認碼",
   "Enter this code in Rakazo to confirm it's you:": "在 Rakazo 中輸入此驗證碼以確認是你本人：",
-  "Welcome to Rakazo": "歡迎使用 Rakazo",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "歡迎使用 Rakazo。用得最好的人都會做三件事：",
-  "Get the apps": "下載應用程式",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo 支援 {platforms}，讓你的機器人隨時隨地都能聯絡到你。",
-  "Join the community": "加入社群",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "在 {discord} 上看看別人在打造什麼、快速獲得協助，並告訴我們接下來該做什麼。",
-  "Star us on GitHub": "在 GitHub 上給我們星星",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo 是開源的。{star}能幫助更多人發現它。",
-  "A star on GitHub": "在 GitHub 上給星星",
-  "Questions? Just reply. I read every one.": "有問題嗎？直接回覆即可。每封我都會看。",
   Unsubscribe: "取消訂閱",
-  "Invite a friend": "邀請朋友",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "邀請朋友加入 Rakazo：對方可免費使用 {weeks} 週；當對方用新卡開始符合條件的訂閱時，你將獲得一個月免費。",
   "Open Rakazo": "開啟 Rakazo",
-  "and choose Invite friends for your link.": "並選擇「邀請朋友」取得你的連結。",
   "We received your Rakazo plugin": "我們已收到你的 Rakazo 外掛",
   "Thanks for submitting a plugin to the Rakazo marketplace.": "感謝你向 Rakazo 外掛市集提交外掛。",
   "We review every submission and will email you when it's done.":
@@ -76,16 +58,4 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "{inviter} invited you to join {space} on Rakazo.": "{inviter} 邀請你加入 Rakazo 上的 {space}。",
   "Join {space}": "加入 {space}",
   "This invitation expires in 7 days.": "此邀請將在 7 天後過期。",
-  "Connect a model to start using Rakazo": "連接模型即可開始使用 Rakazo",
-  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
-    "你的 Rakazo 方案已開始，但在連接模型之前，你的機器人無法回覆。",
-  "Sign in with your {subscriptions} subscription, or paste an API key.":
-    "使用你的 {subscriptions} 訂閱登入，或貼上 API 金鑰。",
-  "Connect a model": "連接模型",
-  "Bring your old assistant to Rakazo": "把你原本的助理帶到 Rakazo",
-  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
-    "已經在 {assistants} 裡設定過助理？Rakazo 可以把它的指示、記憶、技能和例行任務帶過來，成為一個新的機器人，你不必從頭開始。",
-  "It works for any other assistant too: send it one prompt and paste its reply.":
-    "其他任何助理也可以：傳一則提示詞給它，再貼上它的回覆。",
-  "Import an agent": "匯入智慧代理",
 };
