@@ -1,10 +1,27 @@
 # 侧边栏改版：Linger 参考方案
 
-状态：方案待确认。
+状态：PR 2 已实现（桌面）；移动端 rail 留到 PR 5。
 
 范围：Web 与 Electron 的聊天侧边栏；移动端抽屉同步适配。不改后端、数据库、RPC 或翻译目录。
 
 上层方案：[`ui-interaction-parity.md`](./ui-interaction-parity.md)。本文是其中的侧边栏阶段。
+
+## 0. 实现结果（PR 2）
+
+已落地：
+
+- 桌面主 rail：Chats / Activity / Artifacts / Board，宽度 56px（浏览器）或 64px（Electron 窗口控件）收起、220px 展开。
+- 二级列表改为 offcanvas：标题、搜索、创建、隐藏列表；rail 上提供“Show chat list”恢复。
+- 账户菜单通过 portal 放到 rail 底部；列表底部保留套餐提示、归档和 Passkey 提示。
+- Artifacts、Board、NavLink 页面移入 app rail 布局，切页时 rail 常驻。
+- Activity 仍是列表模式（持久化开关），不是 `/app/activity` 路由；Integrations 仍在账户菜单。
+- 新增 `apps/web/e2e/chat/sidebar.spec.ts`，覆盖 rail 展开/收起、Activity、列表隐藏/恢复和截图。
+
+有意取舍：
+
+- 移动端抽屉暂不放入 rail，留给 PR 5；桌面 rail 先落地。移动端仍是单列抽屉。
+- 账户菜单由 `SpaceShell` portal 到 rail；Artifacts/Board 没有 `SpaceShell` 时 rail 底部为空，全局账户入口作为后续补齐。
+- 不复制 Linger 的暖色、字体和 hugeicons。
 
 ## 1. 背景与结论
 

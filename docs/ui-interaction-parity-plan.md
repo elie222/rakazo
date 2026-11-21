@@ -1,6 +1,6 @@
 # UI 与交互体系对齐：落地实施计划
 
-状态：PR 1 已实现；PR 2–5 待执行。
+状态：PR 1–2 已实现；PR 3–5 待执行。
 
 设计依据：
 
@@ -33,6 +33,14 @@
 - 已统一共享控件和 app 内焦点/按下写法；路由级等待改为 120ms 延迟。
 - 验证：UI 包 100 测试、Web 2701 测试、`pnpm checks` 153 项、typecheck、生产 Web 构建通过；Web 启动体积 891.9/900 kB。
 - 桌面 main 包在本机为 2,760.0/2,760.0 kB（超出 0.0 kB），该包不引用 UI/Web 代码，属于基线紧预算；CI 会确认。
+
+## 1.2 PR 2 结果
+
+- 已落地桌面 rail + 二级列表：56px（浏览器）/ 64px（Electron）图标态、220px 标签态；列表 offcanvas。
+- 账户菜单 portal 到 rail 底部；套餐提示保留在列表底部；Artifacts/Board/NavLink 移入 rail 布局。
+- Activity 保留为列表模式，Integrations 保留在账户菜单；移动端 rail 推迟到 PR 5。
+- 新增 `chat/sidebar.spec.ts`，单条 E2E 通过并产出明暗截图。
+- Web 2,701 测试、`pnpm checks` 153 项、typecheck、生产构建通过；Web 启动体积 891.7/900 kB。
 
 ## 2. 交付边界
 
