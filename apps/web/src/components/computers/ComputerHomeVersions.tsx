@@ -27,13 +27,25 @@ export function ComputerHomeVersions({ botId }: { botId: string }) {
     onSaved: () => setOpen(false),
   });
 
-  if (listing.isError)
+  // A Retry restarts the read and clears its error until it answers; keep the row up meanwhile.
+  const failed = listing.isError || (!listing.data && listing.errorUpdateCount > 0);
+  if (failed)
     return (
       <div className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground">
         <Trans>Computer files</Trans>
-        <span className="text-body-sm text-destructive">
-          <Trans>Could not load</Trans>
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-body-sm text-destructive" role="alert">
+            <Trans>Could not load</Trans>
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={listing.isFetching}
+            onClick={() => void listing.refetch()}
+          >
+            <Trans>Retry</Trans>
+          </Button>
+        </div>
       </div>
     );
   if (!versions.length) return null;

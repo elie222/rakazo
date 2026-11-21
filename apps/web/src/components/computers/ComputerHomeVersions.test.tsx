@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { COMPUTER_RUNNING_ERROR } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { QueryClient } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -85,6 +86,11 @@ const click = (label: string) =>
   act(async () =>
     [...host.querySelectorAll("button")].find((button) => button.textContent === label)?.click(),
   );
+const retry = () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Retry");
+const renderFailed = async () => {
+  await act(async () => root.render(<ComputerHomeVersions botId="bot-1" />));
+  await vi.waitFor(() => expect(host.querySelector('[role="alert"]')).not.toBeNull());
+};
 
 it("shows nothing until the computer has an earlier version", async () => {
   computer.homeVersions.mockResolvedValue([]);
@@ -93,11 +99,51 @@ it("shows nothing until the computer has an earlier version", async () => {
   expect(host.textContent).toBe("");
 });
 
-it("says when the versions could not be read", async () => {
+it("says when the versions could not be read and offers Retry", async () => {
   computer.homeVersions.mockRejectedValue(new Error("storage down"));
   await act(async () => root.render(<ComputerHomeVersions botId="bot-1" />));
-  await vi.waitFor(() => expect(host.textContent).toBe("Computer filesCould not load"));
-  expect(host.querySelector("button")).toBeNull();
+  await vi.waitFor(() => expect(host.textContent).toBe("Computer filesCould not loadRetry"));
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not load");
+});
+
+it("reads the versions again on Retry and restores once the read succeeds", async () => {
+  computer.homeVersions.mockRejectedValueOnce(new Error("storage down"));
+  await renderFailed();
+  await click("Retry");
+
+  await vi.waitFor(() => expect(host.querySelector('[role="alert"]')).toBeNull());
+  expect(computer.homeVersions).toHaveBeenCalledTimes(2);
+  expect(host.querySelector("button")?.textContent).toBe("Restore earlier version");
+});
+
+it("disables Retry while the read runs", async () => {
+  computer.homeVersions.mockRejectedValueOnce(new Error("storage down"));
+  await renderFailed();
+  const next = deferred<typeof versions>();
+  computer.homeVersions.mockReturnValueOnce(next.promise);
+  await click("Retry");
+
+  await vi.waitFor(() => expect(retry()?.disabled).toBe(true));
+  await act(async () => next.resolve(versions));
+  await vi.waitFor(() => expect(host.querySelector('[role="alert"]')).toBeNull());
+});
+
+it("keeps Retry available when a retry fails too", async () => {
+  computer.homeVersions
+    .mockRejectedValueOnce(new Error("storage down"))
+    .mockRejectedValueOnce(new Error("storage still down"));
+  await renderFailed();
+  await click("Retry");
+
+  await vi.waitFor(() => expect(computer.homeVersions).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(retry()?.disabled).toBe(false));
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  await click("Retry");
+
+  await vi.waitFor(() =>
+    expect(host.querySelector("button")?.textContent).toBe("Restore earlier version"),
+  );
+  expect(computer.homeVersions).toHaveBeenCalledTimes(3);
 });
 
 it("restores the chosen version and reads the versions again", async () => {
