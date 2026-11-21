@@ -13,6 +13,12 @@ import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
 
 export const MEDIA_JOB_KIND = "media_generation_job";
+const FILE_EXTENSIONS: Record<GeneratedMedia["mimeType"], string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "video/mp4": "mp4",
+};
 const savedJob = z.object({
   provider: z.string(),
   jobId: z.string().optional(),
@@ -221,11 +227,11 @@ export async function generateMediaFromTool(options: {
     };
     let attached: { artifactId: string; block: MessageBlock };
     try {
-      validateGeneratedMedia(output.output, video ? "video/mp4" : "image/png");
+      validateGeneratedMedia(output.output, video ? "video" : "image");
       context.signal.throwIfAborted();
       attached = await options.attach(
         output.output,
-        `generated-${reservation.id}.${video ? "mp4" : "png"}`,
+        `generated-${reservation.id}.${FILE_EXTENSIONS[output.output.mimeType]}`,
         { id: reservation.id, result: fetched },
       );
     } catch (error) {

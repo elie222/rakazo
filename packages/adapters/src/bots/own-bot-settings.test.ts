@@ -55,6 +55,11 @@ const bot = {
   thinkingLevel: null,
   autoSpeak: false,
   voiceId: null,
+  replyMode: "chat",
+  teamChatAmbientEnabled: false,
+  teamChatRules: "",
+  memoryScope: null,
+  disabledBuiltinTools: [] as string[],
 };
 
 beforeEach(() => {
@@ -87,6 +92,9 @@ describe("readOwnBotSettings", () => {
       thinkingLevel: "default",
       readAloud: false,
       voice: "default",
+      replyMode: "chat",
+      teamChatAmbientEnabled: false,
+      disabledTools: [],
       thinkingLevels: ["low", "medium", "high"],
     });
     expect(settings.models).toEqual([
@@ -152,6 +160,17 @@ describe("readOwnBotSettings", () => {
       offset = page.instructionsNextOffset;
     }
     expect(text).toBe(heavy.instructions);
+  });
+
+  it("leaves long team chat rules out of a page of instructions", async () => {
+    const settings = await readSettings({
+      ...bot,
+      description: "d".repeat(4_000),
+      teamChatRules: '"'.repeat(4_000),
+      instructions: "x".repeat(19_000),
+    });
+    expect(settings).toMatchObject({ instructionsOffset: 0 });
+    expect(settings).not.toHaveProperty("teamChatRules");
   });
 
   it("refuses a read when the rest of the settings leave no room for instructions", async () => {

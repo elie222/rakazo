@@ -97,7 +97,12 @@ export function installPreloadRecovery(
   reloadOnce = () => {
     if (reloading) return false;
     if (!target.navigator.onLine || storage.getItem(PRELOAD_RECOVERY_KEY)) return false;
-    storage.setItem(PRELOAD_RECOVERY_KEY, "1");
+    try {
+      storage.setItem(PRELOAD_RECOVERY_KEY, "1");
+    } catch {
+      // Without a persistent loop guard, leave the failure to the app.
+      return false;
+    }
     try {
       storage.setItem(PRELOAD_RECOVERY_STATE_KEY, JSON.stringify(getState()));
     } catch {

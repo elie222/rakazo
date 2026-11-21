@@ -27,17 +27,19 @@ import {
 } from "../../computers/computer-lifecycle.js";
 import { withComputerScreenAvailability } from "../../computers/screens/computer-screens.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
-import {
-  routineClaimWaitsForConversation,
-  startRoutineRunsWaitingOn,
-} from "../../routines/routine-conversation.js";
 import { VaultKeyUnavailableError } from "../../secrets/bot-secrets.js";
 import { returnHelperOutcome } from "../../tasks/background-helpers.js";
+import {
+  computerNeedsRecovery,
+  computerRunError,
+  RunComputerFailedError,
+} from "../assembly/run-computer.js";
 import type { RunComputerUseState, RunLeaseState } from "../assembly/run-context.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import type { TakeoverResumeCheckpoint } from "../turn/takeover-resume.js";
 import { continueRunClaimFence, TAKEOVER_RESUME_CHECKPOINTS } from "../turn/takeover-resume.js";
 import { wakeRun } from "../wakeups/wake-run.js";
+import { claimWaitsForChat, startRunsWaitingOnChat } from "./chat-wait.js";
 import { notifyRun } from "./run-notifications.js";
 
 /**
@@ -424,7 +426,7 @@ export async function claimRun(
             ...continueRunClaimFence(run),
             AND: [
               { OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] },
-              routineClaimWaitsForConversation(run, now),
+              claimWaitsForChat(run, now),
             ],
             OR: [
               { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
@@ -486,7 +488,7 @@ export async function retryRunSetup(
     leaseValid: boolean;
     secrets: string[];
   },
-  setupError: unknown,
+  failure: unknown,
 ): Promise<void> {
   const runId = run.id;
   const { workerId, fence } = attempt;
@@ -494,11 +496,21 @@ export async function retryRunSetup(
   // An abort while stopping is not a setup failure, and must not spend the
   // retry budget that eventually fails the run.
   if (deps.shutdownSignal?.aborted) return;
+  // A failed computer start is told to the user as the computer's, and classified by its cause.
+  const setupError = failure instanceof RunComputerFailedError ? failure.computerError : failure;
   const computerBusy = setupError instanceof ComputerBusyError;
   // The outage logs itself once, and waiting it out is not a failed setup.
   const databaseDown = databaseOutage.failed(setupError, "run setup");
   const retryForever = computerBusy || databaseDown;
-  const setupMessage = redactSecrets(userRunError(setupError), runSecrets);
+  // Only Recover brings this computer back, so the run ends now rather than starting it again.
+  const recoveryRequired = computerNeedsRecovery(setupError);
+  const diskTooLarge = setupError instanceof SandboxDiskTooLargeError;
+  const setupMessage = redactSecrets(
+    recoveryRequired
+      ? computerRunError(setupError)
+      : userRunError(diskTooLarge ? setupError : failure),
+    runSecrets,
+  );
   const reportedSetupError = sanitizedError(setupError, (text) => redactSecrets(text, runSecrets));
   // An outage at the computer provider or the key manager, or a paused turn's tool going
   // offline, is retried like any setup failure, but is not a Rakazo bug to report.
@@ -510,8 +522,7 @@ export async function retryRunSetup(
     setupError instanceof VaultKeyUnavailableError;
   // A damaged computer, or one whose disk outgrew every machine, stays that way until someone
   // recovers it, so the run ends now with the message that says so instead of retrying.
-  const needsRecovery =
-    setupError instanceof SandboxDamagedError || setupError instanceof SandboxDiskTooLargeError;
+  const needsRecovery = recoveryRequired || diskTooLarge;
   // Named here, not left to the log context, so the line is found by run wherever it is written.
   const runFields = {
     "run.id": runId,
@@ -530,9 +541,10 @@ export async function retryRunSetup(
   // Every write below is fenced by this attempt's lease, so each may wait out a failover.
   const whileDatabaseDown = <T>(source: string, write: () => Promise<T>) =>
     retryWhileDatabaseUnavailable(write, { source, signal: deps.shutdownSignal });
-  const priorFailures = retryForever
-    ? 0
-    : await whileDatabaseDown("run setup", () => setupFailureStreak(deps.prisma, runId));
+  const priorFailures =
+    retryForever || needsRecovery
+      ? 0
+      : await whileDatabaseDown("run setup", () => setupFailureStreak(deps.prisma, runId));
   // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
   // setup that fails every time would retry forever. End the run instead.
   if (!retryForever && (needsRecovery || priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1)) {
@@ -634,10 +646,7 @@ export async function finishRunAttempt(
     }
   }
   if (!deps.shutdownSignal?.aborted && !lease.handedBack) {
-    await bestEffort(
-      "start routine runs waiting on the chat",
-      startRoutineRunsWaitingOn(deps, run),
-    );
+    await bestEffort("start runs waiting on the chat", startRunsWaitingOnChat(deps, run));
   }
   if (deps.shutdownSignal?.aborted) {
     // A renewal still in flight must not treat this release as a lost lease.

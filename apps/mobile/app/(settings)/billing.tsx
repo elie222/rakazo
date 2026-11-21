@@ -14,11 +14,7 @@ import {
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
-import {
-  computerSizeLabel,
-  computerUsageDetails,
-  tierComputerDescription,
-} from "@rakazo/i18n/computer-usage";
+import { computerUsageDetails, tierComputerDescription } from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
@@ -103,7 +99,6 @@ export default function BillingScreen() {
   const pending = change.pending;
   const action = (work: BillingChange, failure?: string) => change.run({ work, failure });
   if (!status) return null;
-  const sizing = status.computerSizeSettings;
   const usageDetails =
     status.canManage && showComputerUsage
       ? computerUsageDetails(computerUsage, dateLocaleForUi())
@@ -267,34 +262,11 @@ export default function BillingScreen() {
           {status.computerHoursResetAt ? (
             <SettingsRow title={t`Resets`} value={formatDate(status.computerHoursResetAt)} />
           ) : null}
-          {status.canManage && sizing && sizing.available.length > 1 ? (
-            <MenuView
-              actions={sizing.available.map((size) => ({
-                id: size,
-                title: computerSizeLabel(size, true),
-                state: size === sizing.size ? "on" : "off",
-                attributes: { disabled: pending },
-              }))}
-              onPressAction={({ nativeEvent }) => {
-                const size = sizing.available.find((entry) => entry === nativeEvent.event);
-                if (size && size !== sizing.size)
-                  action(
-                    (send) => send("billing/setComputerSize", { size }),
-                    t`Could not change computer size`,
-                  );
-              }}
-            >
-              <SettingsRow
-                title={t`Computer size`}
-                detail={t`Applies to this organization's computers on their next start.`}
-                value={computerSizeLabel(sizing.size)}
-                chevron="down"
-              />
-            </MenuView>
-          ) : null}
           {status.canManage ? (
             <SettingsRow
-              title={sizing ? t`Standard hours by computer` : t`Hours by computer`}
+              title={
+                status.standardComputerHours ? t`Standard hours by computer` : t`Hours by computer`
+              }
               chevron={showComputerUsage ? "down" : "right"}
               accessibilityState={{ expanded: showComputerUsage }}
               onPress={() => setShowComputerUsage((open) => !open)}

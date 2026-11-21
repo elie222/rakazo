@@ -2551,7 +2551,12 @@ describe("answerRunInput approvals", () => {
         type: "approval.decided",
         userId: "user-1",
         spaceId: "workspace-1",
-        metadata: { decision: "allow", effectKind: "connector_write", runId: "run-1" },
+        metadata: {
+          decision: "allow",
+          effectKind: "connector_write",
+          effectId: "effect-1",
+          runId: "run-1",
+        },
       }),
     });
 
@@ -3988,6 +3993,7 @@ describe("queue admission beside pending cards", () => {
       };
       const prisma = {
         message: { findUnique: vi.fn().mockResolvedValue(null) },
+        prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
         $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
       } as unknown as PrismaClient;
       await expect(
@@ -4202,6 +4208,7 @@ describe("sendUserMessage", () => {
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       run: {
         findFirst: vi.fn().mockResolvedValue({ id: "run-1", taskId: "task-1" }),
       },
@@ -4285,6 +4292,7 @@ describe("sendUserMessage", () => {
     const failure = new Error("transaction rollback");
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn().mockRejectedValue(failure),
     } as unknown as PrismaClient;
     const analytics = { capture: vi.fn(), flush: async () => undefined };
@@ -4338,6 +4346,7 @@ describe("sendUserMessage", () => {
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -4614,6 +4623,7 @@ describe("sendUserMessage", () => {
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -4668,6 +4678,7 @@ describe("sendUserMessage", () => {
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 

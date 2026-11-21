@@ -20,7 +20,8 @@ interface TableSpec {
     | "memoryRevision"
     | "thread"
     | "botEmailMessage"
-    | "meetingSession";
+    | "meetingSession"
+    | "nativeCalendarRequest";
   /** Scans return them in this order as `values`. */
   columns: string[];
   json: boolean;
@@ -39,6 +40,19 @@ interface ScannedRow {
 }
 
 const TABLES: TableSpec[] = [
+  {
+    model: "NativeCalendarRequest",
+    delegate: "nativeCalendarRequest",
+    columns: ["operation", "result"],
+    json: true,
+    scan: (cursor, limit) => Prisma.sql`
+      SELECT id, jsonb_build_array(operation, result) AS values, "spaceId", "userId" AS owner
+      FROM native_calendar_requests WHERE id > ${cursor} AND (operation IS NOT NULL OR result IS NOT NULL)
+      ORDER BY id LIMIT ${limit}`,
+    writePlaintext: (id, row) => Prisma.sql`
+      UPDATE native_calendar_requests SET operation = ${row.operation == null ? null : JSON.stringify(row.operation)}::jsonb,
+        result = ${row.result == null ? null : JSON.stringify(row.result)}::jsonb WHERE id = ${id}`,
+  },
   {
     model: "MeetingSession",
     delegate: "meetingSession",
@@ -378,6 +392,10 @@ export async function contentEncryptionStatus(
     SELECT 'meeting_sessions', count(*) FILTER (WHERE "meetingUrl" IS NOT NULL OR transcript IS NOT NULL),
       count(*) FILTER (WHERE "meetingUrl" NOT LIKE 'rkz1:%' OR transcript NOT LIKE 'rkz1:%')
       FROM meeting_sessions
+    UNION ALL
+    SELECT 'native_calendar_requests', count(*) FILTER (WHERE operation IS NOT NULL OR result IS NOT NULL),
+      count(*) FILTER (WHERE NOT jsonb_exists(operation, '$sealed') OR NOT jsonb_exists(result, '$sealed'))
+      FROM native_calendar_requests
   `;
   const keys = await prisma.spaceKey.groupBy({ by: ["masterKeyId"], _count: { _all: true } });
   return {

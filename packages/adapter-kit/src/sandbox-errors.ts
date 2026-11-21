@@ -1,7 +1,9 @@
 import {
   COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_DAMAGED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_START_FAILED_ERROR,
 } from "@rakazo/contracts";
 
 /** The sandbox provider refused the request because an account rate limit or quota was hit. */
@@ -65,7 +67,7 @@ export class SandboxProviderAccountError extends SandboxUnresponsiveError {
 export class SandboxUnavailableError extends Error {
   readonly code = "SANDBOX_UNAVAILABLE";
   constructor(options?: { cause?: unknown }) {
-    super("The computer did not start. Try again.", options);
+    super(COMPUTER_START_FAILED_ERROR, options);
     this.name = "SandboxUnavailableError";
   }
 }
@@ -118,7 +120,7 @@ export class WorkspaceSaveFailedError extends Error {
 export class SandboxDamagedError extends Error {
   readonly code = "SANDBOX_DAMAGED";
   constructor(options?: { cause?: unknown }) {
-    super("This computer's system is damaged. Recover the computer to rebuild it.", options);
+    super(COMPUTER_DAMAGED_ERROR, options);
     this.name = "SandboxDamagedError";
   }
 }

@@ -169,7 +169,11 @@ export function MemorySettingsOverlay({
 
       <div className="rk-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
         <div className={`space-y-5 ${SETTINGS_CONTENT_WIDTH}`}>
-          {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
+          {error ? (
+            <p role="alert" className="text-body-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
 
           <SpaceMemorySection />
 

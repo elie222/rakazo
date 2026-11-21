@@ -372,6 +372,8 @@ export async function runApprovalSuite(
         ),
         providerId: connection.provider,
         model: connection.modelId,
+        // A model not in the catalog yet is gated with Jev's calibration.
+        calibration: (catalog ?? decisionModel("openrouter", "typesafe/jev-1.14")!).calibration,
       });
     } else {
       const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");
@@ -435,10 +437,23 @@ export async function runApprovalSuite(
   );
   const request = (c: ApprovalCase): AutoReviewRequest => {
     const earlier = reviewOwnerMessages(c.earlierOwnerMessages ?? []);
-    const args =
+    const redacted = autoReview.redactToolArgsForReview(c.args, []);
+    // Targets come from the whole call, as the product reads them; an edit is then shown as its changes.
+    const targetArgs =
       c.newSite && typeof c.args.url === "string"
         ? { url: c.args.url }
-        : autoReview.redactToolArgsForReview(c.args, []);
+        : c.ownComputerAction
+          ? autoReview.ownComputerReviewArgs(
+              c.toolName,
+              redacted,
+              // A case's page stands for what the browser reported.
+              typeof c.args.page === "string" ? c.args.page : undefined,
+            )
+          : redacted;
+    const args =
+      targetArgs === redacted
+        ? autoReview.changedTextReviewArgs(c.toolName, redacted, c.currentRoutinePrompt)
+        : targetArgs;
     // What the product keeps of a run's reads: every result except the bot's own state.
     const outsideText = (c.runSteps ?? [])
       .filter((step) => step.outside || toolResultTaintsRun(step.tool))
@@ -447,7 +462,7 @@ export async function runApprovalSuite(
     const targets =
       c.newSite || c.savedContextWrite
         ? []
-        : outsideOnlyTargets(args, {
+        : outsideOnlyTargets(targetArgs, {
             ownerWords: [c.userTask, ...(c.earlierOwnerMessages ?? [])],
             outsideText,
           });
