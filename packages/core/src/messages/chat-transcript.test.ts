@@ -1,4 +1,5 @@
 import type { ThreadMessage } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { chatTranscriptMarkdown } from "./chat-transcript.js";
 
@@ -38,6 +39,7 @@ const askWords = {
   alwaysAllowed: "Always allowed",
   denied: "Denied",
   answeredWith: (answer: string) => `Answered: ${answer}`,
+  actionLabel: (action: { label: string }) => action.label,
 };
 
 const cardStatus = {
@@ -83,6 +85,8 @@ const cardLabels = {
   whatToReturn: "What to return",
   approvalBoundaries: "Approval boundaries",
   failureHandling: "Failure handling",
+  choiceQuestion: (question: string) => question,
+  choiceOption: (option: { label: string }) => option.label,
 };
 
 const transcript = (messages: ThreadMessage[]) =>
@@ -693,6 +697,70 @@ describe("chatTranscriptMarkdown", () => {
     expect(text).toContain("\\<!-- note");
     expect(text).toContain("Use `<b>` and <https://example.com>");
     expect(text).toContain("```\n<pre>\n```");
+  });
+
+  it("finds a line's code spans in one pass, however many backtick runs close nothing", () => {
+    // Runs of 1, 2, 3, … backticks, each a different length, so none closes another.
+    const line = Array.from({ length: 2000 }, (_, i) => `${"`".repeat(i + 1)}<b>`).join("");
+    expectLinearTime(() => transcript([message("bot", [{ kind: "text", text: line }])]));
+    expect(transcript([message("bot", [{ kind: "text", text: "``a`<b>`` and `<i>" }])])).toContain(
+      "``a`<b>`` and `\\<i>",
+    );
+  });
+
+  it("sees a closing fence on a line that ends in a carriage return", () => {
+    const text = transcript([
+      message("bot", [{ kind: "text", text: "Run:\r\n```sh\r\nls\r\n```\r\n" }]),
+      message("bot", [{ kind: "text", text: "Done" }], "2026-03-04T10:01:00.000Z"),
+    ]);
+    expect(text).toContain("Run:\n```sh\nls\n```\n\n---\n\n");
+  });
+
+  it("writes an approval's buttons and a choice's wording in the reader's language, as the cards do", () => {
+    const text = chatTranscriptMarkdown({
+      title: "Ada",
+      messages: [
+        message("bot", [
+          {
+            kind: "ask",
+            text: "Let Mail read your inbox?",
+            approvalEffectId: "eff_1",
+            actions: [
+              { id: "allow", label: "Allow once" },
+              { id: "deny", label: "Deny" },
+            ],
+          },
+          // A plain question's options are the bot's own words, which the card shows as they are.
+          {
+            kind: "ask",
+            text: "Which folder?",
+            actions: [{ id: "f_1", label: "Receipts" }],
+          },
+          {
+            kind: "choice",
+            question: "What do you want me on first?",
+            options: [{ id: "inbox", letter: "A", label: "Inbox & email" }],
+            answerId: "inbox",
+          },
+        ]),
+      ],
+      speaker: () => "Ada",
+      time: (createdAt) => createdAt,
+      routineEvent: (change, name) => `${change} ${name}`,
+      askWords: { ...askWords, actionLabel: (action) => `[${action.id}]` },
+      cardStatus,
+      cardLabels: {
+        ...cardLabels,
+        choiceQuestion: (question) => `«${question}»`,
+        choiceOption: (option) => `«${option.id}»`,
+      },
+      memberName: (botId: string) => botId,
+      attachment: "Attachment",
+      isSetupComplete: () => false,
+    });
+    expect(text).toContain("Let Mail read your inbox?\n\n- \\[allow\\]\n- \\[deny\\]");
+    expect(text).toContain("Which folder?\n\n- Receipts");
+    expect(text).toContain("«What do you want me on first?»\n- A. «inbox» ✓");
   });
 
   it("escapes a tag after an escaped backtick, which opens no code span", () => {

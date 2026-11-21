@@ -62,6 +62,12 @@ export type AskWords = {
   alwaysAllowed: string;
   denied: string;
   answeredWith: (answer: string) => string;
+  /** An approval or instructions update's button as its card words it; the server stores English. */
+  actionLabel: (
+    action: { id: string; label: string; outcome?: "created" | "cancelled" },
+    instructionUpdate: boolean,
+    site?: string,
+  ) => string;
 };
 
 /** The state words the chat's cards show, in the reader's language. */
@@ -111,6 +117,9 @@ export type CardLabels = {
   whatToReturn: string;
   approvalBoundaries: string;
   failureHandling: string;
+  /** A choice card's question and options as the card words them; the server stores English. */
+  choiceQuestion: (question: string) => string;
+  choiceOption: (option: { id: string; label: string }, question: string) => string;
 };
 
 /** Markdown that only character escapes can make, the same in every CommonMark reader. */
@@ -187,7 +196,8 @@ function closeOpenFence(markdown: string): string {
   // The content columns of the list items seen since the list began, so a fence on an item's
   // continuation line belongs to its item rather than the margin.
   let itemColumns: number[] = [];
-  const lines = markdown.split("\n").map((line) => {
+  // A line ending in "\r\n" ends as "\n" does, so its closing fence is still seen.
+  const lines = markdown.split(/\r\n?|\n/).map((line) => {
     const blank = line.trim() === "";
     const wasAfterBlank = afterBlank;
     afterBlank = blank;
@@ -338,22 +348,36 @@ function backtickRunEnd(line: string, from: number): number {
   return end;
 }
 
-/** The index just after the code span a backtick run opens, closed by a run of the same length. */
-function codeSpanEnd(line: string, start: number): number | undefined {
-  const width = backtickRunEnd(line, start) - start;
-  let at = line.indexOf("`", backtickRunEnd(line, start));
-  while (at !== -1) {
-    const end = backtickRunEnd(line, at);
-    if (end - at === width) return end;
-    at = line.indexOf("`", end);
+/**
+ * Finds, for a backtick run, the index just after the code span it opens, closed by the next run of
+ * the same length. Runs are listed once by length and each length is searched onward from where its
+ * last search stopped, so a line with many unmatched runs is still read in one pass.
+ */
+function codeSpanEnds(line: string): (start: number) => number | undefined {
+  const startsByWidth = new Map<number, number[]>();
+  for (const run of line.matchAll(/`+/g)) {
+    const starts = startsByWidth.get(run[0].length) ?? [];
+    starts.push(run.index);
+    startsByWidth.set(run[0].length, starts);
   }
-  return undefined;
+  const searched = new Map<number, number>();
+  return (start) => {
+    const end = backtickRunEnd(line, start);
+    const width = end - start;
+    const starts = startsByWidth.get(width) ?? [];
+    let at = searched.get(width) ?? 0;
+    while (at < starts.length && (starts[at] ?? 0) < end) at += 1;
+    searched.set(width, at);
+    const closer = starts[at];
+    return closer === undefined ? undefined : closer + width;
+  };
 }
 
 /** The chat shows a bot's raw HTML as nothing; escaped here, an unclosed tag cannot hide what follows. */
 function escapeHtml(line: string): string {
   let out = "";
   let i = 0;
+  const codeSpanEnd = codeSpanEnds(line);
   while (i < line.length) {
     const char = line.charAt(i);
     if (char === "\\") {
@@ -364,7 +388,7 @@ function escapeHtml(line: string): string {
     }
     if (char === "`") {
       // A backtick run that closes no code span is text, so only its own run is copied.
-      const end = codeSpanEnd(line, i) ?? backtickRunEnd(line, i);
+      const end = codeSpanEnd(i) ?? backtickRunEnd(line, i);
       out += line.slice(i, end);
       i = end;
       continue;
@@ -487,7 +511,12 @@ function askMarkdown(
         : fenced(shownDetail)
       : "";
   const options = (optionQuestion || !answered ? actions : [])
-    .map((action) => `- ${oneLine(action.label)}${action.id === chosen?.id ? " \u2713" : ""}`)
+    .map((action) => {
+      const label = optionQuestion
+        ? action.label
+        : words.actionLabel(action, Boolean(block.instructionUpdate), block.site);
+      return `- ${oneLine(label)}${action.id === chosen?.id ? " \u2713" : ""}`;
+    })
     .join("\n");
   const answer =
     typed && block.answer && !block.expired && !answeredInOwnMessage && !holdsSecret(block)
@@ -660,10 +689,13 @@ function blockMarkdown(
       if (block.answerId === "_dismissed") return "";
       const options = block.options.map(
         (option) =>
-          `- ${oneLine(option.letter)}. ${oneLine(option.label)}${block.answerId === option.id ? " ✓" : ""}`,
+          `- ${oneLine(option.letter)}. ${oneLine(words.labels.choiceOption(option, block.question))}${block.answerId === option.id ? " ✓" : ""}`,
       );
       // A list may follow the question on the next line, as the chat's card shows it.
-      const head = [literal(block.question), ...(block.subtitle ? [literal(block.subtitle)] : [])];
+      const head = [
+        literal(words.labels.choiceQuestion(block.question)),
+        ...(block.subtitle ? [literal(block.subtitle)] : []),
+      ];
       return [head.join("\n\n"), options.join("\n")].filter(Boolean).join("\n");
     }
     case "card":

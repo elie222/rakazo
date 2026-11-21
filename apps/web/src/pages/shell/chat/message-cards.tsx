@@ -7,6 +7,10 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BuiCard, SuccessPop } from "../../../components/ai/primitives";
 import { ErrorNotice } from "../../../components/ErrorNotice";
+import {
+  onboardingFocusOptionLabel,
+  onboardingFocusQuestion,
+} from "../../../components/messages/card-wording";
 import { OptionRow } from "../../../components/messages/OptionRow";
 import { connectMcpOauth } from "../../../lib/integrations/mcp-connect";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
@@ -72,7 +76,7 @@ export function ChoiceCard({
           </Button>
         ) : null}
         <div className="pe-8 text-body-lg text-foreground/90">
-          <OnboardingFocusQuestion question={block.question} />
+          {onboardingFocusQuestion(block.question)}
         </div>
         {block.subtitle ? (
           <div className="mt-0.5 text-body-sm text-foreground/75">{block.subtitle}</div>
@@ -86,11 +90,7 @@ export function ChoiceCard({
               disabled={Boolean(block.answerId) || pending}
               onClick={() => answer.run({ optionId: option.id })}
             >
-              <OnboardingFocusOptionLabel
-                id={option.id}
-                label={option.label}
-                question={block.question}
-              />
+              {onboardingFocusOptionLabel(option, block.question)}
             </OptionRow>
           ))}
         </div>
@@ -98,40 +98,6 @@ export function ChoiceCard({
       </BuiCard>
     </div>
   );
-}
-
-const FOCUS_QUESTION = "What do you want me on first?";
-
-/** First-run Chief focus card: API stores English; UI locale catalogs translate it. */
-function OnboardingFocusQuestion({ question }: { question: string }) {
-  if (question === FOCUS_QUESTION) {
-    return <Trans>What do you want me on first?</Trans>;
-  }
-  return question;
-}
-
-function OnboardingFocusOptionLabel({
-  id,
-  label,
-  question,
-}: {
-  id: string;
-  label: string;
-  question: string;
-}) {
-  if (question !== FOCUS_QUESTION) return label;
-  switch (id) {
-    case "day":
-      return <Trans>Day-to-day work</Trans>;
-    case "inbox":
-      return <Trans>Inbox & email</Trans>;
-    case "research":
-      return <Trans>Research & writing</Trans>;
-    case "everything":
-      return <Trans>A bit of everything</Trans>;
-    default:
-      return label;
-  }
 }
 
 export function AppConnectCard({

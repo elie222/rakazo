@@ -70,6 +70,7 @@ const labels = {
     alwaysAllowed: "Always allowed",
     denied: "Denied",
     answeredWith: (answer: string) => `Answered: ${answer}`,
+    actionLabel: (action: { label: string }) => action.label,
   },
   status: {
     saved: "Saved",
@@ -113,6 +114,8 @@ const labels = {
     whatToReturn: "What to return",
     approvalBoundaries: "Approval boundaries",
     failureHandling: "Failure handling",
+    choiceQuestion: (question: string) => question,
+    choiceOption: (option: { label: string }) => option.label,
   },
 };
 const time = (createdAt: string) => createdAt.slice(11, 16);

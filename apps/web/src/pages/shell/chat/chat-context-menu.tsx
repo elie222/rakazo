@@ -7,6 +7,11 @@ import { ContextMenu, toast } from "@rakazo/ui-web";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Suspense, useEffect } from "react";
 import { lazyOverlay } from "../../../components/ErrorBoundary";
+import {
+  approvalActionLabel,
+  onboardingFocusOptionLabel,
+  onboardingFocusQuestion,
+} from "../../../components/messages/card-wording";
 import { reportClientError } from "../../../lib/platform/monitoring";
 import { importChunk } from "../../../lib/platform/preload-recovery";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
@@ -226,6 +231,7 @@ export function ChatContextMenu({
                 alwaysAllowed: t`Always allowed`,
                 denied: t`Denied`,
                 answeredWith: (answer) => t`Answered: ${answer}`,
+                actionLabel: approvalActionLabel,
               },
               status: {
                 saved: t`Saved`,
@@ -269,6 +275,8 @@ export function ChatContextMenu({
                 whatToReturn: t`What to return`,
                 approvalBoundaries: t`Approval boundaries`,
                 failureHandling: t`Failure handling`,
+                choiceQuestion: onboardingFocusQuestion,
+                choiceOption: onboardingFocusOptionLabel,
               },
               bot: t`bot`,
               attachment: t`Attachment`,
