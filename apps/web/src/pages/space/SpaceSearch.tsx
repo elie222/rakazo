@@ -23,9 +23,10 @@ export function SpaceSearchResults({
   /** Gives bot and group results the roster's right-click menu. */
   chatMenu?: ChatMenuState;
 }) {
+  // Loading and empty share one status region, so its text change is announced.
   if (loading) {
     return (
-      <div className="px-3 py-4 text-body text-muted-foreground">
+      <div role="status" className="px-3 py-4 text-body text-muted-foreground">
         <Trans>Searching…</Trans>
       </div>
     );
@@ -44,7 +45,7 @@ export function SpaceSearchResults({
   }
   if (!hits.length) {
     return (
-      <div className="px-3 py-4 text-body text-muted-foreground">
+      <div role="status" className="px-3 py-4 text-body text-muted-foreground">
         <Trans>No results</Trans>
       </div>
     );
