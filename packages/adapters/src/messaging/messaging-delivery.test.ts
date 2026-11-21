@@ -160,7 +160,11 @@ function createWorld() {
       kind: string;
       status: string;
       replyThreadId: string | null;
-      externalConversation: { conversationId: string };
+      externalConversation: {
+        provider?: string;
+        externalKey?: string;
+        conversationId: string;
+      };
     }>,
     channels: [{ id: "ch-1", provider: "sendblue", threadId: "sendblue:grp-1", name: "Family" }],
     channelMembers: [
@@ -1881,7 +1885,12 @@ describe("deliverRun for team chat", () => {
       kind: input.kind ?? "direct",
       status: input.messageStatus ?? "running",
       replyThreadId: "1700.1",
-      externalConversation: { conversationId: "slack:C1" },
+      // Slack keys a room by its bare channel, as the bridge stores it.
+      externalConversation: {
+        provider: "slack",
+        externalKey: "C1",
+        conversationId: "slack:C1",
+      },
     });
   }
 
@@ -1910,6 +1919,65 @@ describe("deliverRun for team chat", () => {
     ]);
     expect(t.world.externalMessages[0]!.status).toBe("delivered");
     expect(sendJobs(t)).toEqual([]);
+  });
+
+  it("answers in its own thread after a newer message moved the conversation's", async () => {
+    const t = setup();
+    teamChatRun(t.world, { replies: [text("m-1", "Here is the summary.")] });
+    // A later message in another thread of the same channel overwrote conversationId.
+    t.world.externalMessages[0]!.externalConversation.conversationId = "slack:C1:1800.2";
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([
+      {
+        threadId: "slack:C1:1700.1",
+        body: "Here is the summary.",
+        idempotencyKey: "external-message:em-1",
+      },
+    ]);
+  });
+
+  it("answers in the channel when its own message had no thread", async () => {
+    const t = setup();
+    teamChatRun(t.world, { replies: [text("m-1", "Noted.")] });
+    t.world.externalMessages[0]!.replyThreadId = null;
+    t.world.externalMessages[0]!.externalConversation.conversationId = "slack:C1:1800.2";
+    await t.delivery.deliverRun("run-1");
+
+    expect(requests(t)).toEqual([
+      { threadId: "slack:C1", body: "Noted.", idempotencyKey: "external-message:em-1" },
+    ]);
+  });
+
+  it("splits a Discord answer at the platform limit instead of losing its tail", async () => {
+    const t = setup();
+    const paragraph = "A line of the answer that the agent wrote for the channel.\n\n";
+    teamChatRun(t.world, { kind: "mention", replies: [text("m-1", paragraph.repeat(40))] });
+    t.world.externalMessages[0]!.externalConversation = {
+      provider: "discord",
+      externalKey: "discord:G1:C1",
+      conversationId: "discord:G1:C1:T1",
+    };
+    t.world.externalMessages[0]!.replyThreadId = "T1";
+    await t.delivery.deliverRun("run-1");
+
+    const sent = t.world.outbound;
+    expect(sent.length).toBeGreaterThan(1);
+    expect(sent.map((row) => row.idempotencyKey)).toEqual(
+      sent.map((_, index) => `external-message:em-1${index === 0 ? "" : `:${index + 1}`}`),
+    );
+    expect(sent.every((row) => row.body.length <= 2_000)).toBe(true);
+    expect(sent.every((row) => row.threadId === "discord:G1:C1:T1")).toBe(true);
+    // Split at paragraph boundaries, so the parts keep every word and only the
+    // whitespace between them changes.
+    expect(
+      sent
+        .map((row) => row.body)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    ).toBe(paragraph.repeat(40).replace(/\s+/g, " ").trim());
+    expect(t.world.externalMessages[0]!.status).toBe("delivered");
   });
 
   it("records nothing for progress or before the run ends", async () => {
@@ -2052,6 +2120,43 @@ describe("delegated team-chat replies", () => {
       expect.objectContaining({ kind: "team", sourceMessageId: "c-msg" }),
     );
     expect(t.sendToThread).toHaveBeenCalledTimes(2);
+  });
+
+  it("splits a long delegated Discord answer instead of losing its tail", async () => {
+    const t = setup();
+    delegationChain(t.world);
+    t.world.externalMessages[0]!.externalConversation = {
+      provider: "discord",
+      externalKey: "discord:G1:C1",
+      conversationId: "discord:G1:C1:T1",
+    };
+    t.world.externalMessages[0]!.replyThreadId = "T1";
+    const paragraph = "A line of the delegated answer that the teammate wrote back.\n\n";
+    addReply(t.world, "run-c", text("c-2", paragraph.repeat(40)));
+    await t.delivery.deliverRun("run-c");
+
+    const sent = t.world.outbound.filter((row) =>
+      row.idempotencyKey.startsWith("team-chat-run:run-c"),
+    );
+    expect(sent.length).toBeGreaterThan(1);
+    expect(sent.map((row) => row.idempotencyKey)).toEqual(
+      sent.map((_, index) => `team-chat-run:run-c${index === 0 ? "" : `:${index + 1}`}`),
+    );
+    expect(sent.every((row) => row.body.length <= 2_000)).toBe(true);
+    expect(sent.every((row) => row.threadId === "discord:G1:C1:T1")).toBe(true);
+  });
+
+  it("answers a delegated run in its own thread after a newer message moved the channel's", async () => {
+    const t = setup();
+    delegationChain(t.world);
+    t.world.externalMessages[0]!.externalConversation = {
+      provider: "slack",
+      externalKey: "C1",
+      conversationId: "slack:C1:1800.2",
+    };
+    await t.delivery.deliverRun("run-c");
+
+    expect(t.world.outbound.find((row) => row.kind === "team")!.threadId).toBe("slack:C1:1700.1");
   });
 
   it("says in the thread when the delegated run failed", async () => {

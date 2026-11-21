@@ -84,6 +84,7 @@ describe("MessagingTeamChatEmulator", () => {
       {
         provider: "slack",
         capabilities: { direct: true, groups: false, receipt: null },
+        teamRooms: { requiresWorkspace: false },
       },
     ]);
     expect(sink).toHaveBeenCalledWith(inbound);

@@ -1,7 +1,18 @@
 import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
+import type { TeamRoomPolicy } from "./team-chat-startup.js";
 import { prefersTeamChatSurface, settleWithTimeout } from "./team-chat-startup.js";
+
+/** The policies the mounted platforms declare in production. */
+const rooms: TeamRoomPolicy = (provider) =>
+  provider === "slack" || provider === "slack-install"
+    ? { requiresWorkspace: true }
+    : provider === "discord"
+      ? { requiresWorkspace: true }
+      : provider === "teamchat-emulator"
+        ? { requiresWorkspace: false }
+        : undefined;
 
 function message(overrides: Partial<MessagingInboundMessage> = {}): MessagingInboundMessage {
   return {
@@ -25,18 +36,56 @@ function message(overrides: Partial<MessagingInboundMessage> = {}): MessagingInb
 
 describe("team chat startup helpers", () => {
   it("prefers TeamChat for configured workspace surfaces", () => {
-    expect(prefersTeamChatSurface(message({ isDirect: false }), "bot-1")).toBe(true);
+    expect(prefersTeamChatSurface(message({ isDirect: false }), "bot-1", rooms)).toBe(true);
     expect(
       prefersTeamChatSurface(
         message({ isDirect: false, provider: "teamchat-emulator", workspaceId: undefined }),
         "bot-1",
+        rooms,
       ),
     ).toBe(true);
-    expect(prefersTeamChatSurface(message(), "bot-1")).toBe(false);
+    expect(prefersTeamChatSurface(message(), "bot-1", rooms)).toBe(false);
     expect(
-      prefersTeamChatSurface(message({ provider: "sendblue", workspaceId: undefined }), "bot-1"),
+      prefersTeamChatSurface(
+        message({ provider: "sendblue", workspaceId: undefined }),
+        "bot-1",
+        rooms,
+      ),
     ).toBe(false);
-    expect(prefersTeamChatSurface(message({ isDirect: false }), undefined)).toBe(false);
+    expect(prefersTeamChatSurface(message({ isDirect: false }), undefined, rooms)).toBe(false);
+  });
+
+  it("takes Discord guild rooms but never a Discord direct message", () => {
+    expect(
+      prefersTeamChatSurface(
+        message({ isDirect: false, provider: "discord", workspaceId: "G-1" }),
+        "bot-1",
+        rooms,
+      ),
+    ).toBe(true);
+    // A guild channel with no guild known is not a room this surface can hold.
+    expect(
+      prefersTeamChatSurface(
+        message({ isDirect: false, provider: "discord", workspaceId: undefined }),
+        "bot-1",
+        rooms,
+      ),
+    ).toBe(false);
+    expect(
+      prefersTeamChatSurface(message({ provider: "discord", workspaceId: "@me" }), "bot-1", rooms),
+    ).toBe(false);
+  });
+
+  it("leaves other providers' rooms on their own surface", () => {
+    for (const provider of ["teams", "lark", "whatsapp", "photon"]) {
+      expect(
+        prefersTeamChatSurface(
+          message({ isDirect: false, provider, workspaceId: "W-1" }),
+          "bot-1",
+          rooms,
+        ),
+      ).toBe(false);
+    }
   });
 
   it("settles once the task ends, whether it succeeds or fails", async () => {

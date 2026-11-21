@@ -102,7 +102,14 @@ export class MessagingTeamChatEmulator implements MessagingSurface {
   }
 
   platforms(): MessagingPlatformDescriptor[] {
-    return [{ provider: this.provider, capabilities: { ...this.capabilities } }];
+    return [
+      {
+        provider: this.provider,
+        capabilities: { ...this.capabilities },
+        // It stands in for a shared-room platform: a room, with no workspace of its own.
+        teamRooms: { requiresWorkspace: false },
+      },
+    ];
   }
 
   handleWebhook(provider: string, _request: Request): Promise<Response> | null {

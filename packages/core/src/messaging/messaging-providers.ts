@@ -6,6 +6,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   lark: "Feishu",
   photon: "iMessage (Photon)",
   teams: "Microsoft Teams",
+  discord: "Discord",
 };
 
 /** User-facing name of a messaging provider (falls back to the raw id). */

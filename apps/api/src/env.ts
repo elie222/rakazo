@@ -160,6 +160,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   messagingOpenSignup: boolean;
   /** Bot that owns team/external chat rooms on the messaging surface. */
   teamChatBotId: string | undefined;
+  /** The bot that owns one platform's shared rooms, by provider id, when it is not the above. */
+  teamChatBotIds: Record<string, string | undefined>;
   /** Optional model override for ambient engagement judging. */
   teamChatJudgeProvider: string | undefined;
   teamChatJudgeModel: string | undefined;
@@ -364,6 +366,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
     teamChatBotId: optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
+    teamChatBotIds: { discord: optional(source.DISCORD_TEAM_CHAT_BOT_ID) },
     teamChatJudgeProvider: optional(source.TEAM_CHAT_JUDGE_PROVIDER),
     teamChatJudgeModel: optional(source.TEAM_CHAT_JUDGE_MODEL),
     defaultProvider: deploymentModel.provider,

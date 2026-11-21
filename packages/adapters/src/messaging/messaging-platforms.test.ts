@@ -42,6 +42,9 @@ const fullEnv: MessagingEnvironmentValues = {
   larkVerificationToken: "lark-verify",
   photonProjectId: "photon-project",
   photonProjectSecret: "photon-secret",
+  discordBotToken: "discord-token",
+  discordPublicKey: "0123456789abcdef".repeat(4),
+  discordApplicationId: "discord-app",
 };
 
 function providers(env: MessagingEnvironmentValues): string[] {
@@ -58,6 +61,7 @@ describe("messagingPlatformsFromEnv", () => {
       "telegram",
       "lark",
       "photon",
+      "discord",
     ]);
   });
 
@@ -132,6 +136,9 @@ describe("messagingPlatformsFromEnv", () => {
         larkVerificationToken: "lark-verify",
       }),
     ).toEqual(["lark"]);
+    for (const key of ["discordBotToken", "discordPublicKey", "discordApplicationId"] as const) {
+      expect(providers({ ...fullEnv, [key]: undefined })).not.toContain("discord");
+    }
   });
 
   it("forces Telegram into webhook mode so worker initialize cannot long-poll", () => {
@@ -415,6 +422,7 @@ describe("messagingPlatformsFromEnv", () => {
     });
     expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
     expect(capabilities.photon).toEqual({ direct: true, groups: false, receipt: "typing" });
+    expect(capabilities.discord).toEqual({ direct: true, groups: true, receipt: "reaction" });
   });
 });
 
