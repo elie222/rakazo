@@ -62,14 +62,23 @@ export async function findPendingRoutineTick(
     attempts: { none: {} },
     effects: { none: {} },
     steeringMessages: { none: {} },
-    task: { status: "queued", prompt: config.prompt },
+    task: { status: "queued" },
   };
-  const candidates = await tx.run.findMany({
-    where: pristine,
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, taskId: true, leaseFence: true, updatedAt: true },
-    take: 100,
-  });
+  // The prompt is encrypted under a fresh IV each time, so it is compared once read back.
+  const candidates = (
+    await tx.run.findMany({
+      where: pristine,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        taskId: true,
+        leaseFence: true,
+        updatedAt: true,
+        task: { select: { prompt: true } },
+      },
+      take: 100,
+    })
+  ).filter((candidate) => candidate.task.prompt === config.prompt);
   if (!candidates.length) return null;
   const runIds = candidates.map((candidate) => candidate.id);
   const leases = await tx.computerExecutionLease.findMany({
