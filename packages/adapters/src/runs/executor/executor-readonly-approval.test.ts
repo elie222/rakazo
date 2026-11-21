@@ -310,7 +310,7 @@ function fixture({
   };
   // Turn checkpoints live in external_effects too, but outside the approval fixtures' rows.
   const turnCheckpoints: { idempotencyKey: string; result: string }[] = [];
-  const liveBot = { fleetManagement };
+  const liveBot = { fleetManagement, disabledBuiltinTools };
   const reviewCredential =
     approvalRole && checkerConnected
       ? {
@@ -2395,7 +2395,7 @@ describe("own settings through update_bot", () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { memoryScope: "shared" }, executionId: "call-1" }]);
     await f.run();
-    expect(f.results).toEqual([{ error: "Only the owner can change memoryScope, in Settings." }]);
+    expect(f.results).toEqual([{ error: "Only the owner can share your memory, in Settings." }]);
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });
   it.each([{ model: "Claude Sonnet" }, { voice: "Rachel" }])(
@@ -2406,8 +2406,7 @@ describe("own settings through update_bot", () => {
       await f.run();
       expect(f.results).toEqual([
         {
-          error:
-            "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
+          error: "Only the owner can change your settings, from their own chat.",
         },
       ]);
       expect(f.effects).toEqual([]);
@@ -2522,6 +2521,31 @@ describe("own settings through update_bot", () => {
     const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
     f.claimedOutsideSteering(true);
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledOnce();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it("turns its own tools off and changes how it replies", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, disabledBuiltinTools: ["shell"] });
+    f.setCalls([
+      { args: { replyMode: "messages", disableTools: ["web_search"] }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([
+      { ok: true, replyMode: "messages", disabledBuiltinTools: ["shell", "web_search"] },
+    ]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { replyMode: "messages", disabledBuiltinTools: ["shell", "web_search"] },
+      }),
+    );
+  });
+  it("lets the approval model check a reply mode change after outside content in Auto", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Unasked", model: "mock" });
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ args: { replyMode: "messages" }, executionId: "call-1" }]);
     await f.run();
     expect(reviewMock).toHaveBeenCalledOnce();
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
@@ -2916,6 +2940,82 @@ describe("bot management approvals", () => {
     expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
     // Only this check asked, so Always allow would save a rule that never takes effect.
     expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
+  });
+
+  it("asks before changing another bot's settings, then applies what the card showed", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      fleetBots: [{ id: "bot-a", name: "Alpha", thread: { id: "thread-a" } }],
+    });
+    const asked = { bot_id: "bot-a", replyMode: "messages", disableTools: ["web_search"] };
+    const stored = {
+      bot_id: "bot-a",
+      settings: { replyMode: "messages", disabledBuiltinTools: ["web_search"] },
+    };
+    f.setCalls([{ args: asked, executionId: "call-1" }]);
+    await f.run();
+    expect(f.effects).toEqual([
+      expect.objectContaining({ kind: "update_bot", status: "intended", request: stored }),
+    ]);
+    expect(f.pauseRunForInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          expect.objectContaining({
+            text: "Change Alpha’s settings?",
+            detail: "Replies: only messages it sends\nTurn off: web_search",
+          }),
+        ],
+      }),
+    );
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args: asked, executionId: "call-2" }]);
+    await f.run();
+    expect(f.results.at(-1)).toEqual({ ok: true });
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "bot-a" }, data: stored.settings }),
+    );
+  });
+
+  it("changes another bot's settings without a card in Never ask", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      skipApprovals: true,
+      fleetBots: [{ id: "bot-a", name: "Alpha", thread: { id: "thread-a" } }],
+    });
+    f.setCalls([{ args: { bot_id: "bot-a", teamChatAmbientEnabled: true }, executionId: "c" }]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([{ ok: true }]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { teamChatAmbientEnabled: true } }),
+    );
+  });
+
+  it("ignores settings the model writes in the stored shape", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      fleetBots: [{ id: "bot-a", name: "Alpha", thread: { id: "thread-a" } }],
+    });
+    f.setCalls([
+      {
+        args: { bot_id: "bot-a", name: "Beta", settings: { fleetManagement: true } },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([{ ok: true }]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { name: "Beta" } }),
+    );
   });
 
   it("returns a refused target to the model without a card", async () => {

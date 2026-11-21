@@ -16,6 +16,7 @@ import {
 } from "@rakazo/contracts";
 import {
   CARD_TITLE_ESCAPED_CHARACTERS,
+  ClientError,
   messagingProviderNamed,
   ONCE_ROUTINE_CRON,
   redactSecrets,
@@ -37,7 +38,13 @@ import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../approvals/
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "../bots/bot-avatar.js";
 import { createdByWhere, managedBotsWhere } from "../bots/child-bots.js";
 import type { UpdateBotPatch } from "../bots/update-bot-patch.js";
-import { argumentGiven, parseUpdateBotPatch } from "../bots/update-bot-patch.js";
+import {
+  argumentGiven,
+  ChildBotSettingsSchema,
+  parseUpdateBotPatch,
+} from "../bots/update-bot-patch.js";
+import type { BotComputerSwitchDeps } from "../computers/bot-computer-switch.js";
+import { switchBotComputer } from "../computers/bot-computer-switch.js";
 import { stopCancelledGroupRuns } from "../computers/computer-idle.js";
 import { asRecord } from "../integrations/connector-http.js";
 import { resolveModelChoice } from "../models/model-choice.js";
@@ -479,7 +486,7 @@ const FLEET_GROUP_LIMIT = 100;
 const FLEET_SECTION_LIMIT = 100;
 const FLEET_ROSTER_MAX_LENGTH = 60_000;
 const GROUP_PAGE_SIZE = 200;
-const NOT_FOUND = "That bot or group is no longer available. Call list_fleet and try again.";
+export const NOT_FOUND = "That bot or group is no longer available. Call list_fleet and try again.";
 
 type FleetBot = {
   id: string;
@@ -834,9 +841,16 @@ export async function updateFleetGroup(
 
 const CHILD_CHANGED = "child changed; read it again with list_fleet";
 
-/** `update_bot` with `bot_id`: the profile fields of another bot in the space. */
+/**
+ * `update_bot` with `bot_id`: the profile of another bot in the space, and once the owner's
+ * approval mode passes it, the settings `prepareChildBotUpdate` checked.
+ */
 export async function updateChildBot(
-  deps: Pick<FleetDeps, "prisma" | "events"> & { runSecrets: readonly string[] },
+  deps: Pick<FleetDeps, "prisma"> &
+    Pick<BotComputerSwitchDeps, "home" | "sandbox"> & {
+      events: Pick<ThreadEvents, "append" | "notify" | "draftRecordingsOfLease">;
+      runSecrets: readonly string[];
+    },
   run: FleetRun,
   args: Record<string, unknown>,
 ): Promise<{ ok: true } | { error: string }> {
@@ -883,20 +897,37 @@ export async function updateChildBot(
     if ("error" in avatar) return avatar;
     patch.color = avatar.color;
   }
-  if (Object.keys(patch).length === 0) {
+  const approved = ChildBotSettingsSchema.safeParse(args.settings ?? {});
+  if (!approved.success) return { error: "The approved change is incomplete." };
+  const { computerMode, ...settings } = approved.data;
+  if (Object.keys(patch).length === 0 && args.settings === undefined) {
     return {
       error: "Provide at least one of name, description, notify_on_finish, or color.",
     };
   }
-  await commitBotUpdate({
-    prisma: deps.prisma,
-    notify: (threadId, seq) => deps.events.notify(threadId, seq),
-    spaceId: run.spaceId,
-    threadId: child.thread.id,
-    botId: child.id,
-    emitBotUpdated: true,
-    data: patch,
-  });
+  if (computerMode) {
+    try {
+      await switchBotComputer(
+        { ...deps, repos: createRepos(deps.prisma) },
+        actorOf(run),
+        child.id,
+        computerMode,
+      );
+    } catch (error) {
+      if (error instanceof ClientError) return { error: error.message };
+      throw error;
+    }
+  }
+  if (Object.keys(patch).length || Object.keys(settings).length)
+    await commitBotUpdate({
+      prisma: deps.prisma,
+      notify: (threadId, seq) => deps.events.notify(threadId, seq),
+      spaceId: run.spaceId,
+      threadId: child.thread.id,
+      botId: child.id,
+      emitBotUpdated: true,
+      data: { ...patch, ...settings },
+    });
   return { ok: true };
 }
 
@@ -1200,7 +1231,11 @@ async function resolveBots(
 }
 
 /** One active bot in the current user’s space, by `bot_id` or exact `bot_name`. */
-async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
+export async function resolveBot(
+  prisma: PrismaClient,
+  run: FleetRun,
+  args: Record<string, unknown>,
+) {
   const id = text(args.bot_id);
   const name = text(args.bot_name);
   if (id && name) return refuse("Pass bot_id or bot_name, not both.");
@@ -1289,7 +1324,7 @@ export function cardName(value: string): string {
 }
 
 /** The first given text field a credential of this run would be redacted from, as a refusal. */
-function credentialField(
+export function credentialField(
   fields: Record<string, unknown>,
   secrets: readonly string[],
 ): string | undefined {

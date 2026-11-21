@@ -55,6 +55,11 @@ const bot = {
   thinkingLevel: null,
   autoSpeak: false,
   voiceId: null,
+  replyMode: "chat",
+  teamChatAmbientEnabled: false,
+  teamChatRules: "",
+  memoryScope: null,
+  disabledBuiltinTools: [] as string[],
 };
 
 beforeEach(() => {
@@ -87,6 +92,10 @@ describe("readOwnBotSettings", () => {
       thinkingLevel: "default",
       readAloud: false,
       voice: "default",
+      replyMode: "chat",
+      teamChatAmbientEnabled: false,
+      memoryScope: "default",
+      disabledTools: [],
       thinkingLevels: ["low", "medium", "high"],
     });
     expect(settings.models).toEqual([

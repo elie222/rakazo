@@ -1,4 +1,4 @@
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -170,6 +170,8 @@ function writeDeps(prisma: ReturnType<typeof fakeFleet>["prisma"], runSecrets: s
     prisma: prisma as unknown as PrismaClient,
     events: { append, notify: vi.fn(async () => undefined) } as unknown as ThreadEvents,
     jobs: { cancel: vi.fn(), enqueue } as unknown as JobPublisher,
+    home: {} as AgentHomeStore,
+    sandbox: {} as SandboxProvider,
     runSecrets,
     append,
     enqueue,

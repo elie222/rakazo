@@ -29,6 +29,11 @@ export type OwnBotSettingsRow = {
   thinkingLevel: string | null;
   autoSpeak: boolean;
   voiceId: string | null;
+  replyMode: string;
+  teamChatAmbientEnabled: boolean;
+  teamChatRules: string;
+  memoryScope: string | null;
+  disabledBuiltinTools: string[];
 };
 
 /** Ids listed per connected provider; the rest are reachable by name. */
@@ -86,6 +91,11 @@ export async function readOwnBotSettings(
     thinkingLevel: bot.thinkingLevel ?? "default",
     readAloud: bot.autoSpeak,
     voice: bot.voiceId ?? "default",
+    replyMode: bot.replyMode,
+    teamChatAmbientEnabled: bot.teamChatAmbientEnabled,
+    ...(bot.teamChatRules ? { teamChatRules: bot.teamChatRules } : {}),
+    memoryScope: bot.memoryScope ?? "default",
+    disabledTools: bot.disabledBuiltinTools,
     models: [...providers].map(([provider, ids]) => ({
       provider,
       ids: ids.slice(0, MODELS_PER_PROVIDER),

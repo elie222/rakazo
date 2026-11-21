@@ -20,7 +20,11 @@ import {
   prepareOwnBotSettings,
   readOwnBotSettings,
 } from "../../bots/own-bot-settings.js";
-import { argumentGiven, ignoredFieldsNote } from "../../bots/update-bot-patch.js";
+import {
+  argumentGiven,
+  ignoredFieldsNote,
+  parseBotSettingsPatch,
+} from "../../bots/update-bot-patch.js";
 import {
   createChildRoutine,
   createFleetGroup,
@@ -271,6 +275,12 @@ export const fleetTools: ToolHandlers = {
     const { deps, run, bot, thread, context } = ctx;
     const { args } = call;
     if (argumentGiven(args.bot_id)) {
+      if (
+        args.settings !== undefined &&
+        call.nextApprovedTool !== call.name &&
+        !call.bypassApproval
+      )
+        return call.finish({ error: "This settings change needs the owner's approval." });
       return call.finish(
         await updateChildBot({ ...deps, runSecrets: ctx.secrets }, ctx.fleetRun, args),
       );
@@ -291,7 +301,19 @@ export const fleetTools: ToolHandlers = {
         }),
       );
     }
-    const { instructions, model, thinkingLevel, readAloud, voice, ...profile } = args;
+    const {
+      instructions,
+      model,
+      thinkingLevel,
+      readAloud,
+      voice,
+      replyMode,
+      teamChatAmbientEnabled,
+      teamChatRules,
+      memoryScope,
+      disableTools,
+      ...profile
+    } = args;
     const modelDeps = await fleetPrepareDeps(deps, run);
     const live = await deps.prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
@@ -307,6 +329,11 @@ export const fleetTools: ToolHandlers = {
         thinkingLevel: true,
         autoSpeak: true,
         voiceId: true,
+        replyMode: true,
+        teamChatAmbientEnabled: true,
+        teamChatRules: true,
+        memoryScope: true,
+        disabledBuiltinTools: true,
       },
     });
     // `instructions_offset` pages through long instructions on a read; it is not a write field.
@@ -344,6 +371,11 @@ export const fleetTools: ToolHandlers = {
       () => listDefaultVoices(deps, run, context),
     );
     if ("error" in settings) return call.finish(settings);
+    const workSettings = parseBotSettingsPatch(
+      { replyMode, teamChatAmbientEnabled, teamChatRules, memoryScope, disableTools },
+      { id: bot.id, disabledBuiltinTools: live.disabledBuiltinTools },
+    );
+    if ("error" in workSettings) return call.finish(workSettings);
     const before = BotSettingsValuesSchema.parse(
       Object.fromEntries(
         Object.keys(settings.data).map((key) => [key, live[key as keyof typeof settings.data]]),
@@ -354,11 +386,10 @@ export const fleetTools: ToolHandlers = {
       ? await updateOwnBotFromTool(deps, run, thread.id, bot, profile, context)
       : undefined;
     if (updated && "error" in updated) return call.finish(updated);
-    if (
-      Object.entries(settings.data).some(
-        ([key, value]) => before[key as keyof typeof before] !== value,
-      )
-    ) {
+    const settingsChanged = Object.entries(settings.data).some(
+      ([key, value]) => before[key as keyof typeof before] !== value,
+    );
+    if (settingsChanged || Object.keys(workSettings.patch).length) {
       try {
         await commitBotUpdate({
           prisma: deps.prisma,
@@ -368,12 +399,14 @@ export const fleetTools: ToolHandlers = {
           botId: bot.id,
           emitBotUpdated: true,
           expectedSettings: before,
-          data: settings.data,
+          data: { ...settings.data, ...workSettings.patch },
         });
       } catch (error) {
         if (!isRecordNotFound(error)) throw error;
         return call.finish({ error: "Your settings changed meanwhile; read them and try again." });
       }
+    }
+    if (settingsChanged) {
       await publishMessage(deps, run, "bot", [
         {
           kind: "ask",
@@ -405,6 +438,7 @@ export const fleetTools: ToolHandlers = {
         : {}),
       ...(settings.data.autoSpeak !== undefined ? { readAloud: settings.data.autoSpeak } : {}),
       ...(settings.data.voiceId !== undefined ? { voice: settings.data.voiceId ?? "default" } : {}),
+      ...workSettings.patch,
       ...(argumentGiven(instructions) ? { instructions: "updated" } : {}),
     });
   },
