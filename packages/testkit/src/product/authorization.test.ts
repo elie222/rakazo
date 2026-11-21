@@ -249,6 +249,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["updater/check", {}],
       ["updater/apply", {}],
       ["models/list"],
+      ["models/suggested"],
       ["models/credentials"],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
