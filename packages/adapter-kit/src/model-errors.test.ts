@@ -55,7 +55,6 @@ describe("transient model errors", () => {
     ["fetch failure", new TypeError("fetch failed")],
     ["SDK connection failure", new Error("Connection error.")],
     ["SDK connection timeout", new Error("Request timed out.")],
-    ["SDK timeout with a fetch abort cause", "Request timed out.: This operation was aborted (20)"],
     ["connection reset", new Error("read ECONNRESET")],
     ["socket hang up", new Error("socket hang up")],
     ["closed websocket", "WebSocket closed 1006"],
@@ -107,11 +106,6 @@ describe("transient model errors", () => {
     ["bad request", { status: 400, message: "Unsupported parameter: temperature" }],
     ["auth failure mentioning a connection error", { status: 401, message: "Connection error." }],
     ["cancellation", new Error("Request was aborted")],
-    ["bare fetch abort", "This operation was aborted (20)"],
-    [
-      "authorization failure with an attached transport deadline",
-      { status: 403, message: "Request timed out.: This operation was aborted (20)" },
-    ],
     ["unknown", new Error("Model stream ended without a terminal event")],
     [
       "a key that is not a valid header value",

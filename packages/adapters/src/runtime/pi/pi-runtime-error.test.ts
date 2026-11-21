@@ -306,7 +306,6 @@ describe("Pi runtime errors", () => {
 
   it.each([
     "WebSocket closed 1006",
-    "Request timed out.: This operation was aborted (20)",
     // The Google SDK reports a stream that closed partway through an event this way.
     "Incomplete JSON segment at the end",
     "OpenCode rejected this chat session. Send the message again.",

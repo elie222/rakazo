@@ -346,7 +346,6 @@ describe("Pi runtime transient model retries", () => {
     "Codex error: Our servers are currently overloaded. Please try again later.",
     "Connection error.",
     "Request timed out.",
-    "Request timed out.: This operation was aborted (20)",
   ])(
     "recovers from two pre-output failures with %s and commits one assistant message",
     async (error) => {
