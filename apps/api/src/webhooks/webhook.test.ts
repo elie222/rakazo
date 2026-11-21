@@ -23,6 +23,7 @@ import {
   mountWebhookHttpRoutes,
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_SECRET_KIND,
+  WEBHOOKS_PER_IP_PER_MINUTE,
 } from "./webhook.js";
 import { loadWebhookTarget } from "./webhook-inbound.js";
 
@@ -284,6 +285,34 @@ describe("inbound webhook HTTP route", () => {
     });
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Unauthorized" });
+  });
+
+  it("throttles a flood of unauthenticated deliveries from one address", async () => {
+    const deps = createDeps({ bot: null });
+    const app = mount(deps);
+    const send = () =>
+      app.request("/api/v1/bots/missing/webhook", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "hi" }),
+      });
+    for (let at = 0; at < WEBHOOKS_PER_IP_PER_MINUTE; at += 1) {
+      expect((await send()).status).toBe(401);
+    }
+    const res = await send();
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("60");
+    expect(await res.json()).toEqual({ error: "Too many requests" });
+    expect(deps.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("shares the per-address budget with the github webhook route", async () => {
+    const deps = createDeps({ bot: null });
+    const app = mount(deps);
+    const send = () => app.request("/api/v1/bots/missing/webhook", { method: "POST", body: "{}" });
+    for (let at = 0; at < WEBHOOKS_PER_IP_PER_MINUTE; at += 1) await send();
+    const res = await app.request("/api/v1/bots/missing/github", { method: "POST", body: "{}" });
+    expect(res.status).toBe(429);
   });
 
   it("rejects bots without a configured webhook secret", async () => {
