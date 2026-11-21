@@ -26,6 +26,7 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { routineRunModelPin } from "../../models/model-selection.js";
 import { protectedComputerLifecycleRefusal } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { findPendingRoutineTick, routineTimerNonce } from "../../routines/routine-coalescing.js";
+import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import {
   nextRoutineWatchAt,
   parseRoutineWatch,
@@ -207,30 +208,13 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     // Archiving pauses a bot's routines; re-pause one that slipped back to active.
     await deps.prisma.routine.updateMany({
       where: { id: routine.id, active: true },
-      data: { active: false, nextRunAt: null },
+      data: { active: false, nextRunAt: null, resumeOnRestore: true },
     });
     return;
   }
   if (!bot?.thread) return;
-  const targetThread = routine.threadId
-    ? await deps.prisma.thread.findFirst({
-        where: {
-          id: routine.threadId,
-          spaceId: routine.spaceId,
-          OR: [
-            { botId: bot.id },
-            {
-              group: {
-                archivedAt: null,
-                members: { some: { botId: bot.id } },
-              },
-            },
-          ],
-        },
-        select: { id: true },
-      })
-    : null;
-  const thread = targetThread ?? bot.thread;
+  const targetThreadId = await routineGroupThreadId(deps.prisma, routine, bot.id);
+  const thread = targetThreadId ? { id: targetThreadId } : bot.thread;
   // A change trigger checks first, without a model; only news becomes a run.
   const watchTick =
     routine.watch == null

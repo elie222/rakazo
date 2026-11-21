@@ -41,13 +41,18 @@ export function activityPreview(run: RunActivityRow): string {
   return text ? t`${name} asked: ${text}` : t`${name} asked`;
 }
 
+function normalizeActivitySearch(text: string): string {
+  // Lowercasing can create new composable sequences, so normalize again afterward.
+  return text.normalize("NFC").toLowerCase().normalize("NFC");
+}
+
 export function activitySearchHaystack(run: RunActivityRow): string {
   const parts = [run.botName];
   if (run.groupName) {
     parts.push(run.groupName, `${run.botName} ${run.groupName}`);
   }
   parts.push(activityPreview(run));
-  return parts.join(" ").toLowerCase();
+  return normalizeActivitySearch(parts.join(" "));
 }
 
 function parseDayStart(isoDate: string): number | null {
@@ -64,13 +69,18 @@ export function runMatchesActivityFilters(
   run: RunActivityRow,
   filters: ActivityListFilters,
 ): boolean {
-  const q = filters.query.trim().toLowerCase();
+  const q = normalizeActivitySearch(filters.query.trim());
   if (q.length > 0 && !activitySearchHaystack(run).includes(q)) return false;
 
   if (filters.status !== "all" && run.status !== filters.status) return false;
 
-  const fromMs = filters.dateRange.from ? parseDayStart(filters.dateRange.from) : null;
-  const toMs = filters.dateRange.to ? parseDayEnd(filters.dateRange.to) : null;
+  // A From after To is read as the range between the two dates, not as one that matches nothing.
+  const { from, to } = filters.dateRange;
+  const swap = from.length > 0 && to.length > 0 && from > to;
+  const first = swap ? to : from;
+  const last = swap ? from : to;
+  const fromMs = first ? parseDayStart(first) : null;
+  const toMs = last ? parseDayEnd(last) : null;
   if (fromMs == null && toMs == null) return true;
 
   const runMs = Date.parse(run.updatedAt);

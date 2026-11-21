@@ -12,8 +12,16 @@ can ask for changes. The bot edits the same page rather than making a new one, s
 
 ## Find your pages
 
-The **Pages** tab in a bot's or group's panel lists its pages. From there you can rename, pin or
-delete a page.
+On web and desktop, select the bot or group name at the top of the chat to open its panel.
+
+- In a bot chat, **Pages** appears once the bot has built a page. If the preview doesn't show all
+  the pages, select its **Pages** heading to see the full list.
+- In a group chat, look for **Pages** in **Group settings**.
+
+On mobile, tap the bot or group name at the top of the chat. Select **Pages** in **Profile**
+for a bot chat or in **Group settings** for a group chat.
+
+Use the menu beside a page to rename, pin or delete it.
 
 ## Share a page
 
@@ -22,3 +30,22 @@ Pages are private at first. To share one, choose **Share**, set it to **Anyone w
 **Only you** to turn the link off.
 
 On web and desktop, **Download PDF** saves a copy through your browser's print dialog.
+
+### Share with specific people
+
+Choose **Specific people** and enter each person's verified Rakazo account email. Send the
+review link, or have them open **Pages shared with you** from their account menu. They can
+read the page from the revision you shared onward and join its review. Remove a person from
+**Share** to revoke their access. Switching away from **Specific people** removes those grants. If someone verifies their
+account after you add their address, add it again to give them access. If their account was deleted,
+adding their new verified account starts access at the current revision.
+
+### Review a page
+
+Open **Comments**, choose a section and post your comment. Each comment stays attached to the
+revision you read. Open its revision to see the original section. The page owner or the person
+who posted the comment can resolve or reopen it.
+
+Use **Ask bot to revise** on an open comment on the latest revision to request a draft. The
+bot receives the page and that comment. The page owner can preview and publish the draft as
+a new revision. Posting a comment alone leaves the bot idle.

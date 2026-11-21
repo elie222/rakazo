@@ -26,11 +26,19 @@ function windowChrome(platform: NodeJS.Platform) {
 
 type WorkArea = { width: number; height: number };
 
+// Smallest the app window can be dragged: the web shell's phone layout. 390 is the
+// width the e2e suite runs that layout at (and the side panel's 384px max fits inside it);
+// 480 keeps the header, composer and a few messages on screen.
+export const APP_WINDOW_MIN_WIDTH = 390;
+export const APP_WINDOW_MIN_HEIGHT = 480;
+
 /** Opens as a window inside the screen's work area rather than filling it. */
 export function browserWindowOptions(platform: NodeJS.Platform, workArea: WorkArea) {
   return {
     width: Math.min(1280, Math.round(workArea.width * 0.8)),
     height: Math.min(840, Math.round(workArea.height * 0.85)),
+    minWidth: Math.min(APP_WINDOW_MIN_WIDTH, workArea.width),
+    minHeight: Math.min(APP_WINDOW_MIN_HEIGHT, workArea.height),
     ...windowChrome(platform),
   };
 }

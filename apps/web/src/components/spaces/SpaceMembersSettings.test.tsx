@@ -189,6 +189,11 @@ it("cancels open invite links only when there are some", async () => {
 it("removes a member only after confirming", async () => {
   await renderWith({ spaceName: "Home", members: [owner, member], canManage: true });
   rpc.spaces.members.remove.mockResolvedValue({ ok: true });
+  rpc.spaces.members.list.mockResolvedValue({
+    spaceName: "Home",
+    members: [owner],
+    canManage: true,
+  });
 
   await act(async () => buttonNamed("Remove")?.click());
   expect(host.querySelector("h2")?.textContent).toBe("Remove Bob Stone?");
@@ -204,6 +209,27 @@ it("removes a member only after confirming", async () => {
   });
   expect(host.querySelectorAll('ul[aria-label="Members"] > li')).toHaveLength(1);
   expect(host.querySelector("h2")).toBeNull();
+});
+
+it("re-reads the people who can be added after removing a member", async () => {
+  await renderWith({ spaceName: "Home", members: [owner, member], canManage: true, addable: [] });
+  rpc.spaces.members.remove.mockResolvedValue({ ok: true });
+  // Bob is still in the organization, so once removed he can be added directly again.
+  rpc.spaces.members.list.mockResolvedValue({
+    spaceName: "Home",
+    members: [owner],
+    canManage: true,
+    addable: [member],
+  });
+
+  await act(async () => buttonNamed("Remove")?.click());
+  const confirm = [...host.querySelectorAll("button")].filter(
+    (button) => button.textContent === "Remove",
+  );
+  await act(async () => confirm.at(-1)?.click());
+
+  await vi.waitFor(() => expect(rpc.spaces.members.list).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(buttonNamed("Bob Stone")).toBeDefined());
 });
 
 it("adds someone from the organization, and keeps the link for anyone else", async () => {

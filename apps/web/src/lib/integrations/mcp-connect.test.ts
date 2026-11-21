@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { RakazoDesktopMcpOAuthCallback } from "@rakazo/contracts";
+import type { RakazoDesktopMcpOAuthCallback, RakazoDesktopOAuthCallback } from "@rakazo/contracts";
 import { beforeEach, expect, it, vi } from "vitest";
 import { connectMcpEndpoint, connectMcpOauth, MCP_OAUTH_CHANNEL } from "./mcp-connect";
 
@@ -172,4 +172,69 @@ it("returns a catalog server that needs no sign-in without opening a window", as
     connectMcpEndpoint({ name: "Docs", endpoint: "https://docs.example/mcp" }),
   ).resolves.toBe("authorization_not_requested");
   expect(open).not.toHaveBeenCalled();
+});
+
+it("lets the desktop shell finish a sign-in the provider sent to a loopback address", async () => {
+  let loopback: ((callback: RakazoDesktopOAuthCallback) => void) | undefined;
+  const releaseLoopback = vi.fn();
+  const releaseCallback = vi.fn();
+  window.rakazoDesktop = {
+    platform: "win32",
+    mcpBrowser: { clear: vi.fn(), onOAuthCallback: () => releaseCallback },
+    oauth: {
+      onCallback: (listener: (callback: RakazoDesktopOAuthCallback) => void) => {
+        loopback = listener;
+        return releaseLoopback;
+      },
+    },
+  } as unknown as NonNullable<Window["rakazoDesktop"]>;
+  openPopup();
+
+  try {
+    const connecting = connectMcpOauth("clx123");
+    await vi.waitFor(() => expect(loopback).toBeTypeOf("function"));
+    expect(rpcMock.mcp.oauth.begin).toHaveBeenCalledWith({
+      serverId: "clx123",
+      redirectUri: `${window.location.origin}/mcp/oauth/callback`,
+      capturesLoopback: true,
+    });
+
+    // Another sign-in's loopback code, or one without a state, is not this session's.
+    loopback?.({ code: "code-0", state: "session-0" });
+    loopback?.({ code: "code-0" });
+    expect(rpcMock.mcp.oauth.complete).not.toHaveBeenCalled();
+
+    loopback?.({ code: "code-1", state: "session-1" });
+    loopback?.({ code: "code-1", state: "session-1" });
+    await expect(connecting).resolves.toBe("connected");
+    expect(rpcMock.mcp.oauth.complete).toHaveBeenCalledOnce();
+    expect(rpcMock.mcp.oauth.complete).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      code: "code-1",
+      state: "session-1",
+    });
+    expect(releaseLoopback).toHaveBeenCalled();
+    expect(releaseCallback).toHaveBeenCalled();
+  } finally {
+    delete window.rakazoDesktop;
+  }
+});
+
+it("does not offer a loopback redirect from a browser or an older desktop app", async () => {
+  openPopup();
+  void connectMcpOauth("clx123").catch(() => undefined);
+  await vi.waitFor(() => expect(rpcMock.mcp.oauth.begin).toHaveBeenCalledOnce());
+  expect(rpcMock.mcp.oauth.begin.mock.calls[0]?.[0].capturesLoopback).toBeUndefined();
+
+  window.rakazoDesktop = {
+    platform: "darwin",
+    mcpBrowser: { clear: vi.fn(), onOAuthCallback: () => () => undefined },
+  } as unknown as NonNullable<Window["rakazoDesktop"]>;
+  try {
+    void connectMcpOauth("clx123").catch(() => undefined);
+    await vi.waitFor(() => expect(rpcMock.mcp.oauth.begin).toHaveBeenCalledTimes(2));
+    expect(rpcMock.mcp.oauth.begin.mock.calls[1]?.[0].capturesLoopback).toBeUndefined();
+  } finally {
+    delete window.rakazoDesktop;
+  }
 });

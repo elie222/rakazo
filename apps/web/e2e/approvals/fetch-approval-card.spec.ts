@@ -12,7 +12,7 @@ test("asks before fetching a site the message did not name", async ({ page }, te
 
   const always = page.getByRole("button", { name: "Always allow example.test", exact: true });
   await expect(always).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText("url: https://docs.example.test/page?q=fixture")).toBeVisible();
+  await expect(page.getByText("URL: https://docs.example.test/page?q=fixture")).toBeVisible();
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toBeVisible();
   const row = page.locator("[data-message-id]").filter({ has: always });
   const card = always.locator("xpath=../..");

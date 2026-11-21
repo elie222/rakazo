@@ -364,6 +364,12 @@ function useScrollEdges(direction: string) {
   return { ref, edges };
 }
 
+function hasColumnHeader(column: ReactNode): boolean {
+  if (Array.isArray(column)) return column.some(hasColumnHeader);
+  if (typeof column === "string") return column.trim() !== "";
+  return column != null && typeof column !== "boolean";
+}
+
 export function Table({
   columns = [],
   rows = [],
@@ -422,11 +428,12 @@ export function Table({
       row.some((cell) => cellText(cell).toLowerCase().includes(needle)),
     );
   }
-  if (sort) {
-    const direction = sort.descending ? -1 : 1;
+  const activeSort = sortable && sort && hasColumnHeader(heads[sort.column]) ? sort : null;
+  if (activeSort) {
+    const direction = activeSort.descending ? -1 : 1;
     shown = [...shown].sort((a, b) => {
-      const x = sortKey(a.row[sort.column]);
-      const y = sortKey(b.row[sort.column]);
+      const x = sortKey(a.row[activeSort.column]);
+      const y = sortKey(b.row[activeSort.column]);
       if (typeof x === "number" && typeof y === "number") return (x - y) * direction;
       // Figures come before words, and after them when the order is reversed.
       if (typeof x === "number") return -direction;
@@ -477,17 +484,18 @@ export function Table({
               <tr>
                 {indexes.map((index) => {
                   const column = heads[index];
-                  const sorted = sort?.column === index;
+                  const canSort = sortable && hasColumnHeader(column);
+                  const sorted = activeSort?.column === index;
                   return (
                     <th
                       key={index}
                       scope="col"
                       className={aligns[index] ? `rk-align-${aligns[index]}` : undefined}
                       aria-sort={
-                        sorted ? (sort.descending ? "descending" : "ascending") : undefined
+                        sorted ? (activeSort.descending ? "descending" : "ascending") : undefined
                       }
                     >
-                      {sortable ? (
+                      {canSort ? (
                         <button type="button" className="rk-sort" onClick={() => press(index)}>
                           {column}
                           <span
@@ -495,7 +503,7 @@ export function Table({
                             aria-hidden="true"
                             data-on={sorted || undefined}
                           >
-                            {sorted && sort.descending ? "\u2193" : "\u2191"}
+                            {sorted && activeSort.descending ? "\u2193" : "\u2191"}
                           </span>
                         </button>
                       ) : (
@@ -541,7 +549,8 @@ export function Table({
 
 export type SegmentedOption =
   | string
-  | { value: string; label?: ReactNode; count?: number | string };
+  | number
+  | { value: string | number; label?: ReactNode; count?: number | string };
 
 /** More options than this is a list, not tabs; the chosen one is always kept. */
 const SEGMENTED_MAX = 200;
@@ -552,10 +561,11 @@ export function Segmented({
   onChange,
 }: {
   options?: SegmentedOption[];
-  value?: string;
+  value?: string | number;
   onChange?: (value: string) => void;
 }) {
   type Item = { value: string; label: ReactNode; count?: number | string };
+  const current = value === undefined || value === null ? undefined : String(value);
   const items = (Array.isArray(options) ? options : []).flatMap((option): Item[] =>
     typeof option === "string" || typeof option === "number"
       ? [{ value: String(option), label: String(option) }]
@@ -564,7 +574,7 @@ export function Segmented({
         : [],
   );
   const shown = items.slice(0, SEGMENTED_MAX);
-  const chosen = items.findIndex((item) => item.value === value);
+  const chosen = items.findIndex((item) => item.value === current);
   if (chosen >= SEGMENTED_MAX) shown[SEGMENTED_MAX - 1] = items[chosen]!;
   return (
     <fieldset className="rk-segmented">
@@ -572,7 +582,7 @@ export function Segmented({
         <button
           key={item.value}
           type="button"
-          aria-pressed={item.value === value}
+          aria-pressed={item.value === current}
           onClick={() => onChange?.(item.value)}
         >
           <span className="rk-segment">

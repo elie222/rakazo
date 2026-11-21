@@ -42,10 +42,6 @@ test("photo working avatars show a visible ring while idle avatars stay plain", 
   await expect(idle).toHaveAttribute("data-working", "false");
   await expect(idle.locator(".rakazo-bot-avatar-ring")).toHaveCount(0);
   await expect(idle.locator(".rakazo-bot-avatar-picture")).toHaveCSS("animation-name", "none");
-  await expect(page.locator(".avatar-shape-idle .rakazo-bot-avatar-ring")).toHaveCSS(
-    "animation-play-state",
-    "paused",
-  );
   await captureScreenshot(page, testInfo, "avatar-photo-working-and-idle");
 });
 
@@ -80,6 +76,21 @@ test("photo avatar animations stay still when reduced motion is enabled", async 
   expect(second).toEqual(first);
 });
 
+test("working studio shapes move their body like organic avatars, with no ring", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/e2e/fixtures/avatar-motion.html");
+  const shape = page.locator(".avatar-shape-working");
+  await expect(shape).toHaveAttribute("data-working", "true");
+  await expect(page.locator(".rakazo-bot-avatar-ring")).toHaveCount(1);
+  await expect(shape.locator(".rakazo-mascot-avatar-body-working")).toHaveCSS("opacity", "1");
+  await expect(shape.locator(".rakazo-mascot-avatar-body-working")).toHaveCSS(
+    "animation-name",
+    /rakazo-mascot-/,
+  );
+});
+
 test("organic avatars hold still while idle and stop working motion while offscreen or hidden", async ({
   page,
 }) => {
@@ -92,7 +103,7 @@ test("organic avatars hold still while idle and stop working motion while offscr
       const states = (mode: string) =>
         [
           ...svg.querySelectorAll(
-            `.rakazo-organic-avatar-body-${mode}, .rakazo-organic-avatar-eyes-${mode}`,
+            `.rakazo-mascot-avatar-body-${mode}, .rakazo-mascot-avatar-eyes-${mode}`,
           ),
         ].flatMap((element) =>
           element
@@ -103,7 +114,7 @@ test("organic avatars hold still while idle and stop working motion while offscr
       return {
         clockPaused: svg.animationsPaused(),
         morphing: ["idle", "working"].filter((mode) =>
-          svg.querySelector(`.rakazo-organic-avatar-body-${mode} animate`),
+          svg.querySelector(`.rakazo-mascot-avatar-body-${mode} animate`),
         ),
         idle: [...new Set(states("idle"))],
         working: [...new Set(states("working"))],
@@ -125,7 +136,7 @@ test("organic avatars hold still while idle and stop working motion while offscr
   // The working morph joins the running svg clock instead of restarting it, and fades in.
   const handoff = await avatar.evaluate(async (svg: SVGSVGElement) => {
     const body = (mode: string) =>
-      svg.querySelector<SVGPathElement>(`.rakazo-organic-avatar-body-${mode}`)!;
+      svg.querySelector<SVGPathElement>(`.rakazo-mascot-avatar-body-${mode}`)!;
     const before = svg.getCurrentTime();
     svg.parentElement!.querySelector("button")!.click();
     await new Promise((resolve) => setTimeout(resolve, 0));

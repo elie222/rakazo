@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import { createServer } from "node:http";
 import type { RakazoDesktopOAuthCallback } from "@rakazo/contracts";
 import { t } from "../i18n.js";
-import { LOOPBACK_HOSTS } from "./oauth-callback.js";
+import { LOOPBACK_HOSTS, mcpLoopbackRefusalFrom } from "./oauth-callback.js";
 
 /** Native transport only: providers still own PKCE, token exchange and persistence. */
 export async function openBrowserAuth(
@@ -73,14 +73,22 @@ export async function openBrowserAuth(
           }
           const target = new URL(request.url ?? "/", callback.origin);
           const code = target.searchParams.get("code");
+          const ours =
+            !consumed &&
+            request.method === "GET" &&
+            request.headers.host === callback.host &&
+            target.origin === callback.origin &&
+            target.pathname === callback.pathname &&
+            target.searchParams.getAll("state").length === 1 &&
+            target.searchParams.get("state") === state;
+          // The user declined at the provider: nothing will ever arrive, so stop listening.
+          if (ours && mcpLoopbackRefusalFrom(target.href)) {
+            consumed = true;
+            response.end(t("You can close this tab and return to Rakazo."), close);
+            return;
+          }
           if (
-            consumed ||
-            request.method !== "GET" ||
-            request.headers.host !== callback.host ||
-            target.origin !== callback.origin ||
-            target.pathname !== callback.pathname ||
-            target.searchParams.getAll("state").length !== 1 ||
-            target.searchParams.get("state") !== state ||
+            !ours ||
             target.searchParams.getAll("code").length !== 1 ||
             !code ||
             target.searchParams.has("error")

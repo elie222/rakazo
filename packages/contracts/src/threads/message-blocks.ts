@@ -48,6 +48,10 @@ const ChartBlock = z
     });
   });
 
+/** What a routine row in the chat says happened. */
+export const RoutineEventChange = z.enum(["created", "updated", "enabled", "disabled", "deleted"]);
+export type RoutineEventChange = z.infer<typeof RoutineEventChange>;
+
 export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
 export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
 
@@ -198,6 +202,15 @@ export const MessageBlock = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
   /**
+   * A routine was created, changed, switched on or off, or deleted. The name only, never the
+   * prompt, and no `text` field on purpose: clients word the row, and the model never sees it.
+   */
+  z.object({
+    kind: z.literal("routine_event"),
+    change: RoutineEventChange,
+    name: z.string().max(200),
+  }),
+  /**
    * Marks a user message as what woke the bot (a webhook, an email, a chat message). Its text
    * block is the bot's full prompt, so chats, previews and search leave the message out.
    */
@@ -207,6 +220,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     text: z.string(),
     /** Provider-generated tool status rather than assistant-authored narration. */
     activity: z.literal(true).optional(),
+    /** The person sees this text as the reply while it is written, so a call can say it then. */
+    shown: z.literal(true).optional(),
     pendingToolNames: z.array(z.string()).optional(),
   }),
   z.object({
