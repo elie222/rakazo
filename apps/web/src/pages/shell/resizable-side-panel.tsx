@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useEventListener } from "../../lib/use-event-listener";
+import { isComposingKey } from "./shell-shortcuts";
 import { useBotsSidebarWidth } from "./sidebar/sidebar-layout";
 
 const STORAGE_KEY = "rakazo:right-panel-width";
@@ -36,6 +37,7 @@ export function ResizableSidePanel({
   children,
   onCoversChat,
   onOverlays,
+  onEscape,
 }: {
   open: boolean;
   panel: string;
@@ -43,6 +45,8 @@ export function ResizableSidePanel({
   onCoversChat?: (covers: boolean) => void;
   /** Tells the shell when the open panel floats over the chat instead of sitting beside it. */
   onOverlays?: (overlays: boolean) => void;
+  /** Closes the panel on Escape; left out for panels that may hold unsaved input. */
+  onEscape?: () => void;
   children: ReactNode;
 }) {
   const reservedLeadingPx = useBotsSidebarWidth();
@@ -70,6 +74,36 @@ export function ResizableSidePanel({
   const belowMd = viewportWidth < MD_BREAKPOINT;
   const chatWidth = belowMd ? viewportWidth : viewportWidth - reservedLeadingPx;
   const panelWidth = belowMd ? Math.min(viewportWidth, MOBILE_PANEL_MAX_WIDTH) : width;
+  const opener = useRef<Element | null>(null);
+  useEffect(() => {
+    if (open) {
+      opener.current = document.activeElement;
+      return () => {
+        // The panel is gone by now, so focus left inside it has fallen back to the page.
+        const focused = document.activeElement;
+        const target = opener.current;
+        opener.current = null;
+        if (
+          target instanceof HTMLElement &&
+          target !== document.body &&
+          target.isConnected &&
+          (!focused || focused === document.body || panelRef.current?.contains(focused))
+        )
+          target.focus({ preventScroll: true });
+      };
+    }
+  }, [open]);
+  useEventListener(open && onEscape ? document : null, "keydown", (event) => {
+    if (!onEscape) return;
+    if (event.key !== "Escape" || event.defaultPrevented || isComposingKey(event)) return;
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && !panelRef.current?.contains(focused)) return;
+    // A field saves when it loses focus, and closing the panel would unmount it before that.
+    if (focused?.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])"))
+      return;
+    event.preventDefault();
+    onEscape();
+  });
   const covering = open && overlay && chatWidth - panelWidth < MAX_VISIBLE_CHAT_WIDTH;
   useEffect(() => {
     if (!covering) return;
