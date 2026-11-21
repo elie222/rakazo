@@ -8,13 +8,17 @@ import { ROUTINE_HISTORY_FIRST_PAGE_SIZE, ROUTINE_HISTORY_PAGE_SIZE } from "@rak
  */
 export function formatCompactDuration(durationMs: number | null | undefined): string | null {
   if (durationMs == null || !Number.isFinite(durationMs) || durationMs < 0) return null;
-  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
-  if (durationMs < 10_000) {
-    const seconds = Math.round(durationMs / 100) / 10;
+  // Pick each bracket from the rounded value, so a value that rounds up to the
+  // next unit's boundary (999.5ms, 59.5s) shows in that unit instead.
+  const ms = Math.round(durationMs);
+  if (ms < 1000) return `${ms}ms`;
+  const tenths = Math.round(durationMs / 100);
+  if (tenths < 100) {
+    const seconds = tenths / 10;
     return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
   }
-  if (durationMs < 60_000) return `${Math.round(durationMs / 1000)}s`;
   const totalSeconds = Math.round(durationMs / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
