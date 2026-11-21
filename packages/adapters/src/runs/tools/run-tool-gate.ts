@@ -163,11 +163,11 @@ export async function gateToolCall(
           deps.connector.declaredReads(connectorCall, batch.actions, context),
         )
       : undefined;
+  // A batch action is vetted only by the batch's own provider, never by a same-named tool elsewhere.
   const vettedReadFor = (toolName: string) =>
     toolName === approvalName || toolName === name
       ? connectorTool?.readOnlyVetted === true
-      : batchReads?.has(toolName) === true ||
-        ctx.tools.connector.get(toolName)?.readOnlyVetted === true;
+      : batchReads?.has(toolName) === true;
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
   const connectorKind = connectorKindFromToolName(approvalName, connectorProviders);
   const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;

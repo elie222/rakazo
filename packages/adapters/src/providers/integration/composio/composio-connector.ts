@@ -84,6 +84,7 @@ export const COMPOSIO_CONNECTOR_CAPABILITIES = {
 
 const ACTION_READS_TTL_MS = 60 * 60 * 1000;
 const ACTION_READS_MAX = 5_000;
+const ACTION_READS_LOOKUP_MAX = 50;
 const WRITE_TAGS = new Set(["destructiveHint", "createHint", "updateHint"]);
 
 function actionSlug(action: string): string {
@@ -524,26 +525,44 @@ export class ComposioConnector implements ComposioProvider {
       const entry = this.actionReads.get(slug);
       return entry !== undefined && now - entry.at < ACTION_READS_TTL_MS;
     };
-    // Session tools run code or other actions, so no tag frees one.
-    const missing = [...new Set(actions.map(actionSlug))].filter(
-      (slug) => slug && !slug.startsWith(COMPOSIO_TOOL_PREFIX) && !fresh(slug),
-    );
+    // Session tools run code or other actions, so no tag frees one. A batch naming more actions
+    // than one lookup covers is not looked up past that, so the rest ask.
+    const missing = [...new Set(actions.map(actionSlug))]
+      .filter((slug) => slug && !slug.startsWith(COMPOSIO_TOOL_PREFIX) && !fresh(slug))
+      .slice(0, ACTION_READS_LOOKUP_MAX);
     if (missing.length > 0) {
-      const page = await (await this.sdk())
-        .getClient()
-        .tools.list(
-          { tool_slugs: missing.join(","), limit: missing.length },
-          { signal: context.signal },
-        );
-      if (this.actionReads.size + missing.length > ACTION_READS_MAX) this.actionReads.clear();
+      let page: Awaited<ReturnType<ReturnType<ComposioClient["getClient"]>["tools"]["list"]>>;
+      try {
+        page = await (await this.sdk())
+          .getClient()
+          .tools.list(
+            { tool_slugs: missing.join(","), limit: missing.length },
+            { signal: context.signal },
+          );
+      } catch (error) {
+        if (context.signal.aborted) throw error;
+        getLogger().warn("composio action effects unavailable", {
+          error: sanitizeIntegrationError(error),
+        });
+        return new Set();
+      }
       const listed = new Map(
         page.items.flatMap((item) => {
           const raw = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
           return typeof raw.slug === "string" ? [[actionSlug(raw.slug), raw.tags] as const] : [];
         }),
       );
-      for (const slug of missing)
+      // An action missing from a partial answer may be on a later page, so it is not cached.
+      const complete = !page.next_cursor;
+      for (const slug of missing) {
+        if (!listed.has(slug) && !complete) continue;
+        this.actionReads.delete(slug);
         this.actionReads.set(slug, { read: composioTagsDeclareRead(listed.get(slug)), at: now });
+      }
+      for (const slug of this.actionReads.keys()) {
+        if (this.actionReads.size <= ACTION_READS_MAX) break;
+        this.actionReads.delete(slug);
+      }
     }
     return new Set(
       actions.filter(

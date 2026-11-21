@@ -481,4 +481,44 @@ describe("declared reads", () => {
     await connector.declaredReads(batch, actions, context());
     expect(lookups).toBe(1);
   });
+
+  it("asks again later for an action a partial answer left out", async () => {
+    const client = new FakeComposioClient();
+    let lookups = 0;
+    client.getClient = () => ({
+      tools: {
+        list: async () => {
+          lookups += 1;
+          return {
+            items: [{ slug: "GMAIL_LIST_LABELS", tags: ["readOnlyHint"] }],
+            next_cursor: "1",
+          };
+        },
+      },
+    });
+    const { connector } = createConnectorStack(new ComposioConnector({ client }));
+    const actions = ["GMAIL_LIST_LABELS", "GMAIL_FETCH_EMAILS"];
+
+    await expect(connector.declaredReads(batch, actions, context())).resolves.toEqual(
+      new Set(["GMAIL_LIST_LABELS"]),
+    );
+    await connector.declaredReads(batch, actions, context());
+    expect(lookups).toBe(2);
+  });
+
+  it("frees nothing when the catalog cannot be asked", async () => {
+    const client = new FakeComposioClient();
+    client.getClient = () => ({
+      tools: {
+        list: async () => {
+          throw new Error("catalog unavailable");
+        },
+      },
+    });
+    const { connector } = createConnectorStack(new ComposioConnector({ client }));
+
+    await expect(
+      connector.declaredReads(batch, ["GMAIL_FETCH_EMAILS"], context()),
+    ).resolves.toEqual(new Set());
+  });
 });
