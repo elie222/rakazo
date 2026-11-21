@@ -421,7 +421,7 @@ export function VideoPreview({ bytes, name }: { bytes: Uint8Array; name: string 
 
 function DownloadError({ message }: { message: string }) {
   return (
-    <div role="alert" className="mt-2 text-left text-body-sm text-destructive">
+    <div role="alert" className="mt-2 text-start text-body-sm text-destructive">
       {message}
     </div>
   );

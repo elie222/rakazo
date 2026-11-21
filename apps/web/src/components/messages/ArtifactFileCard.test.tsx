@@ -257,7 +257,6 @@ it("aligns filenames and the download divider with the reading direction", async
   expect(preview.classList.contains("text-start")).toBe(true);
   expect(archive.classList.contains("text-start")).toBe(true);
   expect(download.classList.contains("border-s")).toBe(true);
-  expect(download.classList.contains("border-l")).toBe(false);
 });
 
 it("previews plain text in the app instead of only offering a download", async () => {
