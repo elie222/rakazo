@@ -50,6 +50,7 @@ msgstr "{0, plural, other {# 項技能}}"
 
 #. placeholder {0}: availability.spaceIds.length
 #. placeholder {0}: chosen.length
+#: apps/mobile/components/settings/space-availability.tsx
 #: apps/web/src/components/integrations/space-availability.tsx
 msgid "{0, plural, one {# space} other {# spaces}}"
 msgstr "{0, plural, other {# 個空間}}"
@@ -60,16 +61,9 @@ msgid "{0, plural, one {# tool} other {# tools}}"
 msgstr "{0, plural, other {# 個工具}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
-msgid "{0, plural, one {Waiting for sign-in — the code expires in about # minute.} other {Waiting for sign-in — the code expires in about # minutes.}}"
-msgstr "{0, plural, one {等待登入中 — 代碼將在約 # 分鐘後失效。} other {等待登入中 — 代碼將在約 # 分鐘後失效。}}"
-
-#. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
-msgid "{0, plural, one {Waiting for sign-in — the link expires in about # minute.} other {Waiting for sign-in — the link expires in about # minutes.}}"
-msgstr "{0, plural, one {等待登入中 — 連結將在約 # 分鐘後失效。} other {等待登入中 — 連結將在約 # 分鐘後失效。}}"
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "{0, plural, one {The code expires in about # minute.} other {The code expires in about # minutes.}}"
+msgstr "{0, plural, other {驗證碼約 # 分鐘後過期。}}"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
@@ -142,6 +136,11 @@ msgstr "剩餘 {0}"
 #: apps/web/src/components/messages/ArtifactFileCard.tsx
 msgid "{0} MB"
 msgstr "{0} MB"
+
+#. placeholder {0}: recurrence.count
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
+msgid "{0} occurrences"
+msgstr "{0} 次"
 
 #. placeholder {0}: sender.name
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -254,6 +253,14 @@ msgstr "{commandVariable} 是保留名稱，不能用作命令變數。請選擇
 msgid "{connectedCount, plural, one {# connected} other {# connected}}"
 msgstr "{connectedCount, plural, other {已連線 # 個}}"
 
+#: apps/web/src/pages/model-settings/space-bots-model.tsx
+msgid "{count, plural, one {{names} keeps its own model} other {{names} keep their own model}}"
+msgstr "{count, plural, other {{names} 使用各自的模型}}"
+
+#: apps/mobile/components/settings/space-bots-model.tsx
+msgid "{count, plural, one {# bot has its own model: {names}} other {# bots have their own model: {names}}}"
+msgstr "{count, plural, other {# 個機器人使用各自的模型：{names}}}"
+
 #: apps/mobile/components/thread/peer-receipt-line.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "{count, plural, one {# message with {peer}} other {# messages with {peer}}}"
@@ -267,17 +274,17 @@ msgstr "{count, plural, one {# 列} other {# 列}}"
 msgid "{count, plural, one {# selected} other {# selected}}"
 msgstr "{count, plural, other {已選取 # 項}}"
 
+#: apps/mobile/app/(settings)/skills.tsx
+msgid "{count, plural, one {# skill} other {# skills}}"
+msgstr "{count, plural, other {# 個技能}}"
+
+#: apps/mobile/components/settings/space-bots-model.tsx
+msgid "{count, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
+msgstr "{count, plural, other {要將 # 個機器人切換為空間預設模型嗎？}}"
+
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
 msgstr "{count} 個代理程式正在工作"
-
-#: apps/mobile/components/settings/space-bots-model.tsx
-msgid "{count} bots have their own model:"
-msgstr "{count} 個機器人使用自己的模型："
-
-#: apps/mobile/components/settings/space-bots-model.tsx
-msgid "{count} bots now use the space default."
-msgstr "{count} 個機器人已改用空間預設模型。"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "{count} connectors"
@@ -313,14 +320,6 @@ msgstr "{count} 個需要處理"
 #: apps/mobile/app/bot-profile.tsx
 msgid "{count} on"
 msgstr "{count} 個已開啟"
-
-#: apps/mobile/app/(settings)/skills.tsx
-msgid "{count} skills"
-msgstr "{count} 個技能"
-
-#: apps/mobile/components/settings/space-availability.tsx
-msgid "{count} spaces"
-msgstr "{count} 個空間"
 
 #: apps/mobile/components/integrations/integration-detail.tsx
 msgid "{count} tools"
@@ -400,6 +399,14 @@ msgstr "{hidden, plural, one {還有 # 個先前步驟} other {還有 # 個先�
 msgid "{hiddenSelectedCount, plural, one {# selected model is hidden by your search.} other {# selected models are hidden by your search.}}"
 msgstr "{hiddenSelectedCount, plural, other {搜尋結果未顯示 # 個已選模型。}}"
 
+#: packages/i18n/src/computer-usage.ts
+msgid "{hours} bot computer hours/month"
+msgstr "每月 {hours} 小時機器人電腦時數"
+
+#: packages/i18n/src/computer-usage.ts
+msgid "{hours} bot computer hours/month at Standard size · Up to {size}"
+msgstr "每月 {hours} 小時機器人電腦時數（標準規格）· 最高 {size}"
+
 #: apps/web/src/lib/locale/relative-time.ts
 msgid "{hours}h ago"
 msgstr "{hours} 小時前"
@@ -430,9 +437,18 @@ msgstr "{memoryGb} GB 記憶體，電腦時數是 {0} 的 {usage} 倍。只在�
 msgid "{minutes}m ago"
 msgstr "{minutes} 分鐘前"
 
+#: apps/mobile/components/settings/space-bots-model.tsx
+msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
+msgstr "{moved, plural, other {# 個機器人現已使用空間預設模型。}}"
+
 #: apps/mobile/lib/routines/cron.ts
 msgid "{n} {unit}"
 msgstr "{n} {unit}"
+
+#: apps/mobile/app/routine.tsx
+#: apps/web/src/pages/shell/use-routine-editor.ts
+msgid "{name} (copy)"
+msgstr "{name}（副本）"
 
 #: apps/mobile/lib/thread/send/thread-attachments.ts
 msgid "{name} (could not read)"
@@ -516,14 +532,6 @@ msgstr "{name}，開啟"
 #: apps/mobile/lib/computers/computer.ts
 msgid "{name}’s computer"
 msgstr "{name} 的電腦"
-
-#: apps/web/src/pages/model-settings/space-bots-model.tsx
-msgid "{names} keep their own model"
-msgstr "{names} 保留各自的模型"
-
-#: apps/web/src/pages/model-settings/space-bots-model.tsx
-msgid "{names} keeps its own model"
-msgstr "{names} 保留自己的模型"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{owner}'s {peer} wants to connect to {agent}"
@@ -878,14 +886,6 @@ msgstr "**星期四**\n"
 msgid "/ month"
 msgstr "/ 月"
 
-#: apps/mobile/components/settings/space-bots-model.tsx
-msgid "1 bot has its own model:"
-msgstr "1 個機器人使用自己的模型："
-
-#: apps/mobile/components/settings/space-bots-model.tsx
-msgid "1 bot now uses the space default."
-msgstr "1 個機器人已改用空間預設模型。"
-
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "1 connector"
 msgstr "1 個連接器"
@@ -900,10 +900,6 @@ msgstr "已獲得 1 個月免費"
 msgid "1 hour"
 msgstr "1 小時"
 
-#: apps/mobile/app/(settings)/skills.tsx
-msgid "1 skill"
-msgstr "1 個技能"
-
 #: apps/web/src/components/integrations/space-availability.tsx
 msgid "1 space"
 msgstr "1 個空間"
@@ -915,6 +911,10 @@ msgstr "1 個工具"
 #: apps/mobile/components/inbox/unread-jump-overlay.tsx
 msgid "1 unread"
 msgstr "1 條未讀"
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+msgid "2. Enter this code at {host}"
+msgstr "2. 在 {host} 輸入此驗證碼"
 
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -950,16 +950,6 @@ msgstr "以看板管理機器人可處理的工單"
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "A model approves routine actions and asks you about the rest."
 msgstr "由模型核准例行操作，其餘的再詢問你。"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "A sign-in page opened — enter this code there:"
-msgstr "已開啟登入頁面，請在該頁面輸入以下驗證碼："
-
-#. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
-msgid "A sign-in tab opened at <0>{0}</0>. Enter this code there — this window keeps waiting:"
-msgstr "已開啟 <0>{0}</0> 的登入分頁。請在該分頁輸入以下代碼，此視窗會繼續等待："
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -1009,6 +999,11 @@ msgstr "帳號"
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Account default"
 msgstr "帳號預設"
+
+#: apps/mobile/app/page-share.tsx
+#: apps/web/src/components/pages/PagePeople.tsx
+msgid "Account email"
+msgstr "帳號電子郵件"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -1078,9 +1073,12 @@ msgstr "活動紀錄"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/app/page-share.tsx
 #: apps/mobile/components/thread/ask-block.tsx
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
+#: apps/web/src/components/pages/PagePeople.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 #: apps/web/src/pages/plugins/domain-search.tsx
 #: apps/web/src/pages/plugins/parts.tsx
@@ -1093,7 +1091,12 @@ msgstr "新增"
 msgid "Add {0} to the group"
 msgstr "將 {0} 加入群組"
 
+#: apps/web/src/pages/plugins/parts.tsx
+msgid "Add {label}"
+msgstr "新增{label}"
+
 #: apps/mobile/app/(settings)/integrations.tsx
+#: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Add {name}"
 msgstr "新增 {name}"
 
@@ -1168,6 +1171,10 @@ msgstr "再新增一個"
 msgid "Add another {name}"
 msgstr "再新增一個 {name}"
 
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
+msgid "Add calendar event?"
+msgstr "要新增日曆活動嗎？"
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Add credits"
@@ -1235,6 +1242,10 @@ msgstr "新增通行金鑰"
 msgid "Add provider"
 msgstr "新增供應商"
 
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
+msgid "Add reminder?"
+msgstr "要新增提醒事項嗎？"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
@@ -1285,6 +1296,10 @@ msgstr "已新增"
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Added"
 msgstr "已新增"
+
+#: apps/web/src/components/integrations/plugin-marketplace.tsx
+msgid "Added: {name}"
+msgstr "已新增：{name}"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -1378,6 +1393,10 @@ msgstr "{price} 全數用於模型使用。"
 msgid "All bots"
 msgstr "所有機器人"
 
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
+msgid "All day"
+msgstr "全天"
+
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "All files"
@@ -1407,8 +1426,9 @@ msgid "Allow"
 msgstr "允許"
 
 #: apps/mobile/app/(settings)/messaging.tsx
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/mobile/lib/settings/ai-consent.ts
-#: apps/web/src/components/call/VoiceConsentDialog.tsx
+#: apps/web/src/components/call/AiDataConsentDialog.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Allow"
@@ -1614,6 +1634,11 @@ msgstr "@{ownerDomain} 的任何人"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
+msgid "Anyone can view. Removes people you added."
+msgstr "任何人皆可檢視。將移除你新增的人員。"
+
+#: apps/mobile/app/page-share.tsx
+#: apps/web/src/components/pages/SharePopover.tsx
 msgid "Anyone with the link"
 msgstr "任何擁有連結的人"
 
@@ -1766,6 +1791,11 @@ msgstr "成品"
 msgid "Ask"
 msgstr "詢問"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Ask bot to revise"
+msgstr "請機器人修改"
+
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Ask first"
@@ -1833,12 +1863,6 @@ msgstr "驗證"
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Authenticator key"
 msgstr "驗證器金鑰"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
-msgid "Authorization code"
-msgstr "授權碼"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Authorization parameters (optional)"
@@ -1929,6 +1953,21 @@ msgstr "上一頁或下一頁"
 msgid "Back to chat"
 msgstr "返回聊天"
 
+#: apps/mobile/app/page-review.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
+msgid "Back to comments"
+msgstr "返回留言"
+
+#: apps/mobile/app/shared-pages.tsx
+msgid "Back to first page"
+msgstr "返回第一頁"
+
+#: apps/mobile/app/page-review.tsx
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
+msgid "Back to latest"
+msgstr "返回最新版本"
+
 #: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "Back to meetings"
 msgstr "返回會議"
@@ -2004,10 +2043,15 @@ msgstr "受阻"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/labs.tsx
 #: apps/web/src/pages/settings/LabsSettingsPanel.tsx
+#: apps/web/src/pages/shell/app-rail.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 #: apps/web/src/pages/space/Board.tsx
 msgid "Board"
 msgstr "看板"
+
+#: apps/web/src/pages/space/Board.tsx
+msgid "Board view"
+msgstr "看板檢視"
 
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
 #: packages/i18n/src/computer-preview.ts
@@ -2039,6 +2083,7 @@ msgstr "機器人"
 #: apps/web/src/pages/Shell.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
+#: apps/web/src/pages/shell/chat/transcript.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "Bot"
 msgstr "機器人"
@@ -2051,6 +2096,14 @@ msgstr "機器人"
 #: apps/mobile/app/bot-profile.tsx
 msgid "Bot actions"
 msgstr "機器人操作"
+
+#: packages/i18n/src/page-review.ts
+msgid "Bot couldn't draft a revision"
+msgstr "機器人無法草擬修訂"
+
+#: packages/i18n/src/page-review.ts
+msgid "Bot draft requested"
+msgstr "已請機器人草擬"
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/vault/BotEmailAddresses.tsx
@@ -2259,6 +2312,7 @@ msgstr "無法讀取影像"
 #: apps/mobile/app/meeting-transcript.tsx
 #: apps/mobile/app/new-bot.tsx
 #: apps/mobile/app/new-space.tsx
+#: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/routines.tsx
@@ -2283,11 +2337,12 @@ msgstr "無法讀取影像"
 #: apps/mobile/components/ui/name-dialog.tsx
 #: apps/mobile/components/vault/confirm-identity.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
-#: apps/mobile/lib/account/account-name-editor.ts
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 #: apps/mobile/lib/cards/ask-action-label.ts
+#: apps/mobile/lib/dialogs/text-prompt.ts
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/mobile/lib/thread/send/unsent-send-warning.ts
 #: apps/mobile/lib/thread/thread-voice.ts
 #: apps/web/src/components/account/PasskeySettings.tsx
@@ -2299,8 +2354,6 @@ msgstr "無法讀取影像"
 #: apps/web/src/components/messages/markdown-link-prompt.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
@@ -2464,12 +2517,13 @@ msgstr "與 {0} 聊天"
 msgid "Chat with your bots from other apps."
 msgstr "在其他應用程式中與你的機器人聊天。"
 
-#: apps/web/src/lib/models/localized-provider-hint.ts
+#: packages/adapters/src/models/model-provider-registry.ts
 msgid "ChatGPT subscription"
 msgstr "ChatGPT 訂閱"
 
 #: apps/mobile/lib/bots/identity-display.ts
 #: apps/web/src/lib/bots/identity-display.ts
+#: apps/web/src/pages/shell/app-rail.tsx
 msgid "Chats"
 msgstr "聊天"
 
@@ -2500,6 +2554,7 @@ msgstr "報到。"
 msgid "Check this yourself"
 msgstr "請自行檢查"
 
+#: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "Check your connection and try again."
@@ -2555,6 +2610,11 @@ msgstr "選擇方案"
 msgid "Choose a provider"
 msgstr "選擇供應商"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Choose a section"
+msgstr "選擇一個段落"
+
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Choose backup"
 msgstr "選擇備份"
@@ -2605,7 +2665,7 @@ msgstr "認領"
 msgid "Claim {address}"
 msgstr "認領 {address}"
 
-#: apps/web/src/lib/models/localized-provider-hint.ts
+#: packages/adapters/src/models/model-provider-registry.ts
 msgid "Claude subscription"
 msgstr "Claude 訂閱"
 
@@ -2775,6 +2835,11 @@ msgctxt "email sign-in"
 msgid "Code"
 msgstr "驗證碼"
 
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Code from {host}"
+msgstr "來自 {host} 的驗證碼"
+
 #. placeholder {0}: headerName(group)
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "Collapse {0}"
@@ -2821,8 +2886,19 @@ msgstr "命令選單"
 msgid "Command variable"
 msgstr "命令變數"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
 #: apps/web/src/pages/space/Board.tsx
 msgid "Comment"
+msgstr "留言"
+
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Comment actions"
+msgstr "留言操作"
+
+#: apps/mobile/app/page-review.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
+msgid "Comments"
 msgstr "留言"
 
 #: apps/mobile/app/(settings)/integrations.tsx
@@ -2835,9 +2911,14 @@ msgid "Compact"
 msgstr "緊湊"
 
 #: apps/mobile/components/bots/bot-context-cards.tsx
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Complete"
 msgstr "完成"
+
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
+msgid "Complete reminder?"
+msgstr "要完成提醒事項嗎？"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/SubagentCard.tsx
@@ -3210,18 +3291,17 @@ msgstr "為了儲存與回想脈絡，會傳送對話、名稱和搜尋內容。
 msgid "Conversations, names, memories, searches and bot and Space IDs are sent to store and recall context."
 msgstr "為了儲存與回想脈絡，會傳送對話、名稱、記憶、搜尋內容，以及機器人和空間 ID。"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/mobile/components/bots/bot-email.tsx
 #: apps/mobile/components/messages/code-copy-button.tsx
 #: apps/web/src/components/BotEmailAddressField.tsx
 #: apps/web/src/components/messages/ArtifactFileCard.tsx
 #: apps/web/src/components/messages/markdown-copy.tsx
+#: apps/web/src/components/pages/PagePeople.tsx
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 #: apps/web/src/components/spaces/InviteDialog.tsx
 #: apps/web/src/components/vault/BotEmailAddresses.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
@@ -3230,14 +3310,16 @@ msgid "Copied"
 msgstr "已複製"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Copied, open again"
+msgstr "已複製，再次開啟"
+
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/cards/run-error-sheet.tsx
 #: apps/mobile/components/thread/message-row.tsx
 #: apps/mobile/components/thread/selection-bar.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Copy"
 msgstr "複製"
@@ -3268,6 +3350,11 @@ msgstr "複製{name}"
 msgid "Copy code"
 msgstr "複製程式碼"
 
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Copy code and open"
+msgstr "複製驗證碼並開啟"
+
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "Copy diagram source"
 msgstr "複製圖表原始碼"
@@ -3288,6 +3375,11 @@ msgstr "複製連結"
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Copy prompt"
 msgstr "複製提示詞"
+
+#: apps/mobile/app/page-share.tsx
+#: apps/web/src/components/pages/PagePeople.tsx
+msgid "Copy review link"
+msgstr "複製審閱連結"
 
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "Copy rows"
@@ -3878,6 +3970,7 @@ msgstr "無法載入此對話。"
 msgid "Could not load this file."
 msgstr "無法載入此檔案。"
 
+#: apps/mobile/app/page-review.tsx
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/page.tsx
 msgid "Could not load this page."
@@ -4003,6 +4096,10 @@ msgstr "無法連線到此模型伺服器"
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "Could not read these files"
 msgstr "無法讀取這些檔案"
+
+#: apps/mobile/lib/board/board.ts
+msgid "Could not refresh the board. {detail}"
+msgstr "無法重新整理看板。{detail}"
 
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 msgid "Could not reject plugin"
@@ -4168,6 +4265,10 @@ msgstr "無法儲存例行任務"
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "Could not save rule"
 msgstr "無法儲存規則"
+
+#: apps/web/src/components/computers/SaveScreenshotButton.tsx
+msgid "Could not save screenshot"
+msgstr "無法儲存螢幕截圖"
 
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/web/src/components/teach/SkillDraftCard.tsx
@@ -4951,6 +5052,11 @@ msgstr "已刪除"
 msgid "Deleted"
 msgstr "已刪除"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Deleted account"
+msgstr "已刪除的帳號"
+
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 #: apps/web/src/pages/shell/chat/transcript-member-name.ts
 msgid "Deleted bot"
@@ -5216,6 +5322,7 @@ msgstr "還沒有帳號？"
 #: apps/mobile/lib/inbox/activity.ts
 #: apps/web/src/components/computers/ComputerCard.tsx
 #: apps/web/src/components/messages/ToolActivityDisclosure.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
 #: apps/web/src/components/vault/VaultImport.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
@@ -5260,6 +5367,14 @@ msgstr "下載 PDF"
 msgid "Downloading…"
 msgstr "下載中…"
 
+#: packages/i18n/src/page-review.ts
+msgid "Draft ready"
+msgstr "草稿已就緒"
+
+#: apps/mobile/app/page-review.tsx
+msgid "Draft revision"
+msgstr "修訂草稿"
+
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "Draft skill"
 msgstr "技能草稿"
@@ -5275,6 +5390,10 @@ msgstr "複製"
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Each name can be used once."
 msgstr "每個名稱只能使用一次。"
+
+#: packages/i18n/src/page-review.ts
+msgid "Earlier revision"
+msgstr "較早版本"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/bot-profile.tsx
@@ -5432,6 +5551,11 @@ msgstr "請輸入 HTTPS URL"
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Enter each site as an HTTPS address a login can be saved for."
 msgstr "請將每個網站填寫為可儲存登入資訊的 HTTPS 網址。"
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Enter this code at {host}"
+msgstr "在 {host} 輸入此驗證碼"
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5640,6 +5764,10 @@ msgid "Extra high"
 msgstr "極高"
 
 #: packages/i18n/src/computer-usage.ts
+msgid "Extra large"
+msgstr "特大"
+
+#: packages/i18n/src/computer-usage.ts
 msgid "Extra large (uses {rate}× hours)"
 msgstr "特大（消耗 {rate} 倍時數）"
 
@@ -5754,10 +5882,6 @@ msgstr "請在網頁應用程式中完成 MCP 授權。"
 msgid "Finish setting up"
 msgstr "完成設定"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Finish signing in in your browser:"
-msgstr "請在瀏覽器中完成登入："
-
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
 msgid "finished"
@@ -5871,6 +5995,15 @@ msgstr "一般"
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Get a free month for each friend who starts a trial."
 msgstr "每有一位朋友開始試用，你就能獲得一個月免費。"
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Get a new code"
+msgstr "取得新驗證碼"
+
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Get a sign-in code"
+msgstr "取得登入驗證碼"
 
 #: apps/mobile/app/bot-profile.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -6081,10 +6214,13 @@ msgstr "隱藏鍵盤"
 msgid "Hide password"
 msgstr "隱藏密碼"
 
-#: apps/mobile/components/calls/VoiceChatCard.tsx
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "Hide transcript"
 msgstr "隱藏文字紀錄"
+
+#: apps/mobile/components/calls/VoiceChatCard.tsx
+msgid "Hide transcript: {title}, {duration}"
+msgstr "隱藏文字紀錄：{title}，{duration}"
 
 #: apps/mobile/lib/models/thinking-level.ts
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
@@ -6508,6 +6644,10 @@ msgstr "跳轉到回覆的訊息：{excerpt}"
 msgid "just now"
 msgstr "剛剛"
 
+#: apps/web/src/pages/space/Board.tsx
+msgid "Kanban"
+msgstr "看板"
+
 #. Keeps the account's current timezone instead of switching
 #: apps/mobile/lib/i18n/device-timezone.ts
 #: apps/web/src/pages/shell/timezone-prompt.tsx
@@ -6567,6 +6707,10 @@ msgid "Language"
 msgstr "語言"
 
 #: packages/i18n/src/computer-usage.ts
+msgid "Large"
+msgstr "大"
+
+#: packages/i18n/src/computer-usage.ts
 msgid "Large (uses {rate}× hours)"
 msgstr "大（消耗 {rate} 倍時數）"
 
@@ -6578,15 +6722,13 @@ msgstr "大量貼上"
 msgid "Large text pasted inline"
 msgstr "已在內文中貼上大量文字"
 
-#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
-msgid "Last check {0}: changed"
-msgstr "上次檢查 {0}：有變化"
+msgid "Last check {checkedAt}: changed"
+msgstr "上次檢查 {checkedAt}：有變更"
 
-#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
-msgid "Last check {0}: no changes"
-msgstr "上次檢查 {0}：無變化"
+msgid "Last check {checkedAt}: no changes"
+msgstr "上次檢查 {checkedAt}：無變更"
 
 #: apps/web/src/components/account/SocialSignInButtons.tsx
 msgid "Last used"
@@ -6874,6 +7016,11 @@ msgstr "由機器人建立"
 msgid "Main model"
 msgstr "主模型"
 
+#: apps/mobile/app/routine.tsx
+#: apps/web/src/pages/routines/RoutineEditor.tsx
+msgid "Make a copy"
+msgstr "建立副本"
+
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
 msgid "Make admin"
@@ -7120,6 +7267,11 @@ msgstr "給 {activeName} 發訊息"
 msgid "Message {name}"
 msgstr "給 {name} 發訊息"
 
+#. placeholder {0}: [speakerName, when].filter(Boolean).join(" ")
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Message actions, {0}"
+msgstr "訊息操作，{0}"
+
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Message composer"
 msgstr "訊息輸入框"
@@ -7149,6 +7301,11 @@ msgstr "訊息…"
 #: apps/web/src/pages/shell/chat/message-view.tsx
 msgid "Messaged {peer}"
 msgstr "已發給 {peer}"
+
+#: apps/mobile/lib/thread/send/thread-send.ts
+#: apps/web/src/pages/shell/composer/use-composer-actions.ts
+msgid "Messages can be up to {limit} characters."
+msgstr "訊息最多 {limit} 個字元。"
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines."
@@ -7223,6 +7380,7 @@ msgstr "模式"
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 #: apps/web/src/pages/shell/chat/chat-model-picker.tsx
+#: apps/web/src/pages/shell/composer/composer-model-picker.tsx
 msgid "Model"
 msgstr "模型"
 
@@ -7600,6 +7758,10 @@ msgstr "新增工作項目"
 msgid "New variable"
 msgstr "新增變數"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+msgid "Newest comments"
+msgstr "最新留言"
+
 #: apps/mobile/app/new-group.tsx
 msgid "Next"
 msgstr "下一步"
@@ -7623,6 +7785,10 @@ msgstr "下次執行"
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Next settings sections"
 msgstr "下一組設定區段"
+
+#: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Next thinking level"
+msgstr "下一個思考等級"
 
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -7669,6 +7835,10 @@ msgstr "沒有機器人"
 #: apps/web/src/pages/space/GroupPanel.tsx
 msgid "No bots match"
 msgstr "沒有符合的機器人"
+
+#: apps/mobile/lib/pages/page-review-comments.tsx
+msgid "No comments yet."
+msgstr "尚無留言。"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "No computer hours used yet"
@@ -7738,6 +7908,11 @@ msgstr "找不到 OpenClaw、Hermes 或代理程式文件。"
 msgid "No pages match “{query}”."
 msgstr "沒有符合「{query}」的頁面。"
 
+#: apps/mobile/app/shared-pages.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
+msgid "No pages shared with you yet."
+msgstr "還沒有人與你分享頁面。"
+
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "No paired computers"
 msgstr "沒有已配對的電腦"
@@ -7799,6 +7974,10 @@ msgstr "還沒有執行紀錄"
 #: apps/mobile/app/page-share.tsx
 msgid "No sign-in needed"
 msgstr "無需登入"
+
+#: apps/web/src/components/integrations/skills-dialog.tsx
+msgid "No skills match your search."
+msgstr "沒有符合的技能。"
 
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "No skills yet"
@@ -7898,6 +8077,7 @@ msgstr "不在外掛程式目錄中"
 
 #: apps/mobile/components/cards/McpApprovalCard.tsx
 #: apps/mobile/lib/auth/passkey.ts
+#: apps/mobile/lib/billing/self-hosted-support.ts
 #: apps/mobile/lib/composer/composer-dictation.ts
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/mobile/lib/thread/thread-voice.ts
@@ -8013,6 +8193,11 @@ msgstr "離線"
 msgid "OK, switching to {name}."
 msgstr "好的，正在切換到 {name}。"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Older comments"
+msgstr "較早留言"
+
 #: apps/mobile/components/calls/CallCard.tsx
 msgid "On a call with {name}"
 msgstr "正在與 {name} 通話"
@@ -8049,6 +8234,10 @@ msgstr "一次性"
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "One-time purchase. Credits do not expire."
 msgstr "單次購買，額度不會到期。"
+
+#: apps/web/src/pages/routines/routine-editor/access-note.tsx
+msgid "Only {name} can change this routine."
+msgstr "只有 {name} 可以變更此例行任務。"
 
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
@@ -8104,6 +8293,11 @@ msgstr "開啟"
 msgid "Open {0}"
 msgstr "開啟 {0}"
 
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Open {host}"
+msgstr "開啟 {host}"
+
 #: apps/mobile/components/cards/ImportSetupCard.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/web/src/pages/shell/bots/import-setup-card.tsx
@@ -8114,12 +8308,6 @@ msgstr "開啟 {name}"
 #: apps/web/src/components/pages/PageCard.tsx
 msgid "Open {title}"
 msgstr "開啟 {title}"
-
-#. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
-msgid "Open <0>{0}</0> and enter this code:"
-msgstr "開啟 <0>{0}</0> 並輸入以下代碼："
 
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 msgid "Open call"
@@ -8175,6 +8363,10 @@ msgstr "開啟導覽"
 #: apps/web/src/pages/SharedPage.tsx
 msgid "Open Rakazo"
 msgstr "開啟 Rakazo"
+
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Open settings"
+msgstr "開啟設定"
 
 #: apps/mobile/lib/composer/composer-dictation.ts
 #: apps/mobile/lib/thread/thread-voice.ts
@@ -8292,21 +8484,28 @@ msgstr "專屬電腦"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/page-share.tsx
+#: apps/mobile/app/routine.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/mobile/lib/bots/identity-display.ts
 #: apps/web/src/components/pages/SharePopover.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
 #: apps/web/src/components/spaces/SpaceMembersSettings.tsx
 #: apps/web/src/lib/bots/identity-display.ts
+#: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
 msgid "Owner"
 msgstr "擁有者"
 
+#: apps/mobile/app/_layout.tsx
 #: apps/mobile/lib/pages/page-card.tsx
 #: apps/web/src/components/pages/PageCard.tsx
 #: apps/web/src/components/pages/PageView.tsx
 msgid "Page"
 msgstr "頁面"
+
+#: apps/web/src/components/pages/PageCard.tsx
+msgid "Page · {sharing} · {when}"
+msgstr "頁面 · {sharing} · {when}"
 
 #: apps/web/src/components/pages/PageCard.tsx
 msgid "Page · {when}"
@@ -8315,10 +8514,6 @@ msgstr "頁面 · {when}"
 #: apps/web/src/components/pages/PageCard.tsx
 msgid "Page · Deleted"
 msgstr "頁面 · 已刪除"
-
-#: apps/web/src/components/pages/PageCard.tsx
-msgid "Page · Shared · {when}"
-msgstr "頁面 · 已共用 · {when}"
 
 #: apps/web/src/components/pages/PageCard.tsx
 msgid "Page · Updated below"
@@ -8354,6 +8549,13 @@ msgstr "頁面標題"
 #: apps/web/src/pages/space/GroupPanel.tsx
 msgid "Pages"
 msgstr "頁面"
+
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/app/shared-pages.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
+#: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
+msgid "Pages shared with you"
+msgstr "與你分享的頁面"
 
 #: apps/mobile/app/pages.tsx
 msgid "Pages this bot builds for you appear here."
@@ -8436,6 +8638,15 @@ msgstr "付款逾期"
 msgid "Paste a replacement key"
 msgstr "貼上替換金鑰"
 
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Paste code"
+msgstr "貼上驗證碼"
+
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Paste the code it shows you"
+msgstr "貼上頁面顯示的驗證碼"
+
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Paste the reply"
 msgstr "貼上回覆"
@@ -8449,6 +8660,10 @@ msgstr "貼上你的 API 金鑰"
 #: apps/mobile/components/media/audio-attachment.tsx
 msgid "Pause"
 msgstr "暫停"
+
+#: apps/mobile/components/media/audio-attachment.tsx
+msgid "Pause {name}"
+msgstr "暫停 {name}"
 
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/mobile/lib/routines/routine.ts
@@ -8556,6 +8771,7 @@ msgstr "方案"
 msgid "Play"
 msgstr "播放"
 
+#: apps/mobile/components/media/audio-attachment.tsx
 #: apps/web/src/components/messages/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "播放 {name}"
@@ -8599,6 +8815,11 @@ msgstr "將其來源指向新的 Webhook"
 msgid "Post a chat message when a check finds no changes. The routine won't run."
 msgstr "檢查未發現變化時發送一則聊天訊息。例行任務不會執行。"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Post comment"
+msgstr "發表留言"
+
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
 msgid "PR reviewer"
@@ -8626,6 +8847,11 @@ msgstr "預覽"
 msgid "Preview {0}"
 msgstr "預覽 {0}"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Preview draft"
+msgstr "預覽草稿"
+
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "此檔案類型無法預覽，請下載後檢視。"
@@ -8642,9 +8868,14 @@ msgstr "上一頁"
 msgid "Previous settings sections"
 msgstr "上一組設定區段"
 
+#: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
 msgid "Priority"
 msgstr "優先順序"
+
+#: apps/mobile/lib/billing/self-hosted-support.ts
+msgid "Priority support for $100 / month"
+msgstr "優先支援，每月 $100"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Privacy"
@@ -8654,7 +8885,7 @@ msgstr "隱私權"
 msgid "Privacy policies"
 msgstr "隱私權政策"
 
-#: apps/web/src/components/call/VoiceConsentDialog.tsx
+#: apps/web/src/components/call/AiDataConsentDialog.tsx
 msgid "Privacy policy"
 msgstr "隱私權政策"
 
@@ -8721,6 +8952,15 @@ msgstr "供應商"
 msgid "Public servers need https://. HTTP only works on your local network."
 msgstr "公開伺服器需要使用 https://。HTTP 僅適用於區域網路。"
 
+#: apps/mobile/app/page-review.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
+msgid "Publish revision"
+msgstr "發布修訂版"
+
+#: packages/i18n/src/page-review.ts
+msgid "Published in revision {version}"
+msgstr "已於第 {version} 版發布"
+
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
 msgid "Pull request"
@@ -8763,9 +9003,17 @@ msgstr "Rakazo"
 msgid "Rakazo credits"
 msgstr "Rakazo 額度"
 
+#: apps/mobile/lib/billing/self-hosted-support.ts
+msgid "Rakazo is free to self-host. If you'd like to support it, subscribers can email support@rakazo.com for help."
+msgstr "Rakazo 可免費自行託管。如果你想支持 Rakazo，訂閱者可寄信至 support@rakazo.com 取得協助。"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
 msgstr "rakazo-shared 與以 bot- 開頭的 ID 保留給 Rakazo 使用。"
+
+#: apps/mobile/app/(settings)/account.tsx
+msgid "Rate Rakazo"
+msgstr "為 Rakazo 評分"
 
 #: apps/mobile/components/thread/message-row.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
@@ -8776,10 +9024,18 @@ msgstr "回應"
 msgid "Reactions"
 msgstr "表情回應"
 
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
+msgid "Read calendar events?"
+msgstr "要讀取日曆活動嗎？"
+
 #: apps/mobile/components/cards/ask-receipt.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Read from the page, not checked"
 msgstr "讀取自頁面，未核實"
+
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
+msgid "Read reminders?"
+msgstr "要讀取提醒事項嗎？"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -9078,6 +9334,19 @@ msgstr "要移除 {secretName} 嗎？機器人將無法再使用它。"
 msgid "Remove {site}"
 msgstr "移除 {site}"
 
+#: apps/mobile/app/page-share.tsx
+msgid "Remove access"
+msgstr "移除存取權"
+
+#. placeholder {0}: person.email
+#: apps/web/src/components/pages/PagePeople.tsx
+msgid "Remove access for {0}"
+msgstr "移除 {0} 的存取權"
+
+#: apps/mobile/app/page-share.tsx
+msgid "Remove access?"
+msgstr "要移除存取權嗎？"
+
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Remove change trigger"
 msgstr "移除變化觸發器"
@@ -9135,6 +9404,11 @@ msgstr "移除技能"
 msgid "Remove webhook"
 msgstr "移除 Webhook"
 
+#: apps/mobile/app/page-share.tsx
+#: apps/web/src/components/pages/SharePopover.tsx
+msgid "Removes everyone you added"
+msgstr "將移除你新增的所有人"
+
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -9178,6 +9452,8 @@ msgstr "續訂日期"
 msgid "Renews {day}"
 msgstr "於 {day} 續訂"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Reopen"
 msgstr "重新開啟"
@@ -9186,6 +9462,16 @@ msgstr "重新開啟"
 #: packages/i18n/src/vault.ts
 msgid "Repeated in the file"
 msgstr "檔案中重複"
+
+#. placeholder {0}: recurrence.interval
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
+msgid "Repeats every {0} day(s)"
+msgstr "每 {0} 天重複"
+
+#. placeholder {0}: recurrence.interval
+#: apps/mobile/lib/personal-calendar/device-calendar.ts
+msgid "Repeats every {0} week(s)"
+msgstr "每 {0} 週重複"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/models/model-providers.tsx
@@ -9243,6 +9529,10 @@ msgstr "回報無變化的檢查"
 #: apps/web/src/lib/query/user-error.ts
 msgid "Request a new code"
 msgstr "請重新獲取驗證碼"
+
+#: packages/i18n/src/page-review.ts
+msgid "Request cancelled"
+msgstr "已取消請求"
 
 #: apps/mobile/lib/computers/use-computer-boot.ts
 msgid "Request timed out"
@@ -9326,6 +9616,15 @@ msgstr "調整機器人側邊欄大小"
 #: apps/web/src/pages/shell/resizable-side-panel.tsx
 msgid "Resize panel"
 msgstr "調整面板大小"
+
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Resolve"
+msgstr "解決"
+
+#: packages/i18n/src/page-review.ts
+msgid "Resolved"
+msgstr "已解決"
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -9449,10 +9748,25 @@ msgstr "返回收件匣"
 msgid "Return to Rakazo"
 msgstr "返回 Rakazo"
 
+#: apps/mobile/app/page.tsx
+#: apps/web/src/components/pages/PageViewHost.tsx
+msgid "Review page"
+msgstr "審閱頁面"
+
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
 msgid "Reviews pull requests waiting on you"
 msgstr "審查等你處理的 pull request"
+
+#. placeholder {0}: comment.version
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Revision {0}"
+msgstr "第 {0} 版"
+
+#: apps/mobile/app/page-review.tsx
+#: apps/mobile/lib/pages/page-review-comments.tsx
+msgid "Revision {version}"
+msgstr "第 {version} 版"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
@@ -9616,7 +9930,7 @@ msgstr "週六"
 #: apps/mobile/components/ui/name-dialog-compose.tsx
 #: apps/mobile/components/ui/name-dialog.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
-#: apps/mobile/lib/account/account-name-editor.ts
+#: apps/mobile/lib/dialogs/text-prompt.ts
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
@@ -9646,6 +9960,10 @@ msgstr "儲存並登入"
 #: apps/mobile/app/(settings)/memory-note.tsx
 msgid "Save mine"
 msgstr "儲存我的版本"
+
+#: apps/web/src/components/computers/SaveScreenshotButton.tsx
+msgid "Save screenshot"
+msgstr "儲存螢幕截圖"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 msgid "Save section name"
@@ -9869,13 +10187,24 @@ msgstr "正在搜尋…"
 msgid "Secret"
 msgstr "密鑰"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Section"
+msgstr "段落"
+
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 msgid "Section actions for {name}"
 msgstr "{name} 的分組操作"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Section name"
 msgstr "分組名稱"
+
+#: apps/web/src/pages/shell/app-rail.tsx
+msgid "Sections"
+msgstr "區塊"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -10076,6 +10405,7 @@ msgstr "形狀 {0}"
 msgid "Shape {number}"
 msgstr "形狀 {number}"
 
+#: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/page.tsx
@@ -10085,7 +10415,6 @@ msgstr "形狀 {number}"
 msgid "Share"
 msgstr "分享"
 
-#: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Share “{title}”"
 msgstr "分享「{title}」"
@@ -10094,6 +10423,10 @@ msgstr "分享「{title}」"
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Share {name}"
 msgstr "分享 {name}"
+
+#: apps/web/src/components/call/AiDataConsentDialog.tsx
+msgid "Share data with {name}?"
+msgstr "要與 {name} 分享資料嗎？"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -10113,7 +10446,7 @@ msgstr "分享到"
 msgid "Share transcript with Space"
 msgstr "與空間共用文字紀錄"
 
-#: apps/web/src/components/call/VoiceConsentDialog.tsx
+#: apps/web/src/components/call/AiDataConsentDialog.tsx
 msgid "Share voice data with {name}?"
 msgstr "要與 {name} 分享語音資料嗎？"
 
@@ -10121,9 +10454,8 @@ msgstr "要與 {name} 分享語音資料嗎？"
 msgid "Share, anyone with the link can view"
 msgstr "共用，任何擁有連結的人都能檢視"
 
-#: apps/mobile/app/pages.tsx
-#: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
+#: packages/i18n/src/page-review.ts
 msgid "Shared"
 msgstr "共享"
 
@@ -10174,8 +10506,10 @@ msgstr "顯示清單"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/pages.tsx
+#: apps/mobile/app/shared-pages.tsx
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/mobile/components/integrations/integration-plugins.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
@@ -10197,10 +10531,13 @@ msgstr "顯示已選取項目"
 msgid "Show tool activity"
 msgstr "顯示工具活動"
 
-#: apps/mobile/components/calls/VoiceChatCard.tsx
 #: apps/web/src/components/call/VoiceChatCard.tsx
 msgid "Show transcript"
 msgstr "顯示文字紀錄"
+
+#: apps/mobile/components/calls/VoiceChatCard.tsx
+msgid "Show transcript: {title}, {duration}"
+msgstr "顯示文字紀錄：{title}，{duration}"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sidebar density"
@@ -10239,11 +10576,13 @@ msgstr "重新登入"
 msgid "Sign in anyway"
 msgstr "仍要登入"
 
-#. placeholder {0}: new URL(oauth.verificationUri).hostname
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
-msgid "Sign in at <0>{0}</0>, then paste the code here."
-msgstr "在 <0>{0}</0> 登入，然後將代碼貼到這裡。"
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Sign in at {host}"
+msgstr "在 {host} 登入"
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+msgid "Sign in at {host}, then paste the code it shows you here."
+msgstr "在 {host} 登入，然後將頁面顯示的驗證碼貼到這裡。"
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/auth/Auth.tsx
@@ -10554,6 +10893,12 @@ msgstr "朗讀這條回覆"
 msgid "Speaking"
 msgstr "說話中"
 
+#: apps/mobile/app/page-share.tsx
+#: apps/web/src/components/pages/SharePopover.tsx
+#: packages/i18n/src/page-review.ts
+msgid "Specific people"
+msgstr "特定人員"
+
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Speech model"
@@ -10606,6 +10951,11 @@ msgstr "開始 {trialDays} 天免費試用"
 msgid "Start free trial"
 msgstr "開始免費試用"
 
+#: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Start over"
+msgstr "重新開始"
+
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Start plan"
@@ -10652,10 +11002,9 @@ msgid "Starting"
 msgstr "正在開始"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 #: apps/web/src/lib/chat/roster-status.ts
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Starting…"
 msgstr "正在開始…"
 
@@ -10666,6 +11015,7 @@ msgstr "州或地區"
 
 #: apps/mobile/components/cards/run-error-sheet.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
+#: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
 msgid "Status"
 msgstr "狀態"
@@ -10737,8 +11087,7 @@ msgid "Subject"
 msgstr "主旨"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/web/src/pages/model-settings/connection-controls.tsx
-#: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Submit"
 msgstr "提交"
 
@@ -10790,6 +11139,15 @@ msgstr "摘要與事實"
 msgid "Sunday"
 msgstr "週日"
 
+#: apps/mobile/lib/billing/self-hosted-support.ts
+msgid "Support for $25 / month"
+msgstr "支援，每月 $25"
+
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/lib/billing/self-hosted-support.ts
+msgid "Support Rakazo"
+msgstr "支持 Rakazo"
+
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Supports images"
@@ -10809,17 +11167,13 @@ msgstr "支援思考"
 msgid "Switch"
 msgstr "切換"
 
-#: apps/mobile/components/settings/space-bots-model.tsx
-msgid "Switch {count} bots to the space default?"
-msgstr "將 {count} 個機器人切換為空間預設模型？"
-
-#: apps/mobile/components/settings/space-bots-model.tsx
-msgid "Switch 1 bot to the space default?"
-msgstr "將 1 個機器人切換為空間預設模型？"
-
 #: apps/mobile/lib/thread/send/unsent-send-warning.ts
 msgid "Switch anyway"
 msgstr "仍要切換"
+
+#: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
+msgid "Switch model"
+msgstr "切換模型"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Switch to {name}?"
@@ -10865,6 +11219,7 @@ msgid "Tab"
 msgstr "Tab"
 
 #: apps/web/src/components/messages/markdown-copy.tsx
+#: apps/web/src/pages/space/Board.tsx
 msgid "Table"
 msgstr "表格"
 
@@ -11032,6 +11387,10 @@ msgstr "模型回傳了無法使用的回覆，請再試一次。"
 msgid "The owner may have turned off its link or deleted it."
 msgstr "擁有者可能已關閉連結或刪除了它。"
 
+#: packages/i18n/src/page-review.ts
+msgid "The page and selected comment are sent to draft a revision."
+msgstr "將傳送頁面和所選留言，用於草擬修訂。"
+
 #: apps/mobile/lib/cards/run-error-presentation.ts
 msgid "The provider couldn't serve the model selected for this bot."
 msgstr "供應商無法提供為此機器人選擇的模型。"
@@ -11083,6 +11442,7 @@ msgstr "伺服器出現問題"
 msgid "The server had a problem. Try again in a moment."
 msgstr "伺服器出現問題。請稍後重試。"
 
+#: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "The shared link stops working"
 msgstr "共用連結將失效"
@@ -11100,10 +11460,6 @@ msgstr "未使用的差額將抵扣到你的下一張帳單。"
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "Their own model is cleared. You can pick one again in each bot."
 msgstr "將清除機器人的個別模型設定。你可以隨時為各機器人重新選擇模型。"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Then paste the code here."
-msgstr "然後在這裡貼上代碼。"
 
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "These files are too large to import."
@@ -11216,6 +11572,11 @@ msgstr "此操作無法復原。"
 msgid "This cannot be undone."
 msgstr "此操作無法復原。"
 
+#: apps/mobile/lib/auth/use-subscription-sign-in.ts
+#: apps/web/src/lib/models/use-model-oauth-signin.ts
+msgid "This code expired. Start again."
+msgstr "此驗證碼已過期，請重新開始。"
+
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "this computer"
 msgstr "這臺電腦"
@@ -11247,6 +11608,10 @@ msgstr "這將刪除此成品的全部 {count} 個版本，且無法復原。"
 #: apps/mobile/app/(settings)/voice.tsx
 msgid "This device"
 msgstr "本裝置"
+
+#: apps/web/src/components/pages/PageReviewHost.tsx
+msgid "This draft isn't available"
+msgstr "無法使用此草稿"
 
 #: apps/web/src/lib/bots/agent-import-errors.ts
 msgid "This export is newer than Rakazo can read. Update Rakazo and try again."
@@ -11328,6 +11693,7 @@ msgstr "這則筆記已變更"
 msgid "This note no longer exists"
 msgstr "這則筆記已不存在"
 
+#: apps/mobile/app/page-review.tsx
 #: apps/mobile/app/page.tsx
 #: apps/mobile/lib/pages/page-card.tsx
 #: apps/web/src/lib/pages/pages.ts
@@ -11336,13 +11702,16 @@ msgstr "無法顯示此頁面。"
 
 #: apps/mobile/lib/pages/page-card.tsx
 #: apps/web/src/components/pages/PageCard.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageView.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "This page couldn't load"
 msgstr "無法載入此頁面"
 
+#: apps/mobile/app/page-review.tsx
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/page.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 #: apps/web/src/pages/SharedPage.tsx
 msgid "This page isn't available"
@@ -11444,6 +11813,10 @@ msgstr "對話"
 msgid "Thursday"
 msgstr "週四"
 
+#: apps/web/src/pages/space/board-views.tsx
+msgid "Ticket"
+msgstr "工單"
+
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "Time of day"
@@ -11483,6 +11856,10 @@ msgstr "待新增"
 msgid "To do"
 msgstr "待辦"
 
+#: apps/mobile/lib/settings/ai-consent.ts
+msgid "To turn this off, use Withdraw all permissions in Account → AI data sharing."
+msgstr "若要關閉，請前往「帳號 → AI 資料分享」，使用「撤回所有權限」。"
+
 #: apps/mobile/components/composer/bot-chip-picker.tsx
 #: apps/web/src/pages/shell/bots/bot-picker.tsx
 msgid "To:"
@@ -11492,6 +11869,7 @@ msgstr "收件人："
 #: apps/mobile/components/thread/time-separator.tsx
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 #: apps/web/src/pages/shell/chat/chat-context.tsx
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Today"
 msgstr "今天"
@@ -11641,6 +12019,7 @@ msgstr "受信任的網站"
 #: apps/mobile/components/ui/app-error-boundary.tsx
 #: apps/mobile/lib/pages/page-load-failure.tsx
 #: apps/web/src/components/pages/PageNotice.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/onboarding/first-bot.tsx
@@ -11946,6 +12325,10 @@ msgstr "使用 {0}"
 msgid "Use {hostLabel}"
 msgstr "使用 {hostLabel}"
 
+#: apps/mobile/lib/dialogs/text-prompt.ts
+msgid "Use {maxLength} characters or fewer"
+msgstr "最多 {maxLength} 個字元"
+
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Use {oauthEnvReference} for the access token."
 msgstr "存取權杖請使用 {oauthEnvReference}。"
@@ -11954,10 +12337,6 @@ msgstr "存取權杖請使用 {oauthEnvReference}。"
 #: apps/web/src/components/BotEmailAddressField.tsx
 msgid "Use 2 to 64 characters"
 msgstr "請使用 2 到 64 個字元"
-
-#: apps/mobile/lib/account/account-name-editor.ts
-msgid "Use 80 characters or fewer"
-msgstr "請使用不超過 80 個字元"
 
 #: apps/mobile/app/sign-in.tsx
 msgid "Use a custom server"
@@ -12142,6 +12521,10 @@ msgstr "版本"
 msgid "View all"
 msgstr "檢視全部"
 
+#: apps/mobile/app/page-review.tsx
+msgid "View page"
+msgstr "檢視頁面"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "View source"
@@ -12186,17 +12569,17 @@ msgstr "語音請求逾時。"
 msgid "Waiting for admission"
 msgstr "等待獲准進入"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Waiting for sign-in — the code expires in about {minutes} minutes."
-msgstr "等待登入中 — 驗證碼將在約 {minutes} 分鐘後失效。"
-
-#: apps/mobile/app/(settings)/model-connection.tsx
-msgid "Waiting for sign-in — the link expires in about {minutes} minutes."
-msgstr "等待登入——連結將在約 {minutes} 分鐘後過期。"
-
 #: apps/mobile/components/thread/ask-block.tsx
 msgid "Waiting for this bot’s response."
 msgstr "正在等待這個機器人的回覆。"
+
+#: apps/web/src/components/models/SubscriptionSignInSteps.tsx
+msgid "Waiting for you to sign in"
+msgstr "正在等待你登入"
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+msgid "Waiting for you to sign in. The code expires in about {minutes} minutes."
+msgstr "正在等待你登入。驗證碼約 {minutes} 分鐘後過期。"
 
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Waiting in line…"
@@ -12458,6 +12841,11 @@ msgstr "可使用你的 ChatGPT 或 Claude 方案。"
 msgid "Workspace"
 msgstr "工作空間"
 
+#: apps/mobile/lib/pages/page-review-comments.tsx
+#: apps/web/src/components/pages/PageReviewComments.tsx
+msgid "Write a comment"
+msgstr "撰寫留言"
+
 #: apps/mobile/app/routine.tsx
 msgid "Write what this routine should do."
 msgstr "寫下此例行任務要做的事。"
@@ -12476,6 +12864,7 @@ msgstr "按年 −{percent}%"
 
 #: apps/mobile/components/thread/time-separator.tsx
 #: apps/web/src/pages/shell/chat/chat-context.tsx
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "Yesterday"
 msgstr "昨天"
@@ -12637,7 +13026,7 @@ msgid "Your recordings and the text you play are sent for transcription and spee
 msgstr "為了語音轉文字和語音合成，會傳送你的錄音和你播放的文字。"
 
 #: apps/mobile/lib/settings/ai-consent.ts
-#: apps/web/src/components/call/VoiceConsentDialog.tsx
+#: apps/web/src/components/call/AiDataConsentDialog.tsx
 msgid "Your recordings are sent for transcription, and text you play is sent to generate speech."
 msgstr "你的錄音會傳送至服務進行轉錄，播放的文字則會傳送至服務產生語音。"
 

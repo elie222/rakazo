@@ -12,6 +12,8 @@ let sidebarWidth: number;
 let host: HTMLDivElement;
 let root: Root;
 
+let overlays: boolean[];
+
 function Shell({ open }: { open: boolean }) {
   const [covered, setCovered] = useState(false);
   return (
@@ -19,7 +21,12 @@ function Shell({ open }: { open: boolean }) {
       <main data-space-switch="main" inert={covered}>
         <button type="button">Message</button>
       </main>
-      <ResizableSidePanel open={open} panel="settings" onCoversChat={setCovered}>
+      <ResizableSidePanel
+        open={open}
+        panel="settings"
+        onCoversChat={setCovered}
+        onOverlays={(value) => overlays.push(value)}
+      >
         <button type="button">Close panel</button>
       </ResizableSidePanel>
     </>
@@ -37,6 +44,7 @@ function show(open: boolean, width: number) {
 describe("ResizableSidePanel", () => {
   beforeEach(() => {
     sidebarWidth = 0;
+    overlays = [];
     i18n.load("en", {});
     i18n.activate("en");
     host = document.createElement("div");
@@ -71,6 +79,18 @@ describe("ResizableSidePanel", () => {
   it("keeps the visible chat interactive when the sidebar is off canvas", () => {
     sidebarWidth = 316;
     expect(show(true, 600).hasAttribute("inert")).toBe(false);
+  });
+
+  it("reports a panel that floats over the chat while the chat stays interactive", () => {
+    sidebarWidth = 316;
+    expect(show(true, 800).hasAttribute("inert")).toBe(false);
+    expect(overlays.at(-1)).toBe(true);
+  });
+
+  it("reports a panel that sits beside the chat as not floating", () => {
+    sidebarWidth = 316;
+    show(true, 1400);
+    expect(overlays.at(-1)).toBe(false);
   });
 
   it("makes the chat inert when the overlay covers nearly all of it beside the sidebar", () => {
