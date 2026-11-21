@@ -25,7 +25,7 @@ export async function resolveComputerWork(
     }),
     prisma.run.findFirst({
       where: { botId: input.botId, status: "waiting_takeover" },
-      select: { id: true },
+      select: { id: true, userId: true },
     }),
   ]);
   const run = lease
@@ -40,12 +40,18 @@ export async function resolveComputerWork(
   // update or a teaching session.
   const heldWithoutRun = leaseActive && !run;
   const working = run?.status !== "waiting_takeover" && (runActive || heldWithoutRun);
-  return { busyBotName: working ? input.botName : null, takeoverRequested: Boolean(waiting) };
+  return {
+    busyBotName: working ? input.botName : null,
+    takeoverRequested: Boolean(waiting),
+    takeoverUserId: waiting?.userId ?? null,
+  };
 }
 
 export interface ComputerWork {
   busyBotName: string | null;
   takeoverRequested: boolean;
+  /** The person the waiting run asked for help. Only they may answer it. */
+  takeoverUserId?: string | null;
 }
 
 export function toComputerStatus(
@@ -114,7 +120,9 @@ export function toComputerStatus(
     state,
     controlHolder: (computer?.controlHolder ?? "none") as ComputerStatus["controlHolder"],
     controlBotId: computer?.controlBotId ?? null,
-    takeoverRequested: work.takeoverRequested,
+    // Skip and I'm done are answered only by the person the bot asked, so anyone else is told
+    // nothing is pending for them and offers Hand back control instead.
+    takeoverRequested: work.takeoverRequested && (!viewerId || work.takeoverUserId === viewerId),
     screenAvailable: !computer?.maintenanceId && (state === "running" || state === "booting"),
     screenWidth: capabilities.screen.width,
     screenHeight: capabilities.screen.height,
