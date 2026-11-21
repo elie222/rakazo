@@ -274,7 +274,7 @@ export async function findRoutineTestRun(
       routineId,
       clientNonce: nonce,
     },
-    select: { id: true },
+    select: { id: true, threadId: true },
   });
 }
 
@@ -315,6 +315,6 @@ export async function createRoutineTestRun(
       ...routineRunModelPin(currentModel),
       clientNonce: nonce,
     },
-    select: { id: true, status: true },
+    select: { id: true, status: true, threadId: true },
   });
 }

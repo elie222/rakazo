@@ -64,7 +64,7 @@ describe("findRoutineTestRun", () => {
         routineId: "routine-1",
         clientNonce: nonce,
       },
-      select: { id: true },
+      select: { id: true, threadId: true },
     });
   });
 
