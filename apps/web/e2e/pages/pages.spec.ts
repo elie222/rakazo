@@ -62,6 +62,11 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   const title = "Calendar layout";
   const source = `function CalendarPage() {
     return <Page width="wide" title="Calendar layout">
+      <Section heading="Daily activity"><CalendarHeatmap from="2026-11-09" to="2026-11-10" days={[
+        { date: "2026-11-09", value: 4 },
+        { date: "2026-11-10", value: 10 },
+        { date: "2026-11-16", value: 1000 }
+      ]} /></Section>
       <Grid columns={2}>
         <Section heading="Week"><WeekView week="2026-11-09" events={[
           { date: "2026-11-09", start: 9, end: 10, title: "Monday event" },
@@ -132,6 +137,13 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   expect(layout.dayEvent.y - layout.dayColumns[0]!.y).toBeCloseTo(67, 0);
   expect(layout.dayText).toContain("Day event");
   expect(layout.dayText).toContain("9:30");
+  const heatmap = frame.getByRole("img", { name: /highest 10$/ });
+  await expect(heatmap).toBeVisible();
+  const heatmapColors = await heatmap
+    .locator(".rk-day")
+    .evaluateAll((cells) => cells.map((cell) => getComputedStyle(cell).backgroundColor));
+  expect(heatmapColors).toHaveLength(2);
+  expect(new Set(heatmapColors).size).toBe(2);
   await captureScreenshot(page, testInfo, "page-calendar-two-columns");
 });
 
