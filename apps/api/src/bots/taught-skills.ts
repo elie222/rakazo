@@ -311,6 +311,9 @@ function handedOver(skill: TaughtSkillRow, actor: Actor) {
   return isTeacher(skill, actor) ? {} : { recording: emptyRecording() as never };
 }
 
+/** A blank or whitespace-only name counts as no name. */
+const givenName = (name: string | undefined) => name?.trim() || undefined;
+
 function skillFor(actor: Actor, row: TaughtSkillRow): TaughtSkill {
   const skill = mapTaughtSkill(row);
   return isTeacher(row, actor) ? skill : { ...skill, recording: emptyRecording() };
@@ -455,7 +458,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         data: {
           userId: actor.userId,
           ...handedOver(skill, actor),
-          name: input.name ?? skill.name,
+          name: givenName(input.name) ?? skill.name,
           playbook: input.playbook as never,
           status: skill.status === "saved" ? "saved" : "draft",
         },
@@ -479,7 +482,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
           userId: actor.userId,
           ...handedOver(skill, actor),
           status: "saved",
-          name: name ?? (skill.name || skill.goal.slice(0, 80)),
+          name: givenName(name) ?? (skill.name.trim() || skill.goal.trim().slice(0, 80)),
         },
       });
       const bot = await deps.prisma.bot.findUnique({

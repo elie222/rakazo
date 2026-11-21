@@ -195,3 +195,24 @@ describe("SkillsDialog browse search", () => {
     await vi.waitFor(() => expect(container.textContent).toContain(noMatchLine));
   });
 });
+
+it("lists skill packs without connectors", async () => {
+  api.catalog.mockResolvedValue({
+    ...catalog,
+    entries: [
+      entry("notes", "Notes"),
+      entry("travel", "Travel"),
+      { ...entry("mail", "Mail"), hasConnector: true },
+    ],
+  });
+  await render();
+  const packs = await vi.waitUntil(() =>
+    container.querySelector('[data-testid="skill-packs"]')?.children.length
+      ? container.querySelector<HTMLElement>('[data-testid="skill-packs"]')
+      : null,
+  );
+  expect([...packs.children].map((row) => row.textContent)).toEqual([
+    expect.stringContaining("Notes"),
+    expect.stringContaining("Travel"),
+  ]);
+});

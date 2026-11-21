@@ -19,7 +19,7 @@ import { unified } from "unified";
 import type { HastNode } from "./table-utils";
 import "./markdown.web.css";
 import "./markdown-table.css";
-import { droppedTableHtmlText } from "@rakazo/contracts";
+import { droppedTableHtmlText, linkLabel } from "@rakazo/contracts";
 import { cssVariableName, pageIconBars } from "@rakazo/ui-tokens";
 import {
   AlertDialog,
@@ -41,7 +41,6 @@ import {
   isProseFence,
   LinkFaviconsPausedContext,
   linkFaviconOrigin,
-  linkLabel,
   markdownLinkDisplayParts,
   markdownLinkNeedsPrompt,
   markdownLinkSite,

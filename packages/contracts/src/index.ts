@@ -80,6 +80,7 @@ export * from "./skills/taught-skills.js";
 export * from "./spaces/groups.js";
 export * from "./spaces/organization.js";
 export * from "./spaces/space.js";
+export * from "./text/link-label.js";
 export * from "./text/markdown-text.js";
 export * from "./text/trim-chars.js";
 export * from "./threads/attachments.js";
