@@ -122,6 +122,20 @@ describe("scratchpad prompt context", () => {
     expect(result?.endsWith("</scratchpad_open>")).toBe(true);
   });
 
+  it("keeps the parked count when open titles fill the block", async () => {
+    const items = [
+      ...Array.from({ length: 40 }, (_, index) => ({
+        ...item(String(index), ""),
+        title: "t".repeat(200),
+      })),
+      { ...item("p", ""), status: "parked" },
+    ];
+    const result = await load(items);
+
+    expect(result).toContain("1 parked. Call scratchpad_list to see them.\n</scratchpad_open>");
+    expect(Buffer.byteLength(result ?? "", "utf8")).toBeLessThanOrEqual(4 * 1024);
+  });
+
   it("escapes delimiter-breaking content and keeps the closing tag under the byte cap", async () => {
     const findMany = vi.fn(async () => [
       {
