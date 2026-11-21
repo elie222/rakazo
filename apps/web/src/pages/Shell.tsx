@@ -1075,7 +1075,7 @@ function SpaceShell() {
         chatMenu={chatMenu}
         roster={
           <SidebarRoster
-            mini={botsSidebarCollapsed && !railOnScreen}
+            mini={railOnScreen && botsSidebarCollapsed}
             sidebarGroups={sidebarGroups}
             collapsedSidebarSections={collapsedSidebarSections}
             bootstrapMe={bootstrapMe}

@@ -177,7 +177,6 @@ function PrimaryRail({
               variant="ghost"
               size="icon"
               aria-label={expanded ? t`Collapse sidebar` : t`Expand sidebar`}
-              aria-expanded={expanded}
               onClick={onToggle}
               className="app-no-drag shrink-0 text-muted-foreground"
             >
