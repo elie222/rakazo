@@ -36,6 +36,8 @@ image_generation = false
 command = {json.dumps(server["command"])}
 args = {json.dumps(server["args"])}
 enabled_tools = {json.dumps(TOOLS)}
+# With approval_policy "never", Codex refuses every MCP call that is not pre-approved.
+default_tools_approval_mode = "approve"
 '''
     (home / "config.toml").write_text(config)
     (home / "schema.json").write_text(json.dumps(SCHEMA))

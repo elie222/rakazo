@@ -15,6 +15,7 @@ import type {
   ScreenRequest,
   ScreenSession,
   TerminalRequest,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import {
   INVALID_BROWSER_REQUEST,
@@ -22,6 +23,7 @@ import {
   SandboxFileTooLargeError,
   SandboxRequestRejectedError,
   SandboxUnresponsiveError,
+  WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import { cancelResponseBody, ResponseTooLargeError, requestDeadline } from "@rakazo/core";
@@ -616,8 +618,12 @@ export class DockerSandboxProvider implements SandboxProvider {
     if (!res.ok) throw new Error(`sandbox file write failed: ${res.status}`);
   }
 
-  async *exportWorkspace(computer: ComputerRef, context: AdapterContext) {
-    yield* this.walkWorkspace(computer, "", context);
+  async *exportWorkspace(
+    computer: ComputerRef,
+    context: AdapterContext,
+    limits?: WorkspaceExportLimits,
+  ) {
+    yield* this.walkWorkspace(computer, context, limits);
   }
 
   async importWorkspace(
@@ -700,35 +706,66 @@ export class DockerSandboxProvider implements SandboxProvider {
     throw new Error(`sandbox destroy failed: ${res.status} ${body}`.trim());
   }
 
-  private async *walkWorkspace(
+  /** Every file the export keeps, in walk order. */
+  private async *listWorkspace(
     computer: ComputerRef,
     directory: string,
     context: AdapterContext,
-  ): AsyncIterable<PortableFile> {
+  ): AsyncIterable<ComputerFileEntry> {
     const entries = (await this.listFiles(computer, directory, context)).filter(
       (entry) => !shouldSkipPortableWorkspaceFile(entry.path, entry.kind === "dir"),
     );
-    for (let index = 0; index < entries.length; ) {
-      const entry = entries[index]!;
-      if (entry.kind === "dir") {
-        yield* this.walkWorkspace(computer, entry.path, context);
-        index += 1;
-        continue;
-      }
-      const files = [];
-      while (index < entries.length && entries[index]?.kind === "file" && files.length < 8) {
-        files.push(entries[index]!);
-        index += 1;
-      }
-      const batch = await Promise.all(
-        files.map(async (file) => ({
+    for (const entry of entries) {
+      if (entry.kind === "dir") yield* this.listWorkspace(computer, entry.path, context);
+      else yield entry;
+    }
+  }
+
+  // Each listing and read is a command in the container, so with `limits` a home over them is
+  // refused from the listing alone instead of after copying gigabytes the save then throws away.
+  // The held listing is bounded by `maxFiles`; an export without limits streams as it lists.
+  private async *walkWorkspace(
+    computer: ComputerRef,
+    context: AdapterContext,
+    limits: WorkspaceExportLimits | undefined,
+  ): AsyncIterable<PortableFile> {
+    const listing = this.listWorkspace(computer, "", context);
+    if (!limits) {
+      yield* this.readWorkspaceFiles(computer, listing, context);
+      return;
+    }
+    const files: ComputerFileEntry[] = [];
+    let bytes = 0;
+    for await (const file of listing) {
+      files.push(file);
+      bytes += file.size;
+      if (files.length > limits.maxFiles) throw new WorkspaceTooLargeError("files");
+      if (bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
+    }
+    yield* this.readWorkspaceFiles(computer, files, context);
+  }
+
+  private async *readWorkspaceFiles(
+    computer: ComputerRef,
+    files: AsyncIterable<ComputerFileEntry> | Iterable<ComputerFileEntry>,
+    context: AdapterContext,
+  ): AsyncIterable<PortableFile> {
+    const read = (batch: ComputerFileEntry[]) =>
+      Promise.all(
+        batch.map(async (file) => ({
           path: file.path,
           content: await this.readFile(computer, file.path, context),
           executable: file.executable,
         })),
       );
-      for (const file of batch) yield file;
+    let batch: ComputerFileEntry[] = [];
+    for await (const file of files) {
+      batch.push(file);
+      if (batch.length < 8) continue;
+      yield* await read(batch);
+      batch = [];
     }
+    yield* await read(batch);
   }
 }
 

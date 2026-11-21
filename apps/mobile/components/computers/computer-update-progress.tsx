@@ -5,7 +5,15 @@ import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
 import { computerUpdateNeedsAttention, computerUpdateStages } from "@rakazo/core";
 import { usePathname } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLiveStream } from "../../lib/api/roster-signals";
 import { computerUpdates } from "../../lib/computers/computer-updates";
@@ -25,6 +33,11 @@ export function ComputerUpdateProgress() {
   );
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The alert text is not announced when it appears, so each failure is announced here.
+  const fail = () => {
+    setError(true);
+    AccessibilityInfo.announceForAccessibility(t`Could not complete action`);
+  };
   const authenticated = !["/sign-in"].includes(pathname);
   useEffect(() => (authenticated ? computerUpdates.watch() : undefined), [authenticated]);
   // Updates are read only when the live stream signals, so it stays open wherever this shows.
@@ -140,7 +153,7 @@ export function ComputerUpdateProgress() {
                   setError(false);
                   void computerUpdates
                     .start(selected.botId, "recover")
-                    .catch(() => setError(true))
+                    .catch(fail)
                     .finally(() => setBusy(false));
                 }}
               />
@@ -151,7 +164,7 @@ export function ComputerUpdateProgress() {
               fill
               onPress={() => {
                 if (selected.status === "failed")
-                  void computerUpdates.dismiss(selected.id).catch(() => setError(true));
+                  void computerUpdates.dismiss(selected.id).catch(fail);
                 else computerUpdates.open(null);
               }}
             />
