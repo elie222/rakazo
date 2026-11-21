@@ -1,16 +1,30 @@
+import { t } from "@lingui/core/macro";
 import type { Bot, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { speechFromBlocks } from "@rakazo/core";
 import { toast } from "@rakazo/ui-web";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { speaker } from "../../../lib/calls/tts";
+import { speaker, voiceNotReadyText } from "../../../lib/calls/tts";
 
 const READ_ALOUD_TOAST = "read-aloud-error";
 
-/** Chat read-aloud has no caption to carry a failure, so it surfaces as a toast. */
-function readAloud(text: string, opts: { botId: string; messageId: string }) {
+/**
+ * Chat read-aloud has no caption to carry a failure, so it surfaces as a toast. With no voice connected, the toast
+ * opens Voice settings, so the message never names a page without a way to it.
+ */
+function readAloud(
+  text: string,
+  opts: { botId: string; messageId: string },
+  openVoiceSettings: () => void,
+) {
   void speaker.speak(text, opts).then((error) => {
-    if (error) toast.error(error, { id: READ_ALOUD_TOAST });
+    if (!error) return;
+    toast.error(error, {
+      id: READ_ALOUD_TOAST,
+      ...(error === voiceNotReadyText()
+        ? { action: { label: t`Open Voice settings`, onClick: openVoiceSettings } }
+        : {}),
+    });
   });
 }
 
@@ -20,12 +34,19 @@ export function useReadAloud({
   snapshot,
   callBotId,
   activeBotId,
+  openVoiceSettings,
 }: {
   active: Bot | undefined;
   snapshot: ThreadSnapshot | null;
   callBotId: string | undefined;
   activeBotId: RefObject<string | undefined>;
+  openVoiceSettings: () => void;
 }) {
+  const openVoiceSettingsRef = useRef(openVoiceSettings);
+  openVoiceSettingsRef.current = openVoiceSettings;
+  // The toast can outlive the render that started the read, so it opens settings through the
+  // latest callback.
+  const openVoiceSettingsNow = useCallback(() => openVoiceSettingsRef.current(), []);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const autoSpoken = useRef<string | null>(null);
   const autoSpokenBotId = useRef<string | null>(null);
@@ -57,7 +78,7 @@ export function useReadAloud({
     const text = speechFromBlocks(lastBot.blocks);
     if (!text) return;
     autoSpoken.current = lastBot.id;
-    readAloud(text, { botId: active.id, messageId: lastBot.id });
+    readAloud(text, { botId: active.id, messageId: lastBot.id }, openVoiceSettingsNow);
   }, [
     snapshot?.messages,
     snapshot?.run?.status,
@@ -65,23 +86,27 @@ export function useReadAloud({
     active?.autoSpeak,
     active?.id,
     callBotId,
+    openVoiceSettingsNow,
   ]);
 
   const speakingMessageIdRef = useRef(speakingMessageId);
   speakingMessageIdRef.current = speakingMessageId;
   const callBotIdRef = useRef(callBotId);
   callBotIdRef.current = callBotId;
-  const speakMessage = useCallback((message: ThreadMessage) => {
-    if (speakingMessageIdRef.current === message.id) {
-      speaker.stop();
-      return;
-    }
-    // An active call owns the speaker; a manual read must not cut into it.
-    if (callBotIdRef.current !== undefined) return;
-    const text = speechFromBlocks(message.blocks);
-    const id = message.botId ?? activeBotId.current;
-    if (text && id) readAloud(text, { botId: id, messageId: message.id });
-  }, []);
+  const speakMessage = useCallback(
+    (message: ThreadMessage) => {
+      if (speakingMessageIdRef.current === message.id) {
+        speaker.stop();
+        return;
+      }
+      // An active call owns the speaker; a manual read must not cut into it.
+      if (callBotIdRef.current !== undefined) return;
+      const text = speechFromBlocks(message.blocks);
+      const id = message.botId ?? activeBotId.current;
+      if (text && id) readAloud(text, { botId: id, messageId: message.id }, openVoiceSettingsNow);
+    },
+    [openVoiceSettingsNow],
+  );
 
   return { speakingMessageId, speakMessage, callHoldsSpeaker: callBotId !== undefined };
 }
