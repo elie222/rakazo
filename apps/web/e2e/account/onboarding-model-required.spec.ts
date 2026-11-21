@@ -114,7 +114,7 @@ test("a hosted account picks credits, a subscription, or an API key", async ({
   const providerPicker = page.getByRole("combobox", { name: "Provider" });
   await expect(page.getByRole("radio", { checked: true })).toHaveCount(0);
   await expect(providerPicker).toHaveCount(0);
-  await expect(continueButton).toBeDisabled();
+  await expect(continueButton).toHaveCount(0);
   await captureScreenshot(page, testInfo, "onboarding-connect-ways");
 
   await page.getByRole("radio", { name: "Use a subscription", exact: true }).click();
@@ -122,6 +122,7 @@ test("a hosted account picks credits, a subscription, or an API key", async ({
   await expect(subscriptions.getByRole("radio")).not.toHaveCount(0);
   await subscriptions.getByRole("radio").first().click();
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  await expect(continueButton).toHaveCount(0);
   await captureScreenshot(page, testInfo, "onboarding-subscription");
 
   await page.getByRole("radio", { name: "Use an API key", exact: true }).click();

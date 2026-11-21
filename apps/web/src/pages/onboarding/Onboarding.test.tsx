@@ -277,7 +277,7 @@ it("starts a hosted account by choosing credits, a subscription, or an API key",
 
   expect(checked()).toEqual([]);
   expect(providerPicker()).toBeNull();
-  expect(button("Continue")?.disabled).toBe(true);
+  expect(button("Continue")).toBeUndefined();
 
   await act(async () => choice("Use a subscription")!.click());
   expect(

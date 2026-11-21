@@ -203,7 +203,9 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
         </p>
       ) : null}
       {error ? <p className="mt-3 text-body text-destructive">{error}</p> : null}
-      {oauth ? null : (
+      {/* Continue only does something once there is a key to save or credits to buy. */}
+      {oauth ||
+      (billingEnabled && (!connectWay || (connectWay === "subscription" && !acceptsKey))) ? null : (
         <Button
           className="mt-6"
           disabled={!credits && !canSaveModel}
@@ -295,7 +297,7 @@ function ConnectWayChoice({ model, fieldId }: { model: OnboardingModel; fieldId:
                 <Icon aria-hidden className="size-5 text-foreground" />
                 <RadioGroupItem id={`${fieldId}-way-${value}`} value={value} />
               </div>
-              <FieldTitle className="text-body-lg">{title}</FieldTitle>
+              <FieldTitle className="text-body-lg text-foreground">{title}</FieldTitle>
             </Field>
           </FieldLabel>
         ))}
@@ -318,7 +320,7 @@ function ConnectWayChoice({ model, fieldId }: { model: OnboardingModel; fieldId:
                   id={`${fieldId}-subscription-${option.value}`}
                   value={option.value}
                 />
-                <FieldTitle>{option.label}</FieldTitle>
+                <FieldTitle className="text-foreground">{option.label}</FieldTitle>
               </Field>
             </FieldLabel>
           ))}
