@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Me, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
-  connectionDisplayName,
+  modelConnectionNames,
   modelRoutingDirty,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -17,10 +18,10 @@ import {
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/models/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { analyticsSurface } from "../../lib/platform/desktop";
@@ -233,7 +234,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     };
   }, []);
 
-  const groups = useMemo(() => {
+  const groups = (() => {
     const grouped = new Map<string, ModelCatalogEntry[]>();
     for (const entry of catalog) {
       const entries = grouped.get(entry.provider) ?? [];
@@ -243,30 +244,23 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     return popularModelProvidersFirst(
       [...grouped].map(([id, entries]) => ({
         id,
-        name: providerDisplayName(
-          id,
-          entries[0]?.providerName ?? id,
-          credentials.find((entry) => entry.provider === id)?.authKind,
-        ),
+        name: providerDisplayName(localizeModelEntry(entries[0] ?? { provider: id })),
         entries,
       })),
       (group) => group.id,
       (group) => group.name,
     );
-  }, [catalog, credentials]);
+  })();
   const credentialByProvider = useMemo(
     () => new Map(credentials.map((entry) => [entry.provider, entry])),
     [credentials],
   );
   selectedLabelRef.current = selected?.label;
+  const selectedEntry = localizeModelEntry(modelsForProvider[0] ?? { provider });
   const selectedProviderName =
-    endpointPreset?.name ?? groups.find((group) => group.id === provider)?.name ?? provider;
+    endpointPreset?.name ?? providerDisplayName(selectedEntry, credential?.authKind);
   const selectedConnectionName = credential
-    ? connectionDisplayName(
-        credential,
-        groups.find((group) => group.id === provider)?.name ?? provider,
-        modelsForProvider[0]?.providerName ? [modelsForProvider[0].providerName] : [],
-      )
+    ? modelConnectionNames(selectedEntry, credential).connectionName
     : selectedProviderName;
   const disconnectName = selectedConnectionName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
