@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { CATALOG_SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
@@ -80,9 +81,9 @@ let container: HTMLDivElement;
 let root: Root;
 let onChanged: Mock<(serverId?: string) => unknown>;
 
-function view(props: { hidden?: boolean } = {}) {
+function view(props: { hidden?: boolean; query?: string } = {}) {
   return createElement(IntegrationCatalogSearch, {
-    query: "tracker",
+    query: props.query ?? "tracker",
     hidden: props.hidden ?? false,
     noLocalMatch: true,
     onChanged,
@@ -113,6 +114,35 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
 });
+
+it.each([1, CATALOG_SEARCH_QUERY_MAX_LENGTH + 1])(
+  "keeps the local empty state without offering public search for %i characters",
+  async (length) => {
+    state.rpc.mockResolvedValue(catalogResult);
+    await act(async () => root.render(view({ query: ` ${"x".repeat(length)} ` })));
+
+    expect(container.textContent).toContain("No apps match your search.");
+    expect(container.textContent).not.toContain("Search more apps");
+    await press("Search more apps");
+    expect(state.rpc).not.toHaveBeenCalled();
+  },
+);
+
+it.each([2, CATALOG_SEARCH_QUERY_MAX_LENGTH])(
+  "searches the public catalog for a trimmed query of %i characters",
+  async (length) => {
+    const query = "x".repeat(length);
+    state.rpc.mockResolvedValue(catalogResult);
+    await act(async () => root.render(view({ query: ` ${query} ` })));
+    await press("Search more apps");
+
+    expect(state.rpc).toHaveBeenCalledExactlyOnceWith(
+      "capabilities/catalogSearch",
+      { query, usePublicCatalog: true },
+      expect.anything(),
+    );
+  },
+);
 
 it("reads out a failed catalog search once, and each new failure of it", async () => {
   state.rpc.mockImplementation(() => Promise.reject(new Error("Search is unavailable right now.")));
