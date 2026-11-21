@@ -5,11 +5,12 @@ import { cronFromPreset, isOneShotRoutineCrons } from "@rakazo/core";
 import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, X } from "lucide-react";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { useIdentityConfirmation } from "../../components/account/ConfirmIdentityDialog";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useSpaceQueries } from "../../lib/query/query";
 import type { RoutineDraftState } from "../../lib/routines/routine-draft";
-import { routineNeedsOneShotArm } from "../../lib/routines/routine-draft";
+import { routineDraftDirty, routineNeedsOneShotArm } from "../../lib/routines/routine-draft";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
 import { RoutineOwnerNote } from "./routine-editor/access-note";
@@ -71,6 +72,13 @@ export function RoutineEditor({
 }) {
   const { t } = useLingui();
   const fieldId = useId();
+  // Going back or closing with unsaved edits asks first; a clean editor leaves at once.
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  // The run time a one-time routine starts with is made from the clock, so remember it per routine.
+  const [opened, setOpened] = useState({ editing, runAtLocal: draft.runAtLocal });
+  if (opened.editing !== editing) setOpened({ editing, runAtLocal: draft.runAtLocal });
+  const leave = (exit: () => void) =>
+    routineDraftDirty(draft, editing, opened.runAtLocal) ? setLeaving(() => exit) : exit();
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
   // Closing the confirmation is a choice, and other failures show as the editor's error.
   const revealWebhook = () => void withIdentityConfirmation(onRevealWebhook).catch(() => undefined);
@@ -107,7 +115,7 @@ export function RoutineEditor({
         <Button
           variant="ghost"
           size="icon"
-          onClick={onBack}
+          onClick={() => leave(onBack)}
           className="text-muted-foreground"
           aria-label={t`Back`}
         >
@@ -119,7 +127,7 @@ export function RoutineEditor({
         <Button
           variant="ghost"
           size="icon"
-          onClick={onClose}
+          onClick={() => leave(onClose)}
           className="text-muted-foreground"
           aria-label={t`Close`}
         >
@@ -324,6 +332,17 @@ export function RoutineEditor({
 
       {editing ? <RoutineRunHistory key={editing.id} routineId={editing.id} /> : null}
       {identityDialog}
+      <ConfirmDialog
+        open={leaving !== null}
+        onCancel={() => setLeaving(null)}
+        title={<Trans>Discard unsaved changes?</Trans>}
+        confirmLabel={<Trans>Discard</Trans>}
+        onConfirm={() => {
+          const exit = leaving;
+          setLeaving(null);
+          exit?.();
+        }}
+      />
     </div>
   );
 }
