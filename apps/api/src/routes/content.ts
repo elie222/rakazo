@@ -390,13 +390,18 @@ export function contentRoutes(ctx: RouterContext) {
               costUsd: 0,
             };
           }
-          return totalsOf({
-            ...rawTotals,
-            inputComplete: Boolean(rawTotals.inputComplete),
-            outputComplete: Boolean(rawTotals.outputComplete),
-            totalComplete: Boolean(rawTotals.totalComplete),
-            costComplete: Boolean(rawTotals.costComplete),
-          });
+          // A few calls without a count (an interrupted one) must not blank the whole total.
+          const tokensPartial = !rawTotals.totalComplete && rawTotals.totalTokens !== null;
+          return {
+            ...totalsOf({
+              ...rawTotals,
+              inputComplete: Boolean(rawTotals.inputComplete),
+              outputComplete: Boolean(rawTotals.outputComplete),
+              totalComplete: Boolean(rawTotals.totalComplete) || tokensPartial,
+              costComplete: Boolean(rawTotals.costComplete),
+            }),
+            tokensPartial,
+          };
         })();
 
         const nextDay = (day: string) =>
