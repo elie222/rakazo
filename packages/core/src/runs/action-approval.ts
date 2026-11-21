@@ -813,6 +813,15 @@ export function applyJudgeDecision(input: {
  */
 export const CARD_TITLE_ESCAPED_CHARACTERS = "[\\\\`*_[\\]<>~|]";
 
+/**
+ * The server's labels on the user's-computer approval, whose "allow" covers the whole space. Cards
+ * from before it covered the space carry the older label.
+ */
+export const ALLOW_IN_SPACE_LABELS: ReadonlySet<string> = new Set([
+  "Allow in this space",
+  "Allow for this chat",
+]);
+
 export function isApprovalAskBlock(block: {
   kind: string;
   approvalEffectId?: string;

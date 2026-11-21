@@ -130,6 +130,11 @@ export function voiceChatSummary(group: VoiceChatGroup): string {
     : sentence;
 }
 
+/** A call's length as the chat shows it: minutes and seconds, such as 3:05. */
+export function callDurationText(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 /** The connected time the caller recorded, else whole seconds between the first and last message. */
 export function voiceChatDuration(group: VoiceChatGroup): number {
   const marker = group.marker?.blocks[0];

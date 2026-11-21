@@ -322,6 +322,7 @@ test("group chats share every context-menu action", async ({ page }, testInfo) =
     "Mark as Unread",
     "Edit Profile",
     "Duplicate",
+    "Export chat",
     "Clear conversation",
     "Archive",
     "Delete",
