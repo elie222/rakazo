@@ -37,8 +37,8 @@ export function BotCreatePicker({
   const terms = needle.split(/\s+/);
   const showCreate =
     !needle ||
-    [createLabel.toLowerCase(), "new bot"].some(
-      (label) => label.includes(needle) || terms.every((part) => label.includes(part)),
+    [createLabel.toLowerCase(), "new bot"].some((label) =>
+      terms.every((part) => label.includes(part)),
     );
 
   return (
