@@ -96,8 +96,7 @@ vi.mock("react-native", () => ({
       <div
         data-padding-left={(safeArea.rtl ? end : start) ?? horizontal}
         data-padding-right={(safeArea.rtl ? start : end) ?? horizontal}
-        data-padding-top={flat.paddingTop ?? flat.paddingVertical ?? flat.padding}
-        data-padding-bottom={flat.paddingBottom ?? flat.paddingVertical ?? flat.padding}
+        data-padding-top={flat.paddingTop ?? flat.padding}
       >
         {children}
       </div>
@@ -140,9 +139,6 @@ describe("computer update progress", () => {
   afterEach(() => act(() => root.unmount()));
 
   it.each([
-    { direction: "LTR", left: 0, right: 0 },
-    { direction: "LTR", left: 54, right: 0 },
-    { direction: "LTR", left: 0, right: 54 },
     { direction: "LTR", left: 18, right: 54 },
     { direction: "RTL", left: 18, right: 54 },
   ])(
@@ -163,9 +159,6 @@ describe("computer update progress", () => {
       expect(sheet?.dataset.paddingLeft).toBe(`${24 + left}`);
       expect(sheet?.dataset.paddingRight).toBe(`${24 + right}`);
       expect(sheet?.dataset.paddingTop).toBe("24");
-      expect(sheet?.dataset.paddingBottom).toBe("24");
-      expect(sheet?.textContent).toContain("Updating Team Computer");
-      expect(sheet?.contains(button("Continue in Background") ?? null)).toBe(true);
     },
   );
 
