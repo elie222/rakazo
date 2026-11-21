@@ -124,6 +124,7 @@ jobs:
       attestations: write
     secrets:
       LEGACY_GHCR_TOKEN: ${{ secrets.LEGACY_GHCR_TOKEN }}
+      MARKETING_REPO_TOKEN: ${{ secrets.MARKETING_REPO_TOKEN }}
 
   publish-mobile-update:
     name: Publish compatible mobile update

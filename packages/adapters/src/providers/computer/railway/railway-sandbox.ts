@@ -16,8 +16,12 @@ import type {
   UnreferencedMachineRecords,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
-import { SandboxFileTooLargeError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
-import { anySignal } from "@rakazo/core";
+import {
+  SandboxFileTooLargeError,
+  SandboxRateLimitError,
+  WorkspaceTooLargeError,
+} from "@rakazo/adapter-kit";
+import { anySignal, cancelResponseBody, parseRetryAfter } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import type * as Railway from "railway";
@@ -234,6 +238,8 @@ export class RailwaySandboxProvider implements SandboxProvider {
         createdId = error.id;
       }
       if (createdId) await this.deleteUnreferenced(createdId, request.botId);
+      if (hasRailwayErrorCode(railway, error, "LIMIT_EXCEEDED"))
+        throw new SandboxRateLimitError({ cause: error });
       throw error;
     }
     if (context.signal.aborted) {
@@ -726,6 +732,14 @@ async function railwayFetch(
   const deadline = AbortSignal.timeout(30_000);
   const signal = init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline;
   const response = await fetch(input, { ...init, signal, redirect: "error" });
+  // Railway's own rate limit is a computer limit, not a server failure. It is checked before the
+  // body, so a plain-text 429 is classified too, and it is thrown so the SDK never sees a reply.
+  if (response.status === 429) {
+    cancelResponseBody(response);
+    throw new SandboxRateLimitError({
+      retryAfterMs: parseRetryAfter(response.headers.get("retry-after")),
+    });
+  }
   const bytes = await readBodyCapped(response, MAX_RESPONSE_BYTES, signal);
   let body: { data?: { sandboxCreate?: { id?: unknown } }; errors?: unknown[] };
   try {
@@ -740,8 +754,14 @@ async function railwayFetch(
   if (typeof createdId === "string") onCreated?.(createdId);
   // Never attach upstream error bodies (which may echo credentials) to SDK errors. Keep only a
   // coarse code so a missing sandbox or a full sandbox cap stays distinguishable.
-  const failed = !response.ok || body.errors?.length || !body.data;
-  const code = failed ? railwayErrorCode(body.errors?.[0]) : undefined;
+  const errors = Array.isArray(body.errors) ? body.errors : [];
+  const failed = !response.ok || errors.length || !body.data;
+  const codes = errors.map(railwayErrorCode);
+  const code = failed
+    ? codes.includes("LIMIT_EXCEEDED")
+      ? "LIMIT_EXCEEDED"
+      : (codes[0] ?? "REQUEST_FAILED")
+    : undefined;
   return new Response(
     code
       ? JSON.stringify({
@@ -777,7 +797,9 @@ function railwayErrorCode(error: unknown) {
   if (/\bidle\b/i.test(message)) return "IDLE_TIMEOUT_REJECTED";
   if (/\bnot found\b/i.test(message)) return "NOT_FOUND";
   if (/\b(?:not authori[sz]ed|unauthori[sz]ed|forbidden)\b/i.test(message)) return "UNAUTHORIZED";
-  if (/\b(?:limit|quota|maximum)\b/i.test(message)) return "LIMIT_EXCEEDED";
+  if (/\b(?:limit|quota)\b/i.test(message)) return "LIMIT_EXCEEDED";
+  if (/\bmaximum\s+(?:sandboxes?|machines?|environments?|concurrent)\b/i.test(message))
+    return "LIMIT_EXCEEDED";
   return extensions?.code ?? "REQUEST_FAILED";
 }
 

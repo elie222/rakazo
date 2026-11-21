@@ -47,7 +47,6 @@ jobs:
       SCREENSHOT_AGENT: ${{ vars.PR_SCREENSHOT_AGENT || 'codex' }}
     outputs:
       pr: ${{ steps.pr.outputs.pr }}
-      prompt: ${{ steps.pr.outputs.prompt }}
       preview_url: ${{ steps.pr.outputs.preview_url }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -98,15 +97,21 @@ jobs:
               '{title, head_sha: .head.sha, body: (.body // ""), changed_files: ($files | split("\n") | map(select(. != ""))), preview_url: $url, existing_e2e_screenshots: $evidence}' \
               > "$dir/pr.json"
           gh pr diff "$pr" --repo "$GITHUB_REPOSITORY" > "$dir/full.diff" 2>/dev/null || echo "(diff unavailable)" > "$dir/full.diff"
-          delimiter="PROMPT_$(openssl rand -hex 16)"
+          # Not a job output: GitHub drops an output that contains anything matching a secret.
+          python3 .github/scripts/pr-screenshots.py prompt .github/prompts/pr-screenshots.md \
+            "$dir/pr.json" "$dir/full.diff" > "$dir/prompt.txt"
           {
-            echo "prompt<<$delimiter"
-            python3 .github/scripts/pr-screenshots.py prompt .github/prompts/pr-screenshots.md \
-              "$dir/pr.json" "$dir/full.diff"
-            echo "$delimiter"
             echo "pr=$pr"
             echo "preview_url=$preview_url"
+            echo "prompt_file=$dir/prompt.txt"
           } >> "$GITHUB_OUTPUT"
+      - name: Hand over the prompt
+        if: steps.pr.outputs.pr != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pr-screenshot-prompt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.pull_request }}
+          path: ${{ steps.pr.outputs.prompt_file }}
+          retention-days: 1
 
   # Shows the change on the pull request without its author taking screenshots. The agent only
   # gets browser tools: no files, shell or web access, so the pull request and the preview it
@@ -135,6 +140,20 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pr-screenshot-prompt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.pull_request }}
+          path: ${{ runner.temp }}/prompt
+      - name: Read the prompt
+        id: prompt
+        run: |
+          delimiter="PROMPT_$(openssl rand -hex 16)"
+          {
+            echo "text<<$delimiter"
+            cat "$RUNNER_TEMP/prompt/prompt.txt"
+            echo
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
       - name: Recheck the queued commit
         id: current
         env:
@@ -182,7 +201,7 @@ jobs:
           github_token: ${{ github.token }}
           # Fork authors lack write access; the agent has only browser tools and a read-only token.
           allowed_non_write_users: "*"
-          prompt: ${{ needs.screenshot-context.outputs.prompt }}
+          prompt: ${{ steps.prompt.outputs.text }}
           claude_args: >-
             --model ${{ vars.PR_SCREENSHOT_MODEL || 'claude-sonnet-5-5' }}
             --max-turns 90
@@ -224,18 +243,27 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
         run: |
           set -euo pipefail
+          # The token shares its hourly API limit with other automation. Codex rotates the login,
+          # so skip the capture unless there is room left to save the rotated one afterwards.
+          remaining="$(gh api rate_limit --jq .resources.core.remaining)"
+          if (( remaining < 100 )); then
+            reset="$(gh api rate_limit --jq '.resources.core.reset | todate')"
+            echo "::warning::Skipped the screenshot agent: the token that saves the subscription login has $remaining GitHub API calls left until $reset. The stored login is unchanged."
+            exit 0
+          fi
           install -d -m 700 "$RUNNER_TEMP/screenshot-codex"
           printf '%s' "$CODEX_SUBSCRIPTION_AUTH" | python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-codex/auth.json"
           # Verify write-back before Codex can rotate the refresh token.
           gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/screenshot-codex/auth.json"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
           sudo install -o codex-screenshots -g codex-screenshots -m 600 \
             "$RUNNER_TEMP/screenshot-codex/auth.json" /home/codex-screenshots/.codex/auth.json
       - name: Run Codex screenshot agent
         id: codex
-        if: steps.auth.outcome == 'success'
+        if: steps.auth.outputs.ready == 'true'
         env:
           CODEX_HOME: /home/codex-screenshots/.codex
-          PROMPT: ${{ needs.screenshot-context.outputs.prompt }}
+          PROMPT: ${{ steps.prompt.outputs.text }}
           MODEL: ${{ vars.PR_SCREENSHOT_MODEL }}
         run: |
           set -euo pipefail
@@ -263,10 +291,12 @@ jobs:
             echo "::$resume::"
             exit "$status"
           fi
+          # Tool names and outcomes only, so an incomplete run says which step failed without echoing page text.
+          grep -E '^mcp: [a-z_./]+( started| \(failed\)| \(completed\))?$' "$log" | tail -n 40 || true
           result=$(sudo -n -u codex-screenshots head -c 65537 /srv/pr-screenshot-agent/result.json | jq -c .)
           echo "result=$result" >> "$GITHUB_OUTPUT"
       - name: Persist refreshed subscription login
-        if: always() && steps.auth.outcome == 'success'
+        if: always() && steps.auth.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
         run: |

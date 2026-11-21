@@ -1,5 +1,6 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
+import { formatShortHistoryDate } from "@rakazo/core";
 
 export function formatRelativeTime(iso: string, now = new Date()): string {
   const date = new Date(iso);
@@ -12,5 +13,5 @@ export function formatRelativeTime(iso: string, now = new Date()): string {
   if (hours < 24) return t`${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return t`${days}d ago`;
-  return date.toLocaleDateString(i18n.locale || "en", { month: "short", day: "numeric" });
+  return formatShortHistoryDate(date, now, i18n.locale || "en");
 }

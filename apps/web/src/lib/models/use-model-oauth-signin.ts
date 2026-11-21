@@ -1,3 +1,5 @@
+import { t } from "@lingui/core/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type {
   AnalyticsModelSignInStep,
   ModelOAuthBegin,
@@ -90,10 +92,13 @@ export function useModelOAuthSignIn(options: {
     if (loginId) void rpc.models.cancelOAuth({ loginId, reason }).catch(() => undefined);
   }
 
-  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal, rpc);
+  async function finishSubscriptionSignIn(login: ModelOAuthBegin, controller: AbortController) {
+    await waitForModelOAuth(login, controller.signal, rpc);
     if (controller.signal.aborted) return;
-    const saved = await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
+    const saved = await rpc.models.finishOAuth(
+      { loginId: login.loginId },
+      { signal: controller.signal },
+    );
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     setOauth(null);
@@ -125,7 +130,7 @@ export function useModelOAuthSignIn(options: {
         { signal: controller.signal },
       );
       submitted = true;
-      await finishSubscriptionSignIn(attempt.loginId, controller);
+      await finishSubscriptionSignIn(attempt, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (submitted) {
@@ -207,7 +212,7 @@ export function useModelOAuthSignIn(options: {
         }
       }
       waitingForCode = started.mode === "auth-url";
-      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
+      if (!waitingForCode) await finishSubscriptionSignIn(started, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
@@ -224,6 +229,18 @@ export function useModelOAuthSignIn(options: {
       }
     }
   }
+
+  // Nothing asks the server about a code waiting to be pasted, so the card ends on the code's
+  // own clock. A device code's expiry arrives with its status.
+  useTimeout(
+    () => {
+      if (oauthCodeSubmittingRef.current) return;
+      cancelOAuthAttempt("interrupted");
+      onErrorRef.current(t`This code expired. Start again.`);
+    },
+    oauth?.mode === "auth-url" ? oauth.expiresInSeconds * 1000 : null,
+    oauth?.loginId,
+  );
 
   useEffect(() => () => cancelOAuthAttempt("left", false), []);
 

@@ -12,10 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@rakazo/ui-web";
-import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
 import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
-import { PasteCodeSignIn } from "../../components/models/PasteCodeSignIn";
+import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
 import type { OnboardingModel } from "./use-onboarding-model";
 
@@ -46,7 +45,6 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     needsProject,
     needsRouting,
     notice,
-    oauth,
     provider,
     providerItems,
     providerOptions,
@@ -223,15 +221,13 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
         </p>
       ) : null}
       {error ? <p className="mt-3 text-body text-destructive">{error}</p> : null}
-      {oauth ? null : (
-        <Button
-          className="mt-6"
-          disabled={!credits && !canSaveModel}
-          onClick={() => void (credits ? fundWithCredits() : saveModel())}
-        >
-          <Trans>Continue</Trans>
-        </Button>
-      )}
+      <Button
+        className="mt-6"
+        disabled={!credits && !canSaveModel}
+        onClick={() => void (credits ? fundWithCredits() : saveModel())}
+      >
+        <Trans>Continue</Trans>
+      </Button>
     </div>
   );
 }
@@ -370,39 +366,23 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
 
   return (
     <div className="mt-4">
-      {oauth ? (
-        <div className="rounded-lg border border-border px-3.5 py-3">
-          {oauth.mode === "auth-url" ? (
-            <PasteCodeSignIn
-              oauth={oauth}
-              code={pasteCode}
-              onCodeChange={setPasteCode}
-              onSubmit={() => void submitOAuthCode()}
-              onPageOpened={() => reportSignInStep("page_opened")}
-            />
-          ) : (
-            <DeviceCodeSignIn
-              oauth={oauth}
-              setup={selected?.signInSetup}
-              codeCopied={codeCopied}
-              onCopyCode={copyOAuthCode}
-              onPageOpened={() => reportSignInStep("page_opened")}
-            />
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2 -ml-2 text-muted-foreground"
-            onClick={() => cancelOAuthAttempt()}
-          >
-            <Trans>Cancel</Trans>
-          </Button>
-        </div>
-      ) : (
-        <Button disabled={oauthPending} onClick={() => beginSelectedSubscriptionSignIn()}>
-          {oauthPending ? <Trans>Starting…</Trans> : signInLabel}
-        </Button>
-      )}
+      <SubscriptionSignInSteps
+        oauth={oauth}
+        setup={selected?.signInSetup}
+        startLabel={signInLabel}
+        starting={oauthPending}
+        onStart={() => beginSelectedSubscriptionSignIn()}
+        onRestart={() => {
+          cancelOAuthAttempt("replaced");
+          beginSelectedSubscriptionSignIn();
+        }}
+        codeCopied={codeCopied}
+        onCopyCode={copyOAuthCode}
+        pasteCode={pasteCode}
+        onPasteCodeChange={setPasteCode}
+        onSubmitCode={() => void submitOAuthCode()}
+        onPageOpened={() => reportSignInStep("page_opened")}
+      />
     </div>
   );
 }

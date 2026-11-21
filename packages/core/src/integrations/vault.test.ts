@@ -2,6 +2,7 @@ import type { BotSecretMetadata, LoginFieldInput, VaultPolicy } from "@rakazo/co
 import {
   BLOCKED_ITEM_ANSWER,
   encodeLoginSecret,
+  FULL_VAULT_ANSWER,
   UNCHOSEN_ITEM_ANSWER,
   VAULT_ALSO_ON_LIMIT,
 } from "@rakazo/contracts";
@@ -23,11 +24,13 @@ const fields = [{ label: "Password", value: "saved-password-1", hidden: true }];
 const withKey = encodeLoginSecret({ fields, otp: TEST_KEY });
 
 describe("secretAnswerRefusal", () => {
-  it("names only the server's two fixed refusals", () => {
+  it("names only the server's three fixed refusals", () => {
     expect(secretAnswerRefusal(new Error(BLOCKED_ITEM_ANSWER))).toBe("blocked");
     expect(secretAnswerRefusal({ message: UNCHOSEN_ITEM_ANSWER })).toBe("unchosen");
+    expect(secretAnswerRefusal(new Error(FULL_VAULT_ANSWER))).toBe("full");
     for (const error of [
       new Error(`${BLOCKED_ITEM_ANSWER} saved-password-1`),
+      new Error(`${FULL_VAULT_ANSWER} saved-password-1`),
       new Error("Could not save saved-password-1"),
       BLOCKED_ITEM_ANSWER,
       { message: 3 },

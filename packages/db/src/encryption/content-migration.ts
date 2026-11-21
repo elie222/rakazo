@@ -21,7 +21,8 @@ interface TableSpec {
     | "thread"
     | "botEmailMessage"
     | "meetingSession"
-    | "nativeCalendarRequest";
+    | "nativeCalendarRequest"
+    | "task";
   /** Scans return them in this order as `values`. */
   columns: string[];
   json: boolean;
@@ -137,6 +138,18 @@ const TABLES: TableSpec[] = [
       WHERE id > ${cursor} AND "historyCompactionSummary" IS NOT NULL ORDER BY id LIMIT ${limit}`,
     writePlaintext: (id, row) =>
       Prisma.sql`UPDATE threads SET "historyCompactionSummary" = ${row.historyCompactionSummary as string} WHERE id = ${id}`,
+  },
+  {
+    model: "Task",
+    delegate: "task",
+    columns: ["prompt"],
+    json: false,
+    updatedAt: true,
+    scan: (cursor, limit) => Prisma.sql`
+      SELECT id, jsonb_build_array(prompt) AS values, "spaceId", "threadId" AS owner FROM tasks
+      WHERE id > ${cursor} ORDER BY id LIMIT ${limit}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE tasks SET prompt = ${row.prompt as string} WHERE id = ${id}`,
   },
   {
     model: "BotEmailMessage",
@@ -384,6 +397,8 @@ export async function contentEncryptionStatus(
     UNION ALL
     SELECT 'threads', count(*) FILTER (WHERE "historyCompactionSummary" IS NOT NULL),
       count(*) FILTER (WHERE "historyCompactionSummary" NOT LIKE 'rkz1:%') FROM threads
+    UNION ALL
+    SELECT 'tasks', count(*), count(*) FILTER (WHERE prompt NOT LIKE 'rkz1:%') FROM tasks
     UNION ALL
     SELECT 'bot_email_messages', count(*), count(*) FILTER (WHERE NOT (text LIKE 'rkz1:%'
       AND subject LIKE 'rkz1:%' AND "fromAddress" LIKE 'rkz1:%' AND "fromName" LIKE 'rkz1:%'))

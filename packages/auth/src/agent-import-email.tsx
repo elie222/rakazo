@@ -3,6 +3,7 @@ import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { AGENT_IMPORT_ASSISTANTS } from "@rakazo/core";
 import { Text } from "react-email";
 import { Button, emailText, greeting, message } from "./email.js";
+import { emailCopy } from "./email-copy/hosted-copy.js";
 
 /** Opens the agent import, through sign-in when the browser has no session. */
 export function agentImportUrl(webOrigin: string): string {
@@ -17,25 +18,19 @@ export function agentImportEmail(
   locale = "en",
 ): Promise<TransactionalEmail> {
   const say = emailText(locale);
+  const copy = emailCopy("agent-import", locale);
   const assistants = new Intl.ListFormat(locale, { type: "disjunction" }).format(
     AGENT_IMPORT_ASSISTANTS.map((assistant) => assistant.name),
   );
   return message(
     user.email,
     locale,
-    say("Bring your old assistant to Rakazo"),
+    copy("subject"),
     <>
       <Text>{greeting(say, user.name)}</Text>
-      <Text>
-        {say(
-          "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.",
-          { assistants },
-        )}
-      </Text>
-      <Text>
-        {say("It works for any other assistant too: send it one prompt and paste its reply.")}
-      </Text>
-      <Button href={agentImportUrl(links.webOrigin)}>{say("Import an agent")}</Button>
+      <Text>{copy("intro", { assistants })}</Text>
+      <Text>{copy("other")}</Text>
+      <Button href={agentImportUrl(links.webOrigin)}>{copy("button")}</Button>
     </>,
     links.unsubscribeUrl,
   );
