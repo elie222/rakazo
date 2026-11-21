@@ -25,9 +25,9 @@ describe.each(caddyfiles)("%s HSTS", (filename) => {
     expect(httpsSite).not.toContain("frame-ancestors 'none'");
   });
 
-  it("keeps shared page links out of search results and Referer headers", () => {
+  it("keeps shared page and reply links out of search results and Referer headers", () => {
     expect(httpsSite).toContain(
-      '@sharedPage path /p/*\n\theader @sharedPage {\n\t\tX-Robots-Tag "noindex, nofollow"\n\t\tReferrer-Policy no-referrer\n\t}',
+      '@sharedPage path /p/* /c/*\n\theader @sharedPage {\n\t\tX-Robots-Tag "noindex, nofollow"\n\t\tReferrer-Policy no-referrer\n\t}',
     );
   });
 

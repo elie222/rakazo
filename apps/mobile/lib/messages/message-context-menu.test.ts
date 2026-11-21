@@ -11,6 +11,7 @@ const labels: Record<MessageMenuSymbol, string> = {
   select: "Select text",
   selectMessages: "Select messages",
   unread: "Mark as unread",
+  share: "Share",
 };
 
 const reactions = ["👍", "👎", "❤️", "😂", "🎉", "😮"] as const;
@@ -35,6 +36,21 @@ describe("message context menu", () => {
       menu.find((entry) => entry.id === "react")?.subactions?.map((entry) => entry.title),
     ).toEqual([...reactions]);
     expect(ids(menu)).not.toContain("cancel");
+  });
+
+  it("puts Share after Copy only for a reply that can be shared", () => {
+    const include = { quote: false, react: false, speak: false, select: false };
+    const shared = buildMessageContextMenu({
+      labels,
+      reactions,
+      include: { ...include, share: true },
+    });
+    expect(ids(shared)).toEqual(["reply", "copy", "share"]);
+    expect(shared.find((entry) => entry.id === "share")).toMatchObject({
+      title: "Share",
+      symbol: "share",
+    });
+    expect(ids(buildMessageContextMenu({ labels, reactions, include }))).toEqual(["reply", "copy"]);
   });
 
   it("keeps read-only history copyable without reply, quote, or reaction actions", () => {

@@ -53,6 +53,7 @@ import { IntegrationSetupPage } from "./pages/integrations/IntegrationSetup";
 import { McpOAuthCallbackPage } from "./pages/integrations/McpOAuthCallback";
 import { SlackInstallCallbackPage } from "./pages/integrations/SlackInstallCallback";
 import { SharedPagePage } from "./pages/SharedPage";
+import { SharedReplyPage } from "./pages/SharedReplyPage";
 import { ShellPage } from "./pages/Shell";
 import { AppRailLayout } from "./pages/shell/app-rail";
 
@@ -235,6 +236,7 @@ function SessionApp() {
               />
               <Route path="/reset-password" element={<PasswordResetPage />} />
               <Route path="/p/:slugToken" element={<SharedPagePage />} />
+              <Route path="/c/:token" element={<SharedReplyPage />} />
               <Route
                 path="/review/:pageId?"
                 element={

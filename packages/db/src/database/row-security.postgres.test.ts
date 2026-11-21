@@ -29,6 +29,7 @@ type Tenant = {
   spaceId: string;
   userId: string;
   botId: string;
+  messageId: string;
   secretId: string;
   personalSecretId: string;
 };
@@ -103,6 +104,16 @@ function rowsFor(t: Tenant, tag: string): Array<[string, Record<string, unknown>
     ],
     ["userVoiceCredential", { userId: t.userId, provider: "p", secretId: t.personalSecretId }],
     ["trustedLinkSite", { userId: t.userId, site: `${tag}.example.test` }],
+    [
+      "replyShare",
+      {
+        spaceId: t.spaceId,
+        userId: t.userId,
+        messageId: t.messageId,
+        botId: t.botId,
+        tokenHash: `rls-reply-${tag}-${t.userId}`,
+      },
+    ],
     ["spendingLimit", { userId: t.userId, amount: 100, currency: "usd", period: "month" }],
     [
       "payment",
@@ -129,6 +140,7 @@ describePostgres("row-level security (PostgreSQL)", () => {
     spaceId: `rls-space-${name}-${suffix}`,
     botId: `rls-bot-${name}-${suffix}`,
     threadId: `rls-thread-${name}-${suffix}`,
+    messageId: `rls-message-${name}-${suffix}`,
     documentId: `rls-doc-${name}-${suffix}`,
     secretId: `rls-secret-${name}-${suffix}`,
     personalSecretId: `rls-personal-${name}-${suffix}`,
@@ -158,7 +170,13 @@ describePostgres("row-level security (PostgreSQL)", () => {
         data: { id: t.threadId, spaceId: t.spaceId, userId: t.userId, botId: t.botId },
       });
       await o.message.create({
-        data: { threadId: t.threadId, seq: 1, role: "user", blocks: [{ text: t.name }] },
+        data: {
+          id: t.messageId,
+          threadId: t.threadId,
+          seq: 1,
+          role: "user",
+          blocks: [{ text: t.name }],
+        },
       });
       await o.event.create({
         data: {
@@ -265,8 +283,14 @@ describePostgres("row-level security (PostgreSQL)", () => {
         "agentSkill",
         "userVoiceCredential",
         "trustedLinkSite",
+        "replyShare",
       ].map(async (table) => {
-        const scope = ["userVoiceCredential", "vaultCredential", "trustedLinkSite"].includes(table)
+        const scope = [
+          "userVoiceCredential",
+          "vaultCredential",
+          "trustedLinkSite",
+          "replyShare",
+        ].includes(table)
           ? "userId"
           : "spaceId";
         const ids = tenants.map((t) => t[scope]);
@@ -1061,6 +1085,7 @@ describePostgres("row-level security (PostgreSQL)", () => {
       agentSkill: [],
       userVoiceCredential: [],
       trustedLinkSite: [],
+      replyShare: [],
     };
     expect(await owners()).toEqual(none);
     expect(await runAsTenant(a, owners)).toEqual({
@@ -1072,6 +1097,7 @@ describePostgres("row-level security (PostgreSQL)", () => {
       agentSkill: [a.spaceId],
       userVoiceCredential: [a.userId],
       trustedLinkSite: [a.userId],
+      replyShare: [a.userId],
     });
     const everyone = await runAsSystem("row-level security test", owners);
     expect(everyone.agentSkill).toEqual(tenants.map((t) => t.spaceId).sort());
@@ -1108,6 +1134,33 @@ describePostgres("row-level security (PostgreSQL)", () => {
         }),
       ),
     ).toEqual({ count: 0 });
+  });
+
+  it("shows a user's reply links in every space, and makes them only in the space acted in", async () => {
+    const shares = () =>
+      db.replyShare.findMany({
+        where: { userId: { in: tenants.map((t) => t.userId) } },
+        select: { userId: true },
+      });
+    expect(await runAsTenant({ spaceId: b.spaceId, userId: a.userId }, shares)).toEqual([
+      { userId: a.userId },
+    ]);
+    expect(
+      await runAsTenant(b, () => db.replyShare.deleteMany({ where: { userId: a.userId } })),
+    ).toEqual({ count: 0 });
+    await expect(
+      runAsTenant({ spaceId: b.spaceId, userId: a.userId }, () =>
+        db.replyShare.create({
+          data: {
+            spaceId: a.spaceId,
+            userId: a.userId,
+            messageId: a.messageId,
+            botId: a.botId,
+            tokenHash: `rls-reply-elsewhere-${a.userId}`,
+          },
+        }),
+      ),
+    ).rejects.toThrow(/row-level security/);
   });
 
   it("keeps normal reads, writes and transactions working for the tenant", async () => {

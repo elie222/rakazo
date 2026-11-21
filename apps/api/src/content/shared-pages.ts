@@ -8,16 +8,18 @@ const MINUTE_MS = 60_000;
 const READS_PER_IP_PER_MINUTE = 120;
 
 /**
- * Anyone with a page's link reads its current version here, signed out. Every token that does
- * not open a shared page gets the same 404, and nothing here runs tools or models.
+ * Anyone with a share link reads what it opens at `<pathPrefix><token>`, signed out: never
+ * indexed, cached or sent on as a referrer. Every token that opens nothing gets the same 404, and
+ * nothing here runs tools or models.
  */
-export function mountSharedPages(
+export function mountShareLinkRead(
   app: Hono,
-  prisma: PrismaClient,
+  pathPrefix: string,
   clientIp: (c: Context) => string | undefined,
+  read: (token: string) => Promise<object | null>,
 ) {
   const reads = windowCounter(MINUTE_MS);
-  app.get(`${SHARED_PAGE_PATH_PREFIX}:token`, async (c) => {
+  app.get(`${pathPrefix}:token`, async (c) => {
     const headers = {
       "cache-control": "no-store",
       "x-robots-tag": "noindex, nofollow",
@@ -26,8 +28,20 @@ export function mountSharedPages(
     if (reads(throttleKey(clientIp(c))) > READS_PER_IP_PER_MINUTE) {
       return c.json({ error: "Too many requests" }, 429, { ...headers, "retry-after": "60" });
     }
-    const page = await readSharedPage(prisma, c.req.param("token"));
-    if (!page) return c.json({ error: "Not found" }, 404, headers);
-    return c.json(page, 200, headers);
+    // Every reader turns away an empty token with the same 404.
+    const shared = await read(c.req.param("token") ?? "");
+    if (!shared) return c.json({ error: "Not found" }, 404, headers);
+    return c.json(shared, 200, headers);
   });
+}
+
+/** Anyone with a page's link reads its current version here. */
+export function mountSharedPages(
+  app: Hono,
+  prisma: PrismaClient,
+  clientIp: (c: Context) => string | undefined,
+) {
+  mountShareLinkRead(app, SHARED_PAGE_PATH_PREFIX, clientIp, (token) =>
+    readSharedPage(prisma, token),
+  );
 }

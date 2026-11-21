@@ -374,7 +374,7 @@ const email = fc
 const shareToken = fc
   .tuple(fc.constantFrom("", "q3-plan-", "notes-"), base64url)
   .map(([slug, token]) => ({ text: slug + token, secret: token }));
-const sharePath = fc.constantFrom("/p/", "/api/v1/pages/shared/");
+const sharePath = fc.constantFrom("/p/", "/api/v1/pages/shared/", "/c/", "/api/v1/replies/shared/");
 const shareLinkAt = (origin: fc.Arbitrary<string>) =>
   fc.tuple(origin, sharePath, shareToken, fc.constantFrom("", "?x=1", "#top", "/", "&x=1")).map(
     ([host, path, token, tail]): Planted => ({
@@ -688,6 +688,7 @@ const fragment = fc.constantFrom(
   ".key=",
   "/p/",
   "%2Fp%2F",
+  "/c/",
   "/en",
   "/home/",
   "/Users/",
@@ -742,6 +743,7 @@ const hostileUnit = fc.constantFrom(
   "/p/",
   "%2Fp%2F",
   "/en/p/",
+  "/c/",
   "://",
   "://a:",
   "://a:b/",

@@ -779,6 +779,7 @@ model SpaceMember {
   modelRoleChoices SpaceModelRoleChoice[]
   settingOverrides SpaceSettingOverride[]
   threadReads      ThreadRead[]
+  replyShares      ReplyShare[]
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -1078,6 +1079,7 @@ model Bot {
   externalConversations ExternalConversation[]
   emailAddress      BotEmailAddress?
   emailMessages     BotEmailMessage[]
+  replyShares       ReplyShare[]
 
   @@unique([spaceId, spawnKey])
   @@index([spaceId, userId, archivedAt, pinned, updatedAt])
@@ -1238,6 +1240,7 @@ model Message {
   sourceRuns            Run[]             @relation("RunSourceMessage")
   externalTranscriptFor  ExternalMessage?
   steeringMessages SteeringMessage[]
+  replyShares      ReplyShare[]
   createdAt        DateTime  @default(now())
 
   @@unique([threadId, seq])
@@ -1247,6 +1250,28 @@ model Message {
   @@index([searchTokens], type: Gin)
   // Partial index messages_tool_work_idx (bot replies that used tools) is created in SQL.
   @@map("messages")
+}
+
+/// A public link to one bot reply. The link's page reads the message itself, so nothing of the
+/// reply is copied here, and only the token's hash is kept. It ends with the message, the bot,
+/// or the sharer's place in the Space.
+model ReplyShare {
+  id        String      @id @default(cuid())
+  spaceId   String
+  userId    String
+  member    SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  messageId String
+  message   Message     @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  botId     String
+  bot       Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  tokenHash String      @unique
+  createdAt DateTime    @default(now())
+
+  @@index([userId, createdAt])
+  @@index([spaceId, userId])
+  @@index([messageId])
+  @@index([botId])
+  @@map("reply_shares")
 }
 
 /// The send nonce of a message that history retention deleted, so a replayed signed delivery

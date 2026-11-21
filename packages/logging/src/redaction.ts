@@ -219,8 +219,9 @@ const URL_CREDENTIALS = new RegExp(
   "g",
 );
 
+// A shared page's or a shared reply's link path.
 const sharePath = (slash: string) =>
-  `${slash}(?:api${slash}v1${slash}pages${slash}shared|p)${slash}`;
+  `${slash}(?:api${slash}v1${slash}(?:pages|replies)${slash}shared|p|c)${slash}`;
 const SLASH = String.raw`\/`;
 const ENCODED_SLASH = "%(?:25)*2F";
 // A token may hold percent-encoded characters; only an encoded `/`, `?`, `#` or `&` ends it, as
@@ -232,8 +233,8 @@ const shareLink = (slash: string, origin: string) =>
   String.raw`(?:^|[^\w.~%/-]|${origin}|(?:${sharePath(SLASH)}|${sharePath(ENCODED_SLASH)})${SHARE_TOKEN})(?:${slash}[a-z]{2}(?:-[a-z]{2,4})?)?${sharePath(slash)}`;
 const ORIGIN = String.raw`:\/\/[^/\s?#]*`;
 const ENCODED_ORIGIN = String.raw`%(?:25)*3A(?:${ENCODED_SLASH}){2}[^/\s?#%]*(?:%(?:25)*3A\d+)?`;
-// A shared page's link is its only credential, in the API path and in the web page path, plain or
-// percent-encoded. The lookbehind runs only after a link path matched and stops at the previous
+// A shared page's or reply's link is its only credential, in the API path and in the web path,
+// plain or percent-encoded. The lookbehind runs only after a link path matched and stops at the previous
 // slash, plain or encoded like the path itself, so the scan stays linear.
 const PAGE_SHARE_LINK = new RegExp(
   `(${sharePath(SLASH)}|${sharePath(ENCODED_SLASH)})` +

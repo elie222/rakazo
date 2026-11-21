@@ -44,6 +44,7 @@ import {
   routineTestRunNonce,
   routineTestTarget,
 } from "../routines/routines.js";
+import { createReplyShare, listReplyShares, removeReplyShare } from "../threads/reply-shares.js";
 import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
 import {
   isBackgroundRun,
@@ -713,6 +714,23 @@ export function threadsRoutes(ctx: RouterContext) {
         await setThreadSnooze(deps.prisma, context.actor, target, input.until);
         return { ok: true as const };
       }),
+    },
+    replyShares: {
+      create: authed.replyShares.create.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        return createReplyShare(
+          { prisma: deps.prisma, webOrigin: deps.env.webOrigin },
+          context.actor,
+          target,
+          input.messageId,
+        );
+      }),
+      list: authed.replyShares.list.handler(({ context }) =>
+        listReplyShares(deps.prisma, context.actor),
+      ),
+      remove: authed.replyShares.remove.handler(({ context, input }) =>
+        removeReplyShare(deps.prisma, context.actor, input.shareId),
+      ),
     },
     externalConversations: {
       updatePolicy: authed.externalConversations.updatePolicy.handler(

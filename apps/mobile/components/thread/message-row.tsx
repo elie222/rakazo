@@ -10,6 +10,7 @@ import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
   canMarkMessageUnread,
+  canShareReply,
   copyableMessageText,
   isPeerReceiptBlocks,
   liveMessageComposing,
@@ -63,6 +64,8 @@ export type MessageRowActions = {
   speak: (message: MobileMessage) => void;
   react: (message: MobileMessage, reaction: MessageReaction) => Promise<boolean>;
   markUnread: (message: MobileMessage) => void;
+  /** Opens what a bot reply's public link would show, and makes the link on request. */
+  share: (message: MobileMessage) => void;
   answer: (
     message: MobileMessage,
     answer: string,
@@ -211,6 +214,8 @@ export const MessageRow = memo(function MessageRow({
     const includeSelectMessages = canSelectMessage(message);
     // Any sent message can be marked unread; the next open starts New at the first reply from it.
     const includeUnread = !readOnly && !markedUnread && canMarkMessageUnread(message);
+    // Anyone who can open the chat can share one of its bot replies.
+    const includeShare = Boolean(artifactTarget) && canShareReply(message);
     const reply = () => actions.reply(message);
     const quote = () => actions.quote(message);
     const speakMessage = () => actions.speak(message);
@@ -225,6 +230,7 @@ export const MessageRow = memo(function MessageRow({
     };
     const react = (reaction: MessageReaction) => actions.react(message, reaction);
     const markUnread = () => actions.markUnread(message);
+    const share = () => actions.share(message);
     // VoiceOver reads the bubble as one element and can't reach a code block's copy button.
     const codeBlocks = message.role === "user" ? [] : markdownCodeBlocks(blockText(message));
     const copyCode = () => {
@@ -255,6 +261,7 @@ export const MessageRow = memo(function MessageRow({
       ...(includeSpeak ? [{ name: "speak", text: t`Speak message`, onPress: speakMessage }] : []),
       ...(includeSelect ? [{ name: "select", text: t`Select text`, onPress: select }] : []),
       { name: "copy", text: t`Copy`, onPress: copy },
+      ...(includeShare ? [{ name: "share", text: t`Share`, onPress: share }] : []),
       ...(includeSelectMessages
         ? [{ name: "selectMessages", text: t`Select messages`, onPress: selectMessages }]
         : []),
@@ -272,6 +279,7 @@ export const MessageRow = memo(function MessageRow({
         select: t`Select text`,
         selectMessages: t`Select messages`,
         unread: t`Mark as unread`,
+        share: t`Share`,
       },
       reactions: MESSAGE_REACTIONS,
       include: {
@@ -282,6 +290,7 @@ export const MessageRow = memo(function MessageRow({
         select: includeSelect,
         selectMessages: includeSelectMessages,
         unread: includeUnread,
+        share: includeShare,
       },
     });
     const openSheet = (event: GestureResponderEvent) =>
@@ -325,6 +334,9 @@ export const MessageRow = memo(function MessageRow({
           ],
           [
             { name: "copy", text: t`Copy`, icon: "copy-outline" as const, onPress: copy },
+            ...(includeShare
+              ? [{ name: "share", text: t`Share`, icon: "link-outline" as const, onPress: share }]
+              : []),
             ...(includeSelectMessages
               ? [
                   {
@@ -387,6 +399,7 @@ export const MessageRow = memo(function MessageRow({
         if (id === "select") select();
         if (id === "selectMessages") selectMessages();
         if (id === "unread") markUnread();
+        if (id === "share") share();
       },
       actionProps: {
         onLongPress: Platform.OS === "ios" ? undefined : openSheet,
@@ -402,6 +415,7 @@ export const MessageRow = memo(function MessageRow({
   }, [
     message,
     actions,
+    artifactTarget,
     markedUnread,
     readOnly,
     onCall,

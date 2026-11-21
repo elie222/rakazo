@@ -1,9 +1,11 @@
 import type { ThreadMessage } from "@rakazo/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  canShareReply,
   copyableMessagesText,
   copyableMessageText,
   selectableMessageText,
+  sharedReplyText,
 } from "./message-text.js";
 
 function message(blocks: ThreadMessage["blocks"]): ThreadMessage {
@@ -116,5 +118,62 @@ describe("copyableMessagesText", () => {
     ).toBe("a\n\nb");
     expect(copyableMessagesText([card])).toBe("");
     expect(copyableMessagesText([])).toBe("");
+  });
+});
+
+describe("sharedReplyText", () => {
+  const canary = "CANARY-7f3a";
+  const reply = message([
+    { kind: "text", text: "  The answer is 42.  " },
+    { kind: "progress", text: canary },
+    { kind: "steps", steps: [{ label: "Searched", count: 1, note: canary }] },
+    { kind: "card", lines: [{ k: "key", v: canary }] },
+    { kind: "meta", text: canary },
+    { kind: "ask", text: canary },
+    { kind: "computer", state: "ready", text: canary },
+    { kind: "file", artifactId: "a_1", mimeType: "text/plain", name: canary, size: 1 },
+    { kind: "image", artifactId: "a_2", mimeType: "image/png", name: canary },
+    { kind: "text", text: "Ask secret-token." },
+  ]);
+
+  it("keeps only the reply's text blocks, never hidden fields", () => {
+    const text = sharedReplyText(reply, (value) => value);
+    expect(text).toBe("The answer is 42.\n\nAsk secret-token.");
+    expect(text).not.toContain(canary);
+  });
+
+  it("applies the redaction it is given to the whole text", () => {
+    const redact = vi.fn((value: string) => value.replace("secret-token", "[Redacted]"));
+    expect(sharedReplyText(reply, redact)).toBe("The answer is 42.\n\nAsk [Redacted].");
+    expect(redact).toHaveBeenCalledOnce();
+  });
+
+  it("reads stored rows whose text is not a string", () => {
+    const stored = message([{ kind: "text", text: 7 } as never, { kind: "text", text: "kept" }]);
+    expect(sharedReplyText(stored, (value) => value)).toBe("kept");
+  });
+});
+
+describe("canShareReply", () => {
+  const text = { kind: "text", text: "Hello" } as const;
+
+  it("shares a saved bot reply with text", () => {
+    expect(canShareReply(message([text]))).toBe(true);
+  });
+
+  it("never shares people's messages, unsaved rows, deliveries, bot-to-bot receipts or empty replies", () => {
+    expect(canShareReply({ ...message([text]), role: "user" })).toBe(false);
+    expect(canShareReply({ ...message([text]), id: "progress:run_1" })).toBe(false);
+    expect(canShareReply(message([text, { kind: "delivery" }]))).toBe(false);
+    expect(
+      canShareReply(
+        message([
+          text,
+          { kind: "bot_message_sent", toBotId: "b_2", toBotName: "Peer", text: "Hi" },
+        ]),
+      ),
+    ).toBe(false);
+    expect(canShareReply(message([{ kind: "text", text: "   " }]))).toBe(false);
+    expect(canShareReply(message([{ kind: "progress", text: "working" }]))).toBe(false);
   });
 });

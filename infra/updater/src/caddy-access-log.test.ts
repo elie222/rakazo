@@ -56,6 +56,9 @@ describe.each(caddyfiles)("%s access log", (filename) => {
     expect(redact("/api/v1/pages/shared/Zm9vYmFy_-x")).toBe("/api/v1/pages/shared/REDACTED");
     expect(redact("/p/q3-plan-Zm9vYmFy_-x?ref=1")).toBe("/p/REDACTED?ref=1");
     expect(redact("/app/p/page1")).toBe("/app/p/page1");
+    expect(redact("/api/v1/replies/shared/Zm9vYmFy_-x")).toBe("/api/v1/replies/shared/REDACTED");
+    expect(redact("/c/Zm9vYmFy_-x?ref=1")).toBe("/c/REDACTED?ref=1");
+    expect(redact("/app/c/chat1")).toBe("/app/c/chat1");
     expect(redact("/rpc/threads/get?botId=b1")).toBe("/rpc/threads/get?botId=b1");
   });
 });

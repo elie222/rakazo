@@ -262,6 +262,7 @@ export const MessageView = memo(function MessageView({
       onMarkUnread={onMarkUnread}
       markedUnread={markedUnread}
       onReact={onReact}
+      shareTarget={artifactTarget}
     />
   );
   if (isNarration) {

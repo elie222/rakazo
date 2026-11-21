@@ -88,6 +88,7 @@ export * from "./threads/external-conversations.js";
 export * from "./threads/history.js";
 export * from "./threads/message-blocks.js";
 export * from "./threads/reactions.js";
+export * from "./threads/reply-shares.js";
 export * from "./threads/search.js";
 export * from "./threads/thread.js";
 export * from "./threads/thread-message.js";

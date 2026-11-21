@@ -163,6 +163,17 @@ describe("client monitoring contract", () => {
     expect(scrubMonitoringText(`GET /p/${token} failed`)).toBe("GET /p/[Redacted] failed");
   });
 
+  it("keeps a shared reply's link out of reported URLs and error text", () => {
+    const token = "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9";
+    expect(stripMonitoringUrl(`https://app.example.com/c/${token}?x=1`)).toBe(
+      "https://app.example.com/c/[Redacted]",
+    );
+    expect(stripMonitoringUrl(`/api/v1/replies/shared/${token}`)).toBe(
+      "/api/v1/replies/shared/[Redacted]",
+    );
+    expect(scrubMonitoringText(`GET /c/${token} failed`)).toBe("GET /c/[Redacted] failed");
+  });
+
   it("uses valid W3C headers shared by client errors and the API", () => {
     const headers = clientCorrelationHeaders(() => "12345678-1234-4234-9234-123456789abc");
     expect(headers.traceparent).toBe("00-12345678123442349234123456789abc-1234567812344234-01");

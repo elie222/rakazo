@@ -355,6 +355,21 @@ describe("redaction", () => {
     expect(logged).not.toContain(token);
   });
 
+  it("redacts a shared reply's link like a page's, and leaves other paths", () => {
+    const token = "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9";
+    expect(
+      redactSensitiveText(
+        `Failed to open https://app.example.com/c/${token}: 404\n` +
+          `    at GET /api/v1/replies/shared/${token}?x=1 (fetch)\n` +
+          `next=%2Fc%2F${token}&from=mail "/en/c/${token}" /app/c/chat1 src/c/index.ts`,
+      ),
+    ).toBe(
+      "Failed to open https://app.example.com/c/[Redacted]: 404\n" +
+        "    at GET /api/v1/replies/shared/[Redacted]?x=1 (fetch)\n" +
+        'next=%2Fc%2F[Redacted]&from=mail "/en/c/[Redacted]" /app/c/chat1 src/c/index.ts',
+    );
+  });
+
   it("scans text full of link-like paths without blocking", () => {
     const moduleUrl = new URL("./redaction.ts", import.meta.url).href;
     const output = execFileSync(
