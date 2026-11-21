@@ -45,6 +45,8 @@ export type PiCatalogEntry = {
   recommended?: boolean;
   provider: string;
   providerName: string;
+  subscriptionName?: string;
+  subscriptionNameId?: string;
   id: string;
   label: string;
   billing: string;
@@ -285,6 +287,8 @@ function buildPiCatalog(): PiCatalogEntry[] {
       entries.push({
         provider: provider.id,
         providerName,
+        subscriptionName: definition?.subscriptionName,
+        subscriptionNameId: definition?.subscriptionNameId,
         id: model.id,
         recommended: isRecommendedCatalogModel(provider.id, model.id),
         label: catalogModelLabel(model.id, model.name, modelIds),

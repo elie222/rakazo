@@ -1,4 +1,5 @@
-import { abortableDelay } from "../primitives/async.js";
+import { MODEL_SIGN_IN_EXPIRED_ERROR } from "@rakazo/contracts";
+import { pollUntil } from "../primitives/retry.js";
 import { isRetryableError } from "../primitives/retry-policy.js";
 
 export type ModelOAuthCompletion =
@@ -26,29 +27,39 @@ export function finishModelOAuthAttempt(
   resetBusy();
 }
 
+/** The server reports an expired code itself; past this margin the client stops asking. */
+const EXPIRY_GRACE_MS = 60_000;
+
 export async function waitForModelOAuthCompletion(
   complete: () => Promise<ModelOAuthCompletion>,
-  options: { signal?: AbortSignal; attempts?: number; pollIntervalMs?: number } = {},
+  options: { expiresInSeconds: number; signal?: AbortSignal; pollIntervalMs?: number },
 ): Promise<{ status: "ready" }> {
-  const attempts = options.attempts ?? 180;
-  const pollIntervalMs = options.pollIntervalMs ?? 5000;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    throwIfAborted(options.signal);
-    let result: ModelOAuthCompletion;
-    try {
-      result = await complete();
-    } catch (error) {
-      throwIfAborted(options.signal);
-      if (!isRetryableError(error)) throw error;
-      // A failed status read does not mean the sign-in itself failed.
-      result = { status: "pending" };
-    }
-    throwIfAborted(options.signal);
-    if (result.status === "ready") return result;
-    if (result.status === "error") throw new Error(result.error);
-    if (attempt < attempts) await abortableDelay(pollIntervalMs, options.signal);
-  }
-  throw new Error("Sign-in timed out. Try again.");
+  const { signal } = options;
+  return pollUntil(
+    async () => {
+      throwIfAborted(signal);
+      let result: ModelOAuthCompletion;
+      try {
+        result = await complete();
+      } catch (error) {
+        throwIfAborted(signal);
+        if (!isRetryableError(error)) throw error;
+        // A failed status read does not mean the sign-in itself failed.
+        return undefined;
+      }
+      throwIfAborted(signal);
+      if (result.status === "error") throw new Error(result.error);
+      return result.status === "ready" ? result : undefined;
+    },
+    {
+      intervalMs: options.pollIntervalMs ?? 5000,
+      timeoutMs: options.expiresInSeconds * 1000 + EXPIRY_GRACE_MS,
+      signal,
+      onTimeout: () => {
+        throw new Error(MODEL_SIGN_IN_EXPIRED_ERROR);
+      },
+    },
+  );
 }
 
 function throwIfAborted(signal?: AbortSignal) {
