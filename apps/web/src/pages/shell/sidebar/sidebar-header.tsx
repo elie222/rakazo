@@ -11,6 +11,7 @@ import type { Panel } from "../right-panel-state";
 
 // A size class, since the Button sizes any svg without one to 16px.
 const ICON = "size-4.5";
+const TOGGLE_ICON = `${ICON} rtl:rotate-180`;
 const STROKE = 1.75;
 
 export function SidebarHeader({
@@ -64,9 +65,9 @@ export function SidebarHeader({
         onClick={() => setBotsSidebarCollapsedPref(!mini)}
       >
         {mini ? (
-          <PanelLeftOpen className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          <PanelLeftOpen className={TOGGLE_ICON} strokeWidth={STROKE} aria-hidden="true" />
         ) : (
-          <PanelLeftClose className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          <PanelLeftClose className={TOGGLE_ICON} strokeWidth={STROKE} aria-hidden="true" />
         )}
       </Button>
     </IconTooltip>

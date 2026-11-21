@@ -520,3 +520,32 @@ describe("plain text truncation properties", () => {
     );
   });
 });
+
+describe("plainTextFromMarkdown task markers and entities", () => {
+  it.each([
+    ["- [ ] todo item", "todo item"],
+    ["- [x] done", "done"],
+    ["* [X] done", "done"],
+    ["1. [ ] first", "first"],
+    ["- [ ] a\n- [x] b", "a b"],
+    ["- [link](https://example.com)", "link"],
+    ["- [ ]", ""],
+    ["Remember [ ] not a task", "Remember [ ] not a task"],
+    ["[ ] no list marker", "[ ] no list marker"],
+    ["- [y] not a task", "[y] not a task"],
+  ])("previews %j as %j", (source, preview) => {
+    expect(plainTextFromMarkdown(source)).toBe(preview);
+  });
+
+  it.each([
+    ["Tom &amp; Jerry &lt;3", "Tom & Jerry <3"],
+    ["caf&#233; &#x1F600;", "café 😀"],
+    ["&lt;b&gt;not a tag&lt;/b&gt;", "<b>not a tag</b>"],
+    ["a &unknown; b", "a &unknown; b"],
+    ["`&amp;` stays", "&amp; stays"],
+    ["```\n&lt;\n```", "&lt;"],
+    ["&#xE000;0&#xE000; end", "\uE000" + "0" + "\uE000 end"],
+  ])("previews %j as %j", (source, preview) => {
+    expect(plainTextFromMarkdown(source)).toBe(preview);
+  });
+});
