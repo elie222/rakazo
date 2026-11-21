@@ -4,7 +4,7 @@ import {
   getDefaultEnvironment,
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { pollUntil } from "@rakazo/core";
+import { pollUntil } from "@rakazo/core/retry";
 import type { HostScreen, HostScreenAction, HostScreenObservation } from "./host-screen.js";
 import {
   actThenObserve,
