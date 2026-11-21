@@ -210,6 +210,20 @@ it("moves the active row to the first match when searching", async () => {
   expect(rowState()).toEqual([["Newest", "false", "true"]]);
 });
 
+it("returns the active row to the model in use when the search is cleared", async () => {
+  const onPick = vi.fn();
+  await renderCurrent(onPick);
+  await type("newest");
+  await type("");
+  expect(rowState()).toEqual([["Older", "true", "true"]]);
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>("[cmdk-root]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: "older" }));
+});
+
 it("does not mark or pick a connection of your own when the included model is in use", async () => {
   const onPick = vi.fn();
   await act(async () =>

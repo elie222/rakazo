@@ -74,9 +74,18 @@ export function RoleModelPicker({
     ...options.map((option) => ({ option, provider: undefined })),
     ...providers.map((provider) => ({ option: undefined, provider })),
   ];
-  const { query, setQuery, showSearch, visible } = useListSearch(rows, {
+  const {
+    query,
+    setQuery: setSearch,
+    showSearch,
+    visible,
+  } = useListSearch(rows, {
     text: (row) => (row.option ? modelCatalogSearchText(row.option) : row.provider!.name),
   });
+  const setQuery = (next: string) => {
+    searched.current = true;
+    setSearch(next);
+  };
   const groups = useMemo(() => {
     const grouped = new Map<string, RoleModelOption[]>();
     for (const row of visible) {
@@ -113,6 +122,8 @@ export function RoleModelPicker({
   // searching moves it to the first match.
   const [activeValue, setActiveValue] = useState("");
   const startValue = (!needle && currentValue) || values[0] || "";
+  // Set when the search changes, until cmdk's own answer to it (or the next key) is handled.
+  const searched = useRef(false);
   useEffect(() => {
     if (open) setActiveValue(startValue);
   }, [startValue, open]);
@@ -167,7 +178,16 @@ export function RoleModelPicker({
           shouldFilter={false}
           loop
           value={activeValue}
-          onValueChange={setActiveValue}
+          onKeyDown={() => {
+            searched.current = false;
+          }}
+          onValueChange={(value) => {
+            // cmdk moves the active row to its first row after a search changes, which would
+            // lose the model in use when the box is cleared; the first answer is ours to replace.
+            const settled = searched.current;
+            searched.current = false;
+            setActiveValue(settled ? startValue : value);
+          }}
         >
           {showSearch ? (
             <ListSearchInput
