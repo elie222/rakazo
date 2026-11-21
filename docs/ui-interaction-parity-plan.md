@@ -51,7 +51,7 @@
 - 列表重排使用 Web Animations API 的 FLIP，只在列表签名变化时测量，流式文字不会触发布局读取。
 - 新增 `use-flip.test.tsx`、`use-entering-messages.test.tsx`，并在 `transcript.test.tsx`、`composer.test.tsx`、`ActivityList.test.tsx` 补行为断言；`chat/sidebar.spec.ts` 覆盖 56px 行高、隐藏列表的焦点隔离与移动端 Activity 入口。
 - 行尾“More”悬浮菜单留给 PR 4：现有聊天菜单是右键上下文菜单，直接复用到悬浮按钮会在窄行上覆盖整行点击（E2E 已复现），因此 PR 3 不提前上线半成品。
-- 验证：UI 包 101 测试、Web 2,713 测试、`pnpm checks` 153 项、typecheck、生产构建通过；Web 启动体积 894.0/900 kB。
+- 验证：UI 包 101 测试、Web 2,713 测试、`pnpm checks` 153 项、typecheck、生产构建通过；Web 启动体积 894.1/900 kB。
 
 ## 2. 交付边界
 
