@@ -68,6 +68,7 @@ export async function exportChat(options: {
     routineEvent: (change: RoutineEventChange, name: string) => string;
     ask: AskWords;
     status: CardStatusWords;
+    deletedBot: string;
     attachment: string;
   };
   time: (createdAt: string) => string;
@@ -85,6 +86,7 @@ export async function exportChat(options: {
     routineEvent: labels.routineEvent,
     askWords: labels.ask,
     cardStatus: labels.status,
+    memberName: (botId) => memberName(botId) ?? labels.deletedBot,
     attachment: labels.attachment,
     speaker: (message) => {
       if (message.role === "user") return otherAuthor(message.author, meId)?.name ?? labels.you;

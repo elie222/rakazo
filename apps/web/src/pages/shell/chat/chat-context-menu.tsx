@@ -207,6 +207,10 @@ export function ChatContextMenu({
               readFromPage: t`Read from the page, not checked`,
               buttonReadFromPage: (button) =>
                 t`Button “${button}”. Read from the page, not checked`,
+              approved: t`Approved`,
+              discarded: t`Discarded`,
+              commandVariable: t`Command variable`,
+              codeFrom: (host) => t`Only enter a code ${host} sent you.`,
             },
             status: {
               saved: t`Saved`,
@@ -219,6 +223,7 @@ export function ChatContextMenu({
               archived: t`archived`,
               deleted: t`deleted`,
             },
+            deletedBot: t`Deleted bot`,
             attachment: t`Attachment`,
           },
           meId,

@@ -26,6 +26,10 @@ const askWords = {
   settingsUpdated: "Settings updated",
   readFromPage: "Read from the page, not checked",
   buttonReadFromPage: (button: string) => `Button “${button}”. Read from the page, not checked`,
+  approved: "Approved",
+  discarded: "Discarded",
+  commandVariable: "Command variable",
+  codeFrom: (host: string) => `Only enter a code ${host} sent you.`,
 };
 
 const cardStatus = {
@@ -49,6 +53,7 @@ const transcript = (messages: ThreadMessage[]) =>
     routineEvent: (change, name) => `${change} routine "${name}"`,
     askWords,
     cardStatus,
+    memberName: (botId: string) => botId,
     attachment: "Attachment",
   });
 
@@ -204,6 +209,7 @@ describe("chatTranscriptMarkdown", () => {
       routineEvent: (change, name) => `${change} ${name}`,
       askWords,
       cardStatus,
+      memberName: (botId: string) => botId,
       attachment: "Attachment",
     });
     expect(text).toBe(
@@ -480,6 +486,7 @@ describe("chatTranscriptMarkdown", () => {
       routineEvent: (change, name) => `${change} ${name}`,
       askWords: { ...askWords, updateInstructions: "Atualizar instruções?" },
       cardStatus,
+      memberName: (botId: string) => botId,
       attachment: "Attachment",
     });
     expect(text).toContain("Atualizar instruções?");
@@ -634,7 +641,7 @@ describe("chatTranscriptMarkdown", () => {
     );
     expect(
       transcript([message("bot", [{ ...pin, oneTimeCode: { origin: "https://example.com" } }])]),
-    ).toContain("Enter your PIN\n\nSent");
+    ).toContain("Enter your PIN\n\nOnly enter a code example.com sent you.\n\nSent");
     expect(transcript([message("bot", [{ ...pin, dismissed: true as const }])])).toContain(
       "Enter your PIN\n\nDismissed",
     );
@@ -653,6 +660,80 @@ describe("chatTranscriptMarkdown", () => {
         ]),
       ]),
     ).toContain("Lee · archived\n\nMax · deleted\n\nAda");
+  });
+
+  it("writes a draft's outcome once answered, and a protected request's destination as its card shows it", () => {
+    const draft = {
+      source: "Mail",
+      values: { kind: "email" as const, to: "dana@example.com", subject: "Invoice", body: "Hi" },
+      keys: { to: "to", body: "body", subject: "subject" },
+    };
+    expect(
+      transcript([message("bot", [{ kind: "ask", text: "Send?", outgoingDraft: draft }])]),
+    ).not.toContain("Discarded");
+    expect(
+      transcript([
+        message("bot", [
+          { kind: "ask", text: "Send?", outgoingDraft: draft, status: "answered", answer: "deny" },
+        ]),
+      ]),
+    ).toContain("Subject: Invoice\n\nHi\n\nDiscarded");
+    const command = {
+      kind: "ask" as const,
+      text: "Enter the token",
+      input: "secret" as const,
+      status: "pending" as const,
+      credential: {
+        name: "github_token",
+        origin: "https://api.github.com",
+        auth: { type: "command" as const },
+      },
+    };
+    expect(transcript([message("bot", [command])])).toContain("Command variable $");
+    expect(
+      transcript([
+        message("bot", [
+          {
+            ...command,
+            credential: undefined,
+            oneTimeCode: { origin: "https://shop.example.com/x" },
+          },
+        ]),
+      ]),
+    ).toContain("Only enter a code shop.example.com sent you.");
+    expect(
+      transcript([
+        message("bot", [
+          {
+            ...command,
+            credential: {
+              name: "api_token",
+              origin: "https://api.example.com",
+              auth: { type: "bearer" as const },
+            },
+          },
+        ]),
+      ]),
+    ).toContain("https://api.example.com");
+  });
+
+  it("names both bots of a handoff, as the chat row does", () => {
+    const text = chatTranscriptMarkdown({
+      title: "Crew",
+      messages: [
+        message("bot", [
+          { kind: "handoff", fromBotId: "b_ada", toBotId: "b_lee", text: "Take the invoice" },
+        ]),
+      ],
+      speaker: () => "Ada",
+      time: () => "10:00",
+      routineEvent: (change, name) => `${change} ${name}`,
+      askWords,
+      cardStatus,
+      memberName: (botId) => (botId === "b_lee" ? "Lee" : "Ada"),
+      attachment: "Attachment",
+    });
+    expect(text).toContain("\u21aa Lee \u2190 Ada\n\nTake the invoice");
   });
 
   it("is just the title for an empty chat", () => {

@@ -1,4 +1,5 @@
 import type { MessageBlock, RoutineEventChange } from "@rakazo/contracts";
+import { commandVariableName, outgoingDraftPresentation } from "@rakazo/contracts";
 import { resolveAskChoice } from "../asks/answerable-ask.js";
 import { isSecretAskBlock } from "../asks/ask-kind.js";
 import { separateAskAnswers } from "../asks/ask-replies.js";
@@ -35,6 +36,12 @@ export type AskWords = {
   /** The note under a payment's amounts: they were read from the page and not checked. */
   readFromPage: string;
   buttonReadFromPage: (button: string) => string;
+  approved: string;
+  discarded: string;
+  /** The label before a command-line secret's variable name. */
+  commandVariable: string;
+  /** Where a one-time code came from, by the site's host. */
+  codeFrom: (host: string) => string;
 };
 
 /** The state words the chat's cards show, in the reader's language. */
@@ -240,7 +247,24 @@ function askMarkdown(
   status: CardStatusWords,
   answeredInOwnMessage: boolean,
 ): string {
-  if (block.outgoingDraft) return draftMarkdown(block.outgoingDraft.values, words);
+  if (block.outgoingDraft) {
+    // The card names an answered draft's outcome; a pending one names none.
+    const { status: draftStatus } = outgoingDraftPresentation(
+      block,
+      block.outgoingDraft.values,
+      block.outgoingDraft.values,
+      false,
+    );
+    const outcome =
+      draftStatus === "expired"
+        ? words.expired
+        : draftStatus === "discarded"
+          ? words.discarded
+          : draftStatus === "approved"
+            ? words.approved
+            : "";
+    return [draftMarkdown(block.outgoingDraft.values, words), outcome].filter(Boolean).join("\n\n");
+  }
   // A settled change shows only that it happened, with an undo.
   if (block.instructionUpdate?.undoVersionId) return words.instructionsUpdated;
   if (block.settingsUpdate) return words.settingsUpdated;
@@ -255,6 +279,8 @@ function askMarkdown(
   // The secret card shows a detail only for a one-time code; the prompt card shows it always.
   const shownDetail =
     block.detail && (!isSecretAskBlock(block) || block.oneTimeCode) ? block.detail : "";
+  // A protected request names where its answer goes, as its card does.
+  const destination = isSecretAskBlock(block) ? secretDestination(block, words) : "";
   const detail = block.receipt
     ? receiptMarkdown(block.receipt, words)
     : shownDetail
@@ -278,9 +304,37 @@ function askMarkdown(
   // A protected answer is never written, but the card's outcome for it is.
   const outcome =
     block.status === "answered" && isSecretAskBlock(block) ? secretOutcome(block, status) : "";
-  return [question, detail, options, answer, outcome, block.expired ? words.expired : ""]
+  return [
+    question,
+    destination,
+    detail,
+    options,
+    answer,
+    outcome,
+    block.expired ? words.expired : "",
+  ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+const FORM_AUTH_TYPES = new Set(["card", "contact"]);
+
+/** The line a protected request's card shows under its question: the variable, the code's site or the login's site. */
+function secretDestination(block: AskBlock, words: AskWords): string {
+  const credential = block.credential;
+  if (credential?.auth.type === "command") {
+    return oneLine(`${words.commandVariable} $${commandVariableName(credential.name)}`);
+  }
+  if (block.oneTimeCode) return oneLine(words.codeFrom(new URL(block.oneTimeCode.origin).host));
+  if (credential?.auth.type === "login") return oneLine(siteHostOf(credential.origin));
+  // Card, contact and login forms show no origin; other credentials show it as it is.
+  if (credential && !FORM_AUTH_TYPES.has(credential.auth.type)) return oneLine(credential.origin);
+  return "";
+}
+
+/** A login's site as its card shows it: the host, without a leading www. */
+function siteHostOf(origin: string): string {
+  return URL.canParse(origin) ? new URL(origin).host.replace(/^www\./, "") : origin;
 }
 
 /** A protected answer's outcome, worded as its card words it. */
@@ -301,6 +355,7 @@ function blockMarkdown(
     routineEvent: (change: RoutineEventChange, name: string) => string;
     ask: AskWords;
     status: CardStatusWords;
+    memberName: (botId: string) => string;
     attachment: string;
   },
   answeredInOwnMessage: boolean,
@@ -315,8 +370,15 @@ function blockMarkdown(
     case "ask":
       return askMarkdown(block, words.ask, words.status, answeredInOwnMessage);
     case "meta":
-    case "handoff":
       return literal(block.text);
+    case "handoff":
+      // The chat row names both bots before the text, as it does here.
+      return [
+        oneLine(`↪ ${words.memberName(block.toBotId)} ← ${words.memberName(block.fromBotId)}`),
+        literal(block.text),
+      ]
+        .filter(Boolean)
+        .join("\n\n");
     case "channel_message":
       return literal(channelMessageLine(block));
     case "image":
@@ -412,6 +474,8 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   askWords: AskWords;
   /** A card's state words (saved, running, archived and so on), in the reader's words. */
   cardStatus: CardStatusWords;
+  /** A group bot's name as the chat shows it, for a handoff between bots. */
+  memberName: (botId: string) => string;
   /** The label before an attached file's name, in the reader's words. */
   attachment: string;
 }): string {
@@ -425,6 +489,7 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
     routineEvent: options.routineEvent,
     ask: options.askWords,
     status: options.cardStatus,
+    memberName: options.memberName,
     attachment: options.attachment,
   };
   const entries = visibleMessages.flatMap((message) => {

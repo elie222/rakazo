@@ -43,6 +43,7 @@ const labels = {
   system: "System",
   routineEvent: (change: string, name: string) => `${change} routine "${name}"`,
   attachment: "Attachment",
+  deletedBot: "Deleted bot",
   ask: {
     answer: "Answer",
     expired: "Expired",
@@ -56,6 +57,10 @@ const labels = {
     settingsUpdated: "Settings updated",
     readFromPage: "Read from the page, not checked",
     buttonReadFromPage: (button: string) => `Button “${button}”. Read from the page, not checked`,
+    approved: "Approved",
+    discarded: "Discarded",
+    commandVariable: "Command variable",
+    codeFrom: (host: string) => `Only enter a code ${host} sent you.`,
   },
   status: {
     saved: "Saved",
