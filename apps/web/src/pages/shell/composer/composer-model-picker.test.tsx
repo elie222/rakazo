@@ -8,6 +8,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComposerModelKeys } from "./composer-model-picker";
 
 vi.mock("../../../lib/query/rpc", () => {
   const rpc = {
@@ -17,6 +18,8 @@ vi.mock("../../../lib/query/rpc", () => {
       list: vi.fn(async () => [
         { provider: "acme", id: "fast", label: "Fast", thinkingLevels: ["low", "high"] },
         { provider: "acme", id: "smart", label: "Smart" },
+        { provider: "acme", id: "steady", label: "Steady", thinkingLevels: ["medium"] },
+        { provider: "acme", id: "deep", label: "Deep", thinkingLevels: ["low", "medium", "high"] },
       ]),
     },
     me: vi.fn(async () => ({ defaultProvider: "acme", defaultModel: "fast" })),
@@ -71,6 +74,39 @@ describe("ComposerModelPicker", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    ["oauth", "Example Abonnement"],
+    ["api_key", "Acme"],
+  ])("shows the serving %s connection name in the model list", async (authKind, name) => {
+    i18n.load("de", { "Example subscription": "Example Abonnement" });
+    i18n.activate("de");
+    vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
+      { id: "connection", provider: "acme", label: "Acme", authKind, hasKey: true },
+    ] as never);
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([
+      {
+        provider: "acme",
+        providerName: "Acme",
+        subscriptionName: "Example subscription",
+        auth: "both",
+        id: "fast",
+        label: "Fast",
+      },
+    ] as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker bot={bot} onSaved={vi.fn()} onConnect={vi.fn()} open />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => {
+      const option = document.querySelector('[role="option"][aria-label^="Fast"]');
+      expect(option?.getAttribute("aria-label")).toBe(`Fast (${name})`);
+    });
+  });
+
   it("names the Space default's model and saves a pick to the bot", async () => {
     const onSaved = vi.fn();
     const updated = { ...bot, modelProvider: "acme", modelId: "smart" };
@@ -110,6 +146,147 @@ describe("ComposerModelPicker", () => {
       modelId: "smart",
       thinkingLevel: null,
     });
+  });
+
+  it("opens when its owner asks, as the keyboard shortcut does, and reports closing", async () => {
+    const onOpenChange = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker
+            bot={bot}
+            onSaved={vi.fn()}
+            onConnect={vi.fn()}
+            open
+            onOpenChange={onOpenChange}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const option = await vi.waitFor(() => {
+      const row = document.querySelector<HTMLElement>('[role="option"]');
+      if (!row) throw new Error("list not open");
+      return row;
+    });
+    act(() => {
+      option.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await vi.waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("steps to the next thinking level from the keyboard, wrapping at the end", async () => {
+    const registered: { keys: ComposerModelKeys | null } = { keys: null };
+    const register = (next: ComposerModelKeys | null) => {
+      registered.keys = next;
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const render = (current: Bot) =>
+      act(() =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <ComposerModelPicker
+              bot={current}
+              onSaved={vi.fn()}
+              onConnect={vi.fn()}
+              onKeysChange={register}
+            />
+          </QueryClientProvider>,
+        ),
+      );
+    vi.mocked(rpc.bots.update).mockResolvedValue({ ...bot, thinkingLevel: "low" } as never);
+    render({ ...bot, thinkingLevel: "high" } as Bot);
+    await vi.waitFor(() =>
+      expect(container.querySelector('button[aria-label^="Model"]')).not.toBeNull(),
+    );
+
+    let stepped: boolean | undefined;
+    act(() => {
+      stepped = registered.keys?.stepThinking();
+    });
+    expect(stepped).toBe(true);
+    await vi.waitFor(() =>
+      expect(rpc.bots.update).toHaveBeenLastCalledWith({ botId: "bot-1", thinkingLevel: "low" }),
+    );
+  });
+
+  it("offers no thinking step for a model without levels", async () => {
+    const registered: { keys: ComposerModelKeys | null } = { keys: null };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker
+            bot={{ ...bot, modelProvider: "acme", modelId: "smart" } as Bot}
+            onSaved={vi.fn()}
+            onConnect={vi.fn()}
+            onKeysChange={(next) => {
+              registered.keys = next;
+            }}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(container.querySelector('button[aria-label^="Model"]')).not.toBeNull(),
+    );
+    vi.mocked(rpc.bots.update).mockClear();
+    expect(registered.keys?.stepThinking()).toBe(false);
+    expect(rpc.bots.update).not.toHaveBeenCalled();
+  });
+
+  it("saves Default when a step lands on the default's level, so the bot keeps following it", async () => {
+    const registered: { keys: ComposerModelKeys | null } = { keys: null };
+    vi.mocked(rpc.bots.update).mockResolvedValue({ ...bot, thinkingLevel: null } as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker
+            bot={{ ...bot, modelProvider: "acme", modelId: "deep", thinkingLevel: "low" } as Bot}
+            onSaved={vi.fn()}
+            onConnect={vi.fn()}
+            onKeysChange={(next) => {
+              registered.keys = next;
+            }}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => expect(registered.keys).not.toBeNull());
+    let stepped: boolean | undefined;
+    act(() => {
+      stepped = registered.keys?.stepThinking();
+    });
+    expect(stepped).toBe(true);
+    await vi.waitFor(() =>
+      expect(rpc.bots.update).toHaveBeenLastCalledWith({ botId: "bot-1", thinkingLevel: null }),
+    );
+  });
+
+  it("keeps a one-level model on its default rather than saving the same level", async () => {
+    const registered: { keys: ComposerModelKeys | null } = { keys: null };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker
+            bot={{ ...bot, modelProvider: "acme", modelId: "steady" } as Bot}
+            onSaved={vi.fn()}
+            onConnect={vi.fn()}
+            onKeysChange={(next) => {
+              registered.keys = next;
+            }}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(container.querySelector('button[aria-label^="Model"]')).not.toBeNull(),
+    );
+    vi.mocked(rpc.bots.update).mockClear();
+    expect(registered.keys?.stepThinking()).toBe(false);
+    expect(rpc.bots.update).not.toHaveBeenCalled();
   });
 
   it("saves a thinking level from beside the model list", async () => {

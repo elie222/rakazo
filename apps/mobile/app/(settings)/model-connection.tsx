@@ -4,11 +4,12 @@ import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
-  connectionDisplayName,
   matchCompatibleEndpointPreset,
+  modelConnectionNames,
   modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -24,6 +25,7 @@ import {
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -31,6 +33,7 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -214,6 +217,7 @@ export default function ModelConnection() {
 
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
+  const signInSetup = selected?.signInSetup;
   const {
     oauth,
     pasteCode,
@@ -222,7 +226,7 @@ export default function ModelConnection() {
     codeCopied,
     copyOAuthCode,
     cancelOAuth,
-    cancelSignIn,
+    leaveSignIn,
     openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,
@@ -244,8 +248,8 @@ export default function ModelConnection() {
 
   const cancelInFlightWork = useCallback(() => {
     modelProbe.invalidate();
-    cancelSignIn();
-  }, [cancelSignIn, modelProbe]);
+    leaveSignIn();
+  }, [leaveSignIn, modelProbe]);
 
   useEffect(
     () => () => {
@@ -278,10 +282,10 @@ export default function ModelConnection() {
     }, [cancelInFlightWork, load]),
   );
 
-  const providerName = selected?.providerName ?? selected?.provider ?? "";
+  const selectedEntry = localizeModelEntry(selected ?? { provider, providerName: "" });
   const selectedProviderLabel = credential
-    ? connectionDisplayName(credential, providerName)
-    : (endpointPreset?.name ?? providerName);
+    ? modelConnectionNames(selectedEntry, credential).connectionName
+    : (endpointPreset?.name ?? providerDisplayName(selectedEntry));
   useScreenHeader({ title: selectedProviderLabel || undefined });
   const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
     selected?.routingFields,
@@ -554,21 +558,39 @@ export default function ModelConnection() {
     />
   ) : null;
 
+  const signInHost = oauth?.mode === "auth-url" ? new URL(oauth.verificationUri).hostname : "";
   const catalogConnectionControls =
     !isOpenAiCompatible && selected ? (
       <>
+        {subscriptionSignIn &&
+        signInSetup &&
+        (oauth || credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL(signInSetup.url)}
+            style={{ marginTop: 12 }}
+          >
+            <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
+          </Pressable>
+        ) : null}
         {subscriptionSignIn ? (
           oauth ? (
             <View style={styles.oauthCard}>
               {oauth.mode === "auth-url" ? (
                 <>
-                  <Text style={styles.secondary}>{t`Finish signing in in your browser:`}</Text>
-                  <Pressable onPress={() => void openSignInPage(oauth.verificationUri)}>
-                    <Text style={styles.link}>{oauth.verificationUri}</Text>
-                  </Pressable>
-                  <Text style={styles.secondary}>{t`Then paste the code here.`}</Text>
+                  <Text style={styles.secondary}>
+                    {t`Sign in at ${ph({ host: signInHost })}, then paste the code it shows you here.`}
+                  </Text>
+                  <NativeActionButton
+                    fill
+                    label={t`Open ${ph({ host: signInHost })}`}
+                    onPress={() => void openSignInPage(oauth.verificationUri)}
+                    style={{ marginTop: 12 }}
+                  />
                   <TextInput
-                    accessibilityLabel={t`Authorization code`}
+                    accessibilityLabel={t`Code from ${ph({ host: signInHost })}`}
+                    placeholder={t`Paste code`}
+                    placeholderTextColor={native.tertiaryLabel}
                     value={pasteCode}
                     onChangeText={setPasteCode}
                     autoCapitalize="none"
@@ -583,35 +605,36 @@ export default function ModelConnection() {
                     prominence="secondary"
                     style={{ marginTop: 12 }}
                   />
-                  <Text style={styles.secondary}>
-                    {t`Waiting for sign-in — the link expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
-                  </Text>
                 </>
               ) : (
                 <>
                   <Text style={styles.secondary}>
-                    {t`A sign-in page opened — enter this code there:`}
+                    {signInSetup
+                      ? t`2. Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`
+                      : t`Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`}
                   </Text>
-                  <Pressable onPress={() => void openSignInPage(oauth.verificationUri)}>
-                    <Text style={styles.link}>{oauth.verificationUri}</Text>
-                  </Pressable>
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
                     fill
-                    label={codeCopied ? t`Copied` : t`Copy`}
-                    onPress={() => copyOAuthCode(oauth.userCode)}
-                    prominence="secondary"
+                    label={codeCopied ? t`Copied, open again` : t`Copy code and open`}
+                    onPress={() => {
+                      copyOAuthCode(oauth.userCode);
+                      void openSignInPage(oauth.verificationUri);
+                    }}
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
-                    {t`Waiting for sign-in — the code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
+                    {t`Waiting for you to sign in. The code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
                   </Text>
                 </>
               )}
               <NativeActionButton
                 fill
-                label={t`Cancel`}
-                onPress={() => cancelOAuth()}
+                label={oauth.mode === "device-code" ? t`Get a new code` : t`Start over`}
+                onPress={() => {
+                  cancelOAuth("replaced");
+                  void startSubscriptionSignIn();
+                }}
                 prominence="secondary"
                 style={{ marginTop: 12 }}
               />

@@ -44,15 +44,16 @@ export function WatchTriggerCard({
   onChange: (watch: RoutineWatchDraft) => void;
   onRemove: () => void;
 }) {
-  const { t } = useLingui();
+  const { i18n, t } = useLingui();
   const id = useId();
+  const checkedAt = state ? new Date(state.checkedAt).toLocaleString(i18n.locale || "en") : "";
   const status = !state
     ? null
     : state.outcome === "failed"
       ? t`Check failed: ${state.detail ?? ""}`
       : state.outcome === "changed"
-        ? t`Last check ${new Date(state.checkedAt).toLocaleString()}: changed`
-        : t`Last check ${new Date(state.checkedAt).toLocaleString()}: no changes`;
+        ? t`Last check ${checkedAt}: changed`
+        : t`Last check ${checkedAt}: no changes`;
   return (
     <div className="rounded-xl border border-border p-3" data-testid="routine-watch-card">
       <div className="flex items-center gap-2.5 px-0.5">

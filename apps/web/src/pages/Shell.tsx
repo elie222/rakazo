@@ -93,6 +93,7 @@ import { Composer } from "./shell/composer/composer";
 import { ComposerModelPicker } from "./shell/composer/composer-model-picker";
 import { useComposerActions } from "./shell/composer/use-composer-actions";
 import { useComposerMentions } from "./shell/composer/use-composer-mentions";
+import { useComposerModelShortcuts } from "./shell/composer/use-composer-model-shortcuts";
 import { ComputerOverlay } from "./shell/computers/computer-overlay";
 import { ComputerPanel } from "./shell/computers/computer-panel";
 import { useComputerControls, useComputerState } from "./shell/computers/use-computer";
@@ -102,7 +103,12 @@ import { rightPanelStorageKey } from "./shell/right-panel-state";
 import { ShellDialogs, useShellDialogs } from "./shell/shell-dialogs";
 import type { SettingsSection } from "./shell/shell-overlay-url";
 import { AppOverlays, SettingsOverlays } from "./shell/shell-overlays";
-import { cycleBotId, isApplePlatform, useShellShortcuts } from "./shell/shell-shortcuts";
+import {
+  cycleBotId,
+  findPanelAction,
+  isApplePlatform,
+  useShellShortcuts,
+} from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
 import { ArchivedChats } from "./shell/sidebar/archived-chats";
 import { focusSidebarSearch, ShellSidebar } from "./shell/sidebar/shell-sidebar";
@@ -201,10 +207,15 @@ function SpaceShell() {
     refreshBots,
   });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
-  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
-  useEffect(() => {
+  // Read while rendering, so returning to chats does not animate the sidebar shut.
+  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(() =>
+    readBotsSidebarCollapsed(userId),
+  );
+  const [sidebarCollapsedFor, setSidebarCollapsedFor] = useState(userId);
+  if (sidebarCollapsedFor !== userId) {
+    setSidebarCollapsedFor(userId);
     setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
-  }, [userId]);
+  }
   const search = useSidebarSearch({ rpc, navigate });
   const thread = useThreadState();
   const { snapshot } = thread;
@@ -258,6 +269,8 @@ function SpaceShell() {
     useQuery(queries.voice.status.queryOptions()).data ?? null;
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
+  const [panelCoversChat, setPanelCoversChat] = useState(false);
+  const [panelOverlays, setPanelOverlays] = useState(false);
   const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [botMenu, setBotMenu] = useState<ChatMenuTarget | null>(null);
@@ -377,6 +390,13 @@ function SpaceShell() {
         focusSidebarSearch();
         return true;
       }
+      // The open model list is a dialog too, but its own chords still close it or step its thinking.
+      if (
+        (shortcut.type === "model-picker" || shortcut.type === "thinking-level") &&
+        modelShortcuts.open
+      ) {
+        return modelShortcuts.run(shortcut.type);
+      }
       // The command menu picks its own Cmd/Ctrl+1–9 from what it lists.
       if (hasOpenDialog(document, true)) return false;
       switch (shortcut.type) {
@@ -394,16 +414,24 @@ function SpaceShell() {
           return toggleChatPanel();
         case "focus-composer":
           return focusComposer();
+        case "model-picker":
+        case "thinking-level":
+          return modelShortcuts.run(shortcut.type);
         case "quote-selection":
           if (mobileSidebarOpen || (isMobileSidebar && panel)) return false;
           return quoteShortcutRef.current?.() ?? false;
         case "find":
           if (!active && !activeGroup) return false;
-          // On a narrow window the drawer makes the chat inert and a side panel covers it, so
-          // either would hide the bar. A panel holding a form keeps its input instead.
-          if (isMobileSidebar && panel) {
-            if (!chatPanelOpen) return false;
-            setPanel(null);
+          // The drawer makes the chat inert and a side panel can cover it, so either would hide
+          // the bar. A panel holding a form keeps its input instead.
+          {
+            const action = findPanelAction(
+              isMobileSidebar || panelOverlays,
+              !!panel,
+              chatPanelOpen,
+            );
+            if (action === "refuse") return false;
+            if (action === "close-panel") setPanel(null);
           }
           setMobileSidebarOpen(false);
           setFindOpen(true);
@@ -559,6 +587,10 @@ function SpaceShell() {
       : (queryClient.getQueryData(queries.skills.list.queryKey({ input: { botId: active.id } })) ??
         []);
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
+  const modelShortcuts = useComposerModelShortcuts({
+    botId: inGroup ? undefined : active?.id,
+    enabled: showComposerModel && !recordingSkill,
+  });
 
   const sidebarSpaces = useMemo(
     () =>
@@ -1109,7 +1141,7 @@ function SpaceShell() {
       <main
         data-space-switch="main"
         aria-hidden={mobileSidebarOpen || undefined}
-        inert={mobileSidebarOpen}
+        inert={mobileSidebarOpen || panelCoversChat}
         className="isolate flex min-w-0 flex-1 flex-col bg-background"
       >
         {/* Inside main so the composer and its menus stay above it. */}
@@ -1238,6 +1270,7 @@ function SpaceShell() {
                   <ComposerModelPicker
                     bot={active}
                     disabled={Boolean(recordingSkill)}
+                    {...modelShortcuts.pickerProps}
                     onConnect={() => openSettings("models")}
                     onSaved={(updated) =>
                       setBots((current) =>
@@ -1329,6 +1362,8 @@ function SpaceShell() {
         refreshBots={refreshBots}
         refreshGroupThread={refreshGroupThread}
         discardChatAttachments={composer.discardThreadAttachments}
+        onCoversChat={setPanelCoversChat}
+        onOverlays={setPanelOverlays}
         computerOpen={computerOpen}
         computerPanel={
           active ? (
@@ -1500,6 +1535,7 @@ function SpaceShell() {
         onOpenChange={setShortcutsOpen}
         host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
         dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
+        modelPicker={showComposerModel}
       />
 
       {computerOpen && computerBot ? (
