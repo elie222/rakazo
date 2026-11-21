@@ -199,7 +199,11 @@ function PrimaryRail({
             icon={<PanelLeft className="size-5" strokeWidth={1.75} aria-hidden="true" />}
             label={t`Show chat list`}
             testId="show-chat-list"
-            onClick={onShowChats}
+            onClick={() => {
+              // Board and Artifacts have no chat list beside them; bring the shell back first.
+              if (!onChatShell) navigate("/app");
+              onShowChats();
+            }}
           />
         ) : null}
         <RailItem

@@ -55,6 +55,10 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
   const list = page.getByTestId("bots-sidebar");
   await expect(list).toHaveAttribute("aria-hidden", "true");
   await expect(list).toHaveAttribute("inert", "");
+  // The collapsed rail lists chats as 48px squares, not full-width bars.
+  const miniRow = await page.locator('[data-slot="list-row"]').first().boundingBox();
+  expect(miniRow?.width).toBe(48);
+  expect(miniRow?.height).toBe(48);
   await expect(rail).toBeVisible();
   await rail.getByRole("button", { name: "Show chat list" }).click();
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
@@ -84,8 +88,12 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
   expect(hideBox!.x + hideBox!.width).toBeLessThanOrEqual(536);
 
   // Activity from another page returns to the chat shell, where its list lives.
+  await page.getByRole("button", { name: "Hide chat list" }).click();
   await rail.getByRole("link", { name: "Artifacts" }).click();
   await expect(page).toHaveURL(/\/app\/artifacts/);
+  // Restoring a hidden list also returns to the chat shell from any page.
+  await page.getByTestId("show-chat-list").click();
+  await expect(page).toHaveURL(/\/app$/);
   await activity.click();
   await expect(page).toHaveURL(/\/app$/);
   await expect(

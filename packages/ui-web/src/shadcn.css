@@ -106,7 +106,9 @@
   pointer-events: auto;
 }
 
-[data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"]))
+[data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"])):has(
+    > .row-reveal-action
+  )
   > [data-slot="list-row-link"]
   > [data-slot="list-row-content"] {
   -webkit-mask-image: linear-gradient(
@@ -122,7 +124,9 @@
 }
 
 [dir="rtl"]
-  [data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"]))
+  [data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"])):has(
+    > .row-reveal-action
+  )
   > [data-slot="list-row-link"]
   > [data-slot="list-row-content"] {
   -webkit-mask-image: linear-gradient(

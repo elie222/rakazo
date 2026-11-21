@@ -54,21 +54,35 @@
   --font-weight-normal: 420;
 }
 
-/* Shadow utilities read the generated tokens; naming them in `@theme` would self-reference. */
+/* Shadow utilities read the generated tokens; naming them in `@theme` would self-reference.
+   They set `--tw-shadow` and compose it with the ring, like Tailwind's own shadows, so a
+   surface can carry both its token shadow and the 1px hairline. */
 @utility shadow-outline {
-  box-shadow: var(--shadow-outline);
+  --tw-shadow: var(--shadow-outline);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
 }
 
 @utility shadow-control {
-  box-shadow: var(--shadow-control);
+  --tw-shadow: var(--shadow-control);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
 }
 
 @utility shadow-popover {
-  box-shadow: var(--shadow-popover);
+  --tw-shadow: var(--shadow-popover);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
 }
 
 @utility shadow-dialog {
-  box-shadow: var(--shadow-dialog);
+  --tw-shadow: var(--shadow-dialog);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
 }
 
 /* A message that lands while the chat is open rises into place once; history stays still. */

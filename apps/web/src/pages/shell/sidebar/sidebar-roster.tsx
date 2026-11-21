@@ -416,7 +416,7 @@ export function SidebarRoster({
                     className={cn(
                       "text-start",
                       mini
-                        ? "mx-auto size-12 justify-center rounded-xl"
+                        ? "mx-auto min-h-12 size-12 justify-center rounded-xl"
                         : compact
                           ? "min-h-11 gap-2 px-2.5 py-1.5"
                           : "gap-3 px-2.5",
@@ -553,6 +553,7 @@ export function SidebarRoster({
                     data-flip-key={`${item.kind}:${item.chat.id}`}
                     className={cn(
                       "group/row",
+                      mini && "mx-auto w-12 rounded-xl",
                       item.kind === "bot" && draggedBotId === item.chat.id && "opacity-55",
                     )}
                     actions={
