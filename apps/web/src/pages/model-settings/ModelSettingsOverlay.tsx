@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelSignInCancelReason, SettingsScope } from "@rakazo/contracts";
 import {
-  connectionDisplayName,
+  modelConnectionNames,
   modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -13,6 +13,7 @@ import {
   isFirstModelConnection,
   popularModelProvidersFirst,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   Dialog,
@@ -133,11 +134,10 @@ export function ModelSettingsOverlay({
   );
   const connectionName = (entry: ModelCredential) => {
     const group = groups.find((item) => item.id === entry.provider);
-    return connectionDisplayName(
+    return modelConnectionNames(
+      localizeModelEntry(group?.entries[0] ?? { provider: entry.provider }),
       entry,
-      group?.name ?? entry.provider,
-      group?.entries[0]?.providerName ? [group.entries[0].providerName] : [],
-    );
+    ).connectionName;
   };
   const providerLabel = (id: string) =>
     credentialByProvider.get(id)?.endpointName ??
