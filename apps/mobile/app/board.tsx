@@ -3,6 +3,7 @@ import type { Ticket, TicketStatus } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import { NativeActionButton } from "../components/native/native-action-button";
 import { LoadFailure } from "../components/ui/load-failure";
 import { rpc } from "../lib/api/api";
 import { errorText } from "../lib/api/user-error";
@@ -52,6 +53,11 @@ export default function BoardScreen() {
     }, [load]),
   );
 
+  function reload() {
+    setLoading(true);
+    void load();
+  }
+
   async function move(ticket: Ticket, status: TicketStatus) {
     if (moving.current.has(ticket.id)) return;
     moving.current.add(ticket.id);
@@ -75,15 +81,18 @@ export default function BoardScreen() {
         {loading ? (
           <ActivityIndicator color={native.secondaryLabel} />
         ) : error ? (
-          <LoadFailure
-            message={error}
-            onRetry={() => {
-              setLoading(true);
-              void load();
-            }}
-          />
+          <LoadFailure message={error} onRetry={reload} />
         ) : (
-          <Text style={styles.message}>{t`No tickets yet.`}</Text>
+          <View style={styles.empty}>
+            <Text style={styles.message}>{t`No tickets yet.`}</Text>
+            <NativeActionButton
+              label={t`Refresh`}
+              fill={false}
+              prominence="secondary"
+              style={styles.refresh}
+              onPress={reload}
+            />
+          </View>
         )}
       </View>
     );
@@ -108,6 +117,8 @@ function createStyles() {
       paddingHorizontal: 32,
       backgroundColor: native.groupedPage,
     },
+    empty: { alignItems: "center", gap: 8 },
+    refresh: { alignSelf: "center" },
     message: { color: native.secondaryLabel, fontSize: 17, textAlign: "center" },
   });
 }
