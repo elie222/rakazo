@@ -44,6 +44,18 @@ export function useAppRail() {
   return use(AppRailContext);
 }
 
+/** The chat shell owns the overlay host; every other rail page hands the overlay back to it. */
+function isChatShellPath(pathname: string) {
+  return (
+    pathname === "/app" ||
+    pathname.startsWith("/app/g/") ||
+    (pathname.startsWith("/app/") &&
+      !pathname.startsWith("/app/board") &&
+      !pathname.startsWith("/app/artifacts") &&
+      !pathname.startsWith("/app/x/"))
+  );
+}
+
 /** The secondary list's collapse state, shared by the rail's restore action and the list. */
 export function useAppSidebar() {
   const context = use(AppSidebarContext);
@@ -150,19 +162,13 @@ function PrimaryRail({
   const navigate = useNavigate();
   const activityMode = activityModePreference.use();
   const integrationsOpen = new URLSearchParams(search).has("integrations");
-  const onChatShell =
-    pathname === "/app" ||
-    pathname.startsWith("/app/g/") ||
-    (pathname.startsWith("/app/") &&
-      !pathname.startsWith("/app/board") &&
-      !pathname.startsWith("/app/artifacts") &&
-      !pathname.startsWith("/app/x/"));
+  const onChatShell = isChatShellPath(pathname);
   const onChats = !activityMode && onChatShell;
   const onArtifacts = pathname === "/app/artifacts" || pathname.startsWith("/app/artifacts/");
   const onBoard = pathname === "/app/board" || pathname === "/app/board/";
-  function openIntegrations() {
-    const params = withShellOverlay(new URLSearchParams(search), { kind: "integrations" });
-    navigate({ pathname, search: params.toString() });
+  function openOverlay(overlay: ShellOverlay) {
+    const params = withShellOverlay(new URLSearchParams(search), overlay);
+    navigate({ pathname: onChatShell ? pathname : "/app", search: params.toString() });
   }
 
   return (
@@ -269,7 +275,7 @@ function PrimaryRail({
           expanded={expanded}
           icon={<Plug className="size-5" strokeWidth={1.75} aria-hidden="true" />}
           label={t`Connect apps`}
-          onClick={openIntegrations}
+          onClick={() => openOverlay({ kind: "integrations" })}
         />
       </div>
       <div
@@ -292,7 +298,10 @@ function RailFooter({ boardEnabled }: { boardEnabled: boolean }) {
   const navigate = useNavigate();
   function openOverlay(overlay: ShellOverlay) {
     const params = withShellOverlay(new URLSearchParams(search), overlay);
-    navigate({ pathname, search: params.toString() });
+    navigate({
+      pathname: isChatShellPath(pathname) ? pathname : "/app",
+      search: params.toString(),
+    });
   }
   return (
     <ShellSidebarFooter
