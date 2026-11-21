@@ -335,6 +335,19 @@ harness failures and incomplete runs. Read the category and evidence before
 attributing a red run to a prompt change. Several trials establish an initial
 baseline, not a statistically precise reliability estimate.
 
+Compare two saved version 2 workflow Eval reports locally.
+
+```sh
+pnpm test:evals:compare baseline.json candidate.json
+```
+
+The command matches trials by case, strategy, and trial number. It lists
+passed-to-failed transitions and planned trials marked as not run. Reused or
+regraded results are marked on transitions. Workflow cost shows the report's
+recorded spend and displays `unknown` when unavailable. A completed comparison
+exits with status 0. If recorded settings or trial plans differ, the command
+names the differences and exits with status 1.
+
 The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied
 injection warnings must not be mistaken for compliance with the injection.
