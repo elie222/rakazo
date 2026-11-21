@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   savedGatewayId: "gateway-fixture",
   vendorLabels: false,
   subscriptionSignIn: false,
+  signInSetup: false,
   reconnectRequired: false,
   secondConnection: false,
   alert: vi.fn(),
@@ -235,6 +236,14 @@ vi.mock("../api/api", () => ({
                 ...entry,
                 auth: "both",
                 signIn: "device-code",
+                ...(mocks.signInSetup
+                  ? {
+                      signInSetup: {
+                        label: "Turn on device code sign-in in security settings",
+                        url: "https://example.com/security",
+                      },
+                    }
+                  : {}),
               }))
             : [
                 ...catalog.map((entry) => ({
@@ -637,6 +646,7 @@ beforeEach(() => {
   mocks.savedGatewayId = "gateway-fixture";
   mocks.vendorLabels = false;
   mocks.subscriptionSignIn = false;
+  mocks.signInSetup = false;
   mocks.pasteBackSignIn = false;
   mocks.reconnectRequired = false;
   mocks.secondConnection = false;
@@ -1019,17 +1029,25 @@ describe("provider connection screen", () => {
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
   });
 
-  it("copies before opening the browser and keeps the code available if opening fails", async () => {
+  it("opens prerequisites before issuing a code and lets the browser handoff be retried", async () => {
     mocks.connected = false;
     mocks.platform = "android";
     mocks.subscriptionSignIn = true;
+    mocks.signInSetup = true;
     const completeSignIn = deferred<{ status: "ready" }>();
     const copied = deferred<boolean>();
     mocks.completeOAuth.mockReturnValueOnce(completeSignIn.promise);
     mocks.copyCode.mockReturnValueOnce(copied.promise);
-    mocks.openURL.mockRejectedValueOnce(new Error("Browser unavailable"));
     await renderConnection();
-    await act(async () => buttonWithText("Sign in")!.click());
+    await act(async () =>
+      buttonWithText("1. Turn on device code sign-in in security settings")!.click(),
+    );
+    expect(mocks.openURL).toHaveBeenCalledWith("https://example.com/security");
+    expect(mocks.rpc).not.toHaveBeenCalledWith("models/beginOAuth", expect.anything());
+    mocks.openURL.mockClear();
+    mocks.openURL.mockRejectedValueOnce(new Error("Browser unavailable"));
+    await act(async () => buttonWithText("2. Get a sign-in code")!.click());
+    expect(container.textContent).toContain("paste this code when asked. Then return to Rakazo.");
 
     await act(async () => buttonWithText("Copy code and open")!.click());
     expect(mocks.copyCode).toHaveBeenCalledOnce();
@@ -1340,6 +1358,7 @@ describe("model role lists", () => {
       (next as { params: { requestId: string } }).params.requestId,
     )!;
     expect(picker.title).toBe("Add fallback");
+    expect(picker.connectionNotice).toBe("Provider connected. Choose a model.");
     expect(picker.connectChoices).toBeUndefined();
     expect(picker.choices.map((choice) => choice.modelLabel)).toEqual(
       catalog.slice(1).map((entry) => entry.label),
