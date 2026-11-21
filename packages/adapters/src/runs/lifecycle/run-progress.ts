@@ -236,6 +236,7 @@ export function mayBeSilentEnding(
 export function holdsTransientProgress(ctx: Pick<RunContext, "run" | "allowSilentEmptyRun">) {
   return (
     ctx.run.trigger === "routine" ||
+    ctx.run.trigger === "webhook" ||
     isBackgroundRunTrigger(ctx.run.trigger) ||
     (ctx.allowSilentEmptyRun && ctx.run.trigger === "follow_up")
   );
@@ -252,8 +253,8 @@ export function shownProgress(ctx: Pick<RunContext, "replyMode">) {
 export async function flushProgress(ctx: RunContext) {
   const { deps, run, runId, bot, thread } = ctx;
   const { reply } = ctx.state;
-  // Routines may finish silently. Do not leak narration or a partial silence
-  // sentinel before the final outcome is known.
+  // Routines and webhook deliveries may finish silently. Do not leak narration or a
+  // partial silence sentinel before the final outcome is known.
   if (
     ctx.scripted ||
     !reply.pendingProgress ||

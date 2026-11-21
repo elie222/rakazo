@@ -15,24 +15,35 @@ export function messagesModeReplyGuidance(maxLength = messageUserMaxLength()): s
   return `Text you write while working is private and never shown to the person. To tell them anything before your final answer, such as what you are starting on, something important you found, or a question, call message_user with one or two short sentences (at most ${maxLength} characters). Your final answer, the text you write after your last tool call, is shown. Put the complete answer there, never in message_user.`;
 }
 
-export const ROUTINE_SILENT_REPLY_GUIDANCE = `If this routine's prompt says to stay silent when there is nothing to report, the entire final assistant reply must be exactly ${NO_RESPONSE} — no surrounding prose, no variants, no progress updates, no all-clear, and no meta note that you are staying silent. Do not call message_user unless you have something to report.`;
+export const ROUTINE_SILENT_REPLY_GUIDANCE = `If this routine's prompt, or the instructions it points to, says to stay silent when there is nothing to report, the entire final assistant reply must be exactly ${NO_RESPONSE} — no surrounding prose, no variants, no progress updates, no all-clear, and no meta note that you are staying silent. An instruction to leave the reply empty or write nothing means the same: reply ${NO_RESPONSE}. Do not call message_user unless you have something to report. Nobody is waiting on this run: call ask_user only for a real decision the person must make, never to end the turn without writing.`;
 
 export const REACTION_SILENT_REPLY_GUIDANCE = `The user reacted with an emoji to your message. Reply only if the reaction calls for it, such as a correction after 👎, a go-ahead on something you proposed, or a question. Otherwise the entire final assistant reply must be exactly ${NO_RESPONSE}, with no message_user call.`;
 
 export const GROUP_UNADDRESSED_REPLY_GUIDANCE = `This message went to every member of the group and names nobody. Members decide at about the same time, so do not count on seeing the others' replies. Before using any tools, decide whether it is for you. Answer when it falls within your own description, or when it asks each member to reply. Stay silent when it fits another member's description better, or when no member's description fits it and you are not the first member listed. To stay silent, the entire final assistant reply must be exactly ${NO_RESPONSE}, with no tool calls, never a dot, a placeholder or an empty message.`;
 
+/** Runs nobody is waiting on: routines, reactions, and deliveries from outside, such as webhooks. */
 export function runAllowsSilentEmpty(trigger: string): boolean {
-  return trigger === "reaction" || trigger === "routine" || isBackgroundRunTrigger(trigger);
+  return (
+    trigger === "reaction" ||
+    trigger === "routine" ||
+    trigger === "webhook" ||
+    isBackgroundRunTrigger(trigger)
+  );
 }
 
 /**
  * Whether text written before a tool call may become a durable mid-turn chat bubble.
- * Routine and bot-to-bot runs hold it back, using the last segment as the final reply
+ * Routine, webhook and bot-to-bot runs hold it back, using the last segment as the final reply
  * only when the model supplies none and has not explicitly chosen silence.
  * Background runs never promote it.
  */
 export function runPromotesMidTurnNarration(trigger: string): boolean {
-  return trigger !== "routine" && trigger !== "bot_message" && !isBackgroundRunTrigger(trigger);
+  return (
+    trigger !== "routine" &&
+    trigger !== "webhook" &&
+    trigger !== "bot_message" &&
+    !isBackgroundRunTrigger(trigger)
+  );
 }
 
 export const TICKET_SILENT_REPLY_GUIDANCE =
