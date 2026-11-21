@@ -69,6 +69,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     color: z.string(),
     avatarSet: z.string(),
     notifyOnFinish: z.boolean(),
+    notifyOnReply: z.boolean().default(true),
     pinned: z.boolean(),
     position: z.number().int(),
     sectionId: Id.nullable(),

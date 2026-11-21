@@ -108,6 +108,7 @@ describePostgres("account export (PostgreSQL)", () => {
           data: { id, spaceId, userId, name: id, color: "blue" },
         });
       await bot(`mine-${suffix}`, ownedSpace, exporter);
+      await prisma.bot.update({ where: { id: `mine-${suffix}` }, data: { notifyOnReply: false } });
       await bot(`mine-shared-${suffix}`, sharedSpace, exporter);
       await bot(`theirs-${suffix}`, sharedSpace, other);
       const thread = await prisma.thread.create({
@@ -361,6 +362,7 @@ describePostgres("account export (PostgreSQL)", () => {
       owned.filter(
         (record): record is Extract<AccountExportRecord, { type: T }> => record.type === type,
       );
+    expect(owns("bot")[0]!.notifyOnReply).toBe(false);
     expect(owns("thread")[0]!.historyCompactionSummary).toBe("Summary mentions PERIWINKLE");
     expect(owns("thread")[1]).toMatchObject({
       id: `zz-helper-${suffix}`,

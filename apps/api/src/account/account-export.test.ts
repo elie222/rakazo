@@ -49,6 +49,7 @@ const botRecord = (id: string): Extract<AccountExportRecord, { type: "bot" }> =>
   color: "blue",
   avatarSet: "rakazo",
   notifyOnFinish: true,
+  notifyOnReply: true,
   pinned: false,
   position: 0,
   sectionId: null,

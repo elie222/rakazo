@@ -2002,6 +2002,22 @@ describeJourneys("required product journeys", () => {
     expect(bots.find((bot) => bot.id === source.id)?.fleetManagement).toBe(false);
   });
 
+  it("duplicating a bot keeps its reply notifications muted", async () => {
+    const cookie = await signup(app, `bot-notify-dup-j-${stamp}@rakazo.test`, "Notify");
+    const source = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await rpc(app, cookie, "bots/update", { botId: source.id, notifyOnReply: false });
+
+    const copy = await rpc<Bot>(app, cookie, "bots/duplicate", { botId: source.id });
+
+    expect(copy).toMatchObject({ notifyOnFinish: true, notifyOnReply: false });
+  });
+
   it("untrusted bot_message run cannot rewrite a child's instructions", async () => {
     const cookie = await signup(app, `bot-management-trust-j-${stamp}@rakazo.test`, "Bot Manager");
     const parent = await rpc<Bot>(app, cookie, "bots/create", {

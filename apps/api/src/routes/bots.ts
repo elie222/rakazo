@@ -387,6 +387,7 @@ export function botsRoutes(ctx: RouterContext) {
           description: source.description,
           instructions: source.instructions,
           notifyOnFinish: source.notifyOnFinish,
+          notifyOnReply: source.notifyOnReply,
           dailyCheckIns: source.dailyCheckIns,
           color: source.color,
           avatarSet: resolveBotAvatarSet(source.avatarSet),

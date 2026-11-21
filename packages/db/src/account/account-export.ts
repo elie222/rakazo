@@ -150,6 +150,7 @@ async function* spaceRecords(
       color: bot.color,
       avatarSet: bot.avatarSet,
       notifyOnFinish: bot.notifyOnFinish,
+      notifyOnReply: bot.notifyOnReply,
       pinned: bot.pinned,
       position: bot.position,
       sectionId: bot.sectionId,

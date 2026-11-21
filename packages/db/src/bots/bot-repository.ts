@@ -435,6 +435,7 @@ export function createRepos(
         description: string;
         instructions: string;
         notifyOnFinish: boolean;
+        notifyOnReply?: boolean;
         dailyCheckIns?: boolean;
         fleetManagement?: boolean;
         replyMode?: string;
@@ -547,6 +548,7 @@ export function createRepos(
               description: input.description,
               instructions: input.instructions,
               notifyOnFinish: input.notifyOnFinish,
+              notifyOnReply: input.notifyOnReply,
               dailyCheckIns: input.dailyCheckIns,
               fleetManagement: input.fleetManagement,
               replyMode: input.replyMode,
