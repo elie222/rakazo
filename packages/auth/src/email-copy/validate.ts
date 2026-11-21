@@ -10,26 +10,28 @@ export function placeholders(text: string): string[] {
 }
 
 /**
- * Keeps each string of a copy file that the email can use: a known language and key, a non-empty
- * string, and the same placeholders as its default. Everything else, and every language or key
- * the file lacks, is named in `problems`.
+ * Keeps each string of a copy file that the email can use: a non-empty string with the same
+ * placeholders as its default. A string that would fall back (invalid, or a language or key the
+ * file lacks) is named in `problems`. An email, language or key this release does not know is
+ * named in `unused`: newer copy may add one before an older release is rebuilt.
  */
 export function readCopyFile(
   defaults: Defaults,
   locales: readonly string[],
   id: EmailCopyId | string,
   file: unknown,
-): { copy: CopyByLocale; problems: string[] } {
+): { copy: CopyByLocale; problems: string[]; unused: string[] } {
   const keys = defaults[id];
   const copy: CopyByLocale = {};
   const problems: string[] = [];
-  if (!keys) return { copy, problems: [`${id}: no such email`] };
-  if (!isRecord(file)) return { copy, problems: [`${id}: not an object of languages`] };
+  const unused: string[] = [];
+  if (!keys) return { copy, problems, unused: [`${id}: no such email`] };
+  if (!isRecord(file)) return { copy, problems: [`${id}: not an object of languages`], unused };
   for (const locale of locales)
     if (!Object.hasOwn(file, locale)) problems.push(`${id}.${locale}: missing`);
   for (const [locale, strings] of Object.entries(file)) {
     if (!locales.includes(locale)) {
-      problems.push(`${id}.${locale}: no such language`);
+      unused.push(`${id}.${locale}: no such language`);
       continue;
     }
     if (!isRecord(strings)) {
@@ -39,7 +41,7 @@ export function readCopyFile(
     const kept: Record<string, string> = {};
     for (const [key, text] of Object.entries(strings)) {
       const fallback = Object.hasOwn(keys, key) ? keys[key] : undefined;
-      if (fallback === undefined) problems.push(`${id}.${locale}.${key}: no such key`);
+      if (fallback === undefined) unused.push(`${id}.${locale}.${key}: no such key`);
       else if (typeof text !== "string" || !text.trim())
         problems.push(`${id}.${locale}.${key}: not a non-empty string`);
       else if (placeholders(text).join() !== placeholders(fallback).join())
@@ -52,7 +54,7 @@ export function readCopyFile(
       if (!Object.hasOwn(strings, key)) problems.push(`${id}.${locale}.${key}: missing`);
     copy[locale] = kept;
   }
-  return { copy, problems };
+  return { copy, problems, unused };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

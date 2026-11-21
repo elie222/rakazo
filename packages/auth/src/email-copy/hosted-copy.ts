@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { translate } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
@@ -16,7 +16,8 @@ export type SayCopy<Id extends EmailCopyId> = (
 /**
  * Reads a deployment's email copy from `dir` (`<email>.json`, app language to key to text), once
  * per email. Each string falls back to the file's English, then to the default, and every
- * missing file or invalid string is logged once; sending never depends on the file.
+ * missing file or invalid string is logged once; sending never depends on the file. Without the
+ * directory (an image built without copy) every email uses its default without a word.
  */
 export function emailCopyReader(
   dir: string | undefined,
@@ -24,11 +25,12 @@ export function emailCopyReader(
     getLogger().warn("email copy falls back to the default", { "email_copy.problem": problem }),
 ) {
   const loaded = new Map<EmailCopyId, CopyByLocale>();
+  const present = Boolean(dir && existsSync(dir));
   const load = (id: EmailCopyId): CopyByLocale => {
     const cached = loaded.get(id);
     if (cached) return cached;
     let copy: CopyByLocale = {};
-    if (dir) {
+    if (dir && present) {
       try {
         const read = readCopyFile(
           EMAIL_COPY_DEFAULTS,

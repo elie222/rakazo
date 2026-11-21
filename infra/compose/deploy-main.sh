@@ -95,7 +95,7 @@ use_revision_image() {
       echo "Using the published image ${published}."
       return 0
     fi
-    echo "::warning::Could not pull ${published}; building ${revision} on this host instead." >&2
+    echo "::warning::Could not pull ${published}; building ${revision} on this host instead, with the default email copy." >&2
   fi
   compose "${limit}" build --build-arg "GIT_SHA=${revision}"
 }

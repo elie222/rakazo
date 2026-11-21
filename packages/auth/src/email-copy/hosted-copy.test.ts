@@ -33,12 +33,25 @@ function reader(dir: string | undefined) {
 const referral = EMAIL_COPY_DEFAULTS.referral;
 
 describe("email copy", () => {
-  it("uses the defaults, without a word, when the deployment has no copy", () => {
-    const { copy, problems } = reader(undefined);
-    expect(copy("referral", "de")("body", { weeks: 2 })).toBe(
-      referral.body.replace("{weeks}", "2"),
-    );
-    expect(problems).toEqual([]);
+  it.each([undefined, join(tmpdir(), "email-copy-absent")])(
+    "uses the defaults, without a word, when the deployment has no copy at %s",
+    (dir) => {
+      const { copy, problems } = reader(dir);
+      expect(copy("referral", "de")("body", { weeks: 2 })).toBe(
+        referral.body.replace("{weeks}", "2"),
+      );
+      expect(problems).toEqual([]);
+    },
+  );
+
+  it("lists copy this release does not use without falling back", () => {
+    const file = { ...everyLanguage(referral), "pt-br": referral };
+    const read = readCopyFile(EMAIL_COPY_DEFAULTS, EMAIL_LOCALES, "referral", file);
+    expect(read.problems).toEqual([]);
+    expect(read.unused).toEqual(["referral.pt-br: no such language"]);
+    expect(readCopyFile(EMAIL_COPY_DEFAULTS, EMAIL_LOCALES, "later", {}).unused).toEqual([
+      "later: no such email",
+    ]);
   });
 
   it("uses the deployment's copy in the email's language, else its English", () => {
@@ -56,12 +69,12 @@ describe("email copy", () => {
     expect(problems).toEqual([]);
   });
 
-  it("names a missing or unknown language and writes it in the file's English", () => {
+  it("names a missing language, ignores an unknown one, and writes in the file's English", () => {
     const { en, ...rest } = everyLanguage({ ...referral, subject: "Hosted subject" });
     const { fr: _fr, ...withoutFrench } = rest;
     const { copy, problems } = reader(copyDir({ referral: { en, ...withoutFrench, "pt-br": en } }));
     expect(copy("referral", "fr")("subject")).toBe("Hosted subject");
-    expect(problems).toEqual(["referral.fr: missing", "referral.pt-br: no such language"]);
+    expect(problems).toEqual(["referral.fr: missing"]);
   });
 
   it("falls back string by string and names each problem once", () => {
@@ -81,7 +94,6 @@ describe("email copy", () => {
     expect(problems).toEqual(
       expect.arrayContaining([
         "referral.en.body: placeholders none, expected weeks",
-        "referral.en.extra: no such key",
         "referral.en.link: missing",
         "referral.de.subject: not a non-empty string",
       ]),
