@@ -232,6 +232,22 @@ describeBreakdown("usage.breakdown", () => {
     expect(mixed.models.find((m) => m.model === "unpriced")?.costUsd).toBeNull();
     expect(mixed.models.find((m) => m.model === "m1")?.costUsd).toBeCloseTo(0.0115);
 
+    // A call with no token count leaves the total as the sum of the others, marked partial.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "interrupted",
+        costUsd: 0,
+      },
+    });
+    const partial = await get({ range: "30d", botId: alpha.id });
+    expect(partial.totals).toMatchObject({ modelCalls: 6, totalTokens: 207, tokensPartial: true });
+    expect(mixed.totals.tokensPartial).toBe(false);
+
     const elsewhere = await rpc<UsageBreakdown>(app, other, "usage/breakdown", { range: "all" });
     expect(summary(elsewhere)).toEqual({ runs: 1, calls: 1, tokens: 1_000_000 });
     expect(names(elsewhere)).toEqual(["Elsewhere"]);
