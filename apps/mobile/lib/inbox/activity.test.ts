@@ -19,6 +19,26 @@ describe("formatActivityRelativeTime", () => {
     const iso = new Date(now.getTime() - seconds * 1_000).toISOString();
     expect(formatActivityRelativeTime(iso, now)).toBe(label);
   });
+
+  it("includes the year only for older calendar years in the active language", () => {
+    resetI18nForTests("de");
+    const now = new Date(2026, 5, 15, 12);
+    const previous = new Date(2025, 0, 15, 12);
+    const current = new Date(2026, 0, 15, 12);
+    expect(formatActivityRelativeTime(previous.toISOString(), now)).toBe(
+      previous.toLocaleDateString("de", { day: "numeric", month: "short", year: "numeric" }),
+    );
+    expect(formatActivityRelativeTime(current.toISOString(), now)).toBe(
+      current.toLocaleDateString("de", { day: "numeric", month: "short" }),
+    );
+  });
+
+  it("keeps recent dates relative across a local year boundary", () => {
+    const date = new Date(2025, 11, 31, 23, 30);
+    const cutoff = date.getTime() + 7 * 86_400_000;
+    expect(formatActivityRelativeTime(date.toISOString(), new Date(cutoff - 1))).toBe("6d ago");
+    expect(formatActivityRelativeTime(date.toISOString(), new Date(cutoff))).toBe("Dec 31, 2025");
+  });
 });
 
 describe("activity preview", () => {

@@ -18,4 +18,18 @@ describe("formatRelativeTime", () => {
     const iso = new Date(now.getTime() - seconds * 1_000).toISOString();
     expect(formatRelativeTime(iso, now)).toBe(label);
   });
+
+  it("distinguishes the same date in different years", () => {
+    const now = new Date(2026, 5, 15, 12);
+    expect(formatRelativeTime(new Date(2024, 0, 15, 12).toISOString(), now)).toBe("Jan 15, 2024");
+    expect(formatRelativeTime(new Date(2025, 0, 15, 12).toISOString(), now)).toBe("Jan 15, 2025");
+    expect(formatRelativeTime(new Date(2026, 0, 15, 12).toISOString(), now)).toBe("Jan 15");
+  });
+
+  it("switches from relative time to the local calendar date at seven days", () => {
+    const date = new Date(2025, 11, 31, 23, 30);
+    const cutoff = date.getTime() + 7 * 86_400_000;
+    expect(formatRelativeTime(date.toISOString(), new Date(cutoff - 1))).toBe("6d ago");
+    expect(formatRelativeTime(date.toISOString(), new Date(cutoff))).toBe("Dec 31, 2025");
+  });
 });

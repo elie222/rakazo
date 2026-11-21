@@ -1,6 +1,6 @@
 import { ph, t } from "@lingui/core/macro";
 import type { RoutineRun, RunActivityRow } from "@rakazo/contracts";
-import { routineRunLateness } from "@rakazo/core";
+import { formatShortHistoryDate, routineRunLateness } from "@rakazo/core";
 import { rpc } from "../api/api";
 import { dateLocaleForUi } from "../i18n/i18n";
 
@@ -26,7 +26,7 @@ export function formatActivityRelativeTime(iso: string, now = new Date()): strin
   if (hours < 24) return t`${ph({ count: hours })}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return t`${ph({ count: days })}d ago`;
-  return date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
+  return formatShortHistoryDate(date, now, dateLocaleForUi());
 }
 
 /** "Started 2h late" for a scheduled run that started well after its time; else undefined. */
