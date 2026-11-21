@@ -57,6 +57,11 @@ export function useFlip(container: RefObject<HTMLElement | null>, revision: stri
       width: root.clientWidth,
       height: root.clientHeight,
     };
+    // A row that left the list keeps only its finished animation; drop it so a long-lived shell
+    // does not hold every row it has ever moved.
+    for (const key of running.current.keys()) {
+      if (!positions.has(key)) running.current.delete(key);
+    }
     if (
       !previous ||
       previous.order === order ||
