@@ -6,6 +6,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { memoryRetainTurnJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { messageBlocksText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   effectiveMemoryScope,
@@ -16,7 +17,6 @@ import {
   storedMessageBlocks,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { messageBlocksText } from "../runs/assembly/run-replies.prompt.js";
 import {
   isUserProgressClientNonce,
   USER_PROGRESS_CLIENT_NONCE_PREFIX,

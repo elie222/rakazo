@@ -282,6 +282,12 @@ export const RADIUS = "0.75rem";
 export const fontWeight = { regular: "400", medium: "500", semibold: "600" } as const;
 
 /**
+ * How your sent message enters the chat on web and mobile: it rises `offset` px into place and
+ * fades in from `opacity`, over `ms`, easing out.
+ */
+export const sendEntrance = { ms: 250, offset: 20, opacity: 0.4 } as const;
+
+/**
  * Native text styles on the system font, in points: iOS body text is 17/22. Titles use the
  * font's own line spacing, written out so they don't inherit a smaller body line height.
  */

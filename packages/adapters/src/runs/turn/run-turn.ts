@@ -118,6 +118,7 @@ export async function consumeRunEvents(
         reply.assistantTurnText = "";
       }
       if (event.type === "text") {
+        if (event.text) ctx.statusLive?.supersede();
         await streamText(ctx, event);
       } else if (event.type === "turn") {
         reply.assistantTurnBreakPending = true;
@@ -166,6 +167,8 @@ export async function consumeRunEvents(
   } finally {
     watching = false;
     clearInterval(watch);
+    // Statuses already being written land before the run's end, never after it.
+    await ctx.statusLive?.close();
     // Run completion clears thinking too; never let this replace the turn's own outcome.
     await publishThinking(false).catch(() => {});
   }
@@ -237,8 +240,17 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   // Tool status lines are not the model writing.
   if (!event.activity) ctx.state.toolCallStreak = { key: undefined, count: 0 };
   if (holdsTransientProgress(ctx)) return;
+  if (event.activity && event.text.trim())
+    reply.lastActivityLine = redactSecrets(event.text, ctx.secrets);
   // The bot's own note stays the working line until it writes again.
   if (event.activity && reply.narrationStatusShowing) return;
+  // With a status model, a step's technical line is worded for the person instead of shown.
+  // The model's own status ends the opening status, even before the status model is known.
+  if (event.activity && event.modelStatus) ctx.statusLive?.supersede();
+  else if (event.activity && ctx.statusLive?.active() && event.text.trim()) {
+    ctx.statusLive.step(redactSecrets(event.text, ctx.secrets));
+    return;
+  }
   // Flush batched text deltas first so an activity line cannot land
   // ahead of text the model streamed before the tool call.
   if (reply.pendingProgress && !progressHeldForSilence(ctx)) {

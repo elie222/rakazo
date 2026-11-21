@@ -28,10 +28,13 @@ export function ChatTitleAvatar({
   bot,
   status,
   composing,
+  working,
 }: {
   bot: MobileBot | SpaceBot | undefined;
   status: string | undefined;
   composing: boolean;
+  /** Whether the chat has a run at work: the working dot shows exactly then. */
+  working?: boolean;
 }) {
   const styles = useThemedStyles(createChatTitleAvatarStyles);
   if (!bot) {
@@ -52,6 +55,7 @@ export function ChatTitleAvatar({
       status={status}
       composing={composing}
       muted={bot.notifyOnFinish === false}
+      workingDot={working}
     />
   );
 }

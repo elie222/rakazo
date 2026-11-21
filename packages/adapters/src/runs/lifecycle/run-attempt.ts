@@ -38,6 +38,7 @@ import type { TakeoverContinuePlan } from "../turn/takeover-resume.js";
 import { takeoverContinuePlan } from "../turn/takeover-resume.js";
 import { wakeRun } from "../wakeups/wake-run.js";
 import { claimRun, finishRunAttempt, renewRunLease, requeueComputerRun } from "./run-lifecycle.js";
+import type { LiveStatusLines } from "./run-status-lines.js";
 
 const RUN_HEARTBEAT_MS = 60_000;
 
@@ -299,6 +300,14 @@ export interface RunHold extends RunClaim {
   abort: { controller: AbortController | null };
   detachShutdown: (() => void) | undefined;
   dispatchHandedOff: boolean;
+  /** The working line's statuses, once assembly starts them; closed when the attempt ends. */
+  statusLines: RunStatusLines;
+}
+
+export interface RunStatusLines {
+  live: LiveStatusLines | undefined;
+  /** Lets the status model hear the request once the main model's key is redacted. */
+  secretsReady: () => void;
 }
 
 export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
@@ -375,6 +384,7 @@ export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
     abort,
     detachShutdown: undefined,
     dispatchHandedOff: false,
+    statusLines: { live: undefined, secretsReady: () => {} },
   };
   return hold;
 }
@@ -400,6 +410,8 @@ export async function releaseRunHold(hold: RunHold, endRunConnectorState: (runId
     tool: computerUse.tool,
     ready: Boolean(computerUse.screenRelease),
   });
+  // A setup that fails before the turn starts must not leave statuses posting.
+  await hold.statusLines.live?.close();
   hold.detachShutdown?.();
   clearInterval(heartbeat);
   await finishRunAttempt(

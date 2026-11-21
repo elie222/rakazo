@@ -4,6 +4,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   displayName,
   isBackgroundRunTrigger,
+  messageBlocksText,
   plainTextFromMarkdown,
   redactSecrets,
   truncatedPlainText,
@@ -13,7 +14,6 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { countUnreadInboxChats, membersSnoozing } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { notificationIdentity } from "../../notifications/notification-identity.js";
-import { messageBlocksText } from "../assembly/run-replies.prompt.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 
 const COMPLETION_NOTIFICATION_MAX_CHARS = 180;

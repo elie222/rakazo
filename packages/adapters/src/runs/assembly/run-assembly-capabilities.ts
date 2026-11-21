@@ -219,6 +219,7 @@ export async function startTurnModel(
     resolved,
   } = started.start;
   runSecrets.push(...resolved.redact);
+  hold.statusLines.secretsReady();
   // A pin stays as it was created. Unpinned runs still record the model they
   // used; modelPinned is what keeps that record from becoming the next choice.
   if (!run.modelPinned) {

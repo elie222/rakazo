@@ -11,6 +11,7 @@ import type {
 import { modelCreditOfferings } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
 import { modelBilling } from "../../models/model-secret.js";
+import { isRuntimeFailureText } from "../runtime-failure-text.js";
 import {
   historyCompactionInstructions,
   historyCompactionPrompt,
@@ -457,12 +458,12 @@ export async function compactHistory(
         operationKind: "compaction",
       });
     }
-    if (event.type === "text" && /^(?:I hit a problem:|Unknown model )/i.test(event.text.trim())) {
+    if (event.type === "text" && isRuntimeFailureText(event.text)) {
       runtimeReportedFailure = true;
     }
     if (event.type === "done" && event.text) {
       const text = event.text.trim();
-      if (/^(?:I hit a problem:|Unknown model )/i.test(text)) runtimeReportedFailure = true;
+      if (isRuntimeFailureText(text)) runtimeReportedFailure = true;
       else summary = text;
     }
   }
