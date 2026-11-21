@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { CapabilityInstall } from "@rakazo/contracts";
+import type { CapabilityInstall, McpServer } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -23,6 +23,17 @@ vi.mock("../../components/integrations/plugin-marketplace", () => ({
 vi.mock("../../components/integrations/space-availability", () => ({
   AvailabilityControl: () => null,
   AvailabilityLabel: () => null,
+}));
+vi.mock("@lingui/react", () => ({
+  Plural: () => null,
+  Trans: ({
+    children,
+    message,
+  }: {
+    children?: ReactNode;
+    message?: string;
+  }) => children ?? message ?? null,
+  useLingui: () => ({ _: (message: string) => message, i18n: { locale: "en" } }),
 }));
 vi.mock("@lingui/react/macro", () => ({
   Plural: () => null,
@@ -115,4 +126,76 @@ it("names each Remove button after the source it removes", () => {
     return document.getElementById(id)?.textContent;
   });
   expect(described).toEqual(["Billing API", "Docs GraphQL"]);
+});
+
+function plugin(id: string, name: string): CapabilityInstall {
+  return {
+    id,
+    name,
+    kind: "plugin",
+    source: `https://github.com/example/${id}`,
+    config: { parts: ["connector"] },
+  } as CapabilityInstall;
+}
+
+function mcpServer(oauthStatus: McpServer["oauthStatus"]): McpServer {
+  return {
+    id: "server-1",
+    enabled: true,
+    oauthStatus,
+    oauthClientId: null,
+    health: { status: "unknown" },
+  } as McpServer;
+}
+
+it("reconnects an added plugin from the servers it already has", () => {
+  const install = plugin("gmail", "Gmail");
+  const onOpenPlugin = vi.fn();
+  const onSignInPlugin = vi.fn();
+  const state = {
+    mcpError: null,
+    mcpQuery: { refetch: vi.fn() },
+    sources: [],
+    pending: null,
+    refresh: vi.fn(),
+  } as unknown as PluginConnections;
+
+  act(() => {
+    root.render(
+      <ManageView
+        state={state}
+        connectedItems={[]}
+        connectorInstalls={[install]}
+        standaloneServers={[]}
+        appCount={1}
+        sourceError={null}
+        confirmingSource={null}
+        onRemoveSource={vi.fn()}
+        installedSelection={() => ({
+          source: install.source,
+          installedSource: install.source,
+          name: "Gmail",
+        })}
+        pluginServers={() => [mcpServer("reconnect")]}
+        onOpenPlugin={onOpenPlugin}
+        onSignInPlugin={onSignInPlugin}
+      />,
+    );
+  });
+
+  const reconnect = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Reconnect",
+  );
+  expect(reconnect).toBeTruthy();
+  act(() => reconnect?.click());
+  expect(onSignInPlugin).toHaveBeenCalledWith(install);
+  expect(onOpenPlugin).not.toHaveBeenCalled();
+
+  act(() => {
+    const name = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Gmail"),
+    );
+    name?.click();
+  });
+  expect(onOpenPlugin).toHaveBeenCalledOnce();
 });

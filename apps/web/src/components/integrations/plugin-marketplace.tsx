@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
   Spinner,
   Switch,
+  toast,
   useCopyText,
 } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, Ellipsis, FileText, Link2, Plug, Trash2 } from "lucide-react";
@@ -103,6 +104,7 @@ export function PluginRow({
   logo,
   site,
   installed,
+  pending = false,
   onOpen,
   onConnect,
 }: {
@@ -111,8 +113,10 @@ export function PluginRow({
   logo?: string | null;
   site?: string | null;
   installed: boolean;
+  /** The connector is being added from this row. */
+  pending?: boolean;
   onOpen: () => void;
-  /** Installs the connector and starts sign-in. Absent when the plugin has no connector. */
+  /** Adds the connector without opening the page. Absent when the plugin has no connector. */
   onConnect?: () => void;
 }) {
   const { t } = useLingui();
@@ -131,10 +135,19 @@ export function PluginRow({
         type="button"
         variant="secondary"
         size="sm"
+        disabled={pending}
         aria-label={installed ? t`Added: ${name}` : onConnect ? undefined : t`Add ${name}`}
-        onClick={() => (!installed && onConnect ? onConnect() : onOpen())}
+        onClick={() => (!installed && onConnect && !pending ? onConnect() : onOpen())}
       >
-        {installed ? <Trans>Added</Trans> : onConnect ? <Trans>Connect</Trans> : <Trans>Add</Trans>}
+        {pending ? (
+          <Trans>Connecting…</Trans>
+        ) : installed ? (
+          <Trans>Added</Trans>
+        ) : onConnect ? (
+          <Trans>Connect</Trans>
+        ) : (
+          <Trans>Add</Trans>
+        )}
       </Button>
     </div>
   );
@@ -198,7 +211,7 @@ export function PluginDetail({
   const [recipe, setRecipe] = useState<{ name: string; content: string | null } | null>(null);
   const [allSkills, setAllSkills] = useState(false);
   const [noAuth, setNoAuth] = useState(new Set<string>());
-  const [confirm, setConfirm] = useState<"disconnect" | "uninstall" | null>(null);
+  const [confirm, setConfirm] = useState<"uninstall" | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolRows, setToolRows] = useState<
     | {
@@ -297,19 +310,54 @@ export function PluginDetail({
       ? [...parts.filter((value) => value !== part), part]
       : parts.filter((value) => value !== part);
 
+  async function finishSignIn(server: McpServer) {
+    const result = await connectMcpOauth(server.id);
+    if (!live.current) return;
+    if (result === "authorization_not_requested")
+      setNoAuth((current) => new Set([...current, server.id]));
+    if (result === "cancelled") setError(errorDetails(t`Sign-in cancelled. Try again.`));
+    await onChanged();
+  }
+
   const signIn = (server: McpServer) =>
-    run(
-      server.id,
+    run(server.id, () => finishSignIn(server), t`Could not sign in`);
+
+  /** Adds a plugin that is not installed yet, then starts sign-in in the same click. */
+  function connectPlugin() {
+    void run(
+      "header",
       async () => {
-        const result = await connectMcpOauth(server.id);
-        if (!live.current) return;
-        if (result === "authorization_not_requested")
-          setNoAuth((current) => new Set([...current, server.id]));
-        if (result === "cancelled") setError(errorDetails(t`Sign-in cancelled. Try again.`));
-        await onChanged();
+        let installId = install?.id;
+        if (!install) {
+          if (!preview) return;
+          const created = await rpc.capabilities.install({
+            kind: "plugin",
+            name: preview.name,
+            source: preview.pinnedSource ?? selection.source,
+            pluginDigest: preview.digest,
+            config: {},
+            pluginParts: ["connector"],
+          });
+          installId = created.id;
+          toast.success(t`${selection.name} added`);
+          await onChanged();
+        } else if (!parts.includes("connector")) {
+          await rpc.capabilities.pluginParts({ id: install.id, parts: toggle("connector", true) });
+          await onChanged();
+        }
+        const listed = await rpc.mcp.servers.list();
+        const server =
+          listed.find(
+            (row) =>
+              row.installId === installId &&
+              mcpServerNeedsSignIn(row) &&
+              mcpServerConnection(row) !== "needs_client",
+          ) ?? listed.find((row) => row.installId === installId);
+        if (server) await finishSignIn(server);
       },
-      t`Could not sign in`,
+      t`Could not connect plugin`,
     );
+  }
 
   const enable = (server: McpServer) =>
     activeBotId &&
@@ -430,8 +478,8 @@ export function PluginDetail({
     : !install
       ? t`Connecting adds one plugin for your account. It then shows in every space, including an organization you create later.`
       : allSpaces
-        ? t`This plugin is one install for your account. It is in every space, including an organization you create later. Disconnect deletes its MCP server and removes it from all of them.`
-        : t`This plugin is only in the spaces you chose. Disconnect deletes its MCP server and removes it from those spaces.`;
+        ? t`This plugin is one install for your account. It is in every space, including an organization you create later. Disconnect signs it out. Uninstall removes it from all of them.`
+        : t`This plugin is only in the spaces you chose. Disconnect signs it out. Uninstall removes it from those spaces.`;
 
   const [copied, copy] = useCopyText();
   async function share() {
@@ -521,6 +569,29 @@ export function PluginDetail({
     );
   }
 
+  /** Signs the plugin's servers out. The install stays, so Connect can sign in again. */
+  function disconnectPlugin() {
+    void run(
+      "disconnect",
+      async () => {
+        const browser = desktopBridge()?.mcpBrowser;
+        await Promise.all(
+          servers.map(async (server) => {
+            await bestEffort("clear the desktop MCP browser", browser?.clear(server.id));
+            await rpc.mcp.oauth.disconnect({ serverId: server.id });
+          }),
+        );
+        setNoAuth((current) => {
+          const next = new Set(current);
+          for (const server of servers) next.delete(server.id);
+          return next;
+        });
+        await onChanged();
+      },
+      t`Could not disconnect plugin`,
+    );
+  }
+
   /** Deletes the MCP servers with the plugin. One install, so every space loses it. */
   function removePlugin() {
     if (!install) return;
@@ -550,13 +621,7 @@ export function PluginDetail({
             <Trans>Cancel</Trans>
           </Button>
           <Button variant="destructive" disabled={busy} onClick={removePlugin}>
-            {pending === "remove" ? (
-              <Trans>Removing…</Trans>
-            ) : confirm === "disconnect" ? (
-              <Trans>Disconnect</Trans>
-            ) : (
-              <Trans>Uninstall</Trans>
-            )}
+            {pending === "remove" ? <Trans>Removing…</Trans> : <Trans>Uninstall</Trans>}
           </Button>
         </>
       );
@@ -567,8 +632,8 @@ export function PluginDetail({
           <Button variant="secondary" disabled={busy} onClick={startSignIn}>
             <Trans>Reconnect</Trans>
           </Button>
-          <Button variant="destructive" disabled={busy} onClick={() => setConfirm("disconnect")}>
-            <Trans>Disconnect</Trans>
+          <Button variant="destructive" disabled={busy} onClick={disconnectPlugin}>
+            {pending === "disconnect" ? <Trans>Disconnecting…</Trans> : <Trans>Disconnect</Trans>}
           </Button>
         </>
       );
@@ -584,19 +649,14 @@ export function PluginDetail({
         servers.some((row) => mcpServerConnection(row) !== "disabled");
       return (
         <>
-          {detail ? (
+          {detail && pending !== "header" ? (
             <Button variant="secondary" disabled={busy} onClick={() => void share()}>
               {copied ? <Check /> : <Link2 />}
               {copied ? <Trans>Copied</Trans> : <Trans>Share</Trans>}
             </Button>
           ) : null}
           {offerConnect && !installed ? (
-            <Button
-              disabled={busy || !ready}
-              onClick={() =>
-                void setParts("header", toggle(headerPart, true), t`Could not install plugin`)
-              }
-            >
+            <Button disabled={busy || !ready} onClick={connectPlugin}>
               {pending === "header" ? <Trans>Connecting…</Trans> : <Trans>Connect</Trans>}
             </Button>
           ) : null}
@@ -605,7 +665,7 @@ export function PluginDetail({
               disabled={busy}
               onClick={() => {
                 if (!parts.includes("connector")) {
-                  void setParts("header", toggle("connector", true), t`Could not install plugin`);
+                  connectPlugin();
                   return;
                 }
                 startSignIn();
@@ -620,7 +680,7 @@ export function PluginDetail({
               )}
             </Button>
           ) : null}
-          {installed ? (
+          {installed && pending !== "header" ? (
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -712,6 +772,10 @@ export function PluginDetail({
     );
   }
 
+  // The preview decides which buttons belong here. Drawing them early uses a different size,
+  // then swaps them in with a flash once the plugin loads.
+  const headerPending = previewLoading && !detail && !install;
+
   return (
     <div data-testid="plugin-detail" className="space-y-7">
       <div className="flex items-start gap-4">
@@ -736,7 +800,7 @@ export function PluginDetail({
             <ArrowUpRight size={14} />
           </a>
         </div>
-        <div className="flex shrink-0 gap-2 pt-2">{headerAction()}</div>
+        <div className="flex shrink-0 gap-2 pt-2">{headerPending ? null : headerAction()}</div>
       </div>
 
       {detail?.description || selection.description ? (

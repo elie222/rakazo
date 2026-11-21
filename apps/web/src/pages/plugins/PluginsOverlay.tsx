@@ -7,7 +7,12 @@ import type {
   IntegrationCatalogSurface,
   McpSourcePreset,
 } from "@rakazo/contracts";
-import { BOT_COLOR_LIST, MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import {
+  BOT_COLOR_LIST,
+  MCP_OAUTH_CLIENT_REQUIRED,
+  mcpServerConnection,
+  mcpServerNeedsSignIn,
+} from "@rakazo/contracts";
 import type { connectedAppMarks } from "@rakazo/core";
 import {
   CONNECTION_CATALOG_PAGE_SIZE,
@@ -31,6 +36,7 @@ import {
   Input,
   LogoAvatar,
   Spinner,
+  toast,
 } from "@rakazo/ui-web";
 import { ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
@@ -109,6 +115,8 @@ export function PluginsOverlay({
   const [sourceBack, setSourceBack] = useState<OverlayView>("browse");
   const [plugin, setPlugin] = useState<PluginSelection | null>(null);
   const [pluginAutoConnect, setPluginAutoConnect] = useState(false);
+  const [addingPlugin, setAddingPlugin] = useState<string | null>(null);
+  const [signingInPlugin, setSigningInPlugin] = useState<string | null>(null);
   const [gitSource, setGitSource] = useState("");
   const [detailKey, setDetailKey] = useState<{
     connectorId: string;
@@ -215,6 +223,69 @@ export function PluginsOverlay({
     setCatalogError(null);
     setPluginAutoConnect(connect);
     setPlugin(selection);
+  }
+
+  /** Adds the connector, confirms it, and starts sign-in. The list stays open. */
+  async function addPlugin(selection: PluginSelection) {
+    if (addingPlugin) return;
+    setCatalogError(null);
+    setAddingPlugin(selection.installedSource);
+    try {
+      const preview = await rpc.capabilities.pluginPreview({ source: selection.source });
+      const created = await rpc.capabilities.install({
+        kind: "plugin",
+        name: preview.name,
+        source: preview.pinnedSource ?? selection.source,
+        pluginDigest: preview.digest,
+        config: {},
+        pluginParts: ["connector"],
+      });
+      toast.success(t`${selection.name} added`);
+      await refresh();
+      const listed = await rpc.mcp.servers.list();
+      const server =
+        listed.find(
+          (row) =>
+            row.installId === created.id &&
+            mcpServerNeedsSignIn(row) &&
+            mcpServerConnection(row) !== "needs_client",
+        ) ?? listed.find((row) => row.installId === created.id);
+      if (!server) return;
+      const result = await connectMcpOauth(server.id);
+      if (result === "cancelled") toast.error(t`Sign-in cancelled. Try again.`);
+      await refresh();
+    } catch (err) {
+      toast.error(errorText(err, t`Could not connect plugin`));
+      await refresh().catch(() => undefined);
+    } finally {
+      setAddingPlugin((current) => (current === selection.installedSource ? null : current));
+    }
+  }
+
+  /** Signs in with the servers already saved for this plugin. The list stays open. */
+  async function signInPlugin(install: CapabilityInstall) {
+    if (signingInPlugin) return;
+    const servers = pluginServers(install);
+    const server =
+      servers.find(
+        (row) => mcpServerNeedsSignIn(row) && mcpServerConnection(row) !== "needs_client",
+      ) ?? servers.find((row) => mcpServerConnection(row) !== "disabled");
+    if (!server) return;
+    if (mcpServerConnection(server) === "needs_client") {
+      toast.error(t`Needs an OAuth client ID`);
+      return;
+    }
+    setSigningInPlugin(install.id);
+    try {
+      const result = await connectMcpOauth(server.id);
+      if (result === "cancelled") toast.error(t`Sign-in cancelled. Try again.`);
+      await refresh();
+    } catch (err) {
+      toast.error(errorText(err, t`Could not connect plugin`));
+      await refresh().catch(() => undefined);
+    } finally {
+      setSigningInPlugin((current) => (current === install.id ? null : current));
+    }
   }
 
   /** A managed app whose brand also has a plugin opens one page with its skills. */
@@ -659,6 +730,8 @@ export function PluginsOverlay({
               installedSelection={installedSelection}
               pluginServers={pluginServers}
               onOpenPlugin={openPlugin}
+              onSignInPlugin={(install) => void signInPlugin(install)}
+              signingInId={signingInPlugin}
               onOpenApp={openApp}
             />
           ) : view === "github" ? (
@@ -705,7 +778,8 @@ export function PluginsOverlay({
               state={state}
               tileContext={tileContext}
               onOpenPlugin={openPlugin}
-              onConnectPlugin={(selection) => openPlugin(selection, true)}
+              onConnectPlugin={(selection) => void addPlugin(selection)}
+              addingSource={addingPlugin}
               onSearchPublic={(publicQuery) => {
                 setPublicCatalogQuery(publicQuery);
                 openAddView("browseMcp");

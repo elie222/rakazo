@@ -33,14 +33,17 @@ export function PluginBrowse({
   tileContext,
   onOpenPlugin,
   onConnectPlugin,
+  addingSource,
   onSearchPublic,
 }: {
   browse: CatalogBrowse;
   state: PluginConnections;
   tileContext: TileContext;
   onOpenPlugin: (selection: PluginSelection) => void;
-  /** Installs the connector and starts sign-in. */
+  /** Adds the connector, confirms it, and starts sign-in without leaving the list. */
   onConnectPlugin: (selection: PluginSelection) => void;
+  /** The plugin whose connector is being added, matched by its installed source. */
+  addingSource?: string | null;
   /** Opens the public MCP catalog searched for the query. */
   onSearchPublic: (query: string) => void;
 }) {
@@ -99,6 +102,7 @@ export function PluginBrowse({
         logo={entry.logo}
         site={selection.site}
         installed={Boolean(installedPlugin(entry.installedSource))}
+        pending={addingSource === entry.installedSource}
         onOpen={() => onOpenPlugin(selection)}
         onConnect={entry.hasConnector ? () => onConnectPlugin(selection) : undefined}
       />

@@ -10,7 +10,7 @@ import { parseLabs } from "@rakazo/contracts";
 import type { connectedAppMarks } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import type { RefObject } from "react";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import { setLabs } from "../../lib/bootstrap";
 import { invalidateVoiceConsent } from "../../lib/calls/voice-consent";
@@ -23,7 +23,7 @@ import type { ShellOverlay } from "./shell-overlay-url";
 const loadSettingsOverlay = () =>
   import("../settings/SettingsOverlay").then((module) => module.SettingsOverlay);
 const SettingsOverlay = lazyOverlay(loadSettingsOverlay);
-// A settings link should start its chunk with the shell, so the chat is not what paints first.
+// A settings link starts its chunk with the shell, so the chat is not what paints first.
 if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("settings")) {
   void loadSettingsOverlay();
 }
@@ -186,6 +186,11 @@ export function SettingsOverlays({
   peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
 }) {
   const voiceStatusKey = queries.voice.status.queryKey();
+  // The menu and page live in this chunk. Fetch it once the shell has painted, so opening
+  // Settings shows them with the screen instead of an empty frame.
+  useEffect(() => {
+    void loadSettingsOverlay();
+  }, []);
   return (
     <>
       {overlay?.kind === "settings" && showSettings ? (

@@ -68,7 +68,10 @@ const api = vi.hoisted(() => ({
   parts: vi.fn(),
   approve: vi.fn(),
   connect: vi.fn(),
+  oauthDisconnect: vi.fn(),
   remove: vi.fn(),
+  serverList: vi.fn(),
+  added: vi.fn(),
   skills: vi.fn(),
   skill: vi.fn(),
   toolList: vi.fn(),
@@ -93,8 +96,9 @@ vi.mock("../../lib/query/rpc", () => ({
       remove: api.remove,
     },
     mcp: {
+      oauth: { disconnect: api.oauthDisconnect },
       assignments: { approve: api.approve, list: api.assignmentList, setTools: api.setTools },
-      servers: { tools: api.toolList, agents: api.agents },
+      servers: { tools: api.toolList, agents: api.agents, list: api.serverList },
     },
     agentSkills: { list: api.skills, get: api.skill },
   },
@@ -171,6 +175,7 @@ vi.mock("@rakazo/ui-web", () => {
       />
     ),
     useCopyText: () => [false, async () => true] as const,
+    toast: { success: api.added },
   };
 });
 
@@ -272,6 +277,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.resetAllMocks();
   api.preview.mockResolvedValue(preview);
+  api.install.mockResolvedValue(install);
+  api.serverList.mockResolvedValue([server]);
   onChanged.mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
@@ -300,6 +307,8 @@ describe("plugin detail", () => {
       config: {},
       pluginParts: ["connector"],
     });
+    expect(api.added).toHaveBeenCalledTimes(1);
+    expect(api.connect).toHaveBeenCalledWith(server.id);
     expect(onChanged).toHaveBeenCalled();
     expect(api.approve).not.toHaveBeenCalled();
   });
@@ -341,6 +350,41 @@ describe("plugin detail", () => {
     api.connect.mockRejectedValue(new Error("Could not sign in"));
     await click("Connect");
     expect(container.querySelector('[role="alert"] a')).toBeNull();
+  });
+
+  it("disconnects the sign-in and leaves Share, Connect, and Uninstall", async () => {
+    let finish: () => void = () => {};
+    api.oauthDisconnect.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ ok: true });
+        }),
+    );
+    await render({
+      install,
+      servers: [{ ...server, oauthStatus: "connected", health: ok }],
+    });
+    await click("Disconnect");
+    expect(button("Disconnecting…").disabled).toBe(true);
+    expect(api.oauthDisconnect).toHaveBeenCalledWith({ serverId: server.id });
+    expect(api.remove).not.toHaveBeenCalled();
+    await act(async () => finish());
+    expect(onBack).not.toHaveBeenCalled();
+    expect(onChanged).toHaveBeenCalled();
+    await render({
+      install,
+      servers: [
+        {
+          ...server,
+          oauthStatus: "none",
+          health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
+        },
+      ],
+    });
+    expect(button("Share")).toBeTruthy();
+    expect(button("Connect")).toBeTruthy();
+    expect(button("Uninstall")).toBeTruthy();
+    expect(() => button("Disconnect")).toThrow();
   });
 
   it("uninstalls the plugin and its MCP server after confirmation", async () => {

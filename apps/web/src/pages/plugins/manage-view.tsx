@@ -32,6 +32,8 @@ export function ManageView({
   installedSelection,
   pluginServers,
   onOpenPlugin,
+  onSignInPlugin,
+  signingInId = null,
   onOpenApp,
 }: {
   state: PluginConnections;
@@ -47,6 +49,10 @@ export function ManageView({
   installedSelection: (install: CapabilityInstall) => PluginSelection;
   pluginServers: (install: CapabilityInstall | undefined) => McpServer[];
   onOpenPlugin: (selection: PluginSelection) => void;
+  /** Signs in with the servers already on this install. The list stays open. */
+  onSignInPlugin?: (install: CapabilityInstall) => void;
+  /** The install whose sign-in is in progress. */
+  signingInId?: string | null;
   onOpenApp: (item: ConnectionCatalogItem) => void;
 }) {
   const { mcpError, mcpQuery, sources, pending, refresh } = state;
@@ -106,7 +112,9 @@ export function ManageView({
                 install={install}
                 selection={installedSelection(install)}
                 servers={pluginServers(install)}
+                pending={signingInId === install.id}
                 onOpen={onOpenPlugin}
+                onSignIn={() => onSignInPlugin?.(install)}
               />
             ))}
             <div data-testid="registered-mcp-servers" className="contents">
@@ -231,16 +239,23 @@ function InstalledPluginRow({
   install,
   selection,
   servers,
+  pending = false,
   onOpen,
+  onSignIn,
 }: {
   install: CapabilityInstall;
   selection: PluginSelection;
   servers: McpServer[];
+  pending?: boolean;
   onOpen: (selection: PluginSelection) => void;
+  onSignIn: () => void;
 }) {
   const signInNeeded = servers.some(mcpServerNeedsSignIn);
   const connected =
     servers.length > 0 && servers.every((server) => mcpServerConnection(server) === "connected");
+  const reconnect = servers.some(
+    (server) => server.oauthStatus === "reconnect" || server.oauthStatus === "connected",
+  );
   const attention =
     servers.find((server) => mcpServerConnection(server) === "needs_client") ??
     servers.find((server) => {
@@ -279,9 +294,16 @@ function InstalledPluginRow({
             variant="secondary"
             size="sm"
             className="shrink-0"
-            onClick={() => onOpen(selection)}
+            disabled={pending}
+            onClick={onSignIn}
           >
-            <Trans>Connect</Trans>
+            {pending ? (
+              <Trans>Connecting…</Trans>
+            ) : reconnect ? (
+              <Trans>Reconnect</Trans>
+            ) : (
+              <Trans>Connect</Trans>
+            )}
           </Button>
         )}
       </div>

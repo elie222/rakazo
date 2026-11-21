@@ -5,6 +5,7 @@ import { fetchSafeWebText } from "../web/web-ssrf.js";
 import type { PluginCompleteness, PluginTextReader } from "./plugin-connectors.js";
 import {
   classifyPluginFiles,
+  githubFetchHeaders,
   mcpPointerFromManifest,
   parsePluginSource,
 } from "./plugin-connectors.js";
@@ -179,7 +180,7 @@ function displayName(name: string): string {
 }
 
 const publicRead: PluginTextReader = async (url, maxBytes, signal) =>
-  (await fetchSafeWebText(url, { maxBytes, signal })).body;
+  (await fetchSafeWebText(url, { maxBytes, signal, headers: githubFetchHeaders(url) })).body;
 
 /** Cache is per API router instance; failures are never cached. Concurrent
  * requests share one bounded fetch, without sharing an actor's abort signal. */

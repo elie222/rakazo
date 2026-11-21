@@ -1,13 +1,14 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "../tools/builtin-skills.prompt.js";
 import type { PluginRepoFile } from "./plugin-connectors.js";
 import {
   classifyPluginFiles,
   fetchGitHubRepo,
+  githubFetchHeaders,
   isPluginLoadFault,
   isTransientFetchError,
   parsePluginDirectory,
@@ -646,6 +647,28 @@ describe("portable plugin parser", () => {
       expect(parsed.skipped).toEqual([expect.objectContaining({ kind: "mcp_invalid" })]);
     }
     expect(plugin({ type: "http", url: "https://notcursor.com/mcp" }).mcpServers).toHaveLength(1);
+  });
+});
+
+describe("GitHub token", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("sends GITHUB_TOKEN only to GitHub hosts", () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_exampletoken");
+    expect(githubFetchHeaders("https://api.github.com/repos/a/b/commits/HEAD")).toEqual({
+      Authorization: "Bearer ghp_exampletoken",
+      Accept: "application/vnd.github+json",
+    });
+    expect(
+      githubFetchHeaders("https://raw.githubusercontent.com/a/b/main/plugin.json"),
+    ).toEqual({ Authorization: "Bearer ghp_exampletoken" });
+    expect(githubFetchHeaders("https://mcp.example.com/mcp")).toBeUndefined();
+    expect(githubFetchHeaders("https://evil.example/api.github.com")).toBeUndefined();
+  });
+  it("omits a missing or unsafe token", () => {
+    vi.stubEnv("GITHUB_TOKEN", "  ");
+    expect(githubFetchHeaders("https://api.github.com/rate_limit")).toBeUndefined();
+    vi.stubEnv("GITHUB_TOKEN", "ghp_bad\ntoken");
+    expect(githubFetchHeaders("https://api.github.com/rate_limit")).toBeUndefined();
   });
 });
 

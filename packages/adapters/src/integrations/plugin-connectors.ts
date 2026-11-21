@@ -239,8 +239,29 @@ export type PluginTextReader = (
   maxBytes: number,
   signal?: AbortSignal,
 ) => Promise<string>;
+
+const GITHUB_FETCH_HOSTS = new Set(["api.github.com", "raw.githubusercontent.com"]);
+
+/** Auth for plugin fetches. The token stays on GitHub's hosts; a redirect to any other
+ * origin drops these headers. An empty or unsafe value is left off so preview still runs. */
+export function githubFetchHeaders(url: string): Record<string, string> | undefined {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+  if (!GITHUB_FETCH_HOSTS.has(hostname)) return undefined;
+  const token = process.env.GITHUB_TOKEN?.trim();
+  if (!token || !/^[A-Za-z0-9_]+$/.test(token)) return undefined;
+  return {
+    Authorization: `Bearer ${token}`,
+    ...(hostname === "api.github.com" ? { Accept: "application/vnd.github+json" } : {}),
+  };
+}
+
 const readPublicText: PluginTextReader = async (url, maxBytes, signal) =>
-  (await fetchSafeWebText(url, { maxBytes, signal })).body;
+  (await fetchSafeWebText(url, { maxBytes, signal, headers: githubFetchHeaders(url) })).body;
 
 export async function fetchGitHubRepo(
   ref: PluginSourceRef,

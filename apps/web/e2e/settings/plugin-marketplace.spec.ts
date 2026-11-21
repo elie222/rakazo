@@ -15,7 +15,7 @@ import {
   signup,
 } from "../helpers/helpers";
 
-test("Integrations installs a plugin, completes real broker OAuth against a fake provider, and removes its children", async ({
+test("Integrations installs a plugin, completes real broker OAuth against a fake provider, and signs it out", async ({
   page,
 }, testInfo) => {
   await signup(page, `marketplace-${Date.now()}@rakazo.test`, "password12", "Marketplace Test");
@@ -59,9 +59,17 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   const row = dialog.getByTestId("plugin-results").getByTestId("plugin-row");
   await expect(row).toHaveCount(1);
   await captureScreenshot(page, testInfo, "integrations-plugin-search");
-  // Connect installs the connector and starts sign-in, the same as Connect then Sign in.
+  // Connect adds the plugin, confirms it, and starts sign-in without leaving the list.
   const cancelledPopup = page.waitForEvent("popup", { timeout: 30_000 });
   await row.getByRole("button", { name: "Connect", exact: true }).click();
+  const first = await cancelledPopup;
+  await expect(first.getByRole("heading", { name: "Fixture provider sign-in" })).toBeVisible();
+  await first.close();
+  await expect(row.getByRole("button", { name: "Added", exact: true })).toBeVisible();
+  await expect(page.getByText("Sign-in cancelled")).toBeVisible();
+  await expect(dialog.getByText("Sign-in cancelled")).toHaveCount(0);
+  await expect(dialog.getByRole("heading", { name: "Planning Notes", exact: true })).toHaveCount(0);
+  await row.getByRole("button", { name: /^Planning Notes/ }).click();
   await expect(dialog.getByRole("heading", { name: "Planning Notes", exact: true })).toBeVisible();
   await expect(
     dialog.getByText("https://marketplace-tools.example.test/mcp", { exact: true }),
@@ -92,14 +100,10 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   );
   const servers = await rpc<McpServer[]>(page, "mcp/servers/list", undefined);
   const server = servers.find((row) => row.installId === install!.id)!;
-  expect(server.oauthStatus).toBe("none");
+  expect(server.oauthStatus).not.toBe("connected");
   expect(await rpc(page, "mcp/assignments/list", { botId })).toEqual([]);
 
-  // Closing the provider must not claim Connected or lose the install.
-  const first = await cancelledPopup;
-  await expect(first.getByRole("heading", { name: "Fixture provider sign-in" })).toBeVisible();
-  await first.close();
-  await expect(dialog.getByRole("alert")).toContainText("Sign-in cancelled");
+  // Closing the provider on the list must not claim Connected or lose the install.
   await expect(dialog.getByRole("button", { name: "Reconnect", exact: true })).toBeEnabled();
 
   cancel = false;
@@ -132,15 +136,20 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   await expect(dialog.getByTestId("connected-skills")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "integrations-manage");
 
-  // Disconnect deletes the MCP server and the plugin, in every space of the account.
+  // Disconnect signs the plugin out and leaves it installed, ready to connect again.
   await apps.getByRole("button", { name: /Planning Notes/ }).click();
   await dialog.getByRole("button", { name: "Disconnect", exact: true }).click();
-  await dialog.getByRole("button", { name: "Disconnect", exact: true }).click();
-  await expect(dialog.getByTestId("installed-plugin")).toHaveCount(0);
-  expect(await rpc(page, "mcp/servers/list", undefined)).toEqual([]);
-  expect(await rpc(page, "mcp/assignments/list", { botId })).toEqual([]);
-  expect(await rpc(page, "capabilities/list", undefined)).toEqual([]);
-  expect(await skillNames()).not.toContain("planning-notes");
+  await expect(dialog.getByRole("button", { name: "Share", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "More", exact: true }).click();
+  await expect(dialog.getByRole("menuitem", { name: "Uninstall" })).toBeVisible();
+  expect(await rpc<CapabilityInstall[]>(page, "capabilities/list", undefined)).toContainEqual(
+    expect.objectContaining({ id: install!.id, kind: "plugin" }),
+  );
+  expect(await rpc<McpServer[]>(page, "mcp/servers/list", undefined)).toContainEqual(
+    expect.objectContaining({ id: server.id, oauthStatus: "none" }),
+  );
+  expect(await skillNames()).toContain("planning-notes");
   await dialog.getByRole("button", { name: "Close integrations", exact: true }).click();
   await page.getByTestId("user-menu-trigger").click();
   await page.getByRole("button", { name: "Skills", exact: true }).click();
