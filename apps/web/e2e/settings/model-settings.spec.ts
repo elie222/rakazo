@@ -409,6 +409,14 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
             authKind: "oauth",
             reconnectRequired: true,
           },
+          {
+            id: "cred-api-key",
+            provider: "anthropic",
+            label: "Anthropic",
+            hasKey: true,
+            isDefault: false,
+            authKind: "api_key",
+          },
         ],
       },
     }),
@@ -416,10 +424,17 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
 
   await openUserSettings(page, "models");
   await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Sign in again");
+  await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Claude subscription");
+  const apiKey = page.getByTestId("model-provider-cred-api-key");
+  await expect(apiKey).toContainText("Anthropic");
+  await expect(apiKey).not.toContainText("Claude subscription");
   await captureScreenshot(page, testInfo, "model-settings-reconnect-required");
   // The connection's page offers sign-in only because it expired; rename and disconnect end it.
   await page.getByTestId("model-provider-cred-claude").getByRole("button").click();
   const connection = page.getByTestId("model-provider-page");
+  await expect(
+    connection.getByRole("heading", { name: "Claude subscription", exact: true }),
+  ).toBeVisible();
   await expect(connection.getByRole("button", { name: "Sign in again" })).toBeVisible();
   await expect(connection.getByRole("button", { name: "Disconnect" })).toBeVisible();
   await expect(connection.getByRole("button", { name: "Test connection" })).toHaveCount(0);

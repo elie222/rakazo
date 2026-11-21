@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Me, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
-  connectionDisplayName,
+  modelConnectionNames,
   modelRoutingDirty,
   providerDisplayName,
   savedCompatibleEndpointMatches,
@@ -244,10 +244,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     return popularModelProvidersFirst(
       [...grouped].map(([id, entries]) => ({
         id,
-        name: providerDisplayName(
-          localizeModelEntry(entries[0] ?? { provider: id }),
-          credentials.find((entry) => entry.provider === id)?.authKind,
-        ),
+        name: providerDisplayName(localizeModelEntry(entries[0] ?? { provider: id })),
         entries,
       })),
       (group) => group.id,
@@ -259,14 +256,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     [credentials],
   );
   selectedLabelRef.current = selected?.label;
+  const selectedEntry = localizeModelEntry(modelsForProvider[0] ?? { provider });
   const selectedProviderName =
-    endpointPreset?.name ?? groups.find((group) => group.id === provider)?.name ?? provider;
+    endpointPreset?.name ?? providerDisplayName(selectedEntry, credential?.authKind);
   const selectedConnectionName = credential
-    ? connectionDisplayName(
-        credential,
-        groups.find((group) => group.id === provider)?.name ?? provider,
-        modelsForProvider[0]?.providerName ? [modelsForProvider[0].providerName] : [],
-      )
+    ? modelConnectionNames(selectedEntry, credential).connectionName
     : selectedProviderName;
   const disconnectName = selectedConnectionName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
