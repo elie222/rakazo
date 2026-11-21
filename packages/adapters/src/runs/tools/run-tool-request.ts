@@ -29,6 +29,7 @@ import {
   purchaseApprovalOf,
   purchaseCardSummary,
 } from "../../payments/purchase-gate.js";
+import { reachesManagedRoutines } from "../../routines/routine-target.js";
 import { canonicalToolEvents } from "../../routines/routine-triggers.js";
 import { listVaultItems } from "../../secrets/bot-secrets.js";
 import type { VaultCardUse, VaultLoginUse } from "../../secrets/vault/vault-card-use.js";
@@ -40,7 +41,12 @@ import {
   vaultCardUseOf,
   vaultLoginUseOf,
 } from "../../secrets/vault/vault-card-use.js";
-import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "../../tools/fleet-tools.js";
+import {
+  isFleetApprovalTool,
+  modelLabel,
+  prepareFleetRequest,
+  resolveBot,
+} from "../../tools/fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "../../tools/lazy-tool-catalog.js";
 import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
@@ -445,11 +451,19 @@ export async function prepareToolRequest(
     const refused = await scheduleCreateRefusal(ctx, args);
     if (refused) return refusal("schedule_create_refused", refused.error);
   }
+  // A bot passing its own id is working on its own routines, which need no bot management. A
+  // name may be shared, so it goes through the lookup below.
+  if (reachesManagedRoutines(name, args) && String(args.bot_id ?? "").trim() === bot.id) {
+    const { bot_id: _id, bot_name: _name, ...rest } = args;
+    args = rest;
+  }
+  const managedRoutines = reachesManagedRoutines(name, args);
   const fleetWrite =
     FLEET_WRITE_TOOL_NAMES_SET.has(name) ||
     name === "archive_bot" ||
-    (name === "update_bot" && argumentGiven(args.bot_id));
-  if (fleetWrite || name === "list_fleet") {
+    (name === "update_bot" && argumentGiven(args.bot_id)) ||
+    (managedRoutines && name !== "schedule_list");
+  if (fleetWrite || name === "list_fleet" || managedRoutines) {
     if (isSubagentToolExecution(executionId))
       return refusal("helper_bot_management", "Helpers cannot use bot management tools.");
     // The run-start snapshot is not enough: the owner can turn the switch off mid-run.
@@ -458,7 +472,12 @@ export async function prepareToolRequest(
       select: { fleetManagement: true },
     });
     if (!live?.fleetManagement)
-      return refusal("tool_disabled", "This tool is disabled for this bot.");
+      return refusal(
+        "tool_disabled",
+        managedRoutines
+          ? "Bot management is off for this bot, so it reaches only its own routines."
+          : "This tool is disabled for this bot.",
+      );
     if (!ctx.source.ownerStartedRun)
       return refusal("run_not_owner_started", "Bot management tools need a run you started.");
     // Text from a channel or webhook may have asked for it, so it goes through the approval mode,
@@ -466,6 +485,14 @@ export async function prepareToolRequest(
     if (fleetWrite && (await ctx.trust.receivedOutsideMessage())) {
       request.heldForApproval = true;
       request.ignoresAllowRules = true;
+    }
+    // The card names the bot, and an approved replay acts on its id, not a name another bot
+    // could take by then.
+    if (managedRoutines && nextApprovedTool !== name) {
+      const target = await resolveBot(deps.prisma, ctx.fleetRun, args);
+      if ("error" in target) return refusal("bot_management_request_invalid", target.error);
+      const { bot_id: _id, bot_name: _name, ...rest } = args;
+      args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
     }
   }
   if (name === "update_preferences") request.settingsChange = true;

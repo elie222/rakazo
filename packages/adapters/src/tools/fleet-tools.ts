@@ -1200,7 +1200,11 @@ async function resolveBots(
 }
 
 /** One active bot in the current user’s space, by `bot_id` or exact `bot_name`. */
-async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
+export async function resolveBot(
+  prisma: PrismaClient,
+  run: FleetRun,
+  args: Record<string, unknown>,
+) {
   const id = text(args.bot_id);
   const name = text(args.bot_name);
   if (id && name) return refuse("Pass bot_id or bot_name, not both.");
