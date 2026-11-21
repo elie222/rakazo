@@ -254,3 +254,36 @@ it("tells apart a model name that two providers share", async () => {
     await panel.unmount();
   }
 });
+
+it("draws every bar on one baseline and puts the dates in a separate row", async () => {
+  const panel = await renderPanel();
+  try {
+    const days = Array.from({ length: 30 }, (_, i) => ({
+      date: `2026-10-${String(i + 1).padStart(2, "0")}`,
+      ...point(1, i === 29 ? 900 : 100, 0.01),
+    }));
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      overTime: days,
+    }));
+    await panel.pick("7 days");
+    // jsdom does no layout, so this checks the structure that gives the shared baseline,
+    // not the measured pixels.
+    const bars = panel.container.querySelector('[data-testid="usage-bars"]')!;
+    const axis = panel.container.querySelector('[data-testid="usage-axis"]')!;
+    expect(bars.children).toHaveLength(30);
+    for (const bar of bars.children) {
+      expect(bar.textContent).toBe("");
+      expect(bar.getAttribute("aria-label")).toMatch(/tokens/);
+    }
+    expect(bars.contains(axis)).toBe(false);
+    expect(axis.getAttribute("aria-hidden")).toBe("true");
+    const labels = [...axis.children];
+    expect(labels).toHaveLength(2);
+    expect(labels[0]?.className).toContain("text-start");
+    expect(labels[1]?.className).toContain("text-end");
+    expect(labels.map((label) => label.className).join(" ")).not.toContain("truncate");
+  } finally {
+    await panel.unmount();
+  }
+});
