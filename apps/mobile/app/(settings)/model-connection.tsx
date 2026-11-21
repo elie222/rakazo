@@ -223,8 +223,6 @@ export default function ModelConnection() {
     pasteCode,
     setPasteCode,
     oauthPending,
-    codeCopied,
-    copyOAuthCode,
     cancelOAuth,
     leaveSignIn,
     openSignInPage,
@@ -584,7 +582,7 @@ export default function ModelConnection() {
                   <NativeActionButton
                     fill
                     label={t`Open ${ph({ host: signInHost })}`}
-                    onPress={() => void openSignInPage(oauth.verificationUri)}
+                    onPress={() => void openSignInPage(oauth)}
                     style={{ marginTop: 12 }}
                   />
                   <TextInput
@@ -616,11 +614,8 @@ export default function ModelConnection() {
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
                     fill
-                    label={codeCopied ? t`Copied, open again` : t`Copy code and open`}
-                    onPress={() => {
-                      copyOAuthCode(oauth.userCode);
-                      void openSignInPage(oauth.verificationUri);
-                    }}
+                    label={t`Copy code and open`}
+                    onPress={() => void openSignInPage(oauth)}
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
