@@ -177,12 +177,12 @@ describe("schedule tools on another bot's routines", () => {
     },
   );
 
-  it("acts on the named bot's id, and treats naming itself as its own routines", async () => {
+  it("acts on the named bot's id, and treats passing its own id as its own routines", async () => {
     const byName = managedRoutineCall({})("schedule_cancel", { bot_name: "Child", name: "r" });
     await expect(byName.prepared).resolves.toBeUndefined();
     expect(byName.request.args).toEqual({ bot_id: "child", bot_name: "Child", name: "r" });
     const self = managedRoutineCall({ fleetManagement: false })("schedule_update", {
-      bot_name: "Me",
+      bot_id: "bot-1",
       routineId: "r",
     });
     await expect(self.prepared).resolves.toBeUndefined();

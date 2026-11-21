@@ -451,11 +451,9 @@ export async function prepareToolRequest(
     const refused = await scheduleCreateRefusal(ctx, args);
     if (refused) return refusal("schedule_create_refused", refused.error);
   }
-  // A bot naming itself is working on its own routines, which need no bot management.
-  if (
-    reachesManagedRoutines(name, args) &&
-    (args.bot_id === bot.id || (!argumentGiven(args.bot_id) && args.bot_name === bot.name))
-  ) {
+  // A bot passing its own id is working on its own routines, which need no bot management. A
+  // name may be shared, so it goes through the lookup below.
+  if (reachesManagedRoutines(name, args) && args.bot_id === bot.id) {
     const { bot_id: _id, bot_name: _name, ...rest } = args;
     args = rest;
   }

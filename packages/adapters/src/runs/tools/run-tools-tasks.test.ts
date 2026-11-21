@@ -65,6 +65,9 @@ function groupRun() {
     const row = matches(where)[0];
     return row ? saved(row) : null;
   });
+  const count = vi.fn(
+    async ({ where }: { where: Record<string, unknown> }) => matches(where).length,
+  );
   const deleteMany = vi.fn(async () => ({ count: 1 }));
   const updateMany = vi.fn(async () => ({ count: 1 }));
   const bots = [
@@ -83,7 +86,7 @@ function groupRun() {
   const ctx = {
     deps: {
       prisma: {
-        routine: { findMany, findFirst, deleteMany, updateMany },
+        routine: { count, findMany, findFirst, deleteMany, updateMany },
         bot: { findMany: findBots },
         scratchpadItem: { findMany: vi.fn(async () => []) },
         taughtSkill: { findMany: vi.fn(async () => []) },
