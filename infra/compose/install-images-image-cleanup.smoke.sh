@@ -33,7 +33,6 @@ for a in "$@"; do
       if [[ " $* " == *" --images "* ]]; then
         printf '%s\n' \
           ghcr.io/elie222/rakazo/app:edge \
-          ghcr.io/elie222/rakazo/app:edge \
           ghcr.io/elie222/rakazo/computer:edge \
           'postgres:16@sha256:e17e86066e5ef83e0952a9347f5c792b7ece00972e2aa787a6986f471b3dd3d5' \
           registry.example.com:5000/rakazo-fork/app:edge \
