@@ -208,6 +208,13 @@ export function BotSettings({
   const voices = useQuery({ ...queries.voice.voices.queryOptions({ input: {} }), ...refresh }).data;
   const credentialsQuery = useQuery({ ...queries.models.credentials.queryOptions(), ...refresh });
   const catalogQuery = useQuery({ ...queries.models.list.queryOptions(), ...refresh });
+  // Refreshed on a timer while settings are open: the suggested rows re-rank when a
+  // provider starts failing or recovers, without reopening the picker.
+  const suggestionsQuery = useQuery({
+    ...queries.models.suggested.queryOptions(),
+    ...refresh,
+    refetchInterval: 30_000,
+  });
   const meQuery = useQuery({ ...queries.me.queryOptions(), ...refresh });
   const credentials = credentialsQuery.data ?? NO_CREDENTIALS;
   const catalog = catalogQuery.data ?? NO_CATALOG;
@@ -674,6 +681,7 @@ export function BotSettings({
                 ids={ids}
                 containerRef={modelRef}
                 choices={modelChoices}
+                suggestions={suggestionsQuery.data?.suggestions}
                 value={selectedModelKey}
                 onModelChange={(key) => {
                   setModelKey(key);

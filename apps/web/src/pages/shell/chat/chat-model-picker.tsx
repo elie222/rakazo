@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { ModelSuggestion } from "@rakazo/contracts";
 import type { ChatModelChoice, ModelMark } from "@rakazo/core";
-import { groupModelChoices, modelChoiceSearchText, modelMark } from "@rakazo/core";
+import { groupModelChoices, modelChoiceSearchText, modelMark, modelOptionKey } from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
@@ -29,6 +30,7 @@ import { useListSearch } from "../../../lib/use-list-search";
 export function ChatModelPicker({
   id,
   choices,
+  suggestions,
   value,
   onChange,
   compact = false,
@@ -46,6 +48,8 @@ export function ChatModelPicker({
 }: {
   id?: string;
   choices: readonly ChatModelChoice[];
+  /** Recently used, currently available models shown first. */
+  suggestions?: readonly ModelSuggestion[];
   value: string;
   onChange: (key: string) => void;
   compact?: boolean;
@@ -77,7 +81,32 @@ export function ChatModelPicker({
   const { query, setQuery, showSearch, visible } = useListSearch(choices, {
     text: modelChoiceSearchText,
   });
-  const sections = useMemo(() => groupModelChoices(visible, ""), [visible]);
+  const suggestedChoiceKeys = useMemo(
+    () =>
+      new Set((suggestions ?? []).map((entry) => modelOptionKey(entry.provider, entry.modelId))),
+    [suggestions],
+  );
+  const suggestedChoices = useMemo(() => {
+    if (!suggestions?.length) return [];
+    const byKey = new Map(choices.map((choice) => [choice.key, choice]));
+    const seen = new Set<string>();
+    const rows: ChatModelChoice[] = [];
+    for (const entry of suggestions) {
+      const choice = byKey.get(modelOptionKey(entry.provider, entry.modelId));
+      if (!choice || seen.has(choice.key)) continue;
+      seen.add(choice.key);
+      rows.push(choice);
+    }
+    return rows;
+  }, [choices, suggestions]);
+  const sections = useMemo(() => {
+    // Suggestions are a shortcut, not a duplicate section: while not searching,
+    // their rows leave the provider groups. A search still finds every copy.
+    const rest = query ? visible : visible.filter((choice) => !suggestedChoiceKeys.has(choice.key));
+    const grouped = groupModelChoices(rest, "");
+    if (query || suggestedChoices.length === 0) return grouped;
+    return [{ key: "suggested", heading: t`Suggested`, data: suggestedChoices }, ...grouped];
+  }, [query, visible, suggestedChoiceKeys, suggestedChoices, t]);
   const selected = choices.find((choice) => choice.key === value) ?? choices[0];
   const textOnly = selected?.images === false;
   const model = selectedLabel ?? selected?.label ?? "";

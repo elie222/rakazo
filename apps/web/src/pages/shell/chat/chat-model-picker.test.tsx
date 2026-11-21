@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { ModelSuggestion } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import type { PopoverContent } from "@rakazo/ui-web/components/ui/popover";
 import type { ComponentProps, ReactNode } from "react";
@@ -70,9 +71,17 @@ describe("ChatModelPicker", () => {
     vi.unstubAllGlobals();
   });
 
-  const render = (list: ChatModelChoice[], value: string) =>
+  const render = (list: ChatModelChoice[], value: string, suggested?: ModelSuggestion[]) =>
     act(() =>
-      root.render(<ChatModelPicker id="model" choices={list} value={value} onChange={onChange} />),
+      root.render(
+        <ChatModelPicker
+          id="model"
+          choices={list}
+          suggestions={suggested}
+          value={value}
+          onChange={onChange}
+        />,
+      ),
     );
   const options = () => [...document.querySelectorAll('[role="option"]')];
   const search = (text: string) =>
@@ -193,6 +202,44 @@ describe("ChatModelPicker", () => {
     expect(options()).toHaveLength(0);
     expect(document.querySelector("[cmdk-group-heading]")).toBeNull();
     expect(document.body.textContent).toContain("No matching models");
+  });
+
+  it("shows suggested models first without duplicating them below", () => {
+    const suggested: ModelSuggestion[] = [
+      {
+        provider: "openrouter",
+        modelId: "vendor/model-7",
+        label: "Model 7",
+        reason: "recent",
+        recentRuns: 12,
+        successRatePct: 100,
+        lastUsedAt: new Date().toISOString(),
+      },
+      {
+        provider: "openrouter",
+        modelId: "vendor/model-2",
+        label: "Model 2",
+        reason: "available",
+        recentRuns: 0,
+        successRatePct: 0,
+        lastUsedAt: null,
+      },
+    ];
+    render(choices(11), "openrouter::vendor/model-2", suggested);
+    act(() => container.querySelector<HTMLButtonElement>("button#model")!.click());
+
+    // Every choice is still listed once: the shortcut row replaces the copies.
+    expect(options()).toHaveLength(12);
+    const headings = [...document.querySelectorAll("[cmdk-group-heading]")].map(
+      (node) => node.textContent,
+    );
+    expect(headings[0]).toBe("Suggested");
+    expect(options()[0]?.getAttribute("aria-label")).toBe("Model 7 (OpenRouter)");
+    expect(options()[1]?.getAttribute("aria-label")).toBe("Model 2 (OpenRouter)");
+
+    // A search still finds every model, suggestions included.
+    search("MODEL 7");
+    expect(options().map((option) => option.textContent)).toEqual(["Model 7"]);
   });
 
   it("lets the popup flip vertically without switching axes", () => {

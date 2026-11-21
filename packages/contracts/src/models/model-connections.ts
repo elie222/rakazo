@@ -458,3 +458,26 @@ export const ModelCatalogEntrySchema = z.object({
   live: z.literal(true).optional(),
 });
 export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
+
+/**
+ * One row of a picker's "Suggested" section: a model the space can run now,
+ * with why it is suggested. Computed from recent runs, never stored.
+ */
+export const ModelSuggestionSchema = z.object({
+  provider: z.string(),
+  modelId: z.string(),
+  label: z.string(),
+  providerName: z.string().optional(),
+  reason: z.enum(["recent", "available"]),
+  recentRuns: z.number().int().min(0),
+  successRatePct: z.number().min(0).max(100),
+  lastUsedAt: z.string().nullable(),
+});
+export type ModelSuggestion = z.infer<typeof ModelSuggestionSchema>;
+
+export const ModelSuggestionsSchema = z.object({
+  checkedAt: z.string(),
+  windowDays: z.number().int().min(1),
+  suggestions: z.array(ModelSuggestionSchema),
+});
+export type ModelSuggestions = z.infer<typeof ModelSuggestionsSchema>;

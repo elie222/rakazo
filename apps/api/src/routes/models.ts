@@ -70,6 +70,7 @@ import {
   saveConnectionModelSettings,
   throwIfAborted,
 } from "../models/model-credentials.js";
+import { buildModelSuggestions, SUGGESTION_WINDOW_DAYS } from "../models/model-suggestions.js";
 import type { RouterContext } from "./context.js";
 
 /** A secret store outage is answered as one the member waits out; any other failure is unchanged. */
@@ -154,6 +155,17 @@ export function modelsRoutes(ctx: RouterContext) {
     models: {
       list: authed.models.list.handler(async ({ context }) =>
         withServingConnections(context.actor, await chatCatalog(context.actor)),
+      ),
+      suggested: authed.models.suggested.handler(async ({ context }) =>
+        buildModelSuggestions(
+          deps.prisma,
+          context.actor.userId,
+          await chatCatalog(context.actor),
+        ).then((suggestions) => ({
+          checkedAt: new Date().toISOString(),
+          windowDays: SUGGESTION_WINDOW_DAYS,
+          suggestions,
+        })),
       ),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const [rows, main] = await Promise.all([
