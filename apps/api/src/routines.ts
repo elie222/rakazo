@@ -191,6 +191,8 @@ export async function createRoutineTestRun(
   nonce: string | undefined,
 ) {
   const { routine, botId, threadId } = target;
+  // The thread lock comes before the shared bot lock, the order every run starter uses.
+  await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
   if ((await pausedBotIds(tx, [botId])).size > 0) throw new BotPausedError();
   const task = await tx.task.create({
     data: {

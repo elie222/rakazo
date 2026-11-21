@@ -49,11 +49,11 @@ function pendingTimerFixture(reuse = true) {
   const tx = {
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
-    bot: { findFirst: vi.fn(async () => null) },
+    bot: { findFirst: vi.fn(async (): Promise<{ id: string } | null> => null) },
     computerExecutionLease: { findMany: vi.fn(async () => []) },
     computer: { findMany: vi.fn(async () => []) },
     routine: {
-      updateMany: vi.fn(async () => ({ count: 1 })),
+      updateMany: vi.fn(async (_args: { where: { bot?: { pausedAt?: null } } }) => ({ count: 1 })),
       findUnique: vi.fn(async () => ({
         prompt: "check current work",
         modelProvider: null,
@@ -75,7 +75,10 @@ function pendingTimerFixture(reuse = true) {
   };
   const prisma = {
     user: { findUnique: vi.fn(async () => null) },
-    routine: { findUnique: vi.fn(async () => routine) },
+    routine: {
+      findUnique: vi.fn(async () => routine),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
     bot: { findUnique: vi.fn(async () => ({ id: "bot-1", thread: { id: "thread-1" } })) },
     agentSkill: { findMany: vi.fn(async () => []) },
     $transaction: vi.fn(async (callback: (client: unknown) => Promise<unknown>) => callback(tx)),
@@ -87,7 +90,7 @@ function pendingTimerFixture(reuse = true) {
     jobs: { enqueue, cancel: vi.fn(), close: vi.fn() },
     events: { append },
   } as unknown as Parameters<typeof createRunExecutor>[0]);
-  return { executor, tx, enqueue, append, scheduledAt };
+  return { executor, tx, prisma, enqueue, append, scheduledAt };
 }
 
 describe("recurring routine catch-up", () => {
@@ -136,6 +139,22 @@ describe("recurring routine catch-up", () => {
     expect(tx.task.create).not.toHaveBeenCalled();
     expect(append).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "routine.wakeup" }));
+  });
+});
+
+describe("a paused bot's routine occurrence", () => {
+  it("skips the occurrence and queues the next wakeup when the pause lands before the claim", async () => {
+    const { executor, tx, prisma, enqueue, append, scheduledAt } = pendingTimerFixture(false);
+    // The bot was read unpaused, then paused: a claim filtering on unpaused bots matches nothing.
+    tx.routine.updateMany.mockImplementation(async ({ where }) => ({
+      count: where.bot?.pausedAt === null ? 0 : 1,
+    }));
+    tx.bot.findFirst.mockResolvedValueOnce({ id: "bot-1" });
+    await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
+    expect(prisma.routine.updateMany).toHaveBeenCalledOnce();
+    expect(append).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "routine.wakeup" }));
   });
 });

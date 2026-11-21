@@ -17,7 +17,7 @@ vi.mock("./cancel-runs.js", () => ({
 vi.mock("./audit-events.js", () => ({ recordAuditEvent: vi.fn(async () => {}) }));
 
 import { recordAuditEvent } from "./audit-events.js";
-import { BotPausedError, pauseBot, resumeBot } from "./bot-pause.js";
+import { BotPausedError, cancelPausedBotRuns, pauseBot, resumeBot } from "./bot-pause.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { PrismaClient } from "./client.js";
 import { sendUserMessage } from "./events.js";
@@ -156,6 +156,59 @@ describe("pauseBot authorization", () => {
     const cancelled = await pauseBot(prisma, { notify }, actor("owner"), "bot-1");
     expect(cancelled.map((run) => run.id)).toEqual(["run-1"]);
     expect(recordAuditEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("cancelling a paused bot's runs", () => {
+  it("leaves the runs alone when a resume commits before the runs are read", async () => {
+    const { bot, tx, prisma, notify } = fakeDb();
+    vi.mocked(cancelRunsInTransaction).mockClear();
+    bot.pausedAt = new Date();
+    // The resume commits after the first pause read and before the runs are selected.
+    tx.$queryRaw.mockImplementation((async (strings: TemplateStringsArray) => {
+      if (strings.join("").includes("FOR SHARE")) bot.pausedAt = null;
+      return [];
+    }) as never);
+    expect(await cancelPausedBotRuns(prisma, { notify }, "bot-1")).toEqual([]);
+    expect(cancelRunsInTransaction).not.toHaveBeenCalled();
+  });
+
+  it("keeps a live worker's computer until it stops, and signals the runs change", async () => {
+    const { tx, prisma, notify } = fakeDb();
+    const base = { taskId: "task-1", userId: "owner", spaceId: "space-1", threadId: "thread-1" };
+    tx.run.findMany.mockResolvedValue([
+      { ...base, id: "queued", status: "queued", leaseExpiresAt: null },
+      { ...base, id: "live", status: "running", leaseExpiresAt: new Date(Date.now() + 60_000) },
+      { ...base, id: "lost", status: "running", leaseExpiresAt: new Date(0) },
+    ] as never);
+    const publishSpaceChange = vi.fn(async () => {});
+    await pauseBot(prisma, { notify, publishSpaceChange }, actor("owner"), "bot-1");
+    expect(tx.computerExecutionLease.updateMany).toHaveBeenCalledWith({
+      where: { runId: { in: ["queued", "lost"] } },
+      data: { expiresAt: new Date(0) },
+    });
+    expect(tx.computer.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { executionRunId: { in: ["queued", "lost"] } } }),
+    );
+    expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith("space-1", "runs");
+  });
+
+  it("releases no computer when only a live worker's run is cancelled", async () => {
+    const { tx, prisma, notify } = fakeDb();
+    tx.run.findMany.mockResolvedValue([
+      {
+        id: "live",
+        taskId: "task-1",
+        userId: "owner",
+        spaceId: "space-1",
+        threadId: "thread-1",
+        status: "leased",
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+      },
+    ] as never);
+    await pauseBot(prisma, { notify }, actor("owner"), "bot-1");
+    expect(tx.computerExecutionLease.updateMany).not.toHaveBeenCalled();
+    expect(tx.computer.updateMany).not.toHaveBeenCalled();
   });
 });
 

@@ -133,7 +133,9 @@ function nextScheduledRunAt(
 /**
  * Read after the run insert, which holds a key-share lock on the bot row until commit: a pause
  * either already committed and shows here, or waits for this transaction and its cancellation
- * sweep sees the run. The claim filter alone is read before that lock is held.
+ * sweep sees the run. The claim does not filter on the pause: a pause that lands after the bot
+ * was read would make the claim match nothing, and the occurrence would be dropped with no next
+ * wakeup queued.
  */
 async function refusePausedBot(tx: Prisma.TransactionClient, botId: string) {
   const paused = await tx.bot.findFirst({
@@ -252,7 +254,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
           userId: routine.userId,
           active: true,
           nextRunAt: scheduledAt,
-          bot: { archivedAt: null, pausedAt: null },
+          bot: { archivedAt: null },
         },
         data: {
           lastRunAt: new Date(),

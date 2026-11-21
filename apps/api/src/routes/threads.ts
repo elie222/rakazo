@@ -14,12 +14,14 @@ import type { Prisma } from "@rakazo/db";
 import {
   AnswerTooLongError,
   appendEventInTransaction,
+  BotPausedError,
   createExternalConversationRepos,
   createThreadMessageInTransaction,
   IsolationError,
   isUniqueViolation,
   loadMessageAuthor,
   lockSpaceGroup,
+  pausedBotIds,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
   withTransactionRetry,
@@ -245,6 +247,11 @@ export function threadsRoutes(ctx: RouterContext) {
           // Any saved run means this submission was accepted; it is replayed, never extended. A
           // run another request commits after this lookup fails the insert below the same way.
           if ((await savedRuns(tx)).length) throw new SavedSubmission();
+          // Every routine thread is locked, in one order, before any routine takes a bot lock.
+          const threadIds = [...new Set(routines.map((routine) => routine.target.threadId))].sort();
+          for (const threadId of threadIds) {
+            await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
+          }
           const runs = [];
           for (const routine of routines) {
             runs.push(
@@ -378,8 +385,15 @@ export function threadsRoutes(ctx: RouterContext) {
             },
             include: { members: { orderBy: [{ createdAt: "asc" }, { botId: "asc" }] } },
           });
-          const botId = group?.members[0]?.botId;
-          if (!botId) throw new IsolationError();
+          // The first unpaused member takes the message; when all are paused it is refused.
+          const members = group?.members ?? [];
+          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+          const paused = await pausedBotIds(
+            tx,
+            members.map((member) => member.botId),
+          );
+          const botId = members.find((member) => !paused.has(member.botId))?.botId;
+          if (!botId) throw members.length ? new BotPausedError() : new IsolationError();
           const blocks = [{ kind: "text" as const, text: input.text }];
           const message = await createThreadMessageInTransaction(tx, {
             threadId: target.threadId,

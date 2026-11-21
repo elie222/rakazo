@@ -67,7 +67,7 @@ async function pausableBot(
 }
 
 type RunCancellation = {
-  runs: Array<{ id: string }>;
+  runs: Array<{ id: string; spaceId: string }>;
   events: Array<{ threadId: string; seq: number }>;
 };
 
@@ -78,27 +78,59 @@ async function cancelActiveRuns(
   runId?: string,
 ): Promise<RunCancellation> {
   if (!(await botPaused(tx, botId))) return { runs: [], events: [] };
+  // Every thread with an active run of the bot is locked, even when only `runId` is cancelled: the
+  // waiting-message delete below covers the bot in all of them.
   const threads = await tx.run.findMany({
-    where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] }, ...(runId ? { id: runId } : {}) },
+    where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
     distinct: ["threadId"],
     select: { threadId: true },
     orderBy: { threadId: "asc" },
   });
-  // Thread locks come first, as in every writer of run state.
+  // Thread locks come first, as in every writer of run state. The pause is read again under a
+  // shared bot lock after them: a resume that committed since the first read keeps the runs that
+  // started after it.
   for (const { threadId } of threads) {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
   }
+  await tx.$queryRaw`SELECT id FROM bots WHERE id = ${botId} FOR SHARE`;
+  if (!(await botPaused(tx, botId))) return { runs: [], events: [] };
   const runs = await tx.run.findMany({
-    where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] }, ...(runId ? { id: runId } : {}) },
-    select: { id: true, taskId: true, userId: true, spaceId: true, threadId: true },
+    where: {
+      botId,
+      threadId: { in: threads.map(({ threadId }) => threadId) },
+      status: { in: [...ACTIVE_RUN_STATUSES] },
+      ...(runId ? { id: runId } : {}),
+    },
+    select: {
+      id: true,
+      taskId: true,
+      userId: true,
+      spaceId: true,
+      threadId: true,
+      status: true,
+      leaseExpiresAt: true,
+    },
   });
-  const cancelled = await cancelRunsInTransaction(tx, runs, new Date());
+  const now = new Date();
+  const cancelled = await cancelRunsInTransaction(tx, runs, now);
   const cancelledIds = cancelled.map((run) => run.id);
-  await expireComputerExecutionLeases(tx, { runId: { in: cancelledIds } });
-  await tx.computer.updateMany({
-    where: { executionRunId: { in: cancelledIds } },
-    data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
-  });
+  // A live worker releases its run's computer once it sees the cancellation. A waiting or queued
+  // run has no worker, and one whose lease ran out lost its worker.
+  const idle = cancelled
+    .filter(
+      (run) =>
+        (run.status !== "leased" && run.status !== "running") ||
+        !run.leaseExpiresAt ||
+        run.leaseExpiresAt <= now,
+    )
+    .map((run) => run.id);
+  if (idle.length) {
+    await expireComputerExecutionLeases(tx, { runId: { in: idle } });
+    await tx.computer.updateMany({
+      where: { executionRunId: { in: idle } },
+      data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
+    });
+  }
   // A paused bot's waiting messages would otherwise steer its first run after it is resumed.
   await tx.steeringMessage.deleteMany({ where: { botId } });
   await tx.event.deleteMany({
@@ -119,9 +151,19 @@ async function cancelActiveRuns(
   return { runs: cancelled, events: [...seqs].map(([threadId, seq]) => ({ threadId, seq })) };
 }
 
-async function notifyCancelled(events: Pick<ThreadEvents, "notify">, done: RunCancellation) {
+type PauseEvents = Pick<ThreadEvents, "notify" | "publishSpaceChange">;
+
+async function notifyCancelled(events: PauseEvents, done: RunCancellation) {
   for (const { threadId, seq } of done.events) {
     await bestEffort("paused bot run cancellation notification", events.notify(threadId, seq));
+  }
+  for (const spaceId of new Set(done.runs.map((run) => run.spaceId))) {
+    if (events.publishSpaceChange) {
+      await bestEffort(
+        "paused bot runs change notification",
+        events.publishSpaceChange(spaceId, "runs"),
+      );
+    }
   }
 }
 
@@ -131,7 +173,7 @@ async function notifyCancelled(events: Pick<ThreadEvents, "notify">, done: RunCa
  */
 export async function cancelPausedBotRuns(
   prisma: PrismaClient,
-  events: Pick<ThreadEvents, "notify">,
+  events: PauseEvents,
   botId: string,
   runId?: string,
 ) {
@@ -161,7 +203,7 @@ async function lockPausableBot(tx: Prisma.TransactionClient, actor: Actor, botId
  */
 export async function pauseBot(
   prisma: PrismaClient,
-  events: Pick<ThreadEvents, "notify">,
+  events: PauseEvents,
   actor: Actor,
   botId: string,
 ) {

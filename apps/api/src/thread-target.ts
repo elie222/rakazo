@@ -641,10 +641,11 @@ export async function sendThreadMessage(
         );
         // Match message counter locking before inspecting runs, without changing counters on rejection.
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
-        // After the thread lock, as a finishing run takes its thread before the bot row.
+        // Routines lock their threads first: every thread lock comes before a shared bot lock, as
+        // a finishing run takes its thread before the bot row.
+        routineRuns = (await startRoutines?.(tx)) ?? [];
         if (!input.noModel && (await pausedBotIds(tx, [target.botId])).size > 0)
           throw new BotPausedError();
-        routineRuns = (await startRoutines?.(tx)) ?? [];
         const activeRuns = await tx.run.findMany({
           where: {
             threadId: target.threadId,
@@ -866,6 +867,8 @@ export async function sendThreadMessage(
       );
       // Group ownership is locked first, then the thread, as in the normal write path.
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+      // Routines lock their threads before any shared bot lock below.
+      routineRuns = (await startRoutines?.(tx)) ?? [];
       // A paused member starts no work; the others still answer. When every target is paused,
       // the send is refused after a bare "stop" has had its chance to stop a helper.
       let onlyPausedTargets = false;
@@ -874,7 +877,6 @@ export async function sendThreadMessage(
         onlyPausedTargets = pausedIds.size === targetBotIds.length;
         targetBotIds = targetBotIds.filter((id) => !pausedIds.has(id));
       }
-      routineRuns = (await startRoutines?.(tx)) ?? [];
       let activeRuns = await tx.run.findMany({
         where: {
           threadId: target.threadId,

@@ -2605,6 +2605,56 @@ describe("sendThreadMessage", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it("locks the routine threads before the shared bot lock, then refuses a paused bot", async () => {
+    const locks: string[] = [];
+    const tx = {
+      space: { findUnique: vi.fn(async () => null) },
+      user: { findMany: vi.fn().mockResolvedValue([]) },
+      spaceMember: { count: vi.fn().mockResolvedValue(1) },
+      $executeRaw: vi.fn(async () => 0),
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        // The space lock passes a Prisma.sql object rather than a template.
+        const sql = Array.isArray(strings) ? strings.join("?") : "";
+        if (sql.includes("FROM bots")) {
+          locks.push("bot");
+          return [{ id: "bot-1", pausedAt: new Date() }];
+        }
+        if (sql.includes("FROM threads")) locks.push(`thread:${String(values[0])}`);
+        return [];
+      }),
+    };
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    const startRoutines = vi.fn(async (client: typeof tx) => {
+      await client.$queryRaw`SELECT id FROM threads WHERE id = ${"routine-thread"} FOR UPDATE`;
+      return [];
+    });
+
+    await expect(
+      sendThreadMessage(
+        {
+          prisma,
+          sandbox: {} as never,
+          events: { notify: vi.fn() } as never,
+          jobs: { enqueue: vi.fn() } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        {
+          kind: "bot",
+          botId: "bot-1",
+          threadId: "thread-1",
+          bot: { computer: null },
+        } as ThreadTarget,
+        { text: "Run it", clientNonce: "nonce-routine-lock" },
+        undefined,
+        startRoutines as never,
+      ),
+    ).rejects.toMatchObject({ name: "BotPausedError" });
+    expect(locks).toEqual(["thread:thread-1", "thread:routine-thread", "bot"]);
+  });
+
   describe("in a shared space", () => {
     function busyThread(activeRuns: unknown[]) {
       let messageSeq = 0;

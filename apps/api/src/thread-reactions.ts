@@ -8,6 +8,7 @@ import {
   createThreadMessageInTransaction,
   IsolationError,
   loadMessageAuthor,
+  pausedBotIds,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
@@ -88,8 +89,11 @@ export async function reactToThreadMessage(
       replyToMessageId: parent.id,
       clientNonce: input.clientNonce,
     });
-    const runs = replyBotId
-      ? await startReactionTurn(tx, actor, target.threadId, replyBotId, parent, message, {
+    // A paused bot starts no turn: the reaction is saved without one, as while a bot is taught.
+    const turnBotId =
+      replyBotId && (await pausedBotIds(tx, [replyBotId])).size === 0 ? replyBotId : undefined;
+    const runs = turnBotId
+      ? await startReactionTurn(tx, actor, target.threadId, turnBotId, parent, message, {
           ...input,
           canReleaseTakeover: Boolean(releaseTakeover),
         })

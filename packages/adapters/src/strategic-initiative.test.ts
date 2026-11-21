@@ -407,6 +407,21 @@ it.each([{ eligible: false }, { member: false }])(
   },
 );
 
+it("takes a shared bot lock before the eligibility recheck, so a pause waits for the run insert", async () => {
+  const { prisma } = strategicPrisma({ bots: [candidate] });
+  const { jobs } = publisher();
+  expect(await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 10 })).toBe(
+    1,
+  );
+  const queryRaw = vi.mocked(prisma.$queryRaw);
+  const calls = queryRaw.mock.calls as unknown as Array<[TemplateStringsArray]>;
+  const shared = calls.findIndex(([strings]) => strings.join("").includes("FOR SHARE"));
+  expect(shared).toBeGreaterThanOrEqual(0);
+  expect(queryRaw.mock.invocationCallOrder[shared]).toBeLessThan(
+    vi.mocked(prisma.bot.findFirst).mock.invocationCallOrder[0]!,
+  );
+});
+
 it("uses routine model-access gating when billing is enabled", async () => {
   vi.mocked(memberHasModelAccess).mockResolvedValueOnce(false);
   const { prisma } = strategicPrisma({ bots: [candidate] });

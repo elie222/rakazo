@@ -2343,7 +2343,7 @@ describe("createRunExecutor", () => {
 
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ bot: { archivedAt: null, pausedAt: null } }),
+        where: expect.objectContaining({ bot: { archivedAt: null } }),
         data: expect.objectContaining({ active: false, nextRunAt: null }),
       }),
     );

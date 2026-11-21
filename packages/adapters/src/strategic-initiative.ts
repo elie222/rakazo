@@ -219,6 +219,9 @@ async function queueStrategicInitiativeRun(
       // Match the thread-before-bot lock order used by message creation. Recheck after
       // the lock so concurrent sweeps and a user starting work cannot race this claim.
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${bot.thread!.id} FOR UPDATE`;
+      // A pause locks the bot row exclusively before it cancels runs; a shared lock here makes it
+      // wait for this insert, so its sweep sees the run.
+      await tx.$queryRaw`SELECT id FROM bots WHERE id = ${bot.id} FOR SHARE`;
       const eligible = await tx.bot.findFirst({
         where: {
           id: bot.id,
