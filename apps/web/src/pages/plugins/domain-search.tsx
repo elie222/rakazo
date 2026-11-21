@@ -71,6 +71,7 @@ export function DomainSearch({
     setCatalogFeedSearched,
     search,
   } = state;
+  const noResults = catalogFeedSearched && !catalogFeedPending && catalogFeedResults.length === 0;
   return (
     <div data-testid="integrations-catalog-feed" className="max-w-2xl space-y-6">
       <ViewTitle title={<Trans>Search by domain</Trans>} onBack={onBack} />
@@ -103,9 +104,20 @@ export function DomainSearch({
             {catalogFeedPending ? <Trans>Searching…</Trans> : <Trans>Search</Trans>}
           </Button>
         </form>
-        {catalogFeedError ? <p className="text-body text-destructive">{catalogFeedError}</p> : null}
-        {catalogFeedSearched && !catalogFeedPending && catalogFeedResults.length === 0 ? (
-          <p className="text-body text-muted-foreground">
+        {/* Always mounted: only the text changes, so screen readers announce it. */}
+        <span role="alert" className="sr-only">
+          {catalogFeedError}
+        </span>
+        {catalogFeedError ? (
+          <p aria-hidden="true" className="text-body text-destructive">
+            {catalogFeedError}
+          </p>
+        ) : null}
+        <span role="status" className="sr-only">
+          {noResults ? <Trans>No results</Trans> : null}
+        </span>
+        {noResults ? (
+          <p aria-hidden="true" className="text-body text-muted-foreground">
             <Trans>No results</Trans>
           </p>
         ) : null}
