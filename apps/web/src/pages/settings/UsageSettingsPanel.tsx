@@ -88,6 +88,15 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   }, [data, isPlaceholderData, botId, modelKey, modelOptions]);
 
   const maxTokens = Math.max(1, ...overTime.map((p) => p.totalTokens ?? 0));
+  const dayLabel = (date: string) =>
+    new Date(`${date}T00:00:00Z`).toLocaleDateString(
+      i18n.locale,
+      monthly
+        ? { month: "short", year: "numeric", timeZone: "UTC" }
+        : { month: "short", day: "numeric", timeZone: "UTC" },
+    );
+  const every = overTime.length <= 8;
+  const axisPoints = every ? overTime : [overTime.at(0), overTime.at(-1)].filter((p) => p != null);
 
   return (
     <div
@@ -183,8 +192,8 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           <SectionHeading variant="label" className="mb-3">
             <Trans>Usage over time</Trans>
           </SectionHeading>
-          <div className="flex h-28 items-end gap-1">
-            {overTime.map((point, index) => {
+          <div data-testid="usage-bars" className="flex h-24 items-end gap-1">
+            {overTime.map((point) => {
               const unknown = point.totalTokens == null;
               const value = point.totalTokens ?? 0;
               const height = unknown
@@ -192,34 +201,40 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                 : value === 0
                   ? 0
                   : Math.max(4, Math.round((value / maxTokens) * 100));
-              const day = new Date(`${point.date}T00:00:00Z`).toLocaleDateString(
-                i18n.locale,
-                monthly
-                  ? { month: "short", year: "numeric", timeZone: "UTC" }
-                  : { month: "short", day: "numeric", timeZone: "UTC" },
-              );
-              const labelled = overTime.length <= 8 || index === 0 || index === overTime.length - 1;
-              const label = t`${day}: ${number(point.totalTokens)} tokens, ${cost(point.costUsd)}`;
+              const label = t`${dayLabel(point.date)}: ${number(point.totalTokens)} tokens, ${cost(point.costUsd)}`;
               return (
                 <Tooltip key={point.date}>
                   <TooltipTrigger
                     aria-label={label}
-                    className="flex h-full min-w-0 flex-1 flex-col items-center gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+                    className="flex h-full min-w-0 flex-1 items-end rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
                   >
-                    <span className="flex w-full flex-1 items-end">
-                      <span
-                        className={`w-full rounded-sm ${unknown ? "bg-muted" : "bg-foreground/70"}`}
-                        style={{ height: `${height}%` }}
-                      />
-                    </span>
-                    <span className="w-full truncate text-center text-caption text-muted-foreground">
-                      {labelled ? day : null}
-                    </span>
+                    <span
+                      className={`w-full rounded-sm ${unknown ? "bg-muted" : "bg-foreground/70"}`}
+                      style={{ height: `${height}%` }}
+                    />
                   </TooltipTrigger>
                   <TooltipContent>{label}</TooltipContent>
                 </Tooltip>
               );
             })}
+          </div>
+          <div
+            data-testid="usage-axis"
+            aria-hidden="true"
+            className={`mt-1 flex text-caption text-muted-foreground ${every ? "gap-1" : "justify-between"}`}
+          >
+            {axisPoints.map((point, index, shown) => (
+              <span
+                key={point.date}
+                className={
+                  every
+                    ? "min-w-0 flex-1 truncate text-center"
+                    : `whitespace-nowrap ${index === shown.length - 1 ? "text-end" : "text-start"}`
+                }
+              >
+                {dayLabel(point.date)}
+              </span>
+            ))}
           </div>
         </div>
       ) : null}
