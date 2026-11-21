@@ -306,17 +306,33 @@ export async function installContainerRuntime(
   return path.join(root, "bin", "container");
 }
 
-/** Numeric comparison of dotted versions; anything unparsable counts as too old. */
+// Preserve the existing two-part form in runtime status reports as major.minor.0.
+const RUNTIME_VERSION =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)?$/;
+
+function parseRuntimeVersion(value: string | undefined) {
+  if (typeof value !== "string") return null;
+  const match = RUNTIME_VERSION.exec(value);
+  if (!match) return null;
+  const [, major = "0", minor = "0", patch = "0", prerelease] = match;
+  if (prerelease?.split(".").some((part) => /^0\d+$/.test(part))) return null;
+  return {
+    parts: [BigInt(major), BigInt(minor), BigInt(patch)],
+    prerelease: prerelease !== undefined,
+  };
+}
+
+/** Compare against a stable minimum. Unparsable versions count as too old. */
 export function versionAtLeast(version: string | undefined, minimum: string): boolean {
-  const parse = (value: string) => value.split(".").map((part) => Number.parseInt(part, 10));
-  if (!version || !/^\d+\.\d+(\.\d+)?/.test(version)) return false;
-  const have = parse(version);
-  const want = parse(minimum);
-  for (let index = 0; index < want.length; index += 1) {
-    const difference = (have[index] ?? 0) - (want[index] ?? 0);
-    if (difference !== 0) return difference > 0;
+  const have = parseRuntimeVersion(version);
+  const want = parseRuntimeVersion(minimum);
+  if (!have || !want || want.prerelease) return false;
+  for (const [index, expected] of want.parts.entries()) {
+    const actual = have.parts[index] ?? 0n;
+    if (actual !== expected) return actual > expected;
   }
-  return true;
+  // Build metadata does not affect precedence; a same-number prerelease is older.
+  return !have.prerelease;
 }
 
 export interface ContainerRuntime {
@@ -399,7 +415,7 @@ async function cliVersion(deps: ResolveRuntimeDeps, cli: string): Promise<string
     timeoutMs: CLI_TIMEOUT_MS,
     signal: deps.signal,
   });
-  return result.code === 0 ? /version (\d+\.\d+\.\d+)/.exec(result.stdout)?.[1] : undefined;
+  return result.code === 0 ? /version (\d+\.\d+\.\d+\S*)/.exec(result.stdout)?.[1] : undefined;
 }
 
 /** The runtime reports its root resolved (`/private/var/…`), which a plain path may not be. */
