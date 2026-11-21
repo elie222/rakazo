@@ -5,6 +5,7 @@ import { ModelSignInError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { MODEL_KEY_FORMAT_ERROR } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { FIRST_CHAT_EMAIL_DELAY_MS } from "../email/lifecycle-email.js";
 import type { RouterDeps } from "../router.js";
 import type { RouterHandler } from "../router-test-support.js";
 import {
@@ -444,6 +445,60 @@ describe("model credential persistence", () => {
       expect.objectContaining({ update: { modelId: "only-model", thinkingLevel: null } }),
     );
     await expect(response.json()).resolves.toMatchObject({ json: { isDefault: true } });
+  });
+
+  /** Account mail on: the first-chat mail is written ahead and queued in the save's transaction. */
+  function withFirstChatEmail(setup: ReturnType<typeof persistDeps>) {
+    const job = { name: "email.lifecycle" };
+    const prepare = vi.fn(async () => job);
+    const enqueueIn = vi.fn(async () => {});
+    Object.assign(setup.deps, { prepareLifecycleEmail: prepare, jobs: { enqueueIn } });
+    Object.assign(setup.deps.prisma, {
+      space: { findUnique: vi.fn().mockResolvedValue({ organizationId: "org-1" }) },
+    });
+    return { job, prepare, enqueueIn, handler: appHandler(setup.deps) };
+  }
+
+  it("queues the first-chat mail a day out with a person's first connection", async () => {
+    const { job, prepare, enqueueIn, handler } = withFirstChatEmail(persistDeps());
+    const before = Date.now();
+    const response = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "sk-test-key-123",
+    });
+    expect(response.status).toBe(200);
+    expect(prepare).toHaveBeenCalledWith(
+      "first-chat",
+      { organizationId: "org-1", userId: actor.userId },
+      expect.any(Date),
+    );
+    const dueAt = (prepare.mock.calls[0] as unknown[])[2] as Date;
+    expect(dueAt.getTime() - before).toBeGreaterThanOrEqual(FIRST_CHAT_EMAIL_DELAY_MS);
+    expect(dueAt.getTime() - before).toBeLessThan(FIRST_CHAT_EMAIL_DELAY_MS + 60_000);
+    expect(enqueueIn).toHaveBeenCalledExactlyOnceWith(expect.anything(), job);
+  });
+
+  it("queues no first-chat mail for a person who already has a connection", async () => {
+    const setup = persistDeps();
+    const { prepare, enqueueIn, handler } = withFirstChatEmail(setup);
+    (setup.deps.prisma.userModelCredential.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(
+      { id: "cred-0" },
+    );
+    await call(handler, "models/connect", { provider: "anthropic", apiKey: "sk-test-key-123" });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(enqueueIn).not.toHaveBeenCalled();
+  });
+
+  it("still saves the connection when the first-chat mail cannot be written", async () => {
+    const setup = persistDeps();
+    const { prepare, enqueueIn, handler } = withFirstChatEmail(setup);
+    prepare.mockRejectedValueOnce(new Error("mail down"));
+    const response = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "sk-test-key-123",
+    });
+    expect(response.status).toBe(200);
+    expect(enqueueIn).not.toHaveBeenCalled();
   });
 
   it("does not persist a missing model id as the string null", async () => {

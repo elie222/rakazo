@@ -115,9 +115,10 @@ Set `WELCOME_EMAIL_ENABLED=true` to send each new account one welcome email, wit
 link, after it first signs in. It needs one of the providers above.
 
 With billing configured, the same switch also sends an organization's owner one reminder a day
-after their plan starts if they have not connected a model yet. That reminder is queued and
-sent by the worker, so give the worker the same mail settings as the API, including this switch
-(the Compose files already do); a worker without them drops the reminder.
+after their plan starts if they have not connected a model yet, and one a day after they first
+connect a model if they have not sent a message yet. These reminders are queued and sent by the
+worker, so give the worker the same mail settings as the API, including this switch (the Compose
+files already do); a worker without them drops the reminders.
 
 ## Password policy
 

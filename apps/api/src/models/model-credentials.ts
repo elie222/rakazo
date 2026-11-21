@@ -60,6 +60,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { assertNoDanglingModelPins } from "../bots/model-pins.js";
+import { FIRST_CHAT_EMAIL_DELAY_MS } from "../email/lifecycle-email.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
 import type { RouterDeps } from "../router.js";
 
@@ -329,11 +330,23 @@ export async function persistModelCredential(
   codexCatalog: CodexLiveCatalog,
 ) {
   const prepared = await prepareModelCredential(deps, actor, input, codexCatalog);
+  const firstChatEmail = await firstChatEmailJob(deps, actor);
   throwIfAborted(input.signal);
   const cred = await withTransactionRetry(() =>
-    deps.prisma.$transaction((tx) => writeModelCredential(tx, actor, input, prepared), {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    }),
+    deps.prisma.$transaction(
+      async (tx) => {
+        const first =
+          firstChatEmail &&
+          !(await tx.userModelCredential.findFirst({
+            where: { userId: actor.userId },
+            select: { id: true },
+          }));
+        const saved = await writeModelCredential(tx, actor, input, prepared);
+        if (first) await deps.jobs.enqueueIn(tx, firstChatEmail);
+        return saved;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
   );
   (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(input.provider));
   // The connection is the account's, so the routines it held are released in every Space.
@@ -348,6 +361,38 @@ export async function persistModelCredential(
     ),
   );
   return modelCredentialDto(cred, input.plaintext);
+}
+
+/**
+ * The mail that nudges a person to send their first message a day after their first model
+ * connection, written before the save so its transaction only queues it. Undefined once they
+ * have a connection, or where account mail is off; a failure to write it never stops the save.
+ */
+function firstChatEmailJob(deps: RouterDeps, actor: Actor) {
+  const prepare = deps.prepareLifecycleEmail;
+  if (!prepare) return undefined;
+  return bestEffort(
+    "prepare the first chat email",
+    runAsSystem("prepare the first chat email", async () => {
+      const [connected, space] = await Promise.all([
+        deps.prisma.userModelCredential.findFirst({
+          where: { userId: actor.userId },
+          select: { id: true },
+        }),
+        deps.prisma.space.findUnique({
+          where: { id: actor.spaceId },
+          select: { organizationId: true },
+        }),
+      ]);
+      if (connected || !space) return undefined;
+      const job = await prepare(
+        "first-chat",
+        { organizationId: space.organizationId, userId: actor.userId },
+        new Date(Date.now() + FIRST_CHAT_EMAIL_DELAY_MS),
+      );
+      return job ?? undefined;
+    }),
+  );
 }
 
 /** One model's settings on one of the member's connections. */

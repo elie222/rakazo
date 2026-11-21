@@ -41,6 +41,7 @@ import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing/billing.js";
 import type { VoiceDeps } from "./calls/voice.js";
+import type { PrepareLifecycleEmail } from "./email/lifecycle-email.js";
 import { meetingCalendarRoutes } from "./meetings/calendar/calendar-routes.js";
 import type { createMeetingAnswers } from "./meetings/meeting-answers.js";
 import { meetingRoutes } from "./meetings/meeting-routes.js";
@@ -139,6 +140,8 @@ export interface RouterDeps {
   };
   /** Present only when the deployment bills; self-hosted installs leave it unset. */
   billing?: BillingService;
+  /** Writes a lifecycle mail's job for the caller's transaction; unset where account mail is off. */
+  prepareLifecycleEmail?: PrepareLifecycleEmail;
   email?: TransactionalEmailProvider;
   onEmailError?: (error: unknown) => void;
   speechSummary?: VoiceDeps["speechSummary"];

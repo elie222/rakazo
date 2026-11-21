@@ -1,6 +1,6 @@
-import type { JobPublisher, TransactionalEmail } from "@rakazo/adapter-kit";
+import type { BackgroundJob, JobPublisher, TransactionalEmail } from "@rakazo/adapter-kit";
 import { lifecycleEmailJob } from "@rakazo/adapter-kit";
-import { agentImportEmail, emailLocale, modelConnectionEmail } from "@rakazo/auth";
+import { agentImportEmail, emailLocale, firstChatEmail, modelConnectionEmail } from "@rakazo/auth";
 import type { LifecycleEmailKind } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { unsubscribeUrl } from "./marketing-email.js";
@@ -11,12 +11,27 @@ export const MODEL_CONNECTION_EMAIL_DELAY_MS = 24 * 60 * 60 * 1000;
 /** How long after a plan starts the agent-import mail is due: a day after the one above. */
 export const AGENT_IMPORT_EMAIL_DELAY_MS = 2 * MODEL_CONNECTION_EMAIL_DELAY_MS;
 
+/** How long after a person's first model connection the first-chat mail is due. */
+export const FIRST_CHAT_EMAIL_DELAY_MS = 24 * 60 * 60 * 1000;
+
+type LifecycleTarget = { organizationId: string; userId: string };
+
 /** Queues a lifecycle mail for an organization's owner; present only where account mail is on. */
 export type ScheduleLifecycleEmail = (
   kind: LifecycleEmailKind,
-  target: { organizationId: string; userId: string },
+  target: LifecycleTarget,
   dueAt: Date,
 ) => Promise<void>;
+
+/**
+ * Writes a lifecycle mail's job without queueing it, for a caller that queues it in its own
+ * transaction. Null when the person is gone.
+ */
+export type PrepareLifecycleEmail = (
+  kind: LifecycleEmailKind,
+  target: LifecycleTarget,
+  dueAt: Date,
+) => Promise<BackgroundJob | null>;
 
 /** A new lifecycle mail adds its kind to `LIFECYCLE_EMAIL_KINDS` and its template here. */
 const TEMPLATES: Record<
@@ -29,6 +44,7 @@ const TEMPLATES: Record<
 > = {
   "model-connection": modelConnectionEmail,
   "agent-import": agentImportEmail,
+  "first-chat": firstChatEmail,
 };
 
 /**
@@ -45,12 +61,25 @@ export function lifecycleEmailScheduler(deps: {
   origin: string;
   secret: string;
 }): ScheduleLifecycleEmail {
+  const prepare = lifecycleEmailPreparer(deps);
+  return async (kind, target, dueAt) => {
+    const job = await prepare(kind, target, dueAt);
+    if (job) await deps.jobs.enqueue(job);
+  };
+}
+
+export function lifecycleEmailPreparer(deps: {
+  prisma: PrismaClient;
+  webOrigin: string;
+  origin: string;
+  secret: string;
+}): PrepareLifecycleEmail {
   return async (kind, target, dueAt) => {
     const user = await deps.prisma.user.findUnique({
       where: { id: target.userId },
       select: { email: true, name: true, locale: true },
     });
-    if (!user) return;
+    if (!user) return null;
     const { subject, text, html, headers } = await TEMPLATES[kind](
       user,
       {
@@ -59,8 +88,6 @@ export function lifecycleEmailScheduler(deps: {
       },
       emailLocale(user.locale),
     );
-    await deps.jobs.enqueue(
-      lifecycleEmailJob({ kind, ...target, message: { subject, text, html, headers } }, dueAt),
-    );
+    return lifecycleEmailJob({ kind, ...target, message: { subject, text, html, headers } }, dueAt);
   };
 }

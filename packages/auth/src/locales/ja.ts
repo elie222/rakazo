@@ -98,4 +98,10 @@ export const JA_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "ほかのアシスタントでも使えます。プロンプトを 1 つ送り、その返信を貼り付けるだけです。",
   "Import an agent": "エージェントをインポート",
+  "Your bot is ready": "ボットの準備ができました",
+  "Your model is connected, so your bot can reply now.":
+    "モデルが接続されたので、ボットが返信できるようになりました。",
+  "A good first task: ask it to go through your inbox and tell you what needs a reply.":
+    "最初のタスクのおすすめ：受信トレイを確認して、返信が必要なものを教えてもらいましょう。",
+  "Send a message": "メッセージを送る",
 };

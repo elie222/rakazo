@@ -13,6 +13,7 @@ import {
   signInCodeEmail,
   verificationEmail,
 } from "./email.js";
+import { firstChatEmail } from "./first-chat-email.js";
 import { homeDeletionEmail } from "./home-deletion-email.js";
 import { modelConnectionEmail } from "./model-connection-email.js";
 import {
@@ -72,6 +73,7 @@ it("shares the layout across account, product and marketplace emails", async () 
     referralEmail(user, url, url),
     modelConnectionEmail(user, { webOrigin: url, unsubscribeUrl: url }),
     agentImportEmail(user, { webOrigin: url, unsubscribeUrl: url }),
+    firstChatEmail(user, { webOrigin: url, unsubscribeUrl: url }),
     organizationInvitationEmail(user.email, {
       organizationName: "Acme",
       inviterName: "Sam",
@@ -322,4 +324,22 @@ it("asks for one thing in the agent import email: opening the import", async () 
   const links = [...message.html!.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
   expect(links).toEqual(["https://app.example.test/sign-in?next=%2Fapp%3Fimport", unsubscribeUrl]);
   expect(message.headers?.["List-Unsubscribe"]).toBe(`<${unsubscribeUrl}>`);
+});
+
+it("asks for one thing in the first chat email: a message to the bot", async () => {
+  const unsubscribeUrl = "https://app.example.test/unsubscribe?token=fake-token";
+  const user = { name: "Ana", email: "user@example.test" };
+  const links = { webOrigin: "https://app.example.test", unsubscribeUrl };
+  const message = await firstChatEmail(user, links);
+  expect(message.subject).toBe("Your bot is ready");
+  expect(message.text).toContain("Hi Ana,");
+  expect(message.text).toContain("Your model is connected, so your bot can reply now.");
+  expect(message.text).toContain("ask it to go through your inbox");
+  const hrefs = [...message.html!.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
+  expect(hrefs).toEqual(["https://app.example.test/sign-in", unsubscribeUrl]);
+  expect(message.headers?.["List-Unsubscribe"]).toBe(`<${unsubscribeUrl}>`);
+  const japanese = await firstChatEmail(user, links, "ja");
+  expect(japanese.subject).toBe("ボットの準備ができました");
+  expect(japanese.html).toContain('lang="ja"');
+  expect(japanese.text).toContain("メッセージを送る");
 });

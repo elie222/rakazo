@@ -123,7 +123,7 @@ const planTerms = {
  * The mails of a person's lifecycle sequence. One job sends each, no two within a day of each
  * other, and each at most once per person.
  */
-export const LIFECYCLE_EMAIL_KINDS = ["model-connection", "agent-import"] as const;
+export const LIFECYCLE_EMAIL_KINDS = ["model-connection", "agent-import", "first-chat"] as const;
 export const LifecycleEmailKind = z.enum(LIFECYCLE_EMAIL_KINDS);
 export type LifecycleEmailKind = z.infer<typeof LifecycleEmailKind>;
 

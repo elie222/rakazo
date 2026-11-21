@@ -97,4 +97,10 @@ export const NL_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "Het werkt ook met elke andere assistent: stuur één prompt en plak het antwoord.",
   "Import an agent": "Een agent importeren",
+  "Your bot is ready": "Je bot is klaar",
+  "Your model is connected, so your bot can reply now.":
+    "Je model is verbonden, dus je bot kan nu antwoorden.",
+  "A good first task: ask it to go through your inbox and tell you what needs a reply.":
+    "Een goede eerste taak: vraag hem je inbox door te nemen en te zeggen wat een antwoord nodig heeft.",
+  "Send a message": "Stuur een bericht",
 };
