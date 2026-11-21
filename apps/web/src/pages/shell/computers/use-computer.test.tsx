@@ -174,15 +174,22 @@ it("never caches a single-use screen URL", async () => {
 });
 
 it("never draws the previous bot's screen for the bot switched to", async () => {
+  // The panel shows the screen; the full window is closed, and its bot follows the chat.
+  await act(async () => {
+    state.setComputerOpen(false);
+    state.setComputerBotId("bot-1");
+  });
   screenAnswer = () => ({ url: "embedded-screen://first-bot" });
   await read();
   expect(state.screenUrl).toBe("embedded-screen://first-bot");
-  // The chat changes first; the new bot's screen is set only after that render, as the app does.
+  // The chat changes first. The new bot's screen is set after that render, while the opened
+  // computer's bot still names the previous one, as the app does.
   activeId = "bot-2";
   activeBotId.current = activeId;
   drawn = [];
   await act(async () => root.render(<Harness />));
   await act(async () => state.showCachedComputer("bot-2"));
+  await act(async () => state.setComputerBotId("bot-2"));
   expect(drawn.length).toBeGreaterThan(0);
   expect(drawn.every((render) => render.botId === "bot-2" && render.url === null)).toBe(true);
   screenAnswer = () => ({ url: "embedded-screen://second-bot" });
@@ -197,6 +204,9 @@ it("never draws the previous bot's screen for the bot switched to", async () => 
   await act(async () => root.render(<Harness />));
   await act(async () => state.showCachedComputer("bot-1"));
   expect(drawn.some((render) => render.url === "embedded-screen://second-bot")).toBe(false);
+  // Its cached screen shows at once, before the opened computer's bot has caught up.
+  expect(state.screenUrl).toBe("embedded-screen://first-bot");
+  await act(async () => state.setComputerBotId("bot-1"));
   expect(state.screenUrl).toBe("embedded-screen://first-bot");
 });
 

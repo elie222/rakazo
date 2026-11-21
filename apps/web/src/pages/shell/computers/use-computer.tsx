@@ -84,19 +84,21 @@ export function useComputerState({
   const [screen, setScreen] = useState<Screen>({ url: null });
   const screenRef = useRef(screen);
   // A caller holding only a URL shows a cached screen or none; the shown URL keeps its sign-in.
-  const setScreenUrl = useCallback((url: string | null) => {
-    const botId = computerBotIdRef.current ?? activeBotId.current;
+  // No URL leaves the owner as it was.
+  const setScreenUrl = useCallback((url: string | null, botId?: string) => {
     setScreen((current) => {
-      if (current.url !== url) return { url, botId };
-      return current.botId === botId ? current : { ...current, botId };
+      const owner = botId ?? current.botId;
+      if (current.url !== url) return { url, botId: owner };
+      return current.botId === owner ? current : { ...current, botId: owner };
     });
   }, []);
   const [screenUrlLoadedBotId, setScreenUrlLoadedBotId] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerBotId, setComputerBotId] = useState<string | undefined>();
-  // Switching bots renders once before the new bot's screen is set. A frame that mounts on the
-  // previous bot's screen can stay on it, so another bot's screen is never drawn.
-  const frameBotId = computerBotId ?? activeId;
+  // Switching bots renders once before the new bot's screen is set, and the opened computer's bot
+  // follows the chat only after that render. A frame that mounts on the previous bot's screen can
+  // stay on it, so the panel draws only the chat's own bot and the full view only the bot it opened.
+  const frameBotId = computerOpen ? (computerBotId ?? activeId) : activeId;
   const screenUrl = screen.botId === frameBotId ? screen.url : null;
   const computerOpenRef = useRef(false);
   const computerBotIdRef = useRef<string | undefined>(undefined);
@@ -439,10 +441,10 @@ export function useComputerState({
     setComputerErrorFromScreen(false);
     const cached = computerCacheRef.current.get(botId);
     if (cached) {
-      setScreenUrl(cached.screenUrl);
+      setScreenUrl(cached.screenUrl, botId);
       commitComputer(cached.computer);
     } else {
-      setScreenUrl(null);
+      setScreenUrl(null, botId);
     }
   }
 
