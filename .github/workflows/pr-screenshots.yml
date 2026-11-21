@@ -291,6 +291,8 @@ jobs:
             echo "::$resume::"
             exit "$status"
           fi
+          # Tool names and outcomes only, so an incomplete run says which step failed without echoing page text.
+          grep -E '^mcp: [a-z_./]+( started| \(failed\)| \(completed\))?$' "$log" | tail -n 40 || true
           result=$(sudo -n -u codex-screenshots head -c 65537 /srv/pr-screenshot-agent/result.json | jq -c .)
           echo "result=$result" >> "$GITHUB_OUTPUT"
       - name: Persist refreshed subscription login
