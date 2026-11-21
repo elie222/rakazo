@@ -10,6 +10,7 @@ import {
   writeBotsSidebarWidth,
 } from "../../../lib/preferences/bots-sidebar-pref";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { focusChatListRestore } from "./focus-chat-list";
 
 function direction() {
   return document.documentElement.dir === "rtl" ? -1 : 1;
@@ -82,9 +83,7 @@ export function useSidebarResize({
     const collapsing = next < BOTS_SIDEBAR_SNAP_WIDTH;
     commit(next);
     if (collapsing) {
-      requestAnimationFrame(() => {
-        document.querySelector<HTMLElement>('[data-testid="show-chat-list"]')?.focus();
-      });
+      focusChatListRestore();
     }
   }
 
@@ -179,7 +178,8 @@ export function useSidebarResize({
         commit(maxWidth);
       } else if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        onCollapsedChange(!collapsed);
+        if (collapsed) onCollapsedChange(false);
+        else commitFromKeyboard(BOTS_SIDEBAR_MINI_WIDTH);
       }
     },
   };

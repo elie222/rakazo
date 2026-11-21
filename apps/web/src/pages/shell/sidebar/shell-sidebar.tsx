@@ -28,6 +28,7 @@ import { useAppRail } from "../app-rail";
 import type { ChatMenuState } from "../chat/chat-context-menu";
 import type { Panel } from "../right-panel-state";
 import type { SettingsSection } from "../shell-overlay-url";
+import { focusChatListRestore } from "./focus-chat-list";
 import { SidebarFooter } from "./sidebar-footer";
 import { SidebarHeader } from "./sidebar-header";
 import type { SidebarSearch } from "./use-sidebar-search";
@@ -183,10 +184,7 @@ export function ShellSidebar({
           }}
           onCollapse={() => {
             setCollapsedPref(true);
-            // The Hide button is about to become inert; hand focus to the rail's restore action.
-            requestAnimationFrame(() => {
-              document.querySelector<HTMLElement>('[data-testid="show-chat-list"]')?.focus();
-            });
+            focusChatListRestore();
           }}
           onCloseMobile={() => setMobileOpen(false)}
           bots={bots}

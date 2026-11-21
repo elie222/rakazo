@@ -49,7 +49,7 @@ export function BotsSidebarLayout({
       >
         {children}
         {/* The full-screen computer covers the sidebar, so its edge must not catch clicks there. */}
-        {computerOpen || collapsed ? null : (
+        {computerOpen || (collapsed && !resizing) ? null : (
           <hr
             {...handleProps}
             data-testid="bots-sidebar-edge"

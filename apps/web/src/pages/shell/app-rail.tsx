@@ -23,6 +23,7 @@ import {
 } from "../../lib/preferences/bots-sidebar-pref";
 import { useQueryUserId } from "../../lib/query/query";
 import { useMediaQuery } from "../../lib/use-media-query";
+import { focusChatList } from "./sidebar/focus-chat-list";
 
 const AppRailContext = createContext(false);
 const AppSidebarContext = createContext<{
@@ -104,7 +105,10 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
             boardEnabled={boardEnabled}
             expanded={expanded}
             listCollapsed={listCollapsed}
-            onShowChats={() => setListCollapsed(false)}
+            onShowChats={() => {
+              setListCollapsed(false);
+              focusChatList();
+            }}
             onToggle={toggle}
             setRailFooterNode={setRailFooterNode}
           />

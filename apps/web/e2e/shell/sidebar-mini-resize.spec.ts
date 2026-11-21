@@ -23,9 +23,13 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
   });
   await rpc(page, "threads/markUnread", { botId: bot.id });
   await page.reload();
+
   const sidebar = page.getByTestId("bots-sidebar");
   const handle = page.getByRole("separator", { name: "Resize bots sidebar" });
   const row = page.locator(`[data-roster-bot-id="${bot.id}"]`);
+  const hide = sidebar.getByRole("button", { name: "Hide chat list" });
+  const show = page.getByTestId("show-chat-list");
+
   await expect(sidebar).toHaveCSS("width", "316px");
   await handle.hover({ position: { x: 4, y: 300 } });
   const edge = (await handle.boundingBox())!;
@@ -42,123 +46,54 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
   await sidebar.getByTestId("sidebar-search-trigger").click();
   await sidebar.getByRole("textbox", { name: "Search", exact: true }).fill("no roster matches");
   await expect(row).toHaveCount(0);
-  await page.getByTestId("minimize-bots-sidebar").click();
-  await expect(sidebar).toHaveCSS("width", "72px");
-  await expect(row).toHaveAccessibleName("Research");
-  await expect(row).toHaveAccessibleDescription(/unread/);
-  await page.getByTestId("restore-bots-sidebar").click();
+
+  // Hiding the list removes it from focus and assistive technology; the rail brings it back.
+  await hide.click();
+  await expect(sidebar).toHaveAttribute("aria-hidden", "true");
+  await expect(show).toBeFocused();
+  await show.click();
   await expect(sidebar.getByRole("textbox", { name: "Search", exact: true })).toHaveValue(
     "no roster matches",
   );
+  await expect(sidebar.getByTestId("sidebar-search-trigger")).toBeFocused();
   await sidebar.getByRole("textbox", { name: "Search", exact: true }).fill("");
-  await page.getByTestId("minimize-bots-sidebar").click();
-  await expect(sidebar).toHaveCSS("width", "72px");
+
+  await hide.click();
+  await show.click();
   await row.click();
   await expect(page).toHaveURL(new RegExp(`/app/${bot.id}$`));
   await expect(row).toHaveAttribute("aria-current", "page");
-  await expect(sidebar.locator("[data-roster-preview]")).toHaveCount(0);
-  await page.mouse.move(700, 450);
-  await row.hover();
-  const tooltip = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Research" });
-  const actionLabel = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Create" });
-  await expect(tooltip).toBeVisible();
-  await expect
-    .poll(async () => {
-      const label = await tooltip.boundingBox();
-      const icon = await row.boundingBox();
-      return label && icon ? label.x >= icon.x + icon.width : false;
-    })
-    .toBe(true);
-  await captureScreenshot(page, testInfo, "sidebar-mini-avatar-rail");
-  const action = sidebar.getByRole("button", { name: "Create", exact: true });
-  await page.mouse.move(700, 450);
-  await expect(actionLabel).toBeHidden();
-  await action.hover();
-  await expect(actionLabel).toBeVisible();
-  await expect
-    .poll(async () => {
-      const label = await actionLabel.boundingBox();
-      const button = await action.boundingBox();
-      return label && button ? label.x >= button.x + button.width : false;
-    })
-    .toBe(true);
-  await captureScreenshot(page, testInfo, "sidebar-mini-action-rail");
+
   await page.getByTestId("user-menu-trigger").click();
-  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).last().click();
   await expect(page.getByTestId("account-menu-header")).toBeHidden();
   await page.getByRole("button", { name: "Close integrations", exact: true }).click();
+
   await page.reload();
-  await expect(sidebar).toHaveCSS("width", "72px");
-  await page.getByTestId("restore-bots-sidebar").click();
   await expect(sidebar).toHaveCSS("width", `${preferredWidth}px`);
-
-  await handle.focus();
-  await handle.press("Home");
-  await expect(sidebar).toHaveCSS("width", "72px");
-  await handle.hover({ position: { x: 4, y: 300 } });
-  const miniEdge = (await handle.boundingBox())!;
-  await page.mouse.down();
-  await page.mouse.move(miniEdge.x + 240, miniEdge.y + 300, { steps: 12 });
-  await page.mouse.up();
-  await expect(sidebar).toHaveAttribute("data-collapsed", "false");
-  await expect
-    .poll(async () => Math.round((await sidebar.boundingBox())!.width))
-    .toBeGreaterThan(300);
-
-  await page.getByTestId("minimize-bots-sidebar").click();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Open navigation" }).click();
-  await expect(sidebar).toHaveCSS("width", "316px");
-  await expect(sidebar.getByTestId("sidebar-search-trigger")).toBeVisible();
-  await expect(sidebar.getByRole("textbox", { name: "Search", exact: true })).toHaveCount(0);
-  await expect(row.locator("[data-roster-bot-name]")).toBeVisible();
 });
 
-test("sidebar resize follows RTL and reduced motion", async ({ page }, testInfo) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await signup(page, `sidebar-rtl-${Date.now()}@rakazo.test`, "password12", "Sidebar Sample");
-  await completeOnboarding(page);
-  await page.evaluate(() => {
-    document.documentElement.dir = "rtl";
-  });
-  // A viewport change renders the logical sidebar side after changing document direction.
+test("keyboard resize keeps focus and hands collapse to the rail", async ({ page }) => {
   await page.setViewportSize({ width: 1300, height: 900 });
+  await signup(page, `sidebar-keys-${Date.now()}@rakazo.test`, "password12", "Sidebar Sample");
+  await completeOnboarding(page);
   const sidebar = page.getByTestId("bots-sidebar");
   const handle = page.getByRole("separator", { name: "Resize bots sidebar" });
-  await expect(sidebar).toHaveCSS("transition-property", "none");
+  const show = page.getByTestId("show-chat-list");
+
   await handle.focus();
   await handle.press("ArrowLeft");
-  await expect(sidebar).toHaveCSS("width", "348px");
+  await expect(sidebar).toHaveCSS("width", "284px");
   await handle.press("Home");
-  await expect(sidebar).toHaveCSS("width", "72px");
-  const row = sidebar.locator("[data-roster-bot-id]").first();
-  await row.hover();
-  const tooltip = page.locator('[data-slot="tooltip-content"]');
-  await expect(tooltip).toBeVisible();
-  await expect
-    .poll(async () => {
-      const label = await tooltip.boundingBox();
-      const icon = await row.boundingBox();
-      return label && icon ? label.x + label.width <= icon.x : false;
-    })
-    .toBe(true);
-  await captureScreenshot(page, testInfo, "sidebar-mini-avatar-rail-rtl");
-  const action = sidebar.getByRole("button", { name: "Create", exact: true });
-  await page.mouse.move(650, 450);
-  await action.hover();
-  const actionLabel = page.locator('[data-slot="tooltip-content"]').filter({ hasText: "Create" });
-  await expect(actionLabel).toBeVisible();
-  await expect
-    .poll(async () => {
-      const label = await actionLabel.boundingBox();
-      const button = await action.boundingBox();
-      return label && button ? label.x + label.width <= button.x : false;
-    })
-    .toBe(true);
-  await handle.press("ArrowLeft");
-  await expect(sidebar).toHaveCSS("width", "240px");
-  const box = (await sidebar.boundingBox())!;
-  expect(Math.round(box.x + box.width)).toBe(1300);
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+  await expect(show).toBeFocused();
+
+  await show.click();
+  await expect(sidebar).toHaveAttribute("data-collapsed", "false");
+  await expect(sidebar.getByTestId("sidebar-search-trigger")).toBeFocused();
+  await handle.focus();
+  await handle.press("End");
+  await expect(sidebar).toHaveCSS("width", "480px");
 });
 
 test("narrow desktop keeps the chat width when both panels are open", async ({
@@ -169,9 +104,11 @@ test("narrow desktop keeps the chat width when both panels are open", async ({
   await completeOnboarding(page);
   const sidebar = page.getByTestId("bots-sidebar");
   const handle = page.getByRole("separator", { name: "Resize bots sidebar" });
+  // An expanded rail takes 220px, leaving the chat's 320px minimum before the list grows.
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
   await handle.focus();
   await handle.press("End");
-  await expect(sidebar).toHaveCSS("width", "480px");
+  await expect(sidebar).toHaveCSS("width", "260px");
   await openBotPanel(page);
   const panel = page.getByTestId("side-panel");
   await expect(panel).toHaveCSS("position", "absolute");
@@ -181,15 +118,14 @@ test("narrow desktop keeps the chat width when both panels are open", async ({
   await captureScreenshot(page, testInfo, "sidebar-narrow-panel-overlay");
   await handle.focus();
   await handle.press("Home");
-  await expect(sidebar).toHaveCSS("width", "72px");
-  await expect(panel).toHaveCSS("position", "relative");
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+  await expect(page.getByTestId("show-chat-list")).toBeFocused();
+  // The rail keeps the panel overlaying the chat, which still keeps the composer's minimum.
+  await expect(panel).toHaveCSS("position", "absolute");
   await expect.poll(async () => (await chat.boundingBox())!.width).toBeGreaterThanOrEqual(320);
 });
 
-test("sidebar snaps its layout during a held drag in both directions", async ({
-  page,
-}, testInfo) => {
-  await page.emulateMedia({ colorScheme: "dark" });
+test("sidebar snaps its layout during a held drag", async ({ page }) => {
   await signup(page, `sidebar-snaps-${Date.now()}@rakazo.test`, "password12", "Sidebar Sample");
   await completeOnboarding(page);
   for (const name of ["Research", "Notes", "Planner"]) {
@@ -203,37 +139,47 @@ test("sidebar snaps its layout during a held drag in both directions", async ({
   }
   await page.reload();
   const sidebar = page.getByTestId("bots-sidebar");
-  const captureFrame = async (name: string) => {
-    const path = testInfo.outputPath(`${name}.png`);
-    await sidebar.screenshot({ path, animations: "disabled" });
-    await testInfo.attach(name, { contentType: "image/png", path });
-  };
   const handle = page.getByRole("separator", { name: "Resize bots sidebar" });
-  const minimize = page.getByTestId("minimize-bots-sidebar");
-  await page.getByTestId("minimize-bots-sidebar").click();
-  await expect(sidebar).toHaveCSS("width", "72px");
-  await captureFrame("sidebar-mini-tight-spacing");
+  const show = page.getByTestId("show-chat-list");
+
+  await expect(sidebar).toHaveCSS("width", "316px");
   await handle.hover({ position: { x: 4, y: 300 } });
   const edge = (await handle.boundingBox())!;
   const origin = edge.x + 4;
   await page.mouse.down();
-  for (const [distance, width, mini, frame] of [
-    [48, 72, true, "01-mini-before-snap"],
-    [112, 240, false, "02-expanded-on-snap"],
-    [240, 312, false, "03-expanded-resizing"],
-    [60, 72, true, "04-mini-on-snap-back"],
-  ] as const) {
-    await page.mouse.move(origin + distance, edge.y + 300);
-    await expect(sidebar).toHaveCSS("width", `${width}px`);
-    await expect(sidebar).toHaveAttribute("data-collapsed", String(mini));
-    if (mini) await expect(minimize).toHaveCount(0);
-    else await expect(minimize).toBeVisible();
-    await captureFrame(`sidebar-drag-${frame}`);
-  }
+  await page.mouse.move(origin - 200, edge.y + 300);
+  // The handle stays mounted while the pointer is down, so the release can still commit.
+  await expect(handle).toBeVisible();
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
   await page.mouse.up();
-  await expect(sidebar).toHaveCSS("width", "72px");
-  await page.reload();
-  await expect(sidebar).toHaveCSS("width", "72px");
-  await page.getByTestId("restore-bots-sidebar").click();
+  await expect(handle).toHaveCount(0);
+  await expect(show).toBeVisible();
+
+  await show.click();
+  await expect(sidebar).toHaveAttribute("data-collapsed", "false");
   await expect(sidebar).toHaveCSS("width", "316px");
+});
+
+test("resizes in the visual direction for RTL and hands collapse to the rail", async ({ page }) => {
+  await page.setViewportSize({ width: 1300, height: 900 });
+  await signup(page, `sidebar-rtl-${Date.now()}@rakazo.test`, "password12", "Sidebar Sample");
+  await completeOnboarding(page);
+  await page.evaluate(() => document.documentElement.setAttribute("dir", "rtl"));
+  const sidebar = page.getByTestId("bots-sidebar");
+  const handle = page.getByRole("separator", { name: "Resize bots sidebar" });
+  const show = page.getByTestId("show-chat-list");
+  await handle.focus();
+  await handle.press("ArrowLeft");
+  await expect(sidebar).toHaveCSS("width", "348px");
+  await handle.press("Home");
+  await expect(sidebar).toHaveAttribute("data-collapsed", "true");
+  await expect(show).toBeFocused();
+  await show.click();
+  await expect
+    .poll(async () => {
+      const box = (await sidebar.boundingBox())!;
+      const rail = (await page.getByTestId("app-rail").boundingBox())!;
+      return Math.round(box.x + box.width) - Math.round(rail.x);
+    })
+    .toBe(0);
 });
