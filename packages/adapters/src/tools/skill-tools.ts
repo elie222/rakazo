@@ -8,7 +8,15 @@ import {
   renameRoutineSkillMentions,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { availableInSpace } from "@rakazo/db";
+import {
+  AVAILABILITY_SELECT,
+  assertNameFreeWhereAvailable,
+  availableInSpace,
+  lockOwner,
+  NameTakenError,
+  runAsSystemInTransaction,
+  spaceAvailability,
+} from "@rakazo/db";
 import { BUILTIN_AGENT_SKILLS } from "./builtin-skills.prompt.js";
 
 export const SKILL_TOOL_NAMES = new Set([
@@ -82,22 +90,6 @@ function rejectInvalidSkillFields(name: string, description: string): string | u
   }
   return undefined;
 }
-
-/**
- * A bot changes only skills that live in its own space alone: writing this space's details into
- * a skill other spaces read would carry them across the boundary.
- */
-function onlyInSpace(owner: SkillOwner) {
-  return {
-    spaceId: owner.spaceId,
-    userId: owner.userId,
-    allSpaces: false,
-    availableIn: { none: {} },
-  };
-}
-
-const SHARED_SKILL_ERROR =
-  "Could not change this skill. A skill available in other spaces can only be changed by the user.";
 
 /**
  * Points the owner's routines that mention a skill as `@old` at its new name. Run it in the
@@ -344,10 +336,21 @@ export async function skillUpdateFromTool(
   try {
     // Re-scope mutate to owner + user source so a stale id cannot cross tenants.
     const changed = await prisma.$transaction(async (tx) => {
+      // Held before the read, so a change to where the skill is available can't slip in between.
+      if (renamed) await lockOwner(tx, owner.userId, "names:skill");
+      const row = await tx.agentSkill.findFirst({
+        where: { id: existing.id, ...availableInSpace(owner) },
+        select: { spaceId: true, allSpaces: true, availableIn: AVAILABILITY_SELECT },
+      });
+      if (!row) return null;
+      const availability = spaceAvailability(row);
+      if (nextName.toLowerCase() !== existing.name.toLowerCase()) {
+        await assertNameFreeWhereAvailable(tx, "skill", owner, nextName, availability, existing.id);
+      }
       const updated = await tx.agentSkill.updateMany({
         where: {
           id: existing.id,
-          ...onlyInSpace(owner),
+          ...availableInSpace(owner),
           source: "user",
           // A rename that lost a race must not leave routines pointing at a stale name.
           ...(renamed ? { name: existing.name } : {}),
@@ -360,17 +363,29 @@ export async function skillUpdateFromTool(
       });
       if (updated.count !== 1) return null;
       if (!renamed) return [];
-      return renameSkillInRoutines(
+      // The owner's routines in the other spaces the skill is available in sit outside this run's
+      // space, so read them by owner as the settings screen does.
+      return runAsSystemInTransaction(
         tx,
-        { userId: owner.userId, spaceIds: [owner.spaceId] },
-        existing.name,
-        nextName,
+        "owner's routines in the spaces a renamed skill is available in",
+        () =>
+          renameSkillInRoutines(
+            tx,
+            {
+              userId: owner.userId,
+              spaceIds: availability.allSpaces ? null : availability.spaceIds,
+            },
+            existing.name,
+            nextName,
+          ),
       );
     });
-    if (!changed) return { error: SHARED_SKILL_ERROR };
+    if (!changed)
+      return { error: "Could not update skill. It may have changed; read it and try again." };
     await signalRenamedRoutines(events, changed);
     return { ok: true, id: existing.id, name: nextName, description: nextDescription };
-  } catch {
+  } catch (error) {
+    if (error instanceof NameTakenError) return { error: error.message };
     return { error: "Could not update skill." };
   }
 }
@@ -386,8 +401,8 @@ export async function skillDeleteFromTool(
     return { error: "Builtin and plugin skills are read-only." };
   }
   const deleted = await prisma.agentSkill.deleteMany({
-    where: { id: existing.id, ...onlyInSpace(owner), source: "user" },
+    where: { id: existing.id, ...availableInSpace(owner), source: "user" },
   });
-  if (deleted.count !== 1) return { error: SHARED_SKILL_ERROR };
+  if (deleted.count !== 1) return { error: "Skill not found." };
   return { ok: true, name: existing.name };
 }
