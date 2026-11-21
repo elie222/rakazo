@@ -94,7 +94,8 @@ if aws s3 cp \
   echo "Downloaded existing Playwright history."
 elif grep -Eq "404|NoSuchKey|Not Found" "$history_error_path"; then
   echo "No existing Playwright history found; creating it."
-elif [[ "$update_history" == "false" ]]; then
+elif [[ "$PLAYWRIGHT_EVENT" == "pull_request" ]]; then
+  # Pull request runs never write the main baseline, so history is only their comparison fallback.
   echo "::warning::Could not read Playwright history; publishing this run without its baseline fallback."
   cat "$history_error_path"
 else
