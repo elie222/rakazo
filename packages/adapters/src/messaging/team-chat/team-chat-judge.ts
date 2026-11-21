@@ -21,7 +21,11 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "../../models/model-provider-allowlist.js";
-import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
+import {
+  deploymentModelRole,
+  memberOnOwnKeyPlan,
+  resolveMemberMainModel,
+} from "../../models/model-roles.js";
 import { modelBilling, secretValuesToRedact } from "../../models/model-secret.js";
 import {
   hasHostedModelCredits,
@@ -243,6 +247,9 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const fallback = deploymentModelRole("main", {
       settings,
       deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
+      ownKeyPlan:
+        settings?.modelCreditsEnabled === true &&
+        (await memberOnOwnKeyPlan(this.deps.prisma, scope)),
     }).primary;
     // The operator's own judge setting is deployment configuration, not a user choice, so
     // the allowlist never refuses it. Any other pin the list refuses is skipped rather than

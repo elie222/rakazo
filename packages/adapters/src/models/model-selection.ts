@@ -11,6 +11,7 @@ import { MODEL_UNPRICED_FOR_CREDITS_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   chooseModelCredential,
+  creditsPayForMember,
   findModelCredential,
   findModelCredentialById,
   GUEST_ROLE,
@@ -1178,7 +1179,7 @@ export async function hasHostedModelCredits(
           select: { mode: true, balanceMicros: true },
         })
       : null;
-  if (credits?.mode !== "credits" && (!credits || credits.balanceMicros <= 0n)) return false;
+  if (!(await creditsPayForMember(prisma, credits, scope.userId))) return false;
   if (allowPersonal) return true;
   return !(await prisma.userModelCredential.findFirst({
     where: { userId: scope.userId, provider: modelCredentialProviderFilter(provider) },

@@ -208,6 +208,9 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
   z.object({ name: z.literal("trial_ended"), ...planTerms, converted: z.boolean() }).strict(),
   // Which lifecycle mail went out; never the address or the person.
   z.object({ name: z.literal("lifecycle_email_sent"), email: LifecycleEmailKind }).strict(),
+  // An own-key plan's owner was given the one-time model credit, and a model call first spent it.
+  z.object({ name: z.literal("model_credit_granted") }).strict(),
+  z.object({ name: z.literal("model_credit_grant_spent") }).strict(),
   // Only the fixed reason; the comment stays in the database.
   z
     .object({

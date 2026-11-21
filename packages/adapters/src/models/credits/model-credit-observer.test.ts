@@ -1,5 +1,6 @@
 import type { ModelCallObserver } from "@rakazo/adapter-kit";
 import {
+  claimFirstGrantSpend,
   creditAccount,
   organizationForMember,
   recordModelCreditReceipt,
@@ -9,7 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpDecisionProvider } from "../../approvals/http-decisions.js";
 import { hostedModelCreditObserver } from "./model-credit-observer.js";
 
-vi.mock("@rakazo/db", () => ({
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  creditsPayForMember: (await importOriginal<typeof import("@rakazo/db")>()).creditsPayForMember,
+  claimFirstGrantSpend: vi.fn(),
   organizationForMember: vi.fn(),
   creditAccount: vi.fn(),
   reserveModelCredits: vi.fn(),
@@ -35,9 +38,40 @@ describe("hosted model credit gate", () => {
     expect(findUnique).not.toHaveBeenCalled();
     expect(reserveModelCredits).not.toHaveBeenCalled();
   });
-  it("lets a BYOK account with a balance reserve credits", async () => {
+  it("lets a BYOK account with a balance reserve credits until the member connects a model", async () => {
     vi.mocked(creditAccount).mockResolvedValue({ mode: "byok", balanceMicros: 1n } as never);
-    await expect(hostedModelCreditObserver({} as never, scope)).resolves.toBeDefined();
+    const connected = (id: string | null) =>
+      ({ userModelCredential: { findFirst: async () => (id ? { id } : null) } }) as never;
+    await expect(hostedModelCreditObserver(connected(null), scope)).resolves.toBeDefined();
+    await expect(hostedModelCreditObserver(connected("credential-1"), scope)).rejects.toThrow(
+      "Connect your own API key",
+    );
+  });
+  it("reports the first spend of a grant once, after its reservation", async () => {
+    vi.mocked(creditAccount).mockResolvedValue({
+      mode: "byok",
+      balanceMicros: 2_000_000n,
+      grantSpentAt: null,
+    } as never);
+    vi.mocked(reserveModelCredits).mockResolvedValue("reservation-1");
+    vi.mocked(claimFirstGrantSpend).mockResolvedValue(true);
+    const capture = vi.fn();
+    const observer = await hostedModelCreditObserver(
+      { userModelCredential: { findFirst: async () => null } } as never,
+      scope,
+      { capture, flush: async () => {} },
+    );
+    const call = {
+      callId: "call-1",
+      maxCostUsd: 0.02,
+      provider: "test-provider",
+      modelId: "test-model",
+      runId: "run-1",
+    } as Parameters<ModelCallObserver["beforeCall"]>[0];
+    await observer.beforeCall(call);
+    await observer.beforeCall({ ...call, callId: "call-2" });
+    expect(claimFirstGrantSpend).toHaveBeenCalledTimes(1);
+    expect(capture).toHaveBeenCalledExactlyOnceWith("user-1", { name: "model_credit_grant_spent" });
   });
   it("requires a reservation before a funded-mode account may use the server key", async () => {
     vi.mocked(creditAccount).mockResolvedValue({ mode: "credits" } as never);

@@ -796,7 +796,10 @@ it.each(["personal-main", "legacy-main", "missing-personal-pin", "withdrawn-cred
         },
         member: { findUnique: async () => ({ role: "owner" }) },
         billingAccount: { findUnique: async () => null },
-        modelCreditAccount: { upsert: async () => ({ mode: "credits" }) },
+        modelCreditAccount: {
+          upsert: async () => ({ mode: "credits" }),
+          findUnique: async () => ({ mode: "credits" }),
+        },
       } as never,
       runtime: { run } as never,
       secrets: {

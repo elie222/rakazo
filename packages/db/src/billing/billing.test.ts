@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../database/client.js";
-import { hasModelAccess, memberHasModelAccess, ownerHadTrial } from "./billing.js";
+import {
+  creditsPayForMember,
+  hasModelAccess,
+  memberHasModelAccess,
+  ownerHadTrial,
+} from "./billing.js";
 
 describe("model access", () => {
   const now = new Date("2030-01-15T12:00:00.000Z");
@@ -22,6 +27,27 @@ describe("model access", () => {
   ])("$mode with balance $balanceMicros and $status: $access", ({ status, access, ...credits }) => {
     expect(hasModelAccess(credits, status, now)).toBe(access);
   });
+});
+
+describe("credits that pay for a member's hosted calls", () => {
+  const db = (connected: boolean) =>
+    ({
+      userModelCredential: { findFirst: async () => (connected ? { id: "credential" } : null) },
+    }) as unknown as Pick<PrismaClient, "userModelCredential">;
+  it.each([
+    { mode: "credits", balanceMicros: 0n, connected: true, pays: true },
+    { mode: null, balanceMicros: 5n, connected: true, pays: true },
+    { mode: null, balanceMicros: 0n, connected: false, pays: false },
+    // An own-key plan's grant pays until the member connects a model of their own.
+    { mode: "byok", balanceMicros: 5n, connected: false, pays: true },
+    { mode: "byok", balanceMicros: 5n, connected: true, pays: false },
+    { mode: "byok", balanceMicros: 0n, connected: false, pays: false },
+  ])(
+    "$mode with $balanceMicros, connected $connected: $pays",
+    async ({ connected, pays, ...credits }) => {
+      expect(await creditsPayForMember(db(connected), credits, "user")).toBe(pays);
+    },
+  );
 });
 
 describe("one trial per person", () => {

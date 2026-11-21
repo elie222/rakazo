@@ -64,6 +64,15 @@ export function approvedModelCreditOffering(provider: string, modelId: string) {
   );
 }
 
+/** The offering with the lowest token prices, for credit that should last. */
+export function cheapestModelCreditOffering(env: NodeJS.ProcessEnv = process.env) {
+  const price = (entry: ModelCreditOffering) => entry.price.input + entry.price.output;
+  return modelCreditOfferings(env)?.offerings.reduce<ModelCreditOffering | undefined>(
+    (cheapest, entry) => (cheapest && price(cheapest) <= price(entry) ? cheapest : entry),
+    undefined,
+  );
+}
+
 /** Price measured buckets at the snapshotted customer tariff, never the upstream bill. */
 export function offeringUsage(
   entry: ModelCreditOffering,

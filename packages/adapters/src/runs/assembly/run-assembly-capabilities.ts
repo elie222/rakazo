@@ -30,7 +30,7 @@ import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-ca
 import { teamWorkspaceInstruction } from "../../computers/screens/computer-support.prompt.js";
 import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
-import { selectConfiguredModel } from "../../models/model-roles.js";
+import { memberOnOwnKeyPlan, selectConfiguredModel } from "../../models/model-roles.js";
 import {
   findConnectedModelCredential,
   PINNED_PROVIDER_NOT_CONNECTED,
@@ -120,6 +120,12 @@ export async function startTurnModel(
   const { pinnedComputerFailure, pinnedComputerModels } = parts.saved;
   const { bot, main, modelChoice, overrideCredential, settings } = parts.records;
   const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
+  const defaults = {
+    settings,
+    deployment: runDeployment,
+    ownKeyPlan:
+      (await modelCreditBillingEnabled(deps)) && (await memberOnOwnKeyPlan(deps.prisma, run)),
+  };
   const runtimeFallback = runtimeFallbackModel(deps.runtime);
   const pinError =
     !pinnedComputerModels &&
@@ -148,7 +154,7 @@ export async function startTurnModel(
         hostedProvider: (await modelCreditBillingEnabled(deps))
           ? resolveDeploymentModel().provider
           : undefined,
-        defaults: { settings, deployment: runDeployment },
+        defaults,
       });
   const selectedProvider = selected.provider ?? runtimeFallback?.provider;
   const selectedModelId = selected.id ?? runtimeFallback?.id;
@@ -186,13 +192,7 @@ export async function startTurnModel(
   }
   const scripted = deps.runtime.describe().capabilities.scripted;
   const registerRunSecrets = (values: string[]) => runSecrets.push(...values);
-  const backups = runModelBackups(
-    deps,
-    run,
-    { settings, deployment: runDeployment },
-    scripted,
-    registerRunSecrets,
-  );
+  const backups = runModelBackups(deps, run, defaults, scripted, registerRunSecrets);
   const started = await startRunModel(
     deps,
     run,

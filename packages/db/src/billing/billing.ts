@@ -27,6 +27,22 @@ export function hasModelAccess(
   return BYOK_TIERS.standard.monthlyPriceCents === null && credits.mode === "credits";
 }
 
+/**
+ * Whether an organization's credits pay for a member's hosted model calls. An own-key plan's
+ * balance, such as its one-time grant, pays only until the member connects a model of their own.
+ */
+export async function creditsPayForMember(
+  prisma: Pick<PrismaClient, "userModelCredential">,
+  credits: { mode: string | null; balanceMicros: bigint } | null | undefined,
+  userId: string,
+): Promise<boolean> {
+  if (!credits) return false;
+  if (credits.mode === "credits") return true;
+  if (credits.balanceMicros <= 0n) return false;
+  if (credits.mode !== "byok") return true;
+  return !(await prisma.userModelCredential.findFirst({ where: { userId }, select: { id: true } }));
+}
+
 /** The free period's end while it is still running. */
 export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new Date()) {
   return credits.byokFreeUntil && credits.byokFreeUntil > now ? credits.byokFreeUntil : null;

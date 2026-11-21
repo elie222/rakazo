@@ -8,7 +8,7 @@ import { lifecycleEmailJob } from "@rakazo/adapter-kit";
 import type { LifecycleEmailKind } from "@rakazo/contracts";
 import { ActorSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { claimProductEmail, hasBillingAccess, isOwnerRole } from "@rakazo/db";
+import { claimProductEmail, grantModelCredit, hasBillingAccess, isOwnerRole } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 /** No person gets two of our mails closer together than this, whichever kinds they are. */
@@ -31,7 +31,8 @@ const STILL_WANTED: Record<
 
 /**
  * A paid or trialing own-key plan whose owner has connected no model. Hosted credits need no
- * connection, so an organization funded by them is left alone.
+ * connection, so an organization funded by them is left alone; an own-key plan's balance, such
+ * as the grant this mail announces, does not make it one.
  */
 async function needsModelConnection(prisma: PrismaClient, target: Target): Promise<boolean> {
   const [organization, connection] = await Promise.all([
@@ -51,7 +52,6 @@ async function needsModelConnection(prisma: PrismaClient, target: Target): Promi
   if (!hasBillingAccess(organization.billing.status) || organization.billing.creditAmountCents)
     return false;
   const credits = organization.modelCredits;
-  // An own-key organization runs on its own model whatever balance it kept.
   if (credits?.mode === "byok") return true;
   return credits?.mode !== "credits" && (credits?.balanceMicros ?? 0n) <= 0n;
 }
@@ -110,6 +110,16 @@ export function createLifecycleEmailSender(deps: {
     const { kind, userId } = job;
     const user = await recipient(prisma, job);
     if (!user || !(await STILL_WANTED[kind](prisma, job))) return;
+    // The model mail announces the one-time credit, so it goes only with it. The grant is
+    // keyed to the organization, so a retry or a mail moved past the gap gives nothing twice.
+    if (kind === "model-connection") {
+      const grant = await grantModelCredit(prisma, {
+        organizationId: job.organizationId,
+        ownerUserId: userId,
+      });
+      if (grant === "ineligible") return;
+      if (grant === "granted") deps.analytics?.capture(userId, { name: "model_credit_granted" });
+    }
     const claim = await claimProductEmail(prisma, { userId, kind }, LIFECYCLE_EMAIL_GAP_MS);
     if (claim === "skip") return;
     if (claim !== "claimed") {

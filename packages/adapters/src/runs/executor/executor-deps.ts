@@ -13,6 +13,7 @@ import type {
   NotificationProvider,
   PaidServiceProvider,
   PaymentWalletProvider,
+  ProductAnalytics,
   SandboxProvider,
   SecretStore,
   TransactionalEmailProvider,
@@ -52,6 +53,8 @@ export interface ExecutorDeps {
   secrets: string[];
   secretStore: SecretStore;
   billingEnabled?: boolean;
+  /** Measures when a run first spends an own-key plan's credit grant. */
+  analytics?: ProductAnalytics;
   deploymentModelKey?: string;
   /** The deployment default model can run; see resolveDeploymentModel. */
   deploymentModelConfigured?: boolean;

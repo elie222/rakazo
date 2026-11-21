@@ -85,12 +85,12 @@ export const RU_MESSAGES: Record<string, string> = {
     "{inviter} приглашает вас присоединиться к {space} в Rakazo.",
   "Join {space}": "Присоединиться к {space}",
   "This invitation expires in 7 days.": "Приглашение действует 7 дней.",
-  "Connect a model to start using Rakazo": "Подключите модель, чтобы начать пользоваться Rakazo",
-  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
-    "Ваш тариф Rakazo уже действует, но ваши боты не смогут отвечать, пока не подключена модель.",
-  "Sign in with your {subscriptions} subscription, or paste an API key.":
-    "Войдите с подпиской {subscriptions} или вставьте ключ API.",
-  "Connect a model": "Подключить модель",
+  "Credit added to your account": "На ваш счёт добавлен кредит",
+  "We added {amount} of credit so you can start chatting now.":
+    "Мы добавили {amount} кредита, чтобы вы могли начать чат прямо сейчас.",
+  "Start chatting": "Начать чат",
+  "You can also {connect}.": "Также можно {connect}.",
+  "connect your own model": "подключить свою модель",
   "Bring your old assistant to Rakazo": "Перенесите своего прежнего ассистента в Rakazo",
   "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
     "Уже настроили ассистента в {assistants}? Rakazo может перенести его инструкции, память, навыки и рутины в нового бота, чтобы вам не начинать заново.",

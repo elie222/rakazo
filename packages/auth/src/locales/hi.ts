@@ -82,12 +82,12 @@ export const HI_MESSAGES: Record<string, string> = {
     "{inviter} ने आपको Rakazo पर {space} से जुड़ने के लिए आमंत्रित किया है।",
   "Join {space}": "{space} से जुड़ें",
   "This invitation expires in 7 days.": "यह आमंत्रण 7 दिनों में समाप्त हो जाएगा।",
-  "Connect a model to start using Rakazo": "Rakazo का उपयोग शुरू करने के लिए एक मॉडल कनेक्ट करें",
-  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
-    "आपका Rakazo प्लान शुरू हो गया है, लेकिन जब तक कोई मॉडल कनेक्ट नहीं होता, आपके बॉट जवाब नहीं दे सकते।",
-  "Sign in with your {subscriptions} subscription, or paste an API key.":
-    "अपने {subscriptions} सब्सक्रिप्शन से साइन इन करें, या API कुंजी पेस्ट करें।",
-  "Connect a model": "मॉडल कनेक्ट करें",
+  "Credit added to your account": "आपके खाते में क्रेडिट जोड़ा गया",
+  "We added {amount} of credit so you can start chatting now.":
+    "हमने {amount} का क्रेडिट जोड़ा है ताकि आप अभी चैट शुरू कर सकें।",
+  "Start chatting": "चैट शुरू करें",
+  "You can also {connect}.": "आप {connect} भी कर सकते हैं।",
+  "connect your own model": "अपना मॉडल कनेक्ट",
   "Bring your old assistant to Rakazo": "अपने पुराने असिस्टेंट को Rakazo में लाएँ",
   "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
     "क्या आपने {assistants} में पहले से कोई असिस्टेंट सेट अप किया है? Rakazo उसके निर्देश, मेमोरी, स्किल और रूटीन एक नए बॉट के रूप में ला सकता है, ताकि आपको फिर से शुरू न करना पड़े।",

@@ -7,9 +7,13 @@ import type {
 } from "@rakazo/contracts";
 import { backupChoiceKey, modelRoleConnectionId, usableModelId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { appliedModelRole } from "@rakazo/db";
+import { appliedModelRole, organizationForMember } from "@rakazo/db";
 import { resolveAutoReviewChecker } from "../approvals/auto-review.js";
-import { approvedModelCreditOffering, modelCreditOfferings } from "../model-credits/offerings.js";
+import {
+  approvedModelCreditOffering,
+  cheapestModelCreditOffering,
+  modelCreditOfferings,
+} from "../model-credits/offerings.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 
@@ -21,6 +25,8 @@ export type DeploymentModelDefaults = {
   deployment?: { provider: string; model: string } | null;
   env?: NodeJS.ProcessEnv;
   includedApproval?: boolean;
+  /** The member's organization is on an own-key plan, whose credit is a small one-time grant. */
+  ownKeyPlan?: boolean;
 };
 
 /** What runs for a purpose without a member's choice, in the same shape as one. */
@@ -41,6 +47,10 @@ export function deploymentModelRole(
   const modelId =
     usableModelId(defaults.settings?.defaultModelId) ?? usableModelId(defaults.deployment?.model);
   const offerings = modelCreditOfferings(defaults.env);
+  // So the grant pays for many replies rather than a few expensive ones.
+  const cheapest = defaults.ownKeyPlan ? cheapestModelCreditOffering(defaults.env) : undefined;
+  if (cheapest)
+    return { primary: { provider: cheapest.provider, modelId: cheapest.modelId }, backups: [] };
   if (
     offerings &&
     !offerings.offerings.some((entry) => entry.provider === provider && entry.modelId === modelId)
@@ -84,6 +94,21 @@ export type MemberMainModel = ModelRoleChoice & {
   /** The connection that serves it; null when only the deployment can. */
   credential: ModelCredential;
 };
+
+/** Whether the member's organization is on an own-key plan, where hosted credit is only a grant. */
+export async function memberOnOwnKeyPlan(
+  prisma: PrismaClient,
+  scope: { userId: string; spaceId: string },
+): Promise<boolean> {
+  if (!modelCreditOfferings()) return false;
+  const membership = await organizationForMember(prisma, scope);
+  if (!membership) return false;
+  const account = await prisma.modelCreditAccount.findUnique({
+    where: { organizationId: membership.organizationId },
+    select: { mode: true },
+  });
+  return account?.mode === "byok";
+}
 
 /** The member's main model and the connection that serves it, resolved as validation does. */
 export async function resolveMemberMainModel(

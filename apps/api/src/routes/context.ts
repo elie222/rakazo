@@ -25,6 +25,7 @@ import {
   kickModelCredentialRefresh,
   listAvailablePiCatalog,
   McpOAuthBroker,
+  memberOnOwnKeyPlan,
   modelCredentialAuthKindsForSpace,
   modelCreditOfferings,
   modelProviderAllowed,
@@ -322,6 +323,9 @@ export function createRouterContext(deps: RouterDeps) {
                 where: { id: "default" },
               }),
               deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
+              ownKeyPlan:
+                deps.billing?.modelCreditsEnabled === true &&
+                (await memberOnOwnKeyPlan(deps.prisma, actor)),
             }).primary
           : null,
       };

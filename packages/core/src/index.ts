@@ -23,6 +23,7 @@ export * from "./avatars/logo-avatar-art.js";
 export * from "./avatars/logo-avatar-motion.js";
 export * from "./avatars/logo-avatar-traits.js";
 export * from "./avatars/notification-avatar.js";
+export * from "./billing/model-credit-grant.js";
 export * from "./billing/spending.js";
 export * from "./bots/bot-look.js";
 export * from "./bots/bot-mentions.js";

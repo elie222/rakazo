@@ -263,6 +263,7 @@ async function runTurn({
       billingAccount: { findUnique: vi.fn(async () => null) },
       modelCreditAccount: {
         upsert: vi.fn(async () => ({ mode: "credits", balanceMicros: 1_000_000n })),
+        findUnique: vi.fn(async () => ({ mode: "credits" })),
       },
       taughtSkill: { findMany: vi.fn(async () => []) },
       vaultCredential: { findMany: vi.fn(async () => []) },

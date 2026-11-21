@@ -717,6 +717,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions } =
     createRunRuntime(runtimeEnv, connectors, {
       billingEnabled: modelCreditsEnabled,
+      analytics,
       mediaGeneration,
       meetingWork: meetingProvider && meetings.work.bind(meetings),
       meetingCalendarSync:

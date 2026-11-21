@@ -1,12 +1,15 @@
-import type { ModelCallObserver } from "@rakazo/adapter-kit";
+import type { ModelCallObserver, ProductAnalytics } from "@rakazo/adapter-kit";
 import { HOSTED_MODEL_CREDITS_REQUIRED_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  claimFirstGrantSpend,
   creditAccount,
+  creditsPayForMember,
   organizationForMember,
   recordModelCreditReceipt,
   reserveModelCredits,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 
 import { modelCreditOfferings, offeringUsage } from "../../model-credits/offerings.js";
 import { maximumModelCallCost } from "../../runtime/pi/usage/pi-usage.js";
@@ -30,12 +33,15 @@ export class ModelCreditAccountUnavailableError extends Error {
 export async function hostedModelCreditObserver(
   prisma: PrismaClient,
   scope: { userId: string; spaceId: string },
+  analytics?: ProductAnalytics,
 ): Promise<ModelCallObserver> {
   const membership = await organizationForMember(prisma, scope);
   if (!membership) throw new ModelCreditAccountUnavailableError();
   const account = await creditAccount(prisma, membership.organizationId);
-  if (account.mode !== "credits" && account.balanceMicros <= 0n)
+  if (!(await creditsPayForMember(prisma, account, scope.userId)))
     throw new HostedModelCreditsRequiredError(HOSTED_MODEL_CREDITS_REQUIRED_ERROR);
+  // Only an own-key plan's balance can be a grant; checked until its first spend is recorded.
+  let grantUnspent = Boolean(analytics) && account.mode === "byok" && !account.grantSpentAt;
   const configuration = modelCreditOfferings();
   const snapshots = new Map<string, NonNullable<typeof configuration>["offerings"][number]>();
   return {
@@ -79,6 +85,16 @@ export async function hostedModelCreditObserver(
         },
       );
       if (offering) snapshots.set(reservation, offering);
+      if (grantUnspent) {
+        grantUnspent = false;
+        if (
+          await bestEffort(
+            "record the first credit grant spend",
+            claimFirstGrantSpend(prisma, membership.organizationId),
+          )
+        )
+          analytics?.capture(scope.userId, { name: "model_credit_grant_spent" });
+      }
       return reservation;
     },
     afterCall: async (reservationId, usage) => {

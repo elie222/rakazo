@@ -87,12 +87,12 @@ export const DE_MESSAGES: Record<string, string> = {
     "{inviter} hat dich eingeladen, {space} auf Rakazo beizutreten.",
   "Join {space}": "{space} beitreten",
   "This invitation expires in 7 days.": "Diese Einladung läuft in 7 Tagen ab.",
-  "Connect a model to start using Rakazo": "Verbinde ein Modell, um mit Rakazo loszulegen",
-  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
-    "Dein Rakazo-Tarif läuft, aber deine Bots können erst antworten, wenn ein Modell verbunden ist.",
-  "Sign in with your {subscriptions} subscription, or paste an API key.":
-    "Melde dich mit deinem Abo von {subscriptions} an oder füge einen API-Schlüssel ein.",
-  "Connect a model": "Modell verbinden",
+  "Credit added to your account": "Guthaben zu deinem Konto hinzugefügt",
+  "We added {amount} of credit so you can start chatting now.":
+    "Wir haben {amount} Guthaben hinzugefügt, damit du jetzt loslegen kannst.",
+  "Start chatting": "Chat starten",
+  "You can also {connect}.": "Du kannst auch {connect}.",
+  "connect your own model": "dein eigenes Modell verbinden",
   "Bring your old assistant to Rakazo": "Bring deinen bisherigen Assistenten zu Rakazo",
   "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
     "Hast du schon einen Assistenten in {assistants} eingerichtet? Rakazo kann seine Anweisungen, sein Gedächtnis, seine Skills und Routinen als neuen Bot übernehmen, damit du nicht von vorn anfängst.",

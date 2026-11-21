@@ -448,3 +448,30 @@ it("uses the approved default when owner settings name an unapproved model", () 
     }).primary,
   ).toEqual({ provider: entry.provider, modelId: entry.modelId });
 });
+
+it("runs an own-key plan's credit on the cheapest offering, whatever the default", () => {
+  const offering = (id: string, input: number, output: number) => ({
+    id,
+    connectionId: "operator-connection",
+    provider: "approved-provider",
+    modelId: `${id}-model`,
+    price: { input, output, cacheRead: 0, cacheWrite: 0 },
+  });
+  const env = {
+    MODEL_CREDIT_OFFERINGS: JSON.stringify({
+      defaultOfferingId: "frontier",
+      offerings: [offering("frontier", 5, 25), offering("small", 0.5, 2), offering("mid", 1, 4)],
+    }),
+  };
+  expect(deploymentModelRole("main", { ...deploymentDefaults, env }).primary).toEqual({
+    provider: "approved-provider",
+    modelId: "frontier-model",
+  });
+  expect(
+    deploymentModelRole("main", { ...deploymentDefaults, env, ownKeyPlan: true }).primary,
+  ).toEqual({ provider: "approved-provider", modelId: "small-model" });
+  // Without offerings the deployment's one model is the only one there is.
+  expect(deploymentModelRole("main", { ...deploymentDefaults, ownKeyPlan: true })).toEqual(
+    deploymentModelRole("main", deploymentDefaults),
+  );
+});

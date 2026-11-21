@@ -45,7 +45,11 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "../../models/model-provider-allowlist.js";
-import { resolveMemberMainModel, selectConfiguredModel } from "../../models/model-roles.js";
+import {
+  memberOnOwnKeyPlan,
+  resolveMemberMainModel,
+  selectConfiguredModel,
+} from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
 import { modelBilling, parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
 import {
@@ -120,6 +124,7 @@ export async function fleetPrepareDeps(
           defaults: {
             settings,
             deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
+            ownKeyPlan: Boolean(hostedProvider) && (await memberOnOwnKeyPlan(deps.prisma, scope)),
           },
         });
         return { provider: selected.provider ?? null, model: selected.id ?? null };
@@ -226,7 +231,9 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
   const apiKey = material.apiKey ?? runtimeKey;
   if (apiKey) args[6]?.([apiKey]);
   const callObserver =
-    !credential && billingEnabled ? await hostedModelCreditObserver(deps.prisma, scope) : undefined;
+    !credential && billingEnabled
+      ? await hostedModelCreditObserver(deps.prisma, scope, deps.analytics)
+      : undefined;
   const fundingOfferingId =
     creditOfferingId ??
     (!operatorFunded && !credential
@@ -631,6 +638,8 @@ export async function resolveRunModel(
     defaults: {
       settings,
       deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
+      ownKeyPlan:
+        (await modelCreditBillingEnabled(deps)) && (await memberOnOwnKeyPlan(deps.prisma, scope)),
     },
   });
   const { credential, thinkingLevel } = selected;

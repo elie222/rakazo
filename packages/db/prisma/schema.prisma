@@ -65,6 +65,9 @@ model User {
   /// When an organization this person owns was given free own-key days; uses up only that
   /// trial, and survives the organization the days belonged to.
   byokTrialUsedAt             DateTime?
+  /// When an organization this person owns was given the one-time model credit; survives the
+  /// organization, so its owner never gets a second one.
+  modelCreditGrantedAt        DateTime?
   /// The organization whose open checkout session holds this owner's one own-key trial,
   /// and until when that hold lasts. Null once the session is paid, expired, or cancelled.
   byokTrialCheckoutOrganizationId String?
@@ -2759,6 +2762,8 @@ model ModelCreditAccount {
   balanceMicros         BigInt             @default(0)
   pendingCreditCheckout Boolean            @default(false)
   byokFreeUntil         DateTime?
+  /// When a model call first spent this organization's one-time credit grant.
+  grantSpentAt          DateTime?
   /// Numbers each provider read of purchases in the order it started.
   purchaseReadsStarted  BigInt             @default(0)
   /// The newest read that applied every purchase it saw; older reads are skipped.

@@ -106,8 +106,11 @@ dbTests("model connection email", () => {
   const sentTo = (id: string) =>
     email.sent.filter((message) => message.to === `${id}@example.test`);
   const claims = (id: string) => prisma.emailSend.count({ where: { userId: id } });
+  const balance = async (id: string) =>
+    (await prisma.modelCreditAccount.findUnique({ where: { organizationId: id } }))
+      ?.balanceMicros ?? 0n;
 
-  it("queues one job a day after an own-key plan starts and sends its mail once", async () => {
+  it("queues one job a day after an own-key plan starts, grants the credit and mails it once", async () => {
     const before = queued.length;
     const startedAt = Date.now();
     const { id, customer, job } = await subscriber("once");
@@ -130,9 +133,11 @@ dbTests("model connection email", () => {
 
     const [message, ...extra] = sentTo(id);
     expect(extra).toHaveLength(0);
-    expect(message!.subject).toBe("Connect a model to start using Rakazo");
+    expect(await balance(id)).toBe(2_000_000n);
+    expect(message!.subject).toBe("Credit added to your account");
+    expect(message!.text).toContain("We added $2 of credit so you can start chatting now.");
+    expect(message!.text).toContain(`${WEB_ORIGIN}/sign-in?next=%2Fapp`);
     expect(message!.text).toContain(`${WEB_ORIGIN}/sign-in?next=%2Fonboarding%2Fmodel`);
-    expect(message!.text).toContain("ChatGPT or Claude subscription, or paste an API key");
     expect(message!.headers).toEqual({
       "List-Unsubscribe": expect.stringContaining(
         `${WEB_ORIGIN}/api/v1/email/unsubscribe?user=${id}&token=`,
@@ -140,6 +145,7 @@ dbTests("model connection email", () => {
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     });
     expect(capture.mock.calls.filter(([userId]) => userId === id)).toEqual([
+      [id, { name: "model_credit_granted" }],
       [id, { name: "lifecycle_email_sent", email: "model-connection" }],
     ]);
   });
@@ -152,6 +158,7 @@ dbTests("model connection email", () => {
     await send(job);
     expect(sentTo(id)).toHaveLength(0);
     expect(await claims(id)).toBe(0);
+    expect(await balance(id)).toBe(0n);
   });
 
   it.each(["canceled", "unpaid"] as const)("drops the job when the plan is %s", async (status) => {
@@ -161,6 +168,16 @@ dbTests("model connection email", () => {
     await send(job);
     expect(sentTo(id)).toHaveLength(0);
     expect(await claims(id)).toBe(0);
+    expect(await balance(id)).toBe(0n);
+  });
+
+  it("sends nothing, and grants nothing, to an owner who was given the credit before", async () => {
+    const { id, job } = await subscriber("granted-before");
+    await prisma.user.update({ where: { id }, data: { modelCreditGrantedAt: new Date() } });
+    await send(job);
+    expect(sentTo(id)).toHaveLength(0);
+    expect(await claims(id)).toBe(0);
+    expect(await balance(id)).toBe(0n);
   });
 
   it("drops the job for an organization that runs on hosted credits", async () => {
@@ -179,9 +196,11 @@ dbTests("model connection email", () => {
     await send(chose.job);
     await send(funded.job);
     expect([...sentTo(chose.id), ...sentTo(funded.id)]).toHaveLength(0);
+    expect(await balance(chose.id)).toBe(0n);
+    expect(await balance(funded.id)).toBe(1n);
   });
 
-  it("still reminds an own-key organization that kept a credit balance", async () => {
+  it("still grants and mails an own-key organization that kept a credit balance", async () => {
     const { id, job } = await subscriber("own-key-balance");
     await prisma.modelCreditAccount.upsert({
       where: { organizationId: id },
@@ -190,6 +209,7 @@ dbTests("model connection email", () => {
     });
     await send(job);
     expect(sentTo(id)).toHaveLength(1);
+    expect(await balance(id)).toBe(2_000_001n);
   });
 
   it("writes only to a verified, active owner who has not opted out, of an organization that is staying", async () => {
@@ -243,6 +263,8 @@ dbTests("model connection email", () => {
     });
     await send(job);
     expect(sentTo(id)).toHaveLength(1);
+    // The credit came with the first try; the mail that announces it followed after the gap.
+    expect(await balance(id)).toBe(2_000_000n);
   });
 
   it("lets only one of two different mails racing for the same person through", async () => {
@@ -263,7 +285,9 @@ dbTests("model connection email", () => {
     await send(job);
     expect(sentTo(id)).toHaveLength(0);
     expect(await claims(id)).toBe(1);
-    expect(capture.mock.calls.filter(([userId]) => userId === id)).toHaveLength(0);
+    expect(capture.mock.calls.filter(([userId]) => userId === id)).toEqual([
+      [id, { name: "model_credit_granted" }],
+    ]);
   });
 
   it("queues the import mail two days after any plan starts and sends it once", async () => {
