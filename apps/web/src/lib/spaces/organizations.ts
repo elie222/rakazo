@@ -1,5 +1,6 @@
 import type { OrganizationList } from "@rakazo/contracts";
 import {
+  guestSpaceOfSelection,
   organizationLandingSpaceId,
   organizationOfSpace,
   organizationSwitchContext,
@@ -76,11 +77,12 @@ export async function leaveOrganization(
 ): Promise<void> {
   if (!fromSpaceId || fromSpaceId === toSpaceId) return;
   // A link into another organization can arrive before the list has loaded.
-  const organizations =
-    (await queryClient.ensureQueryData(organizationsQuery(userId)).catch(() => undefined))
-      ?.organizations ?? [];
-  const from = organizationOfSpace(organizations, fromSpaceId);
-  const to = organizationOfSpace(organizations, toSpaceId);
+  const list = await queryClient.ensureQueryData(organizationsQuery(userId)).catch(() => undefined);
+  if (!list) return;
+  const from = organizationOfSpace(list.organizations, fromSpaceId);
+  const to = organizationOfSpace(list.organizations, toSpaceId);
+  if (!from && !guestSpaceOfSelection(list, fromSpaceId)) return;
+  if (!to && !guestSpaceOfSelection(list, toSpaceId)) return;
   if (from && from.id === to?.id) return;
   if (from) rememberSpace(from.id, fromSpaceId);
   const departingSpaceIds = from?.spaceIds ?? [fromSpaceId];
