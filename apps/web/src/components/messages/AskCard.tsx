@@ -110,7 +110,10 @@ function approvalActionLabel(
 ): string {
   if (outcome === "created") return t`Create space`;
   if (outcome === "cancelled") return t`Cancel`;
-  if (id === "allow") return ALLOW_IN_SPACE.has(fallback) ? t`Allow in this space` : t`Allow once`;
+  if (id === "allow" && ALLOW_IN_SPACE.has(fallback)) return t`Allow in this space`;
+  // The server's label when approving makes the change itself, as replacing another bot's instructions.
+  if (id === "allow" && fallback === "Apply now") return t`Apply now`;
+  if (id === "allow") return t`Allow once`;
   if (id === "always") return site ? t`Always allow ${site}` : t`Always allow this tool`;
   if (id === "deny") return t`Deny`;
   return fallback;
