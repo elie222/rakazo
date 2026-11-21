@@ -10,7 +10,7 @@ import {
   Sidebar,
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
-import type { ReactNode, UIEvent } from "react";
+import type { CSSProperties, ReactNode, UIEvent } from "react";
 import { useEffect, useState } from "react";
 import { PasskeyOffer } from "../../../components/account/PasskeyOffer";
 import { useUsageHint } from "../../../components/billing/PlanUsage";
@@ -151,6 +151,12 @@ export function ShellSidebar({
         data-space-switch="sidebar"
         inert={listHidden || undefined}
         aria-hidden={listHidden || undefined}
+        style={
+          {
+            // The list steps aside by its own width from the rail's edge while it slides.
+            "--app-rail-offset": "calc(var(--app-rail-width) - var(--sidebar-width))",
+          } as CSSProperties
+        }
         data-bots-sidebar-density={density}
         data-collapsed={collapsed ? "true" : "false"}
         className={
@@ -159,7 +165,7 @@ export function ShellSidebar({
             : // The sidebar is fixed to the window edge, so it steps aside for the rail there.
               `h-full overflow-hidden border-sidebar-border ${
                 rail
-                  ? "data-[side=left]:left-(--app-rail-width) data-[side=right]:right-(--app-rail-width) data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--app-rail-width)-var(--sidebar-width))] data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--app-rail-width)-var(--sidebar-width))]"
+                  ? "data-[side=left]:left-(--app-rail-width) data-[side=right]:right-(--app-rail-width) data-[side=left]:group-data-[collapsible=offcanvas]:left-(--app-rail-offset) data-[side=right]:group-data-[collapsible=offcanvas]:right-(--app-rail-offset)"
                   : ""
               }`
         }
