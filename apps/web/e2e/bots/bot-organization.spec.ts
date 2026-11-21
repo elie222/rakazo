@@ -221,6 +221,49 @@ test("bots can be reordered by drag or keyboard and keep that order", async ({ p
   await expect.poll(order).toEqual([beta.id, alpha.id, chiefId]);
 });
 
+test("a bot dragged over another Space shows the not-allowed cursor and stays put", async ({
+  page,
+}) => {
+  const stamp = Date.now();
+  await signup(page, `bot-cross-space-${stamp}@rakazo.test`, "password12", "Cross Space");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  const chiefId = activeBotId(page);
+  const other = await rpc<{ id: string }>(page, "spaces/create", { name: "Second space" });
+  const created = await page.request.post("/rpc/bots/create", {
+    headers: { "x-rakazo-space-id": other.id },
+    data: {
+      json: { name: "Scout", description: "", notifyOnFinish: true, computerMode: "team" },
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const { json: scout } = (await created.json()) as { json: { id: string } };
+  await page.reload();
+
+  const sidebar = page.locator("aside").first();
+  const chief = sidebar.locator(`[data-roster-bot-id="${chiefId}"]`);
+  const scoutRow = sidebar.locator(`[data-roster-bot-id="${scout.id}"]`);
+  await expect(scoutRow).toBeVisible();
+  let saves = 0;
+  page.on("request", (request) => {
+    if (/\/rpc\/(bots\/(update|reorder)|groups\/update)/.test(request.url())) saves += 1;
+  });
+  const from = (await chief.boundingBox())!;
+  const to = (await scoutRow.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
+  await expect(scoutRow).toHaveCSS("cursor", "not-allowed");
+  await expect(scoutRow).not.toHaveAttribute("data-roster-drop", "true");
+  await page.mouse.up();
+
+  await expect(scoutRow).not.toHaveCSS("cursor", "not-allowed");
+  // The release neither moved the bot nor opened a chat.
+  expect(saves).toBe(0);
+  expect(activeBotId(page)).toBe(chiefId);
+});
+
 test("chat composer controls are vertically centered", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `composer-layout-${stamp}@rakazo.test`, "password12", "Composer Layout");

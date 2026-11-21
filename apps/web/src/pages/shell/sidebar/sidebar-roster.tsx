@@ -28,6 +28,7 @@ import {
   Users,
 } from "lucide-react";
 import type { RefObject } from "react";
+import { useMemo } from "react";
 import {
   compactRosterStatusLabel,
   rosterHasUndismissedRunError,
@@ -38,7 +39,9 @@ import type { ChatMenuState } from "../chat/chat-context-menu";
 import { ChatMenu } from "../chat/chat-context-menu";
 import { useRedrawAtMidnight } from "../chat/use-redraw-at-midnight";
 import type { RosterDropAction, RosterDropTarget } from "./roster-drop";
+import { rosterDropSlots, rosterHeaderDropKey, rosterRowDropKey } from "./roster-drop";
 import type { sidebarGroupsForSpaces } from "./space-sidebar";
+import { useRosterPointerDrag } from "./use-roster-pointer-drag";
 
 export function SidebarRoster({
   sidebarGroups,
@@ -101,6 +104,18 @@ export function SidebarRoster({
 }) {
   useRedrawAtMidnight();
   const { t } = useLingui();
+  const activeSpaceId = bootstrapMe?.spaceId;
+  const dropSlots = useMemo(
+    () => rosterDropSlots(sidebarGroups, activeSpaceId),
+    [sidebarGroups, activeSpaceId],
+  );
+  const startDrag = useRosterPointerDrag({
+    slots: dropSlots,
+    setDraggedBotId,
+    setRosterDropKey,
+    rosterDropAction,
+    applyRosterDrop,
+  });
   return (
     <>
       {sidebarGroups.map((group, groupIndex) => {
@@ -109,13 +124,7 @@ export function SidebarRoster({
           item.kind === "bot" ? [item.chat.id] : [],
         );
         const hasSpaceActions = group.canOpenSpaceSettings;
-        const headerDropTarget: RosterDropTarget | null =
-          group.spaceId === bootstrapMe?.spaceId &&
-          !group.emptySpaceId &&
-          (group.sectionId || group.key.endsWith("unassigned"))
-            ? { kind: "section", sectionId: group.sectionId }
-            : null;
-        const headerDropKey = `header:${group.key}`;
+        const headerDropKey = rosterHeaderDropKey(group.key);
         const section = group.sectionId
           ? (group.spaceId === bootstrapMe?.spaceId
               ? botSections
@@ -130,32 +139,20 @@ export function SidebarRoster({
               if (!mini) toggleSidebarSection(group.key);
             }}
             data-sidebar-group={group.key}
+            data-roster-space={group.spaceId}
             className={`flex flex-col gap-0.5 ${mini && groupIndex > 0 ? "mt-2 border-t border-sidebar-border pt-2" : ""}`}
           >
             {!mini && (group.title || hasSpaceActions) ? (
               // biome-ignore lint/a11y/useSemanticElements: groups sidebar controls, not form fields; Move to remains the keyboard alternative.
               <div
                 role="group"
+                data-roster-drop-key={headerDropKey}
                 data-roster-drop={rosterDropKey === headerDropKey ? "true" : undefined}
                 className={`${
                   group.title && hasSpaceActions
                     ? "grid pt-3 pb-0.5"
                     : `flex items-center pt-3 pb-0.5${group.title ? "" : " justify-end"}`
                 } rounded-lg ${rosterDropKey === headerDropKey ? "bg-sidebar-accent" : ""}`}
-                onDragOver={(event) => {
-                  if (!headerDropTarget || !rosterDropAction(headerDropTarget, false)) return;
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                  if (rosterDropKey !== headerDropKey) setRosterDropKey(headerDropKey);
-                }}
-                onDragLeave={() => {
-                  if (rosterDropKey === headerDropKey) setRosterDropKey(null);
-                }}
-                onDrop={(event) => {
-                  if (!headerDropTarget) return;
-                  event.preventDefault();
-                  applyRosterDrop(headerDropTarget, false, groupBotIds);
-                }}
               >
                 {group.title ? (
                   // Prefer the section menu over the space menu when both apply;
@@ -301,21 +298,7 @@ export function SidebarRoster({
                     : item.chat.preview ||
                       item.chat.members.map((member) => member.name).join(", "));
                 const rosterLine = compact ? compactStatusLabel : previewLine;
-                const rowDropTarget: RosterDropTarget | null =
-                  item.chat.spaceId !== bootstrapMe?.spaceId
-                    ? null
-                    : item.kind === "bot"
-                      ? { kind: "bot", chat: item.chat }
-                      : {
-                          kind: "group",
-                          chat: {
-                            id: item.chat.id,
-                            memberIds: item.chat.members.map((member) => member.botId),
-                          },
-                        };
-                const rowSameList =
-                  Boolean(draggedBotId) && groupBotIds.includes(draggedBotId ?? "");
-                const rowDropKey = `row:${item.kind}:${item.chat.id}`;
+                const rowDropKey = rosterRowDropKey(item.kind, item.chat.id);
                 const groupMembers =
                   item.kind === "group" && item.chat.id === activeSnapshot?.groupId
                     ? (activeSnapshot.members ?? item.chat.members)
@@ -337,7 +320,7 @@ export function SidebarRoster({
                 const chatTrigger = (
                   <ContextMenuTrigger
                     render={<button type="button" />}
-                    draggable={item.kind === "bot"}
+                    data-roster-drop-key={rowDropKey}
                     data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
                     data-roster-unread={item.chat.unread ? "true" : undefined}
                     data-roster-error={rowError && (compact || mini) ? "true" : undefined}
@@ -358,30 +341,12 @@ export function SidebarRoster({
                     aria-keyshortcuts={
                       item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined
                     }
-                    onDragStart={(event) => {
-                      if (item.kind !== "bot") return;
-                      setDraggedBotId(item.chat.id);
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("text/plain", item.chat.id);
-                    }}
-                    onDragOver={(event) => {
-                      if (!rowDropTarget || !rosterDropAction(rowDropTarget, rowSameList)) return;
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                      if (rosterDropKey !== rowDropKey) setRosterDropKey(rowDropKey);
-                    }}
-                    onDragLeave={() => {
-                      if (rosterDropKey === rowDropKey) setRosterDropKey(null);
-                    }}
-                    onDrop={(event) => {
-                      if (!rowDropTarget) return;
-                      event.preventDefault();
-                      applyRosterDrop(rowDropTarget, rowSameList, groupBotIds);
-                    }}
-                    onDragEnd={() => {
-                      setDraggedBotId(null);
-                      setRosterDropKey(null);
-                    }}
+                    onPointerDown={
+                      item.kind === "bot" ? (event) => startDrag(event, item.chat) : undefined
+                    }
+                    // Bots move with pointer events; a native drag (of the avatar image, say)
+                    // would take the pointer away from them.
+                    onDragStart={(event) => event.preventDefault()}
                     data-roster-drop={rosterDropKey === rowDropKey ? "true" : undefined}
                     onKeyDown={(event) => {
                       if (
