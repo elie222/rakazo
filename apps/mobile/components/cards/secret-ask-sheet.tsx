@@ -12,6 +12,7 @@ import { useThemedStyles } from "../../lib/native/native";
 import { useSecretSheetClose } from "../../lib/vault/secret-sheet-close";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSwitch } from "../native/native-switch";
+import { SheetCloseButton } from "../native/sheet-close-button";
 import type { LoginFieldRow } from "../vault/login-fields-editor";
 import { LoginFieldsEditor } from "../vault/login-fields-editor";
 
@@ -27,6 +28,7 @@ export function SecretAskSheet({
   pending,
   onClose,
   onSave,
+  onDismiss,
 }: {
   title: string;
   destination: string;
@@ -39,6 +41,8 @@ export function SecretAskSheet({
   onClose: () => void;
   /** `remember` is false when "Save to Vault" was turned off: the login is for this run only. */
   onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
+  /** Turns the request down without a value; absent when this viewer can't. */
+  onDismiss?: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
@@ -78,6 +82,20 @@ export function SecretAskSheet({
     }
   }
 
+  async function dismiss() {
+    if (submitting || !onDismiss) return;
+    clear();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onDismiss();
+    } catch (err) {
+      setError(secretAnswerErrorText(err, t`Could not send answer`));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <Modal
       visible
@@ -100,7 +118,11 @@ export function SecretAskSheet({
         ]}
       >
         <View style={styles.header}>
-          <NativeActionButton label={t`Cancel`} onPress={close} prominence="plain" />
+          {/* Centered on the sheet, clear of the buttons on either side; read first. */}
+          <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
+            {title}
+          </Text>
+          <SheetCloseButton onPress={close} />
           <NativeActionButton
             disabled={incomplete}
             busy={submitting}
@@ -108,17 +130,16 @@ export function SecretAskSheet({
             label={remember ? t`Save` : t`Continue`}
             onPress={() => void save()}
             prominence={incomplete ? "plain" : "primary"}
+            // The button pins itself to the top of a row; this one centers with the close button.
+            style={styles.headerAction}
           />
         </View>
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
-          // A long title and site at large text sizes can leave the fields under the keyboard.
+          // A long site and replaced login at large text sizes can leave the fields under the keyboard.
           automaticallyAdjustKeyboardInsets
         >
-          <Text style={styles.title} numberOfLines={2}>
-            {title}
-          </Text>
           <Text style={styles.destination}>{destination}</Text>
           {replacedSite ? (
             <Text style={styles.replaced}>
@@ -148,6 +169,15 @@ export function SecretAskSheet({
               {error}
             </Text>
           ) : null}
+          {onDismiss ? (
+            <NativeActionButton
+              label={t`Dismiss request`}
+              disabled={submitting || closing}
+              fill={false}
+              prominence="plain"
+              onPress={() => void dismiss()}
+            />
+          ) : null}
         </ScrollView>
       </View>
     </Modal>
@@ -162,12 +192,23 @@ function createStyles() {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
+      minHeight: 44,
       paddingHorizontal: 20,
       paddingBottom: 12,
     },
+    headerAction: { alignSelf: "center" },
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 12 },
-    title: { color: tokens.foreground, fontSize: 20, fontWeight: "600" },
-    destination: { color: tokens.foreground, fontSize: 15, marginBottom: 8 },
+    title: {
+      position: "absolute",
+      left: 96,
+      right: 96,
+      top: 11,
+      textAlign: "center",
+      color: tokens.foreground,
+      fontSize: 17,
+      fontWeight: "600",
+    },
+    destination: { color: tokens.mutedForeground, fontSize: 15, marginBottom: 8 },
     replaced: { color: tokens.mutedForeground, fontSize: 13, marginTop: -8, marginBottom: 8 },
     group: { backgroundColor: tokens.muted, borderRadius: 13, overflow: "hidden" },
     row: { flexDirection: "row", alignItems: "center", minHeight: 52, paddingHorizontal: 16 },

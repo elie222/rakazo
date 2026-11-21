@@ -1,7 +1,9 @@
+import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { LOGIN_FIELD_LIMIT } from "@rakazo/contracts";
 import type { RefObject } from "react";
+import { useState } from "react";
 import type { TextInputInstance } from "react-native";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
@@ -22,8 +24,9 @@ export function emptyLoginField(fields: readonly LoginFieldRow[]): LoginFieldRow
 }
 
 /**
- * The values of a website login, each with a Hidden switch. With `labels` the fields are fixed and
- * shown by those names; without them the person names, adds and removes fields.
+ * The values of a website login. With `labels` the fields are fixed, shown by those names, and
+ * secret or not as their labels say, with an eye to check a secret one while typing. Without them
+ * the person names, adds and removes fields, and a Hidden switch says which are secret.
  */
 export function LoginFieldsEditor({
   fields,
@@ -45,6 +48,14 @@ export function LoginFieldsEditor({
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
+  // Fields shown while typing; their saved Hidden setting is unchanged.
+  const [shown, setShown] = useState<ReadonlySet<number>>(new Set());
+  const toggleShown = (id: number) =>
+    setShown((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const change = (id: number, patch: Partial<LoginFieldInput>) =>
     onChange((current) =>
       current.map((field) => (field.id === id ? { ...field, ...patch } : field)),
@@ -85,7 +96,7 @@ export function LoginFieldsEditor({
                 ) : null}
               </View>
             )}
-            <View style={[styles.row, styles.separated]}>
+            <View style={[styles.row, labels ? undefined : styles.separated]}>
               <TextInput
                 ref={(node) => {
                   inputs.current[index] = node;
@@ -95,7 +106,7 @@ export function LoginFieldsEditor({
                 onChangeText={(value) => change(field.id, { value })}
                 placeholder={name}
                 placeholderTextColor={styles.placeholder.color}
-                secureTextEntry={field.hidden}
+                secureTextEntry={field.hidden && !shown.has(field.id)}
                 {...loginFieldTraits(field.hidden)}
                 autoCorrect={false}
                 autoCapitalize="none"
@@ -106,17 +117,36 @@ export function LoginFieldsEditor({
                 onEndEditing={(event) => onEndEditing(event.nativeEvent.text)}
                 style={styles.input}
               />
+              {labels && field.hidden ? (
+                <NativeActionButton
+                  accessibilityLabel={
+                    shown.has(field.id)
+                      ? t`Hide ${ph({ field: name })}`
+                      : t`Show ${ph({ field: name })}`
+                  }
+                  icon={
+                    shown.has(field.id)
+                      ? { ios: "eye.slash", android: "eye-off-outline" }
+                      : { ios: "eye", android: "eye-outline" }
+                  }
+                  prominence="quiet"
+                  onPress={() => toggleShown(field.id)}
+                  style={styles.reveal}
+                />
+              ) : null}
             </View>
-            <View style={styles.row}>
-              <Text style={styles.switchLabel}>{t`Hidden`}</Text>
-              <NativeSwitch
-                accessibilityLabel={t`Hidden`}
-                accessibilityHint={name}
-                disabled={!editable}
-                value={field.hidden}
-                onValueChange={(hidden) => change(field.id, { hidden })}
-              />
-            </View>
+            {labels ? null : (
+              <View style={styles.row}>
+                <Text style={styles.switchLabel}>{t`Hidden`}</Text>
+                <NativeSwitch
+                  accessibilityLabel={t`Hidden`}
+                  accessibilityHint={name}
+                  disabled={!editable}
+                  value={field.hidden}
+                  onValueChange={(hidden) => change(field.id, { hidden })}
+                />
+              </View>
+            )}
           </View>
         );
       })}
@@ -142,6 +172,7 @@ function createStyles() {
     separated: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.border },
     input: { flex: 1, minWidth: 0, paddingVertical: 16, color: tokens.foreground },
     remove: { minWidth: 44, minHeight: 44, marginRight: -8 },
+    reveal: { marginRight: -4, alignSelf: "center" },
     switchLabel: { flex: 1, color: tokens.foreground, fontSize: 17 },
     placeholder: { color: tokens.faintForeground },
   });

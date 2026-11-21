@@ -58,40 +58,57 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.each([
-  {
-    mode: "editable",
-    rowLabels: ["Username", " Password ", "   "],
-    fixedLabels: undefined,
-    hints: ["Username", "Password", "Value"],
-  },
-  {
-    mode: "fixed",
-    rowLabels: ["Account", "Passphrase"],
-    fixedLabels: ["Username", "Password"],
-    hints: ["Username", "Password"],
-  },
-])(
-  "describes each Hidden switch with its $mode field's name",
-  ({ rowLabels, fixedLabels, hints }) => {
-    act(() =>
-      root.render(
-        <LoginFieldsEditor
-          fields={rowLabels.map((label, id) => ({ id, label, value: "", hidden: true }))}
-          labels={fixedLabels}
-          editable
-          inputs={{ current: [] }}
-          onChange={vi.fn()}
-          onEndEditing={vi.fn()}
-          onSubmit={vi.fn()}
-        />,
-      ),
-    );
+it("describes each Hidden switch with its field's name", () => {
+  act(() =>
+    root.render(
+      <LoginFieldsEditor
+        fields={["Username", " Password ", "   "].map((label, id) => ({
+          id,
+          label,
+          value: "",
+          hidden: true,
+        }))}
+        editable
+        inputs={{ current: [] }}
+        onChange={vi.fn()}
+        onEndEditing={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    ),
+  );
 
-    const switches = [...container.querySelectorAll('[role="switch"]')];
-    expect(switches.map((control) => control.getAttribute("aria-label"))).toEqual(
-      hints.map(() => "Hidden"),
-    );
-    expect(switches.map((control) => control.getAttribute("aria-description"))).toEqual(hints);
-  },
-);
+  const switches = [...container.querySelectorAll('[role="switch"]')];
+  expect(switches.map((control) => control.getAttribute("aria-label"))).toEqual([
+    "Hidden",
+    "Hidden",
+    "Hidden",
+  ]);
+  expect(switches.map((control) => control.getAttribute("aria-description"))).toEqual([
+    "Username",
+    "Password",
+    "Value",
+  ]);
+});
+
+it("asks no Hidden switch for a request's fixed fields", () => {
+  act(() =>
+    root.render(
+      <LoginFieldsEditor
+        fields={["Account", "Passphrase"].map((label, id) => ({
+          id,
+          label,
+          value: "",
+          hidden: id === 1,
+        }))}
+        labels={["Username", "Password"]}
+        editable
+        inputs={{ current: [] }}
+        onChange={vi.fn()}
+        onEndEditing={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    ),
+  );
+
+  expect(container.querySelector('[role="switch"]')).toBeNull();
+});

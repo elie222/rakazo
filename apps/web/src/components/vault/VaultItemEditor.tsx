@@ -753,7 +753,7 @@ function EditorForm({
         <span className="flex-1" />
         {onDismiss ? (
           <Button type="button" variant="ghost" disabled={busy} onClick={() => void dismiss()}>
-            <Trans>Dismiss</Trans>
+            <Trans>Dismiss request</Trans>
           </Button>
         ) : null}
         <Button type="submit" data-testid="vault-editor-save" disabled={!ready || busy}>

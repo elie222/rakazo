@@ -110,15 +110,24 @@ vi.mock("../../lib/native/native", () => ({
 vi.mock("../native/native-action-button", () => ({
   NativeActionButton: ({
     label,
+    accessibilityLabel,
     onPress,
     disabled,
   }: {
-    label: string;
+    label?: string;
+    accessibilityLabel?: string;
     onPress: () => void;
     disabled?: boolean;
   }) => (
     <button type="button" onClick={onPress} disabled={disabled}>
-      {label}
+      {label ?? accessibilityLabel}
+    </button>
+  ),
+}));
+vi.mock("../native/sheet-close-button", () => ({
+  SheetCloseButton: ({ onPress }: { onPress: () => void }) => (
+    <button type="button" onClick={onPress}>
+      Close
     </button>
   ),
 }));
@@ -169,7 +178,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(pending = true, loginFields?: string[]) {
+async function render(pending = true, loginFields?: string[], onDismiss?: () => Promise<void>) {
   await act(async () =>
     root.render(
       <SecretAskSheet
@@ -179,6 +188,7 @@ async function render(pending = true, loginFields?: string[]) {
         pending={pending}
         onClose={onClose}
         onSave={onSave}
+        onDismiss={onDismiss}
       />,
     ),
   );
@@ -206,8 +216,8 @@ async function type(label: string, value: string) {
   });
 }
 
-function hiddenSwitches() {
-  return [...container.querySelectorAll<HTMLInputElement>('input[aria-label="Hidden"]')];
+function buttonLabels() {
+  return [...container.querySelectorAll("button")].map((item) => item.textContent);
 }
 
 function valueFields() {
@@ -232,7 +242,8 @@ it("opens as a page sheet with the title, the default fields and the destination
   expect(password.type).toBe("password");
   expect(password.dataset.contentType).toBe("password");
   expect(password.dataset.autocomplete).toBe("current-password");
-  expect(hiddenSwitches().map((input) => input.checked)).toEqual([false, true]);
+  // Which fields are secret comes from their labels; no switch asks.
+  expect(container.querySelector('input[aria-label="Hidden"]')).toBeNull();
 });
 
 it("shows the default labels translated but saves them in English", async () => {
@@ -259,17 +270,17 @@ it("starts an ID and a phone visible and a PIN hidden", async () => {
     ["Phone number", "text"],
     ["PIN", "password"],
   ]);
-  expect(hiddenSwitches().map((input) => input.checked)).toEqual([false, false, true]);
+  expect(buttonLabels()).toContain("Show PIN");
+  expect(buttonLabels()).not.toContain("Show ID number");
 });
 
 it("starts every field hidden when no label names an identifier", async () => {
   await render(true, ["Memorable word", "Card number"]);
 
   expect(valueFields().map((input) => input.type)).toEqual(["password", "password"]);
-  expect(hiddenSwitches().map((input) => input.checked)).toEqual([true, true]);
 });
 
-it("lets the person hide or show a field, and saves it as chosen", async () => {
+it("shows a secret field while typing but still saves it as secret", async () => {
   onSave.mockResolvedValue();
   await render(true, ["Email", "PIN"]);
 
@@ -277,10 +288,11 @@ it("lets the person hide or show a field, and saves it as chosen", async () => {
   expect(field("Email").dataset.contentType).toBe("none");
   expect(field("PIN").type).toBe("password");
 
-  await act(async () => hiddenSwitches()[0]!.click());
-  expect(field("Email").type).toBe("password");
-  await act(async () => hiddenSwitches()[0]!.click());
-  expect(field("Email").type).toBe("text");
+  await act(async () => button("Show PIN").click());
+  expect(field("PIN").type).toBe("text");
+  await act(async () => button("Hide PIN").click());
+  expect(field("PIN").type).toBe("password");
+  await act(async () => button("Show PIN").click());
 
   await type("Email", "ada@example.test");
   await type("PIN", "1234");
@@ -306,14 +318,18 @@ it("focuses Username once the sheet has been shown", async () => {
   expect(document.activeElement).toBe(field("Username"));
 });
 
-it("shows the site right under a title capped at two lines, before the fields", async () => {
+it("titles the sheet in one line above the site, then the fields", async () => {
   await render();
 
   const texts = [...container.querySelectorAll("span")];
   const title = texts.find((item) => item.textContent === "Example sign-in")!;
   const site = texts.find((item) => item.textContent === "https://login.example.test")!;
-  expect(title.dataset.lines).toBe("2");
+  expect(title.dataset.lines).toBe("1");
   expect(site.dataset.lines).toBeUndefined();
+  // Read before the header's buttons.
+  expect(
+    title.compareDocumentPosition(button("Close")) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(title.compareDocumentPosition(site) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(
     site.compareDocumentPosition(field("Username")) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -341,11 +357,9 @@ it("enables Save only once every field has a value", async () => {
   await type("Password", "example-password");
   expect(button("Save").disabled).toBe(false);
 
-  // A blank value counts only while it is hidden.
+  // A blank username counts as empty.
   await type("Username", "  ");
   expect(button("Save").disabled).toBe(true);
-  await act(async () => hiddenSwitches()[0]!.click());
-  expect(button("Save").disabled).toBe(false);
 });
 
 it("saves the default fields under their English labels, then clears them", async () => {
@@ -387,10 +401,7 @@ it("sends a login for this run only once Save to Vault is off, behind Continue",
   expect(saveToVault().checked).toBe(false);
   // Turning it off keeps what was typed.
   expect(field("Username").value).toBe("ada@example.test");
-  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
-    "Cancel",
-    "Continue",
-  ]);
+  expect(buttonLabels()).toEqual(["Close", "Continue", "Show Password"]);
   await type("Password", "example-password");
   await act(async () => button("Continue").click());
 
@@ -459,14 +470,14 @@ async function nextFrame() {
   await act(async () => vi.advanceTimersToNextFrame());
 }
 
-it("closes on Cancel a frame after the edited field reports it is empty", async () => {
+it("closes on Close a frame after the edited field reports it is empty", async () => {
   vi.useFakeTimers();
   const seen = recordFieldsOnClose();
   await render();
   await type("Username", "ada");
   await type("Password", "example-password");
 
-  await act(async () => button("Cancel").click());
+  await act(async () => button("Close").click());
 
   expect(native.commands).toEqual([
     "clear Username",
@@ -525,10 +536,25 @@ it("closes after a delay when no field reports, as when the card is no longer pe
   expect(onSave).not.toHaveBeenCalled();
 });
 
-it("keeps Cancel and Save as the only sheet actions", async () => {
+it("keeps Close and Save as the only sheet actions", async () => {
   await render();
-  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
-    "Cancel",
-    "Save",
-  ]);
+  expect(buttonLabels()).toEqual(["Close", "Save", "Show Password"]);
+});
+
+it("offers Dismiss request under the fields only when the request can be turned down", async () => {
+  const onDismiss = vi.fn(async () => undefined);
+  await render(true, undefined, onDismiss);
+  await type("Password", "example-password");
+  await act(async () => button("Dismiss request").click());
+  expect(onDismiss).toHaveBeenCalledTimes(1);
+  expect(onSave).not.toHaveBeenCalled();
+  expect(field("Password").value).toBe("");
+});
+
+it("shows a generic error when dismissing fails", async () => {
+  await render(true, undefined, async () => {
+    throw new Error("server detail");
+  });
+  await act(async () => button("Dismiss request").click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not send answer");
 });
