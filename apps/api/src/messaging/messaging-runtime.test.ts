@@ -139,6 +139,24 @@ describe("inbound routing", () => {
     expect(directMessages.inbound).toHaveBeenCalledOnce();
   });
 
+  it("keeps group linking on a platform that has no team rooms", async () => {
+    // Only a declared team room can be closed to linking; a group chat elsewhere is
+    // still a personal group to link.
+    const handle = await inboundHandler(
+      {},
+      { provider: "sendblue", teamRooms: undefined as never },
+    );
+    await handle({
+      ...guildMessage,
+      provider: "sendblue",
+      threadId: "sendblue:group-1",
+      workspaceId: undefined,
+      conversationKey: "sendblue:group-1",
+    });
+
+    expect(directMessages.inbound).toHaveBeenCalledOnce();
+  });
+
   it("still routes a Discord direct message to personal linking", async () => {
     const handle = await inboundHandler({});
     await handle({ ...guildMessage, threadId: "discord:@me:D1", isDirect: true });

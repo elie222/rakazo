@@ -169,10 +169,15 @@ export async function startMessagingRuntime({
         await handleTeamChatInbound(bridgeFor(event.provider, botId), event);
         return;
       }
-      // A room that cannot also be a linked group needs the bot that owns it: without
-      // it nothing can answer there, and the personal channel-linking flow has no
-      // inviter to ask, so the room would only get the one-time intro note.
-      if (!event.isDirect && !allowsPersonalLinking(event.provider, teamRooms)) {
+      // A team room that cannot also be a linked group needs the bot that owns it:
+      // without it nothing can answer there, and the personal channel-linking flow has
+      // no inviter to ask, so the room would only get the one-time intro note. A
+      // platform with no team rooms at all keeps its personal group linking.
+      if (
+        !event.isDirect &&
+        teamRooms(event.provider) &&
+        !allowsPersonalLinking(event.provider, teamRooms)
+      ) {
         warnRoomWithoutBot(event);
         return;
       }
