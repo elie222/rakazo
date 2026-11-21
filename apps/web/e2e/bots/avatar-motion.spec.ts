@@ -45,6 +45,27 @@ test("photo working avatars show a visible ring while idle avatars stay plain", 
   await captureScreenshot(page, testInfo, "avatar-photo-working-and-idle");
 });
 
+test("a cutout photo drops the round frame and casts its shadow from its own outline", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/e2e/fixtures/avatar-motion.html");
+
+  const cutout = page.locator(".avatar-cutout");
+  await expect(cutout).toHaveAttribute("data-cutout", "true");
+
+  const picture = cutout.locator(".rakazo-bot-avatar-picture");
+  await expect(picture).toHaveCSS("overflow-x", "visible");
+  await expect(picture).toHaveCSS("box-shadow", "none");
+  await expect(picture).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(cutout.locator("img")).toHaveCSS("filter", /drop-shadow/);
+
+  const framed = page.locator(".avatar-idle");
+  await expect(framed).toHaveAttribute("data-cutout", "false");
+  await expect(framed.locator("img")).toHaveCSS("filter", "none");
+
+  await captureScreenshot(page, testInfo, "avatar-photo-cutout");
+});
+
 test("photo avatar animations stay still when reduced motion is enabled", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/e2e/fixtures/avatar-motion.html");
