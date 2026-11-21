@@ -138,7 +138,7 @@ export function jsonNeedsSealing(value: unknown): boolean {
 }
 
 // Blind index for search over encrypted messages. Tokens are keyed HMACs of
-// normalized words (and word prefixes), truncated to 32 bits: equality and
+// normalized words, prefixes and Han pairs, truncated to 32 bits: equality and
 // frequency within a space are visible to a database reader, words are not.
 // Collisions only cost a false candidate, which callers filter after decryption.
 
@@ -146,6 +146,9 @@ export type SearchTokenDomain = "word" | "prefix";
 
 const MAX_PREFIX = 10;
 const MIN_PREFIX = 2;
+// At most 1 KiB of int32 payload for Han pairs. A prime modulus spreads sequences
+// of adjacent Unicode code points across the compact buckets.
+const HAN_PAIR_BUDGET = 251;
 
 function searchKey(key: DataKey): Buffer {
   return Buffer.from(hkdfSync("sha256", key.key, Buffer.alloc(0), "rakazo/search/v1", 32));
@@ -166,20 +169,91 @@ function token(hmacKey: Buffer, domain: SearchTokenDomain, term: string): number
   return createHmac("sha256", hmacKey).update(`${domain}\0${term}`).digest().readInt32BE(0);
 }
 
-/** Word tokens for history text plus prefix tokens for every string in the value. */
-export function searchTokens(key: DataKey, input: { words: string; strings: string[] }): number[] {
+// Overlapping code-point pairs include each immediate Han/script boundary.
+// All terms have already been normalized to contiguous letters and numbers.
+function messagePrefixParts(terms: string[], allowLeadingSuffix = false) {
+  const words = new Set<string>();
+  const pairs = new Set<string>();
+  const buckets = new Set<number>();
+  let compact = false;
+  let splitWord = false;
+  for (const term of terms) {
+    for (const match of term.matchAll(/[^\p{Script=Han}]+/gu)) {
+      const word = match[0];
+      if (word !== term) splitWord = true;
+      // "PI服" can start inside "API服务". The I/服 boundary qualifies the
+      // candidate even though PI is a suffix. The opened text verifies PI.
+      if (allowLeadingSuffix && term === terms[0] && match.index === 0 && word !== term) continue;
+      words.add(word);
+    }
+    if (compact && buckets.size === HAN_PAIR_BUDGET) continue;
+    for (const match of term.matchAll(/(?=(\p{Script=Han}.|.\p{Script=Han}))/gu)) {
+      const pair = match[1]!;
+      const left = pair.codePointAt(0)!;
+      const right = pair.codePointAt(left > 0xffff ? 2 : 1)!;
+      buckets.add((31 * left + right) % HAN_PAIR_BUDGET);
+      if (!compact) {
+        if (pairs.size === HAN_PAIR_BUDGET && !pairs.has(pair)) compact = true;
+        else pairs.add(pair);
+      }
+      if (compact && buckets.size === HAN_PAIR_BUDGET) break;
+    }
+  }
+  const bucketTerms = Array.from(buckets, (id) => `\0han-pair-bucket/${id}`);
+  return { words, pairs, bucketTerms, compact, splitWord };
+}
+
+function* wordPrefixes(words: Iterable<string>) {
+  for (const word of words)
+    for (let length = MIN_PREFIX; length <= Math.min(word.length, MAX_PREFIX); length++)
+      yield word.slice(0, length);
+}
+
+// Normalized words cannot contain a NUL. A split word or interior pair must
+// never qualify a row for the candidate window reserved for original prefixes.
+const hanPairTerm = (pair: string) => `\0han-pair/${pair}`;
+const splitPrefixTerm = (prefix: string) => `\0split-prefix/${prefix}`;
+
+/** Hash history words, word prefixes and complete prefix-domain fragments into one stored array. */
+export function wordAndPrefixTokens(
+  key: DataKey,
+  historyText: string,
+  prefixWords: Iterable<string>,
+  fragments: Iterable<string> = [],
+): number[] {
   const hmacKey = searchKey(key);
   const tokens = new Set<number>();
-  for (const term of searchTerms(input.words)) tokens.add(token(hmacKey, "word", term));
-  for (const term of searchTerms(input.strings.join("\n")))
-    for (let length = MIN_PREFIX; length <= Math.min(term.length, MAX_PREFIX); length += 1)
-      tokens.add(token(hmacKey, "prefix", term.slice(0, length)));
+  for (const term of searchTerms(historyText)) tokens.add(token(hmacKey, "word", term));
+  const prefixes = new Set(fragments);
+  for (const prefix of wordPrefixes(prefixWords)) prefixes.add(prefix);
+  for (const prefix of prefixes) tokens.add(token(hmacKey, "prefix", prefix));
   return [...tokens].sort((a, b) => a - b);
 }
 
+export function searchTokens(
+  key: DataKey,
+  input: { words: string; strings: string[] },
+  format: "han-pairs" | "prefix" = "prefix",
+): number[] {
+  const terms = searchTerms(input.strings.join("\n"));
+  if (format === "prefix") return wordAndPrefixTokens(key, input.words, terms);
+  const { words, pairs, bucketTerms, compact, splitWord } = messagePrefixParts(terms);
+  if (!pairs.size && !splitWord) return wordAndPrefixTokens(key, input.words, terms);
+  return wordAndPrefixTokens(key, input.words, terms, [
+    ...(compact ? bucketTerms : Array.from(pairs, hanPairTerm)),
+    ...(splitWord ? Array.from(wordPrefixes(words), splitPrefixTerm) : []),
+  ]);
+}
+
+function queryPrefixes(terms: Iterable<string>): string[] {
+  return [...terms]
+    .filter((term) => term.length >= MIN_PREFIX)
+    .map((term) => term.slice(0, MAX_PREFIX));
+}
+
 /**
- * Tokens every match must contain. Prefix queries use each term's indexed prefix;
- * terms shorter than the minimum prefix cannot be indexed and return none.
+ * Exact history words or the original prefix-only query encoding. Space search
+ * uses prefixQueryTokenSets to cover both current and legacy message indexes.
  */
 export function querySearchTokens(
   key: DataKey,
@@ -189,9 +263,39 @@ export function querySearchTokens(
   const hmacKey = searchKey(key);
   const terms = searchTerms(query);
   if (domain === "word") return terms.map((term) => token(hmacKey, "word", term));
-  return terms
-    .filter((term) => term.length >= MIN_PREFIX)
-    .map((term) => token(hmacKey, "prefix", term.slice(0, MAX_PREFIX)));
+  return queryPrefixes(terms).map((term) => token(hmacKey, "prefix", term));
+}
+
+export interface PrefixQueryTokenSets {
+  legacy: number[][];
+  exact: number[][];
+  compact: number[][];
+}
+
+/** Keep the historical predicate and the two Han representations independently pageable. */
+export function prefixQueryTokenSets(key: DataKey, query: string): PrefixQueryTokenSets {
+  const terms = searchTerms(query);
+  const { words, pairs, bucketTerms, compact: oversized } = messagePrefixParts(terms, true);
+  const prefixes = queryPrefixes(words);
+  const hmacKey = searchKey(key);
+  const hash = (prefix: string) => token(hmacKey, "prefix", prefix);
+  // Older indexes may remain for as long as a self-hosted backfill is paused.
+  const legacy = [queryPrefixes(terms).map(hash)];
+  const originalWords = prefixes.map(hash);
+  const splitWords = prefixes.map((prefix) => hash(splitPrefixTerm(prefix)));
+  // Messages with no mixed-script term already store their non-Han words as
+  // original prefixes. A mixed-script message also stores its split word runs.
+  const withWords = (han: number[]) => {
+    if (!han.length) return splitWords.length ? [splitWords] : [];
+    if (!splitWords.length) return [han];
+    return [
+      [...han, ...originalWords],
+      [...han, ...splitWords],
+    ];
+  };
+  const exact = oversized ? [] : withWords(Array.from(pairs, (pair) => hash(hanPairTerm(pair))));
+  const compact = bucketTerms.length ? withWords(bucketTerms.map(hash)) : [];
+  return { legacy, exact, compact };
 }
 
 // Artifact files: a header naming the key, then 64 KiB AES-GCM segments. Each

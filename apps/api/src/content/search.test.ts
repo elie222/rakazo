@@ -1,7 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { querySpaceSearch } from "./search.js";
 
@@ -92,8 +91,10 @@ describe("search saturation", () => {
     { direct: 0, grouped: 0, conversations: 0, artifactReads: 2, routineReads: 1 },
   ])("stops lower-priority reads when the content budget fills: %j", async (scenario) => {
     const { prisma, artifacts, groupArtifacts } = fixture(25);
-    const messageSearchTokens = vi.fn().mockResolvedValue([]);
-    Object.assign(prisma, { $contentEncryption: () => ({ messageSearchTokens }) });
+    const messagePrefixSearchTokens = vi
+      .fn()
+      .mockResolvedValue({ legacy: [], exact: [], compact: [] });
+    Object.assign(prisma, { $contentEncryption: () => ({ messagePrefixSearchTokens }) });
     prisma.bot.findMany.mockResolvedValue(
       Array.from({ length: scenario.conversations }, (_, i) => ({ id: `bot-${i}`, name: "Bot" })),
     );
@@ -131,7 +132,7 @@ describe("search saturation", () => {
     );
     expect(prisma.artifact.findMany).toHaveBeenCalledTimes(scenario.artifactReads);
     expect(prisma.routine.findMany).toHaveBeenCalledTimes(scenario.routineReads);
-    expect(messageSearchTokens).not.toHaveBeenCalled();
+    expect(messagePrefixSearchTokens).not.toHaveBeenCalled();
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(
       1 +
         Number(scenario.direct > 0) +
@@ -174,10 +175,75 @@ it("resolves active group eligibility once for names, artifacts, and messages", 
     where: { spaceId: actor.spaceId, groupId: { in: ["group-test"] } },
     take: 25,
   });
-  const [strings, ...values] = prisma.$queryRaw.mock.calls[2]!;
-  const groupMessageQuery = Prisma.sql(strings, ...values);
+  const groupMessageQuery = prisma.$queryRaw.mock.calls[2]![0];
   expect(groupMessageQuery.text).toContain("AND g.id IN ($2)");
   expect(groupMessageQuery.values[1]).toBe("group-test");
+});
+
+it("selects each scope's windows once, then reads current messages only until results fill", async () => {
+  const { prisma } = fixture(0);
+  const openRows = vi.fn(async (_model: string, rows: unknown[]) => rows);
+  Object.assign(prisma, {
+    $contentEncryption: () => ({
+      messagePrefixSearchTokens: async () => ({ legacy: [[1]], exact: [[2]], compact: [[3]] }),
+      openRows,
+    }),
+  });
+  prisma.$queryRaw.mockImplementation(async (sql: { text: string; values: unknown[] }) => {
+    const direct = sql.text.includes("INNER JOIN bots b ON");
+    const scope = direct ? "direct" : "group";
+    if (sql.text.includes("UNION ALL"))
+      return Array.from({ length: direct ? 205 : 310 }, (_, i) => ({ id: `${scope}-${i}` }));
+    const ids = sql.values.find(Array.isArray) as string[];
+    // All first-page candidates disappeared or became ineligible. The next page
+    // has current text that fails verification, and the third contains real hits.
+    if (ids[0] === `${scope}-0`) return [];
+    return [...ids].reverse().map((id) => {
+      const seq = Number(id.split("-")[1]);
+      const hit = direct ? seq === 201 || seq === 203 : seq >= 200;
+      return {
+        id,
+        seq,
+        threadId: scope,
+        ...(direct
+          ? { botId: "b", botName: "Bot" }
+          : { groupId: "group-test", groupName: "Group" }),
+        blocks: [{ kind: "text", text: hit ? "部署" : "已修改" }],
+      };
+    });
+  });
+
+  const hits = await querySpaceSearch(prisma as never, actor, "部署");
+  expect(hits.map((hit) => hit.messageId)).toEqual([
+    "direct-201",
+    "direct-203",
+    ...Array.from({ length: 23 }, (_, i) => `group-${200 + i}`),
+  ]);
+  const queries = prisma.$queryRaw.mock.calls.slice(1).map(([sql]) => sql);
+  const windows = queries.filter((sql) => sql.text.includes("UNION ALL"));
+  expect(windows).toHaveLength(2);
+  expect(windows[0].text).toContain("INNER JOIN bots b ON");
+  expect(windows[1].text).toContain("INNER JOIN chat_groups g ON");
+  for (const sql of windows) {
+    expect(sql.text).toContain('SELECT m.id, m."createdAt"');
+    expect(sql.text).not.toContain("m.seq, m.blocks");
+    expect(sql.text).toContain('"searchTokens" @>');
+  }
+  const reads = queries.filter((sql) => sql.text.includes("m.id = ANY("));
+  expect(reads).toHaveLength(6);
+  for (const sql of reads) {
+    expect(sql.text).not.toContain('"searchTokens" @>');
+    expect(sql.text).toContain('t."spaceId" =');
+    expect(sql.text).toContain("NOT (m.blocks @>");
+    if (sql.text.includes("INNER JOIN chat_groups g ON")) {
+      expect(sql.text).toContain('g."archivedAt" IS NULL');
+      expect(sql.text).toContain("g.id IN (");
+      expect(sql.text).toContain("SELECT COUNT(*) FROM chat_group_members gm");
+    } else {
+      expect(sql.text).toContain('b."archivedAt" IS NULL');
+    }
+  }
+  expect(openRows.mock.calls.every(([, rows]) => rows.length <= 100)).toBe(true);
 });
 
 it("applies group eligibility before name and artifact limits", async () => {
@@ -287,14 +353,12 @@ describe("cancelled search", () => {
 it("finds text stored beside entries that are not blocks, in a bot chat and in a group", async () => {
   const { prisma } = fixture(0);
   const blocks = [{ text: "no kind" }, { kind: "text", text: "the quarterly report" }, null];
-  // The message scans are tagged templates: their first argument is the SQL's literal parts.
-  prisma.$queryRaw.mockImplementation(async (sql: readonly string[] | object) => {
-    const text = Array.isArray(sql) ? sql.join("") : "";
-    if (text.includes('b.id AS "botId"'))
+  prisma.$queryRaw.mockImplementation(async (sql: { text?: string }) => {
+    if (sql.text?.includes('b.id AS "botId"'))
       return [
         { id: "message-1", threadId: "thread-1", seq: 3, blocks, botId: "bot-1", botName: "Bot" },
       ];
-    if (text.includes('g.id AS "groupId"'))
+    if (sql.text?.includes('g.id AS "groupId"'))
       return [
         { id: "message-2", threadId: "thread-2", seq: 4, blocks, groupId: "g-1", groupName: "G" },
       ];

@@ -12,6 +12,7 @@ import {
   jsonNeedsSealing,
   openArtifact,
   openJson,
+  prefixQueryTokenSets,
   querySearchTokens,
   sealArtifact,
   sealJson,
@@ -92,6 +93,8 @@ describe("content ciphertext", () => {
 });
 
 describe("blind index tokens", () => {
+  const indexKey = { ...key, key: Buffer.alloc(32, 1) };
+
   it("matches words and prefixes without revealing them, per key", () => {
     const tokens = new Set(
       searchTokens(key, { words: "Ship the Pelican report", strings: ["Ship the Pelican report"] }),
@@ -112,6 +115,121 @@ describe("blind index tokens", () => {
     const tokens = new Set(searchTokens(key, { words: "", strings: ["photo.png"] }));
     expect(tokens.has(querySearchTokens(key, "photo", "word")[0]!)).toBe(false);
     expect(tokens.has(querySearchTokens(key, "photo", "prefix")[0]!)).toBe(true);
+  });
+
+  it("keeps the public two-argument encoder compatible with the original prefix query", () => {
+    const text = "我们今天讨论部署方案";
+    const input = { words: text, strings: [text] };
+    const original = searchTokens(indexKey, input);
+    expect(original).toEqual(searchTokens(indexKey, input, "prefix"));
+    expect(original).toEqual(
+      expect.arrayContaining(querySearchTokens(indexKey, "我们今天", "prefix")),
+    );
+    expect(original).not.toContain(querySearchTokens(indexKey, "部署", "prefix")[0]);
+    const english = { words: "build", strings: ["build"] };
+    expect(searchTokens(indexKey, english, "han-pairs")).toEqual(searchTokens(indexKey, english));
+  });
+
+  it("indexes overlapping Han pairs inside text, including supplementary characters", () => {
+    const text = "我们今天讨论部署方案，明晚去𠮷野。";
+    const stored = searchTokens(indexKey, { words: text, strings: ["text", text] }, "han-pairs");
+    for (const pair of ["论部", "部署", "署方", "方案", "去𠮷", "𠮷野"]) {
+      const [tokens] = prefixQueryTokenSets(indexKey, pair).exact;
+      expect(tokens).toBeDefined();
+      expect(stored).toEqual(expect.arrayContaining(tokens!));
+    }
+    expect(stored).toEqual(
+      expect.arrayContaining(querySearchTokens(indexKey, "我们今天讨论部署方案", "word")),
+    );
+    expect(stored).not.toContain(querySearchTokens(indexKey, "部署", "word")[0]);
+  });
+
+  it("indexes English prefixes and Han pairs on either side of script boundaries", () => {
+    const text = "今晚部署API服务，先升级PostgreSQL16再重启。";
+    const stored = searchTokens(indexKey, { words: text, strings: ["text", text] }, "han-pairs");
+    for (const query of ["部署", "ap", "API", "服务", "postgre", "重启"]) {
+      const [tokens] = prefixQueryTokenSets(indexKey, query).exact;
+      expect(tokens).toBeDefined();
+      expect(stored).toEqual(expect.arrayContaining(tokens!));
+    }
+    const { exact } = prefixQueryTokenSets(indexKey, "sql16");
+    expect(stored).not.toContain(exact[0]![0]);
+  });
+
+  it("indexes adjacent Han and non-Han code points in both directions under the same pair budget", () => {
+    const start = Array.from(
+      { length: 300 },
+      (_, i) => `${String.fromCodePoint(0x4e00 + i)}7`,
+    ).join("");
+    const tail = "部署API服务９𠮷Ｂ";
+    for (const [text, format] of [
+      [tail, "exact"],
+      [start + tail, "compact"],
+    ] as const) {
+      const input = { words: text, strings: [text] };
+      const stored = searchTokens(indexKey, input, "han-pairs");
+      expect(stored.length).toBeLessThanOrEqual(searchTokens(indexKey, input).length + 251 + 2);
+      for (const query of ["署A", "署ap", "i服", "PI服务", "务９", "9𠮷", "𠮷b"]) {
+        const groups = prefixQueryTokenSets(indexKey, query)[format];
+        expect(
+          groups.some((group) => group.every((token) => stored.includes(token))),
+          query,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("requires all indexable pieces of a mixed query in the same message", () => {
+    const texts = [
+      "请看今晚部署方案API服务的日志",
+      "今晚部署方案改由Web服务处理",
+      "今晚部署时间由API服务决定",
+    ];
+    const { legacy, exact, compact } = prefixQueryTokenSets(indexKey, "部署方案api服务");
+    const alternatives = [...legacy, ...exact, ...compact];
+    expect(alternatives.length).toBeGreaterThan(0);
+    expect(alternatives.every((tokens) => tokens.length > 0)).toBe(true);
+    const hits = texts.filter((text) => {
+      const stored = searchTokens(indexKey, { words: text, strings: ["text", text] }, "han-pairs");
+      return alternatives.some((tokens) => tokens.every((token) => stored.includes(token)));
+    });
+    expect(hits).toEqual([texts[0]]);
+    expect(prefixQueryTokenSets(indexKey, "部")).toEqual({ legacy: [[]], exact: [], compact: [] });
+  });
+
+  it("can still find a mixed word prefix made of individually unindexable pieces", () => {
+    const text = "版A中B已就绪";
+    const stored = searchTokens(indexKey, { words: text, strings: ["text", text] }, "han-pairs");
+    const { legacy: alternatives } = prefixQueryTokenSets(indexKey, "版A中B");
+    expect(
+      alternatives.some(
+        (tokens) => tokens.length > 0 && tokens.every((token) => stored.includes(token)),
+      ),
+    ).toBe(true);
+  });
+
+  it("bounds Han-pair tokens across the message and keeps matches beyond the budget", () => {
+    const body = Array.from({ length: 12_000 }, (_, i) => String.fromCodePoint(0x4e00 + i)).join(
+      "",
+    );
+    const strings = [body.slice(0, 6_000), `${body.slice(6_000)}𠮷野CDN`];
+    const oldIndex = searchTokens(indexKey, { words: "", strings }, "prefix");
+    const stored = searchTokens(indexKey, { words: "", strings }, "han-pairs");
+    // At most 251 compact Han tokens beyond the old two-word index and two CDN prefixes.
+    expect(stored.length).toBeLessThanOrEqual(oldIndex.length + 251 + 2);
+    for (const length of [120, 800]) {
+      const tail = prefixQueryTokenSets(indexKey, `${body.slice(-length)}𠮷野cdn`);
+      expect(tail.exact.some((set) => set.every((token) => stored.includes(token)))).toBe(false);
+      expect(tail.compact.some((set) => set.every((token) => stored.includes(token)))).toBe(true);
+    }
+    const wrongSuffix = prefixQueryTokenSets(indexKey, "𠮷野XYZ");
+    expect(wrongSuffix.compact.some((set) => set.every((token) => stored.includes(token)))).toBe(
+      false,
+    );
+    // A formerly searchable word prefix still uses its original budget after a rewrite.
+    const head = prefixQueryTokenSets(indexKey, body.slice(0, 30));
+    for (const index of [oldIndex, stored])
+      expect(head.legacy.some((set) => set.every((token) => index.includes(token)))).toBe(true);
   });
 });
 

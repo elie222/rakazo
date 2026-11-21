@@ -3,7 +3,12 @@ import { createRowId } from "../database/row-id.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
 import { Prisma } from "../generated/prisma/client.js";
 import { historySearchText } from "../history/history-text.js";
-import type { ContentLocation, DataKey, SearchTokenDomain } from "./content-crypto.js";
+import type {
+  ContentLocation,
+  DataKey,
+  PrefixQueryTokenSets,
+  SearchTokenDomain,
+} from "./content-crypto.js";
 import {
   ContentDecryptionError,
   ciphertextKeyId,
@@ -11,6 +16,7 @@ import {
   encryptText,
   jsonKeyIds,
   openJson,
+  prefixQueryTokenSets,
   querySearchTokens,
   sealJson,
   searchTokens,
@@ -52,7 +58,7 @@ interface ModelSpec {
   space: { column: "spaceId" } | { parent: SpaceSource };
   /** Relation field for the owner column (ROW_OWNER), for `connect` writes. */
   ownerRelation: string;
-  searchTokens?: boolean;
+  searchTokens?: "han-pairs" | "prefix";
 }
 
 /** Further content columns (external messages, steering, skills, …) add an entry here. */
@@ -62,7 +68,7 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     fields: { blocks: { plainKeys: MESSAGE_BLOCK_PLAIN_KEYS }, toolHistory: { hidden: true } },
     space: { parent: "threads" },
     ownerRelation: "thread",
-    searchTokens: true,
+    searchTokens: "han-pairs",
   },
   Event: {
     table: "events",
@@ -110,7 +116,7 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     fields: { fromAddress: {}, fromName: {}, subject: {}, text: {} },
     space: { column: "spaceId" },
     ownerRelation: "bot",
-    searchTokens: true,
+    searchTokens: "prefix",
   },
 };
 
@@ -176,14 +182,15 @@ export interface ContentEncryption {
    */
   sealRow<T extends { id: string }>(model: keyof typeof ENCRYPTED_MODELS, row: T): Promise<T>;
   /**
-   * One token list per key version of the space; a match must contain every token
-   * of one list. Empty when the space has no keys, so it has no encrypted rows.
+   * A candidate must contain every token of one alternative across keys and index formats.
+   * An empty outer array means the space has no encryption keys.
    */
   messageSearchTokens(
     spaceId: string,
     query: string,
     domain: SearchTokenDomain,
   ): Promise<number[][]>;
+  messagePrefixSearchTokens(spaceId: string, query: string): Promise<PrefixQueryTokenSets>;
 }
 
 /** Undefined for clients built without content encryption (fakes and temp-table tests). */
@@ -426,7 +433,11 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     }
     // Tokens cover the fields written here: indexed models write all of them together.
     if (spec.searchTokens && fields.some((field) => !spec.fields[field]!.hidden))
-      next.searchTokens = searchTokens(key, { words: words.join("\n"), strings });
+      next.searchTokens = searchTokens(
+        key,
+        { words: words.join("\n"), strings },
+        spec.searchTokens,
+      );
     ring.remember(spec.table, rowId, context);
     return next;
   }
@@ -583,6 +594,15 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     async messageSearchTokens(spaceId, query, domain) {
       const keys = await ring.allFresh(spaceId);
       return keys.map((key) => querySearchTokens(key, query, domain));
+    },
+    async messagePrefixSearchTokens(spaceId, query) {
+      const keys = await ring.allFresh(spaceId);
+      const sets = keys.map((key) => prefixQueryTokenSets(key, query));
+      return {
+        legacy: sets.flatMap((set) => set.legacy),
+        exact: sets.flatMap((set) => set.exact),
+        compact: sets.flatMap((set) => set.compact),
+      };
     },
   };
 

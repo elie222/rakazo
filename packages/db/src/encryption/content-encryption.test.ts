@@ -214,7 +214,7 @@ describe("withContentEncryption for bot inbox mail", () => {
       verified: true,
       to: ["scout@bots.test"],
       subject: "Pelican survey",
-      text: "The pelicans nest on Friday",
+      text: "The pelicans nest on Friday. 我们今天讨论部署方案",
     };
     const row = await sealed.botEmailMessage.create({ data: mail });
     expect(row).toMatchObject(mail);
@@ -224,10 +224,12 @@ describe("withContentEncryption for bot inbox mail", () => {
     expect(stored.to).toEqual(mail.to);
     const tokens = new Set(stored.searchTokens as number[]);
     const encryption = contentEncryptionOf(sealed)!;
-    for (const query of ["harbor", "grace", "pelic", "friday"]) {
+    for (const query of ["harbor", "grace", "pelic", "friday", "我们今天"]) {
       const [queryTokens] = await encryption.messageSearchTokens("s", query, "prefix");
       expect(queryTokens!.every((token) => tokens.has(token))).toBe(true);
     }
+    const [interior] = await encryption.messageSearchTokens("s", "部署", "prefix");
+    expect(interior!.every((token) => tokens.has(token))).toBe(false);
   });
 });
 

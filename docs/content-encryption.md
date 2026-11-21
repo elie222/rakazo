@@ -90,25 +90,46 @@ read-only and runs across spaces.
 
 Postgres full-text search cannot read ciphertext. Messages carry a
 `searchTokens` integer array with a GIN index: keyed HMACs (per space) of each
-normalized word in the conversational text, plus word prefixes of 2 to 10
-characters from every string in the message. Agent history search matches
-whole words, as before. Space search matches word prefixes, then decrypts the
-candidates and applies its usual filter. Rows not yet migrated keep matching
-through the old full-text and substring predicates.
+normalized word in the conversational text for agent history search. Space
+search keeps the original prefixes of each letter-and-number run in every
+string. It also indexes overlapping pairs of adjacent letters or numbers
+when either code point is Han, and prefixes of non-Han runs inside
+mixed-script text. These additions use separate HMAC
+inputs so that they cannot fill the original prefix candidate window.
+Up to 251 distinct such pairs per
+message are indexed exactly. Above that threshold the entire set of pairs is
+mapped into 251 keyed bucket tokens, so the additional Han index payload
+stays below 1 KiB and pairs at the end remain searchable. For example,
+`今晚部署API服务` can be found with `部署`, `API`, `署A`, or `PI服`. A query
+starting inside a non-Han word can use the adjacent Han boundary to qualify,
+then the literal check verifies the entire query. Word prefixes use
+the existing 2-to-10-unit limit.
+
+Newly written encrypted messages use this index. Space search also checks
+the original word-prefix tokens for each space key so earlier encrypted rows
+retain their previous matches. Existing rows acquire the new tokens when their
+blocks are rewritten. Candidates are decrypted and verified against the literal
+query. Plaintext rows still use the full-text and substring predicates.
 
 Tradeoffs:
 
 - Someone with the database but not the keys can see which encrypted messages
-  in the same space share a word or prefix, and how often tokens repeat. They
+  in the same space share a word, prefix or Han pair, and how often tokens repeat. They
   cannot recover the words without the space key.
-- Space search no longer finds text in the middle of a word ("elican" no longer
-  matches "pelican") once a row is encrypted. Queries of single characters scan
-  the 200 most recent messages instead of the index.
+- Latin text supports prefix searches such as "peli" in "pelican". Queries without
+  an indexable piece, such as a single common Han character, scan the 200 most
+  recent messages.
 - Tokens are 32-bit, so unrelated words occasionally collide; those candidates
   are discarded after decryption.
-- Space search checks at most 500 index candidates per query, newest first, so
-  a phrase whose words are common may need a more specific query to reach
-  older messages. Agent history search pages through cursors instead.
+- Each direct or group search reserves its original 500 candidates for
+  word-prefix or plaintext matches. Exact Han pairs and split word prefixes
+  can add up to 500 candidates. Queries containing Han pairs can add up to
+  500 more compact-index candidates. Each window excludes rows covered by an
+  earlier predicate. The API collects the ordered candidate IDs once per
+  scope, then loads and verifies current messages in batches of 100. It stops
+  reading batches when the result limit is reached. A message with enough
+  distinct pairs can occupy every bucket, so an older compact match may fall outside its window.
+  Agent history search pages through cursors.
 
 ## Threat model
 
