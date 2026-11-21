@@ -80,12 +80,15 @@ dbTests("first chat email", () => {
     const customer = (await billingAccountForOrganization(prisma, id))!.customerId;
     provider.completeByokCheckout(customer);
     await billing.sync(customer);
+    await prisma.userModelCredential.create({
+      data: { userId: id, provider: "example-provider", label: "Key", secretId: `${id}-secret` },
+    });
     const job = await prepare("first-chat", { organizationId: id, userId: id }, new Date());
     return { id, customer, job: job!.payload as LifecycleJob };
   }
 
-  /** A run the person's own message, or something else, started. */
-  async function runStartedBy(id: string, trigger: RunTrigger) {
+  /** A run started by a message from `author` (none for a run no message started). */
+  async function runStartedBy(id: string, trigger: RunTrigger, author: string | null = id) {
     const bot = await prisma.bot.create({
       data: { spaceId: id, userId: id, name: "Chief", color: "ink" },
     });
@@ -96,8 +99,19 @@ dbTests("first chat email", () => {
     const task = await prisma.task.create({
       data: { ...owner, prompt: "fixture", status: "completed" },
     });
+    const message = author
+      ? await prisma.message.create({
+          data: { threadId: thread.id, seq: 0, role: "user", blocks: [], authorUserId: author },
+        })
+      : null;
     await prisma.run.create({
-      data: { ...owner, taskId: task.id, status: "completed", trigger },
+      data: {
+        ...owner,
+        taskId: task.id,
+        status: "completed",
+        trigger,
+        sourceMessageId: message?.id,
+      },
     });
   }
 
@@ -133,11 +147,26 @@ dbTests("first chat email", () => {
     "still sends when only a %s has run for the owner",
     async (trigger) => {
       const { id, job } = await connected(`not-own-${trigger}`);
-      await runStartedBy(id, trigger);
+      await runStartedBy(id, trigger, null);
       await send(job);
       expect(sentTo(id)).toHaveLength(1);
     },
   );
+
+  it("still sends when only someone else's message started a run for the owner", async () => {
+    const { id, job } = await connected("others-message");
+    await runStartedBy(id, "messaging", `${id}-coworker`);
+    await runStartedBy(id, "follow_up", null);
+    await send(job);
+    expect(sentTo(id)).toHaveLength(1);
+  });
+
+  it("drops the mail once the owner has removed their model", async () => {
+    const { id, job } = await connected("disconnected");
+    await prisma.userModelCredential.deleteMany({ where: { userId: id } });
+    await send(job);
+    expect(sentTo(id)).toHaveLength(0);
+  });
 
   it("drops the mail when the plan has ended", async () => {
     const { id, customer, job } = await connected("ended");

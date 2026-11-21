@@ -31,7 +31,7 @@ const STILL_WANTED: Record<
 };
 
 /**
- * The run triggers a person's own message sets off, in the app or from a chat app; routines,
+ * The run triggers a person's own message can set off, in the app or from a chat app; routines,
  * webhooks and the bots' own work do not count.
  */
 const OWN_MESSAGE_TRIGGERS: RunTrigger[] = ["user", "follow_up", "messaging"];
@@ -77,20 +77,31 @@ async function hasImportedNothing(prisma: PrismaClient, target: Target): Promise
   );
 }
 
-/** A plan that is still running whose owner has not sent a bot a message of their own. */
+/**
+ * A plan that is still running whose owner still has a model connected and has not yet sent a
+ * bot a message they wrote themselves.
+ */
 async function hasNotChatted(prisma: PrismaClient, target: Target): Promise<boolean> {
-  const [organization, chatted] = await Promise.all([
+  const { userId } = target;
+  const [organization, connection, chatted] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: target.organizationId },
       select: { billing: { select: { status: true } } },
     }),
+    prisma.userModelCredential.findFirst({ where: { userId }, select: { id: true } }),
     prisma.run.findFirst({
-      where: { userId: target.userId, trigger: { in: OWN_MESSAGE_TRIGGERS } },
+      where: {
+        userId,
+        trigger: { in: OWN_MESSAGE_TRIGGERS },
+        sourceMessage: { role: "user", authorUserId: userId },
+      },
       select: { id: true },
     }),
   ]);
   return (
-    Boolean(organization?.billing && hasBillingAccess(organization.billing.status)) && !chatted
+    Boolean(organization?.billing && hasBillingAccess(organization.billing.status)) &&
+    Boolean(connection) &&
+    !chatted
   );
 }
 

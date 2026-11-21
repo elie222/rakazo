@@ -455,6 +455,12 @@ describe("model credential persistence", () => {
     Object.assign(setup.deps, { prepareLifecycleEmail: prepare, jobs: { enqueueIn } });
     Object.assign(setup.deps.prisma, {
       space: { findUnique: vi.fn().mockResolvedValue({ organizationId: "org-1" }) },
+      member: {
+        findMany: vi.fn().mockResolvedValue([
+          { organizationId: "team-org", role: "member" },
+          { organizationId: "own-org", role: "owner" },
+        ]),
+      },
     });
     return { job, prepare, enqueueIn, handler: appHandler(setup.deps) };
   }
@@ -469,7 +475,7 @@ describe("model credential persistence", () => {
     expect(response.status).toBe(200);
     expect(prepare).toHaveBeenCalledWith(
       "first-chat",
-      { organizationId: "org-1", userId: actor.userId },
+      { organizationId: "own-org", userId: actor.userId },
       expect.any(Date),
     );
     const dueAt = (prepare.mock.calls[0] as unknown[])[2] as Date;
@@ -486,6 +492,18 @@ describe("model credential persistence", () => {
     );
     await call(handler, "models/connect", { provider: "anthropic", apiKey: "sk-test-key-123" });
     expect(prepare).not.toHaveBeenCalled();
+    expect(enqueueIn).not.toHaveBeenCalled();
+  });
+
+  it("queues no first-chat mail for a first connection that does not run the main model", async () => {
+    const { enqueueIn, handler } = withFirstChatEmail(persistDeps());
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "only-model",
+      makeDefault: false,
+    });
+    expect(response.status).toBe(200);
     expect(enqueueIn).not.toHaveBeenCalled();
   });
 

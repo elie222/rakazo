@@ -50,6 +50,7 @@ import {
   deleteUnreferencedCredentialSecret,
   findNewestUserModelCredential,
   getModelRole,
+  isOwnerRole,
   modelCredentialProviderFilter,
   modelRoleTarget,
   Prisma,
@@ -342,7 +343,8 @@ export async function persistModelCredential(
             select: { id: true },
           }));
         const saved = await writeModelCredential(tx, actor, input, prepared);
-        if (first) await deps.jobs.enqueueIn(tx, firstChatEmail);
+        // Only a connection that runs the main model lets the person's bot reply.
+        if (first && saved.isDefault) await deps.jobs.enqueueIn(tx, firstChatEmail);
         return saved;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -374,7 +376,7 @@ function firstChatEmailJob(deps: RouterDeps, actor: Actor) {
   return bestEffort(
     "prepare the first chat email",
     runAsSystem("prepare the first chat email", async () => {
-      const [connected, space] = await Promise.all([
+      const [connected, space, memberships] = await Promise.all([
         deps.prisma.userModelCredential.findFirst({
           where: { userId: actor.userId },
           select: { id: true },
@@ -383,11 +385,23 @@ function firstChatEmailJob(deps: RouterDeps, actor: Actor) {
           where: { id: actor.spaceId },
           select: { organizationId: true },
         }),
+        deps.prisma.member.findMany({
+          where: { userId: actor.userId },
+          select: { organizationId: true, role: true },
+          orderBy: { createdAt: "asc" },
+        }),
       ]);
-      if (connected || !space) return undefined;
+      if (connected) return undefined;
+      // The mail goes to an owner about their plan: the one they are in now when they own it,
+      // else the first they own.
+      const owned = memberships.filter(({ role }) => isOwnerRole(role));
+      const organizationId = (
+        owned.find(({ organizationId }) => organizationId === space?.organizationId) ?? owned[0]
+      )?.organizationId;
+      if (!organizationId) return undefined;
       const job = await prepare(
         "first-chat",
-        { organizationId: space.organizationId, userId: actor.userId },
+        { organizationId, userId: actor.userId },
         new Date(Date.now() + FIRST_CHAT_EMAIL_DELAY_MS),
       );
       return job ?? undefined;
