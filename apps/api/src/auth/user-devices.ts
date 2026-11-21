@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import type { UserDeviceHub, UserDeviceRevokeReason, UserDevices } from "@rakazo/adapters";
 import {
   createUserDeviceToken,
@@ -29,6 +30,7 @@ export interface UserDeviceRouteDeps {
   hub: UserDeviceHub;
   devices: UserDevices;
   forwardSecret: string;
+  pairingSecret: string;
   session: (request: Request) => Promise<{ userId: string; sessionId: string } | null>;
   trustedOrigin: (origin: string) => boolean;
 }
@@ -142,12 +144,24 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
     if (body === null) return c.json({ error: "Request too large" }, 413);
     const input = userDevicePairRequest.safeParse(parseJson(body));
     if (!input.success) return c.json({ error: "Invalid device" }, 400);
-    const token = createUserDeviceToken();
+    const token = input.data.pairingKey
+      ? createHmac("sha256", deps.pairingSecret)
+          .update(JSON.stringify(["user-device-pair:v1", userId, input.data.pairingKey]))
+          .digest("hex")
+      : createUserDeviceToken();
+    const tokenHash = hashUserDeviceToken(token);
     const device = await runAsSystem("pair a user device", () =>
       prisma.$transaction(async (tx) => {
         // Hold the account's pairing lock across the count and the insert, so pairings
         // that race cannot each see the limit as still open.
         await lockOwner(tx, userId, "user-devices");
+        const existing = await tx.userDevice.findUnique({ where: { tokenHash } });
+        if (existing) {
+          if (existing.revokedAt !== null) return null;
+          if (existing.userId !== userId || existing.sessionId !== sessionId)
+            return { sessionMismatch: true };
+          return { id: existing.id, reused: true };
+        }
         const active = await tx.userDevice.count({ where: { userId, revokedAt: null } });
         if (active >= USER_DEVICE_LIMIT) return null;
         return tx.userDevice.create({
@@ -155,7 +169,7 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
             userId,
             name: input.data.name,
             platform: input.data.platform,
-            tokenHash: hashUserDeviceToken(token),
+            tokenHash,
             sessionId,
           },
           select: { id: true },
@@ -163,11 +177,13 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
       }),
     );
     if (!device) return c.json({ error: "Remove a computer before adding another" }, 409);
-    await recordSecurityEvent({
-      type: "device.paired",
-      userId,
-      metadata: { deviceId: device.id, platform: input.data.platform },
-    });
+    if ("sessionMismatch" in device) return c.json({ error: "Unauthorized" }, 401);
+    if (!("reused" in device))
+      await recordSecurityEvent({
+        type: "device.paired",
+        userId,
+        metadata: { deviceId: device.id, platform: input.data.platform },
+      });
     return c.json({ deviceId: device.id, userId, token } satisfies UserDevicePairResponse, 201);
   });
 
