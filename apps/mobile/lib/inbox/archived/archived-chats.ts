@@ -48,11 +48,15 @@ export function onArchivedChatsChanged(listener: () => void): () => void {
   return () => changeListeners.delete(listener);
 }
 
-/** The inbox spans every space, so its archive must do the same. */
+/** Load the archive for the same Spaces shown in the current inbox. */
 export async function loadAllArchivedChats(signal?: AbortSignal) {
   try {
     const context = await captureApiRequestContext();
-    const navigation = await rpc("spaces/list", {}, { signal, requestContext: context });
+    const navigation = await rpc(
+      "spaces/list",
+      { scope: "selection" },
+      { signal, requestContext: context },
+    );
     const loaded = await Promise.all(
       navigation.spaces.map(async (space) => {
         const loaded = await loadArchivedChats(signal, {

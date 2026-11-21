@@ -100,6 +100,43 @@ test("an owner invites someone by link and both see the space's members", async 
   // another chat first, so his shell does not open Family, and read it, when it appears.
   const familyRow = (page: Page) =>
     page.locator("aside").first().locator(`[data-roster-bot-id="${bot.id}"]`);
+  const work = await rpc<{ defaultSpaceId: string }>(inviteePage, "organizations/create", {
+    name: "Work",
+  });
+  const workBot = await inviteePage.request.post("/rpc/bots/create", {
+    headers: { "x-rakazo-space-id": work.defaultSpaceId },
+    data: { json: { name: "Work Assistant" } },
+  });
+  expect(workBot.ok()).toBe(true);
+  await openBotInSpace(inviteePage, home.id, planner.id, "Planner");
+  const switcher = inviteePage.getByTestId("organization-menu-trigger");
+  async function switcherMenu() {
+    await inviteePage.getByTestId("user-menu-trigger").click();
+    await switcher.click();
+    return inviteePage.locator('[data-slot="popover-content"]').last();
+  }
+  let destinations = await switcherMenu();
+  await expect(destinations.getByRole("button", { name: /^Home\s*Guest$/ })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(destinations.locator('[aria-current="true"]')).toHaveCount(1);
+  await destinations.getByRole("button", { name: "Work", exact: true }).click();
+  await expect(inviteePage.getByPlaceholder("Message Work Assistant")).toBeVisible();
+  await expect(familyRow(inviteePage)).toHaveCount(0);
+  await inviteePage.reload();
+  await expect(inviteePage.getByPlaceholder("Message Work Assistant")).toBeVisible();
+  await expect(familyRow(inviteePage)).toHaveCount(0);
+  destinations = await switcherMenu();
+  await expect(destinations.getByRole("button", { name: "Work", exact: true })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await captureScreenshot(inviteePage, testInfo, "organization-switcher-guest-space");
+  await destinations.getByRole("button", { name: /^Home\s*Guest$/ }).click();
+  await expect(familyRow(inviteePage)).toBeVisible();
+  await expect(inviteeSidebar.getByText("Work Assistant", { exact: true })).toHaveCount(0);
+
   await openBotInSpace(inviteePage, home.id, planner.id, "Planner");
   await openBotInSpace(ownerPage, home.id, bot.id, "Family");
   await send(ownerPage, "Can you plan dinner for Saturday?");

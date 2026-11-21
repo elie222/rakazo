@@ -1,7 +1,12 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { t } from "@lingui/core/macro";
 import type { OrganizationList } from "@rakazo/contracts";
-import { organizationLandingSpaceId, organizationOfSpace } from "@rakazo/core";
+import {
+  guestSpaceOfSelection,
+  organizationLandingSpaceId,
+  organizationOfSpace,
+  organizationSwitchContext,
+} from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { selectedSpaceId } from "../api/api";
@@ -15,8 +20,10 @@ import { navigatorMounted } from "../navigation/navigator-mounted";
 import { queryClient, removeSpaceQueries, rpcQuery } from "../query/query";
 
 export type Organization = OrganizationList["organizations"][number];
+type GuestSpace = NonNullable<OrganizationList["guestSpaces"]>[number];
 
 const ORGANIZATION_ACTION_PREFIX = "organization:";
+const GUEST_SPACE_ACTION_PREFIX = "guest-space:";
 
 let switchEpoch = 0;
 const switchListeners = new Set<() => void>();
@@ -61,11 +68,15 @@ export function ensureOrganizations(): Promise<void> {
 
 /** The organization of the selected Space, which the server's answer may not have caught up to. */
 export function activeOrganization(list: OrganizationList | undefined): Organization | undefined {
-  if (!list) return undefined;
-  return (
-    organizationOfSpace(list.organizations, selectedSpaceId()) ??
-    list.organizations.find((organization) => organization.id === list.activeOrganizationId)
-  );
+  return organizationSwitchContext(list, selectedSpaceId()).organization;
+}
+
+export function activeGuestSpace(list: OrganizationList | undefined): GuestSpace | undefined {
+  return guestSpaceOfSelection(list, selectedSpaceId());
+}
+
+export function guestSpaceLabel(space: GuestSpace): string {
+  return t`${space.name} (Guest)`;
 }
 
 export function refreshOrganizations(): Promise<void> {
@@ -88,21 +99,33 @@ export function refreshOrganizationReads(): Promise<void> {
   });
 }
 
-/** Organization rows with a check on the active one; none until there is a second. */
+/** Switcher actions, available when there is more than one destination. */
 export function organizationSwitchActions(list: OrganizationList | undefined): MenuAction[] {
-  if (!list || list.organizations.length < 2) return [];
+  if (!list || list.organizations.length + (list.guestSpaces?.length ?? 0) < 2) return [];
   return organizationActions(list);
 }
 
-/** Every organization row, the active one checked, even when it is the only one. */
+/** Organizations and guest Spaces, with a check on the active context. */
 export function organizationActions(list: OrganizationList | undefined): MenuAction[] {
   if (!list) return [];
   const active = activeOrganization(list);
-  return list.organizations.map((organization) => ({
-    id: `${ORGANIZATION_ACTION_PREFIX}${organization.id}`,
-    title: organization.name,
-    state: organization.id === active?.id ? "on" : "off",
-  }));
+  const guest = activeGuestSpace(list);
+  return [
+    ...list.organizations.map(
+      (organization): MenuAction => ({
+        id: `${ORGANIZATION_ACTION_PREFIX}${organization.id}`,
+        title: organization.name,
+        state: organization.id === active?.id ? "on" : "off",
+      }),
+    ),
+    ...(list.guestSpaces ?? []).map(
+      (space): MenuAction => ({
+        id: `${GUEST_SPACE_ACTION_PREFIX}${space.id}`,
+        title: guestSpaceLabel(space),
+        state: space.id === guest?.id ? "on" : "off",
+      }),
+    ),
+  ];
 }
 
 export function organizationForAction(
@@ -112,6 +135,15 @@ export function organizationForAction(
   if (!action.startsWith(ORGANIZATION_ACTION_PREFIX)) return undefined;
   const id = action.slice(ORGANIZATION_ACTION_PREFIX.length);
   return list?.organizations.find((organization) => organization.id === id);
+}
+
+export function guestSpaceForAction(
+  list: OrganizationList | undefined,
+  action: string,
+): GuestSpace | undefined {
+  if (!action.startsWith(GUEST_SPACE_ACTION_PREFIX)) return undefined;
+  const id = action.slice(GUEST_SPACE_ACTION_PREFIX.length);
+  return list?.guestSpaces?.find((space) => space.id === id);
 }
 
 function returnHome(): void {
@@ -125,6 +157,7 @@ async function enterSpace(spaceId: string, leaving: Organization | undefined): P
   if (leaving && current) await rememberOrganizationSpace(leaving.id, current);
   if (!(await selectSpace(spaceId).catch(() => false))) return false;
   if (leaving) removeSpaceQueries(leaving.spaceIds);
+  else if (current && current !== spaceId) removeSpaceQueries([current]);
   void refreshOrganizations();
   noteOrganizationSwitch();
   return true;
@@ -141,6 +174,19 @@ export function switchOrganization(
   organizations: readonly Organization[],
 ): Promise<boolean> {
   return afterPendingSwitch(() => switchNow(target, organizations));
+}
+
+export function switchGuestSpace(
+  target: GuestSpace,
+  organizations: readonly Organization[],
+): Promise<boolean> {
+  return afterPendingSwitch(async () => {
+    const current = selectedSpaceId();
+    if (current === target.id) return true;
+    if (!(await enterSpace(target.id, organizationOfSpace(organizations, current)))) return false;
+    returnHome();
+    return true;
+  });
 }
 
 async function afterPendingSwitch(run: () => Promise<boolean>): Promise<boolean> {
@@ -180,8 +226,14 @@ export async function selectSpaceAcrossOrganizations(spaceId: string): Promise<b
     (await queryClient.fetchQuery({ ...query, retry: false }).catch(() => undefined)) ??
     queryClient.getQueryData(query.queryKey);
   return afterPendingSwitch(async () => {
-    const leaving = organizationOfSpace(list?.organizations ?? [], selectedSpaceId());
-    if (!leaving || leaving.spaceIds.includes(spaceId)) return selectSpace(spaceId);
+    const current = selectedSpaceId();
+    const leaving = organizationOfSpace(list?.organizations ?? [], current);
+    if (
+      current === spaceId ||
+      leaving?.spaceIds.includes(spaceId) ||
+      (!leaving && !activeGuestSpace(list))
+    )
+      return selectSpace(spaceId);
     return enterSpace(spaceId, leaving);
   });
 }

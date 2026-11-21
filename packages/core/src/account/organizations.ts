@@ -1,6 +1,7 @@
 import type { OrganizationList, SpaceMembers } from "@rakazo/contracts";
 
 type Organization = OrganizationList["organizations"][number];
+type GuestSpace = NonNullable<OrganizationList["guestSpaces"]>[number];
 
 /** The Space last used in the organization on this device, else its default. */
 export function organizationLandingSpaceId(
@@ -18,6 +19,26 @@ export function organizationOfSpace(
   return spaceId
     ? organizations.find((organization) => organization.spaceIds.includes(spaceId))
     : undefined;
+}
+
+export function guestSpaceOfSelection(
+  list: OrganizationList | undefined,
+  spaceId: string | null,
+): GuestSpace | undefined {
+  return list?.guestSpaces?.find((space) => space.id === spaceId);
+}
+
+export function organizationSwitchContext(
+  list: OrganizationList | undefined,
+  spaceId: string | null,
+) {
+  const guestSpace = guestSpaceOfSelection(list, spaceId);
+  const organization =
+    list && !guestSpace
+      ? (organizationOfSpace(list.organizations, spaceId) ??
+        list.organizations.find((candidate) => candidate.id === list.activeOrganizationId))
+      : undefined;
+  return { organization, guestSpace };
 }
 
 /**

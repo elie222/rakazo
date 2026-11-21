@@ -34,6 +34,7 @@ export function useSettingsNavItems(available: {
   billing: boolean;
   updates: boolean;
   labs: boolean;
+  organization: boolean;
 }): SettingsNavItem[] {
   const { t } = useLingui();
   return [
@@ -91,7 +92,9 @@ export function useSettingsNavItems(available: {
     ...(available.labs ? [{ id: "labs" as const, label: t`Labs`, icon: FlaskConical }] : []),
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(available.billing ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
-    { id: "organization", label: t`Organization`, icon: Building2 },
+    ...(available.organization
+      ? [{ id: "organization" as const, label: t`Organization`, icon: Building2 }]
+      : []),
     ...(available.updates
       ? [{ id: "updates" as const, label: t`Updates`, icon: CloudDownload }]
       : []),

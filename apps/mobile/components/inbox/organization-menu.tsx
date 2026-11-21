@@ -8,10 +8,14 @@ import { Alert, StyleSheet, Text, View } from "react-native";
 import { resolveMobileAppearance } from "../../lib/appearance/appearance";
 import { native, useThemedStyles } from "../../lib/native/native";
 import {
+  activeGuestSpace,
   activeOrganization,
+  guestSpaceForAction,
+  guestSpaceLabel,
   organizationActions,
   organizationForAction,
   organizationSwitchActions,
+  switchGuestSpace,
   switchOrganization,
 } from "../../lib/spaces/organizations";
 import { NativeSymbol } from "../native/native-symbol";
@@ -20,9 +24,13 @@ import { NativeSymbol } from "../native/native-symbol";
 export function useOrganizationMenuAction(list: OrganizationList | undefined) {
   const { t } = useLingui();
   return (action: string) => {
-    const target = organizationForAction(list, action);
-    if (!target || !list) return;
-    void switchOrganization(target, list.organizations).then((switched) => {
+    if (!list) return;
+    const organization = organizationForAction(list, action);
+    const guestSpace = guestSpaceForAction(list, action);
+    const pending = organization
+      ? switchOrganization(organization, list.organizations)
+      : guestSpace && switchGuestSpace(guestSpace, list.organizations);
+    void pending?.then((switched) => {
       if (!switched) Alert.alert(t`Could not switch spaces`, t`Try again.`);
     });
   };
@@ -33,8 +41,9 @@ export function OrganizationTitleMenu({ list }: { list: OrganizationList | undef
   const styles = useThemedStyles(createStyles);
   const onAction = useOrganizationMenuAction(list);
   const actions = organizationSwitchActions(list);
-  const active = activeOrganization(list);
-  if (actions.length === 0 || !active) return null;
+  const guest = activeGuestSpace(list);
+  const name = guest ? guestSpaceLabel(guest) : activeOrganization(list)?.name;
+  if (actions.length === 0 || !name) return null;
   return (
     <MenuView
       actions={actions}
@@ -45,12 +54,12 @@ export function OrganizationTitleMenu({ list }: { list: OrganizationList | undef
       <View
         accessible
         accessibilityRole="button"
-        accessibilityLabel={active.name}
+        accessibilityLabel={name}
         testID="organization-menu"
         style={styles.title}
       >
         <Text numberOfLines={1} style={styles.name}>
-          {active.name}
+          {name}
         </Text>
         <NativeSymbol
           ios="chevron.down"
@@ -102,14 +111,22 @@ export function OrganizationRowMenu({
             subactions: organizationActions(list),
           },
           { id: NEW_ORGANIZATION, title: t`New organization`, image: "plus" },
-          { id: ORGANIZATION_SETTINGS, title: t`Organization settings`, image: "gearshape" },
+          ...(active
+            ? [
+                {
+                  id: ORGANIZATION_SETTINGS,
+                  title: t`Organization settings`,
+                  image: "gearshape" as const,
+                },
+              ]
+            : []),
         ]}
         colorScheme={resolveMobileAppearance()}
         onPressAction={({ nativeEvent }) => {
           const action = nativeEvent.event;
           if (action === NEW_ORGANIZATION) onCreate();
           else if (action === ORGANIZATION_SETTINGS) onSettings();
-          else if (organizationForAction(list, action)?.id !== active?.id) onSwitch(action);
+          else onSwitch(action);
         }}
       >
         <View style={[rowMenuStyles.fullWidth, { width }]}>{children}</View>

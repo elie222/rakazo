@@ -69,8 +69,8 @@ export function spacesRoutes(ctx: RouterContext) {
       ),
     },
     spaces: {
-      list: authed.spaces.list.handler(async ({ context }) =>
-        spaceNavigationDto(deps, context.actor, repos, groupRepos),
+      list: authed.spaces.list.handler(({ context, input }) =>
+        spaceNavigationDto(deps, context.actor, repos, groupRepos, input?.scope),
       ),
       // Seeds a Space whose id does not exist yet; the member limit is checked inside.
       create: authed.spaces.create.handler(({ context, input }) =>
@@ -299,7 +299,7 @@ export function spacesRoutes(ctx: RouterContext) {
       const actor = context.actor;
       const [me, navigation, archivedBots, archivedGroups] = await Promise.all([
         meDto(deps, actor),
-        spaceNavigationDto(deps, actor, repos, groupRepos),
+        spaceNavigationDto(deps, actor, repos, groupRepos, "selection"),
         repos.listBots(actor, { archived: true }),
         groupRepos.listGroups(actor, { archived: true }),
       ]);
@@ -340,17 +340,35 @@ export function spacesRoutes(ctx: RouterContext) {
   };
 }
 
-// Lists every Space the member belongs to, with each one's bots and threads, so it
-// reads across Spaces. Every query below is limited to the member's Spaces.
 function spaceNavigationDto(
   deps: RouterDeps,
   actor: Actor,
   repos: ReturnType<typeof createRepos>,
   groupRepos: ReturnType<typeof createGroupRepos>,
+  scope: SpaceNavigation["scope"],
 ): Promise<SpaceNavigation> {
   return runAsSystem("space navigation across the member's Spaces", () =>
-    memberSpaceNavigation(deps, actor, repos, groupRepos),
+    memberSpaceNavigation(deps, actor, repos, groupRepos, scope),
   );
+}
+
+async function navigationMembershipFilter(
+  prisma: RouterDeps["prisma"],
+  actor: Actor,
+  scope: SpaceNavigation["scope"],
+) {
+  if (scope === "selection") {
+    const current = await prisma.spaceMember.findUnique({
+      where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
+      select: { organizationId: true, member: { select: { role: true } } },
+    });
+    if (!current) throw new IsolationError();
+    return current.member.role === GUEST_ROLE
+      ? { spaceId: actor.spaceId }
+      : { organizationId: current.organizationId };
+  }
+  const organizationId = await homeOrganizationId(prisma, actor);
+  return { OR: [{ organizationId }, { member: { role: GUEST_ROLE } }] };
 }
 
 async function memberSpaceNavigation(
@@ -358,14 +376,11 @@ async function memberSpaceNavigation(
   actor: Actor,
   repos: ReturnType<typeof createRepos>,
   groupRepos: ReturnType<typeof createGroupRepos>,
+  scope: SpaceNavigation["scope"],
 ): Promise<SpaceNavigation> {
-  // The member's own organization, plus every Space shared with them from someone else's.
-  const organizationId = await homeOrganizationId(deps.prisma, actor);
+  const filter = await navigationMembershipFilter(deps.prisma, actor, scope);
   const memberships = await deps.prisma.spaceMember.findMany({
-    where: {
-      userId: actor.userId,
-      OR: [{ organizationId }, { member: { role: GUEST_ROLE } }],
-    },
+    where: { userId: actor.userId, ...filter },
     select: {
       spaceId: true,
       role: true,
@@ -447,6 +462,7 @@ async function memberSpaceNavigation(
   const firstBotDue = spacesWithContent.size === 0 && !(await hasChatHistory(deps.prisma, actor));
 
   return {
+    ...(scope ? { scope } : {}),
     firstBotDue,
     current: {
       id: actor.spaceId,
