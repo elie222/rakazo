@@ -135,7 +135,8 @@ const NO_BREAK_SPACE = "\u00a0";
  * headings or lists of its own, and each line break kept.
  */
 function literal(text: string): string {
-  const lines = text.split("\n").map((line) =>
+  // Every line ending Markdown reads, so each line's indent is kept as typed text.
+  const lines = text.split(/\r\n?|\n/).map((line) =>
     line
       .replace(LEADING_WHITESPACE, (indent) =>
         indent.replace(/\t/g, NO_BREAK_SPACE.repeat(4)).replace(/ /g, NO_BREAK_SPACE),
@@ -161,6 +162,19 @@ function trimAsciiEdges(text: string): string {
   while (start < end && ASCII_SPACE.includes(text.charAt(start))) start += 1;
   while (end > start && ASCII_SPACE.includes(text.charAt(end - 1))) end -= 1;
   return text.slice(start, end);
+}
+
+/**
+ * Drops a block's blank first and last lines but keeps its first line's indent: a bot reply that
+ * opens with indented code stays code, as each later line of it does.
+ */
+function trimBlankLines(text: string): string {
+  let start = 0;
+  while (start < text.length && ASCII_SPACE.includes(text.charAt(start))) start += 1;
+  if (start === text.length) return "";
+  // A bare "\r" ends a line too, as closeOpenFence and Markdown read it.
+  const lineStart = Math.max(text.lastIndexOf("\n", start), text.lastIndexOf("\r", start)) + 1;
+  return text.slice(lineStart, start) + trimAsciiEdges(text.slice(start));
 }
 
 /** A name or title on one line, so it can never start a heading or speaker of its own. */
@@ -193,9 +207,16 @@ function closeOpenFence(markdown: string): string {
   let afterBlank = true;
   let inIndentedCode = false;
   let inContainer = false;
-  // The content columns of the list items seen since the list began, so a fence on an item's
-  // continuation line belongs to its item rather than the margin.
+  // The content columns of the list items still open, shallowest first, so a fence on an item's
+  // continuation line belongs to its item rather than the margin. A new item ends its siblings and
+  // anything nested deeper, so each column is added and removed once.
   let itemColumns: number[] = [];
+  // An item whose marker starts left of an open item's content is that item's sibling or an
+  // ancestor's, so it ends it.
+  const openItem = (markerIndent: number, column: number) => {
+    while ((itemColumns.at(-1) ?? -1) > markerIndent) itemColumns.pop();
+    itemColumns.push(column);
+  };
   // A line ending in "\r\n" ends as "\n" does, so its closing fence is still seen.
   const lines = markdown.split(/\r\n?|\n/).map((line) => {
     const blank = line.trim() === "";
@@ -245,7 +266,7 @@ function closeOpenFence(markdown: string): string {
       }
       // A nested item sits under its parent's content, so it may be indented four or more.
       const item = !breaksList && (!indented || inContainer) ? listItemColumn(line) : undefined;
-      if (item !== undefined) itemColumns.push(item);
+      if (item !== undefined) openItem(indentWidth(line), item);
       inIndentedCode = indented && !inContainer && (wasAfterBlank || inIndentedCode);
       return inIndentedCode ? line : escapeHtml(line);
     }
@@ -256,16 +277,15 @@ function closeOpenFence(markdown: string): string {
     const rest = fence[3] ?? "";
     const quote = lead.includes(">");
     const width = indentWidth(lead.replace(/\S/g, " "));
-    if (/\S/.test(lead) && !quote) itemColumns.push(width);
+    if (/\S/.test(lead) && !quote) openItem(indentWidth(lead), width);
     // A backtick fence's info string cannot hold a backtick; otherwise the line is text.
     if (!(mark[0] === "`" && rest.includes("`"))) {
       // Without a marker of its own, a fence in a list belongs to the deepest item it reaches.
-      const itemColumn = inContainer
-        ? itemColumns.reduce(
-            (deepest, column) => (column <= width ? Math.max(deepest, column) : deepest),
-            -1,
-          )
-        : -1;
+      // A plain fence ends the items deeper than it reaches, and belongs to the deepest one left.
+      if (inContainer && !/\S/.test(lead)) {
+        while ((itemColumns.at(-1) ?? -1) > width) itemColumns.pop();
+      }
+      const itemColumn = inContainer ? (itemColumns.at(-1) ?? -1) : -1;
       // A plain fence that reaches no item sits outside the list, which it ends.
       if (!/\S/.test(lead) && itemColumn < 0) {
         inContainer = false;
@@ -883,8 +903,9 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   const entries = visibleMessages.flatMap((message) => {
     const body = message.blocks
       .map((block) =>
-        // Only ASCII edges go: a no-break space at the start is typed indentation, not a gap.
-        trimAsciiEdges(
+        // Only blank lines and ASCII ends go: a no-break space at the start is typed indentation,
+        // and a bot's leading spaces are its Markdown indent.
+        trimBlankLines(
           blockMarkdown(
             block,
             message.role,

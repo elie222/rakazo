@@ -708,6 +708,30 @@ describe("chatTranscriptMarkdown", () => {
     );
   });
 
+  it("reads a long list of fenced items in one pass", () => {
+    const list = Array.from({ length: 60_000 }, () => "- step\n  ```\n  x\n  ```").join("\n");
+    expectLinearTime(() => transcript([message("bot", [{ kind: "text", text: list }])]));
+    // A new item ends a deeper one, so a fence after it belongs to the new item.
+    expect(
+      transcript([
+        message("bot", [{ kind: "text", text: "- a\n  - b\n- c\n    ```\n    x\n   y\n    ```" }]),
+        message("bot", [{ kind: "text", text: "Done" }], "2026-03-04T10:01:00.000Z"),
+      ]),
+    ).toContain("   y\n    ```\n\n---\n\n");
+  });
+
+  it("keeps the indent of a reply that opens with indented code, so it stays code", () => {
+    const text = transcript([
+      message("bot", [{ kind: "text", text: "\n    ```\n    <pre>" }]),
+      message("bot", [{ kind: "text", text: "Done" }], "2026-03-04T10:01:00.000Z"),
+    ]);
+    expect(text).toContain("\n\n    ```\n    <pre>\n    ```\n\n---\n\n");
+    // A user's text after a blank line ended by a lone carriage return is still not code.
+    expect(transcript([message("user", [{ kind: "text", text: "\r    rm -rf tmp" }])])).toContain(
+      "\n\n\u00a0\u00a0\u00a0\u00a0rm -rf tmp",
+    );
+  });
+
   it("sees a closing fence on a line that ends in a carriage return", () => {
     const text = transcript([
       message("bot", [{ kind: "text", text: "Run:\r\n```sh\r\nls\r\n```\r\n" }]),
