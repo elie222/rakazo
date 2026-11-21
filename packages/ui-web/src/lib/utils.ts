@@ -18,6 +18,9 @@ const twMerge = extendTailwindMerge({
         "heading1",
         "display",
       ],
+      // The semantic shadows in styles.css. Registered as sizes so a caller's `shadow-none`
+      // or `shadow-lg` replaces them instead of stacking a second shadow.
+      shadow: ["outline", "control", "popover", "dialog"],
     },
   },
 });

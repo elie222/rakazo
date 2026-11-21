@@ -59,7 +59,7 @@ export function SettingsRow({
     >
       {/* A plain block, not FieldContent: the horizontal field pins a content child to the top,
           which leaves the label high beside a taller select or button. */}
-      <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 leading-snug">
+      <div className="flex min-w-0 flex-auto flex-col justify-center gap-0.5 leading-snug">
         {htmlFor ? (
           <FieldLabel htmlFor={htmlFor} className="w-full text-body font-normal text-foreground">
             {label}
@@ -68,7 +68,7 @@ export function SettingsRow({
           <FieldTitle className="w-full text-body font-normal text-foreground">{label}</FieldTitle>
         )}
         {description ? (
-          <FieldDescription id={descriptionId} className="text-left text-body-sm">
+          <FieldDescription id={descriptionId} className="text-start text-body-sm">
             {description}
           </FieldDescription>
         ) : null}
