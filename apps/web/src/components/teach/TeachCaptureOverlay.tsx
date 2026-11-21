@@ -71,15 +71,19 @@ export function TeachCaptureOverlay({
       });
     }
 
-    function buttonFor(event: PointerEvent): "left" | "right" {
-      return event.button === 2 ? "right" : "left";
+    function buttonFor(event: PointerEvent): "left" | "right" | null {
+      if (event.button === 0) return "left";
+      if (event.button === 2) return "right";
+      return null;
     }
 
     function onPointerDown(event: PointerEvent) {
       event.preventDefault();
+      const button = buttonFor(event);
+      if (!button) return;
       target.setPointerCapture(event.pointerId);
       const { x, y } = pointerAt(event);
-      enqueueInput(() => sendPointer("down", x, y, buttonFor(event)));
+      enqueueInput(() => sendPointer("down", x, y, button));
     }
 
     // Each input is one request, one recording write and one sandbox action, so a raw pointer
@@ -104,18 +108,21 @@ export function TeachCaptureOverlay({
     }
 
     function onPointerMove(event: PointerEvent) {
-      if (!event.buttons) return;
+      // The buttons bitmask differs from button: bit 1 is left, bit 2 is right.
+      const button = event.buttons & 1 ? "left" : event.buttons & 2 ? "right" : null;
+      if (!button) return;
       event.preventDefault();
       const { x, y } = pointerAt(event);
-      pendingMove = { x, y, button: event.buttons === 2 ? "right" : "left" };
+      pendingMove = { x, y, button };
       pumpMove();
     }
 
     function onPointerUp(event: PointerEvent) {
       event.preventDefault();
+      const button = buttonFor(event);
+      if (!button) return;
       if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
       const { x, y } = pointerAt(event);
-      const button = buttonFor(event);
       const dragged = pendingMove !== null;
       pendingMove = null;
       // The final position has to reach the sandbox before the release; dropped intermediate
