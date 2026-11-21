@@ -15,6 +15,7 @@ import { createContext, Suspense, use, useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { RouteLoading } from "../../components/RouteLoading";
 import { WindowChrome } from "../../components/WindowChrome";
+import { authClient } from "../../lib/auth/auth";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { activityModePreference } from "../../lib/preferences/activity-mode";
 import { readAppRailExpanded, writeAppRailExpanded } from "../../lib/preferences/app-rail-pref";
@@ -23,9 +24,12 @@ import {
   writeBotsSidebarCollapsed,
 } from "../../lib/preferences/bots-sidebar-pref";
 import { useQueryUserId } from "../../lib/query/query";
+import { selectSpace } from "../../lib/query/rpc";
 import { useMediaQuery } from "../../lib/use-media-query";
+import type { ShellOverlay } from "./shell-overlay-url";
 import { withShellOverlay } from "./shell-overlay-url";
 import { focusChatList } from "./sidebar/focus-chat-list";
+import { ShellSidebarFooter } from "./sidebar/shell-sidebar-footer";
 
 const AppRailContext = createContext(false);
 const AppSidebarContext = createContext<{
@@ -33,8 +37,6 @@ const AppSidebarContext = createContext<{
   setListCollapsed: (collapsed: boolean) => void;
   previewListCollapsed: (collapsed: boolean) => void;
   railWidth: number;
-  railFooterNode: HTMLDivElement | null;
-  setRailFooterNode: (node: HTMLDivElement | null) => void;
 } | null>(null);
 
 /** True when the rail is on screen from the md breakpoint up and holds the window controls there. */
@@ -67,7 +69,6 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
   const railVisible = useMediaQuery("(min-width: 48rem)");
   const [preference, setPreference] = useState<boolean | null>(() => readAppRailExpanded(userId));
   const [listCollapsed, setListCollapsedState] = useState(() => readBotsSidebarCollapsed(userId));
-  const [railFooterNode, setRailFooterNode] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setPreference(readAppRailExpanded(userId));
@@ -99,8 +100,6 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
           setListCollapsed,
           previewListCollapsed,
           railWidth,
-          railFooterNode,
-          setRailFooterNode,
         }}
       >
         <div
@@ -120,7 +119,6 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
               focusChatList();
             }}
             onToggle={toggle}
-            setRailFooterNode={setRailFooterNode}
           />
           <div className="h-full min-h-0 min-w-0 flex-1">
             {/* A page still loading leaves the rail on screen instead of blanking the window. */}
@@ -140,14 +138,12 @@ function PrimaryRail({
   listCollapsed,
   onShowChats,
   onToggle,
-  setRailFooterNode,
 }: {
   boardEnabled: boolean;
   expanded: boolean;
   listCollapsed: boolean;
   onShowChats: () => void;
   onToggle: () => void;
-  setRailFooterNode: (node: HTMLDivElement | null) => void;
 }) {
   const { t } = useLingui();
   const { pathname, search } = useLocation();
@@ -277,14 +273,44 @@ function PrimaryRail({
         />
       </div>
       <div
-        ref={setRailFooterNode}
         data-testid="app-rail-footer"
         className={cn(
           "app-no-drag mt-auto flex w-full flex-col px-3 py-3",
           expanded ? "items-start" : "items-center",
         )}
-      />
+      >
+        <RailFooter boardEnabled={boardEnabled} />
+      </div>
     </nav>
+  );
+}
+
+/** The account entry stays in the layout, so every page beside the rail keeps it. */
+function RailFooter({ boardEnabled }: { boardEnabled: boolean }) {
+  const { data } = authClient.useSession();
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  function openOverlay(overlay: ShellOverlay) {
+    const params = withShellOverlay(new URLSearchParams(search), overlay);
+    navigate({ pathname, search: params.toString() });
+  }
+  return (
+    <ShellSidebarFooter
+      mini
+      logos={[]}
+      user={data?.user}
+      boardEnabled={boardEnabled}
+      navLinks={[]}
+      closeMobileSidebar={() => undefined}
+      navigate={navigate}
+      openSettings={(section) => openOverlay({ kind: "settings", section, spaceId: null })}
+      openIntegrations={() => openOverlay({ kind: "integrations" })}
+      openSkills={() => openOverlay({ kind: "skills" })}
+      openSpaceChat={(spaceId, path) => {
+        selectSpace(spaceId);
+        navigate(path);
+      }}
+    />
   );
 }
 
@@ -326,7 +352,11 @@ function RailToggle({
       aria-label={label}
       aria-expanded={expanded}
       onClick={onClick}
-      className="app-no-drag grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+      className={buttonVariants({
+        variant: "ghost",
+        size: "icon",
+        className: "app-no-drag shrink-0 rounded-full text-muted-foreground",
+      })}
     >
       {expanded ? (
         <PanelLeftClose className="size-5" strokeWidth={1.75} aria-hidden="true" />

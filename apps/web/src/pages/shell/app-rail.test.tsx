@@ -13,6 +13,12 @@ vi.mock("@lingui/react/macro", () => ({
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
+vi.mock("../../lib/auth/auth", () => ({
+  authClient: { useSession: () => ({ data: null }) },
+}));
+vi.mock("./sidebar/shell-sidebar-footer", () => ({
+  ShellSidebarFooter: () => <div data-testid="rail-footer" />,
+}));
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
