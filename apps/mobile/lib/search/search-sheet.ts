@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { dedupeSearchHits, searchHitListKey } from "@rakazo/core";
 import type { MobileBot, MobileGroup } from "../api/mobile-types";
-import { filterBots } from "../inbox/inbox";
+import { filterBots as filterRosterChats } from "../inbox/inbox";
 import type { InboxSpace } from "../inbox/inbox-spaces";
 import { previewSnippet } from "../messages/preview";
 import { mobileSearchDestination } from "./search-destination";
@@ -45,9 +45,8 @@ export function searchSheetRows(
     .flatMap((space) => space.bots)
     .filter((bot) => !("archivedAt" in bot && bot.archivedAt));
   const groups = spaces.flatMap((space) => space.groups);
-  const needle = query.trim().toLowerCase();
   const rows: SearchSheetRow[] = [
-    ...filterBots(bots, query).map(
+    ...filterRosterChats(bots, query).map(
       (bot): SearchSheetRow => ({
         key: `bot-${bot.id}`,
         title: bot.name,
@@ -59,27 +58,25 @@ export function searchSheetRows(
         destination: { pathname: "/thread", params: { botId: bot.id, name: bot.name } },
       }),
     ),
-    ...groups
-      .filter((group) => `${group.name} ${group.preview}`.toLowerCase().includes(needle))
-      .map(
-        (group): SearchSheetRow => ({
-          key: `group-${group.id}`,
-          title: group.name,
-          preview:
-            previewSnippet(group.preview, 40) ||
-            group.members.map((member) => member.name).join(", "),
-          label: t`Group`,
-          group,
-          kind: "conversation",
-          spaceId: group.spaceId,
-          destination: {
-            pathname: "/group-thread",
-            params: { groupId: group.id, name: group.name },
-          },
-        }),
-      ),
+    ...filterRosterChats(groups, query).map(
+      (group): SearchSheetRow => ({
+        key: `group-${group.id}`,
+        title: group.name,
+        preview:
+          previewSnippet(group.preview, 40) ||
+          group.members.map((member) => member.name).join(", "),
+        label: t`Group`,
+        group,
+        kind: "conversation",
+        spaceId: group.spaceId,
+        destination: {
+          pathname: "/group-thread",
+          params: { groupId: group.id, name: group.name },
+        },
+      }),
+    ),
   ];
-  if (!needle) return rows;
+  if (!query.trim()) return rows;
   const chats = new Set(rows.map((row) => row.key));
   for (const hit of dedupeSearchHits(hits)) {
     if (
