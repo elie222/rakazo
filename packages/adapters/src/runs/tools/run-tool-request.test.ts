@@ -182,7 +182,7 @@ describe("schedule tools on another bot's routines", () => {
     await expect(byName.prepared).resolves.toBeUndefined();
     expect(byName.request.args).toEqual({ bot_id: "child", bot_name: "Child", name: "r" });
     const self = managedRoutineCall({ fleetManagement: false })("schedule_update", {
-      bot_id: "bot-1",
+      bot_id: " bot-1 ",
       routineId: "r",
     });
     await expect(self.prepared).resolves.toBeUndefined();

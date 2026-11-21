@@ -453,7 +453,7 @@ export async function prepareToolRequest(
   }
   // A bot passing its own id is working on its own routines, which need no bot management. A
   // name may be shared, so it goes through the lookup below.
-  if (reachesManagedRoutines(name, args) && args.bot_id === bot.id) {
+  if (reachesManagedRoutines(name, args) && String(args.bot_id ?? "").trim() === bot.id) {
     const { bot_id: _id, bot_name: _name, ...rest } = args;
     args = rest;
   }
