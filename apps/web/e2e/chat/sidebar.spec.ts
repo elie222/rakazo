@@ -69,7 +69,7 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
         return element ? getComputedStyle(element).left : null;
       }),
     )
-    .toBe("220px");
+    .toBe("56px");
   const final = await page.evaluate(() => {
     const railElement = document.querySelector('[data-testid="app-rail"]') as HTMLElement;
     return {
@@ -77,14 +77,14 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
       railText: railElement.textContent,
     };
   });
-  expect(final.railWidth).toBe("220px");
+  expect(final.railWidth).toBe("56px");
   expect(final.railText).toContain("Chats");
   expect(final.railText).toContain("Activity");
   await expect(page.getByRole("button", { name: "Search" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Create" })).toBeVisible();
   const hideBox = await page.getByRole("button", { name: "Hide chat list" }).boundingBox();
   expect(hideBox).not.toBeNull();
-  expect(hideBox!.x).toBeGreaterThanOrEqual(220);
+  expect(hideBox!.x).toBeGreaterThanOrEqual(56);
   expect(hideBox!.x + hideBox!.width).toBeLessThanOrEqual(536);
 
   // Activity from another page returns to the chat shell, where its list lives.

@@ -6,6 +6,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type * as RpcModule from "../../lib/query/rpc";
 import { AppRailLayout } from "./app-rail";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -19,7 +20,7 @@ vi.mock("../../lib/auth/auth", () => ({
   authClient: { useSession: () => ({ data: null }) },
 }));
 vi.mock("../../lib/query/rpc", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/query/rpc")>();
+  const actual = await importOriginal<typeof RpcModule>();
   return {
     ...actual,
     rpc: new Proxy(actual.rpc, {
