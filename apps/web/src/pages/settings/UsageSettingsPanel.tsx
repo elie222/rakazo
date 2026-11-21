@@ -166,7 +166,10 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
       <dl className="grid grid-cols-3 gap-3">
         {[
           { label: t`Runs`, value: number(totals?.runs) },
-          { label: t`Tokens`, value: number(totals?.totalTokens) },
+          {
+            label: t`Tokens`,
+            value: `${number(totals?.totalTokens)}${totals?.tokensPartial ? "+" : ""}`,
+          },
           { label: t`Cost`, value: cost(totals?.costUsd) },
         ].map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
