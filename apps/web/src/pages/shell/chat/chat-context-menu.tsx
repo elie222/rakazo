@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { Bot, BotSection, Group } from "@rakazo/contracts";
@@ -205,6 +206,12 @@ export function ChatContextMenu({
               you: t`You`,
               system: t`System`,
               routineEvent,
+              peer: {
+                messaged: (peer) => t`Messaged ${peer}`,
+                messageFrom: (peer) => t`Message from ${peer}`,
+                messagesWith: (count, peer) =>
+                  t`${plural(count, { one: `# message with ${peer}`, other: `# messages with ${peer}` })}`,
+              },
               ask: {
                 answer: t`Answer`,
                 expired: t`Expired`,
@@ -218,7 +225,7 @@ export function ChatContextMenu({
                 settingsUpdated: t`Settings updated`,
                 readFromPage: t`Read from the page, not checked`,
                 buttonReadFromPage: (button) =>
-                  t`Button “${button}”. Read from the page, not checked`,
+                  t`Button “${button}” · read from the page, not checked`,
                 approved: t`Approved`,
                 discarded: t`Discarded`,
                 commandVariable: t`Command variable`,

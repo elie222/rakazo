@@ -26,7 +26,7 @@ const askWords = {
   instructionsUpdated: "Instructions updated",
   settingsUpdated: "Settings updated",
   readFromPage: "Read from the page, not checked",
-  buttonReadFromPage: (button: string) => `Button “${button}”. Read from the page, not checked`,
+  buttonReadFromPage: (button: string) => `Button “${button}” · read from the page, not checked`,
   approved: "Approved",
   discarded: "Discarded",
   commandVariable: "Command variable",
@@ -89,6 +89,12 @@ const cardLabels = {
   choiceOption: (option: { label: string }) => option.label,
 };
 
+const peerWords = {
+  messaged: (peer: string) => `Messaged ${peer}`,
+  messageFrom: (peer: string) => `Message from ${peer}`,
+  messagesWith: (count: number, peer: string) => `${count} messages with ${peer}`,
+};
+
 const transcript = (messages: ThreadMessage[]) =>
   chatTranscriptMarkdown({
     title: "Ada",
@@ -99,6 +105,7 @@ const transcript = (messages: ThreadMessage[]) =>
     askWords,
     cardStatus,
     cardLabels,
+    peerWords,
     memberName: (botId: string) => botId,
     attachment: "Attachment",
     isSetupComplete: () => false,
@@ -199,7 +206,7 @@ describe("chatTranscriptMarkdown", () => {
     expect(text).toBe("# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\nSent the invoice\n\n👍 2\n");
   });
 
-  it("leaves out the work a bot did for another bot, as the chat folds it", () => {
+  it("folds the work a bot did for another bot under its line, as the chat does", () => {
     const text = transcript([
       message(
         "bot",
@@ -220,7 +227,52 @@ describe("chatTranscriptMarkdown", () => {
       }),
       message("bot", [{ kind: "text", text: "Done" }]),
     ]);
-    expect(text).toBe("# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\nDone\n");
+    // The receipt's line counts the reply folded under it, as the chat's marker does.
+    expect(text).toBe(
+      "# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\n2 messages with Lee\n\n---\n\n**Ada** · 2026-03-04 10:00\n\nDone\n",
+    );
+  });
+
+  it("writes a bot-to-bot receipt as the chat's line, one line with a count for a run with the same bot", () => {
+    const text = transcript([
+      message("bot", [
+        { kind: "bot_message_sent", toBotId: "bot-2", toBotName: "Lee", text: "Draft it" },
+      ]),
+      message(
+        "bot",
+        [{ kind: "bot_message_received", fromBotId: "bot-2", fromBotName: "Lee", text: "Brief?" }],
+        "2026-03-04T10:01:00.000Z",
+      ),
+      message(
+        "bot",
+        [{ kind: "bot_message_sent", toBotId: "bot-3", toBotName: "Kai", text: "Ping" }],
+        "2026-03-04T10:02:00.000Z",
+      ),
+      message(
+        "bot",
+        [{ kind: "bot_message_received", fromBotId: "bot-4", fromBotName: "Max", text: "Hi" }],
+        "2026-03-04T10:03:00.000Z",
+      ),
+    ]);
+    // Lee's two receipts are one line; the second is part of it, so it writes nothing.
+    expect(text).toBe(
+      "# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\n2 messages with Lee\n\n---\n\n**Ada** · 2026-03-04 10:02\n\nMessaged Kai\n\n---\n\n**Ada** · 2026-03-04 10:03\n\nMessage from Max\n",
+    );
+  });
+
+  it("counts receipts with the same bot as one run when a tool-activity message sits between", () => {
+    const text = transcript([
+      message("bot", [
+        { kind: "bot_message_sent", toBotId: "bot-2", toBotName: "Lee", text: "Draft it" },
+      ]),
+      message("bot", [{ kind: "steps", steps: [] }], "2026-03-04T10:01:00.000Z"),
+      message(
+        "bot",
+        [{ kind: "bot_message_sent", toBotId: "bot-2", toBotName: "Lee", text: "Again" }],
+        "2026-03-04T10:02:00.000Z",
+      ),
+    ]);
+    expect(text).toBe("# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\n2 messages with Lee\n");
   });
 
   it("words each routine event by its change, not only its name", () => {
@@ -247,6 +299,16 @@ describe("chatTranscriptMarkdown", () => {
     expect(text).toContain("**Ada** · 2026-03-04 10:00\n\n**Bold** reply");
   });
 
+  it("escapes every character a card title escapes, plus & and #, in typed text", () => {
+    // Each character a card title escapes (a backslash first), then "&" and "#".
+    const escaped = ["\\", "`", "*", "_", "[", "]", "<", ">", "|", "~", "&", "#"].map(
+      (char) => `\\${char}`,
+    );
+    expect(transcript([message("user", [{ kind: "text", text: "\\`*_[]<>|~&#" }])])).toContain(
+      `**You** · 2026-03-04 10:00\n\n${escaped.join("")}`,
+    );
+  });
+
   it("keeps a title or speaker on its own line, so it cannot add headings or speakers", () => {
     const text = chatTranscriptMarkdown({
       title: "Project\n\n## Another heading",
@@ -257,6 +319,7 @@ describe("chatTranscriptMarkdown", () => {
       askWords,
       cardStatus,
       cardLabels,
+      peerWords,
       memberName: (botId: string) => botId,
       attachment: "Attachment",
       isSetupComplete: () => false,
@@ -406,6 +469,7 @@ describe("chatTranscriptMarkdown", () => {
         askWords,
         cardStatus,
         cardLabels,
+        peerWords,
         memberName: (botId: string) => botId,
         attachment: "Attachment",
         isSetupComplete: () => false,
@@ -638,6 +702,7 @@ describe("chatTranscriptMarkdown", () => {
       askWords: { ...askWords, updateInstructions: "Atualizar instruções?" },
       cardStatus,
       cardLabels,
+      peerWords,
       memberName: (botId: string) => botId,
       attachment: "Attachment",
       isSetupComplete: () => false,
@@ -778,6 +843,7 @@ describe("chatTranscriptMarkdown", () => {
         choiceQuestion: (question) => `«${question}»`,
         choiceOption: (option) => `«${option.id}»`,
       },
+      peerWords,
       memberName: (botId: string) => botId,
       attachment: "Attachment",
       isSetupComplete: () => false,
@@ -865,7 +931,7 @@ describe("chatTranscriptMarkdown", () => {
           },
         ]),
       ]),
-    ).toContain("- On the button: $4.00\n\nButton “Pay $4.00”. Read from the page, not checked");
+    ).toContain("- On the button: $4.00\n\nButton “Pay $4.00” · read from the page, not checked");
   });
 
   it("writes a protected answer's outcome as its card words it, never its value", () => {
@@ -972,6 +1038,7 @@ describe("chatTranscriptMarkdown", () => {
       askWords,
       cardStatus,
       cardLabels,
+      peerWords,
       memberName: (botId) => (botId === "b_lee" ? "Lee" : "Ada"),
       attachment: "Attachment",
       isSetupComplete: () => false,
@@ -1073,6 +1140,7 @@ describe("chatTranscriptMarkdown", () => {
         askWords,
         cardStatus,
         cardLabels,
+        peerWords,
         memberName: (botId: string) => botId,
         attachment: "Attachment",
         isSetupComplete: (block) => isSetupComplete(block),

@@ -57,7 +57,7 @@ const labels = {
     instructionsUpdated: "Instructions updated",
     settingsUpdated: "Settings updated",
     readFromPage: "Read from the page, not checked",
-    buttonReadFromPage: (button: string) => `Button “${button}”. Read from the page, not checked`,
+    buttonReadFromPage: (button: string) => `Button “${button}” · read from the page, not checked`,
     approved: "Approved",
     discarded: "Discarded",
     commandVariable: "Command variable",
@@ -100,6 +100,11 @@ const labels = {
       cancelled: "cancelled",
       expired: "expired",
     },
+  },
+  peer: {
+    messaged: (peer: string) => `Messaged ${peer}`,
+    messageFrom: (peer: string) => `Message from ${peer}`,
+    messagesWith: (count: number, peer: string) => `${count} messages with ${peer}`,
   },
   cards: {
     computer: "Computer",
@@ -401,6 +406,31 @@ describe("exportChat", () => {
     const { text } = exported();
     expect(text).toMatch(/\*\*You\*\* · \d\d:\d\d\n\nMine/);
     expect(text).toMatch(/\*\*Lee\*\* · \d\d:\d\d\n\nTheirs/);
+  });
+
+  it("does not write a bot-to-bot receipt as something you said", async () => {
+    // A receiving chat stores the receipt as a user message with no author.
+    const receipt = message(
+      "",
+      {
+        blocks: [
+          { kind: "bot_message_received", fromBotId: "bot-2", fromBotName: "Lee", text: "Brief?" },
+        ],
+      },
+      "user",
+    );
+    const { rpc } = rpcWith([{ messages: [receipt], olderCursor: null }]);
+    await exportChat({
+      rpc,
+      target: { kind: "bot", chat: bot },
+      labels,
+      time,
+      memberName: noMembers,
+      meId: "u_me",
+    });
+    const { text } = exported();
+    expect(text).toMatch(/\*\*System\*\* · \d\d:\d\d\n\nMessage from Lee/);
+    expect(text).not.toContain("**You**");
   });
 
   it("names each group message for the bot that wrote it", async () => {

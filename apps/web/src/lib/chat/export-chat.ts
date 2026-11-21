@@ -5,12 +5,13 @@ import type {
   RoutineEventChange,
   ThreadMessage,
 } from "@rakazo/contracts";
-import type { AskWords, CardLabels, CardStatusWords } from "@rakazo/core";
+import type { AskWords, CardLabels, CardStatusWords, PeerWords } from "@rakazo/core";
 import {
   chatTranscriptMarkdown,
   deadlineSignal,
   importSetupStateInput,
   isImportSetupComplete,
+  isPeerReceiptBlocks,
   isRetiredImportSetup,
   loadPeerHistory,
   mapConcurrent,
@@ -133,6 +134,8 @@ export async function exportChat(options: {
     ask: AskWords;
     status: CardStatusWords;
     cards: CardLabels;
+    /** A bot-to-bot marker's line, as the chat's marker words it. */
+    peer: PeerWords;
     /** What the chat calls a bot it cannot name, such as a handoff's bots in a one-bot chat. */
     bot: string;
     attachment: string;
@@ -154,11 +157,14 @@ export async function exportChat(options: {
     askWords: labels.ask,
     cardStatus: labels.status,
     cardLabels: labels.cards,
+    peerWords: labels.peer,
     // As the chat row: a group names a bot that left itself; a one-bot chat has no roster.
     memberName: (botId) => memberName(botId) ?? labels.bot,
     attachment: labels.attachment,
     isSetupComplete: (block) => completed.has(block),
     speaker: (message) => {
+      // A bot-to-bot receipt is stored as an authorless user message; the chat shows a marker.
+      if (isPeerReceiptBlocks(message.blocks)) return labels.system;
       if (message.role === "user") return otherAuthor(message.author, meId)?.name ?? labels.you;
       if (message.role === "system") return labels.system;
       if (target.kind === "bot") return target.chat.name;

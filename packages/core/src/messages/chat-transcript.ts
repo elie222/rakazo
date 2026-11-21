@@ -5,8 +5,10 @@ import { isSecretAskBlock } from "../asks/ask-kind.js";
 import { separateAskAnswers } from "../asks/ask-replies.js";
 import { callDurationText } from "../calls/voice-chat-groups.js";
 import { cloudAgentHttpsUrl } from "../integrations/cloud-agent.js";
+import { peerExchangeLines } from "../peers/peer-exchanges.js";
 import {
   ALLOW_IN_SPACE_LABELS,
+  CARD_TITLE_ESCAPED_CHARACTERS,
   isApprovalAskBlock,
   receiptItems,
 } from "../runs/action-approval.js";
@@ -122,8 +124,11 @@ export type CardLabels = {
   choiceOption: (option: { id: string; label: string }, question: string) => string;
 };
 
-/** Markdown that only character escapes can make, the same in every CommonMark reader. */
-const INLINE_SYNTAX = /[\\`*_[\]<>|~&#]/g;
+/**
+ * The characters a card title escapes, plus "&" (entities) and "#" (headings), so the export and the
+ * cards escape one set.
+ */
+const INLINE_SYNTAX = new RegExp(CARD_TITLE_ESCAPED_CHARACTERS.replace(/\]$/, "&#]"), "g");
 /** What starts a list or rule only at the start of a line. */
 const LINE_START_SYNTAX = /^(\s*)([+=-]|\d+[.)])/;
 /** Leading spaces and tabs of a line with text, which Markdown would read as code or drop. */
@@ -175,6 +180,26 @@ function trimBlankLines(text: string): string {
   // A bare "\r" ends a line too, as closeOpenFence and Markdown read it.
   const lineStart = Math.max(text.lastIndexOf("\n", start), text.lastIndexOf("\r", start)) + 1;
   return text.slice(lineStart, start) + trimAsciiEdges(text.slice(start));
+}
+
+function isPeerReceipt(block: MessageBlock): boolean {
+  return block.kind === "bot_message_sent" || block.kind === "bot_message_received";
+}
+
+/** A bot-to-bot marker's line in the chat's words: one line for a run of messages with the same bot. */
+function peerLine(
+  exchange: { peerBotName: string; count: number },
+  sent: boolean,
+  words: PeerWords,
+): string {
+  const peer = exchange.peerBotName;
+  return oneLine(
+    exchange.count > 1
+      ? words.messagesWith(exchange.count, peer)
+      : sent
+        ? words.messaged(peer)
+        : words.messageFrom(peer),
+  );
 }
 
 /** A name or title on one line, so it can never start a heading or speaker of its own. */
@@ -841,8 +866,8 @@ function blockMarkdown(
       return block.items
         .map((item) => `- ${oneLine("name" in item ? item.name : item.title)}`)
         .join("\n");
-    // Left out: a delivery is the bot's prompt, tool steps are activity, and a peer receipt is a
-    // chip in the chat whose bot-to-bot replies stay folded away.
+    // Left out: a delivery is the bot's prompt and tool steps are activity. A peer receipt's line
+    // is written by its message, which knows its run of receipts.
     case "connect":
     case "delivery":
     case "steps":
@@ -851,6 +876,13 @@ function blockMarkdown(
       return "";
   }
 }
+
+/** The bot-to-bot marker's words, as the chat's marker shows them. */
+export type PeerWords = {
+  messaged: (peer: string) => string;
+  messageFrom: (peer: string) => string;
+  messagesWith: (count: number, peer: string) => string;
+};
 
 /** A readable copy of a chat as Markdown: who said what and when, in the order it was said. */
 export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
@@ -870,6 +902,8 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   cardLabels: CardLabels;
   /** A group bot's name as the chat shows it, for a handoff between bots. */
   memberName: (botId: string) => string;
+  /** The bot-to-bot marker's words, in the reader's language. */
+  peerWords: PeerWords;
   /** The label before an attached file's name, in the reader's words. */
   attachment: string;
   /** Whether a checklist's card shows it complete, which the caller checks against the bot's setup. */
@@ -879,9 +913,8 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
 }): string {
   // Folded as the chat folds them: work a bot did for another bot stays under its receipt, and an
   // emoji-only reply shows under the message it reacts to.
-  const { visibleMessages, reactions } = projectMessageReactions(
-    foldPeerReplies(options.messages, { includePeerReceipts: true }).messages,
-  );
+  const folded = foldPeerReplies(options.messages, { includePeerReceipts: true });
+  const { visibleMessages, reactions } = projectMessageReactions(folded.messages);
   const separateAnswers = separateAskAnswers(visibleMessages);
   const words = {
     routineEvent: options.routineEvent,
@@ -900,19 +933,45 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
       ),
     ),
   };
-  const entries = visibleMessages.flatMap((message) => {
-    const body = message.blocks
-      .map((block) =>
-        // Only blank lines and ASCII ends go: a no-break space at the start is typed indentation,
-        // and a bot's leading spaces are its Markdown indent.
-        trimBlankLines(
-          blockMarkdown(
-            block,
-            message.role,
-            words,
-            separateAnswers.get(message.id)?.has(block) ?? false,
-          ),
-        ),
+  // A receipt's own line waits for its run (null); every other block is written here. A message
+  // with nothing to show is left out before the runs are counted, as the chat does, so it cannot
+  // split a run of receipts with the same bot.
+  const written = visibleMessages
+    .map((message) => ({
+      message,
+      parts: message.blocks.map((block) =>
+        isPeerReceipt(block)
+          ? null
+          : // Only blank lines and ASCII ends go: a no-break space at the start is typed
+            // indentation, and a bot's leading spaces are its Markdown indent.
+            trimBlankLines(
+              blockMarkdown(
+                block,
+                message.role,
+                words,
+                separateAnswers.get(message.id)?.has(block) ?? false,
+              ),
+            ),
+      ),
+    }))
+    .filter(({ parts }) => parts.some((part) => part === null || part !== ""));
+  // A run of receipts with the same bot is one counted line, as the chat groups them.
+  const exchanges = peerExchangeLines({ ...folded, messages: written.map((item) => item.message) });
+  const entries = written.flatMap(({ message, parts }) => {
+    // Only the first receipt of a message is its line, and only where the chat shows one.
+    const receipt = parts.indexOf(null);
+    const exchange = exchanges.lines.get(message.id);
+    const body = parts
+      .map((part, index) =>
+        part !== null
+          ? part
+          : index === receipt && exchange
+            ? peerLine(
+                exchange,
+                message.blocks[index]?.kind === "bot_message_sent",
+                options.peerWords,
+              )
+            : "",
       )
       .filter(Boolean)
       .join("\n\n");

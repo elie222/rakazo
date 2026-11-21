@@ -82,7 +82,7 @@ Under **Advanced**:
 Right-click a bot in the sidebar to **Pin** it, **Move to** a section, **Mark as Unread**,
 **Duplicate**, **Archive** or **Delete** it. Archived bots can be restored later. **Export chat**
 (web and desktop, bots and groups) downloads the whole conversation as a Markdown file that shows
-who said what and when.
+who said what and when. Export chat isn't available on mobile yet.
 
 ## Find things
 
