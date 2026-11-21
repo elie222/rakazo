@@ -588,3 +588,24 @@ it("refuses text over the message limit before any request and keeps the draft",
   expect(accepted).toBe(true);
   expect(rpc.threads.send).toHaveBeenCalledTimes(1);
 });
+
+it("sends a card-typed answer through threads.send targeting that ask message without touching composer state", async () => {
+  const armed = replyCandidate("m-other");
+  act(() => latest.setReplyTarget(armed));
+  rpc.threads.send.mockResolvedValue({ runId: "run-ask", taskId: "task-ask", seq: 4 });
+
+  await act(async () => {
+    await latest.typeAnswerMessage(replyCandidate("ask-1"), "Reykjavik instead", "card-nonce-1");
+  });
+
+  expect(rpc.threads.send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      botId: "bot-1",
+      text: "Reykjavik instead",
+      replyToMessageId: "ask-1",
+      answersQuestion: true,
+      clientNonce: "card-nonce-1",
+    }),
+  );
+  expect(latest.replyTarget).toBe(armed);
+});

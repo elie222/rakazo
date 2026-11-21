@@ -239,6 +239,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   separateAnswers,
   canDismiss,
   onAnswer,
+  onTypeAnswer,
   onOpenComputer,
   onChoiceDismissed,
   onPreviewFile,
@@ -270,6 +271,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     dismiss?: boolean,
     remember?: false,
   ) => Promise<void>;
+  onTypeAnswer?: (message: MobileMessage, answer: string, clientNonce?: string) => Promise<void>;
   onOpenBot: (botId: string, name: string) => void;
   onOpenComputer: (botId: string, name: string) => void;
   onChoiceDismissed?: (question: string) => void;
@@ -532,6 +534,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   accessibilityActions={actionProps.accessibilityActions}
                   onAccessibilityAction={actionProps.onAccessibilityAction}
                   onAnswer={(answer) => onAnswer(message, answer)}
+                  onTypeAnswer={onTypeAnswer && ((...args) => onTypeAnswer(message, ...args))}
                 />
               ) : null}
               {separateAnswers?.has(askBlock) || selectedChoice ? null : answered ? (

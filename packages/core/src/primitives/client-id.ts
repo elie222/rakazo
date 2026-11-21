@@ -19,3 +19,11 @@ export function newClientId(): string {
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+export type DraftNonce = { text: string; nonce: string };
+
+/** Reuses a draft's nonce across retries of unchanged text and rotates it when the text changes. */
+export function draftNonce(previous: DraftNonce | null, text: string): DraftNonce {
+  if (previous?.text === text) return previous;
+  return { text, nonce: newClientId() };
+}

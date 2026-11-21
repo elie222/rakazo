@@ -4,6 +4,9 @@ import { NativeCalendarDeviceKey } from "../personal-calendar/personal-calendar.
 import { ATTACHMENT_COUNT_CEILING } from "./attachments.js";
 import { REPLY_QUOTE_MAX_LENGTH, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "./thread.js";
 
+/** Stable error code when a strict card-answer send targets a closed or foreign question. */
+export const QUESTION_ALREADY_ANSWERED_ERROR = "QUESTION_ALREADY_ANSWERED";
+
 export const threadTarget = z
   .object({
     botId: Id.optional(),
@@ -45,24 +48,43 @@ const threadSendFields = threadTarget.safeExtend({
   clientNonce: z.string().min(1).max(200).optional(),
 });
 
-export const threadSendInput = threadSendFields.superRefine((input, ctx) => {
-  const text = input.text?.trim() ?? "";
-  const artifactIds = input.artifactIds ?? [];
-  if (!text && artifactIds.length === 0) {
-    ctx.addIssue({
-      code: "custom",
-      message: "Provide text or at least one attachment",
-      path: ["text"],
-    });
-  }
-  if (input.replyQuote && !input.replyToMessageId) {
-    ctx.addIssue({
-      code: "custom",
-      message: "replyQuote requires replyToMessageId",
-      path: ["replyQuote"],
-    });
-  }
-});
+export const threadSendInput = threadSendFields
+  .safeExtend({
+    /** Sent from a pending question card: answers only that card, never falls back or stops work. */
+    answersQuestion: z.literal(true).optional(),
+  })
+  .superRefine((input, ctx) => {
+    const text = input.text?.trim() ?? "";
+    const artifactIds = input.artifactIds ?? [];
+    if (!text && artifactIds.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide text or at least one attachment",
+        path: ["text"],
+      });
+    }
+    if (input.replyQuote && !input.replyToMessageId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "replyQuote requires replyToMessageId",
+        path: ["replyQuote"],
+      });
+    }
+    if (input.answersQuestion && !input.replyToMessageId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "answersQuestion requires replyToMessageId",
+        path: ["answersQuestion"],
+      });
+    }
+    if (input.answersQuestion && !text) {
+      ctx.addIssue({
+        code: "custom",
+        message: "answersQuestion requires nonblank text",
+        path: ["text"],
+      });
+    }
+  });
 
 export const threadSendOutput = z.object({
   taskId: Id,

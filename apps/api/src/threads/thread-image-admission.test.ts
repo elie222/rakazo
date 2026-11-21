@@ -402,6 +402,7 @@ describe("current image send admission", () => {
     const { tx, send } = fixture();
     tx.message.findUnique.mockResolvedValue({
       id: "accepted",
+      authorUserId: "user-1",
       seq: 7,
       sourceRuns: [{ id: "accepted-run", taskId: "accepted-task", status: "done" }],
     } as never);

@@ -52,6 +52,8 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       markUnread: (message) => rowActionsRef.current.markUnread(message),
       answer: (message, answer, fields, dismiss, remember) =>
         rowActionsRef.current.answer(message, answer, fields, dismiss, remember),
+      typeAnswer: (message, answer, clientNonce) =>
+        rowActionsRef.current.typeAnswer?.(message, answer, clientNonce) ?? Promise.resolve(),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
       previewFile: (artifactId) => rowActionsRef.current.previewFile(artifactId),
