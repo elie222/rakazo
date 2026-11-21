@@ -63,6 +63,11 @@ describe("ListRow", () => {
     expect(host.querySelector('[data-slot="list-row-status"]')).toBeNull();
     act(() => root.unmount());
   });
+  it("announces its status when given a localized label", () => {
+    const { host, root } = render(<ListRowStatus working label="Running" />);
+    expect(host.querySelector('[data-slot="list-row-status"]')?.textContent).toContain("Running");
+    act(() => root.unmount());
+  });
 });
 
 describe("list foundations", () => {

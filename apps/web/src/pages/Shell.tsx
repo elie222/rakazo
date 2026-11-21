@@ -264,7 +264,8 @@ function SpaceShell() {
   };
   const voiceStatus: VoiceStatus | null =
     useQuery(queries.voice.status.queryOptions()).data ?? null;
-  const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
+  const { mobileSidebarOpen, setMobileSidebarOpen, closeMobileSidebar, swipeHandlers } =
+    useMobileSidebar();
   const isMobileSidebar = useIsMobile();
   const [panelCoversChat, setPanelCoversChat] = useState(false);
   const pages = usePagesForChat();
@@ -1056,6 +1057,7 @@ function SpaceShell() {
         isMobile={isMobileSidebar}
         mobileOpen={mobileSidebarOpen}
         setMobileOpen={setMobileSidebarOpen}
+        onCloseMobile={closeMobileSidebar}
         density={botsSidebarDensity}
         collapsed={botsSidebarCollapsed}
         setCollapsedPref={setBotsSidebarCollapsedPref}

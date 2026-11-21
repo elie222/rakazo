@@ -34,6 +34,11 @@ export function useMobileSidebar() {
   useEffect(() => {
     if (desktop) setMobileSidebarOpen(false);
   }, [desktop]);
+
+  function closeMobileSidebar() {
+    restoreFocus.current = true;
+    setMobileSidebarOpen(false);
+  }
   // Bubbling, so a control inside the drawer that handles Escape first (and prevents the default)
   // keeps it open. The key is consumed here (default prevented) so the Escape handlers on window,
   // like the reply preview's and the transcript's, leave their drafts alone.
@@ -41,8 +46,7 @@ export function useMobileSidebar() {
     if (event.key !== "Escape" || isComposingKey(event) || event.defaultPrevented) return;
     if (!mobileSidebarOpen || desktop) return;
     event.preventDefault();
-    restoreFocus.current = true;
-    setMobileSidebarOpen(false);
+    closeMobileSidebar();
   });
 
   const swipeHandlers = {
@@ -76,5 +80,5 @@ export function useMobileSidebar() {
     },
   };
 
-  return { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers };
+  return { mobileSidebarOpen, setMobileSidebarOpen, closeMobileSidebar, swipeHandlers };
 }

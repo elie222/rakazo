@@ -62,6 +62,7 @@ export function ShellSidebar({
   isMobile,
   mobileOpen,
   setMobileOpen,
+  onCloseMobile,
   density,
   collapsed,
   setCollapsedPref,
@@ -84,6 +85,7 @@ export function ShellSidebar({
   isMobile: boolean;
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
+  onCloseMobile: () => void;
   density: BotsSidebarDensity;
   collapsed: boolean;
   setCollapsedPref: (collapsed: boolean) => void;
@@ -139,7 +141,7 @@ export function ShellSidebar({
         aria-hidden={mobileOpen ? undefined : true}
         inert={mobileOpen ? undefined : true}
         tabIndex={mobileOpen ? undefined : -1}
-        onClick={() => setMobileOpen(false)}
+        onClick={onCloseMobile}
         className={`absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-overlay transition-opacity duration-150 ease-out motion-reduce:transition-none md:hidden ${
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
@@ -192,7 +194,7 @@ export function ShellSidebar({
             setCollapsedPref(true);
             focusChatListRestore();
           }}
-          onCloseMobile={() => setMobileOpen(false)}
+          onCloseMobile={onCloseMobile}
           bots={bots}
           setPanel={setPanel}
           navigate={navigate}

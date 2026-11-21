@@ -121,12 +121,15 @@ function ListRowStatus({
   working = false,
   failed = false,
   unread = false,
+  label,
   className,
   ...props
 }: ComponentProps<"span"> & {
   working?: boolean;
   failed?: boolean;
   unread?: boolean;
+  /** Localized text for the dots, so the row does not rely on color alone. */
+  label?: string;
 }) {
   if (!working && !failed && !unread) return null;
   return (
@@ -135,6 +138,7 @@ function ListRowStatus({
       className={cn("ms-auto flex shrink-0 items-center gap-1 self-start pt-1.5", className)}
       {...props}
     >
+      {label ? <span className="sr-only">{label}</span> : null}
       {failed ? (
         <span className="size-2 rounded-full bg-destructive" aria-hidden="true" />
       ) : working ? (
