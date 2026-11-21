@@ -14,8 +14,9 @@ import type {
   TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
-import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { anySignal } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
@@ -370,7 +371,11 @@ export class RailwaySandboxProvider implements SandboxProvider {
     });
   }
 
-  async *exportWorkspace(computer: ComputerRef, context: AdapterContext) {
+  async *exportWorkspace(
+    computer: ComputerRef,
+    context: AdapterContext,
+    limits?: WorkspaceExportLimits,
+  ) {
     await this.desktops.stopBrowsers(computer, context);
     const result = await this.run(
       computer,
@@ -392,15 +397,21 @@ export class RailwaySandboxProvider implements SandboxProvider {
     type ExportFile = { path: string; executable: boolean; size: number };
     const batches: ExportFile[][] = [];
     const batcher = new PortableFileBatcher<ExportFile>(4, (file) => file.size);
+    let listedFiles = 0;
+    let listedBytes = 0;
     for (let index = 0; index + 2 < entries.length; index += 3) {
       const filePath = entries[index];
       const mode = entries[index + 1];
       if (!filePath || !mode || shouldSkipPortableWorkspaceFile(filePath)) continue;
       const size = Number(entries[index + 2]);
-      if (!Number.isSafeInteger(size) || size < 0 || size > this.maxWorkspaceFileBytes)
-        throw new Error(
-          `Railway workspace file exceeds ${this.maxWorkspaceFileBytes} bytes or has an invalid size`,
-        );
+      if (!Number.isSafeInteger(size) || size < 0)
+        throw new Error("Railway workspace file has an invalid size");
+      // The listing sizes every file, so the save's limits are checked before any file is read.
+      if (size > this.maxWorkspaceFileBytes) throw new WorkspaceTooLargeError("bytes");
+      listedFiles += 1;
+      listedBytes += size;
+      if (limits && listedFiles > limits.maxFiles) throw new WorkspaceTooLargeError("files");
+      if (limits && listedBytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
       const full = batcher.add({
         path: filePath,
         size,
@@ -421,7 +432,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
               length: file.size + 1,
             });
             if (content.byteLength > this.maxWorkspaceFileBytes)
-              throw new Error(`Railway workspace file exceeds ${this.maxWorkspaceFileBytes} bytes`);
+              throw new WorkspaceTooLargeError("bytes");
             if (content.byteLength > file.size) {
               growing.push({ path: file.path, executable: file.executable });
               return undefined;
@@ -444,7 +455,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
           length: this.maxWorkspaceFileBytes + 1,
         });
         if (content.byteLength > this.maxWorkspaceFileBytes)
-          throw new Error(`Railway workspace file exceeds ${this.maxWorkspaceFileBytes} bytes`);
+          throw new WorkspaceTooLargeError("bytes");
         yield { ...file, content };
       } catch (error) {
         if (!(error instanceof SandboxFileNotFoundError)) throw error;

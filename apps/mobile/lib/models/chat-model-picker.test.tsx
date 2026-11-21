@@ -96,7 +96,7 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => createElement("div", {}, children),
 }));
 vi.mock("../layout/floating-header", () => ({ useFloatingHeaderInset: () => mocks.headerInset }));
-vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../messages/message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 vi.mock("../notifications/live-notifications", () => ({
@@ -938,13 +938,19 @@ describe("provider connection screen", () => {
     );
     const signal = mocks.completeOAuth.mock.lastCall![0] as AbortSignal;
     expect(signal.aborted).toBe(false);
+    // The code shows first; the page opens only from its button.
+    expect(mocks.rpc).not.toHaveBeenCalledWith("analytics/modelSignInStep", expect.anything());
+    await act(async () => buttonWithText("Copy code and open")!.click());
     expect(mocks.rpc).toHaveBeenCalledWith("analytics/modelSignInStep", {
       loginId: "login-fixture",
       step: "page_opened",
     });
     act(() => root.render(null));
     expect(signal.aborted).toBe(true);
-    expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", { loginId: "login-fixture" });
+    expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", {
+      loginId: "login-fixture",
+      reason: "left",
+    });
     await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
   });
