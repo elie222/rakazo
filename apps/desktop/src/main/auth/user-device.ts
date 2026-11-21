@@ -471,6 +471,7 @@ export function createUserDeviceAccess(deps: {
       if (!isAllowed(origin) && !(await ask(origin))) return;
       if (changes.get(origin) !== seen && consent.get(origin)?.consent !== "allowed") return;
       unavailable.delete(origin);
+      pairingRetryAfter.delete(origin);
       await pairOnce(origin);
       if (!paired.has(origin)) throw new Error("Could not pair this computer");
       if (changes.get(origin) !== seen) return;

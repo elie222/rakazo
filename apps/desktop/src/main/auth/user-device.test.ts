@@ -608,6 +608,22 @@ describe("remote computer access", () => {
     expect(clients).toHaveLength(1);
   });
 
+  it("sends a fresh request when computer access is turned on during the retry delay", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const fetch = vi.fn(async () =>
+      fetch.mock.calls.length === 1
+        ? new Response(null, { status: 503, headers: { "retry-after": "60" } })
+        : Response.json({ deviceId: "device-1", token: "server-token" }),
+    );
+    const { access, clients } = setup({ fetch });
+    await access.select(other);
+    await access.pair();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await access.setAllowed(other, true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(clients).toHaveLength(1);
+  });
+
   it("never pairs without secure storage", async () => {
     const { access, requests } = setup({ cipher: { ...cipher, available: async () => false } });
     await access.select(origin);
