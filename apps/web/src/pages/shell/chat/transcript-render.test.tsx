@@ -216,3 +216,21 @@ it.each(["Build a plan", "👍"])(
     ).toBeNull();
   },
 );
+
+// jsdom has no layout, so this checks the frame carries the same reserved room
+// as text bubbles rather than measuring where the action rail lands.
+it.each<MessageBlock>([
+  { kind: "ask", text: "What next?", status: "pending" },
+  { kind: "tool_question", callId: "call", questions: [] } as unknown as MessageBlock,
+  { kind: "mcp_approval", callId: "call" } as unknown as MessageBlock,
+])("reserves the action rail's room beside a full-width $kind card", (block) => {
+  const bubble = message("bubble", "Hello");
+  const card: ThreadMessage = { ...message("card", ""), blocks: [block] };
+  act(() => root.render(<Host messages={[bubble, card]} />));
+  const frames = container.querySelectorAll('[data-testid="message-bubble-frame"]');
+  const bubbleClasses = frames[0]?.className ?? "";
+  const cardClasses = frames[1]?.className ?? "";
+  expect(bubbleClasses).toContain("calc(100%_-_8rem)");
+  expect(cardClasses).toContain("calc(100%_-_8rem)");
+  expect(cardClasses).toContain("[@media(hover:none)]:max-w-");
+});
