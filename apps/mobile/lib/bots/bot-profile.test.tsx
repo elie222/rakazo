@@ -1028,12 +1028,12 @@ describe("routines screen", () => {
     expect(switchFor("Morning digest")!.checked).toBe(true);
   });
 
-  it("disables the switch and delete for a routine another member created", async () => {
+  it("keeps the switch and delete for a routine only another member can change", async () => {
     profileRpc(async () => [{ ...digest(), editable: false }]);
     await render(createElement(RoutinesScreen));
-    expect(switchFor("Morning digest")!.disabled).toBe(true);
+    expect(switchFor("Morning digest")!.disabled).toBe(false);
     rowFor("Morning digest, On")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
-    expect(alert).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalled();
   });
 
   it("asks before deleting and removes the row only once the server confirms", async () => {
@@ -1678,7 +1678,7 @@ describe("artifacts opened for one bot", () => {
     expect(container.textContent).toContain("No artifacts yet");
   });
 
-  it("keeps Made by bots on the next page and when the screen comes back", async () => {
+  it("keeps Made by bots during pagination, live refresh, and focus", async () => {
     const file = (id: string, name: string) => ({
       id,
       name,
@@ -1714,6 +1714,21 @@ describe("artifacts opened for one bot", () => {
     expect(container.textContent).toContain("first-report.md");
     expect(container.textContent).toContain("second-report.md");
 
+    const readsBeforeSignal = listSpaceArtifacts.mock.calls.length;
+    await act(async () => {
+      for (const listener of spaceChangeListeners.get("meetings") ?? []) await listener();
+    });
+    expect(listSpaceArtifacts).toHaveBeenCalledTimes(readsBeforeSignal);
+    await act(async () => {
+      for (const listener of spaceChangeListeners.get("artifacts") ?? []) await listener();
+    });
+    expect(listSpaceArtifacts.mock.calls.slice(readsBeforeSignal)).toEqual([
+      [{ botId: "bot-fixture", madeByBots: true, limit: 30 }],
+      [{ botId: "bot-fixture", madeByBots: true, limit: 30, cursor: "page-2" }],
+    ]);
+    expect(container.textContent).toContain("first-report.md");
+    expect(container.textContent).toContain("second-report.md");
+
     await act(async () => {
       for (const effect of focus) effect();
     });
@@ -1722,6 +1737,15 @@ describe("artifacts opened for one bot", () => {
       madeByBots: true,
       limit: 30,
     });
+    expect(container.textContent).not.toContain("second-report.md");
+
+    const readsAfterFocus = listSpaceArtifacts.mock.calls.length;
+    await act(async () => {
+      for (const listener of spaceChangeListeners.get("artifacts") ?? []) await listener();
+    });
+    expect(listSpaceArtifacts.mock.calls.slice(readsAfterFocus)).toEqual([
+      [{ botId: "bot-fixture", madeByBots: true, limit: 30 }],
+    ]);
   });
 
   it("never pages the new filter with the old filter's cursor", async () => {

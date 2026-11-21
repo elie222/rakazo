@@ -12,10 +12,12 @@ import { ClientError, customMcpServerInput } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
+  assertNameFreeWhereAvailable,
   availableInSpace,
   IsolationError,
   isUniqueViolation,
   itemSecretIn,
+  lockOwner,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -33,12 +35,7 @@ import {
   mcpAssignmentDto,
   mcpServerDto,
 } from "../integrations/mcp-servers.js";
-import {
-  assertNameFreeWhereAvailable,
-  lockOwner,
-  serverAvailability,
-  serverSecretSpace,
-} from "../spaces/name-claims.js";
+import { serverAvailability, serverSecretSpace } from "../spaces/name-claims.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
@@ -114,7 +111,13 @@ export function mcpRoutes(ctx: RouterContext) {
   /** Starts a sign-in on the registered web callback; `botId` gets the server once it finishes. */
   async function beginMcpOAuth(
     actor: Actor,
-    input: { serverId: string; redirectUri?: string; client?: McpOAuthClientKind; botId?: string },
+    input: {
+      serverId: string;
+      redirectUri?: string;
+      client?: McpOAuthClientKind;
+      botId?: string;
+      capturesLoopback?: boolean;
+    },
   ) {
     const expectedRedirect = new URL("/mcp/oauth/callback", deps.env.webOrigin).toString();
     // Native clients omit the redirect; the registered web callback is always used.
@@ -230,6 +233,7 @@ export function mcpRoutes(ctx: RouterContext) {
             redirectUri: input.redirectUri,
             client: input.client,
             botId: input.botId,
+            capturesLoopback: input.capturesLoopback,
           });
           if (signIn.status !== "authorization_required" && input.botId)
             await approveMcpAssignment(actor, { botId: input.botId, serverId });

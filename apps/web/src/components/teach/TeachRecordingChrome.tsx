@@ -153,7 +153,7 @@ function ProtectedTeachInput({ botId, skillId }: { botId: string; skillId: strin
         onChange={(event) => setProtectedText(event.target.value)}
         placeholder={t`Protected input`}
         aria-label={t`Protected input`}
-        className="h-8 min-w-0 flex-1"
+        className="min-w-0 flex-1"
       />
       <Button
         type="submit"

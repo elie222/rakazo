@@ -3,8 +3,10 @@ import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import {
   narrateTool,
+  sentenceKey,
   speakable,
   speechFromBlocks,
+  splitSentences,
   spokenDecision,
   toUtterances,
 } from "./speech-text.js";
@@ -67,6 +69,11 @@ describe("speakable", () => {
 
   it("drops emphasis markers, emoji and checkboxes", () => {
     expect(speakable("**Done** ✅ — [x] shipped the _thing_")).toBe("Done — shipped the thing");
+  });
+
+  it("keeps double-asterisk operators while still dropping bold", () => {
+    expect(speakable("Compute 2 ** 3 ** 4 now")).toBe("Compute 2 ** 3 ** 4 now");
+    expect(speakable("**bold** words")).toBe("bold words");
   });
 
   it("keeps underscores inside identifiers and asterisks in arithmetic", () => {
@@ -226,6 +233,23 @@ describe("toUtterances", () => {
     expect(out.join("")).toBe(text);
   });
 
+  it("breaks a long Japanese reply at sentence ends, never mid-sentence", () => {
+    // 33 units: a length that does not divide the 320 budget, so a cut would land mid-sentence.
+    const sentence = "今日は晴れていて、散歩に行くのにちょうど良い天気になるでしょうね。";
+    const text = sentence.repeat(12);
+    const out = toUtterances(text);
+    expect(out.length).toBeGreaterThan(1);
+    for (const piece of out) {
+      expect(piece.length).toBeLessThanOrEqual(320);
+      expect(piece.endsWith("。")).toBe(true);
+    }
+    expect(out.join("")).toBe(text);
+  });
+
+  it("glues short Chinese sentences without inserting a space", () => {
+    expect(toUtterances("你好。好的。")).toEqual(["你好。好的。"]);
+  });
+
   it("does not glue short sentences past the limit", () => {
     const text = `${"a".repeat(319)}. Yes.`;
     expect(toUtterances(text)).toEqual([`${"a".repeat(319)}.`, "Yes."]);
@@ -283,6 +307,69 @@ describe("toUtterances", () => {
   it("is empty for text that speaks to nothing", () => {
     expect(toUtterances("```\ncode only\n```")).not.toContain("code only");
     expect(toUtterances("")).toEqual([]);
+  });
+});
+
+describe("splitSentences", () => {
+  it("keeps every sentence on its own, however short", () => {
+    expect(splitSentences("Yes. The whole suite is green. Ship it?")).toEqual([
+      "Yes.",
+      "The whole suite is green.",
+      "Ship it?",
+    ]);
+  });
+
+  it("does not cut at abbreviations or decimals", () => {
+    expect(splitSentences("I asked Dr. Lee about v2.5 e.g. the beta. Done.")).toEqual([
+      "I asked Dr. Lee about v2.5 e.g. the beta.",
+      "Done.",
+    ]);
+  });
+
+  it("speaks markdown, so lines and headings end sentences and code is named", () => {
+    expect(splitSentences("## Plan\n- Fix it\n- **Ship** it\n\n```ts\nx.y();\n```")).toEqual([
+      "Plan.",
+      "Fix it.",
+      "Ship it.",
+      "(a TypeScript code block)",
+    ]);
+  });
+
+  it("splits Japanese and Chinese sentences after full-width punctuation with no space", () => {
+    expect(
+      splitSentences("今日は晴れです。明日は雨が降るでしょう。週末は曇りになりそうです。"),
+    ).toEqual(["今日は晴れです。", "明日は雨が降るでしょう。", "週末は曇りになりそうです。"]);
+    expect(splitSentences("你好！今天天气很好。我们走吧？")).toEqual([
+      "你好！",
+      "今天天气很好。",
+      "我们走吧？",
+    ]);
+    expect(splitSentences("他停住了……然后走了。")).toEqual(["他停住了……", "然后走了。"]);
+  });
+
+  it("keeps closing quotes and brackets with the sentence they close", () => {
+    expect(splitSentences("他说「好。」然后走了。")).toEqual(["他说「好。」", "然后走了。"]);
+  });
+
+  it("does not split a full-width period inside a number", () => {
+    expect(splitSentences("版本１．５已发布。")).toEqual(["版本１．５已发布。"]);
+  });
+
+  it("leaves an unfinished sentence as the last piece", () => {
+    expect(splitSentences("Booked for Friday. The hotel is")).toEqual([
+      "Booked for Friday.",
+      "The hotel is",
+    ]);
+    expect(splitSentences("")).toEqual([]);
+  });
+});
+
+describe("sentenceKey", () => {
+  it("matches a sentence however it is marked up or punctuated", () => {
+    expect(sentenceKey("**Done.")).toBe(sentenceKey("Done."));
+    expect(sentenceKey("All set, Ada!")).toBe("allsetada");
+    expect(sentenceKey("Ça marche.")).toBe("çamarche");
+    expect(sentenceKey("...")).toBe("");
   });
 });
 

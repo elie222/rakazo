@@ -5,6 +5,7 @@ import { redactSecrets } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "../../approvals/auto-review.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
+import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
 import { storeStepScreenshot } from "../../storage/thread-artifacts.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
@@ -81,7 +82,13 @@ export function keptToolResult(
   secrets: string[],
   max = TOOL_CALL_TEXT_MAX_CHARS,
 ): string | undefined {
-  if (completion.paused || SECRET_TOOL.test(completion.name)) return undefined;
+  // Re-read meeting transcripts through their access policy, including after deletion.
+  if (
+    completion.paused ||
+    SECRET_TOOL.test(completion.name) ||
+    completion.name === READ_MEETING_TRANSCRIPT
+  )
+    return undefined;
   let text: string;
   if (completion.error !== undefined) text = sanitizeConnectorError(completion.error, secrets);
   else {
@@ -178,6 +185,19 @@ export function historyReplaysOutsideContent(history: AgentRunRequest["history"]
         segment.steps.some((step) =>
           step.calls?.some((call) => call.result !== undefined || call.image !== undefined),
         ),
+    ),
+  );
+}
+
+/** The kept results replayed history hands the model, oldest first. */
+export function historyToolResults(history: AgentRunRequest["history"]): unknown[] {
+  return history.flatMap((entry) =>
+    (entry.segments ?? []).flatMap((segment) =>
+      "steps" in segment
+        ? segment.steps.flatMap((step) =>
+            (step.calls ?? []).flatMap((call) => (call.result === undefined ? [] : [call.result])),
+          )
+        : [],
     ),
   );
 }

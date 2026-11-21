@@ -110,7 +110,9 @@ describe("JevAutoReviewProvider", () => {
     };
     expect(body.state.args).toEqual({ url });
     expect(body.state.newSite).toBe(true);
-    expect(body.questions.decision.criteria.pass).toContain("this site");
+    expect(body.questions.decision.criteria.pass).toContain(
+      "A site the owner did not name is fine",
+    );
   });
 
   it("maps an ask choice to ask", async () => {
@@ -140,7 +142,6 @@ describe("JevAutoReviewProvider", () => {
     });
     await expect(provider.review(request, context)).resolves.toEqual({
       decision: "ask",
-      reason: "Checker is unsure.",
       model: "jev/jev-latest",
     });
   });
@@ -157,7 +158,6 @@ describe("JevAutoReviewProvider", () => {
     });
     await expect(provider.review(request, context)).resolves.toEqual({
       decision: "ask",
-      reason: "Checker is unsure.",
       model: "jev/jev-latest",
     });
   });

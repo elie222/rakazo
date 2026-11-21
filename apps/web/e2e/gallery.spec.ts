@@ -22,12 +22,26 @@ test("gallery shows a tool's question as plain text with its form", async ({ pag
   await expect(open!.getByText("Run **send_email** to sam@example.test?")).toBeVisible();
   await expect(open!.getByRole("checkbox", { name: "Approve this call" })).toBeVisible();
   await expect(open!.getByRole("textbox", { name: "Reason" })).toBeVisible();
-  await expect(open!.getByText("This call")).toBeVisible();
+  await expect(open!.getByText("This call", { exact: true })).toBeVisible();
   await expect(open!.getByRole("button", { name: "Accept" })).toBeEnabled();
   await expect(open!.getByRole("button", { name: "Decline" })).toBeEnabled();
   await expect(declined!.getByText("Declined", { exact: true })).toBeVisible();
   await open!.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "tool-question-card");
+});
+
+test("gallery shows routine changes as small rows", async ({ page }, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?scenario=routines&theme=light");
+  const rows = page.getByTestId("routine-event-row");
+  await expect(rows).toHaveText([
+    'Created routine "Morning stretch"',
+    'Updated routine "Morning stretch"',
+    'Updated routine "Morning stretch"',
+    'Disabled routine "Morning stretch"',
+    'Enabled routine "Morning stretch"',
+    'Deleted routine "Morning stretch"',
+  ]);
+  await captureScreenshot(page, testInfo, "routine-change-rows");
 });
 
 test("gallery renders every chat scenario in both themes", async ({ page }, testInfo) => {

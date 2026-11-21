@@ -19,7 +19,7 @@ import { clampCatalogThinkingLevel, pickCatalogModelId } from "./model-providers
 
 type CatalogModel = Pick<
   ModelCatalogEntry,
-  "provider" | "id" | "recommended" | "thinkingLevels" | "routingFields"
+  "provider" | "id" | "recommended" | "thinkingLevels" | "routingFields" | "dataRetentionControl"
 >;
 type DefaultModel = { defaultProvider: string | null; defaultModel: string | null };
 
@@ -33,6 +33,8 @@ export type ConnectionFormFields = {
   gatewayId: string;
   projectId?: string;
   region?: string;
+  /** Present only for a provider that can restrict data retention. */
+  zeroDataRetention?: boolean;
 };
 
 /**
@@ -79,6 +81,7 @@ export function connectionFormFields(input: {
     | "gatewayId"
     | "projectId"
     | "region"
+    | "zeroDataRetention"
   >;
   /** Prefills a new OpenAI-compatible connection, such as a hosted preset. */
   presetBaseUrl?: string;
@@ -104,7 +107,22 @@ export function connectionFormFields(input: {
     )
       ? { projectId: credential?.projectId ?? "", region: credential?.region ?? "global" }
       : {}),
+    ...(catalog.some((entry) => entry.provider === provider && entry.dataRetentionControl)
+      ? { zeroDataRetention: credential?.zeroDataRetention === true }
+      : {}),
   };
+}
+
+/** Whether a catalog provider's data retention toggle differs from the saved connection. */
+export function dataRetentionDirty(
+  selected: Pick<ModelCatalogEntry, "dataRetentionControl">,
+  zeroDataRetention: boolean | undefined,
+  credential?: Pick<ModelCredential, "zeroDataRetention">,
+): boolean {
+  return (
+    selected.dataRetentionControl === true &&
+    (zeroDataRetention === true) !== (credential?.zeroDataRetention === true)
+  );
 }
 
 /** Whether an OpenAI-compatible form can save: a URL, a model, valid headers, and a key if one is needed. */
@@ -158,7 +176,7 @@ export function modelConnectRequest(input: {
   form: ConnectionFormDraft;
   selected: Pick<
     ModelCatalogEntry,
-    "provider" | "providerName" | "id" | "thinkingLevels" | "routingFields"
+    "provider" | "providerName" | "id" | "thinkingLevels" | "routingFields" | "dataRetentionControl"
   >;
   credential?: Pick<ModelCredential, "modelId" | "thinkingLevel" | "projectId" | "region">;
   credentialId: string | null;
@@ -217,6 +235,10 @@ export function modelConnectRequest(input: {
       provider: selected.provider,
       ...(newKey ? { apiKey: newKey } : {}),
       ...modelRoutingInput(selected.routingFields, form, credential),
+      // Always explicit, so turning it off clears the stored value.
+      ...(selected.dataRetentionControl
+        ? { zeroDataRetention: form.zeroDataRetention === true }
+        : {}),
       modelId: selected.id,
       // A save without a key leaves the stored effort alone while the model and effort stay
       // put. Changing either sends the clamped level, including null, so the previous

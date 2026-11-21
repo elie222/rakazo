@@ -6,7 +6,10 @@ const RAKAZO_DOCS: ReadonlyArray<readonly [topics: string, url: string]> = [
     "Creating bots, chatting, bot settings, sidebar, search",
     "https://rakazo.com/docs/bots-and-chats.md",
   ],
-  ["Importing an OpenClaw, Hermes or ChatGPT agent", "https://rakazo.com/docs/import-an-agent.md"],
+  [
+    "Importing an OpenClaw, Hermes, Grok Bot or ChatGPT agent",
+    "https://rakazo.com/docs/import-an-agent.md",
+  ],
   [
     "Connecting apps and integrations (Gmail, GitHub, MCP tools)",
     "https://rakazo.com/docs/integrations.md",

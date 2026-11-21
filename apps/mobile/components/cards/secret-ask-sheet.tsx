@@ -5,9 +5,9 @@ import { LoginSecretValue, loginCardFields } from "@rakazo/contracts";
 import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { useEffect, useRef, useState } from "react";
 import type { TextInputInstance } from "react-native";
-import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSheetPadding } from "../../lib/layout/side-insets";
 import { useThemedStyles } from "../../lib/native/native";
 import { useSecretSheetClose } from "../../lib/vault/secret-sheet-close";
 import { NativeActionButton } from "../native/native-action-button";
@@ -42,7 +42,7 @@ export function SecretAskSheet({
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetPadding();
   const inputs = useRef<(TextInputInstance | null)[]>([]);
   const [fields, setFields] = useState<LoginFieldRow[]>(() =>
     loginCardFields(loginFields).map((field, id) => ({ ...field, id })),
@@ -88,17 +88,7 @@ export function SecretAskSheet({
       // clips its placeholder at large text sizes.
       onShow={() => inputs.current[0]?.focus()}
     >
-      <View
-        accessibilityViewIsModal
-        style={[
-          styles.sheet,
-          // Page sheets clear the notch on iOS; Android modals are full-screen.
-          {
-            paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
+      <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
         <View style={styles.header}>
           <NativeActionButton label={t`Cancel`} onPress={close} prominence="plain" />
           <NativeActionButton
@@ -143,7 +133,11 @@ export function SecretAskSheet({
               onValueChange={setRemember}
             />
           </View>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          ) : null}
         </ScrollView>
       </View>
     </Modal>

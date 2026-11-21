@@ -232,7 +232,7 @@ export function ComposerActions({
       } as CSSProperties)
     : undefined;
   // An empty draft keeps the quiet disabled look either way; the bot's color shows once it can go.
-  const sendClassName = `size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100 ${sendColors ? "bg-chat-user text-chat-user-foreground hover:bg-chat-user/90" : ""}`;
+  const sendClassName = `shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100 ${sendColors ? "bg-chat-user text-chat-user-foreground hover:bg-chat-user/90" : ""}`;
   return (
     <div
       ref={actionsRef}
@@ -262,7 +262,7 @@ export function ComposerActions({
             aria-label={t`Stop`}
             disabled={stopDisabled}
             onClick={onStop}
-            className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+            className="rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
           >
             <Square size={11} strokeWidth={0} fill="currentColor" />
           </Button>

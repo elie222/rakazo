@@ -258,7 +258,12 @@ it("grays out allow and ask rules in Never ask, where only blocks apply", async 
 it("offers Ask and Block, not Allow, for a tool a person approves every time", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   rpcMock.approvalRules.list.mockResolvedValue([
-    { id: "s", effect: "require_approval", matchKind: "tool", matchValue: "create_space" },
+    {
+      id: "s",
+      effect: "require_approval",
+      matchKind: "tool",
+      matchValue: "set_child_instructions",
+    },
   ]);
   rpcMock.autoReview.get.mockResolvedValue(settings);
   const { container, root } = await render();
@@ -452,6 +457,7 @@ it("shows why adding a rule failed", async () => {
     await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
     await act(async () => button(container, "Shell")!.click());
     await vi.waitFor(() => expect(container.textContent).toContain("Could not save"));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not save");
     expect(container.querySelector('[data-testid^="approval-rules-"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
