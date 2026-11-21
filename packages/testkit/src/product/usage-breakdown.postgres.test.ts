@@ -251,6 +251,23 @@ describeBreakdown("usage.breakdown", () => {
     const cached = await get({ range: "30d", botId: alpha.id });
     expect(cached.models.find((m) => m.model === "caching")?.cachedTokens).toBe(42);
     expect(cached.models.find((m) => m.model === "m1")?.cachedTokens).toBeNull();
+    // One call without the figure makes the model's sum unknown, even beside measured ones.
+    await prisma.usageRecord.createMany({
+      data: [5, null].map((cacheReadTokens) => ({
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "mixed-cache",
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens,
+        totalTokens: 7,
+      })),
+    });
+    const mixedCache = await get({ range: "30d", botId: alpha.id });
+    expect(mixedCache.models.find((m) => m.model === "mixed-cache")?.cachedTokens).toBeNull();
     // A row from before cache reads were measured holds a zero and no total: still unknown.
     await prisma.usageRecord.create({
       data: {
