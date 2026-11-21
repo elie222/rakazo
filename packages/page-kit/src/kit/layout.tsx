@@ -60,21 +60,17 @@ export function Page({
   const own = typeof lang === "string" && lang.trim() ? lang.trim() : undefined;
   // Without its own lang, a page's built-in words follow the reader's app language.
   const inherited = useContext(PageLanguage);
-  const [hostLanguage, setHostLanguage] = useState<{ lang: string | undefined }>();
-  // On the render that removes the override, the DOM still has the previous Page language.
-  const language =
-    own ?? inherited ?? (hostLanguage ? hostLanguage.lang : documentLanguage()) ?? "en-US";
+  const language = own ?? inherited ?? documentLanguage();
   const words = wordsFor(language);
   const direction = own ? words.dir : undefined;
+  // Restoring the host language happens after the render that cleared the override, which
+  // still read the override from the document, so render once more.
+  const [, rerender] = useState(0);
   useLayoutEffect(() => {
-    if (!own || !direction) {
-      setHostLanguage(undefined);
-      return;
-    }
+    if (!own || !direction) return;
     const html = document.documentElement;
     const originalLang = html.getAttribute("lang");
     const originalDir = html.getAttribute("dir");
-    setHostLanguage({ lang: originalLang || undefined });
     html.lang = own;
     html.dir = direction;
     return () => {
@@ -82,6 +78,7 @@ export function Page({
       if (html.getAttribute("lang") !== own) return;
       if (originalLang === null) html.removeAttribute("lang");
       else html.setAttribute("lang", originalLang);
+      rerender((count) => count + 1);
       if (html.getAttribute("dir") !== direction) return;
       if (originalDir === null) html.removeAttribute("dir");
       else html.setAttribute("dir", originalDir);
