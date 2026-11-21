@@ -313,6 +313,10 @@ function EditorForm({
   });
   const { keyUnreadable, sites: otherSites } = loginSave;
   const limit = VAULT_ALSO_ON_LIMIT;
+  // Each input points at its message, so a screen reader says why Save is off.
+  const keyErrorId = id("otp-error");
+  const sitesErrorId = id("also-on-error");
+  const sitesInvalid = !Array.isArray(otherSites);
 
   const ready =
     kind === "login"
@@ -511,24 +515,30 @@ function EditorForm({
                 ? text("otp", t`Authenticator key`, otp, setOtp, {
                     type: "password",
                     autoComplete: "new-password",
+                    "aria-invalid": keyUnreadable ? true : undefined,
+                    "aria-describedby": keyUnreadable ? keyErrorId : undefined,
                   })
                 : null}
               {keyUnreadable ? (
-                <p className="-mt-2 text-label text-destructive">
+                <p id={keyErrorId} className="-mt-2 text-label text-destructive">
                   <Trans>This authenticator key can't be read.</Trans>
                 </p>
               ) : null}
               {alsoOnShown
                 ? text("also-on", t`Also on`, alsoOn, setAlsoOn, {
                     placeholder: "https://login.example.com",
+                    "aria-invalid": sitesInvalid ? true : undefined,
+                    "aria-describedby": sitesInvalid ? sitesErrorId : undefined,
                   })
                 : null}
               {otherSites === "invalid" ? (
-                <p className="-mt-2 text-label text-destructive">
+                <p id={sitesErrorId} className="-mt-2 text-label text-destructive">
                   <Trans>Enter each site as an HTTPS address a login can be saved for.</Trans>
                 </p>
               ) : otherSites === "too_many" ? (
-                <p className="-mt-2 text-label text-destructive">{t`Up to ${limit} sites.`}</p>
+                <p id={sitesErrorId} className="-mt-2 text-label text-destructive">
+                  {t`Up to ${limit} sites.`}
+                </p>
               ) : null}
               {otpShown && alsoOnShown ? null : (
                 <div className="flex gap-4">

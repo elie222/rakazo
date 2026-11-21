@@ -11,7 +11,6 @@ import {
   emailAllowed,
   isMessagingEmail,
   MAX_PASSWORD_LENGTH,
-  MESSAGING_EMAIL_SUFFIX,
   MIN_PASSWORD_LENGTH,
   partnerClickFromHeaders,
   signupAttributionFromHeaders,
@@ -112,8 +111,8 @@ export interface AuthEnv {
   webOrigin: string;
   signupsEnabled: string | undefined;
   signupAllowlist: string | undefined;
-  /** Admits a new account only while there is none, for a deployment that serves one person. */
-  singleAccount?: boolean;
+  /** When set, only a request it accepts may create an account, whatever the signup policy. */
+  admitsSignup?: (headers: Headers | undefined) => boolean;
   extraOrigins?: string[];
   /** SHA-256 signing certificate fingerprints of Android apps allowed to use this server's passkeys. */
   androidAppCertFingerprints?: string[];
@@ -208,43 +207,11 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     }
   };
   const discovery = env.oidc ? oidcDiscovery(env.oidc) : undefined;
-  /** Whether another account with email sign-in already has a workspace. */
-  const hasAdmittedAccount = async (
-    client: Pick<PrismaClient, "user" | "spaceMember">,
-    exceptUserId?: string,
-  ) => {
-    const others = await client.user.findMany({
-      where: {
-        ...(exceptUserId ? { id: { not: exceptUserId } } : {}),
-        NOT: { email: { endsWith: MESSAGING_EMAIL_SUFFIX } },
-      },
-      select: { id: true },
-    });
-    return (
-      others.length > 0 &&
-      Boolean(
-        await client.spaceMember.findFirst({
-          where: { userId: { in: others.map((other) => other.id) } },
-          select: { userId: true },
-        }),
-      )
-    );
-  };
-  /** Refuses a new account early, before creating it, once a single-person deployment has one. */
-  const admission = async () => {
+  /** The signup policy as it applies to the request asking. */
+  const admission = (headers: Headers | undefined) => {
     const policy = signupPolicyFromEnv(env);
-    if (!env.singleAccount || !policy.enabled) return policy;
-    return (await hasAdmittedAccount(prisma)) ? { ...policy, enabled: false } : policy;
+    return env.admitsSignup && !env.admitsSignup(headers) ? { ...policy, enabled: false } : policy;
   };
-  /** Admits the sole account one at a time, so two first signups cannot both get in. */
-  const admitSoleAccount = (userId: string) =>
-    prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('rakazo:single-account'))`;
-      if (await hasAdmittedAccount(tx, userId)) return false;
-      // Committed before the lock is released, so the next signup sees it.
-      await bootstrapUserSpace(prisma, { id: userId });
-      return true;
-    });
   /** The directory provisioned this account, so it is admitted whatever the signup policy. */
   const provisioned = async (userId: string) =>
     Boolean(env.directoryProvisioning) &&
@@ -429,7 +396,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         const email = String(user.email ?? "").toLowerCase();
         if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
         if (source.action === "create-user") {
-          const policy = await admission();
+          const policy = admission(ctx?.headers);
           const bypassAllowlist = providerId === "oidc" && env.oidc?.allowSignupBypass;
           if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
           if (!bypassAllowlist && !emailAllowed(email, policy.allowlist))
@@ -659,7 +626,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             .trim()
             .toLowerCase();
           if (!(await ctx.context.internalAdapter.findUserByEmail(email))) {
-            const policy = await admission();
+            const policy = admission(ctx.headers);
             if (!policy.enabled || !emailAllowed(email, policy.allowlist)) {
               if (ctx.path === SEND_SIGN_IN_CODE_PATH) return ctx.json({ success: true });
               throw new APIError("BAD_REQUEST", { code: "INVALID_OTP", message: "Invalid OTP" });
@@ -668,7 +635,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         }
         let policy =
           ctx.path === "/sign-up/email"
-            ? await admission()
+            ? admission(ctx.headers)
             : ctx.path === "/sign-in/email"
               ? signupPolicyFromEnv(env)
               : undefined;
@@ -804,7 +771,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           before: async (session, ctx) => {
             // The auth adapter can still be inside the signup transaction.
             const user = await ctx?.context.internalAdapter.findUserById(session.userId);
-            const policy = signupPolicyFromEnv(env);
+            const policy = admission(ctx?.headers);
             const oidcSignIn = isOidcCallback(ctx);
             const bypassAllowlist = oidcSignIn && env.oidc?.allowSignupBypass;
             if (!user || isMessagingEmail(user.email)) {
@@ -838,12 +805,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                   message: "Registration is closed",
                 });
               }
-              if (!env.singleAccount) await bootstrapUserSpace(prisma, user);
-              else if (!(await admitSoleAccount(user.id)))
-                throw new APIError("FORBIDDEN", {
-                  code: "REGISTRATION_CLOSED",
-                  message: "Registration is closed",
-                });
+              await bootstrapUserSpace(prisma, user);
             }
           },
           after: async (session, ctx) => {
@@ -997,6 +959,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   authContext = auth.$context;
   return Object.assign(auth, {
     emailCodeSignIn,
+    registrationOpen: (headers: Headers) => admission(headers).enabled,
     /** Encrypts OAuth tokens stored before encryption was enabled. Safe to rerun. */
     encryptStoredOAuthTokens: async () => encryptStoredOAuthTokens(prisma, await tokenKey()),
     ssoAvailability: () => discovery?.availability(),

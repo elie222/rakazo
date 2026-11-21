@@ -399,6 +399,24 @@ describe("charts", () => {
     expect(root.querySelectorAll(".rk-matrix-quadrant")).toHaveLength(4);
   });
 
+  it("keeps matrix geometry left to right on an RTL page and lets each label pick its direction", () => {
+    const root = mount(
+      <div dir="rtl">
+        <Matrix2x2
+          axes={{ x: ["מאמץ נמוך", "מאמץ גבוה"], y: ["השפעה נמוכה", "השפעה גבוהה"] }}
+          quadrants={["מהיר", "חשוב", "משני", "מורכב"]}
+          points={[{ label: "תכנון", x: 0.2, y: 0.25 }]}
+        />
+      </div>,
+    );
+    expect(root.querySelector(".rk-matrix")?.getAttribute("dir")).toBe("ltr");
+    const labels = root.querySelectorAll(
+      ".rk-matrix-quadrant, .rk-matrix-label, .rk-matrix-x > span:first-child, .rk-matrix-y > span:first-child",
+    );
+    expect([...labels].map((l) => l.getAttribute("dir"))).toEqual(Array(7).fill("auto"));
+    expect(root.querySelectorAll(".rk-matrix-x bdi, .rk-matrix-y bdi")).toHaveLength(2);
+  });
+
   it("dates a source as live, as a snapshot, while updating, or after a failed refresh", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-31T12:00:00Z"));
