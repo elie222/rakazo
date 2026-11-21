@@ -538,6 +538,8 @@ function toAgentTool(
           const startedAt = Date.now();
           let result: unknown;
           let failure: unknown;
+          // How large the result was before it was cut for the model, set only where a cut happens.
+          let fullBytes: number | undefined;
           try {
             result = await (async () => {
               if (tool.name === "request_takeover") {
@@ -591,20 +593,14 @@ function toAgentTool(
                     if (isToolPauseResult(result)) host.pausePending = true;
                     return result;
                   }
-                  return {
-                    content: [
-                      {
-                        type: "text",
-                        text: serializeToolResult(
-                          result,
-                          host.request.contextStrategy,
-                          tool.name,
-                          args,
-                        ),
-                      },
-                    ],
-                    details: result,
-                  };
+                  const text = serializeToolResult(
+                    result,
+                    host.request.contextStrategy,
+                    tool.name,
+                    args,
+                  );
+                  fullBytes = serializedCut(result, text);
+                  return { content: [{ type: "text", text }], details: result };
                 }
                 host.pausePending = true;
                 return {
@@ -639,25 +635,20 @@ function toAgentTool(
                 );
                 if (isAgentToolExecutionResult(result)) {
                   if (isToolPauseResult(result)) host.pausePending = true;
-                  return keepToolResultWhole(tool.name, args)
-                    ? result
-                    : boundAgentToolResult(result);
+                  if (keepToolResultWhole(tool.name, args)) return result;
+                  const bounded = boundAgentToolResult(result);
+                  fullBytes = clippedFrom(result, bounded);
+                  return bounded;
                 }
-                return {
-                  content: [
-                    {
-                      type: "text",
-                      text: serializeToolResult(
-                        result,
-                        host.request.contextStrategy,
-                        tool.name,
-                        args,
-                        host.request.verbatimMcpServers,
-                      ),
-                    },
-                  ],
-                  details: result,
-                };
+                const text = serializeToolResult(
+                  result,
+                  host.request.contextStrategy,
+                  tool.name,
+                  args,
+                  host.request.verbatimMcpServers,
+                );
+                fullBytes = serializedCut(result, text);
+                return { content: [{ type: "text", text }], details: result };
               }
               return {
                 content: [
@@ -670,7 +661,10 @@ function toAgentTool(
               };
             })();
             if (keepToolResultWhole(tool.name, args)) return result as AgentToolResult<unknown>;
-            return boundAgentToolResult(result as AgentToolResult<unknown>);
+            const bounded = boundAgentToolResult(result as AgentToolResult<unknown>);
+            // A cut the serializer made first measured the larger, original result.
+            fullBytes ??= clippedFrom(result, bounded);
+            return bounded;
           } catch (error) {
             failure = error;
             throw error;
@@ -696,7 +690,7 @@ function toAgentTool(
               ...(result === undefined ? {} : { result }),
               ...(failure === undefined ? {} : { error: failure }),
               ...(host.pausePending ? { paused: true } : {}),
-              ...(toolResultShortened(result) ? { resultShortened: true } : {}),
+              ...(fullBytes === undefined ? {} : { resultShortened: true, resultBytes: fullBytes }),
             };
             try {
               void Promise.resolve(host.request.onToolCompleted?.(completion)).catch(
@@ -761,22 +755,38 @@ export function serializeToolResult(
 }
 
 /**
- * Whether the model read less than the tool returned: the text it got is shorter than the result it
- * came from. Comparing the two is what the serializer decides on, so a verbatim or whole result,
- * passed through untouched, never counts as cut, and a cut recorded here matches what was sent.
+ * The size of the whole serialized result when the serializer cut it, so the text the model reads
+ * is shorter; undefined when nothing was cut. A verbatim or small result is the same text, and an
+ * empty one reads as "ok".
  */
-function toolResultShortened(result: unknown): boolean {
-  const content = (result as { content?: Array<{ type?: unknown; text?: unknown }> } | undefined)
-    ?.content;
-  const details = (result as { details?: unknown } | undefined)?.details;
-  if (!Array.isArray(content) || details === undefined) return false;
-  const text = content.find((part) => part?.type === "text")?.text;
-  if (typeof text !== "string") return false;
+function serializedCut(result: unknown, text: string): number | undefined {
   try {
-    return JSON.stringify(details).length > text.length;
+    const full = JSON.stringify(result);
+    return full !== undefined && full.length > text.length
+      ? Buffer.byteLength(full, "utf8")
+      : undefined;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+/**
+ * The size of the original content's text when clipping dropped or shortened a part of it;
+ * undefined when nothing was cut. Kept parts are the same objects, so a missing or changed one is a
+ * cut. Details that only the page carries (browser elements, a paused call's arguments) are outside
+ * the content and never count.
+ */
+function clippedFrom(before: unknown, after: unknown): number | undefined {
+  const original = (before as { content?: unknown[] } | undefined)?.content;
+  const kept = (after as { content?: unknown[] } | undefined)?.content;
+  if (!Array.isArray(original) || !Array.isArray(kept)) return undefined;
+  const clipped =
+    kept.length !== original.length || kept.some((part, index) => part !== original[index]);
+  if (!clipped) return undefined;
+  return original.reduce<number>((bytes, part) => {
+    const text = (part as { type?: unknown; text?: unknown } | null)?.text;
+    return typeof text === "string" ? bytes + Buffer.byteLength(text, "utf8") : bytes;
+  }, 0);
 }
 
 function boundAgentToolResult<T>(result: AgentToolResult<T>): AgentToolResult<T> {

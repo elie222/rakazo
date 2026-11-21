@@ -89,8 +89,9 @@ export function ToolActivityDisclosure({
   runId?: string;
   children: ReactNode;
 }) {
-  // A folded card reads nothing: the explanation is asked for once someone opens the run.
-  const [opened, setOpened] = useState(live);
+  // A folded card reads nothing: the explanation is asked for once someone opens the ended run. A
+  // card opened while live folds when the run ends, so only an opening after that counts.
+  const [opened, setOpened] = useState(false);
   const duration = formatCompactDuration(durationMs);
   const toolCount = stepCount;
   return (
@@ -98,7 +99,7 @@ export function ToolActivityDisclosure({
       key={live ? "working" : "actions"}
       defaultOpen={live}
       onOpenChange={(open: boolean) => {
-        if (open) setOpened(true);
+        if (open && !live) setOpened(true);
       }}
       data-testid="tool-activity"
       data-live={live || undefined}
@@ -126,10 +127,7 @@ export function ToolActivityDisclosure({
       <CollapsibleContent hiddenUntilFound>
         <div className="ms-[7px] mt-0.5 border-s border-border ps-3">
           {children}
-          {/* Keyed by phase so a finished run re-reads: a live card caches an answer from before its calls ended. */}
-          {runId && opened ? (
-            <RunToolCallDetails key={live ? "live" : "done"} runId={runId} />
-          ) : null}
+          {runId && opened && !live ? <RunToolCallDetails runId={runId} /> : null}
         </div>
       </CollapsibleContent>
     </Collapsible>

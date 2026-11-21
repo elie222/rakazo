@@ -19,7 +19,8 @@ interface TableSpec {
     | "memoryDocument"
     | "memoryRevision"
     | "thread"
-    | "botEmailMessage";
+    | "botEmailMessage"
+    | "toolCallRecord";
   /** Scans return them in this order as `values`. */
   columns: string[];
   json: boolean;
@@ -124,6 +125,21 @@ const TABLES: TableSpec[] = [
         "fromName" = ${row.fromName as string}, subject = ${row.subject as string},
         text = ${row.text as string}, "searchTokens" = NULL WHERE id = ${id}`,
   },
+  {
+    // A call's kept details: nullable scalar ciphertext on the row, found through its thread.
+    model: "ToolCallRecord",
+    delegate: "toolCallRecord",
+    columns: ["arguments", "error", "resultHead"],
+    json: false,
+    scan: (cursor, limit) => Prisma.sql`
+      SELECT id, jsonb_build_array(arguments, error, "resultHead") AS values, "spaceId", "threadId" AS owner
+      FROM tool_call_records
+      WHERE id > ${cursor} AND (arguments IS NOT NULL OR error IS NOT NULL OR "resultHead" IS NOT NULL)
+      ORDER BY id LIMIT ${limit}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE tool_call_records SET arguments = ${row.arguments as string | null},
+        error = ${row.error as string | null}, "resultHead" = ${row.resultHead as string | null} WHERE id = ${id}`,
+  },
 ];
 
 function keyIds(table: TableSpec, values: unknown[]): string[] {
@@ -142,8 +158,9 @@ async function needsWork(
 ): Promise<boolean> {
   const ids = keyIds(table, row.values);
   if (mode === "decrypt") return ids.length > 0 || row.tokens === true;
+  // A nullable column that is empty holds nothing to seal, so it never counts as plaintext.
   const plaintext = row.values.some((value) =>
-    table.json ? jsonNeedsSealing(value) : !isCiphertext(value),
+    table.json ? jsonNeedsSealing(value) : value != null && !isCiphertext(value),
   );
   if (plaintext || row.tokens === false) return true;
   if (mode !== "reencrypt" || !row.spaceId) return false;
@@ -360,6 +377,10 @@ export async function contentEncryptionStatus(
     SELECT 'bot_email_messages', count(*), count(*) FILTER (WHERE NOT (text LIKE 'rkz1:%'
       AND subject LIKE 'rkz1:%' AND "fromAddress" LIKE 'rkz1:%' AND "fromName" LIKE 'rkz1:%'))
       FROM bot_email_messages
+    UNION ALL
+    SELECT 'tool_call_records', count(*), count(*) FILTER (WHERE (arguments IS NOT NULL AND arguments NOT LIKE 'rkz1:%')
+      OR (error IS NOT NULL AND error NOT LIKE 'rkz1:%') OR ("resultHead" IS NOT NULL AND "resultHead" NOT LIKE 'rkz1:%'))
+      FROM tool_call_records
   `;
   const keys = await prisma.spaceKey.groupBy({ by: ["masterKeyId"], _count: { _all: true } });
   return {

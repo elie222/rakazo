@@ -83,6 +83,9 @@ const UNFINISHED_NOTE = "No match in the part searched so far; nextSearch contin
 const CAPPED_NOTE = "The search stopped early without a match; narrow it by date to continue.";
 function bounded<T extends { messages: ReturnType<typeof reference>[] }>(response: T): T {
   const refs = [...response.messages];
+  const runsWithCalls = ("runs" in response ? response.runs : []) as Array<{
+    toolCalls?: unknown[];
+  }>;
   if ("runs" in response) {
     const runs = response.runs as Array<{
       outcomes: ReturnType<typeof reference>[];
@@ -137,6 +140,13 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
       longest.text = longest.text.slice(0, shortenedTextLength(longest.text));
       longest.truncated = true;
       longest.nextTextOffset = longest.textOffset + longest.text.length;
+      continue;
+    }
+    // A linked run's calls give way once no text is left to shorten, rather than failing the read.
+    const detailed = runsWithCalls.find((run) => run.toolCalls?.length);
+    if (detailed?.toolCalls) {
+      detailed.toolCalls.pop();
+      if (!detailed.toolCalls.length) delete detailed.toolCalls;
       continue;
     }
     if (!fullest?.attachments) throw new Error("History metadata exceeds response budget");
@@ -697,7 +707,7 @@ export async function readHistory(
   // a shared page also holds runs other members started.
   const linkedRun = runs.find((run) => run.id === input.linkedRunId);
   const toolDetails =
-    input.linkedRunId && linkedRun?.userId === scope.toolDetailsUserId
+    input.linkedRunId && scope.toolDetailsUserId && linkedRun?.userId === scope.toolDetailsUserId
       ? await toolCallDetails(prisma, scope, input.linkedRunId)
       : undefined;
   return bounded({
@@ -712,7 +722,8 @@ export async function readHistory(
         row.id === anchor.id ? (input.attachmentOffset ?? 0) : 0,
       ),
     ),
-    runs: runs.map((run) => ({
+    // The starter's id only gates the calls above; it never leaves the read.
+    runs: runs.map(({ userId: _userId, ...run }) => ({
       ...run,
       outcomes: outcomes.filter((row) => row.runId === run.id).map((row) => reference(row)),
       artifacts: artifacts.filter((artifact) => artifact.runId === run.id),
@@ -753,12 +764,14 @@ async function toolCallDetails(prisma: PrismaClient, scope: HistoryScope, runId:
     spaceId: scope.spaceId,
     runId,
     limit: TOOL_CALL_RECORDS_IN_HISTORY,
+    // The few slots go to the calls a bot is asked about, as in the owner's own view.
+    explainedOnly: true,
   });
   // The page's own budget decides what fits; these are the most four calls may add to it.
   return calls.length > 0 ? calls.map(boundedToolCall) : undefined;
 }
 
-/** The little of each field a history page carries, so its own 10 KB never has to give way. */
+/** The little of each field a history page carries, so the calls take a small part of its 10 KB. */
 function boundedToolCall(call: ToolCallRecord): ToolCallRecord {
   const cut = (text: string | undefined) =>
     text === undefined ? undefined : text.slice(0, TOOL_CALL_HISTORY_TEXT_MAX_CHARS);

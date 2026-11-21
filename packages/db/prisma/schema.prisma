@@ -1276,7 +1276,7 @@ model ToolCallRecord {
   resultBytes     Int?
   /// The result was longer than the limit the model reads its results within.
   resultShortened Boolean  @default(false)
-  /// The start of the result, redacted and capped, or nothing when the tool returns secrets.
+  /// The start of a failed call's result, redacted and capped; nothing for a call that worked or a tool that returns secrets.
   resultHead      String?
   createdAt       DateTime @default(now())
 

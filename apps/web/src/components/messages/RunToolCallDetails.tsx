@@ -65,7 +65,7 @@ export function ToolCallExplanations({ calls }: { calls: readonly ToolCallRecord
 
 /**
  * Reads one run's kept tool call records. Nothing shows while they load, when the run kept none,
- * or for anyone but the run's owner, whom the server refuses.
+ * for anyone but the run's owner, who gets none, or when the read fails.
  */
 export function RunToolCallDetails({ runId }: { runId: string }) {
   const queries = useSpaceQueries();

@@ -61,6 +61,8 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     allowMyChats,
     searchAt: run.createdAt,
     ...(run.trigger === "routine" ? { ownerOnly: run.userId } : {}),
+    // Only the run's own starter may have its kept calls explained, and only where the source allows it.
+    ...(ctx.source.toolDetailsAllowed && run.userId ? { toolDetailsUserId: run.userId } : {}),
   };
   const given = withoutBlankFields(args);
   let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;
@@ -71,11 +73,7 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   } else {
     const parsed = HistoryReadInputSchema.safeParse(given);
     if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
-    // A linked run explains its own calls to a run the owner started; every other run reads alone.
-    response = await readHistory(deps.prisma, scope, {
-      ...parsed.data,
-      ...(ctx.source.toolDetailsAllowed ? { toolDetailsUserId: run.userId } : {}),
-    });
+    response = await readHistory(deps.prisma, scope, parsed.data);
   }
   const redacted = redactConnectorPayload(
     "runs" in response && Array.isArray(response.runs)

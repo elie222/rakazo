@@ -269,6 +269,8 @@ export interface AgentToolCompletion {
   paused?: boolean;
   /** The result was longer than the limit the model reads its tool results within. */
   resultShortened?: boolean;
+  /** How large a shortened result was before the cut, in bytes; `result` holds what was kept. */
+  resultBytes?: number;
 }
 
 export interface ControlLeaseRef {

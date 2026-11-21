@@ -185,6 +185,52 @@ describe("ToolActivityDisclosure", () => {
     act(() => root.unmount());
   });
 
+  it("reads a live run's kept calls only when its ended card is opened", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    runs.toolCalls.mockImplementation(async () => ({
+      calls: [
+        {
+          executionId: "exec-1",
+          tool: "mail_execute",
+          durationMs: 90,
+          outcome: "failed",
+          error: "401 Unauthorized",
+        },
+      ],
+    }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const render = (live: boolean) =>
+      act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <ToolActivityDisclosure live={live} stepCount={1} runId="run-1">
+              <ToolSteps steps={stepsOf(1)} />
+            </ToolActivityDisclosure>
+          </QueryClientProvider>,
+        );
+      });
+
+    await render(true);
+    await act(flush);
+    expect(runs.toolCalls).not.toHaveBeenCalled();
+
+    // The run ends and its card folds: a folded card still reads nothing.
+    await render(false);
+    await act(flush);
+    expect(runs.toolCalls).not.toHaveBeenCalled();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button[aria-expanded]")?.click();
+    });
+    await act(flush);
+    expect(runs.toolCalls).toHaveBeenCalledWith({ runId: "run-1" }, expect.anything());
+    expect(container.textContent).toContain("401 Unauthorized");
+
+    act(() => root.unmount());
+  });
+
   it("can still be expanded by hand once done", () => {
     const card = mountCard();
     card.render(false);

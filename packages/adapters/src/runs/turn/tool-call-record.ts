@@ -62,11 +62,17 @@ export function toolCallTrace(completion: AgentToolCompletion, secrets: string[]
       : "succeeded";
   const failure =
     completion.error === undefined ? toolResultError(completion.result) : completion.error;
-  const error = failure === undefined ? undefined : sanitizeConnectorError(failure, secrets);
-  // A paused or secret-carrying call keeps no text, but how much came back is never itself a secret.
-  const keepsHead = !completion.paused && !secretCarryingTool(completion.name);
+  // A secret-carrying call keeps neither its error nor its result head, as its kept step does not:
+  // both can name or hold secret values. How much came back is never itself a secret.
+  const secretCarrying = secretCarryingTool(completion.name);
+  const error =
+    failure === undefined || secretCarrying ? undefined : sanitizeConnectorError(failure, secrets);
+  // Only a failure's head is ever shown.
+  const keepsHead = outcome === "failed" && !secretCarrying;
   const text = resultText(completion);
-  const bytes = text === undefined ? undefined : Buffer.byteLength(text, "utf8");
+  // A shortened result says how large it was before the cut; `result` holds only what was kept.
+  const bytes =
+    completion.resultBytes ?? (text === undefined ? undefined : Buffer.byteLength(text, "utf8"));
   const head =
     text === undefined || !keepsHead
       ? undefined
@@ -101,7 +107,7 @@ export type ToolCallTraceTarget = {
  * must not fail because its explanation could not be stored, so a refused or broken write is logged.
  */
 export async function recordToolCall(
-  prisma: Pick<PrismaClient, "toolCallRecord">,
+  prisma: Pick<PrismaClient, "$transaction">,
   keepsRecords: boolean,
   target: ToolCallTraceTarget,
   completion: AgentToolCompletion,

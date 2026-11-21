@@ -60,26 +60,16 @@ async function asMemberOf<T>(
 }
 
 /**
- * Who decides what a Space keeps: the person who created it, or an owner or admin of the
- * organization it belongs to. This is a privacy setting for everyone in the Space, so the answer
- * is the same for reading it back as for changing it.
+ * Who decides what a Space keeps: its owners, by the same membership role every other owner check
+ * reads. This is a privacy setting for everyone in the Space, so the answer is the same for reading
+ * it back as for changing it.
  */
-async function managesToolCallRecords(prisma: PrismaClient, actor: Actor): Promise<boolean> {
-  const space = await prisma.space.findUnique({
-    where: { id: actor.spaceId },
-    select: { createdByUserId: true, organizationId: true },
+export async function managesToolCallRecords(prisma: PrismaClient, actor: Actor): Promise<boolean> {
+  const membership = await prisma.spaceMember.findUnique({
+    where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
+    select: { role: true },
   });
-  if (!space) throw new SpaceNotFoundError();
-  if (space.createdByUserId === actor.userId) return true;
-  const manager = await prisma.member.findFirst({
-    where: {
-      organizationId: space.organizationId,
-      userId: actor.userId,
-      role: { in: ["owner", "admin"] },
-    },
-    select: { id: true },
-  });
-  return manager !== null;
+  return membership !== null && isOwnerRole(membership.role);
 }
 
 export function spacesRoutes(ctx: RouterContext) {

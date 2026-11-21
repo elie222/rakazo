@@ -170,11 +170,49 @@ describePostgres("tool call records (PostgreSQL)", () => {
     expect(left.map((call) => call.executionId)).toEqual(["fresh"]);
   });
 
+  it("keeps no record longer than a shorter chat history retention", async () => {
+    const runId = await runFrom(await message("short history"));
+    await asOwner(() => createToolCallRecord(prisma, trace(runId, "three-days")));
+    await asOwner(() => createToolCallRecord(prisma, trace(runId, "today")));
+    await system.toolCallRecord.updateMany({
+      where: { runId, executionId: "three-days" },
+      data: { createdAt: new Date(Date.now() - 3 * 24 * 60 * 60_000) },
+    });
+
+    const deleted = await runAsSystem("expire tool call records", () =>
+      deleteExpiredToolCallRecords(prisma, { chatHistoryDays: 2 }),
+    );
+    expect(deleted).toBe(1);
+    const left = await asOwner(() => runToolCallRecords(prisma, { spaceId, runId }));
+    expect(left.map((call) => call.executionId)).toEqual(["today"]);
+  });
+
+  it("stops between batches once the sweep is aborted", async () => {
+    const runId = await runFrom(await message("stopping"));
+    await asOwner(() => createToolCallRecord(prisma, trace(runId, "old")));
+    await system.toolCallRecord.updateMany({
+      where: { runId },
+      data: { createdAt: new Date(Date.now() - 15 * 24 * 60 * 60_000) },
+    });
+
+    const deleted = await runAsSystem("expire tool call records", () =>
+      deleteExpiredToolCallRecords(prisma, { signal: AbortSignal.abort() }),
+    );
+    expect(deleted).toBe(0);
+  });
+
   it("takes a cleared conversation's records with it", async () => {
     const runId = await runFrom(await message("clear me"));
     await asOwner(() => createToolCallRecord(prisma, trace(runId, "exec-3")));
 
     await asOwner(() => clearThread(prisma, { spaceId, threadId, botId }));
+    expect(await asOwner(() => runToolCallRecords(prisma, { spaceId, runId }))).toEqual([]);
+  });
+
+  it("keeps nothing of a call that finishes after its run was cancelled", async () => {
+    const runId = await runFrom(await message("stop that"));
+    await system.run.update({ where: { id: runId }, data: { status: "cancelled" } });
+    await asOwner(() => createToolCallRecord(prisma, trace(runId, "late-call")));
     expect(await asOwner(() => runToolCallRecords(prisma, { spaceId, runId }))).toEqual([]);
   });
 
@@ -204,6 +242,8 @@ describePostgres("tool call records (PostgreSQL)", () => {
       readHistory(prisma, { spaceId, threadId, botId, toolDetailsUserId: userId }, page),
     );
     expect(mine.runs.some((run) => "toolCalls" in run)).toBe(true);
+    // The starter's id gates the read; a bot never sees it on any run of the page.
+    expect(mine.runs.every((run) => !("userId" in run))).toBe(true);
 
     // The same page read for another member of the Space explains nothing of this run.
     const theirs = await asOwner(() =>
@@ -213,8 +253,19 @@ describePostgres("tool call records (PostgreSQL)", () => {
   });
 
   it("keeps the calls that need explaining when later ones worked", async () => {
-    const runId = await runFrom(await message("fail then work"));
+    const sourceMessageId = await message("fail then work");
+    const runId = await runFrom(sourceMessageId);
     await asOwner(() => createToolCallRecord(prisma, trace(runId, "failed-call")));
+    // A call waiting on a person needs no explanation and takes none of the slots.
+    await asOwner(() =>
+      createToolCallRecord(prisma, {
+        ...trace(runId, "paused-call"),
+        outcome: "paused",
+        error: undefined,
+        resultShortened: false,
+        resultHead: undefined,
+      }),
+    );
     for (let i = 0; i < 14; i += 1) {
       await asOwner(() =>
         createToolCallRecord(prisma, {
@@ -233,6 +284,34 @@ describePostgres("tool call records (PostgreSQL)", () => {
       runToolCallRecords(prisma, { spaceId, runId, explainedOnly: true }),
     );
     expect(explained.map((call) => call.executionId)).toEqual(["failed-call"]);
+
+    // The bot asking why gets the same failure, not the four newest calls that worked.
+    const page = await asOwner(() =>
+      readHistory(
+        prisma,
+        { spaceId, threadId, botId, toolDetailsUserId: userId },
+        { messageId: sourceMessageId, linkedRunId: runId },
+      ),
+    );
+    const linked = page.runs.find((run) => run.id === runId);
+    expect(
+      (linked && "toolCalls" in linked ? linked.toolCalls : [])?.map((call) => call.executionId),
+    ).toEqual(["failed-call"]);
+  });
+
+  it("explains nothing to a read that names no starter", async () => {
+    const sourceMessageId = await message("no starter here");
+    const runId = await runFrom(sourceMessageId);
+    // A read whose source allows no details names no starter, and nothing matches that.
+    await asOwner(() => createToolCallRecord(prisma, trace(runId, "exec-7")));
+    const page = await asOwner(() =>
+      readHistory(
+        prisma,
+        { spaceId, threadId, botId },
+        { messageId: sourceMessageId, linkedRunId: runId },
+      ),
+    );
+    expect(page.runs.some((run) => "toolCalls" in run)).toBe(false);
   });
 
   it("keeps records for a Space by default and stops when it says so", async () => {

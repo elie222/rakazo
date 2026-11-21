@@ -1261,6 +1261,76 @@ describe("Pi connector tool dispatch", () => {
     expect(events.at(-1)).toEqual({ type: "done" });
   });
 
+  it.each([
+    [
+      "a page whose elements sit only in its details",
+      {
+        kind: "agent_tool_result",
+        content: [{ type: "text", text: "Page ready." }],
+        details: {
+          elements: Array.from({ length: 400 }, (_, index) => ({
+            ref: `e${index}`,
+            label: "control",
+          })),
+        },
+      },
+      undefined,
+    ],
+    [
+      "a plain result over the tool-result limit",
+      { body: "x".repeat(20_000) },
+      JSON.stringify({ body: "x".repeat(20_000) }).length,
+    ],
+    [
+      "an agent result whose text is over the limit",
+      {
+        kind: "agent_tool_result",
+        content: [{ type: "text", text: "y".repeat(20_000) }],
+        details: {},
+      },
+      20_000,
+    ],
+  ])(
+    "marks a result shortened, with its size before the cut, only when the model read less of it: %s",
+    async (_case, result, bytesBeforeCut) => {
+      fakeAgentState.mode = "silent-continuation";
+      const runtime = new PiAgentRuntime();
+      const onToolCompleted = vi.fn();
+
+      for await (const _event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "shortened-result",
+          prompt: "send the update and report back",
+          instructions: "Use the destination tool, then tell the user what happened.",
+          history: [],
+          tools: [destinationTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool: vi.fn(async () => result),
+          onToolCompleted,
+        },
+        {
+          operationId: "shortened-result",
+          traceId: "shortened-result",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )) {
+        // Drained: only the completion record is checked.
+      }
+
+      expect(onToolCompleted).toHaveBeenCalledTimes(1);
+      expect(onToolCompleted.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ name: "destination.write" }),
+      );
+      const completion = onToolCompleted.mock.calls[0]?.[0];
+      expect(completion.resultShortened).toBe(bytesBeforeCut === undefined ? undefined : true);
+      expect(completion.resultBytes).toBe(bytesBeforeCut);
+    },
+  );
+
   it("continues after narration is followed by a silent tool result turn", async () => {
     fakeAgentState.mode = "silent-continuation";
     const runtime = new PiAgentRuntime();

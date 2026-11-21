@@ -363,6 +363,60 @@ describePostgres("content encryption (PostgreSQL)", () => {
       await prisma.message.delete({ where: { id }, select: { id: true } });
     }));
 
+  it("migrates tool call records written with encryption off, and writes them back for a rollback", () =>
+    runAsSystem("test fixture", async () => {
+      const id = `enc-call-plain-${suffix}`;
+      // As a release with encryption off stores it; the call has no error, so that column stays empty.
+      await raw.query(
+        `INSERT INTO tool_call_records (id, "spaceId", "threadId", "botId", "runId", "executionId", tool, "durationMs", outcome, arguments, error, "resultHead")
+         VALUES ($1, $2, $3, $4, $5, $6, 'mail_execute', 12, 'succeeded', $7, NULL, $8)`,
+        [
+          id,
+          spaceId,
+          threadId,
+          botId,
+          `run-${suffix}`,
+          `exec-${suffix}`,
+          '{"token":"HERON-KEY-77"}',
+          "HERON result head",
+        ],
+      );
+      const stored = async () =>
+        (
+          await raw.query<{ arguments: string; error: string | null; resultHead: string }>(
+            `SELECT arguments, error, "resultHead" FROM tool_call_records WHERE id = $1`,
+            [id],
+          )
+        ).rows[0]!;
+      const status = await contentEncryptionStatus(prisma);
+      expect(status.tables.find((t) => t.table === "tool_call_records")!.plaintext).toBeGreaterThan(
+        0,
+      );
+
+      await migrateContent(prisma, { mode: "encrypt" });
+      const sealed = await stored();
+      expect(sealed.arguments).toMatch(/^rkz1:/);
+      expect(sealed.resultHead).toMatch(/^rkz1:/);
+      expect(sealed.error).toBeNull();
+      const read = await prisma.toolCallRecord.findUnique({
+        where: { id },
+        select: { arguments: true, resultHead: true },
+      });
+      expect(read).toEqual({
+        arguments: '{"token":"HERON-KEY-77"}',
+        resultHead: "HERON result head",
+      });
+
+      await migrateContent(prisma, { mode: "decrypt" });
+      expect(await stored()).toEqual({
+        arguments: '{"token":"HERON-KEY-77"}',
+        error: null,
+        resultHead: "HERON result head",
+      });
+      await migrateContent(prisma, { mode: "encrypt" });
+      await prisma.toolCallRecord.delete({ where: { id } });
+    }));
+
   it("encrypts memory, revisions, event payloads and thread summaries", () =>
     runAsSystem("test fixture", async () => {
       const doc = await prisma.memoryDocument.create({

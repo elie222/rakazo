@@ -20,36 +20,44 @@ export interface ToolCallRecordInput {
 }
 
 /**
- * Keeps one call's trace. Never throws for the caller: a run's own work must not fail because its
- * explanation could not be stored.
+ * Keeps one call's trace, unless its run was cancelled first. A call that finishes after its run
+ * was stopped or its conversation cleared has nothing left to explain, as its audit event has no
+ * history to join; the run is locked FOR SHARE, so a clear that cancels it either waits for this
+ * row and deletes it, or commits first and this writes nothing. Callers keep writes best effort.
  */
 export async function createToolCallRecord(
-  prisma: Pick<PrismaClient, "toolCallRecord">,
+  prisma: Pick<PrismaClient, "$transaction">,
   record: ToolCallRecordInput,
 ): Promise<void> {
-  await prisma.toolCallRecord.create({
-    data: {
-      spaceId: record.spaceId,
-      threadId: record.threadId,
-      botId: record.botId,
-      runId: record.runId,
-      executionId: record.executionId,
-      tool: record.tool,
-      durationMs: Math.max(0, Math.round(record.durationMs)),
-      outcome: record.outcome,
-      arguments: record.arguments,
-      error: record.error,
-      resultBytes: record.resultBytes,
-      resultShortened: record.resultShortened ?? false,
-      resultHead: record.resultHead,
-    },
+  await prisma.$transaction(async (tx) => {
+    const [run] = await tx.$queryRaw<Array<{ status: string }>>`
+      SELECT status FROM runs WHERE id = ${record.runId} FOR SHARE`;
+    if (!run || run.status === "cancelled") return;
+    await tx.toolCallRecord.create({
+      data: {
+        spaceId: record.spaceId,
+        threadId: record.threadId,
+        botId: record.botId,
+        runId: record.runId,
+        executionId: record.executionId,
+        tool: record.tool,
+        durationMs: Math.max(0, Math.round(record.durationMs)),
+        outcome: record.outcome,
+        arguments: record.arguments,
+        error: record.error,
+        resultBytes: record.resultBytes,
+        resultShortened: record.resultShortened ?? false,
+        resultHead: record.resultHead,
+      },
+    });
   });
 }
 
 /**
  * One run's newest calls, oldest first, bounded here rather than after: a long run keeps more
- * records than one read should return. `explainedOnly` keeps just the calls that need explaining,
- * so a run that failed once and then worked a dozen times still shows why it failed.
+ * records than one read should return. `explainedOnly` keeps just the calls that need explaining
+ * (failed or shortened; a paused call waits on a person, not on an explanation), so a run that
+ * failed once and then worked a dozen times still shows why it failed.
  */
 export async function runToolCallRecords(
   prisma: Pick<PrismaClient, "toolCallRecord">,
@@ -59,9 +67,7 @@ export async function runToolCallRecords(
     where: {
       spaceId: scope.spaceId,
       runId: scope.runId,
-      ...(scope.explainedOnly
-        ? { OR: [{ outcome: { not: "succeeded" } }, { resultShortened: true }] }
-        : {}),
+      ...(scope.explainedOnly ? { OR: [{ outcome: "failed" }, { resultShortened: true }] } : {}),
     },
     select: {
       executionId: true,
@@ -114,25 +120,33 @@ export async function setSpaceKeepsToolCallRecords(
 
 /** How many records one sweep deletes at once, so a backlog never holds a connection for long. */
 const SWEEP_BATCH = 1_000;
-/** How many batches one sweep takes before leaving the rest to the next one. */
-const SWEEP_MAX_BATCHES = 20;
+const DAY_MS = 24 * 60 * 60_000;
 
 /**
  * Deletes the traces past their retention, oldest first and a batch at a time, so a sweep after a
- * long outage pages through a backlog instead of holding one statement over all of it. Returns how
+ * long outage pages through a backlog instead of holding one statement over all of it. It runs
+ * until nothing is past retention or `signal` aborts between batches, so a busy deployment never
+ * builds a backlog one sweep cannot clear. A deployment that keeps chat history for fewer days
+ * (`chatHistoryDays`) keeps the traces no longer, as they repeat what that history said. Returns how
  * many it deleted. Runs as the system, past the tenant policy every other reader obeys.
  */
 export async function deleteExpiredToolCallRecords(
   prisma: Pick<PrismaClient, "toolCallRecord">,
-  now: Date = new Date(),
+  options: { now?: Date; signal?: AbortSignal; chatHistoryDays?: number | null } = {},
 ): Promise<number> {
-  const cutoff = new Date(now.getTime() - TOOL_CALL_RECORD_RETENTION_MS);
+  const { now = new Date(), signal, chatHistoryDays } = options;
+  const retentionMs = Math.min(
+    TOOL_CALL_RECORD_RETENTION_MS,
+    chatHistoryDays ? chatHistoryDays * DAY_MS : Number.POSITIVE_INFINITY,
+  );
+  const cutoff = new Date(now.getTime() - retentionMs);
   let deleted = 0;
-  for (let batch = 0; batch < SWEEP_MAX_BATCHES; batch += 1) {
+  while (!signal?.aborted) {
     const expired = await prisma.toolCallRecord.findMany({
       where: { createdAt: { lt: cutoff } },
       select: { id: true },
-      orderBy: { createdAt: "asc" },
+      // Deleted rows leave the next query, so the id tiebreak only keeps each batch's order stable.
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: SWEEP_BATCH,
     });
     if (expired.length === 0) break;
