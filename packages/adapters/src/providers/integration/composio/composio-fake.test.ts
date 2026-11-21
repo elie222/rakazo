@@ -2,7 +2,7 @@ import type { ConnectedAccountStatus } from "@composio/core";
 import type { AdapterContext, ConnectorEvent } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError } from "@rakazo/adapter-kit";
 import { CONNECTOR_AUTH_UNAVAILABLE } from "@rakazo/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createConnectorStack } from "../../../integrations/connector-registry.js";
 import { ComposioConnector } from "./composio-connector.js";
 import { FakeComposioClient } from "./composio-fake.js";
@@ -506,7 +506,7 @@ describe("declared reads", () => {
     expect(lookups).toBe(2);
   });
 
-  it("frees nothing when the catalog cannot be asked", async () => {
+  it("fails the lookup with a redacted message when the catalog cannot be asked", async () => {
     const client = new FakeComposioClient();
     client.getClient = () => ({
       tools: {
@@ -517,8 +517,36 @@ describe("declared reads", () => {
     });
     const { connector } = createConnectorStack(new ComposioConnector({ client }));
 
-    await expect(
-      connector.declaredReads(batch, ["GMAIL_FETCH_EMAILS"], context()),
-    ).resolves.toEqual(new Set());
+    await expect(connector.declaredReads(batch, ["GMAIL_FETCH_EMAILS"], context())).rejects.toThrow(
+      "catalog unavailable",
+    );
+  });
+
+  it("stops freeing an action once its verdict expires and is not confirmed again", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeComposioClient();
+      const list = client.getClient().tools.list;
+      let partial = false;
+      client.getClient = () => ({
+        tools: {
+          list: async (query, options) => {
+            if (partial) return { items: [], next_cursor: "1" };
+            return list(query, options);
+          },
+        },
+      });
+      const { connector } = createConnectorStack(new ComposioConnector({ client }));
+      await expect(
+        connector.declaredReads(batch, ["GMAIL_FETCH_EMAILS"], context()),
+      ).resolves.toEqual(new Set(["GMAIL_FETCH_EMAILS"]));
+      vi.advanceTimersByTime(2 * 60 * 60 * 1000);
+      partial = true;
+      await expect(
+        connector.declaredReads(batch, ["GMAIL_FETCH_EMAILS"], context()),
+      ).resolves.toEqual(new Set());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

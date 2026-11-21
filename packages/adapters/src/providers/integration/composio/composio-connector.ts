@@ -540,11 +540,9 @@ export class ComposioConnector implements ComposioProvider {
             { signal: context.signal },
           );
       } catch (error) {
+        // The caller logs and ignores it; only the redacted message may reach the log.
         if (context.signal.aborted) throw error;
-        getLogger().warn("composio action effects unavailable", {
-          error: sanitizeIntegrationError(error),
-        });
-        return new Set();
+        throw new Error(sanitizeIntegrationError(error));
       }
       const listed = new Map(
         page.items.flatMap((item) => {
@@ -568,6 +566,7 @@ export class ComposioConnector implements ComposioProvider {
       actions.filter(
         (action) =>
           !actionSlug(action).startsWith(COMPOSIO_TOOL_PREFIX) &&
+          fresh(actionSlug(action)) &&
           this.actionReads.get(actionSlug(action))?.read === true,
       ),
     );
