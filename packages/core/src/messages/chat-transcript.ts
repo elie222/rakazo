@@ -92,7 +92,8 @@ function closeOpenFence(markdown: string): string {
   // indented code block or list item stays the one it was.
   let closer = "";
   const lines = markdown.split("\n").map((line) => {
-    const fence = /^((?:\s*(?:[-+*]|\d+[.)]|>)\s+)*\s*)(`{3,}|~{3,})(.*)$/.exec(line);
+    // One optional list or quote marker before the fence; no nested repeats, so a long run of spaces cannot backtrack.
+    const fence = /^([ \t]*(?:(?:[-+*]|\d+[.)]|>)[ \t]+)?)(`{3,}|~{3,})(.*)$/.exec(line);
     if (!fence) return open ? line : escapeHtml(line);
     const lead = fence[1] ?? "";
     const mark = fence[2] ?? "";
