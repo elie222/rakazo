@@ -16,7 +16,8 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("../../lib/query", () => ({
   useSpaceQueries: () => ({ pages: { list: { infiniteOptions: () => ({}) } } }),
 }));
-vi.mock("../../lib/pages", () => ({ useOpenPage: () => vi.fn() }));
+const openPage = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/pages", () => ({ useOpenPage: () => openPage }));
 vi.mock("@tanstack/react-query", () => ({
   useInfiniteQuery: () => ({
     data: { pages: [{ items: read.items }] },
@@ -31,10 +32,15 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+const closeMobileSidebar = vi.fn();
 const shelf = async (showSpaceSearch = false) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const root = createRoot(document.body.appendChild(document.createElement("div")));
-  await act(async () => root.render(<SharedPages showSpaceSearch={showSpaceSearch} />));
+  await act(async () =>
+    root.render(
+      <SharedPages showSpaceSearch={showSpaceSearch} closeMobileSidebar={closeMobileSidebar} />,
+    ),
+  );
   return { text: document.body.textContent ?? "", unmount: () => act(async () => root.unmount()) };
 };
 
@@ -57,4 +63,21 @@ it("is absent while empty or while the Space search shows", async () => {
   read.items = [{ id: "p1", title: "Plan" }];
   document.body.replaceChildren();
   expect((await shelf(true)).text).toBe("");
+});
+
+it("closes the mobile sidebar before it opens a shared page", async () => {
+  read.items = [{ id: "p1", title: "Plan" }];
+  read.hasNextPage = false;
+  const order: string[] = [];
+  closeMobileSidebar.mockImplementation(() => order.push("close"));
+  openPage.mockImplementation(() => order.push("open"));
+  const view = await shelf();
+  // The shelf starts folded: open it, then pick the page.
+  await act(async () => document.body.querySelector("button")?.click());
+  const row = [...document.body.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Plan"),
+  );
+  await act(async () => row?.click());
+  expect(order).toEqual(["close", "open"]);
+  await view.unmount();
 });

@@ -14,7 +14,7 @@ import { PageViewHost } from "./PageViewHost";
 
 const { replyFlags, state } = vi.hoisted(() => ({
   replyFlags: [] as boolean[],
-  state: { mine: undefined as boolean | undefined },
+  state: { mine: undefined as boolean | undefined, failWith: undefined as string | undefined },
 }));
 vi.mock("../../lib/pages", async (importActual) => {
   const actual = await importActual<typeof PagesLib>();
@@ -37,15 +37,18 @@ vi.mock("../../lib/query", () => ({
         // Like the server: the link only when asked for.
         queryOptions: ({ input }: { input: { pageId: string; link?: true } }) => ({
           queryKey: ["page", input],
-          queryFn: async () => ({
-            id: "p1",
-            title: "Plan",
-            code: "",
-            owner: { name: "" },
-            visibility: "link",
-            ...(state.mine === undefined ? {} : { mine: state.mine }),
-            shareUrl: input.link === true ? "https://rakazo.example/p/1" : null,
-          }),
+          queryFn: async () => {
+            if (state.failWith) throw Object.assign(new Error("failed"), { code: state.failWith });
+            return {
+              id: "p1",
+              title: "Plan",
+              code: "",
+              owner: { name: "" },
+              visibility: "link",
+              ...(state.mine === undefined ? {} : { mine: state.mine }),
+              shareUrl: input.link === true ? "https://rakazo.example/p/1" : null,
+            };
+          },
         }),
       },
     },
@@ -55,8 +58,17 @@ vi.mock("../../lib/page-actions", () => ({
   pageMutationOptions: () => ({ rename: {}, setVisibility: {} }),
 }));
 vi.mock("./PageView", () => ({
-  PageView: ({ composer, share }: { composer: ReactNode; share: ReactNode }) => (
+  PageView: ({
+    composer,
+    share,
+    notice,
+  }: {
+    composer: ReactNode;
+    share: ReactNode;
+    notice?: ReactNode;
+  }) => (
     <div>
+      {notice}
       {share}
       {composer}
     </div>
@@ -65,6 +77,7 @@ vi.mock("./PageView", () => ({
 
 afterEach(() => {
   state.mine = undefined;
+  state.failWith = undefined;
   replyFlags.length = 0;
   vi.unstubAllGlobals();
   document.body.replaceChildren();

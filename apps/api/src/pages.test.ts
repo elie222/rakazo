@@ -293,6 +293,21 @@ describe("pages shared with the Space", () => {
     });
   });
 
+  it("reads a page again when a save moves it past the version another member was about to read", async () => {
+    const { deps, findFirst } = readDeps(null);
+    findFirst
+      .mockResolvedValueOnce({ ...summary, currentVersion: 2 })
+      .mockResolvedValueOnce({ ...summary, currentVersion: 3 });
+    const findUnique = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ code: "newer" });
+    (deps as { prisma: { pageVersion: { findUnique: unknown } } }).prisma.pageVersion.findUnique =
+      findUnique;
+    await expect(getPage(deps, other, { pageId: "page-1" })).resolves.toMatchObject({
+      version: 3,
+      code: "newer",
+    });
+    expect(findUnique).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps a page no one may read as not found", async () => {
     const { deps } = readDeps(null);
     await expect(getPage(deps, other, { pageId: "page-1" })).rejects.toThrow();

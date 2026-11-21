@@ -21,4 +21,7 @@ Pages are private at first. To share one, choose **Share**, set it to **Anyone w
 **Copy link**. Anyone with the link can view the page without signing in. Set it back to
 **Only you** to turn the link off.
 
+In a shared Space, set it to **Your Space** instead: members sign in to view the page, read-only,
+from **Shared pages** at the bottom of the sidebar on web and desktop. This turns any link off.
+
 On web and desktop, **Download PDF** saves a copy through your browser's print dialog.

@@ -1031,7 +1031,10 @@ function SpaceShell() {
         }
         archived={
           <>
-            <SharedPages showSpaceSearch={search.showSpaceSearch} />
+            <SharedPages
+              showSpaceSearch={search.showSpaceSearch}
+              closeMobileSidebar={() => setMobileSidebarOpen(false)}
+            />
             <SnoozedChats
               snoozed={sidebarSpaces.flatMap((space) => [
                 ...space.bots

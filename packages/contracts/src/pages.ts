@@ -47,8 +47,9 @@ export const PageSummarySchema = z.strictObject({
 export type PageSummary = z.infer<typeof PageSummarySchema>;
 
 /**
- * A listed page. `mine` and `ownerName` are missing from an older server, which lists only the
- * caller's own pages; `ownerName` is set only for another member's page.
+ * A listed page. `ownerName` is set only for another member's page. compat-shim(after v0.12.0):
+ * `mine` and `ownerName` are optional because an older server, which lists only the caller's own
+ * pages, omits them; make them required once it is gone.
  */
 export const PageListItemSchema = z.strictObject({
   ...PageSummarySchema.shape,
@@ -66,7 +67,8 @@ export const PageDetailSchema = z.strictObject({
   owner: z.strictObject({ name: z.string(), image: z.string().nullable() }),
   /**
    * False for a page another member shared with the Space: read-only, current version only.
-   * Missing from an older server, which opens only the caller's own pages.
+   * compat-shim(after v0.12.0): optional because an older server, which opens only the caller's
+   * own pages, omits it; make it required once it is gone.
    */
   mine: z.boolean().optional(),
   /** Set while anyone with the link can open the page; only ever for its owner. */

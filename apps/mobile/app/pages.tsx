@@ -120,7 +120,7 @@ export default function PagesScreen() {
           accessibilityRole="button"
           chevron="right"
           title={page.title}
-          detail={`${page.visibility === "link" ? `${t`Shared`} · ` : ""}${formatActivityRelativeTime(page.updatedAt)}`}
+          detail={`${page.visibility !== "private" ? `${t`Shared`} · ` : ""}${formatActivityRelativeTime(page.updatedAt)}`}
           leading={<PageIcon colors={tokens} width={26} />}
           onPress={() => open(page)}
           onLongPress={onLongPress}

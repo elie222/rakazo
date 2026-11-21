@@ -266,8 +266,8 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     call.nextApprovedTool !== "save_page" &&
     !(await neverAsks(ctx));
   let saved: { pageId: string; version: number; title: string };
-  // Whether other members of the Space can read the page, as read inside the save while its row is held.
-  let sharedAtSave = false;
+  // The visibility read under the page's row lock, so the marks match what the save committed.
+  let visibilityAtSave: string | undefined;
   try {
     saved = await deps.prisma.$transaction(async (tx) => {
       if (!page) {
@@ -316,7 +316,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
         where: { id: page.id },
         select: { visibility: true },
       });
-      sharedAtSave = visibility === "space";
+      visibilityAtSave = visibility;
       return { pageId: page.id, version, title: nextTitle };
     });
   } catch (error) {
@@ -327,7 +327,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
   // Members the page is shared with see the new version, so their open page and list read again.
   // A page private or shared by link has no reader in the Space to tell; sharing it later signals itself.
-  if (page && sharedAtSave) {
+  if (page && visibilityAtSave === "space") {
     await deps.events?.publishSpaceChange?.(run.spaceId, "pages");
   }
   const block: MessageBlock = { kind: "page", ...saved };
@@ -340,6 +340,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     // The page is saved; only its card in the chat is missing, so the bot can still link it.
     return {
       ...saved,
+      ...sharedMarks(visibilityAtSave),
       error: `The page was saved, but its card could not be posted in the chat (${
         error instanceof Error ? error.message : "unknown error"
       }). Link it in your reply as [${linkText}](page:${saved.pageId}).`,
@@ -347,7 +348,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
   const result = {
     ...saved,
-    ...sharedMarks(page?.visibility),
+    ...sharedMarks(visibilityAtSave),
     mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
   };
   return check.warnings?.length ? { ...result, warnings: check.warnings } : result;

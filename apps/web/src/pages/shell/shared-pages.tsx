@@ -13,7 +13,13 @@ const PAGE_SIZE = 20;
  * Every page shared with the Space, anyone's, folded at the bottom of the sidebar. Absent until
  * there is one, and read again whenever a page's sharing changes.
  */
-export function SharedPages({ showSpaceSearch }: { showSpaceSearch: boolean }) {
+export function SharedPages({
+  showSpaceSearch,
+  closeMobileSidebar,
+}: {
+  showSpaceSearch: boolean;
+  closeMobileSidebar: () => void;
+}) {
   const queries = useSpaceQueries();
   const openPage = useOpenPage();
   const pages = useInfiniteQuery(
@@ -38,7 +44,10 @@ export function SharedPages({ showSpaceSearch }: { showSpaceSearch: boolean }) {
         <button
           key={page.id}
           type="button"
-          onClick={() => openPage(page.id)}
+          onClick={() => {
+            closeMobileSidebar();
+            openPage(page.id);
+          }}
           className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-start outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring"
         >
           <PageIcon className="h-5 w-4 shrink-0 text-foreground/60" />

@@ -234,21 +234,30 @@ export async function getPage(
   actor: Actor,
   input: { pageId: string; version?: number; link?: boolean },
 ): Promise<PageDetail> {
-  const row = await readablePage(deps.prisma, actor, input.pageId);
+  let row = await readablePage(deps.prisma, actor, input.pageId);
   const mine = row.userId === actor.userId;
-  const version = input.version ?? row.currentVersion;
+  let version = input.version ?? row.currentVersion;
   // Like a link, another member's read shows only the current version.
   if (!mine && version !== row.currentVersion) throw new IsolationError();
-  const [stored, owner] = await Promise.all([
-    deps.prisma.pageVersion.findUnique({
-      where: { pageId_version: { pageId: row.id, version } },
-      select: { code: true },
-    }),
-    deps.prisma.user.findUnique({
-      where: { id: row.userId },
-      select: { name: true, image: true },
-    }),
-  ]);
+  const readVersion = () =>
+    Promise.all([
+      deps.prisma.pageVersion.findUnique({
+        where: { pageId_version: { pageId: row.id, version } },
+        select: { code: true },
+      }),
+      deps.prisma.user.findUnique({
+        where: { id: row.userId },
+        select: { name: true, image: true },
+      }),
+    ]);
+  let [stored, owner] = await readVersion();
+  // A save between the two reads makes the version just read no longer the current one, which
+  // another member cannot read (the page_versions_space_read policy); read the page again to find the new one.
+  if (!stored && !mine && input.version === undefined) {
+    row = await readablePage(deps.prisma, actor, input.pageId);
+    version = row.currentVersion;
+    [stored, owner] = await readVersion();
+  }
   if (!stored) throw new IsolationError();
   return {
     // The owner's bot, chat and pin are theirs: another member sees only the page.

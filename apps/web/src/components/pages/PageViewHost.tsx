@@ -56,6 +56,7 @@ function OpenPage({
     enabled: pageId !== null,
   });
   // Another member's page is read-only, and a reply would go to a bot that cannot reach it.
+  // compat-shim(after v0.12.0): an older server omits `mine` and opens only the caller's own pages.
   const owned = page.data?.mine !== false;
   const viewer = usePageDocument(
     page.data?.code,
@@ -79,10 +80,12 @@ function OpenPage({
     });
   }
 
-  // A page that is gone or not yours says so, rather than closing under the user.
-  const failed = page.isError && page.data === undefined;
+  // A page that is gone or not yours says so, rather than closing under the user. That includes a
+  // page already shown, such as another member's page its owner stops sharing: a failed re-read
+  // keeps the earlier data, so only a lost connection keeps showing it.
   const code = errorCode(page.error);
-  const gone = failed && (code === "NOT_FOUND" || code === "FORBIDDEN");
+  const gone = page.isError && (code === "NOT_FOUND" || code === "FORBIDDEN");
+  const failed = page.isError && (page.data === undefined || gone);
 
   const actions = pageMutationOptions(queries, queryClient);
   const rename = useMutation(actions.rename);

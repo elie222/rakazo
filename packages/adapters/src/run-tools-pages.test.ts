@@ -319,7 +319,7 @@ describe("saving a page shared by link", () => {
     const tx = {
       page: {
         updateMany,
-        findUniqueOrThrow: vi.fn(async () => ({ title: "Plan", visibility: "private" })),
+        findUniqueOrThrow: vi.fn(async () => ({ title: "Plan", visibility: "link" })),
       },
       pageVersion: { create: vi.fn() },
     };
@@ -383,6 +383,27 @@ describe("saving a page shared with the Space", () => {
       );
       expect(result).toMatchObject({ pageId: "page-1", version: 2 });
       expect(publishSpaceChange.mock.calls).toEqual(signals ? [["space-1", "pages"]] : []);
+    }
+  });
+
+  it("tells the bot who sees the save from the visibility held at save time, even when its card fails", async () => {
+    // Shared with the Space between the read and the save; the earlier read said private.
+    for (const cardFails of [false, true]) {
+      publishMessage.mockReset();
+      if (cardFails) publishMessage.mockRejectedValueOnce(new Error("run was cancelled"));
+      const tx = {
+        page: {
+          updateMany: vi.fn(async () => ({ count: 1 })),
+          findUniqueOrThrow: vi.fn(async () => ({ title: "Plan", visibility: "space" })),
+        },
+        pageVersion: { create: vi.fn() },
+      };
+      const result = (await pageTools.save_page!(
+        context(tx, { currentVersion: 1, visibility: "private" }),
+        call({ pageId: "page-1", edits: [edit] }),
+      )) as Record<string, unknown>;
+      expect(result).toMatchObject({ version: 2, sharedWithSpace: true });
+      expect(result.error === undefined).toBe(!cardFails);
     }
   });
 
