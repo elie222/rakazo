@@ -81,6 +81,32 @@ describe("pending routine timer coalescing", () => {
     expect(await findPendingRoutineTick(tx, config)).toEqual({ id: "run-1", taskId: "task-1" });
     expect(findMany.mock.calls[1]![0]).toMatchObject({ cursor: { id: "old-99" }, skip: 1 });
   });
+  it("looks past a page whose only match holds the computer", async () => {
+    const { tx, findMany } = fixture();
+    const updatedAt = new Date("2026-01-01T00:00:00Z");
+    const first = Array.from({ length: 100 }, (_, index) => ({
+      id: `held-${index}`,
+      taskId: `held-task-${index}`,
+      leaseFence: 0,
+      updatedAt,
+      task: { prompt: index === 0 ? config.prompt : "an earlier prompt" },
+    }));
+    findMany
+      .mockResolvedValueOnce(first as never)
+      .mockResolvedValueOnce([
+        {
+          id: "run-1",
+          taskId: "task-1",
+          leaseFence: 0,
+          updatedAt,
+          task: { prompt: config.prompt },
+        },
+      ] as never);
+    vi.mocked(tx.computerExecutionLease.findMany).mockResolvedValueOnce([
+      { runId: "held-0" },
+    ] as never);
+    expect(await findPendingRoutineTick(tx, config)).toEqual({ id: "run-1", taskId: "task-1" });
+  });
   it("preserves manual runs even with no client nonce", async () => {
     const { tx, updateMany } = fixture(null);
     expect(await findPendingRoutineTick(tx, config)).toBeNull();

@@ -67,10 +67,11 @@ export async function findPendingRoutineTick(
     task: { status: "queued" },
   };
   // The prompt is encrypted under a fresh IV each time, so it is compared once read back, a page
-  // at a time until one holds a match, so work under an older prompt never hides it.
-  const candidates: Array<{ id: string; taskId: string; leaseFence: number; updatedAt: Date }> = [];
+  // at a time until one keeps a match, so work under an older prompt never hides it.
+  let retained: { id: string; taskId: string } | null = null;
+  const cancelledEvents: { threadId: string; seq: number }[] = [];
   let cursor: string | undefined;
-  while (!candidates.length) {
+  while (!retained) {
     const page = await tx.run.findMany({
       where: pristine,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -84,57 +85,57 @@ export async function findPendingRoutineTick(
       take: PAGE,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
-    for (const { task, ...candidate } of page)
-      if (task.prompt === config.prompt) candidates.push(candidate);
+    const candidates = page.filter(({ task }) => task.prompt === config.prompt);
+    const leases = candidates.length
+      ? await tx.computerExecutionLease.findMany({
+          where: {
+            runId: { in: candidates.map((candidate) => candidate.id) },
+            expiresAt: { gt: new Date() },
+          },
+          select: { runId: true },
+        })
+      : [];
+    const held = new Set(leases.map(({ runId }) => runId));
+    for (const candidate of candidates) {
+      // A stale pre-attempt timestamp/fence does not prove execution. Attempts,
+      // effects, checkpoints and live computer ownership do.
+      if (held.has(candidate.id)) continue;
+      // Dispatch can race the earlier read. Lock and recheck, including its exact
+      // fence, so work claimed since the selection is never folded or cancelled.
+      const locked = await tx.run.updateMany({
+        where: { ...pristine, id: candidate.id, leaseFence: candidate.leaseFence },
+        data: retained
+          ? {
+              status: "cancelled",
+              completedAt: new Date(),
+              wakeAt: null,
+              leaseFence: { increment: 1 },
+            }
+          : { updatedAt: candidate.updatedAt },
+      });
+      if (locked.count !== 1) continue;
+      if (!retained) {
+        retained = { id: candidate.id, taskId: candidate.taskId };
+        continue;
+      }
+      // Keep historical rows and terminal events; only redundant, unstarted timer
+      // occurrences disappear from the runnable backlog.
+      await tx.task.updateMany({
+        where: { id: candidate.taskId, status: "queued", runs: { every: { status: "cancelled" } } },
+        data: { status: "cancelled" },
+      });
+      const event = await appendEventInTransaction(tx, {
+        spaceId: config.spaceId,
+        threadId: config.threadId,
+        botId: config.botId,
+        type: "run.cancelled",
+        runId: candidate.id,
+        payload: { reason: "routine_coalesced", supersededByRunId: retained.id },
+      });
+      cancelledEvents.push({ threadId: config.threadId, seq: event.seq });
+    }
     if (page.length < PAGE) break;
     cursor = page.at(-1)!.id;
-  }
-  if (!candidates.length) return null;
-  const runIds = candidates.map((candidate) => candidate.id);
-  const leases = await tx.computerExecutionLease.findMany({
-    where: { runId: { in: runIds }, expiresAt: { gt: new Date() } },
-    select: { runId: true },
-  });
-  const held = new Set(leases.map(({ runId }) => runId));
-  let retained: { id: string; taskId: string } | null = null;
-  const cancelledEvents: { threadId: string; seq: number }[] = [];
-  for (const candidate of candidates) {
-    // A stale pre-attempt timestamp/fence does not prove execution. Attempts,
-    // effects, checkpoints and live computer ownership do.
-    if (held.has(candidate.id)) continue;
-    // Dispatch can race the earlier read. Lock and recheck, including its exact
-    // fence, so work claimed since the selection is never folded or cancelled.
-    const locked = await tx.run.updateMany({
-      where: { ...pristine, id: candidate.id, leaseFence: candidate.leaseFence },
-      data: retained
-        ? {
-            status: "cancelled",
-            completedAt: new Date(),
-            wakeAt: null,
-            leaseFence: { increment: 1 },
-          }
-        : { updatedAt: candidate.updatedAt },
-    });
-    if (locked.count !== 1) continue;
-    if (!retained) {
-      retained = { id: candidate.id, taskId: candidate.taskId };
-      continue;
-    }
-    // Keep historical rows and terminal events; only redundant, unstarted timer
-    // occurrences disappear from the runnable backlog.
-    await tx.task.updateMany({
-      where: { id: candidate.taskId, status: "queued", runs: { every: { status: "cancelled" } } },
-      data: { status: "cancelled" },
-    });
-    const event = await appendEventInTransaction(tx, {
-      spaceId: config.spaceId,
-      threadId: config.threadId,
-      botId: config.botId,
-      type: "run.cancelled",
-      runId: candidate.id,
-      payload: { reason: "routine_coalesced", supersededByRunId: retained.id },
-    });
-    cancelledEvents.push({ threadId: config.threadId, seq: event.seq });
   }
   return retained && { ...retained, ...(cancelledEvents.length ? { cancelledEvents } : {}) };
 }
