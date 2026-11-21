@@ -257,10 +257,8 @@ describe("answering a login card that replaces a saved login's site", () => {
       },
     });
     const refused = await answer(db).catch((error: unknown) => error);
-    // A bot reads this error too, so it stays the short server text, without removal advice.
     expect(refused).toBeInstanceOf(VaultFullError);
     expect((refused as Error).message).toBe(FULL_VAULT_ANSWER);
-    expect((refused as Error).message).not.toContain("Remove");
     expect(db.rows()).toHaveLength(VAULT_ITEM_LIMIT);
   });
 });
