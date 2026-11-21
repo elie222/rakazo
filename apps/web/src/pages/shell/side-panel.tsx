@@ -82,6 +82,7 @@ export function ShellSidePanel({
       panel={panel ?? "closed"}
       onCoversChat={onCoversChat}
       onOverlays={onOverlays}
+      onEscape={panel === "settings" && !computerOpen ? () => setPanel(null) : undefined}
     >
       {open ? (
         <div className="rk-scroll h-full w-full overflow-y-auto px-5 pt-3.5 pb-[17px]">

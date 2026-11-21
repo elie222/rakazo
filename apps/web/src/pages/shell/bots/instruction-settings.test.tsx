@@ -109,6 +109,14 @@ it("keeps history behind its label action and restores with the current baseline
   expect(host.querySelector("textarea")?.value).toBe("Earlier");
 });
 
+it("names the history dialog after its trigger", async () => {
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Instruction history"]')!.click(),
+  );
+  const dialog = document.body.querySelector('[role="dialog"]')!;
+  expect(dialog.getAttribute("aria-label")).toBe("Instruction history");
+});
+
 it("dates the history in the app language, not the system one", async () => {
   appLocale.current = "fr";
   await act(async () =>
