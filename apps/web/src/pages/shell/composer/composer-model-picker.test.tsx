@@ -74,6 +74,39 @@ describe("ComposerModelPicker", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    ["oauth", "Example Abonnement"],
+    ["api_key", "Acme"],
+  ])("shows the serving %s connection name in the model list", async (authKind, name) => {
+    i18n.load("de", { "Example subscription": "Example Abonnement" });
+    i18n.activate("de");
+    vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
+      { id: "connection", provider: "acme", label: "Acme", authKind, hasKey: true },
+    ] as never);
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([
+      {
+        provider: "acme",
+        providerName: "Acme",
+        subscriptionName: "Example subscription",
+        auth: "both",
+        id: "fast",
+        label: "Fast",
+      },
+    ] as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ComposerModelPicker bot={bot} onSaved={vi.fn()} onConnect={vi.fn()} open />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => {
+      const option = document.querySelector('[role="option"][aria-label^="Fast"]');
+      expect(option?.getAttribute("aria-label")).toBe(`Fast (${name})`);
+    });
+  });
+
   it("names the Space default's model and saves a pick to the bot", async () => {
     const onSaved = vi.fn();
     const updated = { ...bot, modelProvider: "acme", modelId: "smart" };

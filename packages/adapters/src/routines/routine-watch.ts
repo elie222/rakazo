@@ -12,7 +12,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatch, RoutineWatchState } from "@rakazo/contracts";
-import { RoutineWatchSchema, RoutineWatchStateSchema } from "@rakazo/contracts";
+import {
+  ROUTINE_WATCH_MIN_MINUTES,
+  RoutineWatchSchema,
+  RoutineWatchStateSchema,
+} from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import {
   connectorKindFromToolName,
@@ -117,6 +121,26 @@ export function parseRoutineWatchState(value: unknown): RoutineWatchState | null
   if (value == null) return null;
   const parsed = RoutineWatchStateSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+/** A new or re-armed watch takes its first reading a moment from now. */
+export function firstWatchCheck(): Date {
+  return new Date(Date.now() + 2_000);
+}
+
+/** A watch with a new check interval, held to the same bounds as the routine's settings. */
+export function watchWithInterval(
+  watch: RoutineWatch | null,
+  everyMinutes: unknown,
+): { watch: RoutineWatch } | { error: string } {
+  if (!watch) return { error: "everyMinutes is only for a routine that watches for changes." };
+  const parsed = RoutineWatchSchema.safeParse({ ...watch, everyMinutes });
+  if (!parsed.success) {
+    return {
+      error: `everyMinutes must be a whole number from ${ROUTINE_WATCH_MIN_MINUTES} to 1440.`,
+    };
+  }
+  return { watch: parsed.data };
 }
 
 export function nextRoutineWatchAt(watch: Pick<RoutineWatch, "everyMinutes">, from: Date): Date {
