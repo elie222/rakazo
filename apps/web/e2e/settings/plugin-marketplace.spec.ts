@@ -53,6 +53,16 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   await expect(dialog.getByRole("button", { name: "Add custom", exact: true })).toBeInViewport();
   await captureScreenshot(page, testInfo, "integrations-plugins-phone");
   await captureScreenshot(page, testInfo, "integrations-narrow-header");
+
+  await page.setViewportSize({ width: 900, height: 800 });
+  const dialogBox = (await dialog.boundingBox())!;
+  expect(dialogBox.x).toBeGreaterThanOrEqual(0);
+  expect(dialogBox.y).toBeGreaterThanOrEqual(0);
+  expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(900);
+  expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(800);
+  await expect(close).toBeVisible();
+  await expect(close).toBeInViewport();
+  await captureScreenshot(page, testInfo, "integrations-dialog-narrow-window");
   if (originalViewport) await page.setViewportSize(originalViewport);
 
   await dialog.getByRole("textbox", { name: "Search apps", exact: true }).fill("planning");
