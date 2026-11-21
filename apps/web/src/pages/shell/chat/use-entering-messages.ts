@@ -34,7 +34,9 @@ export function useEnteringMessages(messages: readonly SeqMessage[]): ReadonlySe
           !message.id.startsWith("progress:"),
       )
       .map((message) => message.id);
-    if (fresh.length > 0) setEntering(new Set(fresh));
+    // Keep the rows still playing: a second reply within the entrance window must not cut the
+    // first animation short by replacing the set.
+    if (fresh.length > 0) setEntering((current) => new Set([...current, ...fresh]));
   }, [messages]);
 
   useTimeout(() => setEntering(EMPTY), entering.size > 0 ? ENTER_MS : null, entering);

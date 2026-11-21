@@ -65,7 +65,9 @@ export function SettingsRow({
             {label}
           </FieldLabel>
         ) : (
-          <FieldTitle className="w-full text-body font-normal text-foreground">{label}</FieldTitle>
+          <FieldTitle className="w-full flex-col items-stretch text-body font-normal text-foreground">
+            {label}
+          </FieldTitle>
         )}
         {description ? (
           <FieldDescription id={descriptionId} className="text-start text-body-sm">

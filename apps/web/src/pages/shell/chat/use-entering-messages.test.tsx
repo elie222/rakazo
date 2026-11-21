@@ -77,6 +77,14 @@ describe("useEnteringMessages", () => {
     ).resolves.toEqual(new Set(["m2"]));
   });
 
+  it("keeps an earlier reply marked while a later one lands", async () => {
+    await show([message("m1", 1)]);
+    await show([message("m1", 1), message("m2", 2)]);
+    await expect(show([message("m1", 1), message("m2", 2), message("m3", 3)])).resolves.toEqual(
+      new Set(["m2", "m3"]),
+    );
+  });
+
   it("clears the mark once the entrance has played", async () => {
     vi.useFakeTimers();
     await show([message("m1", 1)]);
