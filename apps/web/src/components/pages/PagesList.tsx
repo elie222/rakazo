@@ -108,8 +108,8 @@ function OwnerPages({
     );
   }
   const items = uniquePages((pages.data?.pages ?? []).flatMap((read) => read.items));
-  // A failed read is not an empty list: say so, and offer to read it again.
-  if (pages.isError && items.length === 0) {
+  // Keep an active search editable when its results cannot be loaded.
+  if (pages.isError && items.length === 0 && (preview || !query)) {
     return (
       <div role="alert" className="flex flex-col items-start gap-2 px-1 py-2">
         <p className="text-body-sm text-muted-foreground">
@@ -314,7 +314,7 @@ function OwnerPages({
         </label>
       ) : null}
       {actionError}
-      {items.length === 0 ? (
+      {!pages.isError && items.length === 0 ? (
         <p className="px-2 py-1 text-body-sm text-muted-foreground">
           <Trans>No pages match “{query}”.</Trans>
         </p>
