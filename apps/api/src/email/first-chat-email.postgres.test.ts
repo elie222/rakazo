@@ -124,7 +124,7 @@ dbTests("first chat email", () => {
     await send(job);
     const [message, ...extra] = sentTo(id);
     expect(extra).toHaveLength(0);
-    expect(message!.subject).toBe("Dein Bot ist bereit");
+    expect(message!.subject).toBe("Sende deine erste Nachricht");
     expect(message!.text).toContain(`${WEB_ORIGIN}/sign-in`);
     expect(message!.headers?.["List-Unsubscribe"]).toContain("/api/v1/email/unsubscribe?user=");
     expect(capture.mock.calls.filter(([userId]) => userId === id)).toEqual([

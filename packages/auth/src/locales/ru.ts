@@ -97,10 +97,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "Это работает и с любым другим ассистентом: отправьте ему один промпт и вставьте его ответ.",
   "Import an agent": "Импортировать агента",
-  "Your bot is ready": "Ваш бот готов",
-  "Your model is connected, so your bot can reply now.":
-    "Модель подключена, и теперь ваш бот может отвечать.",
-  "A good first task: ask it to go through your inbox and tell you what needs a reply.":
-    "Хорошая первая задача: попросите его просмотреть входящие и сказать, на что нужно ответить.",
   "Send a message": "Отправить сообщение",
+  "Send your first message": "Отправьте первое сообщение",
+  "Your bot is ready. Send it a message to get started.":
+    "Ваш бот готов. Отправьте ему сообщение, чтобы начать.",
 };

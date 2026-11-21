@@ -94,10 +94,8 @@ export const HE_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "זה עובד גם עם כל עוזר אחר: שלחו לו פרומפט אחד והדביקו את התשובה שלו.",
   "Import an agent": "ייבוא סוכן",
-  "Your bot is ready": "הבוט שלכם מוכן",
-  "Your model is connected, so your bot can reply now.":
-    "המודל שלכם מחובר, כך שהבוט שלכם יכול לענות עכשיו.",
-  "A good first task: ask it to go through your inbox and tell you what needs a reply.":
-    "משימה ראשונה טובה: בקשו ממנו לעבור על תיבת הדואר הנכנס שלכם ולומר לכם על מה צריך להשיב.",
   "Send a message": "שליחת הודעה",
+  "Send your first message": "שלחו את ההודעה הראשונה שלכם",
+  "Your bot is ready. Send it a message to get started.":
+    "הבוט שלכם מוכן. שלחו לו הודעה כדי להתחיל.",
 };

@@ -88,9 +88,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "其他任何助理也可以：傳一則提示詞給它，再貼上它的回覆。",
   "Import an agent": "匯入智慧代理",
-  "Your bot is ready": "你的機器人已準備好",
-  "Your model is connected, so your bot can reply now.": "你的模型已連接，機器人現在可以回覆了。",
-  "A good first task: ask it to go through your inbox and tell you what needs a reply.":
-    "第一個任務推薦：請它查看你的收件匣，告訴你哪些郵件需要回覆。",
   "Send a message": "傳送訊息",
+  "Send your first message": "傳送你的第一則訊息",
+  "Your bot is ready. Send it a message to get started.":
+    "你的機器人已準備好。傳一則訊息給它開始吧。",
 };

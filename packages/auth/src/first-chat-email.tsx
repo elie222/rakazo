@@ -17,13 +17,10 @@ export function firstChatEmail(
   return message(
     user.email,
     locale,
-    say("Your bot is ready"),
+    say("Send your first message"),
     <>
       <Text>{greeting(say, user.name)}</Text>
-      <Text>{say("Your model is connected, so your bot can reply now.")}</Text>
-      <Text>
-        {say("A good first task: ask it to go through your inbox and tell you what needs a reply.")}
-      </Text>
+      <Text>{say("Your bot is ready. Send it a message to get started.")}</Text>
       <Button href={firstChatUrl(links.webOrigin)}>{say("Send a message")}</Button>
     </>,
     links.unsubscribeUrl,

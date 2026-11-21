@@ -96,10 +96,8 @@ export const PL_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "Działa to też z każdym innym asystentem: wyślij mu jeden prompt i wklej jego odpowiedź.",
   "Import an agent": "Importuj agenta",
-  "Your bot is ready": "Twój bot jest gotowy",
-  "Your model is connected, so your bot can reply now.":
-    "Twój model jest połączony, więc bot może już odpowiadać.",
-  "A good first task: ask it to go through your inbox and tell you what needs a reply.":
-    "Dobre pierwsze zadanie: poproś go, by przejrzał Twoją skrzynkę odbiorczą i powiedział, co wymaga odpowiedzi.",
   "Send a message": "Wyślij wiadomość",
+  "Send your first message": "Wyślij swoją pierwszą wiadomość",
+  "Your bot is ready. Send it a message to get started.":
+    "Twój bot jest gotowy. Wyślij mu wiadomość, aby zacząć.",
 };

@@ -96,10 +96,8 @@ export const KO_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "다른 어시스턴트에서도 됩니다. 프롬프트 하나를 보내고 답변을 붙여넣으세요.",
   "Import an agent": "에이전트 가져오기",
-  "Your bot is ready": "봇이 준비되었습니다",
-  "Your model is connected, so your bot can reply now.":
-    "모델이 연결되어 이제 봇이 답할 수 있습니다.",
-  "A good first task: ask it to go through your inbox and tell you what needs a reply.":
-    "첫 작업으로 추천: 받은편지함을 살펴보고 답장이 필요한 것을 알려 달라고 해 보세요.",
   "Send a message": "메시지 보내기",
+  "Send your first message": "첫 메시지를 보내세요",
+  "Your bot is ready. Send it a message to get started.":
+    "봇이 준비되었습니다. 메시지를 보내 시작하세요.",
 };

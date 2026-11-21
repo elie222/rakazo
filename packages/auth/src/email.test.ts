@@ -331,15 +331,14 @@ it("asks for one thing in the first chat email: a message to the bot", async () 
   const user = { name: "Ana", email: "user@example.test" };
   const links = { webOrigin: "https://app.example.test", unsubscribeUrl };
   const message = await firstChatEmail(user, links);
-  expect(message.subject).toBe("Your bot is ready");
+  expect(message.subject).toBe("Send your first message");
   expect(message.text).toContain("Hi Ana,");
-  expect(message.text).toContain("Your model is connected, so your bot can reply now.");
-  expect(message.text).toContain("ask it to go through your inbox");
+  expect(message.text).toContain("Your bot is ready. Send it a message to get started.");
   const hrefs = [...message.html!.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
   expect(hrefs).toEqual(["https://app.example.test/sign-in", unsubscribeUrl]);
   expect(message.headers?.["List-Unsubscribe"]).toBe(`<${unsubscribeUrl}>`);
   const japanese = await firstChatEmail(user, links, "ja");
-  expect(japanese.subject).toBe("ボットの準備ができました");
+  expect(japanese.subject).toBe("最初のメッセージを送りましょう");
   expect(japanese.html).toContain('lang="ja"');
   expect(japanese.text).toContain("メッセージを送る");
 });
