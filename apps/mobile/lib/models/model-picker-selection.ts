@@ -3,6 +3,7 @@ import type { Href } from "expo-router";
 
 export type ModelPickerRequest = {
   title?: string;
+  connectionNotice?: string;
   emptyMessage?: string;
   choices: ChatModelChoice[];
   /** Providers that need a connection first, listed after the models. */
