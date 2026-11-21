@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
+import { I18nProvider } from "@lingui/react";
 import type { Me, RakazoDesktop } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
@@ -13,13 +15,6 @@ const dialogProps = vi.hoisted(() => ({
 }));
 const rpc = vi.hoisted(() => ({ me: vi.fn() }));
 
-vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({
-    t: (strings: TemplateStringsArray, ...values: unknown[]) =>
-      strings.reduce((text, part, index) => text + part + (values[index] ?? ""), ""),
-  }),
-  Trans: ({ children }: { children: ReactNode }) => children,
-}));
 vi.mock("@rakazo/ui-web", () => {
   const Block = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
@@ -70,6 +65,8 @@ let host: HTMLDivElement;
 let root: ReturnType<typeof createQueryRoot>;
 
 beforeEach(() => {
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   rpc.me.mockResolvedValue(docker);
@@ -105,7 +102,13 @@ function macWith(computer: Record<string, unknown>) {
 const docker = { canChooseHostComputer: true, computerHost: "docker" } as Me;
 
 async function renderPrompt() {
-  await act(async () => root.render(<HostComputerPrompt initialMe={docker} />));
+  await act(async () =>
+    root.render(
+      <I18nProvider i18n={i18n}>
+        <HostComputerPrompt initialMe={docker} />
+      </I18nProvider>,
+    ),
+  );
 }
 
 /** App menu → Computer Access…, which reads the current choice first. */

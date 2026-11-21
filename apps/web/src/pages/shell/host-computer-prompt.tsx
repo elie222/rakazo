@@ -112,7 +112,7 @@ export function HostComputerPrompt({
   const busy = pending || checking;
 
   // The choice is required, so the dialog stays open until one is saved. It also stays open while
-  // a save or a check runs, so that failure is shown in the dialog.
+  // a save or a check runs, so its failure is shown in the dialog.
   return (
     <Dialog
       open
