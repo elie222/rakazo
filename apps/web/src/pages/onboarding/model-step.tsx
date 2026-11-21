@@ -193,7 +193,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
                 onValueChange={(value) => {
                   if (typeof value !== "string" || !value) return;
                   if (value === modelId) return;
-                  cancelOAuthAttempt();
+                  cancelOAuthAttempt("replaced");
                   setModelId(value);
                   setThinkingLevel(null);
                 }}
@@ -376,7 +376,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
         starting={oauthPending}
         onStart={() => beginSelectedSubscriptionSignIn()}
         onRestart={() => {
-          cancelOAuthAttempt();
+          cancelOAuthAttempt("replaced");
           beginSelectedSubscriptionSignIn();
         }}
         codeCopied={codeCopied}

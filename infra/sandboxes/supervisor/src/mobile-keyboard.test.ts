@@ -242,8 +242,12 @@ function keyboardFixture(
     focusOnClick: true,
     sendKey: (keysym: number, code?: string, down?: boolean) => keys.push([keysym, code, down]),
   };
+  let keyboard: Keyboard | undefined;
   class Keyboard {
-    onkeyevent = null;
+    onkeyevent: ((keysym: number, code: string, down: boolean) => void) | null = null;
+    constructor() {
+      keyboard = this;
+    }
     grab() {}
     ungrab() {}
   }
@@ -283,6 +287,7 @@ function keyboardFixture(
     keyBar,
     keyBarListeners,
     buttons,
+    keyboard,
     windowTarget,
     detach,
   };
@@ -534,6 +539,74 @@ describe("mobile computer keyboard", () => {
       preventDefault() {},
     });
     expect(keys.at(-1)).toEqual([0xff1b, "Escape", undefined]);
+  });
+
+  it("holds a latched Ctrl around a key that noVNC sends on keydown, then clears it", () => {
+    const { keys, keyBarListeners, buttons, input, inputListeners, keyboard } = keyboardFixture({
+      keyBar: true,
+    });
+    const control = buttons.find((item) => item.getAttribute("data-key") === "Control");
+    keyBarListeners.get("click")?.({ target: control, preventDefault() {} });
+    keyboard?.onkeyevent?.(0xff0d, "Enter", true);
+    keyboard?.onkeyevent?.(0xff0d, "Enter", false);
+    expect(keys).toEqual([
+      [0xffe3, "ControlLeft", true],
+      [0xff0d, "Enter", true],
+      [0xff0d, "Enter", false],
+      [0xffe3, "ControlLeft", false],
+    ]);
+    expect(control?.getAttribute("aria-pressed")).toBe("false");
+    const seed = input.value;
+    input.value = `${seed}a`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    expect(keys.slice(4)).toEqual([[97, undefined, undefined]]);
+  });
+
+  it("keeps a latched Ctrl through a modifier keydown until the next other key", () => {
+    const { keys, keyBarListeners, buttons, keyboard } = keyboardFixture({ keyBar: true });
+    const control = buttons.find((item) => item.getAttribute("data-key") === "Control");
+    keyBarListeners.get("click")?.({ target: control, preventDefault() {} });
+    keyboard?.onkeyevent?.(0xffe1, "ShiftLeft", true);
+    keyboard?.onkeyevent?.(0xffe1, "ShiftLeft", false);
+    expect(control?.getAttribute("aria-pressed")).toBe("true");
+    expect(keys).toEqual([
+      [0xffe1, "ShiftLeft", true],
+      [0xffe1, "ShiftLeft", false],
+    ]);
+  });
+
+  it("releases a Ctrl held for a keydown when the keyboard loses focus", () => {
+    const { keys, keyBarListeners, buttons, keyboard, inputListeners } = keyboardFixture({
+      keyBar: true,
+    });
+    const control = buttons.find((item) => item.getAttribute("data-key") === "Control");
+    keyBarListeners.get("click")?.({ target: control, preventDefault() {} });
+    keyboard?.onkeyevent?.(0xff0d, "Enter", true);
+    inputListeners.get("blur")?.({});
+    expect(keys).toEqual([
+      [0xffe3, "ControlLeft", true],
+      [0xff0d, "Enter", true],
+      [0xffe3, "ControlLeft", false],
+    ]);
+    keyboard?.onkeyevent?.(0xff0d, "Enter", false);
+    expect(keys.slice(3)).toEqual([[0xff0d, "Enter", false]]);
+  });
+
+  it("applies a latched Ctrl to a Backspace found by a deleting input", () => {
+    const { keys, keyBarListeners, buttons, input, inputListeners } = keyboardFixture({
+      keyBar: true,
+    });
+    const control = buttons.find((item) => item.getAttribute("data-key") === "Control");
+    keyBarListeners.get("click")?.({ target: control, preventDefault() {} });
+    input.value = input.value.slice(0, -1);
+    inputListeners.get("input")?.({ target: input, inputType: "deleteContentBackward" });
+    expect(keys).toEqual([
+      [0xffe3, "ControlLeft", true],
+      [0xff08, "Backspace", true],
+      [0xff08, "Backspace", false],
+      [0xffe3, "ControlLeft", false],
+    ]);
+    expect(control?.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("lets sibling chrome controls receive taps while the keyboard is open", () => {

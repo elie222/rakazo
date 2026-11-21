@@ -224,7 +224,7 @@ export default function ModelConnection() {
     codeCopied,
     copyOAuthCode,
     cancelOAuth,
-    cancelSignIn,
+    leaveSignIn,
     openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,
@@ -246,8 +246,8 @@ export default function ModelConnection() {
 
   const cancelInFlightWork = useCallback(() => {
     modelProbe.invalidate();
-    cancelSignIn();
-  }, [cancelSignIn, modelProbe]);
+    leaveSignIn();
+  }, [leaveSignIn, modelProbe]);
 
   useEffect(
     () => () => {
@@ -630,7 +630,7 @@ export default function ModelConnection() {
                 fill
                 label={oauth.mode === "device-code" ? t`Get a new code` : t`Start over`}
                 onPress={() => {
-                  cancelOAuth();
+                  cancelOAuth("replaced");
                   void startSubscriptionSignIn();
                 }}
                 prominence="secondary"

@@ -117,7 +117,7 @@ export function ConnectionControls({
             disabled={busy}
             onStart={() => beginSelectedSubscriptionSignIn()}
             onRestart={() => {
-              cancelOAuthAttempt();
+              cancelOAuthAttempt("replaced");
               beginSelectedSubscriptionSignIn();
             }}
             codeCopied={codeCopied}
