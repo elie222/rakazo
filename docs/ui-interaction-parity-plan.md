@@ -1,6 +1,6 @@
 # UI 与交互体系对齐：落地实施计划
 
-状态：PR 1–2 已实现；PR 3–5 待执行。
+状态：PR 1–3 已实现；PR 4–5 待执行。
 
 设计依据：
 
@@ -41,6 +41,17 @@
 - Activity 保留为列表模式，Integrations 保留在账户菜单；移动端 rail 推迟到 PR 5。
 - 新增 `chat/sidebar.spec.ts`，单条 E2E 通过并产出明暗截图。
 - Web 2,701 测试、`pnpm checks` 153 项、typecheck、生产构建通过；Web 启动体积 891.7/900 kB。
+
+## 1.3 PR 3 结果
+
+- 聊天列表行改用 `ListRow`/`ListRowLink`：默认 56px、紧凑密度 44px；标题与预览单行截断，不再各写一套行高。
+- Activity 列表使用 `ListRow tone="surface"`，页面表面不再借用侧栏颜色；Artifacts 侧栏保留密集多行列表，只统一卡片圆角、阴影和内边距。
+- 新消息 450ms 弹入；流式回复保留全部文字，只叠加 1.6s 低对比扫光；`prefers-reduced-motion` 关闭两者。
+- 输入区聚焦时使用语义阴影和 2px 焦点环；发送中按钮显示 Spinner 并 `aria-busy`，阻止重复提交。
+- 列表重排使用 Web Animations API 的 FLIP，只在列表签名变化时测量，流式文字不会触发布局读取。
+- 新增 `use-flip.test.tsx`、`use-entering-messages.test.tsx`，并在 `transcript.test.tsx`、`composer.test.tsx`、`ActivityList.test.tsx` 补行为断言；`chat/sidebar.spec.ts` 覆盖 56px 行高、隐藏列表的焦点隔离与移动端 Activity 入口。
+- 行尾“More”悬浮菜单留给 PR 4：现有聊天菜单是右键上下文菜单，直接复用到悬浮按钮会在窄行上覆盖整行点击（E2E 已复现），因此 PR 3 不提前上线半成品。
+- 验证：UI 包 101 测试、Web 2,712 测试、`pnpm checks` 153 项、typecheck、生产构建通过；Web 启动体积 893.7/900 kB。
 
 ## 2. 交付边界
 
