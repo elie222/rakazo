@@ -52,7 +52,7 @@ interface ModelSpec {
   space: { column: "spaceId" } | { parent: SpaceSource };
   /** Relation field for the owner column (ROW_OWNER), for `connect` writes. */
   ownerRelation: string;
-  searchTokens?: boolean;
+  searchTokens?: "prefix" | "han-pairs";
 }
 
 /** Further content columns (external messages, steering, skills, …) add an entry here. */
@@ -62,7 +62,7 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     fields: { blocks: { plainKeys: MESSAGE_BLOCK_PLAIN_KEYS }, toolHistory: { hidden: true } },
     space: { parent: "threads" },
     ownerRelation: "thread",
-    searchTokens: true,
+    searchTokens: "han-pairs",
   },
   Event: {
     table: "events",
@@ -110,7 +110,7 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     fields: { fromAddress: {}, fromName: {}, subject: {}, text: {} },
     space: { column: "spaceId" },
     ownerRelation: "bot",
-    searchTokens: true,
+    searchTokens: "prefix",
   },
 };
 
@@ -184,6 +184,11 @@ export interface ContentEncryption {
     query: string,
     domain: SearchTokenDomain,
   ): Promise<number[][]>;
+  /** Separate prefix and pair alternatives for each version of the space's key. */
+  spaceMessageSearchTokens(
+    spaceId: string,
+    query: string,
+  ): Promise<Array<{ prefix: number[]; pairs: number[] }>>;
 }
 
 /** Undefined for clients built without content encryption (fakes and temp-table tests). */
@@ -426,7 +431,11 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     }
     // Tokens cover the fields written here: indexed models write all of them together.
     if (spec.searchTokens && fields.some((field) => !spec.fields[field]!.hidden))
-      next.searchTokens = searchTokens(key, { words: words.join("\n"), strings });
+      next.searchTokens = searchTokens(
+        key,
+        { words: words.join("\n"), strings },
+        { hanPairs: spec.searchTokens === "han-pairs" },
+      );
     ring.remember(spec.table, rowId, context);
     return next;
   }
@@ -583,6 +592,13 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     async messageSearchTokens(spaceId, query, domain) {
       const keys = await ring.allFresh(spaceId);
       return keys.map((key) => querySearchTokens(key, query, domain));
+    },
+    async spaceMessageSearchTokens(spaceId, query) {
+      const keys = await ring.allFresh(spaceId);
+      return keys.map((key) => ({
+        prefix: querySearchTokens(key, query, "prefix"),
+        pairs: querySearchTokens(key, query, "han-pair"),
+      }));
     },
   };
 
