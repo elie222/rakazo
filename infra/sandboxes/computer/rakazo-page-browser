@@ -1917,9 +1917,22 @@ PURCHASE_HELPERS = r"""
   const CARD_TOKENS = ["cc-number", "cc-csc", "cc-exp", "cc-exp-month", "cc-exp-year"];
   // What only a payment card's field is called. "Card number" alone is not: membership, frequent-flyer and ID
   // cards have numbers too, and a payment card's form also asks for its security code.
-  const CARD_NAMING = /(?:(?<!\p{L})|(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー]))(?:cvv2?|cvc2?|cvn2?)(?:(?!\p{L})|(?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー]))|(?:(?<![\p{L}\p{N}])|(?<=安全[码碼]|セキュリティコード|カード|卡|카드))csc(?:(?![\p{L}\p{N}])|(?=[码碼]|コード|번호|番号))|card[\s_-]*(?:security|verification)|(?:credit|debit)[\s_-]*card|信用卡|银行卡|銀行卡|借记卡|借記卡|クレジットカード|デビットカード|신용카드|tarjeta[\s_-]*de[\s_-]*(?:crédito|credito|débito|debito)|carte[\s_-]*(?:bancaire|de[\s_-]*crédit|de[\s_-]*credit)|kreditkarte|debitkarte|bankkarte|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|כרטיס[\s_-]*אשראי/iu;
+  // CJK text has no spaces, so a code word counts when it touches CJK characters as well as when it is a whole word.
+  const CJK = String.raw`[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー]`;
+  const standalone = (word, letters, before, after) =>
+    `(?:(?<!${letters})|(?<=${before}))${word}(?:(?!${letters})|(?=${after}))`;
+  const SECURITY_CODE = standalone("(?:cvv2?|cvc2?|cvn2?)", String.raw`\p{L}`, CJK, CJK);
+  const SECURITY_CODE_CSC = standalone("csc", String.raw`[\p{L}\p{N}]`, "安全[码碼]|セキュリティコード|カード|卡|카드",
+    "[码碼]|コード|번호|番号");
+  const CARD_KINDS = String.raw`card[\s_-]*(?:security|verification)|(?:credit|debit)[\s_-]*card`;
+  const CARD_KINDS_ASIA = "信用卡|银行卡|銀行卡|借记卡|借記卡|クレジットカード|デビットカード|신용카드";
+  const CARD_KINDS_EUROPE = String.raw`tarjeta[\s_-]*de[\s_-]*(?:crédito|credito|débito|debito)|carte[\s_-]*(?:bancaire|de[\s_-]*crédit|de[\s_-]*credit)|kreditkarte|debitkarte|bankkarte`;
+  const MASKED_NUMBER = String.raw`(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}`;
+  const CARD_KINDS_HEBREW = String.raw`כרטיס[\s_-]*אשראי`;
+  const CARD_NAMING = new RegExp([SECURITY_CODE, SECURITY_CODE_CSC, CARD_KINDS, CARD_KINDS_ASIA, CARD_KINDS_EUROPE,
+    MASKED_NUMBER, CARD_KINDS_HEBREW].join("|"), "iu");
   // A gift card, voucher or coupon number is not the card that pays.
-  const NOT_A_CARD = /gift|voucher|coupon|promo|loyalty|rewards?\b|שובר|קופון|מתנה|הטבה|礼品|禮品|礼券|禮券|优惠|優惠|代金券|积分|積分|ギフト|クーポン|ポイント|기프트|쿠폰|포인트|regalo|cup[oó]n|cadeau|bon[\s_-]*d['’]?achat|code[\s_-]*promo|geschenk|gutschein|treuepunkte|punkte|会员卡|會員卡|积分卡|積分卡|会員カード|メンバーズカード|회원카드|멤버십|tarjeta[\s_-]*de[\s_-]*socio|carte[\s_-]*de[\s_-]*(?:membre|fid[ée]lit[ée])|mitgliedskarte|kundenkarte/i;
+  const NOT_A_CARD = /gift|voucher|coupon|promo|loyalty|rewards?[\s_-]*(?:card|number|no\b|id|program|points?)|שובר|קופון|מתנה|הטבה|礼品|禮品|礼券|禮券|优惠|優惠|代金券|积分|積分|ギフト|クーポン|ポイント|기프트|쿠폰|포인트|regalo|cup[oó]n|cadeau|bon[\s_-]*d['’]?achat|code[\s_-]*promo|geschenk|gutschein|treuepunkte|punkte|会员卡|會員卡|积分卡|積分卡|会員カード|メンバーズカード|회원카드|멤버십|tarjeta[\s_-]*de[\s_-]*socio|carte[\s_-]*de[\s_-]*(?:membre|fid[ée]lit[ée])|mitgliedskarte|kundenkarte/i;
   const CARD_NUMBER = /card[\s_-]*(?:number|no\b|num\b)|cardnumber|cc[\s_-]*(?:num|number)|ccnum|מספר[\s_-]*כרטיס|卡号|卡號|カード番号|카드[\s_-]*번호|n[uú]mero[\s_-]*de[\s_-]*tarjeta|num[eé]ro[\s_-]*de[\s_-]*carte|kartennummer/i;
   const CARD_COMPANION = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|security[\s_-]*code|(?<![a-z])mm\s*\/\s*yy(?!yy)|קוד[\s_-]*(?:אבטחה|ביטחון)|安全[码碼]|セキュリティコード|보안[\s_-]*코드|c[oó]digo[\s_-]*de[\s_-]*seguridad|cryptogramme|sicherheitscode|pr[üu]fziffer/i;
   const namingOf = (el) => [el.name, el.id, el.placeholder, el.getAttribute("aria-label"),
