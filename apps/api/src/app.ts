@@ -1155,6 +1155,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       hub: userDeviceHub,
       devices: userDevices,
       forwardSecret: userDeviceSecret,
+      pairingSecret: createHmac("sha256", env.encryptionKey)
+        .update("rakazo:user-device-pair:v1")
+        .digest("hex"),
       session: async (request) => {
         const found = await readSession(request);
         return found ? { userId: found.user.id, sessionId: found.session.id } : null;
