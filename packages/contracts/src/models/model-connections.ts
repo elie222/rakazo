@@ -3,9 +3,6 @@ import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema } from "../settings-scope.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 
-const optionalText = z.string().optional();
-const optionalFlag = z.boolean().optional();
-
 /** Default maximum number of completion tokens for an OpenAI-compatible connection. */
 export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
 
@@ -87,9 +84,9 @@ export const ModelSettingsSchema = z
   .object({
     contextWindow: z.number().int().min(1).max(MAX_MODEL_CONTEXT_WINDOW).optional(),
     maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).optional(),
-    images: optionalFlag,
+    images: z.boolean().optional(),
     maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
-    reasoning: optionalFlag,
+    reasoning: z.boolean().optional(),
   })
   .refine((value) => modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow), {
     message: "Maximum output tokens must leave room for input",
@@ -125,21 +122,21 @@ export const ModelCredentialSchema = z.object({
   hasKey: z.boolean(),
   isDefault: z.boolean(),
   headerNames: z.array(z.string()).optional(),
-  baseUrl: optionalText,
+  baseUrl: z.string().optional(),
   /** The hosted service at `baseUrl`, when it is one the catalog offers by name. */
-  endpointName: optionalText,
+  endpointName: z.string().optional(),
   apiProtocol: ModelApiProtocolSchema.optional(),
-  accountId: optionalText,
-  gatewayId: optionalText,
-  projectId: optionalText,
-  region: optionalText,
+  accountId: z.string().optional(),
+  gatewayId: z.string().optional(),
+  projectId: z.string().optional(),
+  region: z.string().optional(),
   /** Requests only reach endpoints that keep no prompts or replies. Absent means off. */
-  zeroDataRetention: optionalFlag,
-  modelId: optionalText,
-  reasoning: optionalFlag,
+  zeroDataRetention: z.boolean().optional(),
+  modelId: z.string().optional(),
+  reasoning: z.boolean().optional(),
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
   maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).optional(),
-  supportsImages: optionalFlag,
+  supportsImages: z.boolean().optional(),
   maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
   /** Openai-compatible only; always contains `modelId` when set. */
@@ -154,7 +151,7 @@ export const ModelCredentialSchema = z.object({
    * The subscription sign-in was rejected. The stored tokens are gone and the
    * owner has to sign in again. Model choices on this connection are kept.
    */
-  reconnectRequired: optionalFlag,
+  reconnectRequired: z.boolean().optional(),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
@@ -291,31 +288,31 @@ export const ModelConnectInputSchema = z
   .object({
     ...ModelContextLimitsSchema.shape,
     provider: z.string(),
-    apiKey: optionalText,
-    accountId: optionalText,
-    gatewayId: optionalText,
-    projectId: optionalText,
-    region: optionalText,
+    apiKey: z.string().optional(),
+    accountId: z.string().optional(),
+    gatewayId: z.string().optional(),
+    projectId: z.string().optional(),
+    region: z.string().optional(),
     /** Omitted keeps the saved choice; false turns it off. */
-    zeroDataRetention: optionalFlag,
+    zeroDataRetention: z.boolean().optional(),
     headers: ModelHeadersSchema.optional(),
-    baseUrl: optionalText,
+    baseUrl: z.string().optional(),
     apiProtocol: ModelApiProtocolSchema.optional(),
-    label: optionalText,
+    label: z.string().optional(),
     /**
      * The connection this save updates; null adds another connection for the provider.
      * Older apps omit it and update the provider's newest connection.
      */
     credentialId: ModelConnectionTargetSchema,
-    modelId: optionalText,
-    reasoning: optionalFlag,
+    modelId: z.string().optional(),
+    reasoning: z.boolean().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
     /** False keeps the current main model; omitted means true. */
-    makeDefault: optionalFlag,
+    makeDefault: z.boolean().optional(),
     /** Where makeDefault sets the main model; omitted means whichever applies in the Space. */
     scope: SettingsScopeSchema.optional(),
     maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).nullable().optional(),
-    supportsImages: optionalFlag,
+    supportsImages: z.boolean().optional(),
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),
     enabledModelIds: z
       .array(z.string().trim().min(1).max(512))
@@ -398,11 +395,11 @@ export type ModelOAuthBegin = z.infer<typeof ModelOAuthBeginSchema>;
 /** A hosted OpenAI-compatible service offered by name. It always needs a key. */
 export const CompatibleEndpointPresetSchema = z.object({
   /** Stable id a deployment allowlist addresses this preset by. */
-  id: optionalText,
+  id: z.string().optional(),
   name: z.string(),
   baseUrl: z.string(),
   /** The model list can be loaded before the connection has a key. */
-  publicModels: optionalFlag,
+  publicModels: z.boolean().optional(),
 });
 export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
 
@@ -410,46 +407,46 @@ export const ModelCatalogEntrySchema = z.object({
   /** Omitted by older servers and ordinary chat connections. */
   protocol: z.enum(["chat", "decisions"]).optional(),
   /** Preselected for a new connection when there is no saved model choice. */
-  recommended: optionalFlag,
+  recommended: z.boolean().optional(),
   /** The provider's connections that can run it, when not all of them can. */
   credentialIds: z.array(z.string()).optional(),
   /** Available through the deployment without a personal credential. */
-  managed: optionalFlag,
+  managed: z.boolean().optional(),
   creditOfferingId: Id.optional(),
   provider: z.string(),
-  providerName: optionalText,
+  providerName: z.string().optional(),
   /** What a signed-in connection is called, by the plan people pay for. */
-  subscriptionName: optionalText,
-  subscriptionNameId: optionalText,
+  subscriptionName: z.string().optional(),
+  subscriptionNameId: z.string().optional(),
   id: z.string(),
   label: z.string(),
   billing: z.string(),
   auth: z.enum(["api-key", "oauth", "both"]).optional(),
-  oauthLabel: optionalText,
-  authHint: optionalText,
-  subscription: optionalFlag,
+  oauthLabel: z.string().optional(),
+  authHint: z.string().optional(),
+  subscription: z.boolean().optional(),
   signIn: ModelOAuthSignInModeSchema.optional(),
   /** A setting the provider makes the user turn on before its sign-in can work. */
   signInSetup: z.object({ label: z.string(), url: z.string().url() }).optional(),
-  reasoning: optionalFlag,
+  reasoning: z.boolean().optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
   /** Uncustomized capabilities for forms on other connections of the same provider. */
   defaultCapabilities: z
     .object({
-      images: optionalFlag,
-      reasoning: optionalFlag,
+      images: z.boolean().optional(),
+      reasoning: z.boolean().optional(),
       thinkingLevels: z.array(ThinkingLevelSchema).optional(),
     })
     .optional(),
   /** The model reads images. Left out where a connection setting decides it. */
-  images: optionalFlag,
+  images: z.boolean().optional(),
   /** The model card's context window and output ceiling, where the catalog has one. */
   contextWindow: z.number().int().min(1).optional(),
   maxTokens: z.number().int().min(1).optional(),
   /** Catalog stand-in so a provider appears before the user enters a real model id. */
-  placeholder: optionalFlag,
+  placeholder: z.boolean().optional(),
   /** Models share one pinned HTTPS models-list URL that can be probed. */
-  catalogProbe: optionalFlag,
+  catalogProbe: z.boolean().optional(),
   /** Ids the provider needs besides a key; a connection cannot save without them. */
   routingFields: z.array(ModelRoutingFieldSchema).optional(),
   /** A connection can limit requests to endpoints that keep no prompts or replies. */
