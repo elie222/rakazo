@@ -637,7 +637,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           <ThreadComposerDock
             hidden={readOnly}
             keyboardProgress={keyboard.progress}
-            keyboardProgress={keyboard.progress}
             columnPadding={columnPadding}
             notice={<ThreadFetchErrorNotice error={error} showingSaved={showingSaved} />}
             onHeight={setDockHeight}
