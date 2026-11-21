@@ -51,6 +51,7 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   const close = dialog.getByRole("button", { name: "Close integrations", exact: true });
   await expect(close).toBeInViewport();
   await expect(dialog.getByRole("button", { name: "Add custom", exact: true })).toBeInViewport();
+  await captureScreenshot(page, testInfo, "integrations-plugins-phone");
   await captureScreenshot(page, testInfo, "integrations-narrow-header");
   if (originalViewport) await page.setViewportSize(originalViewport);
 
@@ -140,6 +141,23 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   await expect(dialog.getByRole("button", { name: "Add skills", exact: true })).toBeVisible();
   expect(await rpc(page, "capabilities/list", undefined)).toEqual([]);
   expect(await skillNames()).not.toContain("planning-notes");
+  await dialog.getByRole("button", { name: "Close integrations", exact: true }).click();
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Skills", exact: true }).click();
+  const skillsDialog = page.getByRole("dialog", { name: "Skills", exact: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const packs = skillsDialog.getByTestId("skill-packs");
+  await packs.scrollIntoViewIfNeeded();
+  await expect(packs.getByText("Review Kit", { exact: true })).toBeVisible();
+  expect(await packs.evaluate((grid) => getComputedStyle(grid).display)).toBe("grid");
+  expect(
+    await packs.evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length),
+  ).toBe(1);
+  await captureScreenshot(page, testInfo, "skills-packs-phone");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  expect(
+    await packs.evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length),
+  ).toBe(2);
 });
 
 test("shows directly registered MCP servers in Integrations without catalog connections", async ({
