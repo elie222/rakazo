@@ -205,7 +205,9 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
           ...(filtered
             ? {
                 totals: { ...point, runs: 14, tokensPartial: true },
-                models: [{ provider: "subscription", model: "example-large", ...point }],
+                models: [
+                  { provider: "subscription", model: "example-large", ...point, cachedTokens: 0 },
+                ],
                 overTime: [point],
               }
             : {}),
