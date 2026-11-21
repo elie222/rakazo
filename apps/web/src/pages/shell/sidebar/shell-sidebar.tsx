@@ -11,7 +11,7 @@ import {
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
 import type { ReactNode, UIEvent } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import { PasskeyOffer } from "../../../components/account/PasskeyOffer";
 import { useUsageHint } from "../../../components/billing/PlanUsage";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
@@ -28,7 +28,6 @@ import { useAppRail } from "../app-rail";
 import type { ChatMenuState } from "../chat/chat-context-menu";
 import type { Panel } from "../right-panel-state";
 import type { SettingsSection } from "../shell-overlay-url";
-import { useFlip } from "../use-flip";
 import { SidebarFooter } from "./sidebar-footer";
 import { SidebarHeader } from "./sidebar-header";
 import type { SidebarSearch } from "./use-sidebar-search";
@@ -104,26 +103,6 @@ export function ShellSidebar({
   footer?: ReactNode;
 }) {
   const { t } = useLingui();
-  const listRef = useRef<HTMLDivElement>(null);
-  const flipRevision = useMemo(
-    () =>
-      [
-        bots
-          .map(
-            (bot) =>
-              `${bot.id}:${bot.pinned ? 1 : 0}:${bot.sectionId ?? ""}:${bot.spaceId}:${bot.updatedAt}`,
-          )
-          .join(","),
-        groups
-          .map(
-            (group) =>
-              `${group.id}:${group.pinned ? 1 : 0}:${group.sectionId ?? ""}:${group.spaceId}:${group.updatedAt}`,
-          )
-          .join(","),
-      ].join(";"),
-    [bots, groups],
-  );
-  useFlip(listRef, flipRevision);
   const rail = useAppRail();
   const {
     query,
@@ -266,7 +245,6 @@ export function ShellSidebar({
           </InputGroup>
         )}
         <div
-          ref={listRef}
           onScroll={resetFadeWhenUnscrollable}
           className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5"
         >
