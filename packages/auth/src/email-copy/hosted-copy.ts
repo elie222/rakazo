@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { translate } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { EmailCopyId } from "./defaults.js";
-import { EMAIL_COPY_DEFAULTS } from "./defaults.js";
+import { EMAIL_COPY_DEFAULTS, EMAIL_LOCALES } from "./defaults.js";
 import type { CopyByLocale } from "./validate.js";
 import { readCopyFile } from "./validate.js";
 
@@ -32,6 +32,7 @@ export function emailCopyReader(
       try {
         const read = readCopyFile(
           EMAIL_COPY_DEFAULTS,
+          EMAIL_LOCALES,
           id,
           JSON.parse(readFileSync(join(dir, `${id}.json`), "utf8")),
         );

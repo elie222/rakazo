@@ -38,4 +38,23 @@ export const EMAIL_COPY_DEFAULTS = {
   },
 } as const satisfies Record<string, Record<string, string>>;
 
+/** The app languages emails are written in; email.tsx has a catalog for each one but English. */
+export const EMAIL_LOCALES = [
+  "en",
+  "de",
+  "es",
+  "fr",
+  "he",
+  "hi",
+  "ja",
+  "ko",
+  "nl",
+  "pl",
+  "pt-BR",
+  "ru",
+  "tr",
+  "zh-CN",
+  "zh-TW",
+] as const;
+
 export type EmailCopyId = keyof typeof EMAIL_COPY_DEFAULTS;

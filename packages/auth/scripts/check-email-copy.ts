@@ -1,9 +1,9 @@
-// Fails when a deployment's email copy directory would fall back anywhere: an unknown email or
-// key, a missing key, or a string whose placeholders differ from its default. The production
+// Fails when a deployment's email copy directory would fall back anywhere: an unknown or missing
+// email, language or key, or a string whose placeholders differ from its default. The production
 // image build runs it under plain Node: node packages/auth/scripts/check-email-copy.ts <dir>
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { EMAIL_COPY_DEFAULTS } from "../src/email-copy/defaults.ts";
+import { EMAIL_COPY_DEFAULTS, EMAIL_LOCALES } from "../src/email-copy/defaults.ts";
 import { readCopyFile } from "../src/email-copy/validate.ts";
 
 const dir = process.argv[2];
@@ -13,6 +13,7 @@ const problems = files.flatMap((file) => {
   try {
     return readCopyFile(
       EMAIL_COPY_DEFAULTS,
+      EMAIL_LOCALES,
       file.slice(0, -".json".length),
       JSON.parse(readFileSync(join(dir, file), "utf8")),
     ).problems;

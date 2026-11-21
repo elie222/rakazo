@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { EMAIL_COPY_DEFAULTS } from "./defaults.js";
+import { CATALOGS } from "../email.js";
+import { EMAIL_COPY_DEFAULTS, EMAIL_LOCALES } from "./defaults.js";
 import { emailCopyReader } from "./hosted-copy.js";
 import { placeholders, readCopyFile } from "./validate.js";
 
@@ -17,6 +18,11 @@ function copyDir(files: Record<string, unknown>): string {
   for (const [id, file] of Object.entries(files))
     writeFileSync(join(dir, `${id}.json`), typeof file === "string" ? file : JSON.stringify(file));
   return dir;
+}
+
+/** A complete copy file: every language with the given strings. */
+function everyLanguage(strings: Record<string, string>) {
+  return Object.fromEntries(EMAIL_LOCALES.map((locale) => [locale, strings]));
 }
 
 function reader(dir: string | undefined) {
@@ -39,7 +45,7 @@ describe("email copy", () => {
     const { copy, problems } = reader(
       copyDir({
         referral: {
-          en: { ...referral, subject: "Hosted subject", body: "Hosted {weeks}" },
+          ...everyLanguage({ ...referral, subject: "Hosted subject", body: "Hosted {weeks}" }),
           de: { ...referral, subject: "Gehostet", body: "Gehostet {weeks}" },
         },
       }),
@@ -48,6 +54,14 @@ describe("email copy", () => {
     expect(copy("referral", "de")("body", { weeks: 3 })).toBe("Gehostet 3");
     expect(copy("referral", "fr")("body", { weeks: 3 })).toBe("Hosted 3");
     expect(problems).toEqual([]);
+  });
+
+  it("names a missing or unknown language and writes it in the file's English", () => {
+    const { en, ...rest } = everyLanguage({ ...referral, subject: "Hosted subject" });
+    const { fr: _fr, ...withoutFrench } = rest;
+    const { copy, problems } = reader(copyDir({ referral: { en, ...withoutFrench, "pt-br": en } }));
+    expect(copy("referral", "fr")("subject")).toBe("Hosted subject");
+    expect(problems).toEqual(["referral.fr: missing", "referral.pt-br: no such language"]);
   });
 
   it("falls back string by string and names each problem once", () => {
@@ -85,9 +99,15 @@ describe("email copy", () => {
     expect(problems[1]).toMatch(/^referral: .*ENOENT/);
   });
 
+  it("lists every language an email can be written in", () => {
+    expect([...EMAIL_LOCALES].sort()).toEqual(["en", ...Object.keys(CATALOGS)].sort());
+  });
+
   it("accepts its own defaults as a complete copy file", () => {
     for (const [id, strings] of Object.entries(EMAIL_COPY_DEFAULTS)) {
-      expect(readCopyFile(EMAIL_COPY_DEFAULTS, id, { en: strings }).problems).toEqual([]);
+      expect(
+        readCopyFile(EMAIL_COPY_DEFAULTS, EMAIL_LOCALES, id, everyLanguage(strings)).problems,
+      ).toEqual([]);
       for (const text of Object.values(strings))
         expect(placeholders(text).every((name) => /^\w+$/.test(name))).toBe(true);
     }

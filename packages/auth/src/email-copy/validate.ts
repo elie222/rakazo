@@ -10,11 +10,13 @@ export function placeholders(text: string): string[] {
 }
 
 /**
- * Keeps each string of a copy file that the email can use: a known key, a non-empty string, and
- * the same placeholders as its default. Everything else is named in `problems`.
+ * Keeps each string of a copy file that the email can use: a known language and key, a non-empty
+ * string, and the same placeholders as its default. Everything else, and every language or key
+ * the file lacks, is named in `problems`.
  */
 export function readCopyFile(
   defaults: Defaults,
+  locales: readonly string[],
   id: EmailCopyId | string,
   file: unknown,
 ): { copy: CopyByLocale; problems: string[] } {
@@ -23,7 +25,13 @@ export function readCopyFile(
   const problems: string[] = [];
   if (!keys) return { copy, problems: [`${id}: no such email`] };
   if (!isRecord(file)) return { copy, problems: [`${id}: not an object of languages`] };
+  for (const locale of locales)
+    if (!Object.hasOwn(file, locale)) problems.push(`${id}.${locale}: missing`);
   for (const [locale, strings] of Object.entries(file)) {
+    if (!locales.includes(locale)) {
+      problems.push(`${id}.${locale}: no such language`);
+      continue;
+    }
     if (!isRecord(strings)) {
       problems.push(`${id}.${locale}: not an object of strings`);
       continue;
