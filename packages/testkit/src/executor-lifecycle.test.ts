@@ -118,6 +118,23 @@ describeIntegration("run executor lifecycle", () => {
     );
   });
 
+  it("cancels a queued run of a paused bot instead of starting it", async () => {
+    const seeded = await seedRun("paused", "write a destination record");
+    // As if the run was queued just before the pause committed, and its cancellation missed it.
+    await db.bot.update({ where: { id: seeded.bot.id }, data: { pausedAt: new Date() } });
+    const recordsBefore = destination.records.length;
+
+    await runAsSystem("background job run.continue", () =>
+      handles.executor.continueRun(seeded.run.id, "worker-paused"),
+    );
+
+    expect(await db.attempt.count({ where: { runId: seeded.run.id } })).toBe(0);
+    expect(destination.records).toHaveLength(recordsBefore);
+    await expect(db.run.findUniqueOrThrow({ where: { id: seeded.run.id } })).resolves.toMatchObject(
+      { status: "cancelled" },
+    );
+  });
+
   it("records an uncertain result without replaying an interrupted external effect", async () => {
     const prompt = "write this to the destination crm as a note";
     const seeded = await seedRun("uncertain-effect", prompt);

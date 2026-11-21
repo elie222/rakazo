@@ -8,7 +8,7 @@ import type { PrismaClient } from "./client.js";
 import { Prisma } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import type { ThreadEvents } from "./events.js";
-import { appendEventInTransaction } from "./events.js";
+import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
 import { IsolationError } from "./scope.js";
 import { SpaceOwnerRequiredError } from "./space-members.js";
 import { SpaceDeletionInProgressError } from "./spaces.js";
@@ -46,7 +46,11 @@ export async function pausedBotIds(
 }
 
 /** The bot's owner or the Space's owner may pause and resume it. */
-async function pausableBot(prisma: PrismaClient, actor: Actor, botId: string) {
+async function pausableBot(
+  prisma: Pick<PrismaClient, "bot" | "spaceMember">,
+  actor: Actor,
+  botId: string,
+) {
   const bot = await prisma.bot.findFirst({
     where: { id: botId, spaceId: actor.spaceId, archivedAt: null },
     select: { id: true, name: true, userId: true },
@@ -62,15 +66,18 @@ async function pausableBot(prisma: PrismaClient, actor: Actor, botId: string) {
   return bot;
 }
 
-type RunCancellation = { threadId: string; seq: number; runs: Array<{ id: string }> };
+type RunCancellation = {
+  runs: Array<{ id: string }>;
+  events: Array<{ threadId: string; seq: number }>;
+};
 
 /** Cancels a paused bot's active runs (or just `runId`) in the caller's transaction. */
 async function cancelActiveRuns(
   tx: Prisma.TransactionClient,
   botId: string,
   runId?: string,
-): Promise<RunCancellation[]> {
-  if (!(await botPaused(tx, botId))) return [];
+): Promise<RunCancellation> {
+  if (!(await botPaused(tx, botId))) return { runs: [], events: [] };
   const threads = await tx.run.findMany({
     where: { botId, status: { in: [...ACTIVE_RUN_STATUSES] }, ...(runId ? { id: runId } : {}) },
     distinct: ["threadId"],
@@ -92,9 +99,10 @@ async function cancelActiveRuns(
     where: { executionRunId: { in: cancelledIds } },
     data: { executionRunId: null, executionBotId: null, executionLeaseExpiresAt: null },
   });
-  // Messages that were waiting to steer a cancelled run would otherwise steer the next one.
-  await tx.steeringMessage.deleteMany({
-    where: { botId, message: { threadId: { in: threads.map((thread) => thread.threadId) } } },
+  // A paused bot's waiting messages would otherwise steer its first run after it is resumed.
+  await tx.steeringMessage.deleteMany({ where: { botId } });
+  await tx.event.deleteMany({
+    where: { runId: { in: cancelledIds }, ...transientRunEventsWhere() },
   });
   const seqs = new Map<string, number>();
   for (const run of cancelled) {
@@ -108,11 +116,11 @@ async function cancelActiveRuns(
     });
     seqs.set(run.threadId, event.seq);
   }
-  return [...seqs].map(([threadId, seq]) => ({ threadId, seq, runs: cancelled }));
+  return { runs: cancelled, events: [...seqs].map(([threadId, seq]) => ({ threadId, seq })) };
 }
 
-async function notifyCancelled(events: Pick<ThreadEvents, "notify">, done: RunCancellation[]) {
-  for (const { threadId, seq } of done) {
+async function notifyCancelled(events: Pick<ThreadEvents, "notify">, done: RunCancellation) {
+  for (const { threadId, seq } of done.events) {
     await bestEffort("paused bot run cancellation notification", events.notify(threadId, seq));
   }
 }
@@ -132,12 +140,24 @@ export async function cancelPausedBotRuns(
     THREAD_LOCK_TRANSACTION_OPTIONS,
   );
   await notifyCancelled(events, committed);
-  return committed[0]?.runs ?? [];
+  return committed.runs;
 }
 
 /**
- * Pauses the bot, cancels its active runs, and records who did it. The pause and the
- * cancellation commit together: a failed cancellation leaves the bot as it was.
+ * Takes the bot row lock, then checks the caller may still pause or resume it, in the transaction
+ * that writes: a revoked owner cannot slip a change in between check and write.
+ */
+async function lockPausableBot(tx: Prisma.TransactionClient, actor: Actor, botId: string) {
+  await tx.$queryRaw`SELECT id FROM bots WHERE id = ${botId} FOR UPDATE`;
+  return pausableBot(tx, actor, botId);
+}
+
+/**
+ * Pauses the bot, then cancels its active runs, and records who did it. The pause commits first and
+ * holds no thread lock: a send locks its thread before it reads the pause under a shared bot lock,
+ * as a finishing run locks its thread before it updates the bot, so this waits for every send in
+ * flight and the cancellation below sees the runs they started. A cancellation that fails leaves
+ * the bot paused; pausing again finishes it.
  */
 export async function pauseBot(
   prisma: PrismaClient,
@@ -145,26 +165,28 @@ export async function pauseBot(
   actor: Actor,
   botId: string,
 ) {
-  const bot = await pausableBot(prisma, actor, botId);
-  const { count, committed } = await prisma.$transaction(async (tx) => {
+  const { bot, count } = await prisma.$transaction(async (tx) => {
+    const bot = await lockPausableBot(tx, actor, botId);
     const { count } = await tx.bot.updateMany({
       where: { id: bot.id, pausedAt: null },
       data: { pausedAt: new Date() },
     });
-    return { count, committed: await cancelActiveRuns(tx, bot.id) };
-  }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  await notifyCancelled(events, committed);
-  const cancelled = committed[0]?.runs ?? [];
-  if (count === 1) await auditBotPause(actor, bot, "bot.paused", cancelled.length);
-  return cancelled;
+    return { bot, count };
+  });
+  // Recorded before the cancellation: a pause that is repeated to finish it is not the pause.
+  if (count === 1) await auditBotPause(actor, bot, "bot.paused");
+  return cancelPausedBotRuns(prisma, events, bot.id);
 }
 
 /** Clears the pause; a routine or run stays as it was. */
 export async function resumeBot(prisma: PrismaClient, actor: Actor, botId: string) {
-  const bot = await pausableBot(prisma, actor, botId);
-  const { count } = await prisma.bot.updateMany({
-    where: { id: bot.id, pausedAt: { not: null } },
-    data: { pausedAt: null },
+  const { bot, count } = await prisma.$transaction(async (tx) => {
+    const bot = await lockPausableBot(tx, actor, botId);
+    const { count } = await tx.bot.updateMany({
+      where: { id: bot.id, pausedAt: { not: null } },
+      data: { pausedAt: null },
+    });
+    return { bot, count };
   });
   if (count === 1) await auditBotPause(actor, bot, "bot.resumed");
 }
@@ -173,13 +195,11 @@ function auditBotPause(
   actor: Actor,
   bot: { id: string; name: string },
   action: "bot.paused" | "bot.resumed",
-  cancelledRuns?: number,
 ) {
   return recordAuditEvent({
     action,
     actor: { type: "user", id: actor.userId },
     spaceId: actor.spaceId,
     target: { type: "bot", id: bot.id, label: bot.name },
-    metadata: cancelledRuns === undefined ? undefined : { cancelledRuns },
   });
 }

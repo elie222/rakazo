@@ -10,7 +10,7 @@ import {
   routineScheduleDelayed,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { IsolationError } from "@rakazo/db";
+import { BotPausedError, IsolationError, pausedBotIds } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 import type { RouterContext } from "./routes/context.js";
 
@@ -191,6 +191,7 @@ export async function createRoutineTestRun(
   nonce: string | undefined,
 ) {
   const { routine, botId, threadId } = target;
+  if ((await pausedBotIds(tx, [botId])).size > 0) throw new BotPausedError();
   const task = await tx.task.create({
     data: {
       spaceId: actor.spaceId,

@@ -13,8 +13,10 @@ import {
   isOneShotRoutineCrons,
   nextRoutineRunDateAcross,
 } from "@rakazo/core";
+import type { Prisma } from "@rakazo/db";
 import {
   accountDeactivated,
+  BotPausedError,
   isUniqueViolation,
   SpaceDeletionInProgressError,
   spaceTakesWork,
@@ -128,6 +130,29 @@ function nextScheduledRunAt(
     : nextRoutineRunDateAcross(routine.crons, scheduledAt, new Date(Date.now()), routine.timezone);
 }
 
+/**
+ * Read after the run insert, which holds a key-share lock on the bot row until commit: a pause
+ * either already committed and shows here, or waits for this transaction and its cancellation
+ * sweep sees the run. The claim filter alone is read before that lock is held.
+ */
+async function refusePausedBot(tx: Prisma.TransactionClient, botId: string) {
+  const paused = await tx.bot.findFirst({
+    where: { id: botId, pausedAt: { not: null } },
+    select: { id: true },
+  });
+  if (paused) throw new BotPausedError();
+}
+
+/** Answers "paused" when the claim transaction was rolled back by {@link refusePausedBot}. */
+async function orPaused<T>(claim: Promise<T>) {
+  try {
+    return await claim;
+  } catch (error) {
+    if (error instanceof BotPausedError) return "paused" as const;
+    throw error;
+  }
+}
+
 export async function wakeRoutine(deps: ExecutorDeps, routineId: string, scheduledFor: string) {
   const scheduledAt = new Date(scheduledFor);
   if (!Number.isFinite(scheduledAt.getTime())) return;
@@ -143,11 +168,11 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   )
     return;
   if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;
-  if (await accountDeactivated(deps.prisma, routine.userId)) {
-    // A deactivated owner's routine skips this occurrence without running. A recurring or
-    // watching one keeps its schedule, so it runs again once the owner is back; a one-time
-    // one is spent. A watch that no longer parses keeps the default interval, so the normal
-    // path reports it once the owner is back.
+  // An owner who cannot run it, or a bot that is paused, skips this occurrence without running.
+  // A recurring or watching routine keeps its schedule, so it runs again once the owner is back
+  // or the bot is resumed; a one-time one is spent. A watch that no longer parses keeps the
+  // default interval, so the normal path reports it then.
+  const skipOccurrence = async () => {
     const nextRunAt =
       routine.watch == null
         ? nextScheduledRunAt(routine, scheduledAt)
@@ -161,8 +186,9 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     });
     if (skipped.count && nextRunAt)
       await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
-    return;
-  }
+  };
+  if (await accountDeactivated(deps.prisma, routine.userId)) return skipOccurrence();
+
   const bot = await deps.prisma.bot.findUnique({
     where: { id: routine.botId },
     include: { thread: true },
@@ -175,6 +201,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     });
     return;
   }
+  if (bot?.pausedAt) return skipOccurrence();
   if (!bot?.thread) return;
   const targetThread = routine.threadId
     ? await deps.prisma.thread.findFirst({
@@ -215,83 +242,87 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     spaceId: routine.spaceId,
     userId: routine.userId,
   });
-  const claimed = await deps.prisma.$transaction(async (tx) => {
-    if (!(await spaceTakesWork(tx, routine.spaceId))) return null;
-    // The owner is part of the claim: a routine taken over mid-check runs as no one stale.
-    const updated = await tx.routine.updateMany({
-      where: {
-        id: routine.id,
-        userId: routine.userId,
-        active: true,
-        nextRunAt: scheduledAt,
-        bot: { archivedAt: null },
-      },
-      data: {
-        lastRunAt: new Date(),
-        nextRunAt,
-        ...(nextRunAt ? {} : { active: false }),
-        ...(watchTick?.run ? { watchState: watchTick.state } : {}),
-      },
-    });
-    if (updated.count !== 1) return null;
-    // The claim locks the row, so the prompt and the model are the versions
-    // committed when it fired; a prompt edit that lands while the tick gathers
-    // its context must not pair with the newer model. Skill expansion runs on
-    // the already-loaded list.
-    const current = await tx.routine.findUnique({
-      where: { id: routine.id },
-      select: { prompt: true, modelProvider: true, modelId: true, thinkingLevel: true },
-    });
-    if (!current) return null;
-    const routinePrompt =
-      expandSkillReferencesInPrompt(current.prompt, skillRecords) +
-      (watchTick?.run ? watchTick.note : "");
-    const timerTick = routine.watch == null && !isOneShotRoutineCrons(routine.crons);
-    const timerNonce = timerTick ? routineTimerNonce(routine.id, scheduledFor) : undefined;
-    if (timerNonce) {
-      const pending = await findPendingRoutineTick(tx, {
-        routineId: routine.id,
-        spaceId: routine.spaceId,
-        botId: bot.id,
-        userId: routine.userId,
-        threadId: thread.id,
-        prompt: routinePrompt,
-        ...routineRunModelPin(current),
+  const claimed = await orPaused(
+    deps.prisma.$transaction(async (tx) => {
+      if (!(await spaceTakesWork(tx, routine.spaceId))) return null;
+      // The owner is part of the claim: a routine taken over mid-check runs as no one stale.
+      const updated = await tx.routine.updateMany({
+        where: {
+          id: routine.id,
+          userId: routine.userId,
+          active: true,
+          nextRunAt: scheduledAt,
+          bot: { archivedAt: null, pausedAt: null },
+        },
+        data: {
+          lastRunAt: new Date(),
+          nextRunAt,
+          ...(nextRunAt ? {} : { active: false }),
+          ...(watchTick?.run ? { watchState: watchTick.state } : {}),
+        },
       });
-      if (pending) return { ...pending, coalesced: true };
-      // An edit racing an earlier tick can rewind the schedule onto an occurrence that already ran.
-      const fired = await tx.run.findUnique({
-        where: { spaceId_clientNonce: { spaceId: routine.spaceId, clientNonce: timerNonce } },
-        select: { id: true },
+      if (updated.count !== 1) return null;
+      // The claim locks the row, so the prompt and the model are the versions
+      // committed when it fired; a prompt edit that lands while the tick gathers
+      // its context must not pair with the newer model. Skill expansion runs on
+      // the already-loaded list.
+      const current = await tx.routine.findUnique({
+        where: { id: routine.id },
+        select: { prompt: true, modelProvider: true, modelId: true, thinkingLevel: true },
       });
-      if (fired) return "fired" as const;
-    }
-    const task = await tx.task.create({
-      data: {
-        spaceId: routine.spaceId,
-        botId: bot.id,
-        threadId: thread.id,
-        userId: routine.userId,
-        prompt: routinePrompt,
-        status: "queued",
-      },
-    });
-    const run = await tx.run.create({
-      data: {
-        spaceId: routine.spaceId,
-        botId: bot.id,
-        threadId: thread.id,
-        taskId: task.id,
-        userId: routine.userId,
-        status: "queued",
-        trigger: "routine",
-        routineId: routine.id,
-        clientNonce: timerNonce,
-        ...routineRunModelPin(current),
-      },
-    });
-    return { ...run, coalesced: false };
-  });
+      if (!current) return null;
+      const routinePrompt =
+        expandSkillReferencesInPrompt(current.prompt, skillRecords) +
+        (watchTick?.run ? watchTick.note : "");
+      const timerTick = routine.watch == null && !isOneShotRoutineCrons(routine.crons);
+      const timerNonce = timerTick ? routineTimerNonce(routine.id, scheduledFor) : undefined;
+      if (timerNonce) {
+        const pending = await findPendingRoutineTick(tx, {
+          routineId: routine.id,
+          spaceId: routine.spaceId,
+          botId: bot.id,
+          userId: routine.userId,
+          threadId: thread.id,
+          prompt: routinePrompt,
+          ...routineRunModelPin(current),
+        });
+        if (pending) return { ...pending, coalesced: true };
+        // An edit racing an earlier tick can rewind the schedule onto an occurrence that already ran.
+        const fired = await tx.run.findUnique({
+          where: { spaceId_clientNonce: { spaceId: routine.spaceId, clientNonce: timerNonce } },
+          select: { id: true },
+        });
+        if (fired) return "fired" as const;
+      }
+      const task = await tx.task.create({
+        data: {
+          spaceId: routine.spaceId,
+          botId: bot.id,
+          threadId: thread.id,
+          userId: routine.userId,
+          prompt: routinePrompt,
+          status: "queued",
+        },
+      });
+      const run = await tx.run.create({
+        data: {
+          spaceId: routine.spaceId,
+          botId: bot.id,
+          threadId: thread.id,
+          taskId: task.id,
+          userId: routine.userId,
+          status: "queued",
+          trigger: "routine",
+          routineId: routine.id,
+          clientNonce: timerNonce,
+          ...routineRunModelPin(current),
+        },
+      });
+      await refusePausedBot(tx, bot.id);
+      return { ...run, coalesced: false };
+    }),
+  );
+  if (claimed === "paused") return skipOccurrence();
   if (!claimed) return;
   if (claimed === "fired") {
     if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
@@ -374,7 +405,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
       crons: true,
       nextRunAt: true,
       userId: true,
-      bot: { select: { archivedAt: true } },
+      bot: { select: { archivedAt: true, pausedAt: true } },
       space: { select: { deletingAt: true } },
     },
   });
@@ -396,7 +427,8 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     !routine ||
     routine.userId !== failed.userId ||
     (!routine.active && !isOneShotRoutineCrons(routine.crons)) ||
-    routine.bot.archivedAt
+    routine.bot.archivedAt ||
+    routine.bot.pausedAt
   ) {
     await notifyAbandonedRetry();
     return;
@@ -421,7 +453,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
           userId: failed.userId,
           active: routine.active,
           ...(!routine.active ? { crons: { equals: routine.crons } } : {}),
-          bot: { archivedAt: null },
+          bot: { archivedAt: null, pausedAt: null },
         },
         data: { active: routine.active },
       });
@@ -458,7 +490,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
           status: "queued",
         },
       });
-      return tx.run.create({
+      const created = await tx.run.create({
         data: {
           spaceId: failed.spaceId,
           botId: failed.botId,
@@ -479,8 +511,14 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
             : {}),
         },
       });
+      await refusePausedBot(tx, failed.botId);
+      return created;
     });
   } catch (error) {
+    if (error instanceof BotPausedError) {
+      await notifyAbandonedRetry();
+      return;
+    }
     // retryOfRunId is unique: another delivery of this job already queued the retry.
     if (isUniqueViolation(error)) return;
     if (error instanceof SpaceDeletionInProgressError) return;

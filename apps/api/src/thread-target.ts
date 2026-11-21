@@ -535,12 +535,6 @@ export async function sendThreadMessage(
     deps.prisma.$transaction(async (tx) => {
       // A Space being deleted takes no new turns; its lock comes before the group and thread rows.
       if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
-      if (
-        target.kind === "bot" &&
-        !input.noModel &&
-        (await pausedBotIds(tx, [target.botId])).size > 0
-      )
-        throw new BotPausedError();
       const author = await loadMessageAuthor(tx, actor.userId);
       let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;
@@ -647,6 +641,9 @@ export async function sendThreadMessage(
         );
         // Match message counter locking before inspecting runs, without changing counters on rejection.
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+        // After the thread lock, as a finishing run takes its thread before the bot row.
+        if (!input.noModel && (await pausedBotIds(tx, [target.botId])).size > 0)
+          throw new BotPausedError();
         routineRuns = (await startRoutines?.(tx)) ?? [];
         const activeRuns = await tx.run.findMany({
           where: {
@@ -855,12 +852,6 @@ export async function sendThreadMessage(
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
       let { botIds: targetBotIds, namesNobody } = groupSendTargets(members, input, repliedBotId);
-      if (!input.noModel && targetBotIds.length > 0) {
-        // A paused member starts no work; the others still answer.
-        const pausedIds = await pausedBotIds(tx, targetBotIds);
-        if (pausedIds.size === targetBotIds.length) throw new BotPausedError();
-        targetBotIds = targetBotIds.filter((id) => !pausedIds.has(id));
-      }
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx, maxAttachmentsPerMessage: deps.maxAttachmentsPerMessage },
         actor,
@@ -875,6 +866,14 @@ export async function sendThreadMessage(
       );
       // Group ownership is locked first, then the thread, as in the normal write path.
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+      // A paused member starts no work; the others still answer. When every target is paused,
+      // the send is refused after a bare "stop" has had its chance to stop a helper.
+      let onlyPausedTargets = false;
+      if (!input.noModel && targetBotIds.length > 0) {
+        const pausedIds = await pausedBotIds(tx, targetBotIds);
+        onlyPausedTargets = pausedIds.size === targetBotIds.length;
+        targetBotIds = targetBotIds.filter((id) => !pausedIds.has(id));
+      }
       routineRuns = (await startRoutines?.(tx)) ?? [];
       let activeRuns = await tx.run.findMany({
         where: {
@@ -972,6 +971,7 @@ export async function sendThreadMessage(
         )(tx);
         return { message, runs: [working], routineRuns, eventSeq: event.seq, stop };
       }
+      if (onlyPausedTargets) throw new BotPausedError();
       if (input.noModel) {
         throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
       }

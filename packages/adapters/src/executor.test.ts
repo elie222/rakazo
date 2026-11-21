@@ -1284,6 +1284,7 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     bot: {
+      findFirst: vi.fn(async () => null),
       findUniqueOrThrow: vi.fn(async (args: { select?: { computerId?: boolean } }) =>
         args.select?.computerId ? { computerId: "computer-1", computerSwitching: false } : bot,
       ),
@@ -2182,6 +2183,7 @@ describe("createRunExecutor", () => {
         callback({
           $queryRaw: vi.fn(async () => []),
           space: { findUnique: vi.fn(async () => null) },
+          bot: { findFirst: vi.fn(async () => null) },
           routine: {
             updateMany,
             findUnique: vi.fn(async () => ({
@@ -2217,6 +2219,59 @@ describe("createRunExecutor", () => {
         data: expect.objectContaining({ nextRunAt: new Date("2026-03-02T00:00:00Z") }),
       }),
     );
+  });
+
+  it("skips an occurrence of a paused bot's routine and keeps its schedule", async () => {
+    const scheduledAt = new Date(Date.now() - 1_000);
+    const enqueue = vi.fn(async () => undefined);
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    const runCreate = vi.fn(async () => ({ id: "run-1" }));
+    const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
+      routine: {
+        findUnique: vi.fn(async () => ({
+          id: "routine-1",
+          spaceId: "ws-1",
+          userId: "user-1",
+          botId: "bot-1",
+          prompt: "say hi",
+          crons: ["0 0 * * *"],
+          timezone: "UTC",
+          active: true,
+          nextRunAt: scheduledAt,
+          threadId: null,
+          watch: null,
+        })),
+        updateMany,
+      },
+      bot: {
+        findUnique: vi.fn(async () => ({
+          id: "bot-1",
+          archivedAt: null,
+          pausedAt: new Date(),
+          thread: { id: "thread-1" },
+        })),
+      },
+      $transaction: vi.fn(),
+      run: { create: runCreate },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      jobs: { enqueue, cancel: vi.fn(), close: vi.fn(async () => undefined) },
+      events: { append: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
+
+    expect(runCreate).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ nextRunAt: scheduledAt }),
+        data: expect.objectContaining({ nextRunAt: expect.any(Date) }),
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "routine.wakeup" }));
   });
 
   it("deactivates one-shot routines after wake without scheduling another wakeup", async () => {
@@ -2259,6 +2314,7 @@ describe("createRunExecutor", () => {
         callback({
           $queryRaw: vi.fn(async () => []),
           space: { findUnique: vi.fn(async () => null) },
+          bot: { findFirst: vi.fn(async () => null) },
           routine: {
             updateMany,
             findUnique: vi.fn(async () => ({
@@ -2287,7 +2343,7 @@ describe("createRunExecutor", () => {
 
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ bot: { archivedAt: null } }),
+        where: expect.objectContaining({ bot: { archivedAt: null, pausedAt: null } }),
         data: expect.objectContaining({ active: false, nextRunAt: null }),
       }),
     );
@@ -2346,6 +2402,7 @@ describe("createRunExecutor", () => {
           callback({
             $queryRaw: vi.fn(async () => []),
             space: { findUnique: vi.fn(async () => null) },
+            bot: { findFirst: vi.fn(async () => null) },
             routine: {
               updateMany: vi.fn(async () => ({ count: 1 })),
               // The claimed row carries the prompt alongside the model.
@@ -2501,6 +2558,7 @@ describe("createRunExecutor", () => {
         callback({
           $queryRaw: vi.fn(async () => []),
           space: { findUnique: vi.fn(async () => null) },
+          bot: { findFirst: vi.fn(async () => null) },
           routine: {
             updateMany: vi.fn(async () => ({ count: 1 })),
             findUnique: vi.fn(async () => ({
@@ -2581,6 +2639,7 @@ describe("createRunExecutor", () => {
         callback({
           $queryRaw: vi.fn(async () => []),
           space: { findUnique: vi.fn(async () => null) },
+          bot: { findFirst: vi.fn(async () => null) },
           routine: {
             updateMany: vi.fn(async () => ({ count: 1 })),
             findUnique: vi.fn(async () => ({
@@ -2679,6 +2738,7 @@ description: Prepare standup notes
         callback({
           $queryRaw: vi.fn(async () => []),
           space: { findUnique: vi.fn(async () => null) },
+          bot: { findFirst: vi.fn(async () => null) },
           routine: {
             updateMany: claim,
             findUnique: vi.fn(async () => ({
@@ -2750,6 +2810,7 @@ description: Prepare standup notes
         callback({
           $queryRaw: vi.fn(async () => []),
           space: { findUnique: vi.fn(async () => null) },
+          bot: { findFirst: vi.fn(async () => null) },
           routine: {
             updateMany,
             findUnique: vi.fn(async () => ({
@@ -2819,6 +2880,7 @@ description: Prepare standup notes
           return callback({
             $queryRaw: vi.fn(async () => []),
             space: { findUnique: vi.fn(async () => null) },
+            bot: { findFirst: vi.fn(async () => null) },
             routine: {
               updateMany: claimUpdateMany,
               findUnique: vi.fn(async () => ({
@@ -2835,6 +2897,7 @@ description: Prepare standup notes
         return callback({
           $queryRaw: vi.fn(async () => []),
           space: { findUnique: vi.fn(async () => null) },
+          bot: { findFirst: vi.fn(async () => null) },
           routine: { updateMany: restoreUpdateMany },
           task: { deleteMany: deleteTaskMany },
           run: { deleteMany: deleteRunMany },
@@ -2974,6 +3037,43 @@ description: Prepare standup notes
         callback({
           $queryRaw: vi.fn(async () => []),
           user: { findUnique: findUser },
+          space: { findUnique: vi.fn(async () => null) },
+          run: { updateMany },
+        }),
+      ),
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma } as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "leased" }) }),
+    );
+  });
+
+  it("claims a run after all when its bot is resumed while it was being refused", async () => {
+    const updateMany = vi.fn(async () => ({ count: 0 }));
+    const prisma = {
+      user: { findUnique: vi.fn(async () => ({ deactivatedAt: null })) },
+      spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          threadId: "thread-1",
+          userId: "user-1",
+          status: "queued",
+          checkpoint: null,
+          leaseFence: 0,
+          // Paused at the first look, resumed by the time the cancel reads it.
+          bot: { pausedAt: new Date() },
+        })),
+        updateMany,
+      },
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          $queryRaw: vi.fn(async () => []),
+          bot: { findUnique: vi.fn(async () => ({ pausedAt: null })) },
           space: { findUnique: vi.fn(async () => null) },
           run: { updateMany },
         }),

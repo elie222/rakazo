@@ -387,6 +387,7 @@ it("filters disabled bots in the database", async () => {
       where: expect.objectContaining({
         dailyCheckIns: true,
         archivedAt: null,
+        pausedAt: null,
         space: { deletingAt: null },
       }),
     }),

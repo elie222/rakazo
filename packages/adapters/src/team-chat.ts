@@ -15,6 +15,7 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  BotPausedError,
   runAsSystem,
   SendClaimLostError,
   SpaceDeletionInProgressError,
@@ -277,7 +278,9 @@ export class TeamChat {
       if (error instanceof SendClaimLostError) return;
       if (error instanceof SpaceDeletionInProgressError) {
         await this.settle(message.id, from, { status: "ignored" });
-        getLogger().info("messaging inbound dropped", { reason: "space being deleted" });
+        getLogger().info("messaging inbound dropped", {
+          reason: error instanceof BotPausedError ? "bot paused" : "space being deleted",
+        });
         return;
       }
       throw error;

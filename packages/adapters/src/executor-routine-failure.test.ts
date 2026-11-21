@@ -620,6 +620,7 @@ function retryHarness(scenario: RetryScenario = {}) {
   const tx = {
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
+    bot: { findFirst: vi.fn(async () => null) },
     routine: {
       updateMany: vi.fn(async () => ({
         count: scenario.pausedBeforeCreate || scenario.archivedBeforeCreate ? 0 : 1,
@@ -807,7 +808,12 @@ describe("running a routine retry", () => {
       await executor.retryRoutineRun("run-1");
 
       expect(tx.routine.updateMany).toHaveBeenCalledWith({
-        where: { id: "routine-1", userId: "user-1", active: true, bot: { archivedAt: null } },
+        where: {
+          id: "routine-1",
+          userId: "user-1",
+          active: true,
+          bot: { archivedAt: null, pausedAt: null },
+        },
         data: { active: true },
       });
       expect(tx.task.create).not.toHaveBeenCalled();
@@ -816,6 +822,17 @@ describe("running a routine retry", () => {
       expect(send).toHaveBeenCalledOnce();
     },
   );
+
+  it("abandons a retry when the bot is paused after the claim but before the run commits", async () => {
+    const { executor, tx, enqueue, send } = retryHarness();
+    tx.bot.findFirst.mockResolvedValueOnce({ id: "bot-1" } as never);
+
+    await executor.retryRoutineRun("run-1");
+
+    expect(tx.run.create).toHaveBeenCalledOnce();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledOnce();
+  });
 
   it("abandons a retry whose destination is no longer eligible", async () => {
     const { executor, tx, enqueue, send } = retryHarness({ invalidDestination: true });
@@ -933,7 +950,7 @@ describe("running a routine retry", () => {
         userId: "user-1",
         active: false,
         crons: { equals: ["@once"] },
-        bot: { archivedAt: null },
+        bot: { archivedAt: null, pausedAt: null },
       },
       data: { active: false },
     });

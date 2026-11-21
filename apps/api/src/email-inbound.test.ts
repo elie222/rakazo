@@ -1,7 +1,7 @@
 import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES } from "@rakazo/adapters";
 import { AttachmentValidationError } from "@rakazo/core";
-import { SpaceDeletionInProgressError } from "@rakazo/db";
+import { BotPausedError, SpaceDeletionInProgressError } from "@rakazo/db";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import type { EmailInboundDeps } from "./email-inbound.js";
@@ -184,6 +184,16 @@ describe("inbound email route", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ ok: true, ignored: expect.any(String) });
+  });
+
+  it("accepts and drops mail for a paused bot, saying so", async () => {
+    const { post, sendUserMessage } = setup();
+    sendUserMessage.mockRejectedValueOnce(new BotPausedError());
+
+    const response = await post("Helper+receipts@Bots.test");
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, ignored: "bot paused" });
   });
 
   it("asks the relay to retry when a signature could not be checked yet", async () => {

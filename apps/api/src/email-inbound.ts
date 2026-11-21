@@ -13,6 +13,7 @@ import {
 import type { ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  BotPausedError,
   createThreadMessageInTransaction,
   isUniqueViolation,
   SpaceDeletionInProgressError,
@@ -239,7 +240,8 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
     { bot: { id: bot.id, spaceId: bot.spaceId, userId: bot.userId }, threadId: bot.thread.id },
     { prompt, artifacts, routines: matched, source: "email", idempotencyKey: email.key },
   ).catch((error: unknown) => {
-    if (error instanceof SpaceDeletionInProgressError) return ignored("space being deleted");
+    if (error instanceof SpaceDeletionInProgressError)
+      return ignored(error instanceof BotPausedError ? "bot paused" : "space being deleted");
     throw error;
   });
 }

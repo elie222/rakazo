@@ -1,7 +1,7 @@
 import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
 import type { TeamChat } from "@rakazo/adapters";
 import { toTeamChatInbound } from "@rakazo/adapters";
-import { SpaceDeletionInProgressError } from "@rakazo/db";
+import { BotPausedError, SpaceDeletionInProgressError } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import { teamChatSenderCanWakeMessageRoutines, wakeMessageRoutines } from "./messaging-inbound.js";
@@ -43,7 +43,9 @@ export function createTeamChatInboundHandler(
       // the provider does not redeliver it. Its transcript copy stays.
       if (error instanceof SpaceDeletionInProgressError) {
         await teamChat.drop(target.externalMessageId, ["deferred"]);
-        getLogger().info("messaging inbound dropped", { reason: "space being deleted" });
+        getLogger().info("messaging inbound dropped", {
+          reason: error instanceof BotPausedError ? "bot paused" : "space being deleted",
+        });
         return;
       }
       await teamChat.routeToAgent(target.externalMessageId, mapped.kind);

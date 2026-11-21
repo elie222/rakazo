@@ -27,6 +27,7 @@ import {
   appendEventInTransaction,
   availableInSpace,
   cancelDeactivatedAccountRuns,
+  cancelPausedBotRuns,
   cancelRunsInTransaction,
   createPendingSteeringRun,
   databaseOutage,
@@ -329,7 +330,7 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       if (deps.shutdownSignal?.aborted) return;
       const run = await deps.prisma.run.findUnique({
         where: { id: runId },
-        include: { routine: { select: { name: true } } },
+        include: { routine: { select: { name: true } }, bot: { select: { pausedAt: true } } },
       });
       if (!run) return;
       // Logs and security events raised by this run's tools name its account and space.
@@ -351,6 +352,12 @@ export function createRunExecutor(executorDeps: ExecutorDeps) {
       if (await accountDeactivated(deps.prisma, run.userId)) {
         // Nothing cancelled: the owner is back (or the run already ended), so carry on.
         if (await cancelDeactivatedAccountRuns(deps.prisma, deps.events, run.userId, runId)) return;
+      }
+      // A run that slipped in as its bot was paused stops before it starts.
+      if (run.bot?.pausedAt) {
+        // Nothing cancelled: the bot was resumed (or the run already ended), so carry on.
+        if ((await cancelPausedBotRuns(deps.prisma, deps.events, run.botId, runId)).length > 0)
+          return;
       }
       if (await cancelRunOfFormerMember(deps, run)) return;
       let { resumeCheckpoint, heldForTakeover, takeoverResume } = takeoverContinuePlan(run);

@@ -23,6 +23,7 @@ import type {
 } from "@rakazo/db";
 import {
   accountDeactivated,
+  BotPausedError,
   createThreadMessage,
   crossSpaceCommunicationAllowed,
   normalizeMessagingLinkCode,
@@ -110,10 +111,15 @@ export function createMessagingInboundHandler(deps: MessagingInboundDeps) {
   };
 }
 
-/** A Space being deleted takes no messages; failing would only make the provider redeliver. */
+/**
+ * A Space being deleted or a paused bot takes no messages; failing would only make the provider
+ * redeliver.
+ */
 function droppedWhileDeleting(error: unknown): void {
   if (!(error instanceof SpaceDeletionInProgressError)) throw error;
-  getLogger().info("messaging inbound dropped", { reason: "space being deleted" });
+  getLogger().info("messaging inbound dropped", {
+    reason: error instanceof BotPausedError ? "bot paused" : "space being deleted",
+  });
 }
 
 async function handleDirectEvent(

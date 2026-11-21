@@ -86,6 +86,7 @@ function fixture(group = false) {
   const send = (
     imageAdmission?: Parameters<typeof sendThreadMessage>[0]["imageAdmission"],
     imageHandling: "confirm" | "file" | null = "confirm",
+    stopOnly = false,
   ) =>
     sendThreadMessage(
       {
@@ -105,8 +106,8 @@ function fixture(group = false) {
             bot: { id: "bot-1", ...model, computer: null },
           }) as ThreadTarget,
       {
-        text: "Read this picture",
-        artifactIds: ["image-1"],
+        text: stopOnly ? "stop" : "Read this picture",
+        artifactIds: stopOnly ? [] : ["image-1"],
         clientNonce: "image-send-1",
         imageHandling: imageHandling ?? undefined,
         mentions: group ? ["bot-1", "bot-2"] : undefined,
@@ -374,8 +375,41 @@ describe("current image send admission", () => {
         : [{ id: "group-1" }],
     );
     await expect(send()).rejects.toBeInstanceOf(BotPausedError);
-    expect(tx.message.create).not.toHaveBeenCalled();
+    // The rolled-back transaction keeps the message out; nothing started a run.
+    expect(tx.run.create).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("lets a bare stop reach a running helper of a group whose members are all paused", async () => {
+    const { tx, send } = fixture(true);
+    tx.$queryRaw.mockImplementation(async (sql: TemplateStringsArray | { strings: string[] }) =>
+      (Array.isArray(sql) ? sql : (sql as { strings: string[] }).strings)
+        .join("?")
+        .includes('"pausedAt"')
+        ? [
+            { id: "bot-1", pausedAt: new Date() },
+            { id: "bot-2", pausedAt: new Date() },
+          ]
+        : [{ id: "group-1" }],
+    );
+    tx.run.findFirst.mockResolvedValue({
+      id: "helper-run",
+      taskId: "task-h",
+      botId: "bot-1",
+      status: "running",
+      userId: "user-1",
+    } as never);
+    // The stop branch opens by touching the group: reaching it means the helper is being stopped.
+    const stopping = new Error("stopping the helper");
+    Object.assign(tx.chatGroup, { update: vi.fn().mockRejectedValue(stopping) });
+    await expect(send(undefined, null, true)).rejects.toBe(stopping);
+    expect(tx.run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([expect.objectContaining({ trigger: expect.any(String) })]),
+        }),
+      }),
+    );
   });
 
   it("rejects a mixed-capability group atomically", async () => {

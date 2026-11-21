@@ -460,8 +460,6 @@ export async function sendUserMessage(
       // deleted takes no new turns. A transcript copy that starts none is still kept.
       if (input.createRun !== false && !(await spaceTakesWork(tx, input.spaceId)))
         throw new SpaceDeletionInProgressError();
-      if (input.createRun !== false && (await pausedBotIds(tx, [input.botId])).size > 0)
-        throw new BotPausedError();
       // Message first: its thread-row lock serializes the whole send against clearThread, so a
       // concurrent clear either sees the committed run and cancels it, or strictly precedes this
       // transaction. Created in separate transactions, the run could land inside the clear's
@@ -474,6 +472,9 @@ export async function sendUserMessage(
         authorUserId: input.authorUserId,
         clientNonce: input.clientNonce,
       });
+      // After the thread lock above, as a finishing run takes its thread before the bot row.
+      if (input.createRun !== false && (await pausedBotIds(tx, [input.botId])).size > 0)
+        throw new BotPausedError();
       if (
         input.crossSpaceSenderBotId &&
         !(await crossSpaceCommunicationAllowed(tx, input.crossSpaceSenderBotId, input.botId))

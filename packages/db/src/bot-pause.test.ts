@@ -9,9 +9,7 @@ vi.mock("./events.js", async (importOriginal) => ({
 }));
 vi.mock("./messages.js", async (importOriginal) => ({
   ...(await importOriginal<typeof Messages>()),
-  createThreadMessageInTransaction: vi.fn(async () => {
-    throw new Error("send went ahead");
-  }),
+  createThreadMessageInTransaction: vi.fn(async () => ({ id: "message-1", seq: 1 })),
 }));
 vi.mock("./cancel-runs.js", () => ({
   cancelRunsInTransaction: vi.fn(async (_tx: unknown, runs: unknown[]) => runs),
@@ -54,13 +52,25 @@ function fakeDb(roles: Record<string, string> = {}) {
       return { count: 1 };
     },
   );
+  const memberLookup = () => ({
+    findUnique: vi.fn(async ({ where }: { where: { spaceId_userId: { userId: string } } }) => {
+      const role = roles[where.spaceId_userId.userId];
+      return role ? { role } : null;
+    }),
+  });
   const tx = {
     $queryRaw: vi.fn(async () => (bot.pausedAt ? [{ id: bot.id, pausedAt: bot.pausedAt }] : [])),
     space: { findUnique: vi.fn(async () => ({ deletingAt: null })) },
-    bot: { findUnique: vi.fn(async () => ({ pausedAt: bot.pausedAt })), updateMany },
+    bot: {
+      findUnique: vi.fn(async () => ({ pausedAt: bot.pausedAt })),
+      findFirst: vi.fn(async () => bot),
+      updateMany,
+    },
+    spaceMember: memberLookup(),
     run: { findMany: vi.fn(async () => [run]) },
     computer: { updateMany: vi.fn() },
     steeringMessage: { deleteMany: vi.fn() },
+    event: { deleteMany: vi.fn() },
     computerExecutionLease: { updateMany: vi.fn() },
   };
   const prisma = {
@@ -68,12 +78,7 @@ function fakeDb(roles: Record<string, string> = {}) {
       findFirst: vi.fn(async () => bot),
       updateMany,
     },
-    spaceMember: {
-      findUnique: vi.fn(async ({ where }: { where: { spaceId_userId: { userId: string } } }) => {
-        const role = roles[where.spaceId_userId.userId];
-        return role ? { role } : null;
-      }),
-    },
+    spaceMember: memberLookup(),
     message: { findUnique: vi.fn(async () => null) },
     $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
   };
@@ -93,10 +98,15 @@ const send = (prisma: PrismaClient) =>
 
 describe("pauseBot", () => {
   it("pauses, cancels the active runs and records who did it", async () => {
-    const { bot, prisma, notify } = fakeDb();
+    const { bot, tx, prisma, notify } = fakeDb();
     const cancelled = await pauseBot(prisma, { notify }, actor("owner"), "bot-1");
     expect(bot.pausedAt).toBeInstanceOf(Date);
     expect(cancelled.map((run) => run.id)).toEqual(["run-1"]);
+    // Every waiting message of the bot goes, not only those in a thread with a run.
+    expect(tx.steeringMessage.deleteMany).toHaveBeenCalledWith({ where: { botId: "bot-1" } });
+    expect(tx.event.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ runId: { in: ["run-1"] } }),
+    });
     expect(cancelRunsInTransaction).toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith("thread-1", 7);
     expect(recordAuditEvent).toHaveBeenCalledWith(
@@ -120,6 +130,35 @@ describe("pauseBot", () => {
   });
 });
 
+describe("pauseBot authorization", () => {
+  it("checks the owner again inside the transaction that writes", async () => {
+    const { bot, tx, prisma, notify } = fakeDb({ boss: "owner" });
+    // The role is revoked after the first read: only a check made in the write's transaction sees it.
+    tx.spaceMember.findUnique.mockResolvedValue(null as never);
+    await expect(pauseBot(prisma, { notify }, actor("boss"), "bot-1")).rejects.toBeInstanceOf(
+      SpaceOwnerRequiredError,
+    );
+    expect(bot.pausedAt).toBeNull();
+    await expect(resumeBot(prisma, actor("boss"), "bot-1")).rejects.toBeInstanceOf(
+      SpaceOwnerRequiredError,
+    );
+  });
+
+  it("finishes a cancellation that failed, and records the pause once", async () => {
+    const { bot, tx, prisma, notify } = fakeDb();
+    vi.mocked(recordAuditEvent).mockClear();
+    vi.mocked(cancelRunsInTransaction).mockRejectedValueOnce(new Error("cancel failed"));
+    await expect(pauseBot(prisma, { notify }, actor("owner"), "bot-1")).rejects.toThrow(
+      "cancel failed",
+    );
+    expect(bot.pausedAt).not.toBeNull();
+    expect(tx.run.findMany).toHaveBeenCalled();
+    const cancelled = await pauseBot(prisma, { notify }, actor("owner"), "bot-1");
+    expect(cancelled.map((run) => run.id)).toEqual(["run-1"]);
+    expect(recordAuditEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("a paused bot", () => {
   it("refuses a run start until it is resumed", async () => {
     const { prisma, notify } = fakeDb();
@@ -130,7 +169,8 @@ describe("a paused bot", () => {
     expect(recordAuditEvent).toHaveBeenLastCalledWith(
       expect.objectContaining({ action: "bot.resumed" }),
     );
-    await expect(send(prisma)).rejects.toThrow("send went ahead");
+    // Past the pause check the fake has nothing more to run, but the refusal is gone.
+    await expect(send(prisma)).rejects.not.toBeInstanceOf(BotPausedError);
   });
 
   it("refuses a non-owner resuming it", async () => {

@@ -36,6 +36,7 @@ type StrategicBot = {
 function strategicBotEligibility(now: Date): Prisma.BotWhereInput {
   return {
     archivedAt: null,
+    pausedAt: null,
     dailyCheckIns: true,
     space: { deletingAt: null },
     thread: { isNot: null },
