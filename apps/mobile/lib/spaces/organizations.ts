@@ -1,7 +1,12 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { t } from "@lingui/core/macro";
 import type { OrganizationList } from "@rakazo/contracts";
-import { organizationLandingSpaceId, organizationOfSpace } from "@rakazo/core";
+import {
+  guestSpaceOfSelection,
+  organizationLandingSpaceId,
+  organizationOfSpace,
+  organizationSwitchContext,
+} from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { selectedSpaceId } from "../api/api";
@@ -63,16 +68,15 @@ export function ensureOrganizations(): Promise<void> {
 
 /** The organization of the selected Space, which the server's answer may not have caught up to. */
 export function activeOrganization(list: OrganizationList | undefined): Organization | undefined {
-  if (!list || activeGuestSpace(list)) return undefined;
-  return (
-    organizationOfSpace(list.organizations, selectedSpaceId()) ??
-    list.organizations.find((organization) => organization.id === list.activeOrganizationId)
-  );
+  return organizationSwitchContext(list, selectedSpaceId()).organization;
 }
 
 export function activeGuestSpace(list: OrganizationList | undefined): GuestSpace | undefined {
-  const spaceId = selectedSpaceId();
-  return list?.guestSpaces?.find((space) => space.id === spaceId);
+  return guestSpaceOfSelection(list, selectedSpaceId());
+}
+
+export function guestSpaceLabel(space: GuestSpace): string {
+  return t`${space.name} (Guest)`;
 }
 
 export function refreshOrganizations(): Promise<void> {
@@ -117,7 +121,7 @@ export function organizationActions(list: OrganizationList | undefined): MenuAct
     ...(list.guestSpaces ?? []).map(
       (space): MenuAction => ({
         id: `${GUEST_SPACE_ACTION_PREFIX}${space.id}`,
-        title: t`${space.name} (Guest)`,
+        title: guestSpaceLabel(space),
         state: space.id === guest?.id ? "on" : "off",
       }),
     ),

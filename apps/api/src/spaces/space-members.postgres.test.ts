@@ -695,6 +695,16 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     ]);
     const fromWork = await call(inSpace(invitee.actor, workId), "spaces/list", {});
     expect(fromWork.json.spaces).toEqual([expect.objectContaining({ id: workId })]);
+    const accessible = await call(inSpace(invitee.actor, workId), "spaces/accessible", {});
+    expect(accessible.json).toEqual(
+      expect.arrayContaining([
+        { id: invitee.spaceId, name: "Personal" },
+        { id: workId, name: "Work" },
+        { id: home, name: "Home" },
+        { id: another, name: "Another shared space" },
+      ]),
+    );
+    expect(accessible.json).toHaveLength(4);
     const fromShared = await call(inSpace(invitee.actor, home), "spaces/list", {});
     expect(fromShared.json.spaces).toEqual([
       expect.objectContaining({ id: home, name: "Home", shared: true, canRename: false }),

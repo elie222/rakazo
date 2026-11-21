@@ -1,5 +1,9 @@
 import type { OrganizationList } from "@rakazo/contracts";
-import { organizationLandingSpaceId, organizationOfSpace } from "@rakazo/core";
+import {
+  organizationLandingSpaceId,
+  organizationOfSpace,
+  organizationSwitchContext,
+} from "@rakazo/core";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { queryClient, spaceQueries, useQueryUserId } from "../query/query";
 import { ORGANIZATION_SPACES_STORAGE_KEY, rpc, selectedSpaceId, selectSpace } from "../query/rpc";
@@ -27,12 +31,13 @@ export function useOrganizations() {
   );
   const organizations = data?.organizations ?? [];
   const guestSpaces = data?.guestSpaces ?? [];
-  const spaceId = selectedSpaceId();
-  const activeGuestSpace = guestSpaces.find((space) => space.id === spaceId);
-  const activeOrganizationId = activeGuestSpace
-    ? null
-    : (organizationOfSpace(organizations, spaceId)?.id ?? data?.activeOrganizationId ?? null);
-  return { organizations, activeOrganizationId, guestSpaces, activeGuestSpace };
+  const { organization, guestSpace } = organizationSwitchContext(data, selectedSpaceId());
+  return {
+    organizations,
+    activeOrganizationId: organization?.id ?? null,
+    guestSpaces,
+    activeGuestSpace: guestSpace,
+  };
 }
 
 function lastSpaces(): Record<string, string> {

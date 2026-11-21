@@ -43,6 +43,7 @@ import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings/settin
 import {
   activeGuestSpace,
   activeOrganization,
+  guestSpaceLabel,
   useOrganizations,
 } from "../../lib/spaces/organizations";
 import { confirmUnsentSendLoss } from "../../lib/thread/send/unsent-send-warning";
@@ -81,7 +82,7 @@ export default function Account() {
   const organizations = useOrganizations().data;
   const guestSpace = activeGuestSpace(organizations);
   const organizationName = guestSpace
-    ? t`${guestSpace.name} (Guest)`
+    ? guestSpaceLabel(guestSpace)
     : activeOrganization(organizations)?.name;
 
   const icon = ({ ios, android }: Icon) => (

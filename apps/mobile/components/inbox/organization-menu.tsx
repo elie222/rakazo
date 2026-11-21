@@ -11,6 +11,7 @@ import {
   activeGuestSpace,
   activeOrganization,
   guestSpaceForAction,
+  guestSpaceLabel,
   organizationActions,
   organizationForAction,
   organizationSwitchActions,
@@ -37,12 +38,11 @@ export function useOrganizationMenuAction(list: OrganizationList | undefined) {
 
 /** The inbox title once there is a second organization: the active one's name, opening a switcher. */
 export function OrganizationTitleMenu({ list }: { list: OrganizationList | undefined }) {
-  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const onAction = useOrganizationMenuAction(list);
   const actions = organizationSwitchActions(list);
   const guest = activeGuestSpace(list);
-  const name = guest ? t`${guest.name} (Guest)` : activeOrganization(list)?.name;
+  const name = guest ? guestSpaceLabel(guest) : activeOrganization(list)?.name;
   if (actions.length === 0 || !name) return null;
   return (
     <MenuView

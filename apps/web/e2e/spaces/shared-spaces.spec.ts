@@ -100,8 +100,6 @@ test("an owner invites someone by link and both see the space's members", async 
   // another chat first, so his shell does not open Family, and read it, when it appears.
   const familyRow = (page: Page) =>
     page.locator("aside").first().locator(`[data-roster-bot-id="${bot.id}"]`);
-  await openBotInSpace(inviteePage, home.id, planner.id, "Planner");
-
   const work = await rpc<{ defaultSpaceId: string }>(inviteePage, "organizations/create", {
     name: "Work",
   });
@@ -110,6 +108,7 @@ test("an owner invites someone by link and both see the space's members", async 
     data: { json: { name: "Work Assistant" } },
   });
   expect(workBot.ok()).toBe(true);
+  await openBotInSpace(inviteePage, home.id, planner.id, "Planner");
   const switcher = inviteePage.getByTestId("organization-menu-trigger");
   async function switcherMenu() {
     await inviteePage.getByTestId("user-menu-trigger").click();
