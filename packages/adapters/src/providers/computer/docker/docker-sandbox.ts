@@ -26,7 +26,13 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
-import { cancelResponseBody, ResponseTooLargeError, requestDeadline } from "@rakazo/core";
+import {
+  cancelResponseBody,
+  deadlineSignal,
+  readErrorTextWithin,
+  readResponseWithin,
+  requestDeadline,
+} from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
@@ -44,7 +50,7 @@ import {
   workspaceCwd,
 } from "../../../computers/screens/computer-support.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
-import { readBodyCapped, withAbort } from "../../../web/web-ssrf.js";
+import { withAbort } from "../../../web/web-ssrf.js";
 
 export const MAX_SANDBOX_ERROR_RESPONSE_BYTES = 8 * 1024;
 export const MAX_SANDBOX_SUCCESS_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -61,20 +67,12 @@ function unwritableHome() {
 const SANDBOX_SUCCESS_RESPONSE_TIMEOUT_MS = 30_000;
 
 async function safeBody(res: Response, signal?: AbortSignal): Promise<string> {
-  const declared = Number(res.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_SANDBOX_ERROR_RESPONSE_BYTES) {
-    cancelResponseBody(res);
-    return "";
-  }
-  try {
-    const readSignal = signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(SANDBOX_ERROR_RESPONSE_TIMEOUT_MS)])
-      : AbortSignal.timeout(SANDBOX_ERROR_RESPONSE_TIMEOUT_MS);
-    const bytes = await readBodyCapped(res, MAX_SANDBOX_ERROR_RESPONSE_BYTES, readSignal);
-    return new TextDecoder().decode(bytes).slice(0, 200);
-  } catch {
-    return "";
-  }
+  const text = await readErrorTextWithin(res, {
+    maxBytes: MAX_SANDBOX_ERROR_RESPONSE_BYTES,
+    timeoutMs: SANDBOX_ERROR_RESPONSE_TIMEOUT_MS,
+    signal,
+  });
+  return text.slice(0, 200);
 }
 
 async function readSandboxJson<T>(
@@ -82,24 +80,11 @@ async function readSandboxJson<T>(
   signal: AbortSignal,
   maxBytes = MAX_SANDBOX_SUCCESS_RESPONSE_BYTES,
 ): Promise<T> {
-  const declared = Number(res.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    cancelResponseBody(res);
-    throw new Error(`sandbox response exceeds ${maxBytes} bytes`);
-  }
-  const readSignal = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(SANDBOX_SUCCESS_RESPONSE_TIMEOUT_MS),
-  ]);
-  let bytes: Uint8Array;
-  try {
-    bytes = await readBodyCapped(res, maxBytes, readSignal);
-  } catch (error) {
-    if (error instanceof ResponseTooLargeError) {
-      throw new Error(`sandbox response exceeds ${maxBytes} bytes`, { cause: error });
-    }
-    throw error;
-  }
+  const bytes = await readResponseWithin(res, {
+    maxBytes,
+    tooLargeMessage: `sandbox response exceeds ${maxBytes} bytes`,
+    signal: deadlineSignal(SANDBOX_SUCCESS_RESPONSE_TIMEOUT_MS, signal),
+  });
   return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
 
