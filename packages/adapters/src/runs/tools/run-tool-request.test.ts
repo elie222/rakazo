@@ -138,10 +138,18 @@ describe("schedule tools on another bot's routines", () => {
       deps: {
         prisma: {
           steeringMessage: { findFirst: async () => null },
-          bot: { findUnique: async () => ({ fleetManagement: input.fleetManagement ?? true }) },
+          bot: {
+            findUnique: async () => ({ fleetManagement: input.fleetManagement ?? true }),
+            findMany: async ({ where }: { where: { id?: string; name?: string } }) =>
+              [
+                { id: "child", name: "Child" },
+                { id: "bot-1", name: "Me" },
+              ].filter((row) => (where.id ? row.id === where.id : row.name === where.name)),
+          },
         },
       },
       run: { trigger: "user" },
+      fleetRun: { spaceId: "space-1" },
       bot: { id: "bot-1" },
       runId: "run-1",
       source: { messagingChannelRun: false, ownerStartedRun: input.ownerStartedRun ?? true },
@@ -168,6 +176,18 @@ describe("schedule tools on another bot's routines", () => {
       await expect(own.prepared).resolves.toBeUndefined();
     },
   );
+
+  it("acts on the named bot's id, and treats naming itself as its own routines", async () => {
+    const byName = managedRoutineCall({})("schedule_cancel", { bot_name: "Child", name: "r" });
+    await expect(byName.prepared).resolves.toBeUndefined();
+    expect(byName.request.args).toEqual({ bot_id: "child", name: "r" });
+    const self = managedRoutineCall({ fleetManagement: false })("schedule_update", {
+      bot_name: "Me",
+      routineId: "r",
+    });
+    await expect(self.prepared).resolves.toBeUndefined();
+    expect(self.request.args).toEqual({ routineId: "r" });
+  });
 
   it("holds a change for approval once outside text reached the run, and never a list", async () => {
     const call = managedRoutineCall({ outsideMessage: true });

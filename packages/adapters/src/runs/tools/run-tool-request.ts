@@ -41,7 +41,12 @@ import {
   vaultCardUseOf,
   vaultLoginUseOf,
 } from "../../secrets/vault/vault-card-use.js";
-import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "../../tools/fleet-tools.js";
+import {
+  isFleetApprovalTool,
+  modelLabel,
+  prepareFleetRequest,
+  resolveBot,
+} from "../../tools/fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "../../tools/lazy-tool-catalog.js";
 import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
@@ -445,6 +450,14 @@ export async function prepareToolRequest(
   if (name === "schedule_create" && nextApprovedTool !== name) {
     const refused = await scheduleCreateRefusal(ctx, args);
     if (refused) return refusal("schedule_create_refused", refused.error);
+  }
+  // Settle the named bot before the gate: the card and an approved replay act on its id, and a
+  // bot naming itself is working on its own routines.
+  if (reachesManagedRoutines(name, args) && nextApprovedTool !== name) {
+    const target = await resolveBot(deps.prisma, ctx.fleetRun, args);
+    if ("error" in target) return refusal("bot_management_request_invalid", target.error);
+    const { bot_id: _id, bot_name: _name, ...rest } = args;
+    args = target.id === bot.id ? rest : { ...rest, bot_id: target.id };
   }
   const managedRoutines = reachesManagedRoutines(name, args);
   const fleetWrite =
