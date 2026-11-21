@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { BLOCKED_ITEM_ANSWER, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode, Ref } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -582,5 +583,16 @@ it("shows a generic error when dismissing fails", async () => {
     throw new Error("server detail");
   });
   await act(async () => button("Dismiss request").click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not send answer");
+});
+
+it("stays open while a dismissal is in flight, so its failure shows", async () => {
+  const pending = deferred<void>();
+  await render(true, undefined, () => pending.promise);
+  await act(async () => button("Dismiss request").click());
+  await act(async () => button("Close").click());
+  expect(onClose).not.toHaveBeenCalled();
+
+  await act(async () => pending.reject(new Error("server detail")));
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not send answer");
 });

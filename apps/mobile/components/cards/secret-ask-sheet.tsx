@@ -62,6 +62,10 @@ export function SecretAskSheet({
   }
 
   const { close, closing, endEditing } = useSecretSheetClose(inputs, clear, onClose);
+  // A save or dismissal in flight keeps the sheet open, so its failure is still shown here.
+  const cancel = () => {
+    if (!submitting) close();
+  };
 
   useEffect(() => {
     if (!pending) close();
@@ -101,7 +105,7 @@ export function SecretAskSheet({
       visible
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={close}
+      onRequestClose={cancel}
       // Focus once the sheet is up: a field focused while the sheet is still being laid out
       // clips its placeholder at large text sizes.
       onShow={() => inputs.current[0]?.focus()}
@@ -122,7 +126,7 @@ export function SecretAskSheet({
           <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
             {title}
           </Text>
-          <SheetCloseButton onPress={close} />
+          <SheetCloseButton onPress={cancel} />
           <NativeActionButton
             disabled={incomplete}
             busy={submitting}
