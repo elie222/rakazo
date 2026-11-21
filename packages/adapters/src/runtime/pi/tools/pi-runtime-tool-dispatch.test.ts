@@ -2843,4 +2843,51 @@ describe("Pi connector tool dispatch", () => {
       { onShellStillRunning: expect.any(Function) },
     );
   });
+
+  it("treats a null computer_act observe or settle_ms as unset", async () => {
+    const computerActTool = builtinAgentTools.find((tool) => tool.name === "computer_act");
+    if (!computerActTool) throw new Error("missing computer_act");
+    const executeTool = vi.fn(async (_name: string, _args: Record<string, unknown>) => ({
+      ok: true,
+    }));
+    const runtime = new PiAgentRuntime();
+    const dispatch = async (args: Record<string, unknown>) => {
+      executeTool.mockClear();
+      fakeAgentState.invoke = { name: "computer_act", args };
+      for await (const _event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "computer-act-args",
+          prompt: "click the button",
+          instructions: "Use computer_act.",
+          history: [],
+          tools: [computerActTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        { signal: new AbortController().signal },
+      )) {
+        // Exhaust the runtime event stream so tool dispatch completes.
+      }
+      return executeTool.mock.calls[0]?.[1];
+    };
+
+    // Providers send omitted optional fields as null; null must not turn observe off.
+    expect(await dispatch({ actions: [], observe: null, settle_ms: null })).toEqual({
+      actions: [],
+      observe: true,
+      settle_ms: 350,
+    });
+    expect(await dispatch({ actions: [] })).toEqual({
+      actions: [],
+      observe: true,
+      settle_ms: 350,
+    });
+    expect(await dispatch({ actions: [], observe: false })).toEqual({
+      actions: [],
+      observe: false,
+      settle_ms: 350,
+    });
+  });
 });

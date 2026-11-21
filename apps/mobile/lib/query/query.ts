@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
-import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
+import { refreshQueriesAfterSignal } from "@rakazo/core";
+import type { DataTag, QueryFilters, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiRequestContext, RpcArgs } from "../api/api";
@@ -259,7 +260,8 @@ export function resetRpcQueries(proc: RpcPath): Promise<void> {
  * the answer they have until the new one arrives.
  */
 export function refreshRpcQueries(proc: RpcPath): Promise<void> {
-  return queryClient.invalidateQueries({ predicate: (query) => query.queryKey.includes(proc) });
+  const filters: QueryFilters = { predicate: (query) => query.queryKey.includes(proc) };
+  return refreshQueriesAfterSignal(queryClient, filters);
 }
 
 /** Forgets the reads sent to these Spaces, as when leaving their organization. */

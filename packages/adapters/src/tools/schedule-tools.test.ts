@@ -128,6 +128,17 @@ describe("resolveScheduleTiming", () => {
     expect(result.nextRunAt.getTime()).toBeLessThanOrEqual(Date.now() + 31_000);
   });
 
+  it("rejects one-shot delays too far out to be a date", () => {
+    expect(resolveScheduleTiming({ delayMinutes: 1e15 })).toEqual({
+      ok: false,
+      error: "The delay is too far in the future.",
+    });
+    expect(resolveScheduleTiming({ delaySeconds: 1e14 })).toEqual({
+      ok: false,
+      error: "The delay is too far in the future.",
+    });
+  });
+
   it("rejects one-shot schedules in the past", () => {
     expect(resolveScheduleTiming({ runAt: new Date(Date.now() - 60_000).toISOString() })).toEqual({
       ok: false,
@@ -1008,12 +1019,27 @@ describe("schedule_create with a watch", () => {
 });
 
 describe("cancelScheduleFromTool", () => {
+  it("refuses a name more than one schedule has", async () => {
+    const deleteMany = vi.fn();
+    const deps = {
+      prisma: { routine: { count: vi.fn(async () => 2), findFirst: vi.fn(), deleteMany } },
+      events: { append: vi.fn() },
+      jobs: { enqueue: vi.fn(), cancel: vi.fn() },
+    } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
+    await expect(
+      cancelScheduleFromTool(deps, { spaceId: "ws-1", botId: "bot-1", name: "Daily" }),
+    ).resolves.toEqual({
+      error: 'More than one schedule is named "Daily". Pass routineId instead.',
+    });
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
   it("deletes with the caller's scope and does not cancel the job when the row moved", async () => {
     const findFirst = vi.fn(async () => ({ id: "routine-1", name: "Daily" }));
     const deleteMany = vi.fn(async () => ({ count: 1 }));
     const cancel = vi.fn(async () => undefined);
     const deps = {
-      prisma: { routine: { findFirst, deleteMany } },
+      prisma: { routine: { count: vi.fn(async () => 1), findFirst, deleteMany } },
       events: { append: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined), cancel },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];

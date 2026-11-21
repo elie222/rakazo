@@ -117,6 +117,7 @@ export * from "./primitives/http-response.js";
 export * from "./primitives/keyed-listeners.js";
 export * from "./primitives/list-search.js";
 export * from "./primitives/prompt-data.js";
+export * from "./primitives/query-refresh.js";
 export * from "./primitives/refresh-coalescer.js";
 export * from "./primitives/response-bytes.js";
 export * from "./primitives/retry.js";
