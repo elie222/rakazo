@@ -3,8 +3,8 @@ import { recordUsage } from "@rakazo/db";
 import type { AutoReviewChecker } from "../../approvals/auto-review.js";
 import {
   autoReviewTimeoutMs,
+  includedReviewChecker,
   isAutoReviewCheckerConfigured,
-  resolveAutoReviewChecker,
   resolveAutoReviewProviderKind,
 } from "../../approvals/auto-review.js";
 import { createAutoReviewProvider } from "../../approvals/auto-review-factory.js";
@@ -20,22 +20,11 @@ import {
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { modelCreditBillingEnabled, resolveModelKey } from "./run-model.js";
 
-/**
- * The deployment's operator-funded reviewer, when hosted credits include one. It needs no
- * connection or credits of the member's, so it can still decide when their own choice cannot.
- */
+/** The deployment's operator-funded reviewer, when hosted credits include one. */
 export async function includedAutoReviewChecker(
   deps: Pick<ExecutorDeps, "prisma" | "billingEnabled">,
 ): Promise<AutoReviewChecker | null> {
-  if (!(await modelCreditBillingEnabled(deps))) return null;
-  const checker = resolveAutoReviewChecker(process.env, true);
-  if (
-    !checker ||
-    !decisionModel(checker.provider, checker.model) ||
-    !isAutoReviewCheckerConfigured({ checker })
-  )
-    return null;
-  return { ...checker, included: true };
+  return includedReviewChecker(await modelCreditBillingEnabled(deps));
 }
 
 /** The Auto Review provider that judges a run's action with one checker choice. */
@@ -168,6 +157,7 @@ export async function autoReviewCheckerProvider(
       checker,
       apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
       callObserver,
+      billing: judgeKey.billing,
       accountId: judgeKey.accountId,
       gatewayId: judgeKey.gatewayId,
       projectId: judgeKey.projectId,

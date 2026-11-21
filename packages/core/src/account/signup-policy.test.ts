@@ -62,6 +62,10 @@ describe("signup policy", () => {
     expect(signupsOpen(undefined)).toBe(true);
     expect(signupsOpen("false")).toBe(false);
     expect(signupsOpen("0")).toBe(false);
+    // An operator closing signups must not depend on lower case.
+    expect(signupsOpen("FALSE")).toBe(false);
+    expect(signupsOpen(" False ")).toBe(false);
+    expect(signupsOpen("TRUE")).toBe(true);
   });
 
   it("builds a normalized policy from environment defaults", () => {

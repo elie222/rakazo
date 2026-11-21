@@ -238,13 +238,13 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("FORBIDDEN");
         const { actor } = context;
         const { role, scope } = input;
-        const [settings, deploymentPrimary] = await Promise.all([
+        const [settings, deployment] = await Promise.all([
           modelRoleTarget(deps.prisma, actor, scope).then((target) =>
             getModelRole(deps.prisma, target, role),
           ),
           deploymentDefault(actor, role),
         ]);
-        return withImageInput(actor, role, { ...settings, deploymentPrimary });
+        return withImageInput(actor, role, { ...settings, ...deployment });
       }),
       setRole: authed.models.setRole.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
@@ -257,14 +257,14 @@ export function modelsRoutes(ctx: RouterContext) {
           [...(primary ? [primary] : []), ...(backups ?? [])],
           reads,
         );
-        const deploymentPrimary = await deploymentDefault(context.actor, role);
+        const deployment = await deploymentDefault(context.actor, role);
         const settings = await updateModelRole(
           deps.prisma,
           { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
           role,
           { primary, backups },
         );
-        return withImageInput(context.actor, role, { ...settings, deploymentPrimary }, reads);
+        return withImageInput(context.actor, role, { ...settings, ...deployment }, reads);
       }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
@@ -473,11 +473,8 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, context.actor);
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          return { status: "error" as const, error: result.error };
-        }
+        // The sign-in already reported how it ended, as model_connect_ended.
+        if (result.status === "error") return { status: "error" as const, error: result.error };
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
@@ -486,16 +483,12 @@ export function modelsRoutes(ctx: RouterContext) {
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          throw new ORPCError("NOT_FOUND", { message: result.error });
-        }
+        if (result.status === "error") throw new ORPCError("NOT_FOUND", { message: result.error });
         // The save already counted the connection.
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
-        await deps.oauthLogins.cancel(input.loginId, context.actor);
+        await deps.oauthLogins.cancel(input.loginId, context.actor, input.reason);
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {

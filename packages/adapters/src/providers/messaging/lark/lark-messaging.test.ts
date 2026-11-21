@@ -897,6 +897,50 @@ describe("Lark messaging conformance", () => {
   });
 });
 
+describe("Lark domain setting", () => {
+  function openDmUrl(larkDomain: string | undefined) {
+    const [platform] = messagingPlatformsFromEnv(
+      {
+        larkAppId: "cli-test",
+        larkAppSecret: "test-app-secret",
+        larkVerificationToken: token,
+        ...(larkDomain === undefined ? {} : { larkDomain }),
+      },
+      { larkTransport: httpInstance },
+    );
+    request.mockClear();
+    return platform!.adapter.openDM!("ou-test").then(() => request.mock.calls[0]?.[0]?.url);
+  }
+
+  it("uses Feishu when unset, blank, or feishu", async () => {
+    for (const larkDomain of [undefined, "", "  ", "feishu", "FEISHU"]) {
+      expect(await openDmUrl(larkDomain)).toBe("https://open.feishu.cn/open-apis/im/v1/chats");
+    }
+  });
+
+  it("uses Lark for lark, ignoring case and surrounding spaces", async () => {
+    for (const larkDomain of ["lark", " Lark "]) {
+      expect(await openDmUrl(larkDomain)).toBe("https://open.larksuite.com/open-apis/im/v1/chats");
+    }
+  });
+
+  it("refuses a LARK_DOMAIN it cannot read, instead of silently using Feishu", () => {
+    for (const larkDomain of ["larksuite", "https://open.larksuite.com", "lark-suite"]) {
+      expect(() =>
+        messagingPlatformsFromEnv(
+          {
+            larkAppId: "cli-test",
+            larkAppSecret: "test-app-secret",
+            larkVerificationToken: token,
+            larkDomain,
+          },
+          { larkTransport: httpInstance },
+        ),
+      ).toThrow("LARK_DOMAIN must be feishu or lark");
+    }
+  });
+});
+
 describe("Lark inbound images", () => {
   async function deliver(payload: unknown) {
     const { surface, events } = createSurface();

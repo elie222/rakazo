@@ -35,7 +35,7 @@ The Compose files also pass the standard provider key variables the agent runtim
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to
 the API and worker, for models that have no stored credential.
 
-`RAKAZO_LIVE_MODEL_CATALOG=off` disables provider and Codex live catalog probing; the default is on.
+`RAKAZO_LIVE_MODEL_CATALOG=off` (or `false`, `0`, `no`) disables provider and Codex live catalog probing; the default is on, and an unrecognized value stops the API at startup.
 
 ## Approvals
 
@@ -290,14 +290,24 @@ MEDIA_GENERATION_IMAGE_MODEL=fal-ai/flux/schnell
 MEDIA_GENERATION_VIDEO_MODEL=fal-ai/wan/v2.2-a14b/text-to-video
 ```
 
-`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, or `fake`
-(for offline testing only). The base URL is optional and defaults to the URL above.
-Only set the image/video model fields for capabilities you want enabled. Compatible
-servers can use the same connection fields; models must support the corresponding
-fal queue API and Flux/Wan input and output shapes. Credentials stay on the server. Set these in
+For images only, `openai` uses the Images API (`POST /images/generations`) instead:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=openai
+MEDIA_GENERATION_BASE_URL=https://api.openai.com/v1
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=gpt-image-1
+```
+
+`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, `openai`, or `fake`
+(for offline testing only). The base URL is optional and defaults to the provider's URL above.
+Only set the image/video model fields for capabilities you want enabled; `openai` takes an
+image model only. Compatible servers can use the same connection fields; models must support
+the corresponding fal queue API and Flux/Wan input and output shapes, or the Images API with
+base64 image data (`b64_json`) in the response. Credentials stay on the server. Set these in
 your deployment secret configuration; never commit actual credentials.
 
-Bots use `generate_image` to attach one PNG or `generate_video` to submit a
+Bots use `generate_image` to attach one image (PNG, JPEG or WebP) or `generate_video` to submit a
 four-second MP4. The video tool returns a job ID and queued/running status. The
 worker keeps checking the job in the background, including after a restart, and
 posts the finished video to the chat that asked for it, once; the bot then gets a

@@ -14,9 +14,10 @@ import {
   TimeoutError,
 } from "@e2b/desktop";
 import type { CommandRequest, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
-import { sandboxIdleMs } from "../../../computers/computer-idle.js";
+import { sandboxIdleMs, sleepDeferReason } from "../../../computers/computer-idle.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../computers/computer-workspace.js";
 import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import { assertSandboxReadLimit } from "../../../computers/sandbox/sandbox-test-support.js";
@@ -393,7 +394,7 @@ describe("E2B computer backend", () => {
     { method: "destroy", status: 404, outcome: "resolves" },
     { method: "destroy", status: 503, outcome: "rejects" },
     { method: "stop", status: 409, outcome: "resolves" },
-    { method: "stop", status: 429, outcome: "rejects" },
+    { method: "stop", status: 429, outcome: "rate_limited" },
     { method: "stop", status: 404, outcome: "gone" },
   ] as const)(
     "$method maps a real SDK $status without resuming the sandbox",
@@ -410,6 +411,8 @@ describe("E2B computer backend", () => {
         if (outcome === "resolves") await expect(result).resolves.toBeUndefined();
         else if (outcome === "rejects")
           await expect(result).rejects.toMatchObject({ statusCode: status });
+        else if (outcome === "rate_limited")
+          await expect(result).rejects.toBeInstanceOf(SandboxRateLimitError);
         else await expect(result).rejects.toSatisfy(isSandboxGoneError);
       });
       // One request: the lifecycle owns retries, and a stop or destroy never resumes the sandbox.
@@ -1222,12 +1225,14 @@ describe("E2B sandbox lifecycle", () => {
     fake.connectError = new RateLimitError("429: rate limited");
     const create = vi.spyOn(fake.sdk, "create");
     const provider = new E2BSandboxProvider("e2b_test", fake.sdk);
-    await expect(
-      provider.provision(
+    const error = await provider
+      .provision(
         { botId: "bot-1", homePath: "/unused", providerRef: "box-1", providerKind: "e2b" },
         context,
-      ),
-    ).rejects.toBe(fake.connectError);
+      )
+      .catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxRateLimitError);
+    expect((error as SandboxRateLimitError).cause).toBe(fake.connectError);
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -1265,7 +1270,7 @@ describe("E2B sandbox lifecycle", () => {
     const { fake, provider, computer } = await started();
     fake.setTimeoutError = apiError(400, "timeout too long");
     fake.connectError = new RateLimitError("429: rate limited");
-    await expect(provider.keepAlive(computer)).rejects.toBe(fake.connectError);
+    await expect(provider.keepAlive(computer)).rejects.toBeInstanceOf(SandboxRateLimitError);
 
     fake.connectError = undefined;
     fake.setTimeoutError = undefined;
@@ -1428,8 +1433,46 @@ describe("E2B sandbox lifecycle", () => {
   it("surfaces a rate-limited pause so the computer is not marked stopped while billing", async () => {
     const { fake, provider, computer } = await started();
     fake.pauseError = new RateLimitError("429: rate limited");
-    await expect(provider.stop(computer, context)).rejects.toBe(fake.pauseError);
+    const error = await provider.stop(computer, context).catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxRateLimitError);
+    expect((error as SandboxRateLimitError).cause).toBe(fake.pauseError);
     expect(fake.state).toBe("running");
+  });
+
+  it("reports every lifecycle call's rate limit as a computer rate limit", async () => {
+    const limit = new RateLimitError("429: rate limited");
+    const computer = { id: "box-1", providerRef: "box-1", kind: "e2b" as const, botId: "bot" };
+    const provider = new E2BSandboxProvider("test-key");
+    const spies = [
+      vi.spyOn(Sandbox, "create").mockRejectedValue(limit),
+      vi.spyOn(Sandbox, "connect").mockRejectedValue(limit),
+      vi.spyOn(Sandbox, "getInfo").mockRejectedValue(limit),
+      vi.spyOn(Sandbox, "pause").mockRejectedValue(limit),
+      vi.spyOn(Sandbox, "kill").mockRejectedValue(limit),
+    ];
+    try {
+      const failures = [
+        await provider
+          .provision({ botId: "bot", homePath: "/unused" }, context)
+          .catch((failure: unknown) => failure),
+        await provider
+          .provision(
+            { botId: "bot", homePath: "/unused", providerRef: "box-1", providerKind: "e2b" },
+            context,
+          )
+          .catch((failure: unknown) => failure),
+        await provider.isRunning(computer, context).catch((failure: unknown) => failure),
+        await provider.stop(computer, context).catch((failure: unknown) => failure),
+        await provider.destroy(computer, context).catch((failure: unknown) => failure),
+      ];
+      for (const failure of failures) {
+        expect(failure).toBeInstanceOf(SandboxRateLimitError);
+        expect((failure as SandboxRateLimitError).cause).toBe(limit);
+        expect(sleepDeferReason(failure)).toBe("rate_limited");
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
   });
 
   it.each(["running", "paused", "killed"] as const)(

@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import { BLOCKED_ITEM_ANSWER, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
-import type { ReactNode, Ref } from "react";
+import type { CSSProperties, ReactNode, Ref } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const modal = vi.hoisted(() => ({ show: undefined as (() => void) | undefined }));
+const insets = vi.hoisted(() => ({ top: 0, bottom: 0, left: 0, right: 0 }));
 // Native commands sent to the fields, and each field's end-editing handler.
 const native = vi.hoisted(() => ({
   commands: [] as string[],
@@ -16,7 +17,22 @@ const native = vi.hoisted(() => ({
 
 vi.mock("react-native", async () => {
   const { useImperativeHandle, useRef } = await import("react");
-  const View = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  const View = ({
+    children,
+    style = [],
+    accessibilityViewIsModal,
+  }: {
+    children?: ReactNode;
+    style?: CSSProperties[];
+    accessibilityViewIsModal?: boolean;
+  }) =>
+    accessibilityViewIsModal ? (
+      <div data-sheet style={Object.assign({}, ...style)}>
+        {children}
+      </div>
+    ) : (
+      <div>{children}</div>
+    );
   return {
     Modal: ({
       children,
@@ -39,8 +55,18 @@ vi.mock("react-native", async () => {
       children?: ReactNode;
       automaticallyAdjustKeyboardInsets?: boolean;
     }) => <div data-keyboard-insets={automaticallyAdjustKeyboardInsets}>{children}</div>,
-    Text: ({ children, numberOfLines }: { children?: ReactNode; numberOfLines?: number }) => (
-      <span data-lines={numberOfLines}>{children}</span>
+    Text: ({
+      children,
+      numberOfLines,
+      accessibilityRole,
+    }: {
+      children?: ReactNode;
+      numberOfLines?: number;
+      accessibilityRole?: string;
+    }) => (
+      <span data-lines={numberOfLines} role={accessibilityRole}>
+        {children}
+      </span>
     ),
     TextInput: function TextInput({
       ref,
@@ -91,7 +117,7 @@ vi.mock("react-native", async () => {
   };
 });
 vi.mock("react-native-safe-area-context", () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  useSafeAreaInsets: () => insets,
 }));
 vi.mock("../../lib/appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../../lib/native/native", () => ({
@@ -143,6 +169,7 @@ let container: HTMLDivElement;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  Object.assign(insets, { left: 0, right: 0 });
   native.commands = [];
   native.endEditing = {};
   resetI18nForTests();
@@ -239,6 +266,20 @@ it("shows the default labels translated but saves them in English", async () => 
   await act(async () => button("Speichern").click());
 
   expect(onSave.mock.lastCall![0].map((answer) => answer.label)).toEqual(["Username", "Password"]);
+});
+
+it.each([
+  { left: 0, right: 72 },
+  { left: 72, right: 0 },
+])("keeps the sheet actions and fields inside the side insets (%j)", async ({ left, right }) => {
+  Object.assign(insets, { left, right });
+  await render();
+
+  const sheet = container.querySelector<HTMLElement>("[data-sheet]")!;
+  expect(sheet.style.paddingLeft).toBe(`${left}px`);
+  expect(sheet.style.paddingRight).toBe(`${right}px`);
+  expect(sheet.contains(button("Save"))).toBe(true);
+  expect(sheet.contains(field("Password"))).toBe(true);
 });
 
 it("starts an ID and a phone visible and a PIN hidden", async () => {
@@ -406,6 +447,7 @@ it("clears both fields and shows a generic error when saving fails", async () =>
   expect(field("Password").value).toBe("");
   expect(button("Save").disabled).toBe(true);
   expect(container.textContent).toContain("Could not send answer");
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not send answer");
   expect(container.textContent).not.toContain("example-password");
 });
 

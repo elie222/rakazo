@@ -409,6 +409,14 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
             authKind: "oauth",
             reconnectRequired: true,
           },
+          {
+            id: "cred-api-key",
+            provider: "anthropic",
+            label: "Anthropic",
+            hasKey: true,
+            isDefault: false,
+            authKind: "api_key",
+          },
         ],
       },
     }),
@@ -416,10 +424,17 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
 
   await openUserSettings(page, "models");
   await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Sign in again");
+  await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Claude subscription");
+  const apiKey = page.getByTestId("model-provider-cred-api-key");
+  await expect(apiKey).toContainText("Anthropic");
+  await expect(apiKey).not.toContainText("Claude subscription");
   await captureScreenshot(page, testInfo, "model-settings-reconnect-required");
   // The connection's page offers sign-in only because it expired; rename and disconnect end it.
   await page.getByTestId("model-provider-cred-claude").getByRole("button").click();
   const connection = page.getByTestId("model-provider-page");
+  await expect(
+    connection.getByRole("heading", { name: "Claude subscription", exact: true }),
+  ).toBeVisible();
   await expect(connection.getByRole("button", { name: "Sign in again" })).toBeVisible();
   await expect(connection.getByRole("button", { name: "Disconnect" })).toBeVisible();
   await expect(connection.getByRole("button", { name: "Test connection" })).toHaveCount(0);
@@ -546,4 +561,148 @@ test("model funding connections", async ({ page }, testInfo) => {
     modelId: model.id,
     credentialId: "personal-example",
   });
+});
+
+test("an approval default the deployment pays for reads as included", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `approval-included-${stamp}@rakazo.test`, "password12", "Model Settings");
+  await completeOnboarding(page);
+  const included = {
+    provider: "example",
+    providerName: "Example",
+    id: "reviewer-example",
+    label: "Reviewer",
+    billing: "",
+    protocol: "decisions" as const,
+  };
+  const other = {
+    provider: "example",
+    providerName: "Example",
+    id: "judge-example",
+    label: "Judge",
+    billing: "",
+    creditOfferingId: "offering-example",
+  };
+  let settings: ModelRoleSettings = { primary: null, backups: [] };
+  const view = () => ({
+    ...settings,
+    deploymentPrimary: { provider: included.provider, modelId: included.id },
+    deploymentIncluded: true,
+  });
+  const approval = (route: Route) =>
+    (route.request().postDataJSON() as { json: { role: string } }).json.role === "approval";
+  await page.route("**/rpc/models/forRole", (route) =>
+    approval(route) ? route.fulfill({ json: { json: [included, other] } }) : route.continue(),
+  );
+  await page.route("**/rpc/models/role", (route) =>
+    approval(route) ? route.fulfill({ json: { json: view() } }) : route.continue(),
+  );
+  await page.route("**/rpc/models/setRole", async (route) => {
+    if (!approval(route)) return route.continue();
+    const { json } = route.request().postDataJSON() as { json: Partial<ModelRoleSettings> };
+    settings = { ...settings, ...json };
+    await route.fulfill({ json: { json: view() } });
+  });
+  await page.reload();
+  await openUserSettings(page, "models");
+  const section = page.getByTestId("model-role-approval");
+  await expect(section.getByTestId("model-role-default")).toHaveText("ReviewerIncluded");
+  await captureScreenshot(page, testInfo, "model-settings-approval-included");
+
+  await section.getByRole("button", { name: "Change Approval model", exact: true }).click();
+  await page.getByRole("option", { name: "Judge", exact: true }).click();
+  await expect(section.getByTestId("model-role-row-1")).toContainText("Judge");
+  await section.getByRole("button", { name: "Change Judge", exact: true }).click();
+  const back = page.getByRole("option").filter({ hasText: "Reviewer" });
+  await expect(back).toHaveText("ReviewerIncluded");
+  await captureScreenshot(page, testInfo, "model-settings-approval-included-picker");
+  await back.click();
+  await expect(section.getByTestId("model-role-default")).toHaveText("ReviewerIncluded");
+  expect(settings.primary).toBeNull();
+});
+
+test("a device-code sign-in shows its setup and code before opening the page", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    body.json.needsModel = true;
+    body.json.needsSignupSurvey = false;
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/models/beginOAuth", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          mode: "device-code",
+          loginId: "login-e2e",
+          provider: "openai-codex",
+          verificationUri: "https://auth.example.test/device",
+          userCode: "TI9B-J5KAM",
+          expiresInSeconds: 900,
+        },
+      },
+    }),
+  );
+  await page.route("**/rpc/models/completeOAuth", (route) =>
+    route.fulfill({ json: { json: { status: "pending" } } }),
+  );
+  await signup(page, `device-code-${stamp}@rakazo.test`, "password12", "Device Code Preview");
+  await chooseOption(page.getByLabel("Provider", { exact: true }), "ChatGPT subscription");
+  await expect(
+    page.getByText("Turn on device code sign-in in ChatGPT security settings"),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open settings" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "onboarding-device-code-setup");
+  const opened = page.waitForEvent("popup", { timeout: 1000 }).catch(() => null);
+  await page.getByRole("button", { name: "Sign in with ChatGPT" }).click();
+  await expect(page.getByText("TI9B-J5KAM")).toBeVisible();
+  // The page opens only when the person asks, so they never land there without the code.
+  expect(await opened).toBeNull();
+  await expect(page.getByRole("link", { name: "Copy code and open" })).toHaveAttribute(
+    "href",
+    "https://auth.example.test/device",
+  );
+  await captureScreenshot(page, testInfo, "onboarding-device-code-sign-in");
+});
+
+test("a pasted-code sign-in opens its page from a click and then takes the code", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    body.json.needsModel = true;
+    body.json.needsSignupSurvey = false;
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/models/beginOAuth", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          mode: "auth-url",
+          loginId: "login-e2e",
+          provider: "anthropic",
+          verificationUri: "https://auth.example.test/oauth/authorize?state=e2e",
+          expiresInSeconds: 900,
+        },
+      },
+    }),
+  );
+  await page.route("**/rpc/models/completeOAuth", (route) =>
+    route.fulfill({ json: { json: { status: "pending" } } }),
+  );
+  await signup(page, `paste-code-${stamp}@rakazo.test`, "password12", "Paste Code Preview");
+  await chooseOption(page.getByLabel("Provider", { exact: true }), "Claude subscription");
+  await page.getByRole("button", { name: "Sign in with Claude" }).click();
+  const open = page.getByRole("link", { name: "Open auth.example.test" });
+  await expect(open).toHaveAttribute("href", "https://auth.example.test/oauth/authorize?state=e2e");
+  await expect(page.getByRole("textbox", { name: "Code from auth.example.test" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue" })).toBeHidden();
+  await captureScreenshot(page, testInfo, "onboarding-paste-code-sign-in");
 });

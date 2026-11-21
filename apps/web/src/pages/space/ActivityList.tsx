@@ -71,8 +71,13 @@ export function ActivityList({
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const live = { refetchOnWindowFocus: "always" } as const;
-  const active = useQuery(queries.runs.list.queryOptions({ input: { filter: "active" }, ...live }));
-  const recent = useQuery(queries.runs.list.queryOptions({ input: { filter: "recent" }, ...live }));
+  const statusFilter = filters.status === "all" ? {} : { status: filters.status };
+  const active = useQuery(
+    queries.runs.list.queryOptions({ input: { filter: "active", ...statusFilter }, ...live }),
+  );
+  const recent = useQuery(
+    queries.runs.list.queryOptions({ input: { filter: "recent", ...statusFilter }, ...live }),
+  );
   const activeRuns = active.data?.runs ?? NO_RUNS;
   const recentRuns = recent.data?.runs ?? NO_RUNS;
   // "Try again" shows its progress in place of the error it answers.
@@ -127,6 +132,7 @@ export function ActivityList({
   const unreadCount = filtersOn ? 0 : sections.unreadGroups.length + sections.unreadBots.length;
   const hasAnyRuns = activeRuns.length > 0 || recentRuns.length > 0;
   const hasVisibleRuns = filteredActive.length > 0 || filteredRecent.length > 0;
+  const noMatches = !hasVisibleRuns && (filters.status !== "all" || (filtersOn && hasAnyRuns));
 
   return (
     <div data-testid="activity-list">
@@ -147,7 +153,7 @@ export function ActivityList({
         <p className="px-2.5 py-2 text-body-sm text-muted-foreground/80">
           <Spinner aria-label={t`Loading activity…`} />
         </p>
-      ) : !error && filtersOn && hasAnyRuns && !hasVisibleRuns ? (
+      ) : !loading && !error && noMatches ? (
         <p className="px-2.5 py-2 text-body-sm text-muted-foreground/80" role="status">
           <Trans>No runs match these filters.</Trans>
         </p>
@@ -291,6 +297,7 @@ function ActivityFilters({
                   data-testid="activity-date-from"
                   type="date"
                   value={filters.dateRange.from}
+                  max={filters.dateRange.to || undefined}
                   onChange={(event) =>
                     onChange({
                       ...filters,
@@ -309,6 +316,7 @@ function ActivityFilters({
                   data-testid="activity-date-to"
                   type="date"
                   value={filters.dateRange.to}
+                  min={filters.dateRange.from || undefined}
                   onChange={(event) =>
                     onChange({
                       ...filters,

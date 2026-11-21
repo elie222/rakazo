@@ -158,7 +158,7 @@ import { mountBillingRoutes } from "./billing/billing-webhook.js";
 import { createSpeechSummarizer } from "./calls/speech-summary.js";
 import { mountVoiceHttpRoutes } from "./calls/voice.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
-import { mountLocalComputerHost } from "./computers/local-settings.js";
+import { localSignupAdmitter, mountLocalComputerHost } from "./computers/local-settings.js";
 import { mountScreenTarget } from "./computers/screen-proxy.js";
 import { storeInboundAttachment } from "./content/artifacts.js";
 import { mountSharedPages } from "./content/shared-pages.js";
@@ -579,7 +579,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     webOrigin: env.webOrigin,
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
-    singleAccount: Boolean(env.desktopStackToken),
+    admitsSignup: env.desktopStackToken ? localSignupAdmitter(env.desktopStackToken) : undefined,
     email,
     logger: authLibraryLogger("auth.request.failed"),
     onEmailError,
@@ -714,10 +714,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
       },
     });
-  const { runtime, executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(
-    runtimeEnv,
-    connectors,
-    {
+  const { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions } =
+    createRunRuntime(runtimeEnv, connectors, {
       billingEnabled: modelCreditsEnabled,
       mediaGeneration,
       meetingWork: meetingProvider && meetings.work.bind(meetings),
@@ -726,6 +724,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       contextStrategy,
       prisma,
       runtime: baseRuntime,
+      pageRevisionRuntime: runtimeOverride ?? new PiAgentRuntime(),
       codexCatalog,
       sandbox,
       memory,
@@ -762,8 +761,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       stoppingSignal: shutdown.signal,
       shutdownSignal: runDrain.signal,
       now,
-    },
-  );
+    });
 
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
@@ -851,6 +849,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
 
   const router = createRouter({
+    pageRevisions,
     meetings,
     meetingCalendar,
     meetingAnswers: createMeetingAnswers({
@@ -1008,6 +1007,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
   }
   app.get("/api/auth/capabilities", (c) => {
+    const registrationOpen = env.desktopStackToken
+      ? auth.registrationOpen(c.req.raw.headers)
+      : undefined;
     return c.json({
       sso: env.oidc
         ? { name: env.oidc.name, availability: auth.ssoAvailability() ?? "checking" }
@@ -1018,6 +1020,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       resetUrl:
         env.passwordAuth !== false && email ? new URL("/reset-password", env.webOrigin).href : null,
       emailCode: auth.emailCodeSignIn,
+      registrationOpen,
       billing: Boolean(billing),
       passkeyRpId: auth.passkeyRpId,
       nativePasskeys: nativePasskeys(env, auth.passkeyRpId),
@@ -1188,6 +1191,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       context: {
         actor,
         sessionId: session?.sessionId,
+        nativeSessionId:
+          c.req.header("origin") === "rakazo://" &&
+          c.req.header("authorization")?.startsWith("Bearer ")
+            ? session?.sessionId
+            : undefined,
         signal: c.req.raw.signal,
         // Same user in the same space, so leaving the space also ends a stream.
         // A database failure rejects this check; only a missing membership is unauthorized.

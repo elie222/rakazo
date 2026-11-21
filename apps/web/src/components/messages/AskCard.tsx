@@ -305,13 +305,17 @@ function PromptAskCard({
             <OptionRow
               key={action.id}
               letter={optionLetter(index)}
-              selected={chosenOption?.id === action.id}
+              // Only an answered card says which option was chosen; before that they are plain actions.
+              selected={answered ? chosenOption?.id === action.id : undefined}
               disabled={answered || !canAnswer || submitting}
               onClick={() => void submitAnswer(action.id)}
             >
               {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
             </OptionRow>
           ))}
+          {answered ? (
+            <span className="sr-only">{block.expired ? t`Expired` : t`Answered`}</span>
+          ) : null}
         </div>
       ) : typedAnswer ? (
         answerIsSeparate ? null : (
