@@ -1914,3 +1914,39 @@ it("shows what a disconnect left, not a read sent before it", async () => {
     await view.unmount();
   }
 });
+
+it("counts a sign-in as replaced when another connection opens over it", async () => {
+  models.list.mockResolvedValue([
+    deepseekEntry,
+    {
+      provider: "openai-codex",
+      providerName: "ChatGPT",
+      id: "fixture-model",
+      label: "Fixture model",
+      auth: "oauth",
+      signIn: "device-code",
+      oauthLabel: "Sign in with ChatGPT",
+    },
+  ]);
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  models.beginOAuth.mockResolvedValue({
+    mode: "device-code",
+    loginId: "login-1",
+    verificationUri: "https://auth.example.test/device",
+    userCode: "ABCD-1234",
+    expiresInSeconds: 300,
+  });
+  models.completeOAuth.mockResolvedValue({ status: "pending" });
+  models.cancelOAuth.mockResolvedValue({ ok: true });
+  const view = await renderSettings();
+  try {
+    await openPicker("Add fallback");
+    await choose("ChatGPT");
+    await click(buttons(view.container, "Sign in with ChatGPT")[0]);
+    expect(models.beginOAuth).toHaveBeenCalledOnce();
+    await manage();
+    expect(models.cancelOAuth).toHaveBeenCalledWith({ loginId: "login-1", reason: "replaced" });
+  } finally {
+    await view.unmount();
+  }
+});
