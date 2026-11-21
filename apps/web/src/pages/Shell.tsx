@@ -202,10 +202,15 @@ function SpaceShell() {
     refreshBots,
   });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
-  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
-  useEffect(() => {
+  // Read while rendering, so returning to chats does not animate the sidebar shut.
+  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(() =>
+    readBotsSidebarCollapsed(userId),
+  );
+  const [sidebarCollapsedFor, setSidebarCollapsedFor] = useState(userId);
+  if (sidebarCollapsedFor !== userId) {
+    setSidebarCollapsedFor(userId);
     setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
-  }, [userId]);
+  }
   const search = useSidebarSearch({ rpc, navigate });
   const thread = useThreadState();
   const { snapshot } = thread;
