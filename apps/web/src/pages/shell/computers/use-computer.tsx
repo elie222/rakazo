@@ -35,8 +35,11 @@ const COMPUTER_CACHE_LIMIT = 20;
 const OWN_CONTROL_EVENT_MS = 10_000;
 
 type CachedComputer = { computer: ComputerStatus | null; screenUrl: string | null };
-/** A screen URL beside what the server said of its sign-in, so the two never drift apart. */
-type Screen = Pick<ComputerScreenResult, "url" | "singleUseSignIn">;
+/**
+ * A screen URL beside what the server said of its sign-in, so the two never drift apart, and the
+ * bot it was read for.
+ */
+type Screen = Pick<ComputerScreenResult, "url" | "singleUseSignIn"> & { botId?: string };
 
 /** The computer shown beside the chat or full screen, and its screen. */
 export function useComputerState({
@@ -79,16 +82,22 @@ export function useComputerState({
   );
   const ownAnswers = useRef(new Map<string, number>());
   const [screen, setScreen] = useState<Screen>({ url: null });
-  const screenUrl = screen.url;
   const screenRef = useRef(screen);
   // A caller holding only a URL shows a cached screen or none; the shown URL keeps its sign-in.
-  const setScreenUrl = useCallback(
-    (url: string | null) => setScreen((current) => (current.url === url ? current : { url })),
-    [],
-  );
+  const setScreenUrl = useCallback((url: string | null) => {
+    const botId = computerBotIdRef.current ?? activeBotId.current;
+    setScreen((current) => {
+      if (current.url !== url) return { url, botId };
+      return current.botId === botId ? current : { ...current, botId };
+    });
+  }, []);
   const [screenUrlLoadedBotId, setScreenUrlLoadedBotId] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerBotId, setComputerBotId] = useState<string | undefined>();
+  // Switching bots renders once before the new bot's screen is set. A frame that mounts on the
+  // previous bot's screen can stay on it, so another bot's screen is never drawn.
+  const frameBotId = computerBotId ?? activeId;
+  const screenUrl = screen.botId === frameBotId ? screen.url : null;
   const computerOpenRef = useRef(false);
   const computerBotIdRef = useRef<string | undefined>(undefined);
   const [computerViewport, setComputerViewport] = useState<{
@@ -130,7 +139,6 @@ export function useComputerState({
   const [shownScreen, setShownScreen] = useState<{ botId?: string; url: string | null }>({
     url: null,
   });
-  const frameBotId = computerBotId ?? activeId;
   if (shownScreen.url !== screenUrl || shownScreen.botId !== frameBotId) {
     const before = embeddableScreenUrl(shownScreen.url);
     const after = embeddableScreenUrl(screenUrl);
@@ -465,8 +473,8 @@ export function useComputerState({
                 current.singleUseSignIn?.screen === answer.singleUseSignIn.screen))
           )
             return current;
-          if (current.url === answer.url) return current;
-          return { url: answer.url, singleUseSignIn: answer.singleUseSignIn };
+          if (current.url === answer.url && current.botId === id) return current;
+          return { url: answer.url, singleUseSignIn: answer.singleUseSignIn, botId: id };
         });
         // A screen read replaces only its own error; a failed boot keeps its error and Retry.
         if (answer.error || computerErrorFromScreenRef.current) {
