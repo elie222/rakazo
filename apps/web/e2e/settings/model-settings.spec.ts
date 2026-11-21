@@ -653,14 +653,16 @@ test("a device-code sign-in shows its setup and code before opening the page", a
   );
   await signup(page, `device-code-${stamp}@rakazo.test`, "password12", "Device Code Preview");
   await chooseOption(page.getByLabel("Provider", { exact: true }), "ChatGPT subscription");
+  await expect(
+    page.getByText("Turn on device code sign-in in ChatGPT security settings"),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open settings" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "onboarding-device-code-setup");
   const opened = page.waitForEvent("popup", { timeout: 1000 }).catch(() => null);
   await page.getByRole("button", { name: "Sign in with ChatGPT" }).click();
   await expect(page.getByText("TI9B-J5KAM")).toBeVisible();
   // The page opens only when the person asks, so they never land there without the code.
   expect(await opened).toBeNull();
-  await expect(
-    page.getByRole("link", { name: "Turn on device code sign-in in ChatGPT security settings" }),
-  ).toBeVisible();
   await expect(page.getByRole("link", { name: "Copy code and open" })).toHaveAttribute(
     "href",
     "https://auth.example.test/device",
