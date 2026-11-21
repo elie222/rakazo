@@ -11,7 +11,7 @@
     "dev": "node ../../../scripts/dev-watch.mjs src/index.ts",
     "start": "tsx src/index.ts",
     "egress": "tsx src/egress-report.ts",
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../../.. infra/sandboxes/supervisor/src"
   },
   "dependencies": {

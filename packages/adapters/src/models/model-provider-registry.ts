@@ -12,8 +12,12 @@ import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
  * without an entry is used exactly as the registry describes it.
  */
 export interface ModelProviderDefinition {
+  preserveModelOrder?: true;
   /** Kept where the registry renamed a provider, so existing names stay. */
   displayName?: string;
+  /** What a signed-in connection is called, by the plan people pay for. */
+  subscriptionName?: string;
+  subscriptionNameId?: string;
   /** The model a new connection preselects; only an exact catalog id. */
   recommendedModel?: string;
   /** Bundled or live-listed ids the provider refuses agent runs for every new account. */
@@ -53,9 +57,17 @@ const bearer = (apiKey: string) => ({ Authorization: `Bearer ${apiKey}` });
 const unauthorized = async (response: Response) =>
   response.status === 401 || response.status === 403;
 
+const subscriptionNames = {
+  codex: /*i18n*/ { id: "XrwIDk", message: "ChatGPT subscription" },
+  anthropic: /*i18n*/ { id: "oCbawp", message: "Claude subscription" },
+};
+
 export const modelProviders = {
+  "openai-compatible": { preserveModelOrder: true },
   "openai-codex": {
     displayName: "OpenAI Codex",
+    subscriptionName: subscriptionNames.codex.message,
+    subscriptionNameId: subscriptionNames.codex.id,
     recommendedModel: "gpt-6-luna",
     signIn: {
       mode: "device-code",
@@ -84,6 +96,8 @@ export const modelProviders = {
   },
   anthropic: {
     recommendedModel: "claude-haiku-5-5",
+    subscriptionName: subscriptionNames.anthropic.message,
+    subscriptionNameId: subscriptionNames.anthropic.id,
     deployment: { keyEnv: "ANTHROPIC_API_KEY", defaultModel: "claude-sonnet-5" },
     signIn: {
       mode: "auth-url",

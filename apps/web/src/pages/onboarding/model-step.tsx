@@ -1,5 +1,4 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { useSignInSetup } from "@rakazo/chat-ui/sign-in-setup";
 import { isUnlistedCompatibleModel } from "@rakazo/core";
 import {
   Button,
@@ -13,11 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@rakazo/ui-web";
-import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
 import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
-import { PasteCodeSignIn } from "../../components/models/PasteCodeSignIn";
-import { SignInSetupStep } from "../../components/models/SignInSetupStep";
+import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
 import type { OnboardingModel } from "./use-onboarding-model";
 
@@ -196,7 +193,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
                 onValueChange={(value) => {
                   if (typeof value !== "string" || !value) return;
                   if (value === modelId) return;
-                  cancelOAuthAttempt();
+                  cancelOAuthAttempt("replaced");
                   setModelId(value);
                   setThinkingLevel(null);
                 }}
@@ -369,55 +366,26 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
     signInLabel,
     submitOAuthCode,
   } = model;
-  const signInSetup = useSignInSetup(
-    selected?.signInSetup,
-    selected?.provider,
-    beginSelectedSubscriptionSignIn,
-  );
 
   return (
     <div className="mt-4">
-      {oauth ? (
-        <div className="rounded-lg border border-border px-3.5 py-3">
-          {oauth.mode === "auth-url" ? (
-            <PasteCodeSignIn
-              oauth={oauth}
-              code={pasteCode}
-              onCodeChange={setPasteCode}
-              onSubmit={() => void submitOAuthCode()}
-              onPageOpened={() => reportSignInStep("page_opened")}
-            />
-          ) : (
-            <DeviceCodeSignIn
-              oauth={oauth}
-              codeCopied={codeCopied}
-              onCopyCode={copyOAuthCode}
-              onPageOpened={() => reportSignInStep("page_opened")}
-            />
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2 -ml-2 text-muted-foreground"
-            onClick={() => cancelOAuthAttempt()}
-          >
-            <Trans>Cancel</Trans>
-          </Button>
-        </div>
-      ) : signInSetup.setup ? (
-        <div className="rounded-lg border border-border px-3.5 py-3">
-          <SignInSetupStep
-            setup={signInSetup.setup}
-            disabled={oauthPending}
-            onContinue={signInSetup.proceed}
-            onCancel={signInSetup.dismiss}
-          />
-        </div>
-      ) : (
-        <Button disabled={oauthPending} onClick={signInSetup.begin}>
-          {oauthPending ? <Trans>Starting…</Trans> : signInLabel}
-        </Button>
-      )}
+      <SubscriptionSignInSteps
+        oauth={oauth}
+        setup={selected?.signInSetup}
+        startLabel={signInLabel}
+        starting={oauthPending}
+        onStart={() => beginSelectedSubscriptionSignIn()}
+        onRestart={() => {
+          cancelOAuthAttempt("replaced");
+          beginSelectedSubscriptionSignIn();
+        }}
+        codeCopied={codeCopied}
+        onCopyCode={copyOAuthCode}
+        pasteCode={pasteCode}
+        onPasteCodeChange={setPasteCode}
+        onSubmitCode={() => void submitOAuthCode()}
+        onPageOpened={() => reportSignInStep("page_opened")}
+      />
     </div>
   );
 }

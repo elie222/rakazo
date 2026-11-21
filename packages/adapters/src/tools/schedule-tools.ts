@@ -36,7 +36,12 @@ import {
   ROUTINE_CHAT_TRIGGER_NOTE,
   ROUTINE_WEBHOOK_SETUP_NOTE,
 } from "../routines/routine-triggers.prompt.js";
-import { validateRoutineWatch } from "../routines/routine-watch.js";
+import {
+  firstWatchCheck,
+  parseRoutineWatch,
+  validateRoutineWatch,
+  watchWithInterval,
+} from "../routines/routine-watch.js";
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
 import type { ScheduleUnit } from "./schedule-intervals.js";
 import { intervalRangeError } from "./schedule-intervals.js";
@@ -193,6 +198,9 @@ export function resolveScheduleTiming(
       const parsed = zonedDateTime(String(input.runAt), timezone);
       if (!parsed) return { ok: false, error: "runAt must be a valid ISO datetime." };
       nextRunAt = parsed;
+    }
+    if (Number.isNaN(nextRunAt.getTime())) {
+      return { ok: false, error: "The delay is too far in the future." };
     }
     if (nextRunAt.getTime() <= Date.now()) {
       return { ok: false, error: `One-shot schedules must run in the future. ${nowIn(timezone)}` };
@@ -846,7 +854,7 @@ async function createWatchFromTool(
   }
   const keyError = await ensureWebhookKey(deps, input, input.events);
   if (keyError) return { error: keyError };
-  const nextRunAt = new Date(Date.now() + 2_000);
+  const nextRunAt = firstWatchCheck();
   // As with a timed routine, a defaulted zone is read under a share lock in the same
   // transaction as the insert, so a zone change cannot cross the creation.
   const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) =>
@@ -985,11 +993,11 @@ function carriedRunAtForTimezone(
 
 /** Steers away from cancel and recreate: a new command watch asks the user again. */
 const WATCH_RETIME_ERROR =
-  "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.";
+  "This routine is a watch: it has no schedule or timezone. Change how often it checks with everyMinutes instead; do not cancel and recreate it.";
 
 /**
  * Edit one of this bot's routines in place: name, prompt, whether it runs in its chat, timing
- * (with startAt), or active.
+ * (with startAt), a watch's interval, or active.
  * Scoped like cancel, so another bot's or another thread's routine reads as not found.
  */
 export async function updateScheduleFromTool(
@@ -1009,6 +1017,8 @@ export async function updateScheduleFromTool(
     active?: boolean;
     timezone?: string;
     schedule: Record<string, unknown>;
+    /** A watch's new check interval, in minutes. */
+    everyMinutes?: unknown;
     /** Replaces the routine's events; an empty object removes them. */
     on?: unknown;
   },
@@ -1047,6 +1057,7 @@ export async function updateScheduleFromTool(
       input.inChat !== undefined ||
       input.timezone !== undefined ||
       input.on !== undefined ||
+      input.everyMinutes !== undefined ||
       Object.values(input.schedule).some(isScheduleValueProvided))
   ) {
     return {
@@ -1069,8 +1080,17 @@ export async function updateScheduleFromTool(
   const retime =
     hasTiming || isScheduleValueProvided(input.schedule.startAt) || timezone !== existing.timezone;
   const inChat = input.inChat === existing.inChat ? undefined : input.inChat;
+  const existingWatch = parseRoutineWatch(existing.watch);
+  let watch = existingWatch;
+  if (input.everyMinutes !== undefined) {
+    const retimed = watchWithInterval(existingWatch, input.everyMinutes);
+    if ("error" in retimed) return retimed;
+    watch = retimed.watch;
+  }
+  const watchChanged = watch?.everyMinutes !== existingWatch?.everyMinutes;
   if (
     !retime &&
+    !watchChanged &&
     name === undefined &&
     prompt === undefined &&
     inChat === undefined &&
@@ -1115,9 +1135,11 @@ export async function updateScheduleFromTool(
     if (!resolved.ok) return { error: resolved.error };
     crons = [resolved.cron];
     nextRunAt = carried ?? resolved.nextRunAt;
+  } else if (active && watchChanged) {
+    nextRunAt = firstWatchCheck();
   } else if (active && !(existing.active && existing.nextRunAt)) {
     // Resuming: a watch checks right away, a repeat picks its next occurrence from now.
-    if (existing.watch != null) nextRunAt = new Date(Date.now() + 2_000);
+    if (existing.watch != null) nextRunAt = firstWatchCheck();
     else if (oneShot) {
       if (!existing.nextRunAt || existing.nextRunAt.getTime() <= Date.now()) {
         return { error: "This one-time schedule has no time left; give a new runAt." };
@@ -1161,7 +1183,10 @@ export async function updateScheduleFromTool(
     if (keyError) return { error: keyError };
   }
   const timingChanged =
-    retime || active !== existing.active || nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
+    retime ||
+    watchChanged ||
+    active !== existing.active ||
+    nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
 
   // The owner is part of the write, so a routine that changed hands since the read is left alone.
   // A name or prompt edit writes only those fields, so a run claimed meanwhile keeps its advance;
@@ -1173,14 +1198,17 @@ export async function updateScheduleFromTool(
       id: existing.id,
       bot: { archivedAt: null },
       ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
-      // A watch added since the read keeps its routine alongside the chat.
+      // A watch added since the read keeps its routine alongside the chat; a new interval applies
+      // only to the watch it was read with.
       ...(inChat ? { watch: { equals: Prisma.DbNull } } : {}),
+      ...(watchChanged ? { watch: { equals: existing.watch as Prisma.InputJsonValue } } : {}),
     },
     data: {
       ...(name === undefined ? {} : { name }),
       ...(prompt === undefined ? {} : { prompt }),
       ...(inChat === undefined ? {} : { inChat }),
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
+      ...(watchChanged && watch ? { watch: watch as Prisma.InputJsonValue } : {}),
       ...(eventsChanged ? events : {}),
     },
   });
@@ -1214,6 +1242,7 @@ export async function updateScheduleFromTool(
     ...(prompt === undefined ? {} : { prompt }),
     ...(inChat === undefined ? {} : { inChat }),
     ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
+    ...(watchChanged ? { watch } : {}),
     ...(eventsChanged ? events : {}),
   };
   if (routineEdited(existing, saved)) {
@@ -1236,6 +1265,7 @@ export async function updateScheduleFromTool(
     nextRunAt: nextRunAt?.toISOString() ?? null,
     oneShot: isOneShotRoutineCrons(crons),
     ...timing,
+    ...(watch ? { everyMinutes: watch.everyMinutes } : {}),
     ...(eventsChanged || input.on !== undefined ? eventsResult(events) : {}),
     // An unchanged prompt is not echoed; an edited one appears only in `changes`, before and after.
     changes: routineChanges(
@@ -1245,6 +1275,7 @@ export async function updateScheduleFromTool(
         inChat: existing.inChat,
         active: existing.active,
         ...describeRoutineTiming(existing),
+        everyMinutes: existingWatch?.everyMinutes,
         on: routineEventsView(existing),
       },
       {
@@ -1253,6 +1284,7 @@ export async function updateScheduleFromTool(
         inChat: inChat ?? existing.inChat,
         active,
         ...timing,
+        everyMinutes: watch?.everyMinutes,
         on: routineEventsView(events),
       },
     ),
@@ -1267,6 +1299,7 @@ type RoutineView = {
   timezone: string;
   schedule?: string;
   nextRun: string | null;
+  everyMinutes?: number;
   on: ReturnType<typeof routineEventsView>;
 };
 
@@ -1281,6 +1314,7 @@ function routineChanges(before: RoutineView, after: RoutineView) {
     "timezone",
     "schedule",
     "nextRun",
+    "everyMinutes",
     "on",
   ] as const) {
     if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
@@ -1313,6 +1347,9 @@ export async function cancelScheduleFromTool(
     botId: input.botId,
     ...(input.threadId ? { threadId: input.threadId } : {}),
   };
+  if (!routineId && (await deps.prisma.routine.count({ where: { ...scope, name: name! } })) > 1) {
+    return { error: `More than one schedule is named "${name}". Pass routineId instead.` };
+  }
   const existing = await deps.prisma.routine.findFirst({
     where: { ...scope, ...(routineId ? { id: routineId } : { name: name! }) },
   });

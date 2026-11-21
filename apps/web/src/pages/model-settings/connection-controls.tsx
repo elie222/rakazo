@@ -1,10 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { useSignInSetup } from "@rakazo/chat-ui/sign-in-setup";
 import { Button, Disclosure, Input, Label, OptionSelect, Switch } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
-import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
-import { PasteCodeSignIn } from "../../components/models/PasteCodeSignIn";
-import { SignInSetupStep } from "../../components/models/SignInSetupStep";
+import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -98,12 +95,6 @@ export function ConnectionControls({
     subscriptionSignIn &&
     credential?.authKind === "oauth" &&
     keyShownFor !== (selected?.provider ?? null);
-  // Signing in again, the setting is already on.
-  const signInSetup = useSignInSetup(
-    credential?.authKind === "oauth" ? undefined : selected?.signInSetup,
-    selected?.provider,
-    beginSelectedSubscriptionSignIn,
-  );
   // Opening the fold swaps the summary for the form, so focus moves to the key field.
   useEffect(() => {
     if (keyShownFor) document.getElementById("model-api-key")?.focus();
@@ -111,61 +102,31 @@ export function ConnectionControls({
   return !isOpenAiCompatible ? (
     <>
       {subscriptionSignIn && (credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
-        <div className="mt-5 flex flex-wrap items-center gap-2 first:mt-0">
-          {oauth ? (
-            <div className="w-full rounded-xl border border-border px-4 py-3">
-              {oauth.mode === "auth-url" ? (
-                <PasteCodeSignIn
-                  oauth={oauth}
-                  code={pasteCode}
-                  onCodeChange={setPasteCode}
-                  onSubmit={() => void submitOAuthCode()}
-                  onPageOpened={() => reportSignInStep("page_opened")}
-                />
-              ) : (
-                <DeviceCodeSignIn
-                  oauth={oauth}
-                  codeCopied={codeCopied}
-                  onCopyCode={copyOAuthCode}
-                  onPageOpened={() => reportSignInStep("page_opened")}
-                />
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mt-2 -ml-2 text-muted-foreground"
-                onClick={() => cancelOAuthAttempt()}
-              >
-                <Trans>Cancel</Trans>
-              </Button>
-            </div>
-          ) : signInSetup.setup ? (
-            <div className="w-full rounded-xl border border-border px-4 py-3">
-              <SignInSetupStep
-                setup={signInSetup.setup}
-                disabled={busy}
-                onContinue={signInSetup.proceed}
-                onCancel={signInSetup.dismiss}
-              />
-            </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={signInSetup.begin}
-            >
-              {oauthPending ? (
-                <Trans>Starting…</Trans>
-              ) : credential?.authKind === "oauth" ? (
+        <div className="mt-5 first:mt-0">
+          <SubscriptionSignInSteps
+            oauth={oauth}
+            setup={selected?.signInSetup}
+            startLabel={
+              credential?.authKind === "oauth" ? (
                 <Trans>Sign in again</Trans>
               ) : (
                 (selected?.oauthLabel ?? t`Sign in`)
-              )}
-            </Button>
-          )}
+              )
+            }
+            starting={oauthPending}
+            disabled={busy}
+            onStart={() => beginSelectedSubscriptionSignIn()}
+            onRestart={() => {
+              cancelOAuthAttempt("replaced");
+              beginSelectedSubscriptionSignIn();
+            }}
+            codeCopied={codeCopied}
+            onCopyCode={copyOAuthCode}
+            pasteCode={pasteCode}
+            onPasteCodeChange={setPasteCode}
+            onSubmitCode={() => void submitOAuthCode()}
+            onPageOpened={() => reportSignInStep("page_opened")}
+          />
         </div>
       ) : null}
 

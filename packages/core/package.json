@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -104,6 +105,26 @@
       "development": "./src/primitives/query.ts",
       "default": "./src/primitives/query.ts"
     },
+    "./retry": {
+      "types": "./src/primitives/retry.ts",
+      "development": "./src/primitives/retry.ts",
+      "default": "./src/primitives/retry.ts"
+    },
+    "./translate": {
+      "types": "./src/locale/translate.ts",
+      "development": "./src/locale/translate.ts",
+      "default": "./src/locale/translate.ts"
+    },
+    "./text-direction": {
+      "types": "./src/locale/text-direction.ts",
+      "development": "./src/locale/text-direction.ts",
+      "default": "./src/locale/text-direction.ts"
+    },
+    "./ui-locale": {
+      "types": "./src/locale/ui-locale.ts",
+      "development": "./src/locale/ui-locale.ts",
+      "default": "./src/locale/ui-locale.ts"
+    },
     "./node/prompt-source-version": {
       "types": "./src/node/prompt-source-version.ts",
       "development": "./src/node/prompt-source-version.ts",
@@ -126,7 +147,7 @@
     }
   },
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/core/src"
   },
   "dependencies": {

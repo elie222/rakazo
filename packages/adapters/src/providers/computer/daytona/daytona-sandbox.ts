@@ -20,9 +20,10 @@ import type {
   TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
-import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { abortableDelay } from "@rakazo/core";
+import { SandboxFileTooLargeError, SandboxRateLimitError } from "@rakazo/adapter-kit";
+import { abortableDelay, parseRetryAfter } from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -57,6 +58,7 @@ import {
 } from "../../../computers/screens/linux-desktop.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
 import { withAbort } from "../../../web/web-ssrf.js";
+import { daytonaRateLimitError } from "./daytona-rate-limit.js";
 import { isDaytonaExecutable, walkDaytonaWorkspace } from "./daytona-workspace.js";
 
 const DISPLAY_START = 20;
@@ -285,6 +287,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         { timeout: 120 },
       );
     } catch (error) {
+      // Refused by Daytona, so nothing was created to delete; a delete would hit the same limit.
+      const limited = await daytonaRateLimitError(error);
+      if (limited) throw limited;
       await this.deleteAbandoned(name, request.botId);
       throw error;
     }
@@ -305,7 +310,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       return sandbox.state === (await daytonaSdk()).SandboxState.STARTED;
     } catch (error) {
       if (await isDaytonaSandboxMissing(error)) return false;
-      throw error;
+      throw (await daytonaRateLimitError(error)) ?? error;
     }
   }
 
@@ -396,9 +401,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   ): Promise<ComputerFileEntry[]> {
     const sandbox = await this.box(computer);
     const relative = normalizeWorkspacePath(directory);
-    const entries = await sandbox.fs.listFiles(
-      workspacePath(await this.workspaceRoot(sandbox), relative),
-    );
+    const entries = await sandbox.fs
+      .listFiles(workspacePath(await this.workspaceRoot(sandbox), relative))
+      .catch(async (error: unknown) => {
+        throw (await daytonaRateLimitError(error)) ?? error;
+      });
     return entries
       .map((entry) => ({
         path: normalizeWorkspacePath(relative ? `${relative}/${entry.name}` : entry.name),
@@ -420,12 +427,16 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     const sandbox = await this.box(computer);
     const target = workspacePath(await this.workspaceRoot(sandbox), filePath);
     if (options?.maxBytes !== undefined) {
-      const info = await sandbox.fs.getFileDetails(target);
+      const info = await sandbox.fs.getFileDetails(target).catch(async (error: unknown) => {
+        throw (await daytonaRateLimitError(error)) ?? error;
+      });
       if (info.size > options.maxBytes) {
         throw new SandboxFileTooLargeError(options.maxBytes);
       }
     }
-    const content = await sandbox.fs.downloadFile(target);
+    const content = await sandbox.fs.downloadFile(target).catch(async (error: unknown) => {
+      throw (await daytonaRateLimitError(error)) ?? error;
+    });
     return new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
   }
 
@@ -437,10 +448,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   async *exportWorkspace(
     computer: ComputerRef,
     context: AdapterContext,
+    limits?: WorkspaceExportLimits,
   ): AsyncIterable<PortableFile> {
     const sandbox = await this.box(computer);
     await this.desktops.stopBrowsers(computer, context);
-    yield* walkDaytonaWorkspace(sandbox, await this.workspaceRoot(sandbox), "", context);
+    yield* walkDaytonaWorkspace(sandbox, await this.workspaceRoot(sandbox), "", context, limits);
   }
 
   async importWorkspace(
@@ -514,7 +526,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       await sandbox.delete(120, true);
     } catch (error) {
       // Deletion is idempotent even when the sandbox disappears after lookup.
-      if (!(await isDaytonaSandboxMissing(error))) throw error;
+      if (!(await isDaytonaSandboxMissing(error))) {
+        throw (await daytonaRateLimitError(error)) ?? error;
+      }
     }
   }
 
@@ -566,9 +580,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       this.checkedAt.set(id, Date.now());
       return { sandbox, started };
     })()
-      .catch((error: unknown) => {
+      .catch(async (error: unknown) => {
         if (isSandboxGoneError(error) && this.connections.get(id) === connection) this.forget(id);
-        throw error;
+        throw (await daytonaRateLimitError(error)) ?? error;
       })
       .finally(() => {
         if (this.connections.get(id) === connection) this.connections.delete(id);
@@ -588,7 +602,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       return await this.client.get(id);
     } catch (error) {
       if (await isDaytonaSandboxMissing(error)) return undefined;
-      throw error;
+      throw (await daytonaRateLimitError(error)) ?? error;
     }
   }
 
@@ -608,7 +622,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     try {
       await (await this.client.get(nameOrId)).delete(timeoutMs / 1_000);
     } catch (error) {
-      if (!(await isDaytonaSandboxMissing(error))) throw error;
+      if (!(await isDaytonaSandboxMissing(error))) {
+        throw (await daytonaRateLimitError(error)) ?? error;
+      }
     }
   }
 
@@ -677,12 +693,16 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     );
     if (mkdir.exitCode !== 0) throw new Error(mkdir.result || "could not create file directories");
     await Promise.all(
-      files.map((file) =>
-        sandbox.fs.uploadFile(
-          Buffer.from(file.content.buffer, file.content.byteOffset, file.content.byteLength),
-          workspacePath(root, file.path),
-        ),
-      ),
+      files.map(async (file) => {
+        await sandbox.fs
+          .uploadFile(
+            Buffer.from(file.content.buffer, file.content.byteOffset, file.content.byteLength),
+            workspacePath(root, file.path),
+          )
+          .catch(async (error: unknown) => {
+            throw (await daytonaRateLimitError(error)) ?? error;
+          });
+      }),
     );
     const executable = files
       .filter((file) => file.executable)
@@ -950,7 +970,7 @@ async function stopDaytonaSandbox(sandbox: DaytonaSandbox): Promise<void> {
     }
   } catch (error) {
     if (isSandboxGoneError(error)) return;
-    throw error;
+    throw (await daytonaRateLimitError(error)) ?? error;
   }
 }
 
