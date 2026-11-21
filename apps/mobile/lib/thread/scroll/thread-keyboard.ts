@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
+import { useEffect, useState } from "react";
 import {
   KeyboardController,
   KeyboardEvents,
@@ -20,7 +21,7 @@ export const KEYBOARD_SETTLE_MS = 600;
 export function useThreadKeyboard() {
   const progress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
   const [avoiding, setAvoiding] = useState(true);
-  const settle = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [focused, setFocused] = useState(false);
 
   useKeyboardHandler(
     {
@@ -42,27 +43,23 @@ export function useThreadKeyboard() {
 
   useEffect(() => {
     const subscription = KeyboardEvents.addListener("keyboardWillShow", () => setAvoiding(true));
-    return () => {
-      subscription.remove();
-      clearTimeout(settle.current);
-    };
+    return () => subscription.remove();
   }, []);
 
-  const onFocusChange = (focused: boolean) => {
-    clearTimeout(settle.current);
-    if (focused) return;
-    settle.current = setTimeout(() => {
+  useTimeout(
+    () => {
       if (progress.value === 0) return;
       progress.value = 0;
       setAvoiding(false);
-    }, KEYBOARD_SETTLE_MS);
-  };
+    },
+    focused ? null : KEYBOARD_SETTLE_MS,
+  );
 
   const { input } = useReanimatedFocusedInput();
   useAnimatedReaction(
     () => input.value !== null,
-    (focused, previous) => {
-      if (focused !== previous) scheduleOnRN(onFocusChange, focused);
+    (current, previous) => {
+      if (current !== previous) scheduleOnRN(setFocused, current);
     },
   );
 
