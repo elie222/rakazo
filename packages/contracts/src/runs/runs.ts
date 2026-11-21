@@ -137,6 +137,22 @@ export const RunActivityRowSchema = z.object({
     ])
     .nullable(),
   updatedAt: z.string(),
+  /**
+   * The run's pending approval card, only for the run's owner while it waits for input.
+   * Lets the Activity list answer Allow-once / Deny without opening the chat (#4181).
+   */
+  pendingApproval: z
+    .object({
+      messageId: Id,
+      /** The card's own question, so the row names the action rather than the run's prompt. */
+      text: z.string(),
+      /** The card's resolved detail, shown whole beside the controls or absent when it must be opened. */
+      detail: z.string().nullable(),
+      /** False when the card must be read in full (explicit approval or long detail): Open/Deny only. */
+      inlineAllow: z.boolean(),
+    })
+    .nullable()
+    .optional(),
 });
 export type RunActivityRow = z.infer<typeof RunActivityRowSchema>;
 
