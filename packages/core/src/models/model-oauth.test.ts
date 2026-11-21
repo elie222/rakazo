@@ -13,7 +13,7 @@ describe("waitForModelOAuthCompletion", () => {
 
       await expect(
         waitForModelOAuthCompletion(complete, {
-          attempts: 3,
+          expiresInSeconds: 900,
           pollIntervalMs: 0,
         }),
       ).resolves.toEqual({ status: "ready" });
@@ -24,21 +24,10 @@ describe("waitForModelOAuthCompletion", () => {
   it.each([400, 401, 403, 404, 409, 426])("does not retry HTTP %s", async (status) => {
     const error = Object.assign(new Error("Request rejected"), { status });
     const complete = vi.fn().mockRejectedValue(error);
-    await expect(waitForModelOAuthCompletion(complete)).rejects.toBe(error);
+    await expect(waitForModelOAuthCompletion(complete, { expiresInSeconds: 900 })).rejects.toBe(
+      error,
+    );
     expect(complete).toHaveBeenCalledTimes(1);
-  });
-
-  it("counts failed reads toward the attempt limit", async () => {
-    const complete = vi
-      .fn()
-      .mockRejectedValue(Object.assign(new Error("Unavailable"), { status: 503 }));
-    await expect(
-      waitForModelOAuthCompletion(complete, {
-        attempts: 2,
-        pollIntervalMs: 0,
-      }),
-    ).rejects.toThrow("timed out");
-    expect(complete).toHaveBeenCalledTimes(2);
   });
 
   it("preserves cancellation when an in-flight read rejects", async () => {
@@ -50,6 +39,7 @@ describe("waitForModelOAuthCompletion", () => {
     });
     await expect(
       waitForModelOAuthCompletion(complete, {
+        expiresInSeconds: 900,
         signal: controller.signal,
         pollIntervalMs: 0,
       }),
@@ -61,6 +51,7 @@ describe("waitForModelOAuthCompletion", () => {
     const complete = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
     const controller = new AbortController();
     const polling = waitForModelOAuthCompletion(complete, {
+      expiresInSeconds: 900,
       signal: controller.signal,
       pollIntervalMs: 60_000,
     });
@@ -78,6 +69,7 @@ describe("waitForModelOAuthCompletion", () => {
       .mockResolvedValue({ status: "error", error: "Denied" });
     await expect(
       waitForModelOAuthCompletion(complete, {
+        expiresInSeconds: 900,
         pollIntervalMs: 0,
       }),
     ).rejects.toThrow("Denied");
@@ -88,6 +80,7 @@ describe("waitForModelOAuthCompletion", () => {
     const complete = vi.fn().mockResolvedValue({ status: "pending" as const });
     const controller = new AbortController();
     const polling = waitForModelOAuthCompletion(complete, {
+      expiresInSeconds: 900,
       signal: controller.signal,
       pollIntervalMs: 60_000,
     });
@@ -102,25 +95,46 @@ describe("waitForModelOAuthCompletion", () => {
   it("returns readiness without another poll", async () => {
     const complete = vi.fn().mockResolvedValue({ status: "ready" as const });
 
-    await expect(waitForModelOAuthCompletion(complete)).resolves.toEqual({
-      status: "ready",
-    });
+    await expect(waitForModelOAuthCompletion(complete, { expiresInSeconds: 900 })).resolves.toEqual(
+      {
+        status: "ready",
+      },
+    );
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
   it("fails with the provider's error instead of polling again", async () => {
     const complete = vi.fn().mockResolvedValue({ status: "error" as const, error: "Denied" });
 
-    await expect(waitForModelOAuthCompletion(complete)).rejects.toThrow("Denied");
+    await expect(waitForModelOAuthCompletion(complete, { expiresInSeconds: 900 })).rejects.toThrow(
+      "Denied",
+    );
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
-  it("stops after the configured attempt limit", async () => {
-    const complete = vi.fn().mockResolvedValue({ status: "pending" as const });
-
-    await expect(
-      waitForModelOAuthCompletion(complete, { attempts: 2, pollIntervalMs: 0 }),
-    ).rejects.toThrow("timed out");
-    expect(complete).toHaveBeenCalledTimes(2);
-  });
+  it.each([
+    ["pending reads", vi.fn().mockResolvedValue({ status: "pending" as const })],
+    [
+      "failed reads",
+      vi.fn().mockRejectedValue(Object.assign(new Error("Unavailable"), { status: 503 })),
+    ],
+  ])(
+    "says the code expired once the server's expiry and a margin pass (%s)",
+    async (_, complete) => {
+      vi.useFakeTimers();
+      try {
+        const polling = waitForModelOAuthCompletion(complete, {
+          expiresInSeconds: 60,
+          pollIntervalMs: 5_000,
+        });
+        const rejected = expect(polling).rejects.toThrow("This code expired. Start again.");
+        await vi.advanceTimersByTimeAsync(115_000);
+        expect(complete).toHaveBeenCalledTimes(24);
+        await vi.advanceTimersByTimeAsync(10_000);
+        await rejected;
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 });

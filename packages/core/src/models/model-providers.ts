@@ -1,6 +1,7 @@
 import type { Bot, ModelApiProtocol, ModelCatalogEntry, ModelSettings } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
+  modelConnectionNames,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   selectCompatibleModelCredential,
@@ -156,12 +157,16 @@ type CatalogModelRef = {
   id: string;
   label: string;
   providerName?: string;
+  subscriptionName?: string;
+  auth?: ModelCatalogEntry["auth"];
   placeholder?: boolean;
   images?: boolean;
 };
 
 type CredentialModelRef = {
   preserveModelOrder?: boolean;
+  id?: string;
+  authKind?: string;
   provider: string;
   label: string;
   modelId?: string | null;
@@ -301,7 +306,7 @@ export function credentialForModel<C extends CredentialModelRef>(
  * The connection a model row runs on, in the order runs choose it: its pinned connection, else
  * one whose saved model is this one, else the most preferred connection for its provider.
  */
-export function connectionForModelChoice<C extends CredentialModelRef & { id: string }>(
+export function connectionForModelChoice<C extends CredentialModelRef>(
   credentials: readonly C[],
   choice: {
     provider: string;
@@ -315,12 +320,10 @@ export function connectionForModelChoice<C extends CredentialModelRef & { id: st
   const provider = credentials.filter(
     (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
   );
-  return (
-    provider.find((entry) => entry.modelId === choice.modelId) ??
-    [...provider].sort(
-      (left, right) => (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
-    )[0]
+  const preferred = [...provider].sort(
+    (left, right) => (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
   );
+  return preferred.find((entry) => entry.modelId === choice.modelId) ?? preferred[0];
 }
 
 /**
@@ -335,12 +338,16 @@ export function connectedModelChoices(
 ): ConnectedModelChoice[] {
   const choices: ConnectedModelChoice[] = [];
   const seen = new Set<string>();
+  const modelsByProvider = new Map<string, CatalogModelRef[]>();
+  for (const entry of catalog) {
+    if (entry.placeholder) continue;
+    const provider = canonicalPiProviderId(entry.provider);
+    const models = modelsByProvider.get(provider) ?? [];
+    models.push(entry);
+    modelsByProvider.set(provider, models);
+  }
   for (const credential of credentials) {
-    const providerModels = catalog.filter(
-      (entry) =>
-        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider) &&
-        !entry.placeholder,
-    );
+    const providerModels = modelsByProvider.get(canonicalPiProviderId(credential.provider)) ?? [];
     const raw = credential.modelId?.trim() ?? "";
     const resolved = raw ? resolveSelectableModelId(providerModels, credential.provider, raw) : "";
     const resolvedInCatalog = providerModels.some(
@@ -365,12 +372,30 @@ export function connectedModelChoices(
           : catalogChoices(providerModels, credential.preserveModelOrder);
     choices.push(...next);
   }
-  choices.push(...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)));
-  return choices.filter((choice) => {
+  const unique = (choice: ConnectedModelChoice) => {
     if (seen.has(choice.key)) return false;
     seen.add(choice.key);
     return true;
+  };
+  const connected = choices.filter(unique).map((choice) => {
+    const models = modelsByProvider.get(canonicalPiProviderId(choice.provider)) ?? [];
+    const exact = models.find((entry) => entry.id === choice.modelId);
+    const entry = exact ?? models[0];
+    if (!entry?.subscriptionName) return choice;
+    const serving = connectionForModelChoice(credentials, choice);
+    const { connectionName: providerLabel } = modelConnectionNames(entry, serving);
+    return {
+      ...choice,
+      providerLabel,
+      label: withConnectionName(choice.modelLabel ?? choice.modelId, providerLabel),
+    };
   });
+  return [
+    ...connected,
+    ...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)).filter(
+      unique,
+    ),
+  ];
 }
 
 export type ChatModelChoice = {
