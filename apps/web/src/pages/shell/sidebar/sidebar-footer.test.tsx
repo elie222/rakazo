@@ -267,6 +267,8 @@ async function renderOrganizations(
   organizations: (typeof personal)[],
   onSwitchOrganization = vi.fn(),
   onCreateOrganization = vi.fn(),
+  guestSpace?: { id: string; name: string },
+  onSwitchGuestSpace = vi.fn(),
 ) {
   await act(async () =>
     root.render(
@@ -285,7 +287,10 @@ async function renderOrganizations(
           signingOut={false}
           logOutError={null}
           organizations={organizations}
-          activeOrganizationId="org-personal"
+          activeOrganizationId={guestSpace ? null : "org-personal"}
+          guestSpaces={guestSpace ? [guestSpace] : []}
+          activeGuestSpace={guestSpace}
+          onSwitchGuestSpace={onSwitchGuestSpace}
           onSwitchOrganization={onSwitchOrganization}
           onCreateOrganization={onCreateOrganization}
         />
@@ -323,4 +328,22 @@ it("lists organizations in a submenu with the active one checked, then New organ
   expect(onSwitch).toHaveBeenCalledWith(work);
   await act(async () => items[2]!.click());
   expect(onCreate).toHaveBeenCalled();
+});
+
+it("shows the current guest Space as a peer of organizations in the switcher", async () => {
+  const guest = { id: "space-guest", name: "Family" };
+  const onSwitchGuestSpace = vi.fn();
+  await renderOrganizations([personal, work], vi.fn(), vi.fn(), guest, onSwitchGuestSpace);
+
+  const items = await openOrganizations();
+  expect(items.map((item) => item.textContent)).toEqual([
+    "Personal",
+    "Work",
+    "FamilyGuest",
+    "New organization",
+  ]);
+  expect(items[0]?.hasAttribute("aria-current")).toBe(false);
+  expect(items[2]?.getAttribute("aria-current")).toBe("true");
+  await act(async () => items[2]?.click());
+  expect(onSwitchGuestSpace).toHaveBeenCalledWith(guest);
 });

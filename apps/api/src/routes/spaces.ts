@@ -11,7 +11,6 @@ import {
   createSpaceInvite,
   fallbackSpaceForMember,
   GUEST_ROLE,
-  homeOrganizationId,
   IsolationError,
   isOwnerRole,
   leaveSpace,
@@ -359,13 +358,17 @@ async function memberSpaceNavigation(
   repos: ReturnType<typeof createRepos>,
   groupRepos: ReturnType<typeof createGroupRepos>,
 ): Promise<SpaceNavigation> {
-  // The member's own organization, plus every Space shared with them from someone else's.
-  const organizationId = await homeOrganizationId(deps.prisma, actor);
+  const current = await deps.prisma.spaceMember.findUnique({
+    where: { spaceId_userId: { spaceId: actor.spaceId, userId: actor.userId } },
+    select: { organizationId: true, member: { select: { role: true } } },
+  });
+  if (!current) throw new IsolationError();
+  const scope =
+    current.member.role === GUEST_ROLE
+      ? { spaceId: actor.spaceId }
+      : { organizationId: current.organizationId };
   const memberships = await deps.prisma.spaceMember.findMany({
-    where: {
-      userId: actor.userId,
-      OR: [{ organizationId }, { member: { role: GUEST_ROLE } }],
-    },
+    where: { userId: actor.userId, ...scope },
     select: {
       spaceId: true,
       role: true,

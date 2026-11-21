@@ -40,7 +40,11 @@ import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 import { useApprovalSettings } from "../../lib/settings/approval-settings";
 import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
 import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings/settings-sheet";
-import { activeOrganization, useOrganizations } from "../../lib/spaces/organizations";
+import {
+  activeGuestSpace,
+  activeOrganization,
+  useOrganizations,
+} from "../../lib/spaces/organizations";
 import { confirmUnsentSendLoss } from "../../lib/thread/send/unsent-send-warning";
 
 type Icon = Pick<ComponentProps<typeof NativeSymbol>, "ios" | "android">;
@@ -75,6 +79,10 @@ export default function Account() {
   const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
   const spending = useSpendingStatus();
   const organizations = useOrganizations().data;
+  const guestSpace = activeGuestSpace(organizations);
+  const organizationName = guestSpace
+    ? t`${guestSpace.name} (Guest)`
+    : activeOrganization(organizations)?.name;
 
   const icon = ({ ios, android }: Icon) => (
     <NativeSymbol ios={ios} android={android} color={tokens.mutedForeground} />
@@ -392,11 +400,11 @@ export default function Account() {
                 accessible
                 accessibilityRole="button"
                 accessibilityLabel={t`Organization`}
-                accessibilityValue={{ text: activeOrganization(organizations)?.name }}
+                accessibilityValue={{ text: organizationName }}
                 chevron="down"
                 leading={icon({ ios: "building.2", android: "business-outline" })}
                 title={t`Organization`}
-                value={activeOrganization(organizations)?.name}
+                value={organizationName}
               />
             </OrganizationRowMenu>
           ) : null}

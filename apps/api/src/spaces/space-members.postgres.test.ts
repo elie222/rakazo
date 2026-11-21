@@ -676,43 +676,40 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     );
   });
 
-  it("lists shared spaces across organizations and creates new spaces in the member's own", async () => {
+  it("keeps guest spaces out of organization rosters and lists them in the switcher", async () => {
     const owner = await person("owner");
     const invitee = await person("invitee");
     const home = await sharedSpace(owner, "Home");
+    const another = await sharedSpace(owner, "Another shared space");
     await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, home) });
+    await call(invitee.actor, "spaces/invites/accept", { token: await invite(owner, another) });
+    const work = await call(invitee.actor, "organizations/create", { name: "Work" });
+    expect(work.status).toBe(200);
+    const workId = work.json.id as string;
+    organizations.push(workId);
 
     const listed = await call(invitee.actor, "spaces/list", {});
     expect(listed.status).toBe(200);
-    const spaces = listed.json.spaces as Array<Record<string, unknown>>;
-    expect(spaces.find((space) => space.id === invitee.spaceId)).toMatchObject({
-      shared: false,
-      isDefault: true,
-      canRename: true,
-    });
-    expect(spaces.find((space) => space.id === home)).toMatchObject({
-      name: "Home",
-      shared: true,
-      isDefault: false,
-      canRename: false,
-      canDelete: false,
-    });
-    // From inside the shared Space, the member still sees their own Spaces around it, and the
-    // owner's organization stays out of their switcher.
+    expect(listed.json.spaces).toEqual([
+      expect.objectContaining({ id: invitee.spaceId, shared: false, isDefault: true }),
+    ]);
+    const fromWork = await call(inSpace(invitee.actor, workId), "spaces/list", {});
+    expect(fromWork.json.spaces).toEqual([expect.objectContaining({ id: workId })]);
     const fromShared = await call(inSpace(invitee.actor, home), "spaces/list", {});
-    expect(
-      (fromShared.json.spaces as Array<{ id: string }>).map((space) => space.id).sort(),
-    ).toEqual([home, invitee.spaceId].sort());
+    expect(fromShared.json.spaces).toEqual([
+      expect.objectContaining({ id: home, name: "Home", shared: true, canRename: false }),
+    ]);
     const organizationList = await call(inSpace(invitee.actor, home), "organizations/list", {});
     expect(organizationList.json).toMatchObject({
-      activeOrganizationId: invitee.organizationId,
-      organizations: [expect.objectContaining({ id: invitee.organizationId })],
+      guestSpaces: expect.arrayContaining([
+        { id: home, name: "Home" },
+        { id: another, name: "Another shared space" },
+      ]),
+      organizations: [
+        expect.objectContaining({ id: invitee.organizationId, spaceIds: [invitee.spaceId] }),
+        expect.objectContaining({ id: workId, spaceIds: [workId] }),
+      ],
     });
-    expect(organizationList.json.organizations).toHaveLength(1);
-    // The shared Space counts as one of theirs, so losing a request's session never drops it.
-    expect(
-      (organizationList.json.organizations as Array<{ spaceIds: string[] }>)[0]!.spaceIds,
-    ).toContain(home);
     const ownerList = await call(owner.actor, "spaces/list", {});
     expect(
       (ownerList.json.spaces as Array<Record<string, unknown>>).find((space) => space.id === home),

@@ -5,6 +5,7 @@ import { queryClient, spaceQueries, useQueryUserId } from "../query/query";
 import { ORGANIZATION_SPACES_STORAGE_KEY, rpc, selectedSpaceId, selectSpace } from "../query/rpc";
 
 export type Organization = OrganizationList["organizations"][number];
+export type GuestSpace = NonNullable<OrganizationList["guestSpaces"]>[number];
 
 /** Every organization read is keyed under this, after the user. */
 const ORGANIZATIONS_KEY = "organizations";
@@ -25,10 +26,13 @@ export function useOrganizations() {
     queryClient,
   );
   const organizations = data?.organizations ?? [];
+  const guestSpaces = data?.guestSpaces ?? [];
   const spaceId = selectedSpaceId();
-  const activeOrganizationId =
-    organizationOfSpace(organizations, spaceId)?.id ?? data?.activeOrganizationId ?? null;
-  return { organizations, activeOrganizationId };
+  const activeGuestSpace = guestSpaces.find((space) => space.id === spaceId);
+  const activeOrganizationId = activeGuestSpace
+    ? null
+    : (organizationOfSpace(organizations, spaceId)?.id ?? data?.activeOrganizationId ?? null);
+  return { organizations, activeOrganizationId, guestSpaces, activeGuestSpace };
 }
 
 function lastSpaces(): Record<string, string> {
@@ -72,13 +76,14 @@ export async function leaveOrganization(
       ?.organizations ?? [];
   const from = organizationOfSpace(organizations, fromSpaceId);
   const to = organizationOfSpace(organizations, toSpaceId);
-  if (!from || !to || from.id === to.id) return;
-  rememberSpace(from.id, fromSpaceId);
+  if (from && from.id === to?.id) return;
+  if (from) rememberSpace(from.id, fromSpaceId);
+  const departingSpaceIds = from?.spaceIds ?? [fromSpaceId];
   // The departing shell saves its Space's seed as it unmounts, so this runs after it.
   window.setTimeout(() => {
     const current = selectedSpaceId();
-    if (current && from.spaceIds.includes(current)) return;
-    for (const spaceId of [...from.spaceIds, null]) {
+    if (current && departingSpaceIds.includes(current)) return;
+    for (const spaceId of [...departingSpaceIds, null]) {
       queryClient.removeQueries({ queryKey: spaceQueries(userId, spaceId).key() });
     }
   }, 0);

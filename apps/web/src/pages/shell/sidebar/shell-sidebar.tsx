@@ -21,7 +21,11 @@ import { useSignOut } from "../../../lib/auth/sign-out";
 import { formatBillingDate } from "../../../lib/billing/billing";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
 import { useQueryUserId } from "../../../lib/query/query";
-import { switchOrganization, useOrganizations } from "../../../lib/spaces/organizations";
+import {
+  openOrganizationSpace,
+  switchOrganization,
+  useOrganizations,
+} from "../../../lib/spaces/organizations";
 import { ActivityList } from "../../space/ActivityList";
 import { SpaceSearchResults } from "../../space/SpaceSearch";
 import { useAppRail } from "../app-rail";
@@ -353,7 +357,7 @@ function ShellSidebarFooter({
 }) {
   const { t, i18n } = useLingui();
   const userId = useQueryUserId();
-  const { organizations, activeOrganizationId } = useOrganizations();
+  const { organizations, activeOrganizationId, guestSpaces, activeGuestSpace } = useOrganizations();
   const { status: billing, showPlans } = useBilling();
   const freeUntil =
     billing?.funding === "byok" &&
@@ -458,6 +462,13 @@ function ShellSidebarFooter({
         logOutError={logOutError}
         organizations={organizations}
         activeOrganizationId={activeOrganizationId}
+        guestSpaces={guestSpaces}
+        activeGuestSpace={activeGuestSpace}
+        onSwitchGuestSpace={(space) => {
+          setMenuOpen(false);
+          if (space.id !== activeGuestSpace?.id)
+            void openOrganizationSpace(userId, space.id, "/app", openSpaceChat);
+        }}
         onSwitchOrganization={(organization) => {
           setMenuOpen(false);
           if (organization.id !== activeOrganizationId)

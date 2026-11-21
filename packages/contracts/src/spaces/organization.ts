@@ -39,9 +39,12 @@ export const OrganizationInvitationPreviewSchema = z.object({
 });
 export type OrganizationInvitationPreview = z.infer<typeof OrganizationInvitationPreviewSchema>;
 
-/** Every organization the signed-in user belongs to, and which one the current Space belongs to. */
+/** Organizations and guest Spaces the signed-in user can switch to. */
 export const OrganizationListSchema = z.object({
+  /** The active member organization, with the home organization as the fallback for guest Spaces. */
   activeOrganizationId: Id,
+  /** Spaces shared with the user by another organization, selectable on their own. */
+  guestSpaces: z.array(z.object({ id: Id, name: z.string() })).optional(),
   organizations: z.array(
     z.object({
       id: Id,

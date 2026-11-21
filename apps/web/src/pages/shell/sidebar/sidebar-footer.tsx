@@ -31,7 +31,7 @@ import {
 import { useLayoutEffect, useRef, useState } from "react";
 import { useSidebarUpdate } from "../../../components/DesktopUpdates";
 import { IconTooltip } from "../../../components/IconTooltip";
-import type { Organization } from "../../../lib/spaces/organizations";
+import type { GuestSpace, Organization } from "../../../lib/spaces/organizations";
 
 type Props = {
   mini?: boolean;
@@ -59,6 +59,9 @@ type Props = {
   logOutError: string | null;
   organizations?: Organization[];
   activeOrganizationId?: string | null;
+  guestSpaces?: GuestSpace[];
+  activeGuestSpace?: GuestSpace;
+  onSwitchGuestSpace?: (space: GuestSpace) => void;
   onSwitchOrganization?: (organization: Organization) => void;
   onCreateOrganization?: () => void;
 };
@@ -93,6 +96,9 @@ export function SidebarFooter({
   logOutError,
   organizations = [],
   activeOrganizationId,
+  guestSpaces,
+  activeGuestSpace,
+  onSwitchGuestSpace,
   onSwitchOrganization,
   onCreateOrganization,
 }: Props) {
@@ -165,6 +171,9 @@ export function SidebarFooter({
             <OrganizationRow
               organizations={organizations}
               activeOrganizationId={activeOrganizationId}
+              guestSpaces={guestSpaces}
+              activeGuestSpace={activeGuestSpace}
+              onSwitchGuestSpace={onSwitchGuestSpace}
               onSwitch={onSwitchOrganization}
               onCreate={onCreateOrganization}
             />
@@ -349,16 +358,22 @@ export function SidebarFooter({
 function OrganizationRow({
   organizations,
   activeOrganizationId,
+  guestSpaces = [],
+  activeGuestSpace,
+  onSwitchGuestSpace,
   onSwitch,
   onCreate,
 }: {
   organizations: Organization[];
   activeOrganizationId?: string | null;
+  guestSpaces?: GuestSpace[];
+  activeGuestSpace?: GuestSpace;
+  onSwitchGuestSpace?: (space: GuestSpace) => void;
   onSwitch?: (organization: Organization) => void;
   onCreate?: () => void;
 }) {
   const active = organizations.find((organization) => organization.id === activeOrganizationId);
-  if (!active) return null;
+  if (!active && !activeGuestSpace) return null;
   return (
     <>
       <Popover>
@@ -374,8 +389,17 @@ function OrganizationRow({
             />
           }
         >
-          <Building2 className="text-muted-foreground" strokeWidth={1.75} />
-          <span className="min-w-0 truncate">{active.name}</span>
+          {activeGuestSpace ? (
+            <UserRound className="text-muted-foreground" strokeWidth={1.75} />
+          ) : (
+            <Building2 className="text-muted-foreground" strokeWidth={1.75} />
+          )}
+          <span className="min-w-0 truncate">{activeGuestSpace?.name ?? active?.name}</span>
+          {activeGuestSpace ? (
+            <span className="text-muted-foreground">
+              <Trans>Guest</Trans>
+            </span>
+          ) : null}
           <ChevronRight className="ms-auto text-muted-foreground" strokeWidth={1.75} />
         </PopoverTrigger>
         <PopoverContent
@@ -385,7 +409,7 @@ function OrganizationRow({
           className="max-h-(--available-height) w-60 gap-0 overflow-y-auto p-1 *:shrink-0"
         >
           {organizations.map((organization) => {
-            const current = organization.id === active.id;
+            const current = organization.id === active?.id;
             return (
               <Button
                 key={organization.id}
@@ -397,6 +421,28 @@ function OrganizationRow({
               >
                 <span className="min-w-0 truncate">{organization.name}</span>
                 {current ? <Check aria-hidden="true" strokeWidth={1.75} /> : null}
+              </Button>
+            );
+          })}
+          {guestSpaces.length > 0 ? <div className="my-1 border-t border-border" /> : null}
+          {guestSpaces.map((space) => {
+            const current = space.id === activeGuestSpace?.id;
+            return (
+              <Button
+                key={space.id}
+                variant="ghost"
+                aria-current={current ? "true" : undefined}
+                size="lg"
+                className="w-full justify-start gap-2.5 font-normal"
+                onClick={() => onSwitchGuestSpace?.(space)}
+              >
+                <span className="min-w-0 truncate">{space.name}</span>
+                <span className="text-muted-foreground">
+                  <Trans>Guest</Trans>
+                </span>
+                {current ? (
+                  <Check className="ms-auto" aria-hidden="true" strokeWidth={1.75} />
+                ) : null}
               </Button>
             );
           })}
