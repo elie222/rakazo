@@ -330,8 +330,16 @@ export interface ConnectorTool {
   inputSchema: Record<string, unknown>;
   /** Editable, fully previewable outgoing arguments selected by the adapter. */
   outgoingDraft?: OutgoingDraftDescriptor;
-  /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
+  /**
+   * Declared effect. `false` forces approval. `true` relaxes the name-based gate only when
+   * `readOnlyVetted` is also set.
+   */
   readOnly?: boolean;
+  /**
+   * Set by the connector registry, never by a tool listing: the read comes from a provider whose
+   * descriptor vouches for its tools' declared effects (`ConnectorCapabilities.vetsToolEffects`).
+   */
+  readOnlyVetted?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
   batch?: ToolBatch;
   /** What the person sees for a call, when the name the model uses would read badly. */
@@ -407,6 +415,11 @@ export interface ConnectorCapabilities {
   discover: boolean;
   oauth: boolean;
   secretsBrokered: boolean;
+  /**
+   * The provider curates its tools and their declared effects, so a read it declares may run
+   * without approval. Never set it for a provider that passes on hints a third-party server wrote.
+   */
+  vetsToolEffects?: boolean;
 }
 
 export type ConnectorCatalogItem = ConnectionCatalogItem;

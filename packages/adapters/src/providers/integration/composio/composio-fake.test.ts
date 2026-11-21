@@ -451,3 +451,34 @@ describe("Composio connected-account lifecycle", () => {
     await expect(connector.listReconnectRefs(context())).resolves.toEqual(ids.slice(2));
   });
 });
+
+describe("declared reads", () => {
+  const batch = {
+    tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+    args: {},
+    executionId: "execution",
+    route: { connectorId: "composio", toolName: "COMPOSIO_MULTI_EXECUTE_TOOL" },
+  };
+
+  it("frees only the actions the catalog tags as reads, asking it once per action", async () => {
+    const client = new FakeComposioClient();
+    const list = client.getClient().tools.list;
+    let lookups = 0;
+    client.getClient = () => ({
+      tools: {
+        list: (query, options) => {
+          lookups += 1;
+          return list(query, options);
+        },
+      },
+    });
+    const { connector } = createConnectorStack(new ComposioConnector({ client }));
+    const actions = ["gmail_fetch_emails", "GMAIL_SEND_EMAIL", "GMAIL_UNKNOWN", "COMPOSIO_X"];
+
+    await expect(connector.declaredReads(batch, actions, context())).resolves.toEqual(
+      new Set(["gmail_fetch_emails"]),
+    );
+    await connector.declaredReads(batch, actions, context());
+    expect(lookups).toBe(1);
+  });
+});

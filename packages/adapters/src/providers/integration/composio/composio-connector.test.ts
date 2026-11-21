@@ -12,6 +12,7 @@ import {
   ComposioConnector,
   collectLogIds,
   composioResultError,
+  composioTagsDeclareRead,
   executeSessionKey,
   expandComposioMultiExecute,
   isComposioEnabled,
@@ -232,6 +233,16 @@ describe("composio app tools", () => {
     expect(tools).toHaveLength(250);
     expect(tools.at(-1)?.name).toBe("GMAIL_ACTION_249");
     expect(composioSdkState.rawToolQueries.at(-1)?.toolkit_slug.toLowerCase()).toBe("gmail");
+  });
+});
+
+describe("composio effect tags", () => {
+  it("reads only an action tagged read-only and nothing that changes data", () => {
+    expect(composioTagsDeclareRead(["readOnlyHint", "openWorldHint"])).toBe(true);
+    expect(composioTagsDeclareRead(["readOnlyHint", "destructiveHint"])).toBe(false);
+    expect(composioTagsDeclareRead(["readOnlyHint", "updateHint"])).toBe(false);
+    expect(composioTagsDeclareRead(["openWorldHint"])).toBe(false);
+    expect(composioTagsDeclareRead(undefined)).toBe(false);
   });
 });
 

@@ -141,13 +141,20 @@ export function connectorKindFromToolName(toolName: string, connectorKinds: stri
 
 /**
  * `readOnly` is the connector tool's declared effect (for installed APIs, derived from the stored
- * HTTP method and read-only flag). A declared write always needs approval. A declared read never
- * relaxes the name check: the provider chooses both the name and the hint.
+ * HTTP method and read-only flag). A declared write always needs approval. A server's own read hint
+ * never relaxes the name check: the server chooses both the name and the hint, and could lie.
+ * `vettedRead` is a read declared by an integration provider that vets its tools' effects, which
+ * frees a tool whose name names no read; a name that says it writes still asks.
  */
-export function connectorToolRequiresApproval(toolName: string, readOnly?: boolean): boolean {
+export function connectorToolRequiresApproval(
+  toolName: string,
+  readOnly?: boolean,
+  vettedRead = false,
+): boolean {
   if (readOnly === false) return true;
   if (MUTATING_CONNECTOR_PATTERN.test(toolName)) return true;
   if (COMPOUND_CONNECTOR_ACTION_PATTERN.test(toolName)) return true;
+  if (vettedRead) return false;
   return !READ_ONLY_CONNECTOR_PATTERN.test(toolName);
 }
 
@@ -181,11 +188,12 @@ export function toolRequiresApproval(
   toolName: string,
   viaConnector: boolean,
   readOnly?: boolean,
+  vettedRead = false,
 ): boolean {
   if (APPROVAL_EXEMPT_TOOLS.has(toolName)) return false;
   if (toolRequiresExplicitApproval(toolName)) return true;
   if (APPROVAL_REQUIRED_BUILTIN_TOOLS.has(toolName)) return true;
-  if (viaConnector) return connectorToolRequiresApproval(toolName, readOnly);
+  if (viaConnector) return connectorToolRequiresApproval(toolName, readOnly, vettedRead);
   return false;
 }
 
@@ -517,9 +525,10 @@ function categoryMatches(
   toolName: string,
   connectorKind: string,
   readOnly: boolean | undefined,
+  vettedRead: boolean | undefined,
 ): boolean {
   const normalized = category.toLowerCase();
-  const consequential = connectorToolRequiresApproval(toolName, readOnly);
+  const consequential = connectorToolRequiresApproval(toolName, readOnly, vettedRead);
   if (normalized === "email") {
     if (EMAIL_CONNECTOR_SLUGS.has(connectorKind.toLowerCase())) return consequential;
     return consequential && /send.*mail|gmail_send|outlook_send/i.test(toolName);
@@ -542,6 +551,7 @@ function ruleMatches(
   toolName: string,
   connectorKind: string,
   readOnly: boolean | undefined,
+  vettedRead: boolean | undefined,
   site: string | undefined,
 ): boolean {
   if (
@@ -560,7 +570,7 @@ function ruleMatches(
     case "connector":
       return connectorKind.toLowerCase() === value;
     case "category":
-      return categoryMatches(rule.matchValue, toolName, connectorKind, readOnly);
+      return categoryMatches(rule.matchValue, toolName, connectorKind, readOnly, vettedRead);
     default:
       return false;
   }
@@ -612,13 +622,21 @@ export function resolveActionApprovalDetail(input: {
   toolAliases?: readonly string[];
   connectorKind?: string;
   readOnly?: boolean;
+  vettedRead?: boolean;
   site?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
   const connectorKind = input.connectorKind ?? connectorKindFromToolName(input.toolName);
   const matchingRules = input.rules.filter(
     (rule) =>
-      ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site) ||
+      ruleMatches(
+        rule,
+        input.toolName,
+        connectorKind,
+        input.readOnly,
+        input.vettedRead,
+        input.site,
+      ) ||
       (rule.matchKind === "tool" &&
         input.toolAliases?.some((alias) => alias.toLowerCase() === rule.matchValue.toLowerCase())),
   );
@@ -695,6 +713,7 @@ export function resolveActionApprovalForTools(input: {
     aliases?: readonly string[];
     connectorKind?: string;
     readOnly?: boolean;
+    vettedRead?: boolean;
   }>;
   wrapper?: { name: string; connectorKind?: string };
   site?: string;
@@ -705,12 +724,14 @@ export function resolveActionApprovalForTools(input: {
     aliases?: readonly string[];
     connectorKind?: string;
     readOnly?: boolean;
+    vettedRead?: boolean;
   }) =>
     resolveActionApprovalDetail({
       toolName: tool.name,
       toolAliases: tool.aliases,
       connectorKind: tool.connectorKind,
       readOnly: tool.readOnly,
+      vettedRead: tool.vettedRead,
       site: input.site,
       rules: input.rules,
     });

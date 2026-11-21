@@ -56,7 +56,7 @@ export type ComposioClient = {
   getClient(): {
     tools: {
       list(
-        query: { toolkit_slug: string; limit: number; cursor?: string },
+        query: { toolkit_slug?: string; tool_slugs?: string; limit: number; cursor?: string },
         options?: { signal?: AbortSignal },
       ): Promise<{
         items: unknown[];
@@ -74,6 +74,30 @@ export type ComposioClient = {
 
 /** Account states the user can only leave by reconnecting. */
 const RECONNECT_STATUSES: ConnectedAccountStatus[] = ["EXPIRED", "INACTIVE", "FAILED", "REVOKED"];
+
+export const COMPOSIO_CONNECTOR_CAPABILITIES = {
+  discover: true,
+  oauth: true,
+  secretsBrokered: true,
+  vetsToolEffects: true,
+};
+
+const ACTION_READS_TTL_MS = 60 * 60 * 1000;
+const ACTION_READS_MAX = 5_000;
+const WRITE_TAGS = new Set(["destructiveHint", "createHint", "updateHint"]);
+
+function actionSlug(action: string): string {
+  return action.trim().toUpperCase();
+}
+
+/** A read carries the read-only tag and none that says it creates, changes or deletes. */
+export function composioTagsDeclareRead(tags: unknown): boolean {
+  return (
+    Array.isArray(tags) &&
+    tags.includes("readOnlyHint") &&
+    !tags.some((tag) => typeof tag === "string" && WRITE_TAGS.has(tag))
+  );
+}
 
 export function isComposioEnabled(apiKey: string | undefined): boolean {
   return Boolean(apiKey) && !isVitestRuntime();
@@ -478,13 +502,56 @@ export class ComposioConnector implements ComposioProvider {
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
 
+  private readonly actionReads = new Map<string, { read: boolean; at: number }>();
+
   describe() {
     return {
       id: "composio",
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: { discover: true, oauth: true, secretsBrokered: true },
+      capabilities: COMPOSIO_CONNECTOR_CAPABILITIES,
     };
+  }
+
+  /** Composio writes every action and its effect tags itself; nothing a user connects adds one. */
+  async declaredReads(
+    _call: ConnectorCall,
+    actions: readonly string[],
+    context: AdapterContext,
+  ): Promise<ReadonlySet<string>> {
+    const now = Date.now();
+    const fresh = (slug: string) => {
+      const entry = this.actionReads.get(slug);
+      return entry !== undefined && now - entry.at < ACTION_READS_TTL_MS;
+    };
+    // Session tools run code or other actions, so no tag frees one.
+    const missing = [...new Set(actions.map(actionSlug))].filter(
+      (slug) => slug && !slug.startsWith(COMPOSIO_TOOL_PREFIX) && !fresh(slug),
+    );
+    if (missing.length > 0) {
+      const page = await (await this.sdk())
+        .getClient()
+        .tools.list(
+          { tool_slugs: missing.join(","), limit: missing.length },
+          { signal: context.signal },
+        );
+      if (this.actionReads.size + missing.length > ACTION_READS_MAX) this.actionReads.clear();
+      const listed = new Map(
+        page.items.flatMap((item) => {
+          const raw = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+          return typeof raw.slug === "string" ? [[actionSlug(raw.slug), raw.tags] as const] : [];
+        }),
+      );
+      for (const slug of missing)
+        this.actionReads.set(slug, { read: composioTagsDeclareRead(listed.get(slug)), at: now });
+    }
+    return new Set(
+      actions.filter(
+        (action) =>
+          !actionSlug(action).startsWith(COMPOSIO_TOOL_PREFIX) &&
+          this.actionReads.get(actionSlug(action))?.read === true,
+      ),
+    );
   }
 
   async sessionFor(userId: string): Promise<ComposioSession> {

@@ -142,7 +142,8 @@ export function mcpToolFields(
 ): Pick<ConnectorTool, "inputSchema" | "readOnly" | "batch" | "outgoingDraft"> {
   return {
     inputSchema: tool.inputSchema as Record<string, unknown>,
-    readOnly: tool.annotations?.readOnlyHint,
+    // A tool that says it may destroy data is a write, whatever else it claims.
+    readOnly: tool.annotations?.destructiveHint === true ? false : tool.annotations?.readOnlyHint,
     ...composioMcpToolFields(tool.name, endpoint),
   };
 }

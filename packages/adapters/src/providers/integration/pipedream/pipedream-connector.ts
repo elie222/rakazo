@@ -110,6 +110,14 @@ function securePipedreamConnectUrl(value: string): URL {
   return url;
 }
 
+/** Pipedream publishes its apps' actions and their effect hints itself, not the apps' servers. */
+export const PIPEDREAM_CONNECTOR_CAPABILITIES = {
+  discover: true,
+  oauth: true,
+  secretsBrokered: true,
+  vetsToolEffects: true,
+};
+
 export class PipedreamConnector implements ManagedConnectorProvider {
   private accessToken?: { value: string; expiresAt: number };
   private accessTokenRequest?: Promise<string>;
@@ -126,7 +134,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       id: "pipedream",
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: { discover: true, oauth: true, secretsBrokered: true },
+      capabilities: PIPEDREAM_CONNECTOR_CAPABILITIES,
     };
   }
 

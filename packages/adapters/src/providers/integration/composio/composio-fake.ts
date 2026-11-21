@@ -180,6 +180,15 @@ const GITHUB_TOOLS: SessionTools = [
   ),
 ];
 
+/** The effect tags the real catalog gives these actions. */
+const TOOL_TAGS: Record<string, string[]> = {
+  GMAIL_FETCH_EMAILS: ["readOnlyHint", "openWorldHint"],
+  GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID: ["readOnlyHint", "openWorldHint"],
+  GMAIL_FETCH_MESSAGE_BY_THREAD_ID: ["readOnlyHint", "openWorldHint"],
+  GMAIL_LIST_LABELS: ["readOnlyHint"],
+  GMAIL_SEND_EMAIL: ["openWorldHint"],
+};
+
 function toolsFor(toolkit: string): SessionTools {
   if (toolkit === "GMAIL") return GMAIL_TOOLS;
   if (toolkit === "GITHUB") return GITHUB_TOOLS;
@@ -232,7 +241,16 @@ export class FakeComposioClient implements ComposioClient {
     return {
       tools: {
         list: async (query) => {
-          const tools = toolsFor(query.toolkit_slug.toUpperCase());
+          if (query.tool_slugs !== undefined) {
+            const slugs = query.tool_slugs.split(",");
+            return {
+              items: Object.entries(TOOL_TAGS)
+                .filter(([slug]) => slugs.includes(slug))
+                .map(([slug, tags]) => ({ slug, tags })),
+              next_cursor: null,
+            };
+          }
+          const tools = toolsFor((query.toolkit_slug ?? "").toUpperCase());
           const offset = Number(query.cursor ?? 0);
           const end = offset + query.limit;
           return {
