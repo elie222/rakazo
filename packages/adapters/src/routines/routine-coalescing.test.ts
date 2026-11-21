@@ -69,17 +69,15 @@ describe("pending routine timer coalescing", () => {
       updatedAt,
       task: { prompt: "an earlier prompt" },
     }));
-    findMany
-      .mockResolvedValueOnce(older as never)
-      .mockResolvedValueOnce([
-        {
-          id: "run-1",
-          taskId: "task-1",
-          leaseFence: 0,
-          updatedAt,
-          task: { prompt: config.prompt },
-        },
-      ] as never);
+    findMany.mockResolvedValueOnce(older as never).mockResolvedValueOnce([
+      {
+        id: "run-1",
+        taskId: "task-1",
+        leaseFence: 0,
+        updatedAt,
+        task: { prompt: config.prompt },
+      },
+    ] as never);
     expect(await findPendingRoutineTick(tx, config)).toEqual({ id: "run-1", taskId: "task-1" });
     expect(findMany.mock.calls[1]![0]).toMatchObject({ cursor: { id: "old-99" }, skip: 1 });
   });

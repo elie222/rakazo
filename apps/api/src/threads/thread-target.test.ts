@@ -1837,7 +1837,9 @@ describe("sendThreadMessage", () => {
               trigger: "user",
             },
           ]),
-          findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1", taskId: "task-1" }),
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ botId: "bot-1", userId: "user-1", taskId: "task-1" }),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         },
@@ -1999,7 +2001,9 @@ describe("sendThreadMessage", () => {
             userId: "user-1",
           },
         ]),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1", taskId: "task-1" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-1", userId: "user-1", taskId: "task-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
           status: where.id === "run-waiting-2" && !explicitReply ? "cancelled" : "queued",
@@ -2276,7 +2280,9 @@ describe("sendThreadMessage", () => {
             userId: "user-1",
           },
         ]),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-a", userId: "user-1", taskId: "task-1" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-a", userId: "user-1", taskId: "task-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
           status: where.id === "run-waiting-2" && !explicitReply ? "cancelled" : "queued",
@@ -3469,7 +3475,9 @@ describe("sendThreadMessage", () => {
             trigger: "routine",
           },
         ]),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1", taskId: "task-1" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-1", userId: "user-1", taskId: "task-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         create: vi.fn(),
@@ -3573,7 +3581,9 @@ describe("sendThreadMessage", () => {
             trigger: "webhook",
           },
         ]),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-a", userId: "user-1", taskId: "task-1" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-a", userId: "user-1", taskId: "task-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         create: vi.fn(),
