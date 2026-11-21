@@ -94,7 +94,6 @@ describe("readOwnBotSettings", () => {
       voice: "default",
       replyMode: "chat",
       teamChatAmbientEnabled: false,
-      memoryScope: "default",
       disabledTools: [],
       thinkingLevels: ["low", "medium", "high"],
     });

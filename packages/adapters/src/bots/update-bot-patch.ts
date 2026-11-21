@@ -76,10 +76,11 @@ export const BOT_SETTING_ARGS = [
   "disableTools",
 ] as const;
 
+/** The settings an `update_bot` call changes; `disableTools` holds only tools not yet off. */
 export type BotSettingsPatch = Pick<
   UpdateBotInput,
-  "replyMode" | "teamChatAmbientEnabled" | "teamChatRules" | "memoryScope" | "disabledBuiltinTools"
->;
+  "replyMode" | "teamChatAmbientEnabled" | "teamChatRules" | "memoryScope"
+> & { disableTools?: string[] };
 
 /** What an approved `update_bot` on another bot applies besides its profile, as stored for replay. */
 export const ChildBotSettingsSchema = z
@@ -111,28 +112,41 @@ export function parseBotSettingsPatch(
   if (argumentGiven(disableTools) && !Array.isArray(disableTools))
     return { error: "disableTools must be a list of tool names." };
   const added = Array.isArray(disableTools)
-    ? disableTools.filter((name) => !bot.disabledBuiltinTools.includes(name))
+    ? [...new Set(disableTools)].filter((name) => !bot.disabledBuiltinTools.includes(name))
     : [];
   const given = (key: string) => (argumentGiven(args[key]) ? args[key] : undefined);
   const parsed = UpdateBotInput.safeParse({
     botId: bot.id,
     replyMode: given("replyMode"),
     teamChatAmbientEnabled: given("teamChatAmbientEnabled"),
-    // Empty rules clear them, as in Settings.
-    teamChatRules: typeof args.teamChatRules === "string" ? args.teamChatRules : undefined,
+    teamChatRules: given("teamChatRules"),
     memoryScope: given("memoryScope"),
-    disabledBuiltinTools: added.length ? [...bot.disabledBuiltinTools, ...added] : undefined,
+    disabledBuiltinTools: added.length ? added : undefined,
   });
   if (!parsed.success) {
     const [issue] = parsed.error.issues;
     const field = issue?.path[0] === "disabledBuiltinTools" ? "disableTools" : issue?.path[0];
     return { error: `${String(field ?? "settings")}: ${issue?.message ?? "invalid"}` };
   }
-  const { botId: _botId, ...data } = parsed.data;
+  const { botId: _botId, disabledBuiltinTools, ...data } = parsed.data;
+  const patch: BotSettingsPatch = Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined),
+  );
+  if (disabledBuiltinTools?.length) patch.disableTools = disabledBuiltinTools;
+  return { patch };
+}
+
+/**
+ * The bot row update for a settings patch. Tools are appended in the same statement, so a list
+ * the owner changes meanwhile is kept rather than overwritten.
+ */
+export function botSettingsData({
+  disableTools,
+  ...settings
+}: Omit<ChildBotSettings, "computerMode">) {
   return {
-    patch: Object.fromEntries(
-      Object.entries(data).filter(([, value]) => value !== undefined),
-    ) as BotSettingsPatch,
+    ...settings,
+    ...(disableTools?.length ? { disabledBuiltinTools: { push: disableTools } } : {}),
   };
 }
 

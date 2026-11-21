@@ -1,16 +1,22 @@
 import type { VoiceInfo } from "@rakazo/contracts";
 import { ComputerModeSchema } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { ClientError, redactSecrets } from "@rakazo/core";
+import type { ThreadEvents } from "@rakazo/db";
+import { commitBotUpdate, createRepos } from "@rakazo/db";
 import type { FleetCardSummary } from "../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../approvals/approval-ask.js";
-import type { FleetPrepareDeps, FleetRun } from "../tools/fleet-tools.js";
-import { cardName, credentialField, NOT_FOUND, resolveBot } from "../tools/fleet-tools.js";
+import type { BotComputerSwitchDeps } from "../computers/bot-computer-switch.js";
+import { switchBotComputer } from "../computers/bot-computer-switch.js";
+import type { FleetDeps, FleetPrepareDeps, FleetRun } from "../tools/fleet-tools.js";
+import { actorOf, cardName, credentialField, NOT_FOUND, resolveBot } from "../tools/fleet-tools.js";
 import { resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { prepareOwnBotSettings } from "./own-bot-settings.js";
-import type { ChildBotSettings } from "./update-bot-patch.js";
+import type { ChildBotSettings, UpdateBotPatch } from "./update-bot-patch.js";
 import {
   argumentGiven,
   BOT_SETTING_ARGS,
+  botSettingsData,
+  ChildBotSettingsSchema,
   parseBotSettingsPatch,
   parseUpdateBotPatch,
 } from "./update-bot-patch.js";
@@ -23,6 +29,17 @@ export function childSettingsGiven(args: Record<string, unknown>): boolean {
 }
 
 const onOff = (value: boolean) => (value ? "on" : "off");
+
+/** Fields `update_bot` takes only for the calling bot itself. */
+function ownOnlyFieldRefusal(args: Record<string, unknown>): { error: string } | undefined {
+  if (argumentGiven(args.artifact_id) || args.use_attached_image === true)
+    return { error: "artifact_id and use_attached_image work only on yourself." };
+  if (argumentGiven(args.instructions))
+    return { error: "Change another bot's instructions with set_child_instructions." };
+  if (argumentGiven(args.model) || argumentGiven(args.thinkingLevel))
+    return { error: "Change another bot's model with set_child_bot_model." };
+  return undefined;
+}
 
 /**
  * Checks an `update_bot` on another bot that changes its settings, as the settings screen would,
@@ -37,8 +54,8 @@ export async function prepareChildBotUpdate(
 ): Promise<
   { ok: true; canonical: Record<string, unknown>; summary: FleetCardSummary } | { error: string }
 > {
-  if (argumentGiven(args.model) || argumentGiven(args.thinkingLevel))
-    return { error: "Change another bot's model with set_child_bot_model." };
+  const ownOnly = ownOnlyFieldRefusal(args);
+  if (ownOnly) return ownOnly;
   const computer = argumentGiven(args.computer)
     ? ComputerModeSchema.safeParse(args.computer)
     : undefined;
@@ -77,7 +94,16 @@ export async function prepareChildBotUpdate(
   }
   const current = await deps.prisma.bot.findUniqueOrThrow({
     where: { id: child.id },
-    select: { disabledBuiltinTools: true, computer: { select: { scope: true } } },
+    select: {
+      disabledBuiltinTools: true,
+      computer: { select: { scope: true } },
+      replyMode: true,
+      teamChatAmbientEnabled: true,
+      teamChatRules: true,
+      memoryScope: true,
+      autoSpeak: true,
+      voiceId: true,
+    },
   });
   let voices: VoiceInfo[] | null = null;
   const voice = await prepareOwnBotSettings(
@@ -96,17 +122,12 @@ export async function prepareChildBotUpdate(
     disabledBuiltinTools: current.disabledBuiltinTools,
   });
   if ("error" in work) return work;
-  // Only the tools to turn off are stored: replay adds them to the list as it is then, so a change
-  // the owner makes while the card waits stays.
-  const { disabledBuiltinTools, ...rest } = work.patch;
-  const disableTools = disabledBuiltinTools?.filter(
-    (name) => !current.disabledBuiltinTools.includes(name),
+  // A setting the bot already has is no change, so a call repeating one stays a profile edit.
+  const settings: ChildBotSettings = Object.fromEntries(
+    Object.entries({ ...work.patch, ...voice.data }).filter(
+      ([key, value]) => current[key as keyof typeof current] !== value,
+    ),
   );
-  const settings: ChildBotSettings = {
-    ...rest,
-    ...(disableTools?.length ? { disableTools } : {}),
-    ...voice.data,
-  };
   if (computer?.success) {
     if (!current.computer) return { error: "That bot has no computer to change." };
     const mode = current.computer.scope === "dedicated" ? "dedicated" : "team";
@@ -141,7 +162,7 @@ export async function prepareChildBotUpdate(
         : "Team chat: only when mentioned",
     );
   if (settings.teamChatRules !== undefined)
-    lines.push(`Team chat rules: ${settings.teamChatRules || "none"}`);
+    lines.push(`Team chat rules: ${settings.teamChatRules}`);
   if (settings.memoryScope)
     lines.push(settings.memoryScope === "shared" ? "Memory: shared" : "Memory: its own");
   if (settings.disableTools) lines.push(`Turn off: ${settings.disableTools.join(", ")}`);
@@ -168,4 +189,91 @@ export async function prepareChildBotUpdate(
     },
     summary,
   };
+}
+
+/**
+ * `update_bot` with `bot_id`: the profile of another bot in the space, and once the owner's
+ * approval mode passes it, the settings `prepareChildBotUpdate` checked.
+ */
+export async function updateChildBot(
+  deps: Pick<FleetDeps, "prisma"> &
+    Pick<BotComputerSwitchDeps, "home" | "sandbox"> & {
+      events: Pick<ThreadEvents, "append" | "notify" | "draftRecordingsOfLease">;
+      runSecrets: readonly string[];
+    },
+  run: FleetRun,
+  args: Record<string, unknown>,
+): Promise<{ ok: true } | { error: string }> {
+  const ownOnly = ownOnlyFieldRefusal(args);
+  if (ownOnly) return ownOnly;
+  const profile = {
+    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
+    name: argumentGiven(args.name) ? args.name : undefined,
+    description: argumentGiven(args.description) ? args.description : undefined,
+    notifyOnFinish: argumentGiven(args.notifyOnFinish)
+      ? args.notifyOnFinish
+      : argumentGiven(args.notify_on_finish)
+        ? args.notify_on_finish
+        : undefined,
+  };
+  const credential = credentialField(
+    { name: profile.name, description: profile.description },
+    deps.runSecrets,
+  );
+  if (credential) return { error: credential };
+
+  const child = await resolveBot(deps.prisma, run, { bot_id: args.bot_id });
+  if ("error" in child) {
+    return { error: child.error };
+  }
+  if (!child.thread) return { error: NOT_FOUND };
+
+  let patch: UpdateBotPatch = {};
+  if (Object.values(profile).some((value) => value !== undefined)) {
+    const parsed = parseUpdateBotPatch(profile);
+    if ("error" in parsed) return parsed;
+    patch = parsed.patch;
+  }
+  if (argumentGiven(args.color)) {
+    const avatar = await resolveUpdateBotAvatar({
+      color: args.color,
+      sourceImageArtifactIds: [],
+      loadArtifact: async () => null,
+    });
+    if ("error" in avatar) return avatar;
+    patch.color = avatar.color;
+  }
+  const approved = ChildBotSettingsSchema.safeParse(args.settings ?? {});
+  if (!approved.success) return { error: "The approved change is incomplete." };
+  const { computerMode, ...settings } = approved.data;
+  if (Object.keys(patch).length === 0 && args.settings === undefined) {
+    return {
+      error: "Provide at least one of name, description, notify_on_finish, or color.",
+    };
+  }
+  if (computerMode) {
+    try {
+      await switchBotComputer(
+        { ...deps, repos: createRepos(deps.prisma) },
+        actorOf(run),
+        child.id,
+        computerMode,
+      );
+    } catch (error) {
+      if (error instanceof ClientError) return { error: error.message };
+      throw error;
+    }
+  }
+  const data = { ...patch, ...botSettingsData(settings) };
+  if (Object.keys(data).length)
+    await commitBotUpdate({
+      prisma: deps.prisma,
+      notify: (threadId, seq) => deps.events.notify(threadId, seq),
+      spaceId: run.spaceId,
+      threadId: child.thread.id,
+      botId: child.id,
+      emitBotUpdated: true,
+      data,
+    });
+  return { ok: true };
 }

@@ -14,6 +14,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { uncertainEffectResult } from "../../approvals/approval-effect.js";
+import { updateChildBot } from "../../bots/child-bot-settings.js";
 import { archiveSpawnedBot, spawnBot } from "../../bots/child-bots.js";
 import {
   listDefaultVoices,
@@ -22,6 +23,7 @@ import {
 } from "../../bots/own-bot-settings.js";
 import {
   argumentGiven,
+  botSettingsData,
   ignoredFieldsNote,
   parseBotSettingsPatch,
 } from "../../bots/update-bot-patch.js";
@@ -32,7 +34,6 @@ import {
   organizeBot,
   setChildBotModel,
   setChildInstructions,
-  updateChildBot,
   updateFleetGroup,
   updateOwnBotFromTool,
 } from "../../tools/fleet-tools.js";
@@ -399,7 +400,7 @@ export const fleetTools: ToolHandlers = {
           botId: bot.id,
           emitBotUpdated: true,
           expectedSettings: before,
-          data: { ...settings.data, ...workSettings.patch },
+          data: { ...settings.data, ...botSettingsData(workSettings.patch) },
         });
       } catch (error) {
         if (!isRecordNotFound(error)) throw error;

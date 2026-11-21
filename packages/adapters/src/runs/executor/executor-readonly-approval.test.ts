@@ -2532,12 +2532,11 @@ describe("own settings through update_bot", () => {
       { args: { replyMode: "messages", disableTools: ["web_search"] }, executionId: "call-1" },
     ]);
     await f.run();
-    expect(f.results).toEqual([
-      { ok: true, replyMode: "messages", disabledBuiltinTools: ["shell", "web_search"] },
-    ]);
+    expect(f.results).toEqual([{ ok: true, replyMode: "messages", disableTools: ["web_search"] }]);
+    // Appended in the write, so a list the owner changes meanwhile is kept.
     expect(f.prisma.bot.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { replyMode: "messages", disabledBuiltinTools: ["shell", "web_search"] },
+        data: { replyMode: "messages", disabledBuiltinTools: { push: ["web_search"] } },
       }),
     );
   });
@@ -2978,7 +2977,7 @@ describe("bot management approvals", () => {
     expect(f.prisma.bot.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "bot-a" },
-        data: { replyMode: "messages", disabledBuiltinTools: ["web_search"] },
+        data: { replyMode: "messages", disabledBuiltinTools: { push: ["web_search"] } },
       }),
     );
   });

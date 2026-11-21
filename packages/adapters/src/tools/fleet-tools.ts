@@ -16,7 +16,6 @@ import {
 } from "@rakazo/contracts";
 import {
   CARD_TITLE_ESCAPED_CHARACTERS,
-  ClientError,
   messagingProviderNamed,
   ONCE_ROUTINE_CRON,
   redactSecrets,
@@ -37,14 +36,7 @@ import type { FleetCardSummary } from "../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../approvals/approval-ask.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "../bots/bot-avatar.js";
 import { createdByWhere, managedBotsWhere } from "../bots/child-bots.js";
-import type { UpdateBotPatch } from "../bots/update-bot-patch.js";
-import {
-  argumentGiven,
-  ChildBotSettingsSchema,
-  parseUpdateBotPatch,
-} from "../bots/update-bot-patch.js";
-import type { BotComputerSwitchDeps } from "../computers/bot-computer-switch.js";
-import { switchBotComputer } from "../computers/bot-computer-switch.js";
+import { argumentGiven, parseUpdateBotPatch } from "../bots/update-bot-patch.js";
 import { stopCancelledGroupRuns } from "../computers/computer-idle.js";
 import { asRecord } from "../integrations/connector-http.js";
 import { resolveModelChoice } from "../models/model-choice.js";
@@ -841,104 +833,6 @@ export async function updateFleetGroup(
 
 const CHILD_CHANGED = "child changed; read it again with list_fleet";
 
-/**
- * `update_bot` with `bot_id`: the profile of another bot in the space, and once the owner's
- * approval mode passes it, the settings `prepareChildBotUpdate` checked.
- */
-export async function updateChildBot(
-  deps: Pick<FleetDeps, "prisma"> &
-    Pick<BotComputerSwitchDeps, "home" | "sandbox"> & {
-      events: Pick<ThreadEvents, "append" | "notify" | "draftRecordingsOfLease">;
-      runSecrets: readonly string[];
-    },
-  run: FleetRun,
-  args: Record<string, unknown>,
-): Promise<{ ok: true } | { error: string }> {
-  if (argumentGiven(args.artifact_id) || args.use_attached_image === true) {
-    return { error: "artifact_id and use_attached_image work only on yourself." };
-  }
-  if (argumentGiven(args.instructions)) {
-    return { error: "Change another bot's instructions with set_child_instructions." };
-  }
-  const profile = {
-    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
-    name: argumentGiven(args.name) ? args.name : undefined,
-    description: argumentGiven(args.description) ? args.description : undefined,
-    notifyOnFinish: argumentGiven(args.notifyOnFinish)
-      ? args.notifyOnFinish
-      : argumentGiven(args.notify_on_finish)
-        ? args.notify_on_finish
-        : undefined,
-  };
-  const credential = credentialField(
-    { name: profile.name, description: profile.description },
-    deps.runSecrets,
-  );
-  if (credential) return { error: credential };
-
-  const child = await resolveBot(deps.prisma, run, { bot_id: args.bot_id });
-  if ("error" in child) {
-    return { error: child.error };
-  }
-  if (!child.thread) return { error: NOT_FOUND };
-
-  let patch: UpdateBotPatch = {};
-  if (Object.values(profile).some((value) => value !== undefined)) {
-    const parsed = parseUpdateBotPatch(profile);
-    if ("error" in parsed) return parsed;
-    patch = parsed.patch;
-  }
-  if (argumentGiven(args.color)) {
-    const avatar = await resolveUpdateBotAvatar({
-      color: args.color,
-      sourceImageArtifactIds: [],
-      loadArtifact: async () => null,
-    });
-    if ("error" in avatar) return avatar;
-    patch.color = avatar.color;
-  }
-  const approved = ChildBotSettingsSchema.safeParse(args.settings ?? {});
-  if (!approved.success) return { error: "The approved change is incomplete." };
-  const { computerMode, disableTools, ...settings } = approved.data;
-  if (Object.keys(patch).length === 0 && args.settings === undefined) {
-    return {
-      error: "Provide at least one of name, description, notify_on_finish, or color.",
-    };
-  }
-  if (computerMode) {
-    try {
-      await switchBotComputer(
-        { ...deps, repos: createRepos(deps.prisma) },
-        actorOf(run),
-        child.id,
-        computerMode,
-      );
-    } catch (error) {
-      if (error instanceof ClientError) return { error: error.message };
-      throw error;
-    }
-  }
-  const data: Omit<Prisma.BotUncheckedUpdateInput, "instructions"> = { ...patch, ...settings };
-  if (disableTools?.length) {
-    const live = await deps.prisma.bot.findUniqueOrThrow({
-      where: { id: child.id },
-      select: { disabledBuiltinTools: true },
-    });
-    data.disabledBuiltinTools = [...new Set([...live.disabledBuiltinTools, ...disableTools])];
-  }
-  if (Object.keys(data).length)
-    await commitBotUpdate({
-      prisma: deps.prisma,
-      notify: (threadId, seq) => deps.events.notify(threadId, seq),
-      spaceId: run.spaceId,
-      threadId: child.thread.id,
-      botId: child.id,
-      emitBotUpdated: true,
-      data,
-    });
-  return { ok: true };
-}
-
 /** Replace the approved child's instructions, checking ownership and the version again. */
 export async function setChildInstructions(
   deps: Pick<FleetDeps, "prisma" | "events">,
@@ -1153,7 +1047,7 @@ export async function createChildRoutine(
   return "error" in created ? created : { ...created, ...target };
 }
 
-function actorOf(run: FleetRun): Actor {
+export function actorOf(run: FleetRun): Actor {
   return { spaceId: run.spaceId, userId: run.userId, email: "", isDeploymentOwner: false };
 }
 

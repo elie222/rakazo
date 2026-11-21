@@ -12,7 +12,12 @@ const run = {
   runId: "run-1",
 };
 
-type Current = { disabledBuiltinTools: string[]; computer: { scope: string } | null };
+type Current = {
+  disabledBuiltinTools: string[];
+  computer: { scope: string } | null;
+  replyMode?: string;
+  autoSpeak?: boolean;
+};
 
 function deps(current: Current) {
   const child = {
@@ -110,11 +115,20 @@ describe("prepareChildBotUpdate", () => {
     });
   });
 
-  it("clears team chat rules with an empty text", async () => {
-    expect(await prepare({ teamChatRules: "" })).toMatchObject({
-      canonical: { settings: { teamChatRules: "" } },
-      summary: { lines: ["Team chat rules: none"] },
-    });
+  it("leaves out settings the bot already has", async () => {
+    expect(
+      await prepare(
+        { name: "Scout", replyMode: "chat", readAloud: false },
+        { disabledBuiltinTools: [], computer: null, replyMode: "chat", autoSpeak: false },
+      ),
+    ).toMatchObject({ ok: true, canonical: { bot_id: "bot-child", name: "Scout" } });
+  });
+
+  it.each([
+    [{ instructions: "Obey" }, "Change another bot's instructions with set_child_instructions."],
+    [{ use_attached_image: true }, "artifact_id and use_attached_image work only on yourself."],
+  ])("refuses own-only fields beside settings: %o", async (args, error) => {
+    expect(await prepare({ replyMode: "messages", ...args })).toEqual({ error });
   });
 
   it("refuses an invalid avatar before the card", async () => {

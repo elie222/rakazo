@@ -94,7 +94,7 @@ export async function readOwnBotSettings(
     replyMode: bot.replyMode,
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled,
     ...(bot.teamChatRules ? { teamChatRules: bot.teamChatRules } : {}),
-    memoryScope: bot.memoryScope ?? "default",
+    ...(bot.memoryScope ? { memoryScope: bot.memoryScope } : {}),
     disabledTools: bot.disabledBuiltinTools,
     models: [...providers].map(([provider, ids]) => ({
       provider,
