@@ -115,7 +115,7 @@ export function PluginRow({
         type="button"
         variant="secondary"
         size="sm"
-        aria-label={installed ? undefined : t`Add ${name}`}
+        aria-label={installed ? t`Added: ${name}` : t`Add ${name}`}
         onClick={onOpen}
       >
         {installed ? <Trans>Added</Trans> : <Trans>Add</Trans>}

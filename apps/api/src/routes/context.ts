@@ -123,7 +123,7 @@ export function createRouterContext(deps: RouterDeps) {
     prepareMcpServer,
     insertMcpServer,
     announceMcpServer,
-  } = createMcpServers(deps, onboardingDeps, mcpOAuth);
+  } = createMcpServers(deps, mcpOAuth);
   const announceRoutine = createRoutineAnnouncer(deps);
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
   const { verifyModelConnection, connectModelCredential } = createModelConnector(
@@ -611,7 +611,7 @@ export function createRouterContext(deps: RouterDeps) {
     home: deps.home,
     dataDir: deps.dataDir,
   });
-  const agentSkills = createAgentSkillsService(deps.prisma);
+  const agentSkills = createAgentSkillsService(deps.prisma, deps.events);
 
   const signedIn = os.middleware(async ({ context, next }) => {
     const actor = context.actor;

@@ -1,4 +1,6 @@
 import type { SpaceChangeKind } from "@rakazo/contracts";
+import { refreshQueriesAfterSignal } from "@rakazo/core";
+import type { QueryFilters } from "@tanstack/react-query";
 import { queryClient } from "./query";
 import type { RpcClient } from "./rpc";
 
@@ -22,6 +24,15 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
     ["meetings", "transcript"],
   ],
   artifacts: [["artifacts", "listSpace"]],
+  pages: [
+    ["pages", "get"],
+    ["pages", "list"],
+    ["pageReviews", "get"],
+    ["pageReviews", "list"],
+    ["pageReviews", "grants"],
+    ["pageReviews", "comments"],
+    ["pageReviews", "draft"],
+  ],
 };
 
 export const isReadChangeKind = (kind: string): kind is ReadChangeKind =>
@@ -30,8 +41,9 @@ export const isReadChangeKind = (kind: string): kind is ReadChangeKind =>
 /** Reads again what the server says may have changed; only screens showing it refetch. */
 export function spaceChanged(kind: ReadChangeKind, client = queryClient): Promise<void> {
   const procedures = READS[kind].map((procedure) => procedure.join("."));
-  return client.invalidateQueries({
+  const filters: QueryFilters = {
     predicate: ({ queryKey: [path] }) =>
       Array.isArray(path) && procedures.includes(path.slice(-2).join(".")),
-  });
+  };
+  return refreshQueriesAfterSignal(client, filters);
 }
