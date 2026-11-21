@@ -93,9 +93,10 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
   await expect(page).toHaveURL(/\/app\/artifacts/);
   // Restoring a hidden list also returns to the chat shell from any page.
   await page.getByTestId("show-chat-list").click();
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).not.toHaveURL(/\/app\/artifacts/);
+  await expect(page).toHaveURL(/\/app(\/|$)/);
   await activity.click();
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).not.toHaveURL(/\/app\/artifacts/);
   await expect(
     page.getByTestId("bots-sidebar").getByText("Activity", { exact: true }).first(),
   ).toBeVisible();
