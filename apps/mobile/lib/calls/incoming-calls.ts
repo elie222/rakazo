@@ -196,7 +196,7 @@ async function fetchRoster() {
 let rosterLoad: Promise<void> | undefined;
 function loadRoster(): Promise<void> {
   if (rosterLoad) return rosterLoad;
-  const load = fetchRoster().finally(() => {
+  const load = bestEffort("load the incoming call roster", fetchRoster()).finally(() => {
     if (rosterLoad === load) rosterLoad = undefined;
   });
   rosterLoad = load;
@@ -204,13 +204,9 @@ function loadRoster(): Promise<void> {
 }
 
 async function lookupCaller(botId: string, callId: string) {
-  try {
-    await loadRoster();
-    const bot = roster.get(botId);
-    if (bot) return bot;
-  } catch {
-    // The account snapshot can still identify a caller if the selected Space is unavailable.
-  }
+  await loadRoster();
+  const bot = roster.get(botId);
+  if (bot) return bot;
   const incoming = await rpc("notifications/incomingCalls");
   return incoming.find((call) => call.id === botId && call.incomingCall.callId === callId) ?? null;
 }
@@ -499,7 +495,7 @@ export function startIncomingCalls() {
             });
         }
         // A pending answer must not wait for the roster: callerFor races it with the stream.
-        void loadRoster().catch(() => undefined);
+        void loadRoster();
         await drainNative();
       })
       .catch(() => undefined);
