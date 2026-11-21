@@ -473,11 +473,8 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, context.actor);
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          return { status: "error" as const, error: result.error };
-        }
+        // The sign-in already reported how it ended, as model_connect_ended.
+        if (result.status === "error") return { status: "error" as const, error: result.error };
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
@@ -486,16 +483,12 @@ export function modelsRoutes(ctx: RouterContext) {
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          throw new ORPCError("NOT_FOUND", { message: result.error });
-        }
+        if (result.status === "error") throw new ORPCError("NOT_FOUND", { message: result.error });
         // The save already counted the connection.
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
-        await deps.oauthLogins.cancel(input.loginId, context.actor);
+        await deps.oauthLogins.cancel(input.loginId, context.actor, input.reason);
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {

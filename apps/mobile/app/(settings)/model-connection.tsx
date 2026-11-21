@@ -226,7 +226,7 @@ export default function ModelConnection() {
     codeCopied,
     copyOAuthCode,
     cancelOAuth,
-    cancelSignIn,
+    leaveSignIn,
     openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,
@@ -248,8 +248,8 @@ export default function ModelConnection() {
 
   const cancelInFlightWork = useCallback(() => {
     modelProbe.invalidate();
-    cancelSignIn();
-  }, [cancelSignIn, modelProbe]);
+    leaveSignIn();
+  }, [leaveSignIn, modelProbe]);
 
   useEffect(
     () => () => {

@@ -190,7 +190,7 @@ export function useOnboardingModel({
 
   function chooseProvider(value: string) {
     if (value === CREDITS_OPTION) {
-      cancelOAuthAttempt();
+      cancelOAuthAttempt("replaced");
       setProvider("");
       setProviderAuth(undefined);
       setCredits(true);
@@ -207,7 +207,7 @@ export function useOnboardingModel({
     if (option === providerOptionValue(provider, providerAuth) && !presetBaseUrl && !endpointPreset)
       return;
     const [nextProvider = option, auth] = option.split(":") as [string, ProviderAuth?];
-    cancelOAuthAttempt();
+    cancelOAuthAttempt("replaced");
     setProviderAuth(auth);
     setManualModelId(false);
     const nextModelId =
