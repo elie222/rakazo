@@ -62,7 +62,7 @@ describe("built-in tool bridge", () => {
     // whether a routine runs in its chat, and takes the events (webhook, Git, chat, email) a
     // routine can start on, saying a Git event needs no connected app; schedule_list reaches a
     // managed bot's routines; update_bot carries the settings its owner can change.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(36_135);
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(36_154);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
