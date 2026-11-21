@@ -14,10 +14,10 @@ import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import type { TextInputInstance, TextInputProps } from "react-native";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MobileBot } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSheetPadding } from "../../lib/layout/side-insets";
 import { useThemedStyles } from "../../lib/native/native";
 import { useSecretSheetClose } from "../../lib/vault/secret-sheet-close";
 import type {
@@ -89,7 +89,7 @@ export function VaultItemEditor({
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetPadding();
   const inputs = useRef<(TextInputInstance | null)[]>([]);
   const [draft, setDraft] = useState<VaultDraft>(() => {
     const fields: LoginFieldRow[] = [
@@ -261,17 +261,7 @@ export function VaultItemEditor({
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={cancel}>
-      <View
-        accessibilityViewIsModal
-        style={[
-          styles.sheet,
-          // Page sheets clear the notch on iOS; Android modals are full-screen.
-          {
-            paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
+      <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
         <View style={styles.header}>
           <NativeActionButton
             disabled={submitting}

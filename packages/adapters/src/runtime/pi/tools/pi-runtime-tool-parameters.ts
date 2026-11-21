@@ -1,5 +1,11 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { BOT_INSTRUCTIONS_MAX_LENGTH, ThinkingLevelSchema } from "@rakazo/contracts";
+import {
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  ComputerModeSchema,
+  MemoryScopeSchema,
+  ReplyModeSchema,
+  ThinkingLevelSchema,
+} from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { Type } from "typebox";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../../approvals/approval-ask.js";
@@ -123,6 +129,12 @@ function builtinParameters(tool: ConnectorTool) {
       thinkingLevel: Type.Optional(stringEnum(ThinkingLevelSchema.options, {})),
       readAloud: Type.Optional(Type.Boolean()),
       voice: Type.Optional(Type.String()),
+      replyMode: Type.Optional(stringEnum(ReplyModeSchema.options, {})),
+      teamChatAmbientEnabled: Type.Optional(Type.Boolean()),
+      teamChatRules: Type.Optional(Type.String()),
+      memoryScope: Type.Optional(stringEnum(MemoryScopeSchema.options, {})),
+      disableTools: Type.Optional(Type.Array(Type.String())),
+      computer: Type.Optional(stringEnum(ComputerModeSchema.options, {})),
       bot_id: Type.Optional(Type.String()),
     });
   }
@@ -411,14 +423,25 @@ const FLEET_STRING_ARGS = [
   "section",
   "instructions",
   "expected_version",
+  "replyMode",
+  "teamChatRules",
+  "memoryScope",
+  "computer",
 ] as const;
-const FLEET_LIST_ARGS = ["bot_ids", "bot_names", "add_bot_ids", "remove_bot_ids"] as const;
+const FLEET_LIST_ARGS = [
+  "bot_ids",
+  "bot_names",
+  "add_bot_ids",
+  "remove_bot_ids",
+  "disableTools",
+] as const;
 const FLEET_FLAG_ARGS = [
   "pinned",
   "clear_section",
   "clear",
   "use_attached_image",
   "readAloud",
+  "teamChatAmbientEnabled",
 ] as const;
 
 /**

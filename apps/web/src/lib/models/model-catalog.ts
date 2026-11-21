@@ -2,6 +2,7 @@ import { i18n } from "@lingui/core";
 import type { ModelCatalogEntry, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import type { ConnectedModelChoice } from "@rakazo/core";
 import { connectedModelChoices } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 
 export { modelOptionKey, parseModelOptionKey } from "@rakazo/core";
 
@@ -10,7 +11,7 @@ export function connectedModelOptions(
   credentials: ModelCredential[],
   catalog: ModelCatalogEntry[],
 ): ConnectedModelChoice[] {
-  return connectedModelChoices(credentials, catalog);
+  return connectedModelChoices(credentials, catalog.map(localizeModelEntry));
 }
 
 export function thinkingLevelLabel(level: ThinkingLevel) {
