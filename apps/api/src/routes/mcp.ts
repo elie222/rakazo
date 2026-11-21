@@ -147,8 +147,8 @@ export function mcpRoutes(ctx: RouterContext) {
     },
   ) {
     // Native clients omit the redirect; the registered web callback is always used.
-    // localhost and 127.0.0.1 are the same loopback server. Providers such as
-    // Calendly only accept the localhost spelling, so that one is registered.
+    // localhost and 127.0.0.1 are the same loopback server. Some providers only
+    // accept the localhost spelling, so that one is registered.
     const redirectUri = mcpOAuthCallbackRedirect(deps.env.webOrigin, input.redirectUri);
     try {
       const signIn = await mcpOAuth.begin({
@@ -160,12 +160,7 @@ export function mcpRoutes(ctx: RouterContext) {
       // No browser login was asked for, and the handshake succeeded. The row shows
       // Connected from a healthy check; there is no OAuth grant to store.
       if (signIn.status === "authorization_not_requested") {
-        await recordMcpServerHealth(
-          deps.prisma,
-          input.serverId,
-          { status: "ok" },
-          signIn.revision,
-        );
+        await recordMcpServerHealth(deps.prisma, input.serverId, { status: "ok" }, signIn.revision);
         return { status: "authorization_not_requested" as const };
       }
       return signIn;
@@ -508,9 +503,10 @@ export function mcpRoutes(ctx: RouterContext) {
               userId: context.actor.userId,
             });
           } catch (error) {
-            throw new ORPCError("BAD_REQUEST", {
-              message: error instanceof Error ? error.message : "Could not list tools",
-            });
+            if (error instanceof ClientError) throw error;
+            if (error instanceof Error && error.message)
+              throw new ClientError("SERVICE_UNAVAILABLE", error.message);
+            throw error;
           }
         }),
         agents: authed.mcp.servers.agents.handler(async ({ context, input }) => {
@@ -651,10 +647,16 @@ export function mcpRoutes(ctx: RouterContext) {
               }),
               tx.mcpServer.findFirst({
                 where: { id: input.serverId, ...availableInSpace(context.actor) },
-                select: { id: true },
+                select: { id: true, allBots: true },
               }),
             ]);
             if (!bot || !server) throw new IsolationError();
+            const existing = await tx.botMcpServer.findUnique({
+              where: { botId_serverId: { botId: bot.id, serverId: server.id } },
+              select: { id: true },
+            });
+            if (!server.allBots && !existing)
+              throw new ClientError("FORBIDDEN", "This bot cannot use that server.");
             return tx.botMcpServer.upsert({
               where: { botId_serverId: { botId: bot.id, serverId: server.id } },
               create: {

@@ -1,11 +1,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, ComputerReleaseReason, ComputerStatus, TaughtSkill } from "@rakazo/contracts";
 import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { SaveScreenshotButton } from "../../../components/computers/SaveScreenshotButton";
 import { TeachCaptureOverlay } from "../../../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../../../components/teach/TeachComputerOverlay";
@@ -79,21 +80,14 @@ export function ComputerOverlay({
   // to connect; a user's own machine has no screen here to take.
   const canSaveScreenshot = !runsOnUserMachine(computer) && computer?.state === "running";
   const [promptControl, setPromptControl] = useState(false);
-  const promptTimer = useRef<number | null>(null);
+  const [promptNonce, setPromptNonce] = useState(0);
   const canUseScreen = !hasControl && !recordingSkill && computer?.state === "running";
-
-  useEffect(
-    () => () => {
-      if (promptTimer.current != null) window.clearTimeout(promptTimer.current);
-    },
-    [],
-  );
+  useTimeout(() => setPromptControl(false), promptControl ? 1800 : null, promptNonce);
 
   function promptTakeControl() {
     if (!canUseScreen) return;
     setPromptControl(true);
-    if (promptTimer.current != null) window.clearTimeout(promptTimer.current);
-    promptTimer.current = window.setTimeout(() => setPromptControl(false), 1800);
+    setPromptNonce((nonce) => nonce + 1);
   }
 
   return (
@@ -175,7 +169,7 @@ export function ComputerOverlay({
                 data-testid="computer-take-control"
                 className={
                   promptControl
-                    ? "animate-pulse shadow-[0_0_0_3px_var(--ring)] ring-2 ring-ring ring-offset-2 ring-offset-background"
+                    ? "animate-pulse ring-2 ring-ring ring-offset-2 ring-offset-background"
                     : undefined
                 }
                 onClick={() => void onTakeControl()}

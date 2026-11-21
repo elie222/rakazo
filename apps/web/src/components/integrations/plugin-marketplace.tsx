@@ -10,6 +10,7 @@ import type {
 } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
 import { installedPluginParts, pluginSite } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import {
   Button,
   Disclosure,
@@ -140,7 +141,8 @@ export function PluginRow({
 }
 
 /** A connected plugin's tools start on for every bot. An assignment can turn some off for one bot. */
-function toolEnabled(assignment: BotMcpServer | undefined, name: string) {
+function toolEnabled(assignment: BotMcpServer | undefined, name: string, allBots: boolean) {
+  if (!allBots && !assignment) return false;
   if (!assignment || assignment.allowAllTools) return true;
   return assignment.allowedTools.includes(name);
 }
@@ -199,7 +201,14 @@ export function PluginDetail({
   const [confirm, setConfirm] = useState<"disconnect" | "uninstall" | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolRows, setToolRows] = useState<
-    { serverId: string; name: string; description: string; enabled: boolean }[] | null
+    | {
+        serverId: string;
+        name: string;
+        description: string;
+        enabled: boolean;
+        locked: boolean;
+      }[]
+    | null
   >(null);
   const [toolsLoading, setToolsLoading] = useState(false);
   const [toolsError, setToolsError] = useState<string | null>(null);
@@ -357,9 +366,7 @@ export function PluginDetail({
   const ready = Boolean(detail) && (Boolean(install) || Boolean(preview));
   const pluginConnected =
     servers.length > 0 &&
-    servers.every(
-      (server) => mcpServerConnection(server) === "connected" || noAuth.has(server.id),
-    );
+    servers.every((server) => mcpServerConnection(server) === "connected" || noAuth.has(server.id));
   const connectorPlugin = !skillPack && !managed && (connectorCount > 0 || servers.length > 0);
   // A plugin is one install for the account. All spaces, the default, includes an
   // organization created later. availability omitted means that default.
@@ -385,6 +392,12 @@ export function PluginDetail({
         void setParts("header", ["connector"], t`Could not install plugin`);
         return;
       }
+      if (!parts.includes("connector")) {
+        if (installedConnector.current) return;
+        installedConnector.current = true;
+        void setParts("header", toggle("connector", true), t`Could not install plugin`);
+        return;
+      }
       if (startedSignIn.current) return;
       const server = servers.find(
         (row) => mcpServerNeedsSignIn(row) && mcpServerConnection(row) !== "needs_client",
@@ -405,6 +418,7 @@ export function PluginDetail({
     install,
     preview,
     skillPack,
+    parts,
     servers,
     setParts,
     signIn,
@@ -441,14 +455,10 @@ export function PluginDetail({
     try {
       const [listed, assignments] = await Promise.all([
         Promise.all(
-          servers.map(async (server) => {
-            if (server.allBots !== true)
-              await rpc.mcp.servers.agents({ id: server.id, allBots: true, botIds: [] });
-            return {
-              server,
-              tools: await rpc.mcp.servers.tools({ id: server.id }),
-            };
-          }),
+          servers.map(async (server) => ({
+            server,
+            tools: await rpc.mcp.servers.tools({ id: server.id }),
+          })),
         ),
         activeBotId ? rpc.mcp.assignments.list({ botId: activeBotId }) : Promise.resolve([]),
       ]);
@@ -456,12 +466,17 @@ export function PluginDetail({
       const byServer = new Map(assignments.map((row) => [row.serverId, row]));
       setToolRows(
         listed.flatMap(({ server, tools }) =>
-          tools.map((tool) => ({
-            serverId: server.id,
-            name: tool.name,
-            description: tool.description,
-            enabled: toolEnabled(byServer.get(server.id), tool.name),
-          })),
+          tools.map((tool) => {
+            const assignment = byServer.get(server.id);
+            const locked = server.allBots !== true && !assignment;
+            return {
+              serverId: server.id,
+              name: tool.name,
+              description: tool.description,
+              enabled: toolEnabled(assignment, tool.name, server.allBots),
+              locked,
+            };
+          }),
         ),
       );
     } catch (err) {
@@ -474,6 +489,7 @@ export function PluginDetail({
 
   function toggleTool(serverId: string, name: string, enabled: boolean) {
     if (!activeBotId || !toolRows) return;
+    if (toolRows.some((row) => row.serverId === serverId && row.locked)) return;
     const serverTools = toolRows.filter((row) => row.serverId === serverId);
     const enabledNames = serverTools
       .filter((row) => (row.name === name ? enabled : row.enabled))
@@ -512,7 +528,11 @@ export function PluginDetail({
       "remove",
       async () => {
         const browser = desktopBridge()?.mcpBrowser;
-        await Promise.all(servers.map((server) => browser?.clear(server.id).catch(() => undefined)));
+        await Promise.all(
+          servers.map((server) =>
+            bestEffort("clear the desktop MCP browser", browser?.clear(server.id)),
+          ),
+        );
         await rpc.capabilities.remove({ id: install.id });
         setConfirm(null);
         await onChanged();
@@ -581,7 +601,16 @@ export function PluginDetail({
             </Button>
           ) : null}
           {offerConnect && installed ? (
-            <Button disabled={busy} onClick={startSignIn}>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                if (!parts.includes("connector")) {
+                  void setParts("header", toggle("connector", true), t`Could not install plugin`);
+                  return;
+                }
+                startSignIn();
+              }}
+            >
               {pending && pending !== "remove" ? (
                 <Trans>Connecting…</Trans>
               ) : reconnect ? (
@@ -823,7 +852,7 @@ export function PluginDetail({
                     <Switch
                       size="sm"
                       checked={tool.enabled}
-                      disabled={!activeBotId || busy}
+                      disabled={!activeBotId || busy || tool.locked}
                       aria-label={t`Enable ${tool.name}`}
                       onCheckedChange={(checked) => toggleTool(tool.serverId, tool.name, checked)}
                     />

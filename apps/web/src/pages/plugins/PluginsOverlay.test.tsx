@@ -31,6 +31,33 @@ vi.mock("../../components/integrations/space-availability", () => ({
   reachesOtherSpaces: () => false,
   useOwnSpaces: () => [],
 }));
+vi.mock("@lingui/react", () => {
+  function fill(message: string, values: Record<string, unknown> = {}) {
+    return message.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+  }
+  return {
+    useLingui: () => ({
+      _: (
+        message: { message?: string; values?: Record<string, unknown> } | string,
+        values?: Record<string, unknown>,
+      ) => {
+        if (typeof message === "string") return message;
+        return fill(message.message ?? "", { ...message.values, ...values });
+      },
+      i18n: { locale: "en" },
+    }),
+    Trans: ({
+      children,
+      message,
+      values,
+    }: {
+      children?: ReactNode;
+      message?: string;
+      values?: Record<string, unknown>;
+    }) => children ?? (message ? fill(message, values) : null),
+    Plural: () => null,
+  };
+});
 vi.mock("@lingui/react/macro", () => ({
   Plural: () => null,
   Trans: ({ children }: { children: ReactNode }) => children,
@@ -58,6 +85,7 @@ vi.mock("@rakazo/ui-web", async () => {
       "Field",
       "FieldDescription",
       "FieldLabel",
+      "LogoAvatar",
       "OptionSelect",
       "SectionHeading",
       "Spinner",
@@ -376,7 +404,7 @@ it("keeps Close outside the wrapping action group so narrow screens still reach 
   const close = host.querySelector('button[aria-label="Close integrations"]');
   expect(close).not.toBeNull();
   const templates = Array.from(host.querySelectorAll("button")).find((button) =>
-    button.textContent?.includes("Templates"),
+    button.textContent?.includes("Bot templates"),
   )!;
   expect(templates.parentElement!.contains(close!)).toBe(false);
   expect(close!.compareDocumentPosition(templates) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

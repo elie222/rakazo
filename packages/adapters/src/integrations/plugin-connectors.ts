@@ -84,6 +84,12 @@ const SCHEMAS = new Set([
   "https://agent-plugins.org/schemas/1.1.0/plugin.schema.json",
 ]);
 const MANIFESTS = ["plugin.json", ".cursor-plugin/plugin.json", ".grok-plugin/plugin.json"];
+/** Order used when a manifest points at an MCP file: a namespaced manifest wins over the root. */
+const POINTED_MANIFEST_PATHS = [
+  ".cursor-plugin/plugin.json",
+  ".grok-plugin/plugin.json",
+  "plugin.json",
+] as const;
 /** Parts that only run inside an editor or execute the plugin's own code on the host. */
 const UNSUPPORTED_DIRS = new Set(["rules", "hooks", "automations"]);
 const UNSUPPORTED_FILES = new Set([".lsp.json"]);
@@ -385,7 +391,7 @@ export async function fetchGitHubRepo(
 
   // A manifest can point at an MCP file that is not the root mcp.json. Download that file too.
   const pointed: string[] = [];
-  for (const manifestPath of [".cursor-plugin/plugin.json", ".grok-plugin/plugin.json", "plugin.json"]) {
+  for (const manifestPath of POINTED_MANIFEST_PATHS) {
     const entry = entryByPath.get(manifestPath);
     if (!entry) continue;
     const text = contents.get(entry.absolutePath);
@@ -662,7 +668,10 @@ function catalogVendorOnly(endpoint: string, headers: Record<string, string>): b
 }
 
 /** Wrapped `{ mcpServers: { name: server } }` or the server map itself, when the wrapper was left off. */
-function mcpServerMap(doc: Record<string, unknown>, strict: boolean): Record<string, unknown> | null {
+function mcpServerMap(
+  doc: Record<string, unknown>,
+  strict: boolean,
+): Record<string, unknown> | null {
   if (object(doc.mcpServers)) return doc.mcpServers;
   if (strict) return null;
   const servers: Record<string, unknown> = {};
@@ -675,7 +684,7 @@ function mcpServerMap(doc: Record<string, unknown>, strict: boolean): Record<str
 
 function mcpConfigPaths(files: Map<string, string>, skipped: PluginSkippedEntry[]): string[] {
   const pointed: string[] = [];
-  for (const manifestPath of [".cursor-plugin/plugin.json", ".grok-plugin/plugin.json", "plugin.json"]) {
+  for (const manifestPath of POINTED_MANIFEST_PATHS) {
     const raw = files.get(manifestPath);
     if (!raw) continue;
     const pointer = readMcpPointer(raw);
@@ -766,6 +775,10 @@ function collectMcpFile(
     }
     if (!["streamable-http", "sse", ...(!strict ? ["http"] : [])].includes(String(type))) {
       skipped.push({ kind: "unsupported_transport", name, reason: "Unsupported MCP transport" });
+      continue;
+    }
+    if (strict && Object.keys(entry).some((key) => !["type", "url", "headers"].includes(key))) {
+      skipped.push({ kind: "mcp_invalid", name, reason: "Unknown MCP server field" });
       continue;
     }
     if (seen.has(name)) continue;
@@ -992,7 +1005,12 @@ export function classifyPluginFiles(
   }
   if (unsupportedParts(paths).length) return "incomplete";
   // The same totals a preview enforces, so browse never offers a plugin it would refuse.
-  const fetched = paths.filter(isFetchedComponent);
+  const pointedMcp =
+    mcpConfigPath && paths.includes(mcpConfigPath) && !isFetchedComponent(mcpConfigPath)
+      ? mcpConfigPath
+      : undefined;
+  if (pointedMcp && (sizes?.get(pointedMcp) ?? 0) > MAX_FILE_BYTES) return "incomplete";
+  const fetched = [...paths.filter(isFetchedComponent), ...(pointedMcp ? [pointedMcp] : [])];
   if (
     paths.length > MAX_TREE_ENTRIES ||
     fetched.length > MAX_FILES ||

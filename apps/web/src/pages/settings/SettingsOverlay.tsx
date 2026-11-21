@@ -307,57 +307,57 @@ export function SettingsOverlay({
               </DialogClose>
             </div>
             <div className="flex min-w-0 items-center gap-1 px-2 pt-2 pb-2 md:min-h-0 md:flex-1 md:flex-col md:items-stretch md:px-3 md:pt-6 md:pb-4">
-            {/* Reserve arrow space so showing controls does not change the overflow measurement. */}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={`shrink-0 md:hidden ${navOverflow.previous || navOverflow.next ? "" : "invisible"}`}
-              aria-label={t`Previous settings sections`}
-              disabled={!navOverflow.previous || panelBusy}
-              onClick={() => scrollSections(-1)}
-            >
-              <ChevronLeft className="rtl:rotate-180" />
-            </Button>
-            <nav
-              ref={setNav}
-              data-testid="settings-nav"
-              aria-label={t`Settings`}
-              className="flex min-w-0 flex-1 flex-row gap-1 overflow-x-auto py-2 md:w-full md:flex-col md:overflow-y-auto md:py-2"
-            >
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                // A space's page is reached from General, so General stays marked.
-                const active = item.id === (section === "space" ? "general" : section);
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    data-testid={`settings-nav-${item.id}`}
-                    aria-current={active ? "page" : undefined}
-                    disabled={panelBusy}
-                    onClick={() => onSectionChange(item.id)}
-                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body transition-colors disabled:pointer-events-none disabled:opacity-50 ${
-                      active
-                        ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                    }`}
-                  >
-                    <Icon className="size-4 shrink-0" strokeWidth={1.75} />
-                    <span className="whitespace-nowrap">{item.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={`shrink-0 md:hidden ${navOverflow.previous || navOverflow.next ? "" : "invisible"}`}
-              aria-label={t`Next settings sections`}
-              disabled={!navOverflow.next || panelBusy}
-              onClick={() => scrollSections(1)}
-            >
-              <ChevronRight className="rtl:rotate-180" />
-            </Button>
+              {/* Reserve arrow space so showing controls does not change the overflow measurement. */}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={`shrink-0 md:hidden ${navOverflow.previous || navOverflow.next ? "" : "invisible"}`}
+                aria-label={t`Previous settings sections`}
+                disabled={!navOverflow.previous || panelBusy}
+                onClick={() => scrollSections(-1)}
+              >
+                <ChevronLeft className="rtl:rotate-180" />
+              </Button>
+              <nav
+                ref={setNav}
+                data-testid="settings-nav"
+                aria-label={t`Settings`}
+                className="flex min-w-0 flex-1 flex-row gap-1 overflow-x-auto py-2 md:w-full md:flex-col md:overflow-y-auto md:py-2"
+              >
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  // A space's page is reached from General, so General stays marked.
+                  const active = item.id === (section === "space" ? "general" : section);
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      data-testid={`settings-nav-${item.id}`}
+                      aria-current={active ? "page" : undefined}
+                      disabled={panelBusy}
+                      onClick={() => onSectionChange(item.id)}
+                      className={`flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-body transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+                        active
+                          ? "bg-accent text-accent-foreground"
+                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+                      <span className="whitespace-nowrap">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={`shrink-0 md:hidden ${navOverflow.previous || navOverflow.next ? "" : "invisible"}`}
+                aria-label={t`Next settings sections`}
+                disabled={!navOverflow.next || panelBusy}
+                onClick={() => scrollSections(1)}
+              >
+                <ChevronRight className="rtl:rotate-180" />
+              </Button>
             </div>
           </div>
 

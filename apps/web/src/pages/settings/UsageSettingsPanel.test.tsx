@@ -9,6 +9,33 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type * as QueryModule from "../../lib/query/query";
 
+vi.mock("@lingui/react", () => {
+  function fill(message: string, values: Record<string, unknown> = {}) {
+    return message.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+  }
+  return {
+    useLingui: () => ({
+      _: (
+        message: { message?: string; values?: Record<string, unknown> } | string,
+        values?: Record<string, unknown>,
+      ) => {
+        if (typeof message === "string") return message;
+        return fill(message.message ?? "", { ...message.values, ...values });
+      },
+      i18n: { locale: "en" },
+    }),
+    Trans: ({
+      children,
+      message,
+      values,
+    }: {
+      children?: ReactNode;
+      message?: string;
+      values?: Record<string, unknown>;
+    }) => children ?? (message ? fill(message, values) : null),
+  };
+});
+
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     t: (strings: TemplateStringsArray, ...values: unknown[]) =>
@@ -304,7 +331,7 @@ it("names models and providers by their labels, and hides identifiers when none 
         { provider: "custom", model: "my-model", ...point(1, 10, 0.001) },
       ],
     }));
-    await panel.pick("7 days");
+    await panel.pick("7d");
     expect(
       [...panel.container.querySelectorAll("tbody tr")].map(
         (row) => row.querySelector("td")?.textContent,
@@ -348,7 +375,7 @@ it("uses stable matching references for table rows and colliding final filter la
       modelOptions: options,
       models: options.map((option) => ({ ...option, ...point(1, 10, 0.001) })),
     }));
-    await panel.pick("7 days");
+    await panel.pick("7d");
     const labels = ["1. Foo (Bar)", "2. Foo (Bar)", "3. Foo (Baz)"];
     expect(await panel.options("Model")).toEqual(["All models", ...labels]);
     const rowLabels = () =>
@@ -363,7 +390,7 @@ it("uses stable matching references for table rows and colliding final filter la
       model: "opaque-b",
     });
     options = [...options].reverse();
-    await panel.pick("Today");
+    await panel.pick("1d");
     expect(await panel.options("Model")).toEqual(["All models", ...[...labels].reverse()]);
     expect(rowLabels()).toEqual([...labels].reverse());
     expect(panel.container.textContent).not.toContain("opaque-");
@@ -382,7 +409,7 @@ it("keeps a known provider name when the recorded model is no longer listed", as
       modelOptions: [{ provider: "alpha", model: "retired-opaque-id" }],
       models: [{ provider: "alpha", model: "retired-opaque-id", ...point(1, 10, 0.001) }],
     }));
-    await panel.pick("7 days");
+    await panel.pick("7d");
     expect(panel.container.querySelector("tbody tr td")?.textContent).toBe(
       "Unlisted modelAlpha AI",
     );
@@ -405,7 +432,7 @@ it("keeps cached catalog names and unlisted labels after a failed refresh", asyn
         { provider: "p", model: "m2", ...point(1, 10, 0.001) },
       ],
     }));
-    await panel.pick("7 days");
+    await panel.pick("7d");
     catalog.entries = new Error("catalog refresh failed");
     await panel.refetchCatalog();
     expect(

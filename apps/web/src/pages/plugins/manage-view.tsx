@@ -6,7 +6,11 @@ import { Button } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 import type { PluginSelection } from "../../components/integrations/plugin-marketplace";
-import { PluginLogo, ROW_BUTTON, ROW_HOVER } from "../../components/integrations/plugin-marketplace";
+import {
+  PluginLogo,
+  ROW_BUTTON,
+  ROW_HOVER,
+} from "../../components/integrations/plugin-marketplace";
 import {
   AvailabilityControl,
   AvailabilityLabel,
@@ -236,8 +240,7 @@ function InstalledPluginRow({
 }) {
   const signInNeeded = servers.some(mcpServerNeedsSignIn);
   const connected =
-    servers.length > 0 &&
-    servers.every((server) => mcpServerConnection(server) === "connected");
+    servers.length > 0 && servers.every((server) => mcpServerConnection(server) === "connected");
   const attention =
     servers.find((server) => mcpServerConnection(server) === "needs_client") ??
     servers.find((server) => {

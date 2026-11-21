@@ -19,7 +19,7 @@ export type McpOauthResult =
 /** Where providers send the user back; a pre-registered client must allow it. */
 export function mcpOAuthRedirectUri(origin = window.location.origin): string {
   const url = new URL(MCP_OAUTH_CALLBACK_PATH, origin);
-  // Calendly and others only exempt the hostname "localhost" from HTTPS.
+  // Some providers only accept the hostname "localhost".
   // 127.0.0.1 is the same loopback host, but they reject it at registration.
   if (url.hostname === "127.0.0.1") url.hostname = "localhost";
   return url.href;
@@ -30,6 +30,15 @@ export function mcpOAuthRedirectUri(origin = window.location.origin): string {
 export function mcpOAuthPopupName(sessionId: string, page: Location = window.location): string {
   const name = `${MCP_OAUTH_CHANNEL}:${sessionId}`;
   return page.hostname === "127.0.0.1" ? `${name}@${page.host}` : name;
+}
+
+/** The localhost callback must return to 127.0.0.1 before a session is required. */
+export function mcpOAuthNeedsLoopbackHandoff(
+  location: Location = window.location,
+  windowName = window.name,
+): boolean {
+  const returnHost = mcpOAuthLoopbackReturnHost(windowName);
+  return Boolean(returnHost && location.hostname === "localhost" && location.host !== returnHost);
 }
 
 /** The 127.0.0.1 app that opened this localhost callback, if the name says so. */
@@ -94,9 +103,7 @@ async function signInInPopup(
   const popup = window.open(
     started.authorizationUrl,
     // The desktop shell gives a per-server window its own browser session.
-    browser
-      ? `${MCP_SIGNIN_WINDOW_PREFIX}${serverId}`
-      : mcpOAuthPopupName(started.sessionId),
+    browser ? `${MCP_SIGNIN_WINDOW_PREFIX}${serverId}` : mcpOAuthPopupName(started.sessionId),
     "popup,width=560,height=720",
   );
   if (!popup) {

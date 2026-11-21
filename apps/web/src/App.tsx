@@ -41,6 +41,7 @@ import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/auth/sso-flow";
 import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncWebLogoAvatarIdentity } from "./lib/bots/logo-avatar-activity";
 import { syncCallIdentity } from "./lib/calls/call-session";
+import { mcpOAuthNeedsLoopbackHandoff } from "./lib/integrations/mcp-connect";
 import { analyticsSurface } from "./lib/platform/desktop";
 import { identifyMonitoringUser } from "./lib/platform/monitoring";
 import { markAfterPaint, markOnce } from "./lib/platform/performance";
@@ -249,7 +250,9 @@ function SessionApp() {
                 path={MCP_OAUTH_CALLBACK_PATH}
                 element={
                   // A sign-in the mobile app started goes back to the app, signed in here or not.
-                  user || mobileMcpOAuthReturnUrl(new URLSearchParams(search)) ? (
+                  user ||
+                  mobileMcpOAuthReturnUrl(new URLSearchParams(search)) ||
+                  mcpOAuthNeedsLoopbackHandoff() ? (
                     <McpOAuthCallbackPage />
                   ) : (
                     <Navigate

@@ -8,8 +8,17 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+vi.mock("@lingui/react", () => ({
+  Trans: ({ children, message }: { children?: ReactNode; message?: string }) =>
+    children ?? message ?? null,
+  useLingui: () => ({
+    _: (message: { message?: string } | string) =>
+      typeof message === "string" ? message : (message.message ?? ""),
+  }),
+}));
 vi.mock("@lingui/react/macro", () => ({
-  Trans: ({ children }: { children: ReactNode }) => children,
+  Trans: ({ children, message }: { children?: ReactNode; message?: string }) =>
+    children ?? message ?? null,
 }));
 vi.mock("@rakazo/ui-web", () => ({
   BotAvatar: () => null,

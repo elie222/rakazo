@@ -82,7 +82,10 @@ function presetCovering(start: string, today = localIso(new Date())): UsageDateR
   return "all";
 }
 
-function presetBounds(range: UsageDateRange, today = localIso(new Date())): { start: string; end: string } | null {
+function presetBounds(
+  range: UsageDateRange,
+  today = localIso(new Date()),
+): { start: string; end: string } | null {
   if (range === "all") return null;
   const daysBack = range === "today" ? 0 : range === "7d" ? 6 : 29;
   return { start: shiftIso(today, -daysBack), end: today };
@@ -111,13 +114,22 @@ function UsageShimmer({ className }: { className: string }) {
     <div
       data-slot="skeleton"
       aria-hidden
-      className={`bg-[length:200%_100%] bg-[linear-gradient(100deg,color-mix(in_srgb,var(--foreground)_12%,transparent)_20%,color-mix(in_srgb,var(--foreground)_34%,transparent)_50%,color-mix(in_srgb,var(--foreground)_12%,transparent)_80%)] animate-[tw-shimmer_1.15s_linear_infinite] ${className}`}
+      className={`animate-pulse bg-foreground/15 ${className}`}
     />
   );
 }
 
 function ChartShimmer() {
-  const heights = ["h-[18%]", "h-[34%]", "h-[22%]", "h-[72%]", "h-[46%]", "h-[28%]", "h-[84%]", "h-[40%]"];
+  const heights = [
+    "h-[18%]",
+    "h-[34%]",
+    "h-[22%]",
+    "h-[72%]",
+    "h-[46%]",
+    "h-[28%]",
+    "h-[84%]",
+    "h-[40%]",
+  ];
   return (
     <div className="flex h-56 items-end gap-3" aria-hidden>
       {heights.map((height) => (
@@ -130,13 +142,16 @@ function ChartShimmer() {
 function formatAxisTokens(value: number): string {
   if (value >= 1_000_000) {
     const millions = value / 1_000_000;
-    const text = millions >= 10 || Number.isInteger(millions) ? String(millions) : millions.toFixed(1);
+    const text =
+      millions >= 10 || Number.isInteger(millions) ? String(millions) : millions.toFixed(1);
     return `${text}M`;
   }
   if (value >= 1_000) {
     const thousands = value / 1_000;
     const text =
-      thousands >= 10 || Number.isInteger(thousands) ? String(Math.round(thousands)) : thousands.toFixed(1);
+      thousands >= 10 || Number.isInteger(thousands)
+        ? String(Math.round(thousands))
+        : thousands.toFixed(1);
     return `${text}K`;
   }
   return String(value);
@@ -243,10 +258,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
       timeZone: "UTC",
     }),
   );
-  const monthTitle = new Date(Date.UTC(visibleMonth.year, visibleMonth.month, 1)).toLocaleDateString(
-    i18n.locale,
-    { month: "long", year: "numeric", timeZone: "UTC" },
-  );
+  const monthTitle = new Date(
+    Date.UTC(visibleMonth.year, visibleMonth.month, 1),
+  ).toLocaleDateString(i18n.locale, { month: "long", year: "numeric", timeZone: "UTC" });
 
   function openCalendar(open: boolean) {
     setCalendarOpen(open);
@@ -310,9 +324,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
       <div className="flex flex-col items-stretch justify-between gap-4 md:flex-row md:items-center">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Popover open={calendarOpen} onOpenChange={openCalendar}>
-            <PopoverTrigger
-              className="inline-flex h-7 w-36 shrink-0 items-center justify-center rounded-[min(var(--radius-md),10px)] border border-input bg-transparent px-2.5 text-body-sm whitespace-nowrap text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50"
-            >
+            <PopoverTrigger className="inline-flex h-7 w-36 shrink-0 items-center justify-center rounded-[min(var(--radius-md),10px)] border border-input bg-transparent px-2.5 text-body-sm whitespace-nowrap text-foreground transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30 dark:hover:bg-input/50">
               {rangeDates}
             </PopoverTrigger>
             <PopoverContent align="start" className="w-[246px] gap-3 p-3">
@@ -425,18 +437,19 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
             setApplied(null);
             setRange(next as UsageDateRange);
           }}
-          className="h-7 gap-1 bg-transparent p-0"
+          size="sm"
+          className="gap-1 bg-transparent p-0"
         >
           {ranges.map((r) => (
             <ToggleGroupItem
               key={r.id}
               value={r.id}
-              className="h-7 rounded-md! bg-transparent px-2.5 text-body-sm text-muted-foreground aria-pressed:bg-[color-mix(in_srgb,var(--foreground)_14%,transparent)] aria-pressed:text-foreground"
+              className="rounded-md! bg-transparent px-2.5 text-body-sm text-muted-foreground aria-pressed:bg-foreground/15 aria-pressed:text-foreground"
             >
               {r.label}
             </ToggleGroupItem>
           ))}
-          </ToggleGroup>
+        </ToggleGroup>
         {isError ? modelSelect : null}
       </div>
 
@@ -446,10 +459,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           { label: t`Tokens`, value: number(displayTotals?.totalTokens) },
           { label: t`Cost`, value: cost(displayTotals?.costUsd) },
         ].map((stat) => (
-          <div
-            key={stat.label}
-            className="rounded-[12px] bg-card px-4 py-4 shadow-[0_0_0_1px_var(--border)]"
-          >
+          <div key={stat.label} className="rounded-[12px] border border-border bg-card px-4 py-4">
             <dt className="text-body-sm text-muted-foreground">{stat.label}</dt>
             <dd className="mt-2 text-heading2 font-semibold tabular-nums text-foreground">
               {loading ? <UsageShimmer className="h-8 w-28 rounded-md" /> : stat.value}
@@ -478,101 +488,110 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           {loading ? (
             <ChartShimmer />
           ) : hasTokens ? (
-          <>
-          <div className="flex w-full gap-2">
-            <div className="flex h-56 w-9 shrink-0 flex-col justify-between text-right text-caption text-muted-foreground tabular-nums">
-              {axis.ticks.map((tick) => (
-                <span key={tick}>{formatAxisTokens(tick)}</span>
-              ))}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div
-                className="relative grid h-56 w-full items-end"
-                style={{ gridTemplateColumns: `repeat(${chartPoints.length}, minmax(0, 1fr))` }}
-              >
-                {axis.ticks.map((tick) => (
-                  <span
-                    key={tick}
-                    className="pointer-events-none absolute inset-x-0 border-t border-border/60"
-                    style={{ bottom: `${(tick / axis.top) * 100}%` }}
-                  />
-                ))}
-                {chartPoints.map((point) => {
-                  const unknown = point.totalTokens == null;
-                  const value = point.totalTokens ?? 0;
-                  const height = unknown ? 100 : (value / axis.top) * 100;
-                  const day = formatUsageDate(point.date, i18n.locale, monthly);
-                  const unused = value === 0 && !unknown;
-                  const barClass = `w-[18px] rounded-t-[3px] ${
-                    unknown ? "bg-muted" : unused ? "bg-muted-foreground/40" : "bg-emerald-500"
-                  }`;
-                  if (unused || unknown) {
-                    return (
-                      <div key={point.date} className="flex h-full min-w-0 items-end justify-center">
-                        <span className={barClass} style={{ height: unused ? "2px" : `${height}%` }} />
-                      </div>
-                    );
-                  }
-                  const modelLine =
-                    modelKey !== "all"
-                      ? selectedModel?.label
-                      : models.length === 1
-                        ? models[0]?.model
-                        : null;
-                  return (
-                    <div key={point.date} className="flex h-full min-w-0 items-end justify-center">
-                    <Tooltip>
-                      <TooltipTrigger
-                        aria-label={t`${day}: ${number(value)} tokens`}
-                        className="relative z-10 flex w-[18px] items-end focus-visible:outline-2 focus-visible:outline-ring"
-                        style={{ height: `${height}%` }}
-                      >
-                        <span className={`${barClass} h-full`} />
-                      </TooltipTrigger>
-                      <TooltipContent
-                        side="left"
-                        sideOffset={8}
-                        align="center"
-                        arrow={false}
-                        className="block w-auto flex-col items-stretch gap-1 bg-popover px-3 py-2 text-left text-popover-foreground shadow-md ring-1 ring-foreground/10"
-                      >
-                        <div className="text-body-sm font-medium text-foreground">{day}</div>
-                        <div className="mt-1 flex items-center gap-2 text-caption">
-                          <span className="size-2 rounded-full bg-emerald-500" />
-                          <span>
-                            {modelLine ? `${modelLine}: ` : null}
-                            {number(value)}
-                          </span>
+            <>
+              <div className="flex w-full gap-2">
+                <div className="flex h-56 w-9 shrink-0 flex-col justify-between text-right text-caption text-muted-foreground tabular-nums">
+                  {axis.ticks.map((tick) => (
+                    <span key={tick}>{formatAxisTokens(tick)}</span>
+                  ))}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div
+                    className="relative grid h-56 w-full items-end"
+                    style={{ gridTemplateColumns: `repeat(${chartPoints.length}, minmax(0, 1fr))` }}
+                  >
+                    {axis.ticks.map((tick) => (
+                      <span
+                        key={tick}
+                        className="pointer-events-none absolute inset-x-0 border-t border-border/60"
+                        style={{ bottom: `${(tick / axis.top) * 100}%` }}
+                      />
+                    ))}
+                    {chartPoints.map((point) => {
+                      const unknown = point.totalTokens == null;
+                      const value = point.totalTokens ?? 0;
+                      const height = unknown ? 100 : (value / axis.top) * 100;
+                      const day = formatUsageDate(point.date, i18n.locale, monthly);
+                      const unused = value === 0 && !unknown;
+                      const barClass = `w-[18px] rounded-t-[3px] ${
+                        unknown ? "bg-muted" : unused ? "bg-muted-foreground/40" : "bg-emerald-500"
+                      }`;
+                      if (unused || unknown) {
+                        return (
+                          <div
+                            key={point.date}
+                            className="flex h-full min-w-0 items-end justify-center"
+                          >
+                            <span
+                              className={barClass}
+                              style={{ height: unused ? "2px" : `${height}%` }}
+                            />
+                          </div>
+                        );
+                      }
+                      const modelLine =
+                        modelKey !== "all"
+                          ? selectedModel?.label
+                          : models.length === 1
+                            ? models[0]?.model
+                            : null;
+                      return (
+                        <div
+                          key={point.date}
+                          className="flex h-full min-w-0 items-end justify-center"
+                        >
+                          <Tooltip>
+                            <TooltipTrigger
+                              aria-label={t`${day}: ${number(value)} tokens`}
+                              className="relative z-10 flex w-[18px] items-end focus-visible:outline-2 focus-visible:outline-ring"
+                              style={{ height: `${height}%` }}
+                            >
+                              <span className={`${barClass} h-full`} />
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="left"
+                              sideOffset={8}
+                              align="center"
+                              arrow={false}
+                              className="block w-auto flex-col items-stretch gap-1 bg-popover px-3 py-2 text-left text-popover-foreground shadow-md ring-1 ring-foreground/10"
+                            >
+                              <div className="text-body-sm font-medium text-foreground">{day}</div>
+                              <div className="mt-1 flex items-center gap-2 text-caption">
+                                <span className="size-2 rounded-full bg-emerald-500" />
+                                <span>
+                                  {modelLine ? `${modelLine}: ` : null}
+                                  {number(value)}
+                                </span>
+                              </div>
+                              <div className="mt-1 text-caption text-foreground">{t`Total: ${number(value)}`}</div>
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
-                        <div className="mt-1 text-caption text-foreground">{t`Total: ${number(value)}`}</div>
-                      </TooltipContent>
-                    </Tooltip>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                  <div className="relative mt-2 h-4">
+                    {axisLabelIndexes(chartPoints.length).map((index) => {
+                      const point = chartPoints[index];
+                      if (!point) return null;
+                      return (
+                        <span
+                          key={point.date}
+                          className="absolute -translate-x-1/2 whitespace-nowrap text-caption text-muted-foreground"
+                          style={{ left: `${((index + 0.5) / chartPoints.length) * 100}%` }}
+                        >
+                          {formatUsageDate(point.date, i18n.locale, monthly)}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-              <div className="relative mt-2 h-4">
-                {axisLabelIndexes(chartPoints.length).map((index) => {
-                  const point = chartPoints[index];
-                  if (!point) return null;
-                  return (
-                    <span
-                      key={point.date}
-                      className="absolute -translate-x-1/2 whitespace-nowrap text-caption text-muted-foreground"
-                      style={{ left: `${((index + 0.5) / chartPoints.length) * 100}%` }}
-                    >
-                      {formatUsageDate(point.date, i18n.locale, monthly)}
-                    </span>
-                  );
-                })}
+              <div className="mt-3 flex items-center gap-2 text-caption text-muted-foreground">
+                <span className="size-2 rounded-full bg-emerald-500" />
+                <Trans>Tokens</Trans>
               </div>
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-caption text-muted-foreground">
-            <span className="size-2 rounded-full bg-emerald-500" />
-            <Trans>Tokens</Trans>
-          </div>
-          </>
+            </>
           ) : (
             <div className="py-8 text-center">
               <h3 className="text-body font-medium text-foreground">

@@ -29,7 +29,7 @@ import {
 } from "@rakazo/contracts";
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { catalogToolPrefix } from "../approvals/approval-effect.js";
 import {
@@ -858,7 +858,7 @@ export class McpConnector implements ConnectorProvider {
             try {
               return await connected.session.listTools({ signal: adapterContext.signal });
             } finally {
-              await closeEntry(connected).catch(() => undefined);
+              await bestEffort("close an MCP tool-list session", closeEntry(connected));
             }
           })();
       return listed.tools.map((tool) => ({
@@ -866,7 +866,7 @@ export class McpConnector implements ConnectorProvider {
         description: tool.description ?? "",
       }));
     } catch (error) {
-      if (shared) await this.evict(key).catch(() => undefined);
+      if (shared) await bestEffort("evict a failed MCP tool-list session", this.evict(key));
       throw new Error(sanitizeConnectorError(error, secrets));
     }
   }

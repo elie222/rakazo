@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import type { CapabilityInstall, McpServer } from "@rakazo/contracts";
+
 import { i18n } from "@lingui/core";
+import type { CapabilityInstall, McpServer } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -148,13 +149,7 @@ vi.mock("@rakazo/ui-web", () => {
     DropdownMenu: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     DropdownMenuTrigger: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     DropdownMenuContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-    DropdownMenuItem: ({
-      children,
-      onClick,
-    }: {
-      children?: ReactNode;
-      onClick?: () => void;
-    }) => (
+    DropdownMenuItem: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
       <button type="button" onClick={onClick}>
         {children}
       </button>
@@ -451,7 +446,7 @@ describe("plugin detail", () => {
       servers: [{ ...server, health: { ...server.health, status: "ok", toolCount: 1 } }],
     });
     await click("1 tool");
-    expect(api.agents).toHaveBeenCalledWith({ id: "server-1", allBots: true, botIds: [] });
+    expect(api.agents).not.toHaveBeenCalled();
     expect(api.toolList).toHaveBeenCalledWith({ id: "server-1" });
     expect(container.textContent).toContain("search");
     const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]');
@@ -475,7 +470,12 @@ describe("plugin detail", () => {
 
   it.each([
     ["signed in", { oauthStatus: "connected" }, true, ["Reconnect"]],
-    ["signed in with a failed check", { oauthStatus: "connected", health: failed }, false, ["Reconnect"]],
+    [
+      "signed in with a failed check",
+      { oauthStatus: "connected", health: failed },
+      false,
+      ["Reconnect"],
+    ],
     ["never signed in with a failed check", { health: failed }, false, ["Connect"]],
     ["disabled", { oauthStatus: "connected", enabled: false }, false, []],
     [

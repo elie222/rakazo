@@ -190,87 +190,87 @@ export function SettingsOverlays({
     <>
       {overlay?.kind === "settings" && showSettings ? (
         <Suspense fallback={<SettingsOpening />}>
-        <SettingsOverlay
-          shellRpc={rpc}
-          space={settingsSpace}
-          spaces={spaces}
-          onRenameSpace={renameSpace}
-          onDeleteSpace={async (spaceId) => {
-            await removeSpace(spaceId);
-            if (alive.current) setOverlay(null);
-          }}
-          onLeftSpace={(spaceId, activeSpaceId) => {
-            setOverlay(null);
-            void leftSpace(spaceId, activeSpaceId);
-          }}
-          onOpenSpace={(spaceId) => setOverlay({ ...overlay, section: "space", spaceId })}
-          name={user?.name ?? ""}
-          onNameSaved={async () => {
-            await refetchSession();
-          }}
-          email={user?.email}
-          section={overlay.section}
-          onSectionChange={(section) => setOverlay({ ...overlay, section })}
-          billingEnabled={bootstrapMe?.billingEnabled === true}
-          sandboxProvider={bootstrapMe?.sandboxProvider}
-          computerSettingsEnabled={bootstrapMe?.computerSettingsEnabled === true}
-          canConfigureComputers={bootstrapMe?.isAdmin === true}
-          onSandboxProviderChange={(sandboxProvider) =>
-            setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
-          }
-          messagingEnabled={messagingEnabled}
-          paymentWalletProvider={bootstrapMe?.paymentWalletProvider ?? null}
-          timezone={bootstrapMe?.timezone ?? null}
-          onTimezoneChange={async (timezone, client) => {
-            const nextMe = await client.preferences.update({ timezone });
-            setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
-          }}
-          botAvatarSet={bootstrapMe?.botAvatarSet}
-          onBotAvatarSetChange={async (botAvatarSet) => {
-            const nextMe = await rpc.preferences.update({ botAvatarSet });
-            setBootstrapMe((prev) =>
-              prev ? { ...prev, botAvatarSet: nextMe.botAvatarSet } : nextMe,
-            );
-            // Unpinned bots were restyled with it. The save already succeeded, so a failed
-            // refresh only waits for the roster's next re-read.
-            void refreshSpaces().catch(() => undefined);
-          }}
-          labs={parseLabs(bootstrapMe?.labs)}
-          labsAvailable={parseLabs(bootstrapMe?.labsAvailable)}
-          onLabsChange={async (labs, client) => {
-            const previous = parseLabs(bootstrapMe?.labs);
-            const apply = (next: LabFeature[]) => {
-              setLabs(next);
-              setBootstrapMe((prev) => (prev ? { ...prev, labs: next } : prev));
-            };
-            apply(labs);
-            try {
-              apply((await client.preferences.update({ labs })).labs);
-            } catch (error) {
-              apply(previous);
-              throw error;
+          <SettingsOverlay
+            shellRpc={rpc}
+            space={settingsSpace}
+            spaces={spaces}
+            onRenameSpace={renameSpace}
+            onDeleteSpace={async (spaceId) => {
+              await removeSpace(spaceId);
+              if (alive.current) setOverlay(null);
+            }}
+            onLeftSpace={(spaceId, activeSpaceId) => {
+              setOverlay(null);
+              void leftSpace(spaceId, activeSpaceId);
+            }}
+            onOpenSpace={(spaceId) => setOverlay({ ...overlay, section: "space", spaceId })}
+            name={user?.name ?? ""}
+            onNameSaved={async () => {
+              await refetchSession();
+            }}
+            email={user?.email}
+            section={overlay.section}
+            onSectionChange={(section) => setOverlay({ ...overlay, section })}
+            billingEnabled={bootstrapMe?.billingEnabled === true}
+            sandboxProvider={bootstrapMe?.sandboxProvider}
+            computerSettingsEnabled={bootstrapMe?.computerSettingsEnabled === true}
+            canConfigureComputers={bootstrapMe?.isAdmin === true}
+            onSandboxProviderChange={(sandboxProvider) =>
+              setBootstrapMe((prev) => (prev ? { ...prev, sandboxProvider } : prev))
             }
-          }}
-          onAccountImported={refreshSpaces}
-          onImportAgent={() => setOverlay({ kind: "import" })}
-          memoryConfig={memoryConfig}
-          onMemoryConfigChange={(config) => {
-            void writeSaved(queryClient, queries.memory.providerConfig.queryKey(), () => config);
-          }}
-          onVoiceStatusMaybeChanged={async () => {
-            invalidateVoiceConsent();
-            try {
-              queryClient.setQueryData(
-                voiceStatusKey,
-                await Promise.race([rpc.voice.status(), voiceStatusRefreshTimeout()]),
+            messagingEnabled={messagingEnabled}
+            paymentWalletProvider={bootstrapMe?.paymentWalletProvider ?? null}
+            timezone={bootstrapMe?.timezone ?? null}
+            onTimezoneChange={async (timezone, client) => {
+              const nextMe = await client.preferences.update({ timezone });
+              setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
+            }}
+            botAvatarSet={bootstrapMe?.botAvatarSet}
+            onBotAvatarSetChange={async (botAvatarSet) => {
+              const nextMe = await rpc.preferences.update({ botAvatarSet });
+              setBootstrapMe((prev) =>
+                prev ? { ...prev, botAvatarSet: nextMe.botAvatarSet } : nextMe,
               );
-            } catch {
-              // Prefer reopening Voice settings over starting a call with stale readiness.
-              void queryClient.resetQueries({ queryKey: voiceStatusKey });
-            }
-          }}
-          onClose={() => setOverlay(null)}
-        />
+              // Unpinned bots were restyled with it. The save already succeeded, so a failed
+              // refresh only waits for the roster's next re-read.
+              void refreshSpaces().catch(() => undefined);
+            }}
+            labs={parseLabs(bootstrapMe?.labs)}
+            labsAvailable={parseLabs(bootstrapMe?.labsAvailable)}
+            onLabsChange={async (labs, client) => {
+              const previous = parseLabs(bootstrapMe?.labs);
+              const apply = (next: LabFeature[]) => {
+                setLabs(next);
+                setBootstrapMe((prev) => (prev ? { ...prev, labs: next } : prev));
+              };
+              apply(labs);
+              try {
+                apply((await client.preferences.update({ labs })).labs);
+              } catch (error) {
+                apply(previous);
+                throw error;
+              }
+            }}
+            onAccountImported={refreshSpaces}
+            onImportAgent={() => setOverlay({ kind: "import" })}
+            memoryConfig={memoryConfig}
+            onMemoryConfigChange={(config) => {
+              void writeSaved(queryClient, queries.memory.providerConfig.queryKey(), () => config);
+            }}
+            onVoiceStatusMaybeChanged={async () => {
+              invalidateVoiceConsent();
+              try {
+                queryClient.setQueryData(
+                  voiceStatusKey,
+                  await Promise.race([rpc.voice.status(), voiceStatusRefreshTimeout()]),
+                );
+              } catch {
+                // Prefer reopening Voice settings over starting a call with stale readiness.
+                void queryClient.resetQueries({ queryKey: voiceStatusKey });
+              }
+            }}
+            onClose={() => setOverlay(null)}
+          />
         </Suspense>
       ) : null}
       {peerConversation && active ? (

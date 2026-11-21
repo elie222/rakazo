@@ -7,7 +7,7 @@ import type {
   IntegrationCatalogSurface,
   McpSourcePreset,
 } from "@rakazo/contracts";
-import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import { BOT_COLOR_LIST, MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { connectedAppMarks } from "@rakazo/core";
 import {
   CONNECTION_CATALOG_PAGE_SIZE,
@@ -530,7 +530,7 @@ export function PluginsOverlay({
                     size={16}
                     motion={false}
                     className="size-4"
-                    avatarValue="#FFFFFF"
+                    avatarValue={BOT_COLOR_LIST.find((color) => color.id === "white")?.hex}
                     identity="bot-templates"
                   />
                   <Trans>Bot templates</Trans>

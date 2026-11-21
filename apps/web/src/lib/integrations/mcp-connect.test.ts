@@ -45,7 +45,9 @@ it("registers a 127.0.0.1 app as localhost and remembers where to finish", () =>
     "http://localhost:5173/mcp/oauth/callback",
   );
   const page = { hostname: "127.0.0.1", host: "127.0.0.1:5173" } as Location;
-  expect(mcpOAuthPopupName("session-1", page)).toBe(`${MCP_OAUTH_CHANNEL}:session-1@127.0.0.1:5173`);
+  expect(mcpOAuthPopupName("session-1", page)).toBe(
+    `${MCP_OAUTH_CHANNEL}:session-1@127.0.0.1:5173`,
+  );
   expect(mcpOAuthLoopbackReturnHost(mcpOAuthPopupName("session-1", page))).toBe("127.0.0.1:5173");
   expect(mcpOAuthLoopbackReturnHost(`${MCP_OAUTH_CHANNEL}:session-1@evil.example`)).toBeNull();
 });

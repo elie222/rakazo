@@ -252,7 +252,9 @@ test("shows directly registered MCP servers in Integrations without catalog conn
     page.getByRole("button", { name: count, exact: true }).locator("span[aria-hidden]").first();
   await expect(marks("1 connected")).toHaveText("");
   await page.getByRole("button", { name: "1 connected", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Manage plugins and skills", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Manage plugins and skills", exact: true }),
+  ).toBeVisible();
   const servers = page.getByTestId("registered-mcp-servers");
   await expect(servers.getByText("Dropbox", { exact: true })).toBeVisible();
   await expect(servers.getByText("GitHub", { exact: true })).toBeVisible();
@@ -304,7 +306,9 @@ test("shows directly registered MCP servers in Integrations without catalog conn
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(marks("0 connected")).toHaveText("");
   await page.getByRole("button", { name: "0 connected", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Manage plugins and skills", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Manage plugins and skills", exact: true }),
+  ).toBeVisible();
   await expect(servers.getByTestId("registered-mcp-server")).toHaveCount(6);
   await expect(
     servers.getByTestId("registered-mcp-server").filter({ hasText: "Dropbox" }),
