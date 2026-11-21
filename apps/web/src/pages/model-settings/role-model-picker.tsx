@@ -74,6 +74,8 @@ export function RoleModelPicker({
     ...options.map((option) => ({ option, provider: undefined })),
     ...providers.map((provider) => ({ option: undefined, provider })),
   ];
+  // Set when the search changes, until cmdk's own answer to it (or the next key) is handled.
+  const searched = useRef(false);
   const {
     query,
     setQuery: setSearch,
@@ -106,24 +108,20 @@ export function RoleModelPicker({
   // The model in use is the row with the same connection or credit offering; no connection
   // matches only a row with none, so an included model never marks someone's own connection.
   // Provider ids compare canonically, so a choice saved under a provider's older id still matches.
-  const currentValue = current
-    ? values.find((value) =>
-        options.some(
-          (option) =>
-            optionValue(option) === value &&
-            canonicalPiProviderId(option.provider) === canonicalPiProviderId(current.provider) &&
-            option.id === current.modelId &&
-            option.credentialId === current.credentialId &&
-            option.creditOfferingId === current.creditOfferingId,
-        ),
-      )
-    : undefined;
+  const currentOption =
+    current &&
+    options.find(
+      (option) =>
+        canonicalPiProviderId(option.provider) === canonicalPiProviderId(current.provider) &&
+        option.id === current.modelId &&
+        option.credentialId === current.credentialId &&
+        option.creditOfferingId === current.creditOfferingId,
+    );
+  const currentValue = currentOption ? optionValue(currentOption) : undefined;
   // The model in use is active when opened, else the first row, so Enter always picks something;
   // searching moves it to the first match.
   const [activeValue, setActiveValue] = useState("");
   const startValue = (!needle && currentValue) || values[0] || "";
-  // Set when the search changes, until cmdk's own answer to it (or the next key) is handled.
-  const searched = useRef(false);
   useEffect(() => {
     if (open) setActiveValue(startValue);
   }, [startValue, open]);
