@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { RailwayGraphQLErrorItem, SandboxInfo } from "railway";
@@ -1236,18 +1237,55 @@ describe("Railway computers", () => {
     try {
       sandbox.exec.mockResolvedValue({ exitCode: 0, stdout: "large\u0000600\u00005\u0000" });
       await expect(bounded.exportWorkspace(computer, ctx).next()).rejects.toThrow(
-        "exceeds 4 bytes",
+        "too large to save",
       );
       expect(sandbox.files.read).not.toHaveBeenCalled();
       sandbox.exec.mockResolvedValue({ exitCode: 0, stdout: "growing\u0000600\u00004\u0000" });
       sandbox.files.read.mockResolvedValue(new Uint8Array(5));
-      await expect(bounded.exportWorkspace(computer, ctx).next()).rejects.toThrow(
-        "exceeds 4 bytes",
+      await expect(bounded.exportWorkspace(computer, ctx).next()).rejects.toEqual(
+        new WorkspaceTooLargeError("bytes"),
       );
       expect(sandbox.files.read).toHaveBeenCalledWith("/home/rakazo/growing", {
         format: "bytes",
         length: 5,
       });
+      // A single-file read keeps its own too-large error, not the save refusal.
+      await expect(bounded.readFile(computer, "growing", ctx)).rejects.toThrow("exceeds 4 bytes");
+    } finally {
+      stopBrowsers.mockRestore();
+    }
+  });
+
+  it("refuses a listing over the save's byte or file limits before reading any file", async () => {
+    const stopBrowsers = vi.spyOn(LinuxDesktop.prototype, "stopBrowsers").mockResolvedValue();
+    sandbox.exec.mockResolvedValue({
+      exitCode: 0,
+      stdout: [
+        "a.txt\u0000600\u00005\u0000",
+        "b.txt\u0000600\u00005\u0000",
+        ".browser-profiles/bot/Cache/data_1\u0000600\u0000500\u0000",
+      ].join(""),
+    });
+    sandbox.files.read.mockResolvedValue(new Uint8Array(5));
+    const drain = async (limits: { maxBytes: number; maxFiles: number }) => {
+      for await (const _ of provider.exportWorkspace(computer, ctx, limits));
+    };
+    try {
+      await expect(drain({ maxBytes: 1_000, maxFiles: 1 })).rejects.toEqual(
+        new WorkspaceTooLargeError("files"),
+      );
+      await expect(drain({ maxBytes: 9, maxFiles: 10 })).rejects.toEqual(
+        new WorkspaceTooLargeError("bytes"),
+      );
+      expect(sandbox.files.read).not.toHaveBeenCalled();
+      // The skipped browser cache does not count toward the limits.
+      const exported = [];
+      for await (const file of provider.exportWorkspace(computer, ctx, {
+        maxBytes: 10,
+        maxFiles: 2,
+      }))
+        exported.push(file.path);
+      expect(exported).toEqual(["a.txt", "b.txt"]);
     } finally {
       stopBrowsers.mockRestore();
     }

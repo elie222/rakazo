@@ -1,3 +1,4 @@
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import type { RemoteDesktopSdk } from "../../../computers/sandbox/remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "../../../computers/sandbox/remote-desktop-sandbox.js";
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
@@ -28,6 +29,32 @@ const e2bSdk: RemoteDesktopSdk = {
   kill: async (id, options) => (await e2b()).kill(id, { ...options, ...noRetries }),
 };
 
+/**
+ * E2B's rate limit is the computer's rate limit: the calls report it as SandboxRateLimitError with
+ * the SDK's error as its cause, so users see the usual message and idle sleep defers. The SDK loads
+ * lazily, so the error is matched by its name, as the timeout is.
+ */
+function withRateLimitErrors(sdk: RemoteDesktopSdk): RemoteDesktopSdk {
+  const limited = async <T>(call: () => Promise<T>): Promise<T> => {
+    try {
+      return await call();
+    } catch (error) {
+      throw error instanceof Error && error.name === "RateLimitError"
+        ? new SandboxRateLimitError({ cause: error })
+        : error;
+    }
+  };
+  const { isRunning } = sdk;
+  return {
+    ...sdk,
+    create: (...args) => limited(() => sdk.create(...args)),
+    connect: (...args) => limited(() => sdk.connect(...args)),
+    pause: (...args) => limited(() => sdk.pause(...args)),
+    kill: (...args) => limited(() => sdk.kill(...args)),
+    ...(isRunning && { isRunning: (...args) => limited(() => isRunning(...args)) }),
+  };
+}
+
 export class E2BSandboxProvider extends RemoteDesktopSandboxProvider {
   constructor(apiKey: string, sdk: RemoteDesktopSdk = e2bSdk) {
     super({
@@ -36,7 +63,7 @@ export class E2BSandboxProvider extends RemoteDesktopSandboxProvider {
       trafficAccessHeader: "e2b-traffic-access-token",
       label: "E2B",
       apiKey,
-      sdk,
+      sdk: withRateLimitErrors(sdk),
       template: E2B_COMPUTER_TEMPLATE,
       fallbackTemplate: E2B_DESKTOP_TEMPLATE,
       isTimeoutError: (error) => error instanceof Error && error.name === "TimeoutError",
