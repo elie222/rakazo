@@ -223,13 +223,13 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
             aria-hidden="true"
             className={`mt-1 flex text-caption text-muted-foreground ${every ? "gap-1" : "justify-between"}`}
           >
-            {axisPoints.map((point, index, shown) => (
+            {axisPoints.map((point, index) => (
               <span
                 key={point.date}
                 className={
                   every
                     ? "min-w-0 flex-1 truncate text-center"
-                    : `whitespace-nowrap ${index === shown.length - 1 ? "text-end" : "text-start"}`
+                    : `whitespace-nowrap ${index === 0 ? "text-start" : "text-end"}`
                 }
               >
                 {dayLabel(point.date)}
