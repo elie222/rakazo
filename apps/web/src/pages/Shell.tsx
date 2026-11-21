@@ -211,6 +211,8 @@ function SpaceShell() {
     railFooterNode,
     setListCollapsed: setBotsSidebarCollapsed,
   } = useAppSidebar();
+  // The rail decides where the footer lives, so the two can never disagree at a breakpoint.
+  const railOnScreen = railWidth > 0;
   const search = useSidebarSearch({ rpc, navigate });
   const thread = useThreadState();
   const { snapshot } = thread;
@@ -999,7 +1001,7 @@ function SpaceShell() {
   };
   const sidebarFooter = (
     <ShellSidebarFooter
-      mini={!isMobileSidebar}
+      mini={railOnScreen}
       logos={footerLogos}
       user={session.data?.user}
       boardEnabled={hasLab(bootstrapMe?.labs, "board")}
@@ -1071,7 +1073,7 @@ function SpaceShell() {
         chatMenu={chatMenu}
         roster={
           <SidebarRoster
-            mini={botsSidebarCollapsed && !isMobileSidebar}
+            mini={botsSidebarCollapsed && !railOnScreen}
             sidebarGroups={sidebarGroups}
             collapsedSidebarSections={collapsedSidebarSections}
             bootstrapMe={bootstrapMe}
@@ -1127,9 +1129,9 @@ function SpaceShell() {
             />
           </>
         }
-        footer={isMobileSidebar ? sidebarFooter : null}
+        footer={railOnScreen ? null : sidebarFooter}
       />
-      {!isMobileSidebar && railFooterNode ? createPortal(sidebarFooter, railFooterNode) : null}
+      {railOnScreen && railFooterNode ? createPortal(sidebarFooter, railFooterNode) : null}
 
       {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}
       <main
