@@ -89,7 +89,10 @@ def handler(path: str):
             length = int(self.headers.get("content-length") or 0)
             body = self.rfile.read(length) if length else None
             tokens = load(path)["tokens"]
-            headers = {k: v for k, v in self.headers.items() if k.lower() not in DROPPED}
+            headers = {
+                k: v for k, v in self.headers.items()
+                if k.lower() not in DROPPED and not any(c in k + v for c in "\r\n")
+            }
             headers["Authorization"] = f"Bearer {tokens['access_token']}"
             headers["chatgpt-account-id"] = tokens["account_id"]
             upstream = http.client.HTTPSConnection(UPSTREAM, context=ssl.create_default_context(), timeout=600)
@@ -97,7 +100,9 @@ def handler(path: str):
             response = upstream.getresponse()
             self.send_response(response.status)
             for name, value in response.getheaders():
-                if name.lower() not in ("connection", "content-length", "transfer-encoding"):
+                if name.lower() not in ("connection", "content-length", "transfer-encoding") and not any(
+                    c in name + value for c in "\r\n"
+                ):
                     self.send_header(name, value)
             self.send_header("transfer-encoding", "chunked")
             self.end_headers()
