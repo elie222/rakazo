@@ -134,6 +134,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     name,
     messageId,
     threadId,
+    preserveIncomingShare,
     readOnly: readOnlyParam,
   } = useLocalSearchParams<{
     botId?: string;
@@ -141,6 +142,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     name?: string;
     messageId?: string;
     threadId?: string;
+    preserveIncomingShare?: string;
     readOnly?: string;
   }>();
   const readOnly = readOnlyParam === "1";
@@ -415,7 +417,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   useIncomingShareImport({
     attachments,
     composerRef: composer.composerRef,
-    readOnly,
+    readOnly: readOnly || preserveIncomingShare === "1",
     threadKey,
     uploadConfig,
   });
