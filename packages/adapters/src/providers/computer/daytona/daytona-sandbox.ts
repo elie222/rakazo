@@ -58,6 +58,7 @@ import {
 } from "../../../computers/screens/linux-desktop.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
 import { withAbort } from "../../../web/web-ssrf.js";
+import { daytonaRateLimitError } from "./daytona-rate-limit.js";
 import { isDaytonaExecutable, walkDaytonaWorkspace } from "./daytona-workspace.js";
 
 const DISPLAY_START = 20;
@@ -400,9 +401,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   ): Promise<ComputerFileEntry[]> {
     const sandbox = await this.box(computer);
     const relative = normalizeWorkspacePath(directory);
-    const entries = await sandbox.fs.listFiles(
-      workspacePath(await this.workspaceRoot(sandbox), relative),
-    );
+    const entries = await sandbox.fs
+      .listFiles(workspacePath(await this.workspaceRoot(sandbox), relative))
+      .catch(async (error: unknown) => {
+        throw (await daytonaRateLimitError(error)) ?? error;
+      });
     return entries
       .map((entry) => ({
         path: normalizeWorkspacePath(relative ? `${relative}/${entry.name}` : entry.name),
@@ -424,12 +427,16 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     const sandbox = await this.box(computer);
     const target = workspacePath(await this.workspaceRoot(sandbox), filePath);
     if (options?.maxBytes !== undefined) {
-      const info = await sandbox.fs.getFileDetails(target);
+      const info = await sandbox.fs.getFileDetails(target).catch(async (error: unknown) => {
+        throw (await daytonaRateLimitError(error)) ?? error;
+      });
       if (info.size > options.maxBytes) {
         throw new SandboxFileTooLargeError(options.maxBytes);
       }
     }
-    const content = await sandbox.fs.downloadFile(target);
+    const content = await sandbox.fs.downloadFile(target).catch(async (error: unknown) => {
+      throw (await daytonaRateLimitError(error)) ?? error;
+    });
     return new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
   }
 
@@ -686,12 +693,16 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     );
     if (mkdir.exitCode !== 0) throw new Error(mkdir.result || "could not create file directories");
     await Promise.all(
-      files.map((file) =>
-        sandbox.fs.uploadFile(
-          Buffer.from(file.content.buffer, file.content.byteOffset, file.content.byteLength),
-          workspacePath(root, file.path),
-        ),
-      ),
+      files.map(async (file) => {
+        await sandbox.fs
+          .uploadFile(
+            Buffer.from(file.content.buffer, file.content.byteOffset, file.content.byteLength),
+            workspacePath(root, file.path),
+          )
+          .catch(async (error: unknown) => {
+            throw (await daytonaRateLimitError(error)) ?? error;
+          });
+      }),
     );
     const executable = files
       .filter((file) => file.executable)
@@ -777,23 +788,6 @@ async function isDaytonaSandboxMissing(error: unknown): Promise<boolean> {
   if (error instanceof DaytonaNotFoundError || error instanceof DaytonaGoneError) return true;
   const status = (error as { statusCode?: unknown } | null)?.statusCode;
   return status === 404 || status === 410;
-}
-
-/**
- * Daytona's 429 as the shared computer rate limit, so callers defer the work and users see the
- * rate-limit message. The wait is the Retry-After that Daytona sent with the refusal.
- */
-async function daytonaRateLimitError(error: unknown): Promise<SandboxRateLimitError | undefined> {
-  const { DaytonaRateLimitError } = await daytonaSdk();
-  if (!(error instanceof DaytonaRateLimitError)) return undefined;
-  const headers = error.headers;
-  // The SDK passes axios headers; a plain record with the same keys is read the same way.
-  const value: unknown =
-    typeof headers?.get === "function" ? headers.get("retry-after") : headers?.["retry-after"];
-  return new SandboxRateLimitError({
-    cause: error,
-    retryAfterMs: parseRetryAfter(typeof value === "string" ? value : undefined),
-  });
 }
 
 /** Named so the shared isSandboxGoneError recognizes it and the computer is replaced. */
