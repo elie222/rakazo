@@ -24,8 +24,17 @@ export type AgentDesktopRun = (
   signal: AbortSignal,
 ) => Promise<AgentDesktopEnvelope>;
 
+/** The operating system the CLI drives, as the bot reads it. */
+export type AgentDesktopSystem = "Windows" | "Linux";
+
 export interface AgentDesktopHostScreenOptions {
   run: AgentDesktopRun;
+  system: AgentDesktopSystem;
+  /**
+   * Linux only: whether a process with this name runs, so an app that is open but off the
+   * accessibility bus is reported instead of launched again.
+   */
+  running?: (app: string) => Promise<boolean>;
   /** This app's own process. Driving it could answer its own approval cards. */
   selfPid: number;
   /** Shrinks a PNG so its long edge is at most `maxDimension`. */
@@ -37,6 +46,16 @@ export interface AgentDesktopHostScreenOptions {
 
 export const SCREEN_DRIVER_BLOCKED_MESSAGE =
   "Windows stopped screen control from starting on this computer. Security settings such as Smart App Control can block it; ask the user to check them.";
+const SCREEN_DRIVER_FAILED_MESSAGE = "Screen control couldn't start on this computer.";
+
+// Linux apps are read over the desktop session's accessibility bus and display.
+const LINUX_SESSION_ENVIRONMENT = [
+  "DBUS_SESSION_BUS_ADDRESS",
+  "XDG_RUNTIME_DIR",
+  "WAYLAND_DISPLAY",
+  "DISPLAY",
+  "XAUTHORITY",
+] as const;
 
 interface AgentDesktopWindow {
   id: string;
@@ -67,7 +86,7 @@ interface Target {
 const LAUNCH_WAIT_MS = 4_000;
 const OBSERVE_TIMEOUT_MS = "8000";
 const REF = /^@([^:\s]+):e(\d+)$/;
-// The OS calls the app primary shortcut modifier ctrl on Windows; cmd there is the Windows key.
+// Windows and Linux call the primary shortcut modifier ctrl; cmd there is the Windows or Super key.
 const MODIFIERS = { cmd: "ctrl", ctrl: "ctrl", option: "alt", shift: "shift" } as const;
 
 /** A command the CLI refused, with whether it may already have taken effect. */
@@ -89,7 +108,16 @@ export function agentDesktopCli(options: {
   /** Resolves to the executable, fetching it first if needed. */
   command: () => Promise<string>;
   home: string;
+  system: AgentDesktopSystem;
 }): AgentDesktopRun {
+  const session =
+    options.system === "Linux"
+      ? Object.fromEntries(
+          LINUX_SESSION_ENVIRONMENT.flatMap((name) =>
+            process.env[name] ? [[name, process.env[name]]] : [],
+          ),
+        )
+      : {};
   return async (args, signal) => {
     const command = await options.command();
     return new Promise((resolve, reject) => {
@@ -97,7 +125,7 @@ export function agentDesktopCli(options: {
         command,
         args,
         {
-          env: { ...getDefaultEnvironment(), AGENT_DESKTOP_HOME: options.home },
+          env: { ...getDefaultEnvironment(), ...session, AGENT_DESKTOP_HOME: options.home },
           signal,
           timeout: 60_000,
           maxBuffer: 64 * 1024 * 1024,
@@ -110,7 +138,11 @@ export function agentDesktopCli(options: {
           if (envelope) return resolve(envelope);
           reject(
             error?.syscall?.startsWith("spawn")
-              ? new HostScreenError(SCREEN_DRIVER_BLOCKED_MESSAGE)
+              ? new HostScreenError(
+                  options.system === "Windows"
+                    ? SCREEN_DRIVER_BLOCKED_MESSAGE
+                    : SCREEN_DRIVER_FAILED_MESSAGE,
+                )
               : (error ?? new Error("no envelope")),
           );
         },
@@ -129,11 +161,13 @@ function parseEnvelope(stdout: string): AgentDesktopEnvelope | undefined {
 }
 
 /**
- * Windows screen control over agent-desktop's UI Automation CLI. Every action is headless: it
+ * Windows and Linux screen control over agent-desktop's CLI, which reads UI Automation on Windows
+ * and the AT-SPI accessibility bus on Linux. Every action is headless: it
  * never moves the pointer, types through the keyboard, or brings a window forward, so gestures
  * that only exist as physical input are refused with a way around them.
  */
 export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOptions): HostScreen {
+  const { system } = options;
   const close = new AbortController();
   // The latest snapshot per window: element numbers in actions refer to it.
   const snapshots = new Map<string, string>();
@@ -151,7 +185,7 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     if (envelope.ok) return envelope.data;
     const code = envelope.error?.code ?? "INTERNAL";
     const retry = envelope.error?.disposition?.retry;
-    const message = refusal(app, code, envelope.error?.message);
+    const message = refusal(system, app, code, envelope.error?.message);
     throw new AgentDesktopError(
       retry && retry !== "safe"
         ? `${message} It may have taken effect; check before repeating it.`
@@ -207,6 +241,9 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     const windows = await listWindows(query, signal);
     let matching = named(windows, query);
     if (!matching.length) {
+      // An app running off the accessibility bus has no windows to list, and launching it
+      // again would open a second window of a single-instance app.
+      await refuseUnreadable(query, signal);
       // Windows launches only programs it can find by bare name, like notepad.
       const launched = await call(query, ["launch", "--", query], signal).catch((error) => {
         if (!(error instanceof HostScreenError)) throw error;
@@ -231,6 +268,23 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     return { name, windowId: window.id, ...(window.title ? { title: window.title } : {}) };
   }
 
+  async function refuseUnreadable(query: string, signal: AbortSignal) {
+    if (!options.running || !(await options.running(query))) return;
+    try {
+      // On the bus with no window yet: launching it opens one.
+      await call(query, ["snapshot", "--app", query, "--max-depth", "1"], signal);
+      return;
+    } catch (error) {
+      // On the bus with no window: launching it opens one.
+      if (error instanceof AgentDesktopError && error.code === "WINDOW_NOT_FOUND") return;
+      // Any other refusal says something else about the app, so the bot hears it as it is.
+      if (!(error instanceof AgentDesktopError) || error.code !== "APP_NOT_FOUND") throw error;
+    }
+    throw new HostScreenError(
+      `${query} is open but doesn't share its window with screen control. If it's a web browser or a desktop app built on one, ask the user to quit it and start it again with ACCESSIBILITY_ENABLED=1 set and the --force-renderer-accessibility option.`,
+    );
+  }
+
   async function rows(found: Target, signal: AbortSignal, query?: string) {
     const scope = ["--window-id", found.windowId, "--timeout-ms", OBSERVE_TIMEOUT_MS];
     const data = (await call(
@@ -251,16 +305,19 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
     else snapshots.delete(found.windowId);
     const lines: string[] = [];
     let truncated = data?.complete === false;
-    const visit = (node: AgentDesktopNode, depth: number) => {
+    const visit = (node: AgentDesktopNode, depth: number, root = false) => {
       if (lines.length >= HOST_SCREEN_MAX_ELEMENTS) {
         truncated = true;
         return;
       }
-      lines.push(`${"  ".repeat(depth)}- ${row(node, snapshot)}`);
       if (node.subtree_truncated) truncated = true;
-      for (const child of node.children ?? []) visit(child, depth + 1);
+      // Toolkits nest many unnamed wrappers (GTK draws about twenty for each row of a file list);
+      // listing them spends the row cap before panes later in the window are reached.
+      const shown = root || Boolean(node.name || node.value || elementNumber(node, snapshot));
+      if (shown) lines.push(`${"  ".repeat(depth)}- ${row(node, snapshot)}`);
+      for (const child of node.children ?? []) visit(child, shown ? depth + 1 : depth);
     };
-    if (data?.tree) visit(data.tree, 0);
+    if (data?.tree) visit(data.tree, 0, true);
     for (const match of data?.matches ?? []) visit({ ...match, children: [] }, 0);
     return {
       tree: boundedHostScreenTree(lines.join("\n"), truncated),
@@ -322,17 +379,29 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
       case "click":
         if (action.element === undefined)
           throw new HostScreenError(
-            "On Windows, click an element number; clicking a point would move the user's pointer.",
+            `On ${system}, click an element number; clicking a point would move the user's pointer.`,
           );
         if (action.double || action.button === "right")
           throw new HostScreenError(
-            "On Windows, double and right clicks would move the user's pointer. Click the element, or use set or menu instead.",
+            `On ${system}, double and right clicks would move the user's pointer. Click the element, or use set or menu instead.`,
           );
-        await run("click", "--", ref(found, action.element));
+        try {
+          await run("click", "--", ref(found, action.element));
+        } catch (error) {
+          // A GTK4 list row has no press action, so only the pointer could choose it.
+          if (!(error instanceof AgentDesktopError) || error.code !== "POLICY_DENIED") throw error;
+          throw new HostScreenError(
+            `${found.name} only takes a click on element ${action.element} from the user's pointer. ${
+              error.notDelivered
+                ? "Look for another control that does the same thing, such as a button, a menu item, or a field to set."
+                : "It may have taken effect; check before trying another control."
+            }`,
+          );
+        }
         return;
       case "type":
         throw new HostScreenError(
-          "On Windows, type would take over the user's keyboard. Use set with the field's whole new text instead.",
+          `On ${system}, type would take over the user's keyboard. Use set with the field's whole new text instead.`,
         );
       case "set": {
         const element = ref(found, action.element);
@@ -353,7 +422,7 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
       case "key": {
         if (action.element !== undefined)
           throw new HostScreenError(
-            "On Windows, keys go to whichever element has focus. Leave out element, or use set or click instead.",
+            `On ${system}, keys go to whichever element has focus. Leave out element, or use set or click instead.`,
           );
         const key = action.key.length === 1 ? action.key.toLowerCase() : action.key;
         const modifiers = [...new Set((action.modifiers ?? []).map((name) => MODIFIERS[name]))];
@@ -363,7 +432,7 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
       case "scroll": {
         if (action.element === undefined && action.x !== undefined)
           throw new HostScreenError(
-            "On Windows, scroll an element number; scrolling at a point would move the user's pointer.",
+            `On ${system}, scroll an element number; scrolling at a point would move the user's pointer.`,
           );
         const area =
           action.element !== undefined
@@ -444,10 +513,16 @@ function appName(window: AgentDesktopWindow) {
   return window.app_name.replace(/\.exe$/i, "");
 }
 
-function row(node: AgentDesktopNode, snapshot: string) {
+/** The number the bot uses for an element of this snapshot, if it can act on it. */
+function elementNumber(node: AgentDesktopNode, snapshot: string) {
   const match = node.ref_id ? REF.exec(node.ref_id) : null;
+  return match && match[1] === snapshot ? match[2] : undefined;
+}
+
+function row(node: AgentDesktopNode, snapshot: string) {
+  const element = elementNumber(node, snapshot);
   const parts = [
-    ...(match && match[1] === snapshot ? [`[${match[2]}]`] : []),
+    ...(element ? [`[${element}]`] : []),
     node.role || "element",
     ...(node.name ? [JSON.stringify(node.name)] : []),
     ...(node.value && node.value !== node.name ? [`= ${JSON.stringify(node.value)}`] : []),
@@ -457,7 +532,12 @@ function row(node: AgentDesktopNode, snapshot: string) {
 }
 
 /** What a refused command means for the bot, without the CLI's internals or file paths. */
-function refusal(app: string, code: string, message: string | undefined) {
+function refusal(
+  system: AgentDesktopSystem,
+  app: string,
+  code: string,
+  message: string | undefined,
+) {
   switch (code) {
     case "STALE_REF":
     case "SNAPSHOT_NOT_FOUND":
@@ -465,9 +545,11 @@ function refusal(app: string, code: string, message: string | undefined) {
     case "AMBIGUOUS_TARGET":
       return `${app} changed since the last observation. Observe it again and use the new element numbers.`;
     case "POLICY_DENIED":
-      return `Windows won't send that to ${app} without taking over the user's pointer or keyboard. Use click, set, or menu instead.`;
+      return `${system} won't send that to ${app} without taking over the user's pointer or keyboard. Use click, set, or menu instead.`;
     case "PERM_DENIED":
-      return `Windows doesn't let Rakazo use ${app}, usually because it runs as administrator.`;
+      return system === "Windows"
+        ? `Windows doesn't let Rakazo use ${app}, usually because it runs as administrator.`
+        : `${system} doesn't let Rakazo use ${app}.`;
     case "APP_UNRESPONSIVE":
       return `${app} is not responding.`;
     case "TIMEOUT":
@@ -479,6 +561,10 @@ function refusal(app: string, code: string, message: string | undefined) {
     case "ACTION_NOT_SUPPORTED":
     case "INVALID_ARGS":
       return message || "That element can't do that.";
+    case "PLATFORM_NOT_SUPPORTED":
+      if (system === "Linux")
+        return "Screen control can't reach this computer's accessibility service. Ask the user to check that accessibility is turned on in their desktop session.";
+      return "Screen control failed. Try again.";
     default:
       return "Screen control failed. Try again.";
   }

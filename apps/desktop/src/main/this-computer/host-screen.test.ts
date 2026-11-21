@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { HostScreenError } from "@rakazo/adapters/host-screen";
@@ -9,6 +9,7 @@ import type { ScreenDriverRelease, ScreenPermissionApi } from "./host-screen.js"
 import {
   createDesktopHostScreen,
   ensureScreenPermissions,
+  runningProcessNamed,
   SCREEN_DRIVER_DOWNLOAD_MESSAGE,
   SCREEN_DRIVER_RELEASES,
   SCREEN_LOCKED_MESSAGE,
@@ -55,30 +56,35 @@ describe("desktop screen", () => {
     locked: () => false,
   };
 
-  it("exists on macOS and Windows", () => {
+  it("exists on macOS, Windows and Linux", () => {
     const api = permissions(true, []);
-    for (const platform of ["darwin", "win32"] as const)
+    for (const platform of ["darwin", "win32", "linux"] as const)
       expect(createDesktopHostScreen({ ...options, permissions: api, platform })).toBeDefined();
     expect(
-      createDesktopHostScreen({ ...options, permissions: api, platform: "linux" }),
+      createDesktopHostScreen({ ...options, permissions: api, platform: "freebsd" }),
     ).toBeUndefined();
   });
 
-  it("asks Windows for no permission and fetches the driver on first use", async () => {
-    const api = permissions(false, []);
-    const driver = vi.fn(async () => {
-      throw new HostScreenError(SCREEN_DRIVER_DOWNLOAD_MESSAGE);
-    });
-    const screen = createDesktopHostScreen({
-      ...options,
-      driver,
-      permissions: api,
-      platform: "win32",
-    })!;
-    expect(driver).not.toHaveBeenCalled();
-    await expect(screen.observe(scope, "notepad")).rejects.toThrow(SCREEN_DRIVER_DOWNLOAD_MESSAGE);
-    expect(api.isTrustedAccessibilityClient).not.toHaveBeenCalled();
-  });
+  it.each(["win32", "linux"] as const)(
+    "asks %s for no permission and fetches the driver on first use",
+    async (platform) => {
+      const api = permissions(false, []);
+      const driver = vi.fn(async () => {
+        throw new HostScreenError(SCREEN_DRIVER_DOWNLOAD_MESSAGE);
+      });
+      const screen = createDesktopHostScreen({
+        ...options,
+        driver,
+        permissions: api,
+        platform,
+      })!;
+      expect(driver).not.toHaveBeenCalled();
+      await expect(screen.observe(scope, "notepad")).rejects.toThrow(
+        SCREEN_DRIVER_DOWNLOAD_MESSAGE,
+      );
+      expect(api.isTrustedAccessibilityClient).not.toHaveBeenCalled();
+    },
+  );
 
   it("says the screen is locked before starting anything", async () => {
     const api = permissions(true, ["granted", "granted"]);
@@ -194,15 +200,92 @@ describe("screen driver download", () => {
     await expect(install()).resolves.toBe(path.join(bin, release.driverSha256, "cua-driver"));
   });
 
+  it("finds this user's processes by command or executable name", async () => {
+    const proc = await mkdtemp(path.join(tmpdir(), "proc-"));
+    try {
+      const fake = async (pid: string, comm: string, exe: string) => {
+        await mkdir(path.join(proc, pid));
+        await writeFile(path.join(proc, pid, "comm"), `${comm}\n`);
+        await writeFile(
+          path.join(proc, pid, "status"),
+          `Name:\t${comm}\nUid:\t${process.getuid?.() ?? 0}\t0\t0\t0\n`,
+        );
+        await symlink(exe, path.join(proc, pid, "exe"));
+      };
+      await fake("10", "brave", "/opt/browser/brave");
+      await fake("11", "Web Content", "/usr/lib/viewer/viewer-bin");
+      await mkdir(path.join(proc, "self"));
+      expect(await runningProcessNamed("Brave", proc)).toBe(true);
+      expect(await runningProcessNamed("viewer-bin", proc)).toBe(true);
+      expect(await runningProcessNamed("viewer", proc)).toBe(false);
+      // Another user's process doesn't count, whoever owns its folder.
+      await fake("15", "someone-else", "/usr/bin/someone-else");
+      await writeFile(path.join(proc, "15", "status"), "Uid:\t4242\t4242\t4242\t4242\n");
+      expect(await runningProcessNamed("someone-else", proc)).toBe(false);
+      // A process that exits mid-scan leaves an entry whose files are gone.
+      await mkdir(path.join(proc, "12"));
+      expect(await runningProcessNamed("missing", proc)).toBe(false);
+      // The kernel cuts a script's command name to 15 characters; the script's path tells them apart.
+      const script = async (pid: string, file: string) => {
+        await fake(pid, path.basename(file).slice(0, 15), "/usr/bin/python3.13");
+        await writeFile(path.join(proc, pid, "cmdline"), `python3\0${file}\0--quiet\0`);
+      };
+      await script("13", "/opt/tools/photo-organizer-cli");
+      expect(await runningProcessNamed("photo-organizer-app", proc)).toBe(false);
+      await script("14", "/opt/tools/photo-organizer-app");
+      expect(await runningProcessNamed("photo-organizer-app", proc)).toBe(true);
+    } finally {
+      await rm(proc, { recursive: true, force: true });
+    }
+  });
+
+  it("counts only processes of this login session, or of none recorded", async () => {
+    const proc = await mkdtemp(path.join(tmpdir(), "proc-"));
+    try {
+      const fake = async (pid: string, comm: string, session: string) => {
+        await mkdir(path.join(proc, pid));
+        await writeFile(path.join(proc, pid, "comm"), `${comm}\n`);
+        await writeFile(
+          path.join(proc, pid, "status"),
+          `Name:\t${comm}\nUid:\t${process.getuid?.() ?? 0}\t0\t0\t0\n`,
+        );
+        await writeFile(path.join(proc, pid, "sessionid"), session);
+        await symlink(`/usr/bin/${comm}`, path.join(proc, pid, "exe"));
+      };
+      await fake("self", "rakazo", "3");
+      await fake("10", "elsewhere", "4");
+      await fake("11", "here", "3");
+      await fake("12", "unrecorded", "4294967295");
+      expect(await runningProcessNamed("elsewhere", proc)).toBe(false);
+      expect(await runningProcessNamed("here", proc)).toBe(true);
+      expect(await runningProcessNamed("unrecorded", proc)).toBe(true);
+      // A process whose session can't be read stops the scan rather than counting as unrecorded.
+      await mkdir(path.join(proc, "13"));
+      await writeFile(path.join(proc, "13", "comm"), "unreadable\n");
+      await writeFile(path.join(proc, "13", "status"), `Uid:\t${process.getuid?.() ?? 0}\n`);
+      await mkdir(path.join(proc, "13", "sessionid"));
+      await expect(runningProcessNamed("unreadable", proc)).rejects.toThrow();
+    } finally {
+      await rm(proc, { recursive: true, force: true });
+    }
+  });
+
   it("pins one checksummed release per platform from each driver's publisher", () => {
-    const { darwin, win32 } = SCREEN_DRIVER_RELEASES;
+    const { darwin, win32, linux } = SCREEN_DRIVER_RELEASES;
     expect(darwin.url).toMatch(
       /^https:\/\/github\.com\/trycua\/cua\/releases\/download\/cua-driver-rs-v[\d.]+\/cua-driver-rs-[\d.]+-darwin-universal-binary\.tar\.gz$/,
     );
     expect(win32.url).toMatch(
       /^https:\/\/github\.com\/vercel-labs\/agent-desktop\/releases\/download\/v([\d.]+)\/agent-desktop-v\1-x86_64-pc-windows-msvc\.tar\.gz$/,
     );
-    for (const release of [darwin, win32]) {
+    expect(linux.url).toMatch(
+      /^https:\/\/github\.com\/vercel-labs\/agent-desktop\/releases\/download\/v([\d.]+)\/agent-desktop-v\1-x86_64-unknown-linux-gnu\.tar\.gz$/,
+    );
+    // One agent-desktop version on every platform, so the adapter reads one CLI.
+    expect(linux.url.split("/download/")[1]!.split("/")[0]).toBe(
+      win32.url.split("/download/")[1]!.split("/")[0],
+    );
+    for (const release of [darwin, win32, linux]) {
       expect(release.sha256).toMatch(/^[a-f0-9]{64}$/);
       expect(release.driverSha256).toMatch(/^[a-f0-9]{64}$/);
     }
