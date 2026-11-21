@@ -27,6 +27,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const fixtures = path.join(root, "packages/testkit/src/page-browser-bench/fixtures");
 const DRIVER_SOURCE = "infra/sandboxes/computer/rakazo-page-browser";
 const SECRETS_SOURCE = "infra/sandboxes/computer/page_secrets.py";
+const PASSKEY_SOURCE = "infra/sandboxes/computer/page_passkey.py";
 const WORK = "/tmp/page-browser-bench";
 
 type Exec = (args: string[], stdin?: string, timeoutMs?: number) => Promise<string>;
@@ -93,10 +94,11 @@ async function installDriver(exec: Exec, driver: string) {
     encoding: "utf8",
   }).trim();
   const directory = `${WORK}/drivers/${sha}`;
-  // Before agent-browser the driver was one file; since, it imports page_secrets from its own folder.
+  // Before agent-browser the driver was one file; since, it imports page_secrets (and later
+  // page_passkey) from its own folder.
   const files = execFileSync(
     "git",
-    ["ls-tree", "--name-only", sha, DRIVER_SOURCE, SECRETS_SOURCE],
+    ["ls-tree", "--name-only", sha, DRIVER_SOURCE, SECRETS_SOURCE, PASSKEY_SOURCE],
     {
       cwd: root,
       encoding: "utf8",

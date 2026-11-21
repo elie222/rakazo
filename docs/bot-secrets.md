@@ -231,7 +231,17 @@ one in the login's editor where a bot must sign in on its own. A file whose quot
 not read at all, so no password is read differently from the export. Delete the export file
 afterwards: it holds your passwords unencrypted.
 
-A sign-in without a password, such as an ID number and phone number, uses the same login card. CAPTCHA and passkeys still use `request_takeover`, as does any sign-in you prefer to do yourself.
+A sign-in without a password, such as an ID number and phone number, uses the same login card. CAPTCHA, a passkey you made yourself, and any sign-in you prefer to do yourself still use `request_takeover`.
+
+### Passkeys
+
+A bot can create its own passkey for a saved login and sign in with it later. On the site's add-passkey button the bot calls `browser_act` `create_passkey` with the login's name, which always asks you on an Approve/Deny card titled "Create a passkey on" that site's host, whatever the login's setting; a login set to Block is refused. Approving it replaces the login's passkey if it already has one. The passkey (its private key, credential id, site and user handle) is saved encrypted inside the login, next to its authenticator key, and is hidden from the bot and from every run's output the way a password is. Reveal never returns it, and it is never imported or exported. The login shows "Passkey" with the site it signs in to, and Remove deletes it from the login; delete it from the site's own settings as well.
+
+Signing in uses `browser_act` `use_passkey` on the site's passkey sign-in button and follows the login's Allow / Ask first / Block setting. For one step the page browser adds a virtual authenticator to the bot's tab, holding only that passkey, and presses the button; the authenticator confirms a person is present only from that click on, and is removed within a few seconds, or as soon as the step ends. Its signature counter is the server's clock in seconds, so nothing is written back after a sign-in. The authenticator never claims a person was verified (no fingerprint or PIN), so a site that requires that is refused by the browser before any passkey is created. A site that creates a passkey on another domain, opens a popup for it, or offers it only in the browser's autofill list is not supported, and a failed creation is never tried again on its own.
+
+Passkeys work on a Private Computer, and on a Team Computer only while no one else is in its Space, since everyone in a shared Space shares that computer's browser. This needs a computer image that includes the passkey steps; an older one refuses the step.
+
+To check the step against a real site, build the computer image and run `VERIFY_DOCKER_PASSKEY_SITE=1 pnpm exec vitest run infra/sandboxes/supervisor/src/page-passkey.docker.test.ts` (`RAKAZO_COMPUTER_IMAGE` selects a prebuilt image). It needs the network: it creates a passkey on webauthn.io in one fresh browser and signs in with it from another.
 
 ### One-time codes
 

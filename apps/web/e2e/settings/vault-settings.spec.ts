@@ -356,6 +356,50 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await captureScreenshot(page, testInfo, "vault-item-own-vault-space");
 });
 
+test("shows the site of a passkey a bot created on a login, and removes it", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `vault-passkey-${stamp}@rakazo.test`, "password12", "Vault Passkey");
+  await completeOnboarding(page);
+  await rpc(page, "vault/put", {
+    scope: "account",
+    destination: { origin: "https://passkey.example.test", auth: { type: "login" } },
+    value: JSON.stringify({
+      fields: [
+        { label: "Email", value: `fake-user-${stamp}@example.test`, hidden: false },
+        { label: "Password", value: `fake-password-${stamp}`, hidden: true },
+      ],
+    }),
+  });
+  // Only a bot's run creates a passkey, so the list shows one until the owner removes it.
+  let removed = false;
+  await page.route("**/rpc/vault/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as {
+      json: Array<{ preview?: Record<string, unknown> }>;
+    };
+    if (!removed)
+      for (const item of body.json) if (item.preview) item.preview.passkey = "passkey.example.test";
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/vault/removePasskey", async (route) => {
+    removed = true;
+    await route.fallback();
+  });
+  const vault = (await openUserSettings(page, "vault")).getByTestId("vault");
+  await vault.getByText("passkey.example.test", { exact: true }).click();
+  const passkey = page.getByTestId("vault-item-passkey");
+  await expect(passkey).toContainText("Passkey");
+  await expect(passkey).toContainText("passkey.example.test");
+  await captureScreenshot(page, testInfo, "vault-login-passkey");
+  await passkey.getByTestId("vault-item-passkey-remove").click();
+  await page.getByTestId("vault-item-remove-confirm").click();
+  await expect(page.getByTestId("vault-item-passkey")).toHaveCount(0);
+  await expect(page.getByTestId("vault-item-detail")).toBeVisible();
+  await captureScreenshot(page, testInfo, "vault-login-passkey-removed");
+});
+
 test("imports logins from a CSV export after a review", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `vault-import-${stamp}@rakazo.test`, "password12", "Vault Import");

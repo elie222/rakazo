@@ -1210,6 +1210,36 @@ describe("VaultSettings new items", () => {
     expect(detail()?.textContent).toContain("Authenticator key••••••••");
   });
 
+  it("shows the site of a passkey a bot created, and removes it keeping the login", async () => {
+    const withPasskey = {
+      ...rows[0]!,
+      preview: { username: "octo@example.com", passkey: "github.com" },
+    };
+    vault.list.mockResolvedValue([withPasskey]);
+    // The rpc mock hands out this same object, so the procedure is added here.
+    const removePasskey = vi.fn(async () => {
+      vault.list.mockResolvedValue([{ ...withPasskey, preview: { username: "octo@example.com" } }]);
+      return { ok: true };
+    });
+    Object.assign(vault, { removePasskey });
+    await render();
+    await click(rowNamed("github"));
+    expect(document.querySelector('[data-testid="vault-item-passkey"]')?.textContent).toContain(
+      "Passkeygithub.com",
+    );
+    await click("vault-item-passkey-remove");
+    // It asks first: the site keeps the passkey, which no one then holds.
+    expect(removePasskey).not.toHaveBeenCalled();
+    expect(detail()?.textContent).toContain("Remove the passkey?");
+    await click("vault-item-remove-confirm");
+    expect(removePasskey).toHaveBeenCalledWith({ scope: "account", name: "github" });
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="vault-item-passkey"]')).toBeNull(),
+    );
+    expect(detail()).not.toBeNull();
+    expect(detail()?.textContent).not.toContain("Remove the passkey?");
+  });
+
   it("sends a login's authenticator key only when it was changed in the editor", async () => {
     const otp = TEST_KEY;
     const keyed = { ...rows[0]!, preview: { username: "octo@example.com", otp: true } };

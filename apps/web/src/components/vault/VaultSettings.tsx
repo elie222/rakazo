@@ -223,6 +223,23 @@ export function VaultSettings({
     return true;
   }
 
+  /** Deletes a login's passkey, keeping the login; the item stays open. */
+  async function removePasskey(name: string) {
+    if (busy) return false;
+    setDetailError(null);
+    setBusy(true);
+    try {
+      await rpc.vault.removePasskey({ scope, name });
+    } catch (err) {
+      setDetailError(errorText(err, t`Could not remove the passkey`));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+    if (!(await refresh())) setError(t`Could not load credentials.`);
+    return true;
+  }
+
   function startEdit(item: BotSecretMetadata, revealed?: VaultRevealed) {
     if (!item.auth) return;
     const kind = vaultKind(item.auth.type);
@@ -349,6 +366,7 @@ export function VaultSettings({
           onReveal={() => reveal(openedItem.name)}
           onEdit={(revealed) => startEdit(openedItem, revealed)}
           onRemove={() => remove(openedItem.name)}
+          onRemovePasskey={() => removePasskey(openedItem.name)}
         />
         {identityDialog}
       </section>

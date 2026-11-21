@@ -138,8 +138,10 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
   if (name === "browser_act") {
     const steps = actions.map((raw) => {
       const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+      const kind = String(step.kind ?? "");
       return {
-        kind: String(step.kind ?? ""),
+        // A passkey step is a click too, on whatever its ref names.
+        kind: kind === "create_passkey" || kind === "use_passkey" ? "click" : kind,
         // As browser_act reads it, so the check looks at the element the click will press.
         ref: step.ref === undefined ? undefined : String(step.ref).trim(),
       };

@@ -268,6 +268,7 @@ export {
   SAVED_LOGIN_UNREADABLE,
   SPACE_VAULT_NOT_IN_USE,
   SpaceVaultNotInUseError,
+  saveLoginPasskey,
   storeBotSecret,
   UNKNOWN_BOTS,
   UNSUPPORTED_ACCESS,

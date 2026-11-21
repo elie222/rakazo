@@ -358,9 +358,23 @@ export function authenticatorKey(text: string): AuthenticatorKey | undefined {
   return /^[A-Z2-7]{16,256}$/.test(secret) ? { ...options, secret } : undefined;
 }
 
+/**
+ * A passkey a bot created on a site for a login: the credential's own private key (PKCS#8,
+ * base64), never typed or shown, only handed to the computer's browser for one sign-in.
+ */
+export const LoginPasskey = z.object({
+  rpId: z.string().min(1).max(253),
+  credentialId: z.string().min(1).max(1024),
+  privateKey: z.string().min(1).max(4096),
+  userHandle: z.string().max(1024).optional(),
+});
+export type LoginPasskey = z.infer<typeof LoginPasskey>;
+
 export const LoginSecretValue = z
   .object({
     fields: z.array(LoginField).min(1).max(LOGIN_FIELD_LIMIT),
+    /** Only a bot creates one, on a card its owner approved; never imported or revealed. */
+    passkey: LoginPasskey.optional(),
     /** The authenticator key, opt-in; never typed itself, only the code it makes. */
     otp: z
       .string()
@@ -779,6 +793,8 @@ export const VaultPreview = z.object({
   username: z.string().optional(),
   /** A login with an authenticator key. Missing from an older server, which can't keep one. */
   otp: z.literal(true).optional(),
+  /** The site a login's passkey signs in to, without the key. */
+  passkey: z.string().optional(),
   card: CardSummary.optional(),
   contact: ContactFields.optional(),
 });

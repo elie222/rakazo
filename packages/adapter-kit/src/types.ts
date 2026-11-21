@@ -1590,7 +1590,32 @@ export type BrowserActStep =
       text: string;
       origin: string;
       merchantAccountId: string;
+    }
+  /**
+   * Clicks `ref` on `origin` while the tab has a passkey authenticator, alone in its call. With
+   * `credential` the site can sign in with that saved passkey on `rpId`; without, it can create one,
+   * which the result returns.
+   */
+  | {
+      kind: "passkey";
+      ref: string;
+      origin: string;
+      rpId?: string;
+      credential?: {
+        credentialId: string;
+        privateKey: string;
+        userHandle?: string;
+        signCount: number;
+      };
     };
+
+/** A passkey a site created in the page browser: its key is secret, like a password. */
+export interface BrowserPasskey {
+  rpId: string;
+  credentialId: string;
+  privateKey: string;
+  userHandle?: string;
+}
 
 export interface BrowserActRequest {
   actions: BrowserActStep[];
@@ -1618,6 +1643,8 @@ export interface BrowserActResult {
   note?: string;
   /** A JavaScript dialog the page has open on the screen, which page tools cannot answer. */
   dialog?: string;
+  /** The passkey a passkey step without a credential created. Never shown to the bot. */
+  passkey?: BrowserPasskey;
 }
 
 /** A purchase step as the page shows it: the label and amount are page text. */

@@ -880,6 +880,44 @@ describe("vault router", () => {
     expect(imported.text).not.toContain(otp);
   });
 
+  it("removes a login's passkey and keeps the login, never revealing or replacing it", async () => {
+    const { auth, call, secrets } = botSecretDeps();
+    const fields = [{ label: "Password", value: FAKE_VALUE, hidden: true }];
+    const login = { name: "shop", origin: "https://shop.example.test", auth: { type: "login" } };
+    await call("vault/put", { destination: login, value: JSON.stringify({ fields }) });
+    const passkey = {
+      rpId: "shop.example.test",
+      credentialId: "fake-credential-id",
+      privateKey: "fake-passkey-private-key",
+    };
+    // Only a bot creates one, on a card its owner approved: here the saved value already holds it.
+    const puts = secrets.put.mock.calls.length;
+    const load = secrets.load.getMockImplementation()!;
+    secrets.load.mockImplementation(async (ciphertext: string) =>
+      secrets.put.mock.calls.length === puts
+        ? JSON.stringify({ fields, passkey })
+        : load(ciphertext),
+    );
+    const [listed] = (await call("vault/list", {})).body.json as BotSecretMetadata[];
+    expect(listed?.preview).toMatchObject({ passkey: "shop.example.test" });
+    auth.hasRecentIdentityConfirmation.mockResolvedValue(true);
+    const revealed = await call("vault/reveal", { name: "shop" });
+    expect(revealed.body.json).toEqual({ fields });
+    expect(revealed.text).not.toContain(passkey.privateKey);
+    // A save from the app sends no passkey: the saved one stays, and one sent is not taken.
+    await call("vault/put", {
+      destination: login,
+      value: JSON.stringify({ fields, passkey: { ...passkey, privateKey: "fake-imported" } }),
+    });
+    expect(secrets.put.mock.calls.at(-1)?.[0]).toContain(passkey.privateKey);
+    expect(secrets.put.mock.calls.at(-1)?.[0]).not.toContain("fake-imported");
+    expect((await call("vault/removePasskey", { name: "shop" })).body.json).toEqual({ ok: true });
+    const [kept] = (await call("vault/list", {})).body.json as BotSecretMetadata[];
+    expect(kept?.preview?.passkey).toBeUndefined();
+    expect((await call("vault/reveal", { name: "shop" })).body.json).toEqual({ fields });
+    expect((await call("vault/removePasskey", { name: "missing" })).status).toBe(404);
+  });
+
   it("changes only the title or note of a saved item when no value is sent", async () => {
     const { call } = botSecretDeps();
     await call("vault/put", { destination, value: FAKE_VALUE });

@@ -127,6 +127,8 @@ export const computerTools: ConnectorTool[] = [
               kind: {
                 type: "string",
                 enum: [...BROWSER_ACT_KINDS],
+                description:
+                  "create_passkey clicks a site's add-passkey button to save a new passkey to the saved login once the user approves; use_passkey clicks its passkey sign-in button. Each goes alone in its call.",
               },
               ref: {
                 type: "string",
@@ -144,7 +146,7 @@ export const computerTools: ConnectorTool[] = [
               secret: {
                 type: "string",
                 description:
-                  "Saved login name for fill_secret, or for fill_code to type that login's authenticator code.",
+                  "Saved login name for fill_secret, create_passkey or use_passkey, or for fill_code to type that login's authenticator code.",
               },
               purchase: {
                 type: "string",
@@ -351,7 +353,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "request_takeover",
     description:
-      "Ask the user to take over the computer screen for CAPTCHA, payment, passkeys, or other protected input request_secret cannot take. Never ask the user to paste protected values in chat.",
+      "Ask the user to take over the computer screen for CAPTCHA, payment, or other protected input request_secret cannot take. Never ask the user to paste protected values in chat.",
     inputSchema: {
       type: "object",
       properties: { reason: { type: "string" } },

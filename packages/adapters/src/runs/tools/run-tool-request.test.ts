@@ -324,6 +324,28 @@ describe("prepareToolRequest: a saved login that asks first", () => {
     expect(alone.loginUse).toEqual({ ...approval, fields: [LOGIN_CODE_FIELD], savedAt });
   });
 
+  it("refuses a passkey on a Team Computer others share before the owner is asked", async () => {
+    const { db, ctx, request } = await setup();
+    const actions = [{ kind: "create_passkey", ref: "e1", secret: "plain" }];
+    const onTeam = (members: number) => {
+      const run = ctx();
+      Object.assign(db.prisma, { spaceMember: { count: async () => members } });
+      return { ...run, computer: { ...run.computer, mode: "team" } };
+    };
+    const shared = request({ actions });
+    expect(await prepareToolRequest(onTeam(2) as never, shared)).toEqual({
+      error: expect.stringContaining("Passkeys work only on a Private Computer"),
+    });
+    expect(shared.loginUse).toBeUndefined();
+    expect(shared.fleetSummary).toBeUndefined();
+    // Alone in the Space, creating one still asks first, even on a login set to Allow.
+    const alone = request({ actions });
+    expect(await prepareToolRequest(onTeam(1) as never, alone)).toBeUndefined();
+    expect(alone.fleetSummary).toMatchObject({
+      title: expect.stringContaining("Create a passkey"),
+    });
+  });
+
   it("asks once for every field one call fills, from the saved login, never a forged approval", async () => {
     const { ctx, request, approval } = await setup();
     const actions = [fill("work", "Email"), fill("work", "Password")];

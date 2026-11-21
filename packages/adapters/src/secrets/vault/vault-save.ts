@@ -1,7 +1,12 @@
 import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretNotFoundError, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import type { BotSecretDestination, SettingsScope, VaultPolicy } from "@rakazo/contracts";
+import type {
+  BotSecretDestination,
+  LoginPasskey,
+  SettingsScope,
+  VaultPolicy,
+} from "@rakazo/contracts";
 import {
   BotSecretAuth,
   commandVariableName,
@@ -10,6 +15,7 @@ import {
   encodeLoginSecret,
   GeneratedSecretRules,
   GenerateSecretInput,
+  LoginSecretValue,
   loginCommandName,
   VAULT_ITEM_LIMIT,
   vaultLoginKey,
@@ -88,17 +94,25 @@ export async function prepareBotSecret(input: {
   /** An import using the default vault stops if that selection changes between rows. */
   expectedDefaultVault?: SettingsScope;
   alsoOn?: readonly string[];
+  /**
+   * Sets the saved login's passkey, or removes it with null, keeping the rest of the login as it
+   * is saved now; `plaintext` is not saved then. Left out, the saved passkey is kept.
+   */
+  passkey?: LoginPasskey | null;
 }) {
   const { prisma, secretStore, scope } = input;
   let { plaintext } = input;
-  if (!plaintext || plaintext.length > 16_384)
+  const passkeyOnly = input.passkey !== undefined;
+  if (!passkeyOnly && (!plaintext || plaintext.length > 16_384))
     throw new VaultItemRefusedError("Invalid credential length");
   const destination = normalizeSecretDestination(input.destination);
   const policy = policyField(destination.auth, input.policy);
   // A bot never widens where a login goes.
   if (scope.botId && input.alsoOn) throw new VaultItemRefusedError(UNSUPPORTED_ACCESS);
   const sites = alsoOnField(destination.auth, destination.origin, input.alsoOn);
-  if (
+  if (passkeyOnly) {
+    if (destination.auth.type !== "login") throw new VaultItemRefusedError(UNSUPPORTED_ACCESS);
+  } else if (
     destination.auth.type === "login" ||
     destination.auth.type === "card" ||
     destination.auth.type === "contact"
@@ -123,11 +137,12 @@ export async function prepareBotSecret(input: {
   const botMoves = (row: typeof existing) =>
     Boolean(scope.botId && row && normalizeSecretDestination(row).origin !== destination.origin);
   // A login saved without its authenticator key keeps the saved one; an empty key removes it.
-  const keepsKey =
-    destination.auth.type === "login" &&
-    existing &&
-    !botMoves(existing) &&
-    !("otp" in JSON.parse(input.plaintext));
+  // Its passkey is never in a value sent to save, so it is kept, or set alone.
+  const keepsSaved = destination.auth.type === "login" && existing && !botMoves(existing);
+  const keepsKey = keepsSaved && !passkeyOnly && !("otp" in JSON.parse(input.plaintext));
+  if (passkeyOnly && !keepsSaved) throw new VaultItemRefusedError("Login is unavailable.");
+  // Only a bot creates a passkey, on a site that asked it to: none is imported.
+  if (input.passkey && !scope.botId) throw new VaultItemRefusedError(UNSUPPORTED_ACCESS);
   if (destination.auth.type === "login" && botMoves(existing))
     plaintext = encodeLoginSecret({ fields: decodeLoginSecret(plaintext).fields });
   function validate(row: typeof existing, count: number) {
@@ -152,9 +167,26 @@ export async function prepareBotSecret(input: {
     usernames && loginSaved(prisma, tx, secretStore, vault, destination, plaintext, usernames);
   if (await repeats(prisma)) throw new LoginAlreadySavedError();
   validate(existing, await prisma.vaultCredential.count({ where: vault }));
-  if (keepsKey) {
-    const otp = await savedLoginKey(prisma, secretStore, existing);
-    if (otp) plaintext = encodeLoginSecret({ ...decodeLoginSecret(plaintext), otp });
+  if (passkeyOnly) {
+    // The login as it is saved now, read again under the lock below.
+    const saved = await savedLogin(prisma, secretStore, existing!);
+    if (!saved) throw new VaultRetryError(SAVED_LOGIN_UNREADABLE);
+    const { passkey: _replaced, ...login } = saved;
+    plaintext = keptLoginValue(input.passkey ? { ...login, passkey: input.passkey } : login);
+  } else if (keepsSaved) {
+    const saved = await savedLogin(prisma, secretStore, existing);
+    const otp = keepsKey ? saved?.otp : undefined;
+    // A passkey works only on its own site, so a login moved to another drops it.
+    const passkey =
+      normalizeSecretDestination(existing).origin === destination.origin
+        ? saved?.passkey
+        : undefined;
+    if (otp || passkey)
+      plaintext = keptLoginValue({
+        ...decodeLoginSecret(plaintext),
+        ...(otp && { otp }),
+        ...(passkey && { passkey }),
+      });
   }
   const id = existing?.id ?? randomBytes(12).toString("hex");
   const ciphertext = await sealVaultValue(prisma, secretStore, { id, ...vault }, plaintext, {
@@ -194,10 +226,10 @@ export async function prepareBotSecret(input: {
           `Invalid credential destination — name: ${conflict} is already exported as $${commandVariableName(destination.name)}`,
         );
       }
-      // The kept key was read before the lock, so a value saved since then is read again.
+      // The kept key and passkey were read before the lock, so a value saved since then is read again.
       if (
         current?.id !== existing?.id ||
-        (keepsKey && current?.ciphertext !== existing?.ciphertext) ||
+        (keepsSaved && current?.ciphertext !== existing?.ciphertext) ||
         (current && ciphertextKeyId(current.ciphertext) !== ciphertextKeyId(existing!.ciphertext))
       )
         throw new TransactionConflictError("Credential changed while saving; retry");
@@ -205,7 +237,9 @@ export async function prepareBotSecret(input: {
         // Its owner's own save may carry a fixed key, so its codes are typed again. A save a bot
         // started, such as a login card answered in chat, shows no key and keeps the saved one:
         // the key that was stopped is still the one there, so the stop stays.
-        ...(current?.codesStoppedAt && !scope.botId ? { codesStoppedAt: null } : {}),
+        ...(current?.codesStoppedAt && !scope.botId && !passkeyOnly
+          ? { codesStoppedAt: null }
+          : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.note !== undefined ? { note: input.note } : {}),
         ...policy,
@@ -258,16 +292,16 @@ async function loadSavedValue(
   }
 }
 
-async function savedLoginKey(
+async function savedLogin(
   prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
   row: Parameters<typeof openVaultValue>[2] & { auth: unknown },
 ) {
   if (BotSecretAuth.safeParse(row.auth).data?.type !== "login") return undefined;
-  // Only a value no one can read holds no key, so the save replaces it.
+  // Only a value no one can read holds no key or passkey, so the save replaces it.
   const plaintext = await loadSavedValue(prisma, secretStore, row);
   try {
-    return plaintext === undefined ? undefined : decodeLoginSecret(plaintext).otp;
+    return plaintext === undefined ? undefined : decodeLoginSecret(plaintext);
   } catch {
     return undefined;
   }
@@ -328,6 +362,42 @@ export async function storeBotSecret(input: Parameters<typeof prepareBotSecret>[
       }),
     );
   });
+}
+
+/**
+ * Set the passkey a bot just created for the saved login `name`, or remove it with null, keeping
+ * the rest of the login as it is saved then. False when no login is saved under the name.
+ */
+/**
+ * A login with what it keeps added (its key or passkey), refused like a sent value that fails the
+ * same rules: what is kept can make a login that was short enough too long.
+ */
+function keptLoginValue(value: LoginSecretValue): string {
+  const parsed = LoginSecretValue.safeParse(value);
+  if (!parsed.success)
+    throw new VaultItemRefusedError(parsed.error.issues[0]?.message ?? "Invalid login");
+  return JSON.stringify(parsed.data);
+}
+
+export async function saveLoginPasskey(input: {
+  prisma: PrismaClient;
+  secretStore: SecretStore;
+  scope: BotSecretScope;
+  name: string;
+  passkey: LoginPasskey | null;
+  /** The saved login's id the passkey was made for: none is set on a login saved since in its place. */
+  id?: string;
+  /** The site it was made on: none is set on a login moved off that site since. */
+  origin?: string;
+}): Promise<boolean> {
+  const found = await findBotSecret(input.prisma, input.scope, input.name);
+  if (!found || "hidden" in found || found.destination.auth.type !== "login") return false;
+  const { id, origin, ...save } = input;
+  if (id !== undefined && found.id !== id) return false;
+  if (origin !== undefined && ![found.destination.origin, ...found.alsoOn].includes(origin))
+    return false;
+  await storeBotSecret({ ...save, destination: found.destination, plaintext: "" });
+  return true;
 }
 
 /** Save a generated login and the command variable holding its password together, or neither. */

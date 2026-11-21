@@ -672,6 +672,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["vault/activity"],
       ["vault/import"],
       ["vault/remove"],
+      ["vault/removePasskey"],
       ["botSecrets/list"],
       ["botSecrets/put"],
       ["botSecrets/remove"],

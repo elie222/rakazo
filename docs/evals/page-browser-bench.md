@@ -19,8 +19,9 @@ pnpm bench:page-browser --driver=585fac380^ --driver=installed --repeat=3
 pnpm bench:page-browser --compare old.json new.json
 ```
 
-`--driver` takes `installed` or any git ref; a ref's driver (and its `page_secrets.py`, when it has
-one) is copied into the computer, so an alternative driver is measured by committing it on a branch.
+`--driver` takes `installed` or any git ref; a ref's driver (and its `page_secrets.py` and
+`page_passkey.py`, when it has them) is copied into the computer, so an alternative driver is
+measured by committing it on a branch.
 
 Each task succeeds only by an observable effect: the fields the fixture server received, or the
 page's URL. For every driver call the results file records latency, errors and fallbacks, and the

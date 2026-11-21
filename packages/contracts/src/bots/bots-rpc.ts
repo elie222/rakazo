@@ -199,6 +199,10 @@ export const botsRpc = {
     remove: oc
       .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
       .output(z.object({ ok: z.literal(true) })),
+    /** Deletes the passkey a bot created for a saved login, keeping the rest of the login. */
+    removePasskey: oc
+      .input(settingsScopeInput.extend({ name: StoredBotSecretName }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   /** The vault this Space uses, for apps that predate it. The bot only checks access. */
   botSecrets: {

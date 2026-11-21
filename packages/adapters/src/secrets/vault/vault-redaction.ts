@@ -1,5 +1,5 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { BotSecretDestination, LoginField } from "@rakazo/contracts";
+import type { BotSecretDestination, LoginField, LoginPasskey } from "@rakazo/contracts";
 import {
   authenticatorKey,
   BotSecretAuth,
@@ -52,6 +52,15 @@ export function authenticatorKeyRedactionForms(otp: string): string[] {
     .flatMap((form) => [form, form.toLowerCase()])
     .filter((form) => form.length >= MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN)
     .flatMap(passwordRedactionForms);
+}
+
+/**
+ * A passkey's private key as anything could show it: as saved (base64) and in base64url, each in a
+ * password's encodings. Its credential id and site are not secret: the site keeps them.
+ */
+export function passkeyRedactionForms(passkey: LoginPasskey): string[] {
+  const url = passkey.privateKey.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return [...new Set([passkey.privateKey, url].flatMap(passwordRedactionForms))];
 }
 
 export function apiKeyRedactionForms(
@@ -158,8 +167,13 @@ export async function loadLoginPasswordRedactions(
     }
     if (type !== "login") return [];
     try {
-      const { fields, otp } = decodeLoginSecret(await openForRedaction(prisma, secretStore, row));
-      const forms = otp ? [...authenticatorKeyRedactionForms(otp)] : [];
+      const { fields, otp, passkey } = decodeLoginSecret(
+        await openForRedaction(prisma, secretStore, row),
+      );
+      const forms = [
+        ...(otp ? authenticatorKeyRedactionForms(otp) : []),
+        ...(passkey ? passkeyRedactionForms(passkey) : []),
+      ];
       for (const field of fields) {
         // Every run would mangle each occurrence of a short value; the filling run still hides it.
         if (!field.hidden || field.value.length < MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN) continue;

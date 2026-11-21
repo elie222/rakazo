@@ -28,6 +28,7 @@ from typing import Any, Callable
 from urllib.parse import unquote, urljoin, urlsplit
 
 sys.path[:0] = [os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/rakazo"]
+import page_passkey  # noqa: E402
 import page_secrets  # noqa: E402
 from page_secrets import CardFieldUncertain, Refused, payment_frame_origin  # noqa: E402
 
@@ -1273,6 +1274,13 @@ class PageBrowser:
             raise KeysNotKept(NOT_KEPT)
 
     def act(self, actions: list[dict[str, Any]]) -> dict[str, Any]:
+        """The steps' result; a passkey a site created goes with it whatever happened after, so the
+        vault keeps the one the site now has."""
+        self.created: dict[str, Any] | None = None
+        result = self.act_steps(actions)
+        return {**result, "passkey": self.created} if self.created else result
+
+    def act_steps(self, actions: list[dict[str, Any]]) -> dict[str, Any]:
         validate_actions(actions)
         completed = 0
         uncertain = False
@@ -1283,7 +1291,13 @@ class PageBrowser:
                 node = self.control(ref, check_disabled=kind in ("fill", "type")) if ref is not None else None
                 typed = kind == "type" or (kind == "fill" and not (node and native_options(node)))
                 uncertain = True
-                if kind == "pay_token" or step.get("origin"):
+                if kind == "passkey":
+                    frame = node.frame  # type: ignore[union-attr]
+                    with page_passkey.Passkey(self.port, self.target, step) as passkey:
+                        passkey.present()
+                        self.step([*([["scrollintoview", f"@{frame.ref}"]] if frame else []), ["click", f"@{ref}"]])
+                        self.created = passkey.wait()
+                elif kind == "pay_token" or step.get("origin"):
                     if ref is not None:
                         self.step([["focus", f"@{ref}"]])
                     page_secrets.run_step(self.port, self.target, step)
@@ -1338,7 +1352,7 @@ class PageBrowser:
         except Refused as exc:
             # Settled, and fixable in the page browser: no desktop fallback.
             return {"ok": False, "completed": completed, "uncertain": False, "error": str(exc)}
-        except CardFieldUncertain as exc:
+        except (CardFieldUncertain, page_passkey.PasskeyNotTaken) as exc:
             return {"ok": False, "completed": completed, "uncertain": True, "error": str(exc)}
         except Exception as exc:  # noqa: BLE001
             dialog = self.dialog()
@@ -2552,8 +2566,12 @@ def validate_actions(actions: Any) -> None:
     if not isinstance(actions, list) or not actions or len(actions) > 24:
         raise RuntimeError("Expected 1 to 24 actions")
     for step in actions:
-        if not isinstance(step, dict) or step.get("kind") not in ("click", "fill", "type", "upload", "pay_token"):
+        if not isinstance(step, dict) or step.get("kind") not in ("click", "fill", "type", "upload", "pay_token",
+                                                                  "passkey"):
             raise RuntimeError("Invalid browser action")
+        if step["kind"] == "passkey":
+            validate_passkey_step(step, len(actions))
+            continue
         if step["kind"] == "pay_token":
             if (step.get("ref") is not None or not isinstance(step.get("text"), str) or not step["text"]
                     or not isinstance(step.get("origin"), str) or not isinstance(step.get("merchantAccountId"), str)):
@@ -2583,6 +2601,29 @@ def validate_actions(actions: Any) -> None:
             raise RuntimeError("A card fill needs its origin")
         if step.get("origin") and not step.get("field"):
             raise RuntimeError("A saved login fill needs its field")
+
+
+def validate_passkey_step(step: dict[str, Any], count: int) -> None:
+    """A passkey step clicks one element on the passkey's site, alone in its call; signing in carries
+    the saved passkey, and creating carries none."""
+    if count != 1:
+        raise RuntimeError("A passkey step runs alone")
+    if not isinstance(step.get("ref"), str) or not re.fullmatch(r"e\d+", step["ref"]):
+        raise RuntimeError("Element ref is required")
+    origin = step.get("origin")
+    if not isinstance(origin, str) or not origin.startswith("https://"):
+        raise RuntimeError("A passkey step needs its HTTPS origin")
+    credential = step.get("credential")
+    if credential is None:
+        if "rpId" in step:
+            raise RuntimeError("A passkey being created has no site yet")
+        return
+    if (not isinstance(step.get("rpId"), str) or not step["rpId"] or not isinstance(credential, dict)
+            or not all(isinstance(credential.get(key), str) and credential[key]
+                       for key in ("credentialId", "privateKey"))
+            or not isinstance(credential.get("userHandle", ""), str)
+            or not isinstance(credential.get("signCount"), int) or credential["signCount"] < 0):
+        raise RuntimeError("A passkey sign-in needs its site and saved passkey")
 
 
 def exit_when_stdin_closes() -> None:

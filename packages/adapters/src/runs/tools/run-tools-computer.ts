@@ -57,6 +57,7 @@ import {
   resolveCodeFill,
   resolveLoginFill,
   resolveVaultCardFill,
+  saveLoginPasskey,
   shellCommandEnvironment,
 } from "../../secrets/bot-secrets.js";
 import {
@@ -64,6 +65,8 @@ import {
   vaultCardUseOf,
   vaultLoginUseOf,
 } from "../../secrets/vault/vault-card-use.js";
+import { passkeySignCount } from "../../secrets/vault/vault-login-fill.js";
+import { passkeyRedactionForms } from "../../secrets/vault/vault-redaction.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { addRunSecrets, recordVaultUse } from "../assembly/run-context.js";
 import { builtinOffered } from "../assembly/run-instructions.prompt.js";
@@ -73,6 +76,7 @@ import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "../turn/takeover-resume.promp
 import { settleMsArg } from "../turn/tool-text.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { passkeyRefusal } from "./run-tool-request.js";
 
 function appendComputerCommand(ctx: RunContext, payload: ComputerCommand) {
   const { deps, run, runId, bot, thread } = ctx;
@@ -422,6 +426,57 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
               const { text, origin, claim, restore } = resolved;
               // A code the person entered for this run was never in the vault: no item, no use.
               return { text, origin, claim, restore };
+            },
+            resolvePasskey: async (step) => {
+              // Checked again: the Space may have been shared since the card was answered.
+              const refused = await passkeyRefusal(ctx);
+              if (refused) return { error: refused };
+              const create = step.kind === "create_passkey";
+              const resolved = await resolveLoginFill({
+                prisma: deps.prisma,
+                secretStore: deps.secretStore,
+                scope: run,
+                runId: run.id,
+                name: step.secret,
+                field: "",
+                passkey: create ? "create" : "use",
+                approval: vaultLoginUseOf(args.loginApproval),
+                pageUrl: ctx.state.pageUrl,
+              });
+              if ("error" in resolved) return resolved;
+              addRunSecrets(ctx, resolved.redactions);
+              const { used, origin, passkey } = resolved;
+              const typed = used && (() => recordVaultUse(ctx, name, used, origin));
+              if (create)
+                return {
+                  origin,
+                  created: async (made) => {
+                    addRunSecrets(ctx, passkeyRedactionForms(made));
+                    const saved = await saveLoginPasskey({
+                      prisma: deps.prisma,
+                      secretStore: deps.secretStore,
+                      scope: run,
+                      name: step.secret,
+                      id: used?.id,
+                      origin,
+                      passkey: made,
+                    });
+                    if (!saved) throw new Error("The login changed while its passkey was created");
+                  },
+                  ...(typed && { typed }),
+                };
+              if (!passkey) return { error: "This login has no passkey." };
+              return {
+                origin,
+                rpId: passkey.rpId,
+                credential: {
+                  credentialId: passkey.credentialId,
+                  privateKey: passkey.privateKey,
+                  ...(passkey.userHandle ? { userHandle: passkey.userHandle } : {}),
+                  signCount: passkeySignCount(),
+                },
+                ...(typed && { typed }),
+              };
             },
             resolvePayTokenFill: async (step) => {
               const paymentWallet = deps.paymentWallet;

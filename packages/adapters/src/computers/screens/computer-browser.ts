@@ -4,6 +4,7 @@ import type {
   BrowserActResult,
   BrowserNavigateRequest,
   BrowserNavigateResult,
+  BrowserPasskey,
   BrowserProvider,
   BrowserPurchaseCheckRequest,
   BrowserPurchaseCheckResult,
@@ -202,6 +203,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         title: typeof live.title === "string" ? live.title : "",
         ...(tree !== undefined ? { tree, elements } : {}),
         ...downloadsOf(live),
+        ...passkeyOf(live),
         error: live.error || DETACHED_MESSAGE,
       };
     }
@@ -220,6 +222,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
         fallback: "computer_act",
         error: live?.error || DETACHED_MESSAGE,
         ...pageNotice(live),
+        ...passkeyOf(live),
       };
     }
     return {
@@ -232,6 +235,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       ...(live.loading === true ? { loading: true } : {}),
       ...downloadsOf(live),
       ...pageNotice(live),
+      ...passkeyOf(live),
     };
   }
 
@@ -315,8 +319,9 @@ export class ComputerBrowserProvider implements BrowserProvider {
     context: AdapterContext,
   ): Promise<LivePayload> {
     context.signal.throwIfAborted();
+    let result: LivePayload | undefined;
     try {
-      const result = this.liveDriver
+      result = this.liveDriver
         ? await this.liveDriver(computer, request, context)
         : this.sandbox?.pageBrowser
           ? await this.sandbox.pageBrowser(computer, request, context)
@@ -357,6 +362,8 @@ export class ComputerBrowserProvider implements BrowserProvider {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
         fallback: "computer_act",
+        // A passkey the site created is kept whatever else the answer lacks.
+        ...passkeyOf(result),
       };
     }
   }
@@ -371,6 +378,27 @@ function unreadable(error: unknown): never {
 /** Files the call's page downloaded, which the helper lists even when a later step failed. */
 function downloadsOf(live: LivePayload | undefined) {
   return Array.isArray(live?.downloads) ? { downloads: live.downloads } : {};
+}
+
+/** The passkey a passkey step created, as the helper reports it; anything else is no passkey. */
+function passkeyOf(live: LivePayload | undefined): { passkey?: BrowserPasskey } {
+  const found = (live?.passkey ?? {}) as Partial<Record<keyof BrowserPasskey, unknown>>;
+  const { rpId, credentialId, privateKey, userHandle } = found;
+  if (
+    typeof rpId !== "string" ||
+    typeof credentialId !== "string" ||
+    typeof privateKey !== "string"
+  )
+    return {};
+  if (!rpId || !credentialId || !privateKey) return {};
+  return {
+    passkey: {
+      rpId,
+      credentialId,
+      privateKey,
+      ...(typeof userHandle === "string" && userHandle ? { userHandle } : {}),
+    },
+  };
 }
 
 /** What the helper reports about the page beyond its contents: a closed alert, or a dialog still open. */

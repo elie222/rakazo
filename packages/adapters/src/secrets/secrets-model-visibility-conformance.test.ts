@@ -4,6 +4,8 @@ import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApprovalAskBlock } from "../approvals/approval-ask.js";
 import { redactToolArgsForReview } from "../approvals/auto-review.js";
+import { browserActFromTool } from "../browser/browser-tools.js";
+import { FakeBrowserProvider } from "../browser/fake-browser.js";
 import {
   redactConnectorPayload,
   sanitizeConnectorError,
@@ -16,6 +18,7 @@ import { sanitizeIntegrationError } from "../providers/integration/composio/comp
 import { PipedreamConnector } from "../providers/integration/pipedream/pipedream-connector.js";
 import { requestWithBotSecret } from "./bot-secrets.js";
 import { EncryptedSecretStore } from "./secrets.js";
+import { passkeyRedactionForms } from "./vault/vault-redaction.js";
 
 // No server is shared with every agent, so only assignments reach a bot.
 const NO_SHARED_SERVERS = { findMany: async () => [], findFirst: async () => null };
@@ -29,6 +32,7 @@ const OAUTH_ACCESS = "oauth-access-token-conformance-value";
 const OAUTH_REFRESH = "oauth-refresh-token-conformance-value";
 const OAUTH_CLIENT_SECRET = "oauth-client-secret-conformance-value";
 const BOT_SECRET = "bot-secret-conformance-value+/=";
+const PASSKEY_KEY = "passkey-private-key-conformance+value/==";
 
 function assertNoLeak(visible: unknown, secrets: string[]) {
   const serialized = JSON.stringify(visible);
@@ -446,6 +450,44 @@ describe("secrets model-visibility conformance", () => {
       expect(events[0]).toMatchObject({ type: "result" });
       assertNoLeak(events, [OAUTH_ACCESS, OAUTH_REFRESH, OAUTH_CLIENT_SECRET, "mcp-static-token"]);
       await connector.close();
+    });
+  });
+
+  describe("login passkey boundary", () => {
+    it("never returns a created or used passkey's private key in browser_act results", async () => {
+      const passkey = {
+        rpId: "portal.example.test",
+        credentialId: "fake-credential-id",
+        privateKey: PASSKEY_KEY,
+      };
+      const forms = passkeyRedactionForms(passkey);
+      const computer = { id: "c1", botId: "b1", kind: "fake", providerRef: "c1" };
+      const context = { signal: new AbortController().signal } as AdapterContext;
+      for (const kind of ["create_passkey", "use_passkey"] as const) {
+        const browser = new FakeBrowserProvider();
+        vi.spyOn(browser, "act").mockResolvedValue({
+          ok: true,
+          completed: 1,
+          url: "https://portal.example.test/",
+          // A page echoing the key, in either encoding, is redacted too.
+          title: `${PASSKEY_KEY} ${forms.join(" ")}`,
+          passkey,
+        });
+        const result = await browserActFromTool(
+          browser,
+          computer,
+          context,
+          { actions: [{ kind, ref: "e1", secret: "portal" }] },
+          {
+            resolvePasskey: async () => ({
+              origin: "https://portal.example.test",
+              created: async () => undefined,
+            }),
+            redactions: () => forms,
+          },
+        );
+        assertNoLeak(result, [PASSKEY_KEY, ...forms]);
+      }
     });
   });
 

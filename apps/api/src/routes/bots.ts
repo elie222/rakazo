@@ -17,6 +17,7 @@ import {
   relabelVaultItem,
   revealBotSecret,
   SpaceVaultNotInUseError,
+  saveLoginPasskey,
   stopCancelledGroupRuns,
   storeBotSecret,
   storeBotWebhookKey,
@@ -839,6 +840,17 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       remove: authed.vault.remove.handler(async ({ context, input }) => {
         await forgetBotSecret(deps.prisma, vaultScope(context.actor, input.scope), input.name);
+        return { ok: true as const };
+      }),
+      removePasskey: authed.vault.removePasskey.handler(async ({ context, input }) => {
+        const removed = await saveLoginPasskey({
+          prisma: deps.prisma,
+          secretStore: deps.secrets,
+          scope: vaultScope(context.actor, input.scope),
+          name: input.name,
+          passkey: null,
+        });
+        if (!removed) throw new ORPCError("NOT_FOUND", { message: "Login not found" });
         return { ok: true as const };
       }),
     },

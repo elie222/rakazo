@@ -20,6 +20,7 @@ spec = importlib.util.spec_from_loader(loader.name, loader)
 helper = importlib.util.module_from_spec(spec)
 loader.exec_module(helper)
 secrets = helper.page_secrets
+passkeys = helper.page_passkey
 
 MERCHANT = "https://shop.example.test"
 CARD_NUMBER = "4242424242424242"
@@ -1252,6 +1253,187 @@ class ActTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, error):
                     self.act([{"kind": "click", "ref": "e8"}, step], browser)
                 self.assertEqual(browser.sent, [])
+
+
+PORTAL = "https://portal.example.test"
+CREATED = {"credentialId": "fake-credential-id", "privateKey": "fake-passkey-key", "rpId": "portal.example.test",
+           "userHandle": "fake-user-handle"}
+SIGN_IN = {"kind": "passkey", "ref": "e8", "origin": PORTAL, "rpId": "portal.example.test",
+           "credential": {"credentialId": "fake-credential-id", "privateKey": "fake-passkey-key", "signCount": 7}}
+
+
+class PasskeyActTest(unittest.TestCase):
+    """The page browser's passkey step, with the authenticator itself faked."""
+
+    def act(self, step, wait=None, browser=None, **patches):
+        browser = browser or FakeAgentBrowser()
+        events = []
+
+        class FakePasskey:
+            def __init__(self, port, target, given):
+                events.append(("attach", port, target, given))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                events.append(("detach",))
+
+            def present(self):
+                events.append(("present", [command for command in browser.actions()]))
+
+            def wait(self):
+                events.append(("wait", [command for command in browser.actions()]))
+                return wait() if callable(wait) else wait
+
+        current = page(browser)
+        with patch.object(passkeys, "Passkey", FakePasskey), patch.object(helper.time, "sleep"), \
+                patch.object(helper, "QUIET_SECONDS", 0.0):
+            for name, value in patches.items():
+                setattr(current, name, value)
+            return current.act([step]), browser, events
+
+    def test_holds_the_passkey_on_the_tab_only_around_its_click_and_answers_from_then(self):
+        result, browser, events = self.act(SIGN_IN)
+        self.assertTrue(result["ok"])
+        self.assertNotIn("passkey", result)
+        self.assertEqual(events, [("attach", 9222, "tab-1", SIGN_IN), ("present", []),
+                                  ("wait", [["click", "@e8"]]), ("detach",)])
+        self.assertNotIn("fake-passkey-key", json.dumps(browser.sent))
+
+    def test_returns_the_passkey_a_site_created_also_when_the_page_then_fails(self):
+        create = {"kind": "passkey", "ref": "e10", "origin": PORTAL}
+        result, browser, _ = self.act(create, wait=CREATED)
+        self.assertEqual((result["ok"], result["passkey"]), (True, CREATED))
+        # A click inside a frame brings the frame into view first, as a click step does.
+        self.assertEqual(browser.actions(), [["scrollintoview", "@e9"], ["click", "@e10"]])
+
+        def broken(*_args, **_kwargs):
+            raise RuntimeError("tab crashed")
+
+        result, _, _ = self.act(create, wait=CREATED, snapshot=broken, settle=lambda *a, **k: True)
+        self.assertEqual((result["ok"], result["passkey"]), (False, CREATED))
+
+    def test_a_passkey_the_site_did_not_take_is_uncertain_and_never_clicked_again(self):
+        def not_taken():
+            raise passkeys.PasskeyNotTaken(passkeys.PASSKEY_NOT_CREATED)
+
+        result, browser, events = self.act({"kind": "passkey", "ref": "e8", "origin": PORTAL}, wait=not_taken)
+        self.assertEqual(result, {"ok": False, "completed": 0, "uncertain": True,
+                                  "error": passkeys.PASSKEY_NOT_CREATED})
+        self.assertEqual(browser.actions(), [["click", "@e8"]])
+        self.assertEqual(events[-1], ("detach",))
+
+    def test_passkey_steps_are_checked_before_anything_runs(self):
+        bad_credential = {**SIGN_IN["credential"]}
+        del bad_credential["privateKey"]
+        for actions, error in (
+                ([SIGN_IN, {"kind": "click", "ref": "e8"}], "runs alone"),
+                ([{**SIGN_IN, "ref": "#save"}], "ref is required"),
+                ([{**SIGN_IN, "origin": "http://portal.example.test"}], "HTTPS origin"),
+                ([{"kind": "passkey", "ref": "e8", "origin": PORTAL, "rpId": "portal.example.test"}], "no site yet"),
+                ([{**SIGN_IN, "rpId": ""}], "site and saved passkey"),
+                ([{**SIGN_IN, "credential": bad_credential}], "site and saved passkey"),
+                ([{**SIGN_IN, "credential": {**SIGN_IN["credential"], "signCount": -1}}], "site and saved passkey"),
+                ([{**SIGN_IN, "credential": {**SIGN_IN["credential"], "userHandle": 5}}], "site and saved passkey")):
+            with self.subTest(error=error, actions=actions):
+                with self.assertRaisesRegex(RuntimeError, error):
+                    helper.validate_actions(actions)
+        helper.validate_actions([SIGN_IN])
+        helper.validate_actions([{"kind": "passkey", "ref": "e8", "origin": PORTAL}])
+
+
+class FakeWebAuthn:
+    """A CDP connection to one tab whose virtual authenticator is scripted."""
+
+    def __init__(self, origin=PORTAL, credentials=None):
+        self.origin = origin
+        # What getCredentials answers, one list per read; the last one stays.
+        self.reads = credentials or [[]]
+        self.calls = []
+        self.closed = False
+        self.context_id = 1
+
+    def call(self, method, params=None, session_id=None):
+        self.calls.append((method, params))
+        if method == "WebAuthn.addVirtualAuthenticator":
+            return {"authenticatorId": "auth-1"}
+        if method == "WebAuthn.getCredentials":
+            found, self.reads = self.reads[0], self.reads[1:] or self.reads
+            return {"credentials": found}
+        return {}
+
+    def close(self):
+        self.closed = True
+
+    def methods(self):
+        return [method for method, _ in self.calls]
+
+
+class PasskeyAuthenticatorTest(unittest.TestCase):
+    def open(self, step, client):
+        with patch.object(passkeys, "connect", return_value=client), \
+                patch.object(passkeys, "attach", return_value="session-1"), \
+                patch.object(passkeys, "eval_json", return_value=client.origin):
+            return passkeys.Passkey(9222, "tab-1", step)
+
+    def test_loads_the_saved_passkey_with_presence_off_until_the_click_and_removes_it_after(self):
+        client = FakeWebAuthn(credentials=[[{"signCount": 7}], [{"signCount": 8}]])
+        with patch.object(passkeys.time, "sleep"):
+            with self.open(SIGN_IN, client) as passkey:
+                options = dict(client.calls)["WebAuthn.addVirtualAuthenticator"]["options"]
+                self.assertFalse(options["automaticPresenceSimulation"])
+                # It never claims a person was verified.
+                self.assertEqual((options["hasUserVerification"], options["isUserVerified"]), (False, False))
+                self.assertTrue(options["hasResidentKey"])
+                added = dict(client.calls)["WebAuthn.addCredential"]
+                # Without its user handle it can't be discoverable, so the site must name it.
+                self.assertEqual(added["credential"], {
+                    "credentialId": "fake-credential-id", "isResidentCredential": False,
+                    "rpId": "portal.example.test", "privateKey": "fake-passkey-key", "signCount": 7})
+                self.assertNotIn("WebAuthn.setAutomaticPresenceSimulation", client.methods())
+                passkey.present()
+                self.assertIsNone(passkey.wait())
+        self.assertEqual(client.methods()[-1], "WebAuthn.removeVirtualAuthenticator")
+        self.assertTrue(client.closed)
+
+    def test_loads_a_passkey_with_its_user_handle_as_discoverable(self):
+        step = {**SIGN_IN, "credential": {**SIGN_IN["credential"], "userHandle": "fake-user-handle"}}
+        client = FakeWebAuthn(credentials=[])
+        with self.open(step, client):
+            added = dict(client.calls)["WebAuthn.addCredential"]["credential"]
+        self.assertEqual((added["isResidentCredential"], added["userHandle"]), (True, "fake-user-handle"))
+
+    def test_reports_the_passkey_a_site_created_only_for_that_site(self):
+        create = {"kind": "passkey", "ref": "e8", "origin": "https://www.portal.example.test"}
+        for rp_id, created in (("portal.example.test", True), ("www.portal.example.test", True),
+                               ("example.test.evil", False), ("other.example.test", False)):
+            with self.subTest(rp_id=rp_id):
+                client = FakeWebAuthn(origin=create["origin"], credentials=[[], [{**CREATED, "rpId": rp_id}]])
+                with patch.object(passkeys.time, "sleep"), self.open(create, client) as passkey:
+                    self.assertNotIn("WebAuthn.addCredential", client.methods())
+                    if created:
+                        self.assertEqual(passkey.wait(), {**CREATED, "rpId": rp_id})
+                    else:
+                        with self.assertRaisesRegex(passkeys.PasskeyNotTaken, "another site"):
+                            passkey.wait()
+
+    def test_a_site_that_takes_nothing_in_time_is_not_taken(self):
+        for step, error in ((SIGN_IN, passkeys.PASSKEY_NOT_USED),
+                            ({"kind": "passkey", "ref": "e8", "origin": PORTAL}, passkeys.PASSKEY_NOT_CREATED)):
+            client = FakeWebAuthn(credentials=[[{"signCount": 7}] if "credential" in step else []])
+            with patch.object(passkeys.time, "sleep"), patch.object(passkeys, "PASSKEY_WAIT_SECONDS", 0.0), \
+                    self.open(step, client) as passkey:
+                with self.assertRaises(passkeys.PasskeyNotTaken) as raised:
+                    passkey.wait()
+                self.assertEqual(str(raised.exception), error)
+
+    def test_refuses_another_site_before_any_authenticator_is_added(self):
+        client = FakeWebAuthn(origin="https://evil.example.test")
+        with self.assertRaisesRegex(passkeys.Refused, "nothing was clicked"):
+            self.open(SIGN_IN, client)
+        self.assertNotIn("WebAuthn.addVirtualAuthenticator", client.methods())
+        self.assertTrue(client.closed)
 
 
 class TypeTest(unittest.TestCase):

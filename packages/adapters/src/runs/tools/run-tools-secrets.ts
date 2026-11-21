@@ -198,14 +198,15 @@ export const secretTools: ToolHandlers = {
           ...(await loginToolHints(deps.prisma, deps.secretStore, run, siteLogin.name)),
         });
       // A card shows neither a login's authenticator key nor its other sites, which only its
-      // owner sets, for the site it has. So a card never moves a login that has them: its
-      // owner changes the site in the Vault, where both are in sight.
+      // owner sets, for the site it has, nor its passkey, which works only on that site. So a
+      // card never moves a login that has them: its owner changes the site in the Vault, where
+      // they are in sight.
       if (replaces) {
         const kept = await loginToolHints(deps.prisma, deps.secretStore, run, destination.name);
-        if (kept.alsoOn || kept.authenticatorCode)
+        if (kept.alsoOn || kept.authenticatorCode || kept.passkey)
           return call.finish({
             error:
-              `The login ${destination.name} has an authenticator key or other sites, which ` +
+              `The login ${destination.name} has an authenticator key, a passkey or other sites, which ` +
               "only the user sets, so a card can't move it to another site. Ask the user to " +
               "change its site in the Vault, or use another name for a different account.",
           });

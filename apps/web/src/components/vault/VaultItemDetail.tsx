@@ -96,6 +96,7 @@ export function VaultItemDetail({
   onReveal,
   onEdit,
   onRemove,
+  onRemovePasskey,
 }: {
   scope: SettingsScope;
   /** An account item seen from a Space that keeps its own vault, whose bots never use it. */
@@ -112,6 +113,8 @@ export function VaultItemDetail({
   /** Opens the editor; a login or card brings its revealed value to start from. */
   onEdit: (revealed?: VaultRevealed) => void;
   onRemove: () => Promise<boolean>;
+  /** Deletes the passkey a bot created for this login. */
+  onRemovePasskey: () => Promise<boolean>;
 }) {
   const { t } = useLingui();
   const { one } = useVaultKindLabels();
@@ -122,7 +125,8 @@ export function VaultItemDetail({
   const kind = auth ? vaultKind(auth.type) : null;
   const [revealed, setRevealed] = useState<VaultRevealed | null>(null);
   const [revealing, setRevealing] = useState(false);
-  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  // What Remove would delete, once asked: the whole item or only its passkey.
+  const [confirmingRemove, setConfirmingRemove] = useState<"item" | "passkey" | null>(null);
   const [usesOpen, setUsesOpen] = useState(false);
   const attempt = useRef(0);
   useTimeout(hide, revealed ? REVEAL_MS : null, revealed);
@@ -231,6 +235,30 @@ export function VaultItemDetail({
       rows.push(
         <DetailRow key="otp" label={t`Authenticator key`} copy={otp} testId="vault-item-otp">
           <span className="font-mono text-body-sm">{otp ?? MASK}</span>
+        </DetailRow>,
+      );
+    // Only the site: Reveal never returns the passkey itself.
+    if (item.preview?.passkey)
+      rows.push(
+        <DetailRow
+          key="passkey"
+          label={t`Passkey`}
+          testId="vault-item-passkey"
+          action={
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              data-testid="vault-item-passkey-remove"
+              disabled={busy}
+              onClick={() => setConfirmingRemove("passkey")}
+            >
+              <Trans>Remove</Trans>
+            </Button>
+          }
+        >
+          {item.preview.passkey}
         </DetailRow>,
       );
   }
@@ -397,7 +425,13 @@ export function VaultItemDetail({
       {confirmingRemove ? (
         <div className="flex flex-col gap-2">
           <p className="text-body-sm text-foreground">
-            <Trans>Remove {secretName}? Bots will no longer be able to use it.</Trans>
+            {confirmingRemove === "passkey" ? (
+              <Trans>
+                Remove the passkey? Bots can no longer sign in with it. Delete it on the site too.
+              </Trans>
+            ) : (
+              <Trans>Remove {secretName}? Bots will no longer be able to use it.</Trans>
+            )}
           </p>
           <div className="flex gap-2">
             <Button
@@ -405,7 +439,11 @@ export function VaultItemDetail({
               variant="destructive"
               data-testid="vault-item-remove-confirm"
               disabled={busy}
-              onClick={() => void onRemove()}
+              onClick={() =>
+                void (confirmingRemove === "passkey"
+                  ? onRemovePasskey().then((removed) => removed && setConfirmingRemove(null))
+                  : onRemove())
+              }
             >
               <Trans>Remove</Trans>
             </Button>
@@ -413,7 +451,7 @@ export function VaultItemDetail({
               type="button"
               variant="ghost"
               disabled={busy}
-              onClick={() => setConfirmingRemove(false)}
+              onClick={() => setConfirmingRemove(null)}
             >
               <Trans>Cancel</Trans>
             </Button>
@@ -441,7 +479,7 @@ export function VaultItemDetail({
             disabled={busy}
             onClick={() => {
               hide();
-              setConfirmingRemove(true);
+              setConfirmingRemove("item");
             }}
           >
             <Trans>Remove</Trans>

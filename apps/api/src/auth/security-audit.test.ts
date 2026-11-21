@@ -61,6 +61,14 @@ describe("procedureSecurityEvent", () => {
     expect(JSON.stringify(event)).not.toContain("ghp_secretvalue");
   });
 
+  it("records a login's passkey removed as a change to that login", () => {
+    const event = procedureSecurityEvent(["vault", "removePasskey"], { name: "portal" }, actor);
+    expect(event).toMatchObject({
+      type: "credential.changed",
+      metadata: { procedure: "vault.removePasskey", kind: "vault_credential", name: "portal" },
+    });
+  });
+
   it("lists which deployment settings changed without the allowlist itself", () => {
     const event = procedureSecurityEvent(
       ["deployment", "update"],

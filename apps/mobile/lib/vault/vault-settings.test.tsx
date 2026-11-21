@@ -222,6 +222,7 @@ vi.mock("../../components/vault/vault-item-sheet", () => ({
     onShow,
     onEdit,
     onRemove,
+    onRemovePasskey,
     onClose,
   }: {
     item: Credential;
@@ -232,6 +233,7 @@ vi.mock("../../components/vault/vault-item-sheet", () => ({
     onShow: () => void;
     onEdit: () => void;
     onRemove: () => void;
+    onRemovePasskey?: () => void;
     onClose: () => void;
   }) =>
     createElement(
@@ -248,6 +250,8 @@ vi.mock("../../components/vault/vault-item-sheet", () => ({
         ["Show", onShow],
         ["Edit", onEdit],
         ["Remove", onRemove],
+        // As the sheet does: only on a login that has a passkey.
+        ...(onRemovePasskey && item.preview?.passkey ? [["Remove passkey", onRemovePasskey]] : []),
         ["Done", onClose],
       ].map(([label, onClick]) =>
         createElement("button", { key: label as string, type: "button", onClick }, label as string),
@@ -431,6 +435,12 @@ beforeEach(() => {
         ? state.credentials.map((entry) => (entry === saved ? next : entry))
         : [...state.credentials, next];
       return next;
+    }
+    if (proc === "vault/removePasskey") {
+      state.credentials = state.credentials.map((entry) =>
+        entry.name === input.name ? { ...entry, preview: { username: "ada@example.test" } } : entry,
+      );
+      return { ok: true };
     }
     if (proc === "vault/remove") {
       state.credentials = state.credentials.filter((entry) => entry.name !== input.name);
@@ -874,6 +884,38 @@ it("removes an item only once the destructive alert is confirmed", async () => {
   expect(state.rpc).toHaveBeenCalledWith("vault/remove", { scope: "account", name: "github" });
   expect(state.rpc).toHaveBeenLastCalledWith("vault/list", { scope: "account" }, expect.anything());
   expect(rows()).toEqual(["netbird-key: $NETBIRD_KEY"]);
+});
+
+it("removes a login's passkey only once its alert is confirmed, keeping the login open", async () => {
+  state.credentials = [
+    credential({
+      name: "portal",
+      title: "portal.example.test",
+      origin: "https://portal.example.test",
+      auth: { type: "login" },
+      preview: { username: "ada@example.test", passkey: "portal.example.test" },
+    }),
+  ];
+  await render();
+  await open("portal.example.test");
+  await act(async () => button("Remove passkey", dialog())!.click());
+  expect(state.alert).toHaveBeenCalledWith(
+    "Remove the passkey?",
+    "Bots can no longer sign in with it. Delete it on the site too.",
+    expect.any(Array),
+  );
+  expect(alertButton("Remove").style).toBe("destructive");
+  await act(async () => alertButton("Cancel").onPress?.());
+  expect(state.rpc).not.toHaveBeenCalledWith("vault/removePasskey", expect.anything());
+
+  await act(async () => alertButton("Remove").onPress?.());
+  expect(state.rpc).toHaveBeenCalledWith("vault/removePasskey", {
+    scope: "account",
+    name: "portal",
+  });
+  expect(state.rpc).not.toHaveBeenCalledWith("vault/remove", expect.anything());
+  expect(button("Remove passkey", dialog())).toBeUndefined();
+  expect(container.querySelector('dialog[aria-label="Detail portal"]')).not.toBeNull();
 });
 
 it("offers only removal for an item whose settings can't be read", async () => {

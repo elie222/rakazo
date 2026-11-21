@@ -1,5 +1,10 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { LoginField, LoginSecretValue, PurchaseCardField } from "@rakazo/contracts";
+import type {
+  LoginField,
+  LoginPasskey,
+  LoginSecretValue,
+  PurchaseCardField,
+} from "@rakazo/contracts";
 import {
   authenticatorKey,
   BotSecretAuth,
@@ -22,7 +27,11 @@ import { totpCode, totpCodeEnd } from "./totp.js";
 import type { BotSecretScope, VaultItemUse } from "./vault-access.js";
 import { usableVaultFields } from "./vault-access.js";
 import type { VaultLoginUse } from "./vault-card-use.js";
-import { LOGIN_CODE_FIELD } from "./vault-card-use.js";
+import {
+  LOGIN_CODE_FIELD,
+  LOGIN_NEW_PASSKEY_FIELD,
+  LOGIN_PASSKEY_FIELD,
+} from "./vault-card-use.js";
 import { LOGIN_CODES_USED_UP } from "./vault-codes.js";
 import {
   authenticatorKeyRedactionForms,
@@ -30,6 +39,7 @@ import {
   loginFillRedactions,
   MIN_REDACTED_HIDDEN_VALUE_EVERY_RUN,
   oneTimeCodeRedactions,
+  passkeyRedactionForms,
   passwordRedactionForms,
 } from "./vault-redaction.js";
 import { openVaultValue } from "./vault-values.js";
@@ -106,6 +116,18 @@ export async function loadRunLoginRedactions(
 
 const HTTPS_ONLY = "Website logins can only be filled on an HTTPS origin.";
 
+// 2025-01-01 UTC: a passkey's counter is the seconds since then.
+const PASSKEY_COUNT_EPOCH_S = 1_735_689_600;
+
+/**
+ * The signature counter a saved passkey signs in with: the server's clock in seconds, so nothing is
+ * written back after a sign-in. It rises with the clock, so two sign-ins within one second, or on
+ * servers whose clocks disagree, can send the same or a lower count.
+ */
+export function passkeySignCount(now = Date.now()): number {
+  return Math.max(0, Math.floor(now / 1000) - PASSKEY_COUNT_EPOCH_S);
+}
+
 /**
  * Resolve one field of a website login for a page fill: this run's login that wasn't saved under
  * the name first, since it is what the person just typed, then a saved one. The caller must pass
@@ -125,6 +147,11 @@ export async function resolveLoginFill(input: {
   pageUrl?: string;
   /** The current code of the login's authenticator key instead of a field. */
   code?: true;
+  /**
+   * The login's passkey instead of a field: to sign in with, or to create one, which the user must
+   * approve whatever the login's setting. Only a saved login keeps a passkey.
+   */
+  passkey?: "use" | "create";
 }): Promise<
   | {
       text: string;
@@ -138,6 +165,8 @@ export async function resolveLoginFill(input: {
       login?: { id: string; ciphertext: string };
       /** For a code: until when it is the authenticator's current one, in epoch milliseconds. */
       codeEnds?: number;
+      /** For a passkey: the saved one, if any. */
+      passkey?: LoginPasskey;
     }
   | { error: string }
 > {
@@ -157,6 +186,8 @@ export async function resolveLoginFill(input: {
     ? { name: input.name, origin: runLogin.origin, auth: { type: "login" } }
     : row;
   if (!stored) return { error: "Login is unavailable. Use request_secret to save it first." };
+  if (input.passkey && runLogin)
+    return { error: "Only a saved login keeps a passkey. Ask the user to save this login first." };
   const storedType = BotSecretAuth.safeParse(stored.auth).data?.type;
   if (storedType === "card") {
     return { error: "This is a saved card. Type it with browser_act fill_card, passing card." };
@@ -189,21 +220,27 @@ export async function resolveLoginFill(input: {
   // redirected page is refused there, and an older computer image needs no change.
   const page = input.pageUrl && URL.canParse(input.pageUrl) ? new URL(input.pageUrl).origin : "";
   const { approval } = input;
+  const asks = row?.policy === "ask" || input.passkey === "create";
   // An approved call is replayed in a fresh attempt that hasn't seen the page yet, so it fills on
   // the site the user approved while that is still one of the login's.
   const approvedSite =
-    row?.policy === "ask" &&
-    approval &&
-    [destination.origin, ...(row.alsoOn ?? [])].includes(approval.site)
+    asks && approval && [destination.origin, ...(row?.alsoOn ?? [])].includes(approval.site)
       ? approval.site
       : undefined;
   const origin = approvedSite ?? (row?.alsoOn?.includes(page) ? page : destination.origin);
+  const approvedField = input.passkey
+    ? input.passkey === "create"
+      ? LOGIN_NEW_PASSKEY_FIELD
+      : LOGIN_PASSKEY_FIELD
+    : input.code
+      ? LOGIN_CODE_FIELD
+      : input.field.trim();
   // Read again here, so the login as it is now is the one the user approved, on this site.
-  if (row?.policy === "ask") {
+  if (row && asks) {
     if (
       approval?.login !== row.name ||
       approval.site !== origin ||
-      !approval.fields.includes(input.code ? LOGIN_CODE_FIELD : input.field.trim())
+      !approval.fields.includes(approvedField)
     )
       return { error: "The user has not approved signing in with this login here." };
     if (approval.savedAt !== row.updatedAt.toISOString())
@@ -212,8 +249,24 @@ export async function resolveLoginFill(input: {
           "This login changed after the user approved it, so nothing was typed. Call browser_act again to ask them.",
       };
   }
-  const { fields, otp } =
+  const { fields, otp, passkey } =
     runLogin ?? decodeLoginSecret(await openVaultValue(input.prisma, input.secretStore, row!));
+  if (input.passkey && row) {
+    if (input.passkey === "use" && !passkey)
+      return {
+        error:
+          "This login has no passkey. Use create_passkey on the site's add-passkey button to create one.",
+      };
+    return {
+      text: "",
+      hidden: true,
+      origin,
+      sites: [destination.origin, ...(row.alsoOn ?? [])],
+      redactions: passkey ? passkeyRedactionForms(passkey) : [],
+      used: { id: row.id, name: row.name, spaceId: row.spaceId, kind: "login" },
+      ...(passkey && { passkey }),
+    };
+  }
   const key = input.code && otp ? authenticatorKey(otp) : undefined;
   if (input.code && !key)
     return { error: "This login has no authenticator key. Use request_secret with oneTimeCode." };

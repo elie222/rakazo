@@ -40,17 +40,28 @@ export function installAgentBrowserCommand(): string {
 }
 
 /**
- * Writes the page-browser wrapper and its secrets helper where the computer image keeps them,
+ * Writes the page-browser wrapper and its secrets and passkey helpers where the computer image keeps them,
  * from this release's copy, unless they already match it. Small enough to run on every boot,
  * so a hosted computer always runs the helper its API was released with.
  */
 export function installPageBrowserFilesCommand(): string {
   const wrapper = computerFile("rakazo-page-browser");
   const secrets = computerFile("page_secrets.py");
-  const version = createHash("sha256").update(wrapper).update("\0").update(secrets).digest("hex");
-  // One archive, so both files change together.
+  const passkey = computerFile("page_passkey.py");
+  const version = createHash("sha256")
+    .update(wrapper)
+    .update("\0")
+    .update(secrets)
+    .update("\0")
+    .update(passkey)
+    .digest("hex");
+  // One archive, so the files change together.
   const archive = gzipSync(
-    JSON.stringify({ "rakazo-page-browser": wrapper, "page_secrets.py": secrets }),
+    JSON.stringify({
+      "rakazo-page-browser": wrapper,
+      "page_secrets.py": secrets,
+      "page_passkey.py": passkey,
+    }),
     { level: 9 },
   ).toString("base64");
   const unpack = [
@@ -58,6 +69,7 @@ export function installPageBrowserFilesCommand(): string {
     "files = json.loads(gzip.decompress(sys.stdin.buffer.read()))",
     "os.makedirs('/usr/local/lib/rakazo', exist_ok=True)",
     "for name, mode, target in (('page_secrets.py', 0o644, '/usr/local/lib/rakazo/page_secrets.py'),",
+    "                           ('page_passkey.py', 0o644, '/usr/local/lib/rakazo/page_passkey.py'),",
     "                           ('rakazo-page-browser', 0o755, '/usr/local/bin/rakazo-page-browser')):",
     "    with open(target + '.new', 'w', encoding='utf-8') as file:",
     "        file.write(files[name])",
@@ -89,7 +101,8 @@ export function privatePageInput() {
   const file = `${directory}/request`;
   return {
     file,
-    create: `mkdir -m 700 -- ${shellQuote(directory)}`,
+    // The file is made 0600 by the computer's user first, so the write fills it in place.
+    create: `mkdir -m 700 -- ${shellQuote(directory)} && (umask 077 && : > ${shellQuote(file)})`,
     run: (command: string) =>
       `bash -c ${shellQuote(`exec 0< ${shellQuote(file)} || exit 1; rm -f -- ${shellQuote(file)} && rmdir -- ${shellQuote(directory)} || exit 1; ${command}`)}`,
     cleanup: `rm -f -- ${shellQuote(file)} && { rmdir -- ${shellQuote(directory)} 2>/dev/null || test ! -e ${shellQuote(directory)}; }`,

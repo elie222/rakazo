@@ -67,6 +67,18 @@ export function vaultLoginUseOf(value: unknown): VaultLoginUse | undefined {
  * trimmed, so none ends in a space and a field named the same is never taken for the code.
  */
 export const LOGIN_CODE_FIELD = "Authenticator code ";
+/**
+ * What an approval names for signing in with a login's passkey, and for creating one, which every
+ * login asks first for, whatever its setting. Like LOGIN_CODE_FIELD, no field is named the same.
+ */
+export const LOGIN_PASSKEY_FIELD = "Passkey ";
+export const LOGIN_NEW_PASSKEY_FIELD = "New passkey ";
+
+const STEP_FIELDS: Record<string, string> = {
+  fill_code: LOGIN_CODE_FIELD,
+  use_passkey: LOGIN_PASSKEY_FIELD,
+  create_passkey: LOGIN_NEW_PASSKEY_FIELD,
+};
 
 /** Each saved login a browser_act call fills, with the fields it fills, as browser_act reads them. */
 export function requestedLoginFills(actions: unknown): Map<string, string[]> {
@@ -74,13 +86,13 @@ export function requestedLoginFills(actions: unknown): Map<string, string[]> {
   for (const raw of Array.isArray(actions) ? actions : []) {
     const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
     const login = String(step.secret ?? "").trim();
-    const field =
-      step.kind === "fill_code"
-        ? LOGIN_CODE_FIELD
-        : typeof step.field === "string"
-          ? step.field.trim()
-          : "";
-    if ((step.kind !== "fill_secret" && step.kind !== "fill_code") || !login || !field) continue;
+    const kind = String(step.kind ?? "");
+    const field = Object.hasOwn(STEP_FIELDS, kind)
+      ? STEP_FIELDS[kind]
+      : kind === "fill_secret" && typeof step.field === "string"
+        ? step.field.trim()
+        : "";
+    if (!login || !field) continue;
     const fields = fills.get(login) ?? [];
     if (!fields.includes(field)) fills.set(login, [...fields, field]);
   }
@@ -96,12 +108,23 @@ export function requestedLoginFills(actions: unknown): Map<string, string[]> {
  */
 export function loginUseSummary(use: VaultLoginUse): FleetCardSummary {
   const host = new URL(use.site).host;
+  if (use.fields.includes(LOGIN_NEW_PASSKEY_FIELD))
+    return {
+      onceOnly: true,
+      title: `Create a passkey on ${host} for ${use.title}?`,
+      lines: [
+        "It replaces the login's passkey, if it has one.",
+        "Bots sign in with it as this login's Vault setting allows.",
+      ],
+    };
   return {
     onceOnly: true,
     title: `Sign in to ${host} with ${use.title}?`,
     lines: use.fields.includes(LOGIN_CODE_FIELD)
       ? ["This types the login's authenticator code."]
-      : [],
+      : use.fields.includes(LOGIN_PASSKEY_FIELD)
+        ? ["This uses the login's passkey."]
+        : [],
   };
 }
 

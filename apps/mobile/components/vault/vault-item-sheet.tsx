@@ -39,6 +39,7 @@ export function VaultItemSheet({
   onShow,
   onEdit,
   onRemove,
+  onRemovePasskey,
 }: {
   item: BotSecretMetadata;
   /** An account item seen from a Space that keeps its own vault, whose bots never use it. */
@@ -52,6 +53,8 @@ export function VaultItemSheet({
   onShow: () => void;
   onEdit: () => void;
   onRemove: () => void;
+  /** Deletes the passkey a bot created for this login. */
+  onRemovePasskey?: () => void;
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
@@ -217,6 +220,21 @@ export function VaultItemSheet({
                     chevron="right"
                     onPress={() => setUsesOpen(true)}
                   />
+                </SettingsGroup>
+              ) : null}
+              {readable?.auth.type === "login" && item.preview?.passkey ? (
+                // Only the site: Reveal never returns the passkey itself.
+                <SettingsGroup>
+                  <SettingsRow title={t`Passkey`} value={item.preview.passkey} />
+                  {onRemovePasskey ? (
+                    <SettingsRow
+                      accessibilityRole="button"
+                      destructive
+                      disabled={busy}
+                      onPress={onRemovePasskey}
+                      title={t`Remove passkey`}
+                    />
+                  ) : null}
                 </SettingsGroup>
               ) : null}
               <SettingsGroup>

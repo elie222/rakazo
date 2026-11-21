@@ -122,11 +122,13 @@ export async function listBotSecrets(
   );
 }
 
-// Where else a login fills, and that it can type its authenticator code; never the key.
+// Where else a login fills, that it can type its authenticator code, and the site its passkey
+// signs in to; never the key or the passkey.
 function loginHints(alsoOn: string[] | undefined, preview: VaultPreview | undefined) {
   return {
     ...(alsoOn?.length ? { alsoOn } : {}),
     ...(preview?.otp ? { authenticatorCode: true } : {}),
+    ...(preview?.passkey ? { passkey: preview.passkey } : {}),
   };
 }
 
@@ -167,9 +169,13 @@ async function itemPreview(
     const plaintext = await openVaultValue(prisma, secretStore, row);
     if (type === "card") return { card: cardSummary(decodeCardSecret(plaintext)) };
     if (type === "contact") return { contact: decodeContactSecret(plaintext) };
-    const { fields, otp } = decodeLoginSecret(plaintext);
+    const { fields, otp, passkey } = decodeLoginSecret(plaintext);
     const username = fields.find((field) => !field.hidden)?.value;
-    return { ...(username ? { username } : {}), ...(otp ? { otp: true as const } : {}) };
+    return {
+      ...(username ? { username } : {}),
+      ...(otp ? { otp: true as const } : {}),
+      ...(passkey ? { passkey: passkey.rpId } : {}),
+    };
   } catch {
     getLogger().warn("vault item could not be read for its preview", { itemId: row.id });
     return undefined;
@@ -344,21 +350,27 @@ export async function vaultItemId(prisma: PrismaClient, scope: BotSecretScope, n
 
 /**
  * A saved value for its owner to read. Only for the owner-facing reveal, which confirms the
- * person first; bots never read values. A login returns its fields.
+ * person first; bots never read values. A login returns its fields and authenticator key, never
+ * its passkey, which stays in the vault.
  */
 export async function revealBotSecret(input: {
   prisma: PrismaClient;
   secretStore: Pick<SecretStore, "load">;
   scope: BotSecretScope;
   name: string;
-}): Promise<LoginSecretValue | { card: CardSecretValue } | { value: string } | null> {
+}): Promise<
+  Omit<LoginSecretValue, "passkey"> | { card: CardSecretValue } | { value: string } | null
+> {
   const row = await input.prisma.vaultCredential.findFirst({
     where: { ...(await vaultFields(input.prisma, input.scope)), name: input.name },
   });
   if (!row) return null;
   const plaintext = await openVaultValue(input.prisma, input.secretStore, row);
   const type = BotSecretAuth.safeParse(row.auth).data?.type;
-  if (type === "login") return decodeLoginSecret(plaintext);
+  if (type === "login") {
+    const { passkey: _kept, ...login } = decodeLoginSecret(plaintext);
+    return login;
+  }
   if (type === "card") return { card: decodeCardSecret(plaintext) };
   return { value: plaintext };
 }

@@ -324,27 +324,47 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
     if (notice) afterEditing.current = { name: saved.name, notice };
   }
 
-  async function remove(name: string) {
+  /** Removes the item, or with `passkey` only the passkey a bot created for it, keeping it open. */
+  async function remove(name: string, passkey = false) {
     setPending(true);
     setError(null);
     try {
       await beforeChange();
-      await rpc("vault/remove", { scope, name }).finally(afterChange);
+      await rpc(passkey ? "vault/removePasskey" : "vault/remove", { scope, name }).finally(
+        afterChange,
+      );
+      if (passkey) {
+        setItems((current) =>
+          current.map((entry) =>
+            entry.name === name && entry.preview
+              ? { ...entry, preview: { ...entry.preview, passkey: undefined } }
+              : entry,
+          ),
+        );
+        return;
+      }
       setItems((current) => current.filter((entry) => entry.name !== name));
       setOpened(null);
       setUses(null);
     } catch (err) {
-      setError(errorText(err, t`Could not remove the item`));
+      setError(
+        errorText(err, passkey ? t`Could not remove the passkey` : t`Could not remove the item`),
+      );
     } finally {
       setPending(false);
     }
   }
 
-  function confirmRemove(item: BotSecretMetadata) {
-    Alert.alert(t`Remove ${ph({ name: item.title })}?`, undefined, [
-      { text: t`Cancel`, style: "cancel" },
-      { text: t`Remove`, style: "destructive", onPress: () => void remove(item.name) },
-    ]);
+  /** Asks before removing the item, or with `passkey` only its passkey, which the site keeps. */
+  function confirmRemove(item: BotSecretMetadata, passkey = false) {
+    Alert.alert(
+      passkey ? t`Remove the passkey?` : t`Remove ${ph({ name: item.title })}?`,
+      passkey ? t`Bots can no longer sign in with it. Delete it on the site too.` : undefined,
+      [
+        { text: t`Cancel`, style: "cancel" },
+        { text: t`Remove`, style: "destructive", onPress: () => void remove(item.name, passkey) },
+      ],
+    );
   }
 
   async function show(item: BotSecretMetadata) {
@@ -594,6 +614,7 @@ function VaultItems({ spaceId }: { spaceId: string | undefined }) {
           onShow={() => void show(openedItem)}
           onEdit={() => void edit(openedItem)}
           onRemove={() => confirmRemove(openedItem)}
+          onRemovePasskey={() => confirmRemove(openedItem, true)}
         />
       ) : null}
       {editing ? (

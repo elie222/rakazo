@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -7,6 +7,7 @@ import { shellQuote } from "../computers/screens/computer-support.js";
 import {
   installAgentBrowserCommand,
   installPageBrowserFilesCommand,
+  privatePageInput,
 } from "./page-browser-install.js";
 
 const computer = path.resolve(import.meta.dirname, "../../../../infra/sandboxes/computer");
@@ -38,6 +39,9 @@ it("writes this release's page-browser files once, and again when they differ", 
   expect(readFileSync(secrets, "utf8")).toBe(
     readFileSync(path.join(computer, "page_secrets.py"), "utf8"),
   );
+  expect(readFileSync(`${root}/usr/local/lib/rakazo/page_passkey.py`, "utf8")).toBe(
+    readFileSync(path.join(computer, "page_passkey.py"), "utf8"),
+  );
   expect(statSync(wrapper).mode & 0o777).toBe(0o755);
   expect(statSync(secrets).mode & 0o777).toBe(0o644);
 
@@ -58,4 +62,30 @@ it("installs agent-browser with the computer image's pinned script", () => {
   expect(installAgentBrowserCommand()).toContain(
     shellQuote(readFileSync(path.join(computer, "install-agent-browser.sh"), "utf8")),
   );
+});
+
+it("hands a page request to the helper from a folder only the computer user can open, gone before the helper reads it", () => {
+  const input = privatePageInput();
+  const folder = path.dirname(input.file);
+  try {
+    execFileSync("bash", ["-c", input.create]);
+    expect(statSync(folder).mode & 0o777).toBe(0o700);
+    expect(statSync(input.file).mode & 0o777).toBe(0o600);
+    // As a hosted computer's file write fills it.
+    writeFileSync(input.file, '{"command":"act","privateKey":"fake-passkey-key"}\n');
+    expect(statSync(input.file).mode & 0o777).toBe(0o600);
+    const seen = execFileSync(
+      "bash",
+      [
+        "-c",
+        input.run(`test ! -e ${shellQuote(input.file)} && test ! -e ${shellQuote(folder)} && cat`),
+      ],
+      { encoding: "utf8" },
+    );
+    expect(seen).toContain("fake-passkey-key");
+    expect(existsSync(input.file)).toBe(false);
+    expect(existsSync(folder)).toBe(false);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 });

@@ -3,6 +3,7 @@ import type {
   AgentToolExecutionResult,
   BrowserActStep,
   BrowserDownload,
+  BrowserPasskey,
   BrowserProvider,
   ComputerRef,
 } from "@rakazo/adapter-kit";
@@ -26,6 +27,8 @@ export const BROWSER_ACT_KINDS = [
   "fill_card",
   "fill_pay_token",
   "fill_code",
+  "create_passkey",
+  "use_passkey",
 ] as const;
 const MAX_QUERY = 200;
 const NAVIGATE_URL_REQUIRED = "An HTTP(S) URL without embedded credentials is required";
@@ -51,12 +54,20 @@ export type PayTokenFillStep = { kind: "fill_pay_token"; purchase: string };
 /** Types the code the user entered for the run's last code request; the model never sees it. */
 /** With `secret`, the current code of that saved login's authenticator key. */
 export type CodeFillStep = { kind: "fill_code"; ref: string; secret?: string };
+/**
+ * Clicks `ref` while the page can create a passkey for the saved login `secret`, or sign in with
+ * the one it has. Alone in its call; the model never sees the passkey.
+ */
+export type PasskeyStep =
+  | { kind: "create_passkey"; ref: string; secret: string }
+  | { kind: "use_passkey"; ref: string; secret: string };
 export type BrowserActInput =
   | BrowserActStep
   | SecretFillStep
   | CardFillStep
   | PayTokenFillStep
-  | CodeFillStep;
+  | CodeFillStep
+  | PasskeyStep;
 /**
  * desktopTools: the run also has computer_act, so a page-tool failure can fall back to it.
  * downloads: the folder in the computer's home that the page's file downloads are saved to, and the
@@ -93,6 +104,26 @@ export type ResolveCodeFill = (
       origin: string;
       claim: () => Promise<string | undefined>;
       restore: () => Promise<void>;
+      typed?: () => Promise<void>;
+    }
+  | { error: string }
+>;
+
+/**
+ * `created` saves the passkey a create_passkey step made; `typed` is as a login fill's, called
+ * once the page may have used the login.
+ */
+export type ResolvePasskey = (step: PasskeyStep) => Promise<
+  | {
+      origin: string;
+      rpId?: string;
+      credential?: {
+        credentialId: string;
+        privateKey: string;
+        userHandle?: string;
+        signCount: number;
+      };
+      created?: (passkey: BrowserPasskey) => Promise<void>;
       typed?: () => Promise<void>;
     }
   | { error: string }
@@ -175,6 +206,7 @@ export async function browserActFromTool(
     resolveCardFill?: ResolveCardFill;
     resolvePayTokenFill?: ResolvePayTokenFill;
     resolveCodeFill?: ResolveCodeFill;
+    resolvePasskey?: ResolvePasskey;
     redactions?: () => string[];
     /** Maps a bot-facing workspace path to its path in the computer's home. */
     resolveUploadPath?: (path: string) => string;
@@ -204,9 +236,42 @@ export async function browserActFromTool(
           restore: () => Promise<void>;
         }
       | undefined;
+    // What a passkey step does with the passkey a site created.
+    let passkeyCreated: ((passkey: BrowserPasskey) => Promise<void>) | undefined;
     // Resolve every saved login and card before acting, so a missing one cannot leave a
     // half-filled form.
-    for (const step of parseBrowserActions(args.actions)) {
+    const steps = parseBrowserActions(args.actions);
+    if (
+      steps.length > 1 &&
+      steps.some((step) => step.kind === "create_passkey" || step.kind === "use_passkey")
+    )
+      throw new BrowserToolInputError("A passkey step runs alone in its browser_act call.");
+    for (const step of steps) {
+      if (step.kind === "create_passkey" || step.kind === "use_passkey") {
+        let resolved: Awaited<ReturnType<ResolvePasskey>>;
+        try {
+          resolved = options.resolvePasskey
+            ? await options.resolvePasskey(step)
+            : { error: "Passkeys are unavailable here." };
+        } catch (error) {
+          context.signal.throwIfAborted();
+          getLogger().warn("saved login could not be loaded for a passkey", {
+            errorName: error instanceof Error ? error.name : typeof error,
+          });
+          return { ...refusedInput("This saved login could not be loaded."), completed: 0 };
+        }
+        if ("error" in resolved) return { ...refusedInput(resolved.error), completed: 0 };
+        const { origin, rpId, credential, created, typed } = resolved;
+        passkeyCreated = created;
+        if (typed) fills.push({ index: actions.length, typed });
+        actions.push({
+          kind: "passkey",
+          ref: step.ref,
+          origin,
+          ...(rpId && credential ? { rpId, credential } : {}),
+        });
+        continue;
+      }
       if (step.kind === "upload") {
         const resolve = options.resolveUploadPath ?? ((path: string) => path);
         let paths: string[];
@@ -353,11 +418,37 @@ export async function browserActFromTool(
       return { ...refusedInput(refusedCode), completed: 0 };
     }
     asked = true;
-    const result = await browser.act(
+    // The passkey a site created never reaches the bot: only the vault keeps it.
+    const { passkey, ...result } = await browser.act(
       computer,
       { actions, downloads: options.downloads?.folder, signal: context.signal },
       context,
     );
+    if (passkeyCreated) {
+      if (!passkey) {
+        // The page reported success without a passkey, as an older computer image would.
+        if (result.ok)
+          Object.assign(result, {
+            ok: false,
+            error: "The site created no passkey, so none was saved.",
+          });
+      } else {
+        try {
+          await passkeyCreated(passkey);
+        } catch (error) {
+          context.signal.throwIfAborted();
+          getLogger().warn("created passkey could not be saved", {
+            errorName: error instanceof Error ? error.name : typeof error,
+          });
+          // Never created again on its own: the site may already hold this one.
+          Object.assign(result, {
+            ok: false,
+            error:
+              "The site created a passkey, but it could not be saved. Tell the user; do not create another one.",
+          });
+        }
+      }
+    }
     // Only fills the page may have typed: one it clearly never reached left nothing.
     for (const fill of fills)
       if (result.uncertain !== false || result.completed > fill.index) await fill.typed();
@@ -479,6 +570,16 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
         );
       }
       return { kind, ref, secret, field };
+    }
+    if (kind === "create_passkey" || kind === "use_passkey") {
+      const secret = typeof action.secret === "string" ? action.secret.trim() : "";
+      if (!secret)
+        throw new BrowserToolInputError(
+          `browser_act ${kind} needs secret: the name of a saved login`,
+        );
+      return kind === "create_passkey"
+        ? { kind, ref, secret }
+        : { kind: "use_passkey" as const, ref, secret };
     }
     if (kind === "fill" || kind === "type") {
       if (typeof action.text !== "string") {

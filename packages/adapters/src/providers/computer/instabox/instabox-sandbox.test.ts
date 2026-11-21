@@ -602,7 +602,10 @@ describe("instabox page tools", () => {
       name.startsWith("write /tmp/rakazo-page-input-"),
     );
     const folder = write!.slice("write ".length, write!.lastIndexOf("/"));
-    expect(emulator.commands).toContainEqual(`mkdir -m 700 -- '${folder}'`);
+    // The file is made 0600 inside the private folder before the request is written to it.
+    expect(emulator.commands).toContainEqual(
+      `mkdir -m 700 -- '${folder}' && (umask 077 && : > '${folder}/request')`,
+    );
     expect(pageFiles(emulator, computer.id)).toEqual([]);
   });
 

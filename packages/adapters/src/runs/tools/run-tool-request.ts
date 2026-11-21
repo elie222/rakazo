@@ -1,7 +1,7 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
-import { runLoginKind } from "@rakazo/db";
+import { runLoginKind, spaceIsShared } from "@rakazo/db";
 import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import type { TerminatingToolResult } from "../../approvals/approval-effect.js";
 import {
@@ -41,6 +41,8 @@ import { listVaultItems } from "../../secrets/bot-secrets.js";
 import type { VaultCardUse, VaultLoginUse } from "../../secrets/vault/vault-card-use.js";
 import {
   cardUseSummary,
+  LOGIN_NEW_PASSKEY_FIELD,
+  LOGIN_PASSKEY_FIELD,
   loginUseSummary,
   requestedCardUse,
   requestedLoginFills,
@@ -335,6 +337,16 @@ export async function resolveToolRequest(
  * The saved login that asks first this browser_act call fills: every field it fills, on the one
  * of its sites it fills there, as saved now. A replay keeps the approval the user answered.
  */
+/**
+ * Why a passkey step cannot run on this run's computer, if it cannot: anyone sharing the Space
+ * shares a Team Computer's browser, and could use the passkey there.
+ */
+export async function passkeyRefusal(ctx: RunContext): Promise<string | undefined> {
+  if (ctx.computer.mode === "team" && (await spaceIsShared(ctx.deps.prisma, ctx.run.spaceId)))
+    return "Passkeys work only on a Private Computer, or a Team Computer in a Space no one else is in.";
+  return undefined;
+}
+
 async function askingLoginUse(
   ctx: RunContext,
   actions: unknown,
@@ -345,6 +357,11 @@ async function askingLoginUse(
   const { deps, run } = ctx;
   const asking: VaultLoginUse[] = [];
   for (const [login, fields] of requestedLoginFills(actions)) {
+    // Refused before any card, so the owner never approves a passkey that cannot be made here.
+    const passkey =
+      fields.includes(LOGIN_PASSKEY_FIELD) || fields.includes(LOGIN_NEW_PASSKEY_FIELD);
+    const refused = passkey && (await passkeyRefusal(ctx));
+    if (refused) return { error: refused };
     // This run's login that wasn't saved is what the person just typed, and is filled instead.
     const kind = runLoginKind(run.id, login);
     if (
@@ -353,8 +370,11 @@ async function askingLoginUse(
       continue;
     // A login's title never comes from its value, so it isn't decrypted here.
     const [item] = await listVaultItems(deps.prisma, deps.secretStore, run, login, false);
-    if (item?.policy !== "ask" || BotSecretAuth.safeParse(item.auth).data?.type !== "login")
-      continue;
+    // Creating a passkey asks first on every login the bot may use; the fill refuses a blocked one.
+    const asks =
+      item?.policy === "ask" ||
+      (fields.includes(LOGIN_NEW_PASSKEY_FIELD) && item !== undefined && item.policy !== "off");
+    if (!asks || BotSecretAuth.safeParse(item.auth).data?.type !== "login") continue;
     const savedAt = item.updatedAt.toISOString();
     // Where it fills: the page's site when that is one of its others, as the fill reads it.
     const url = ctx.state.pageUrl;
@@ -638,6 +658,18 @@ export async function prepareToolRequest(
     // A press that could not be checked is never pressed and never asked about, in any approval mode.
     if (typeof detected === "string") return uncheckedPress(detected);
     const purchase = detected;
+    // A passkey step clicks with no purchase check of its own, so it never completes a purchase.
+    if (
+      purchase &&
+      Array.isArray(rest.actions) &&
+      rest.actions.some((step: { kind?: unknown } | null) =>
+        ["create_passkey", "use_passkey"].includes(String(step?.kind)),
+      )
+    )
+      return {
+        error:
+          "This passkey click would complete a purchase, so nothing was clicked. Use click for that step.",
+      };
     // One card asks one question: a sign-in is never approved under a payment's.
     if (loginUse && purchase)
       return {

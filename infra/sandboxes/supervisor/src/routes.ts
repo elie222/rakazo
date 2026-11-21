@@ -579,6 +579,25 @@ app.post("/computers/:id/browser", async (c) => {
                 paths: z.array(z.string().min(1).max(1024)).min(1).max(10),
                 roots: z.array(z.string().min(1).max(1024)).max(2).optional(),
               }),
+              // A saved login's passkey: created on its site, or used there with the credential.
+              z.object({
+                kind: z.literal("passkey"),
+                ref: z.string().min(1).max(200),
+                origin: z
+                  .string()
+                  .url()
+                  .max(2048)
+                  .refine((value) => new URL(value).protocol === "https:"),
+                rpId: z.string().min(1).max(253).optional(),
+                credential: z
+                  .object({
+                    credentialId: z.string().min(1).max(2048),
+                    privateKey: z.string().min(1).max(8192),
+                    userHandle: z.string().min(1).max(1024).optional(),
+                    signCount: z.number().int().min(0),
+                  })
+                  .optional(),
+              }),
               z.object({
                 kind: z.literal("pay_token"),
                 text: z.string().min(1).max(4096),

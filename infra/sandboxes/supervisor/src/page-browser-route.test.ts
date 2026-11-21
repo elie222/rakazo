@@ -180,6 +180,11 @@ it.each([
       field: "code",
     },
   ],
+  ["a passkey without its site", { kind: "passkey", ref: "e1" }],
+  [
+    "a passkey on a plain-HTTP site",
+    { kind: "passkey", ref: "e1", origin: "http://login.example.test" },
+  ],
   [
     "a pay token without the merchant's origin",
     { kind: "pay_token", text: "lpt_fake_secret", merchantAccountId: "acct_fake123" },
@@ -285,6 +290,46 @@ it.each([
   expect(JSON.stringify(helperCall[0].Cmd)).not.toContain(fill.text);
   expect(helperCall[0].Env).toContain("RAKAZO_BROWSER_ARGS_STDIN=1");
   expect(mock.stdin.join("")).toBe(`${JSON.stringify({ command: "act", actions })}\n`);
+});
+
+it.each([
+  ["creating", { kind: "passkey", ref: "e1", origin: "https://login.example.test" }],
+  [
+    "signing in with",
+    {
+      kind: "passkey",
+      ref: "e1",
+      origin: "https://login.example.test",
+      rpId: "login.example.test",
+      credential: {
+        credentialId: "fake-credential-id",
+        privateKey: "fake-passkey-private-key",
+        userHandle: "fake-user-handle",
+        signCount: 7,
+      },
+    },
+  ],
+])("passes a step %s a passkey to the helper only over stdin", async (_, step) => {
+  const response = await supervisorApp.request("/computers/computer-login/browser", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "home",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": "first",
+      "x-rakazo-screen-lease-id": "run:9",
+    },
+    body: JSON.stringify({ command: "act", actions: [step] }),
+  });
+  expect(await response.json()).toMatchObject({ ok: true });
+  const helperCall = mock.exec.mock.calls.find(([options]) =>
+    options.Cmd.includes("/usr/local/bin/rakazo-page-browser"),
+  )!;
+  expect(JSON.stringify(helperCall[0].Cmd)).not.toContain("fake-passkey-private-key");
+  expect(JSON.stringify(helperCall[0].Cmd)).not.toContain("passkey");
+  expect(helperCall[0].Env).toContain("RAKAZO_BROWSER_ARGS_STDIN=1");
+  expect(mock.stdin.join("")).toBe(`${JSON.stringify({ command: "act", actions: [step] })}\n`);
 });
 
 it.each([

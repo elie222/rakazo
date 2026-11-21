@@ -84,5 +84,6 @@ export {
   generateBotSecret,
   prepareBotSecret,
   SAVED_LOGIN_UNREADABLE,
+  saveLoginPasskey,
   storeBotSecret,
 } from "./vault/vault-save.js";
