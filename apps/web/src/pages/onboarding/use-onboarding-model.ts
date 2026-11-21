@@ -213,7 +213,7 @@ export function useOnboardingModel({
 
   function chooseConnectWay(next: ConnectWay) {
     if (next === connectWay) return;
-    cancelOAuthAttempt();
+    cancelOAuthAttempt("replaced");
     setProvider("");
     setProviderAuth(undefined);
     setConnectWay(next);
@@ -230,7 +230,7 @@ export function useOnboardingModel({
     if (option === providerOptionValue(provider, providerAuth) && !presetBaseUrl && !endpointPreset)
       return;
     const [nextProvider = option, auth] = option.split(":") as [string, ProviderAuth?];
-    cancelOAuthAttempt();
+    cancelOAuthAttempt("replaced");
     setProviderAuth(auth);
     setManualModelId(false);
     const nextModelId =
