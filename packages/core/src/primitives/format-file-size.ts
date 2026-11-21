@@ -21,7 +21,9 @@ export function fileSizeParts(
     unit += 1;
   }
   const amount = locale
-    ? new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(rounded)
+    ? new Intl.NumberFormat(locale, { maximumFractionDigits: 1, useGrouping: false }).format(
+        rounded,
+      )
     : Number.isInteger(rounded)
       ? String(rounded)
       : rounded.toFixed(1);
