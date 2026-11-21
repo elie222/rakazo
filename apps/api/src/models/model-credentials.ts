@@ -289,10 +289,9 @@ async function writeModelCredential(
   const target = await modelRoleTarget(tx, actor, input.scope);
   const mainRole = await getModelRole(tx, target, "main");
   const runsMain = mainRole.primary?.credentialId === credential.id;
-  // Only an explicit main-model connect changes a role. Omitted means yes for a first
-  // connect (older apps) and no for a save of a connection that already exists.
+  // Only an explicit main-model connect changes a role. Omitted means yes for older apps.
   const becomesMain =
-    (input.makeDefault ?? !existing) &&
+    input.makeDefault !== false &&
     Boolean(defaultModel) &&
     (!input.keepExistingDefault || !mainRole.primary);
   // A main-model connect keeps the effort its model already had.
