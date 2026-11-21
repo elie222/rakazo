@@ -3,6 +3,7 @@ import type { AuthInteraction, Credential, OAuthCredential } from "@earendil-wor
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type { ModelOAuthBegin, ModelSignInCancelReason, SettingsScope } from "@rakazo/contracts";
+import { retry } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -11,8 +12,16 @@ import type { ModelProviderDefinition } from "../../../models/model-provider-reg
 import { modelProviders } from "../../../models/model-provider-registry.js";
 import { logModelSignIn } from "./model-sign-in-log.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
+import { createChatGptDeviceCodeLogin } from "./pi-chatgpt-device-code.js";
+
 import type { PiOAuthEnd, PiOAuthEnded, PiOAuthMeasure, PiOAuthPending } from "./pi-oauth-ended.js";
-import { PENDING_SIGN_IN_COLUMNS, pendingSignInOfRow, signInFailure } from "./pi-oauth-ended.js";
+import {
+  PENDING_SIGN_IN_COLUMNS,
+  pendingSignInOfRow,
+  SIGN_IN_EXPIRED,
+  signInFailure,
+  signInFailureText,
+} from "./pi-oauth-ended.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
 export const COPILOT_OAUTH_PROVIDER = "github-copilot";
@@ -401,10 +410,12 @@ export class PiOAuthLogins<T = unknown> {
           session.expired = true;
           return;
         }
-        session.abort.abort(new Error("Sign-in expired."));
         // A stored outcome stays for whichever process the client asks next.
-        if (session.state === "pending") this.removeSession(session, "timed_out");
-        else this.detachSession(session);
+        if (session.state === "pending") void this.expire(session);
+        else {
+          session.abort.abort(new Error("Sign-in expired."));
+          this.detachSession(session);
+        }
       }, started.expiresInSeconds * 1000);
       session.expiresTimer.unref?.();
       return {
@@ -511,7 +522,10 @@ export class PiOAuthLogins<T = unknown> {
     const normalizedCode = code.trim();
     let session = this.ownSession(loginId, actor);
     if (!session && normalizedCode) session = await this.resume(loginId, actor, persist);
-    if (!session) throw new ModelSignInError(SIGN_IN_NOT_FOUND);
+    if (!session) {
+      const outcome = await this.outcome(loginId, actor);
+      throw new ModelSignInError(outcome?.status === "failed" ? outcome.error : SIGN_IN_NOT_FOUND);
+    }
     if (session.error) throw new ModelSignInError(session.error);
     if (!normalizedCode) throw new ModelSignInError("Paste an authorization code or callback URL.");
     const resolve = session.submitCode;
@@ -695,17 +709,57 @@ export class PiOAuthLogins<T = unknown> {
     }
   }
 
+  /** The provider's message can quote its response: it is read here, and only a fixed text and
+   *  class leave. */
   private async fail(session: Session<T>, message: string): Promise<void> {
     if (session.state !== "pending") return;
+    const end = signInFailure(message);
     session.state = "failed";
-    session.error = message;
+    session.error = signInFailureText(end);
     this.releaseLease(session);
     await session.setup.promise;
     if (
       this.pending.get(session.id) === session &&
-      (await this.writeOutcome(session, { status: "failed", error: message }))
+      (await this.writeOutcome(session, { status: "failed", error: session.error }))
     ) {
-      this.report(this.pendingOf(session), signInFailure(message), session.id);
+      this.report(this.pendingOf(session), end, session.id);
+    }
+  }
+
+  /** The code ran out while waiting for the person. The sign-in reads as expired until the
+   *  client reads it; whichever process marks the row reports the end. */
+  private async expire(session: Session<T>): Promise<void> {
+    const owned = session.lease !== undefined;
+    const waiting = this.pendingOf(session);
+    session.abort.abort(new Error("Sign-in expired."));
+    session.state = "failed";
+    session.error = SIGN_IN_EXPIRED;
+    const handoff = this.handoff;
+    if (!handoff) {
+      this.report(waiting, { reason: "timed_out" }, session.id);
+      return;
+    }
+    this.detachSession(session);
+    if (!session.stored) return;
+    try {
+      // Unwritten, the row would read as pending and then as interrupted.
+      const expired = await retry(
+        () =>
+          runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
+            handoff.prisma.modelOAuthSession.updateMany({
+              // A pasted code another process received is that process's to finish.
+              where: owned ? { ...rowOf(session), status: "pending" } : unclaimedRow(session),
+              data: { status: "failed", error: SIGN_IN_EXPIRED, leaseExpiresAt: null },
+            }),
+          ),
+        {
+          attempts: OUTCOME_WRITE_ATTEMPTS,
+          delayMs: (attempt) => SAVE_WAIT_POLL_MS * (attempt + 1),
+        },
+      );
+      if (expired.count === 1) this.report(waiting, { reason: "timed_out" }, session.id);
+    } catch (error) {
+      getLogger().error("model sign-in expiry not stored", error);
     }
   }
 
@@ -893,8 +947,10 @@ export class PiOAuthLogins<T = unknown> {
         ? { status: "failed", provider, error: SIGN_IN_INTERRUPTED }
         : { status: "pending" };
     }
-    // A pasted-code sign-in nobody finished in time is gone.
-    return row.createdAt < pastedCodeCutoff() ? undefined : { status: "pending" };
+    // A pasted-code sign-in nobody finished in time, on a process that has since stopped.
+    return row.createdAt < pastedCodeCutoff()
+      ? { status: "failed", provider, error: SIGN_IN_EXPIRED }
+      : { status: "pending" };
   }
 
   /** Drop a sign-in whose outcome the client has read. */
@@ -1166,6 +1222,7 @@ function defaultLogin(
       ...(verifier ? { createVerifier: () => verifier } : {}),
     })(interaction);
   }
+  if (providerId === CHATGPT_OAUTH_PROVIDER) return createChatGptDeviceCodeLogin()(interaction);
   return builtinModels().login(providerId, type, interaction);
 }
 
