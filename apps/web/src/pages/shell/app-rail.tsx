@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { Button, cn } from "@rakazo/ui-web";
+import { cn } from "@rakazo/ui-web";
 import {
   Bell,
   FolderOpen,
@@ -12,7 +12,6 @@ import {
 import type { CSSProperties, ReactNode } from "react";
 import { createContext, Suspense, use, useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { IconTooltip } from "../../components/IconTooltip";
 import { RouteLoading } from "../../components/RouteLoading";
 import { WindowChrome } from "../../components/WindowChrome";
 import { desktopBridge } from "../../lib/platform/desktop";
@@ -63,7 +62,6 @@ export function useAppRailMetrics() {
  */
 export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
   const userId = useQueryUserId();
-  const wide = useMediaQuery("(min-width: 64rem)");
   const railVisible = useMediaQuery("(min-width: 48rem)");
   const [preference, setPreference] = useState<boolean | null>(() => readAppRailExpanded(userId));
   const [listCollapsed, setListCollapsedState] = useState(() => readBotsSidebarCollapsed(userId));
@@ -74,8 +72,9 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
     setListCollapsedState(readBotsSidebarCollapsed(userId));
   }, [userId]);
 
-  const expanded = preference ?? wide;
-  const railWidth = railVisible ? (expanded ? 220 : desktopBridge() ? 72 : 56) : 0;
+  // Like the reference, the rail starts as a 56px icon column and widens on request.
+  const expanded = preference ?? false;
+  const railWidth = railVisible ? (expanded ? 220 : desktopBridge() ? 62 : 56) : 0;
   function toggle() {
     const next = !expanded;
     setPreference(next);
@@ -167,31 +166,40 @@ function PrimaryRail({
     <nav
       data-testid="app-rail"
       aria-label={t`Sections`}
-      className="app-drag relative z-20 hidden w-(--app-rail-width) shrink-0 flex-col border-e border-sidebar-border bg-sidebar pb-3 transition-[width] duration-(--motion-layout) ease-(--ease-standard) motion-reduce:transition-none md:flex"
+      data-expanded={expanded}
+      className="app-drag relative z-20 hidden w-(--app-rail-width) shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[width] duration-(--motion-pop) ease-(--ease-out) motion-reduce:transition-none md:flex"
     >
-      <div className={cn("flex shrink-0 flex-col gap-2 pt-4", expanded ? "px-4" : "items-center")}>
-        {desktopBridge() ? <WindowChrome className="self-start" /> : null}
-        <div className={cn("flex items-center gap-2", expanded ? "w-full" : "justify-center")}>
-          {expanded ? <RailBrand /> : null}
-          <IconTooltip label={expanded ? t`Collapse sidebar` : t`Expand sidebar`} side="inline-end">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={expanded ? t`Collapse sidebar` : t`Expand sidebar`}
-              onClick={onToggle}
-              className="app-no-drag shrink-0 text-muted-foreground"
-            >
-              {expanded ? (
-                <PanelLeftClose className="size-5" strokeWidth={1.75} aria-hidden="true" />
-              ) : (
-                <PanelLeftOpen className="size-5" strokeWidth={1.75} aria-hidden="true" />
-              )}
-            </Button>
-          </IconTooltip>
-        </div>
+      {desktopBridge() ? <WindowChrome className="mx-3 mt-3 self-start" /> : null}
+      <div
+        className={cn(
+          "flex h-11 shrink-0 items-start pt-3",
+          expanded ? "justify-between gap-2 px-3" : "justify-center px-3",
+        )}
+      >
+        {expanded ? (
+          <>
+            <RailBrand />
+            <RailToggle expanded label={t`Collapse sidebar`} onClick={onToggle} />
+          </>
+        ) : (
+          <button
+            type="button"
+            aria-label={t`Expand sidebar`}
+            aria-expanded={false}
+            onClick={onToggle}
+            className="app-no-drag group/rail-toggle relative grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <RailBrandMark className="size-6 transition-[opacity,scale] duration-(--motion-floating) ease-(--ease-out) group-hover/rail-toggle:scale-75 group-hover/rail-toggle:opacity-0 group-focus-visible/rail-toggle:scale-75 group-focus-visible/rail-toggle:opacity-0 motion-reduce:transition-none" />
+            <PanelLeftOpen
+              className="absolute size-5 scale-75 opacity-0 transition-[opacity,scale] duration-(--motion-floating) ease-(--ease-out) group-hover/rail-toggle:scale-100 group-hover/rail-toggle:opacity-100 group-focus-visible/rail-toggle:scale-100 group-focus-visible/rail-toggle:opacity-100 motion-reduce:transition-none"
+              strokeWidth={1.75}
+              aria-hidden="true"
+            />
+          </button>
+        )}
       </div>
 
-      <div className={cn("mt-4 flex flex-col gap-1", expanded ? "px-3" : "items-center px-2")}>
+      <div className="mb-7 flex flex-col gap-2 px-3">
         {listCollapsed ? (
           <RailItem
             active={false}
@@ -257,7 +265,10 @@ function PrimaryRail({
       <div
         ref={setRailFooterNode}
         data-testid="app-rail-footer"
-        className="app-no-drag mt-auto flex w-full justify-center px-2 pb-1"
+        className={cn(
+          "app-no-drag mt-auto flex w-full flex-col px-3 py-3",
+          expanded ? "items-start" : "items-center",
+        )}
       />
     </nav>
   );
@@ -266,12 +277,49 @@ function PrimaryRail({
 function RailBrand() {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-2" aria-hidden="true">
-      <span className="flex size-7 items-center justify-center gap-1 rounded-full bg-card">
-        <span className="h-3 w-[5px] rounded-full bg-primary" />
-        <span className="h-3 w-[5px] rounded-full bg-primary" />
-      </span>
-      <span className="truncate text-body-lg font-medium">Rakazo</span>
+      <RailBrandMark className="size-6" />
+      <span className="min-w-0 flex-1 truncate text-center text-sm font-medium">Rakazo</span>
     </span>
+  );
+}
+
+function RailBrandMark({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center justify-center gap-1 rounded-full bg-card",
+        className,
+      )}
+    >
+      <span className="h-3 w-[5px] rounded-full bg-primary" />
+      <span className="h-3 w-[5px] rounded-full bg-primary" />
+    </span>
+  );
+}
+
+function RailToggle({
+  expanded,
+  label,
+  onClick,
+}: {
+  expanded: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-expanded={expanded}
+      onClick={onClick}
+      className="app-no-drag grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      {expanded ? (
+        <PanelLeftClose className="size-5" strokeWidth={1.75} aria-hidden="true" />
+      ) : (
+        <PanelLeftOpen className="size-5" strokeWidth={1.75} aria-hidden="true" />
+      )}
+    </button>
   );
 }
 
@@ -293,16 +341,23 @@ function RailItem({
   testId?: string;
 }) {
   const className = cn(
-    "app-no-drag flex h-10 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-start outline-none transition-[color,background-color,transform] duration-(--motion-micro) ease-(--ease-standard) focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-[0.97] motion-reduce:active:scale-100",
-    expanded ? "w-full" : "w-10 justify-center",
-    active
-      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+    "app-no-drag group/rail-item flex h-8 min-w-0 select-none items-center overflow-hidden rounded-full text-start outline-none transition-[background-color,color,box-shadow] duration-(--motion-micro) ease-(--ease-standard) focus-visible:ring-2 focus-visible:ring-ring/50 motion-reduce:transition-none",
+    expanded ? "w-full gap-2" : "w-8",
+    active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-muted-foreground",
+    expanded && !active && "hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+    !expanded &&
+      "hover:w-max hover:bg-primary hover:pe-2.5 hover:text-primary-foreground hover:shadow-md focus-visible:w-max focus-visible:bg-primary focus-visible:pe-2.5 focus-visible:text-primary-foreground focus-visible:shadow-md",
   );
   const content = (
     <>
-      <span className="flex size-5 shrink-0 items-center justify-center">{icon}</span>
-      {expanded ? <span className="min-w-0 truncate text-body">{label}</span> : null}
+      <span className="ms-1.5 flex size-5 shrink-0 items-center justify-center">{icon}</span>
+      {expanded ? (
+        <span className="min-w-0 truncate text-sm">{label}</span>
+      ) : (
+        <span className="absolute start-[34px] top-1/2 -translate-y-1/2 whitespace-nowrap text-xs opacity-0 transition-opacity duration-(--motion-micro) ease-(--ease-standard) group-hover/rail-item:static group-hover/rail-item:translate-y-0 group-hover/rail-item:opacity-100 group-focus-visible/rail-item:static group-focus-visible/rail-item:translate-y-0 group-focus-visible/rail-item:opacity-100 motion-reduce:transition-none">
+          {label}
+        </span>
+      )}
     </>
   );
   const control = to ? (
@@ -328,11 +383,5 @@ function RailItem({
       {content}
     </button>
   );
-  return expanded ? (
-    control
-  ) : (
-    <IconTooltip label={label} side="inline-end">
-      {control}
-    </IconTooltip>
-  );
+  return control;
 }

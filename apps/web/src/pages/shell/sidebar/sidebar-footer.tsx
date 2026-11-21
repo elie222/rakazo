@@ -125,13 +125,13 @@ export function SidebarFooter({
   return (
     <div
       data-testid="sidebar-footer"
-      className={`flex shrink-0 items-center gap-2 bg-transparent ${mini ? "flex-col px-1 py-2" : "px-2.5 py-3"}`}
+      className={`flex shrink-0 items-center bg-transparent ${mini ? "flex-col gap-1 px-0 py-0" : "gap-2 px-2.5 py-3"}`}
     >
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
-          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring"
+          className={`grid shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring ${mini ? "size-8" : "size-9"}`}
         >
           {image && failedImage !== image ? (
             <img
@@ -328,23 +328,10 @@ export function SidebarFooter({
           />
         </Button>
       ) : null}
-      {mini ? (
-        <IconTooltip label={t`Connect apps`}>
-          <Button
-            variant="ghost"
-            size="icon-lg"
-            aria-label={t`Connect apps`}
-            onClick={onIntegrations}
-            className="rounded-full text-muted-foreground"
-          >
-            <Plug aria-hidden="true" strokeWidth={1.75} />
-          </Button>
-        </IconTooltip>
-      ) : null}
       {update.available ? (
         <IconTooltip label={t`Install update`}>
           <Button
-            size="icon-lg"
+            size={mini ? "icon" : "icon-lg"}
             className="rounded-full"
             aria-label={t`Install update`}
             disabled={update.busy}

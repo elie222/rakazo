@@ -6,7 +6,7 @@ export function appRailExpandedStorageKey(userId: string | null | undefined): st
   return userId ? `${STORAGE_PREFIX}${userId}` : null;
 }
 
-/** `null` means the user has never chosen; the layout then follows the wide-window default. */
+/** `null` means the user has never chosen; the rail then starts collapsed at its icon width. */
 export function readAppRailExpanded(userId: string | null | undefined): boolean | null {
   const key = appRailExpandedStorageKey(userId);
   if (!key) return null;
