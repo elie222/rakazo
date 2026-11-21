@@ -16,6 +16,7 @@ import {
   messagingEnvFromProcess,
   openAiCompatAllowPublicHosts,
   resolveCloudAgentProvider,
+  resolveCodingCliProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
   sandboxProviderOptionsFromEnv,
@@ -50,7 +51,11 @@ import { getLogger, monitoringPseudonymSecret } from "@rakazo/logging";
 import type { DeploymentVoice } from "./voice/deployment-config.js";
 import { deploymentVoiceFromEnv } from "./voice/deployment-config.js";
 
-export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
+export {
+  resolveCloudAgentProvider,
+  resolveCodingCliProvider,
+  resolveSandboxProvider,
+} from "@rakazo/adapters";
 
 export interface AppEnv extends MessagingEnvironmentValues {
   deploymentVoice?: DeploymentVoice;
@@ -115,6 +120,7 @@ export interface AppEnv extends MessagingEnvironmentValues {
   screenProxySecret: string;
   sandboxProvider: string;
   cloudAgentProvider: string;
+  codingCliProvider: string;
   cloudAgentSpaceId: string | undefined;
   cursorApiKey: string | undefined;
   /** Raw PAYMENT_WALLET_* values; createPaymentWalletProvider resolves them. */
@@ -271,6 +277,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const webOrigin = webOriginFromEnv(source);
   const sandboxProvider = resolveSandboxProvider(source);
   const cloudAgentProvider = resolveCloudAgentProvider(source);
+  const codingCliProvider = resolveCodingCliProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
   let sandboxOptions: SandboxProviderOptions | undefined;
   return {
@@ -325,6 +332,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     screenProxySecret: resolveScreenProxySecret(source),
     sandboxProvider,
     cloudAgentProvider,
+    codingCliProvider,
     cloudAgentSpaceId: optional(source.CLOUD_AGENT_SPACE_ID),
     cursorApiKey: optional(source.CURSOR_API_KEY),
     paymentWalletProvider: optional(source.PAYMENT_WALLET_PROVIDER),

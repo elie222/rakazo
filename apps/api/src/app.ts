@@ -33,6 +33,7 @@ import {
   createAgentHomeStore,
   createArtifactStore,
   createCloudAgentConnection,
+  createCodingCliConnection,
   createConnectorRuntime,
   createDubPartnerProgram,
   createLifecycleEmailSender,
@@ -527,6 +528,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     CURSOR_API_KEY: env.cursorApiKey,
     CLOUD_AGENT_SPACE_ID: env.cloudAgentSpaceId,
   });
+  const codingCli = createCodingCliConnection({
+    CODING_CLI_PROVIDER: env.codingCliProvider,
+    CURSOR_API_KEY: env.cursorApiKey,
+    CODING_CLI_BIN: process.env.CODING_CLI_BIN,
+  });
   const paymentWallet = await createPaymentWalletProvider({
     PAYMENT_WALLET_PROVIDER: env.paymentWalletProvider,
     PAYMENT_WALLET_CLIENT_ID: env.paymentWalletClientId,
@@ -583,6 +589,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         ? (id: string) => messagingInstallations.isActive(id)
         : undefined,
       cloudAgent,
+      codingCli,
       userDevices: botUserDevices,
       paymentWallet,
       web,

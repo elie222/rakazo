@@ -743,6 +743,7 @@ export async function selectRunTools(
       paidServicesEnabled: Boolean(paidServices),
       cloudAgentEnabled: Boolean(cloudAgent),
       cloudAgentCleanupEnabled,
+      codingCliEnabled: Boolean(deps.codingCli),
       paymentWalletEnabled,
       messagingChannelRun: nonOwnerChatRun,
       voiceCall,

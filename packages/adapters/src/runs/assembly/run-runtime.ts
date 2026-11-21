@@ -315,6 +315,7 @@ export function createRunRuntime(
       localModelsApiKey() ?? "",
       env.composioApiKey ?? "",
       env.cursorApiKey ?? "",
+      deps.codingCli?.apiKey ?? "",
       process.env.TYPESAFE_API_KEY ?? "",
     ].filter(Boolean),
     mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,

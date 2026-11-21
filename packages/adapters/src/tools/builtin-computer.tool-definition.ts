@@ -233,6 +233,20 @@ export const computerTools: ConnectorTool[] = [
     },
   },
   {
+    name: "coding_cli_run",
+    description:
+      "Run the coding CLI installed on this bot's computer, in its workspace. Returns the final text and a session id; pass resume to continue. Does not install the CLI.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "Task for the CLI." },
+        model: { type: "string", description: "Model id, one token." },
+        resume: { type: "string", description: "Session id from an earlier result." },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
     name: "user_computer_list",
     description:
       "List the user's connected, allowed computers with computerId, name and bound (the computer used when computerId is omitted). Pass computerId to user_computer_shell, user_computer_observe or user_computer_act to target one explicitly.",
