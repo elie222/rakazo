@@ -5,11 +5,12 @@ import {
   modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
+  providerDisplayName,
 } from "@rakazo/contracts";
 import { connectionFormFields, pickCatalogModelId, popularModelProvidersFirst } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useMemo, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/models/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { analyticsSurface } from "../../lib/platform/desktop";
@@ -140,7 +141,7 @@ export function useOnboardingModel({
     const optionLabel = (id: string, auth?: ProviderAuth) => {
       if (id === "anthropic" && auth === "key") return t`Anthropic API`;
       if (id === "openai") return t`OpenAI API`;
-      return providerDisplayName(id, byId.get(id)?.providerName ?? id, auth);
+      return providerDisplayName(localizeModelEntry(byId.get(id) ?? { provider: id }), auth);
     };
     const main = [
       ...(billingEnabled ? [{ value: CREDITS_OPTION, label: t`Rakazo credits` }] : []),
