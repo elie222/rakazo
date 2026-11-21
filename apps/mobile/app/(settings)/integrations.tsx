@@ -145,7 +145,6 @@ export default function Integrations() {
   const [detailKey, setDetailKey] = useState<{ connectorId: string; slug: string } | null>(null);
   const [tools, setTools] = useState<ConnectionTool[]>([]);
   const [toolsLoading, setToolsLoading] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(true);
   const [toolsTick, setToolsTick] = useState(0);
   const connectionAttempt = useRef<AbortController | null>(null);
 
@@ -680,7 +679,6 @@ export default function Integrations() {
 
   function openDetail(item: ConnectionCatalogItem) {
     setCatalogError(null);
-    setToolsOpen(true);
     setDetailKey({ connectorId: item.connectorId, slug: item.slug });
   }
 
@@ -1136,8 +1134,6 @@ export default function Integrations() {
                 setLabelDrafts={setLabelDrafts}
                 tools={tools}
                 toolsLoading={toolsLoading}
-                toolsOpen={toolsOpen}
-                setToolsOpen={setToolsOpen}
                 onBack={closeDetail}
                 onUninstall={() => void uninstall(detailItem)}
                 onRename={(row) => void renameAccount(row)}

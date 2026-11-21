@@ -100,6 +100,7 @@ vi.mock("../../components/native/native-symbol", () => ({
   ),
 }));
 vi.mock("../../components/ui/row-accessories", () => ({ Chevron: () => null }));
+vi.mock("../../components/integrations/tool-permissions", () => ({ ToolPermissions: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -123,16 +124,23 @@ vi.mock("../../components/ui/menu-picker", () => ({
 vi.mock("../../components/native/native-action-button", () => ({
   NativeActionButton: ({
     label,
+    accessibilityLabel,
     onPress,
     disabled,
     busy,
   }: {
-    label: string;
+    label?: string;
+    accessibilityLabel?: string;
     onPress: () => void;
     disabled?: boolean;
     busy?: boolean;
   }) => (
-    <button type="button" disabled={disabled || busy} onClick={onPress}>
+    <button
+      type="button"
+      aria-label={accessibilityLabel}
+      disabled={disabled || busy}
+      onClick={onPress}
+    >
       {label}
     </button>
   ),
@@ -232,6 +240,13 @@ const account = {
   capabilities: [],
   createdAt: "2026-01-01",
 };
+
+/** A button by its text, or the trash icon that removes `account`. */
+function named(button: HTMLButtonElement, action: string) {
+  return action === "Remove"
+    ? button.getAttribute("aria-label") === `Remove ${account.displayName}`
+    : button.textContent === action;
+}
 let root: Root;
 let container: HTMLDivElement;
 let catalog: Deferred<(typeof item)[]>;
@@ -450,8 +465,8 @@ it.each(["Remove", "Uninstall"])(
     state.rpc.mockImplementation((proc: string) =>
       proc === "connections/catalog" ? Promise.reject(new Error()) : Promise.resolve([]),
     );
-    const remove = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === action,
+    const remove = [...container.querySelectorAll("button")].find((button) =>
+      named(button, action),
     );
     const toolsCalls = state.rpc.mock.calls.filter(([proc]) => proc === "connections/tools").length;
     await act(async () => remove?.click());
@@ -509,8 +524,8 @@ it.each(["Add another", "Remove", "Uninstall"])(
       if (proc === "connections/catalog") return Promise.reject(new Error());
       return Promise.resolve([]);
     });
-    const button = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === action,
+    const button = [...container.querySelectorAll("button")].find((button) =>
+      named(button, action),
     );
     expect(button).toBeDefined();
     await act(async () => button?.click());
@@ -708,7 +723,7 @@ it.each(["rename", "revoke", "uninstall", "connect"])(
       const label =
         action === "revoke" ? "Remove" : action === "uninstall" ? "Uninstall" : "Add another";
       await act(async () =>
-        [...container.querySelectorAll("button")].find((b) => b.textContent === label)?.click(),
+        [...container.querySelectorAll("button")].find((b) => named(b, label))?.click(),
       );
     }
     expect(state.rpc).toHaveBeenCalledWith(

@@ -222,6 +222,8 @@ export const integrationsRpc = {
         z.object({
           name: z.string(),
           description: z.string(),
+          /** The provider's own read-only hint; the name decides when it is absent. */
+          readOnly: z.boolean().optional(),
         }),
       ),
     ),

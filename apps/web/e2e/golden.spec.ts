@@ -192,10 +192,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(detail.getByLabel("Account label").nth(1)).toHaveValue(accountName);
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
-  await page
-    .getByTestId("connection-tools")
-    .getByText(/tools?$/)
-    .click();
+  await expect(detail.getByText("Send email", { exact: true })).toBeHidden();
+  await page.getByTestId("connection-tools-writes").getByText("Writes", { exact: true }).click();
   await expect(detail.getByText("Send email", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "11a3-plugin-tools");
 
@@ -209,7 +207,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(detailAgain.getByLabel("Account label")).toHaveCount(2);
   await expect(detailAgain.getByLabel("Account label").nth(1)).toHaveValue(accountName);
 
-  await detailAgain.getByRole("button", { name: "Remove", exact: true }).last().click();
+  await detailAgain.getByRole("button", { name: `Remove ${accountName}`, exact: true }).click();
   await expect(detailAgain.getByLabel("Account label")).toHaveCount(1);
   await detailAgain.getByRole("button", { name: "Uninstall", exact: true }).click();
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
