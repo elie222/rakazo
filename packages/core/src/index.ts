@@ -123,7 +123,12 @@ export * from "./primitives/response-bytes.js";
 export * from "./primitives/retry.js";
 export * from "./primitives/retry-policy.js";
 export * from "./primitives/search.js";
-export { validTimezoneOrUtc, wallClock, zonedDateTime } from "./primitives/time.js";
+export {
+  formatShortHistoryDate,
+  validTimezoneOrUtc,
+  wallClock,
+  zonedDateTime,
+} from "./primitives/time.js";
 export * from "./primitives/user-error.js";
 export * from "./primitives/utf8.js";
 export * from "./routines/inbound-routine.js";

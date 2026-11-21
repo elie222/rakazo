@@ -158,17 +158,16 @@ export async function listAgentSkillRecords(
   return mergeBuiltinSkills(builtinAgentSkillRecords(), rows.map(toRecord));
 }
 
-async function findOwnedSkill(
-  prisma: PrismaClient,
-  owner: SkillOwner,
-  input: { skillId?: string; name?: string },
-): Promise<(SkillRecord & { id: string }) | null> {
-  const skills = await listAgentSkillRecords(prisma, owner);
-  if (input.skillId) {
-    return skills.find((skill) => skill.id === input.skillId) ?? null;
-  }
-  if (input.name) return findSkillByName(skills, input.name) ?? null;
-  return null;
+type SkillKey = Pick<AgentSkillRow, "id" | "name">;
+type SkillLookup = { skillId?: string; name?: string };
+
+function matchSkill<T extends SkillKey>(skills: readonly T[], input: SkillLookup) {
+  if (input.skillId) return skills.find((skill) => skill.id === input.skillId);
+  return input.name ? findSkillByName(skills, input.name) : undefined;
+}
+
+async function findOwnedSkill(prisma: PrismaClient, owner: SkillOwner, input: SkillLookup) {
+  return matchSkill(await listAgentSkillRecords(prisma, owner), input);
 }
 
 /** The text files stored beside a skill's SKILL.md, keyed by relative path. */
@@ -186,14 +185,39 @@ export async function skillReadFromTool(
   owner: SkillOwner,
   input: { name?: string; skillId?: string; file?: string },
 ): Promise<Record<string, unknown>> {
-  const skill = await findOwnedSkill(prisma, owner, input);
-  if (!skill) return { error: "Skill not found." };
-  const row = skill.id.startsWith("builtin:")
+  const keys = await prisma.agentSkill.findMany({
+    where: availableInSpace(owner),
+    select: { id: true, name: true },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+  });
+  // Builtins already have a document. Stored entries have only a name and ID here.
+  const catalog = mergeBuiltinSkills<SkillKey | (SkillRecord & { id: string })>(
+    builtinAgentSkillRecords(),
+    keys,
+  );
+  const key = matchSkill(catalog, input);
+  if (!key) return { error: "Skill not found." };
+
+  const builtin = "readOnly" in key ? key : undefined;
+  const row = builtin
     ? null
     : await prisma.agentSkill.findFirst({
-        where: { id: skill.id, ...availableInSpace(owner) },
-        select: { files: true },
+        where: {
+          id: key.id,
+          ...availableInSpace(owner),
+          ...(input.skillId ? {} : { name: key.name }),
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          source: true,
+          content: true,
+          files: true,
+        },
       });
+  const skill = builtin ?? (row && toRecord(row));
+  if (!skill) return { error: "Skill not found." };
   const files = skillFiles(row?.files);
   const paths = Object.keys(files).sort();
   const wanted = input.file?.trim().replace(/^\.\//, "");

@@ -304,6 +304,18 @@ describe("Pi usage accounting", () => {
       expect(normalizePiUsage(undefined, model, fields)).toMatchObject({ costUsd, costSource });
     },
   );
+  it("records a local model call as free, but not an unpriced hosted one", () => {
+    const unpriced = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    expect(
+      normalizePiUsage({ input: 5, output: 2 }, { provider: "local", cost: unpriced }),
+    ).toMatchObject({ costUsd: 0, costSource: "free-endpoint" });
+    expect(normalizePiUsage(undefined, { provider: "local", cost: unpriced })).toMatchObject({
+      costUsd: 0,
+    });
+    expect(
+      normalizePiUsage({ input: 5, output: 2 }, { provider: "openrouter", cost: unpriced }),
+    ).toMatchObject({ costUsd: null, costSource: null });
+  });
   it("retains a provider cost receipt when a stream throws after reporting it", async () => {
     const afterCall = vi.fn();
     const events: AgentRuntimeEvent[] = [];
@@ -1274,7 +1286,7 @@ describe("Pi usage accounting", () => {
           output: 2,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
         },
-        { cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+        { provider: "openrouter", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       ).costUsd,
     ).toBeNull();
   });
