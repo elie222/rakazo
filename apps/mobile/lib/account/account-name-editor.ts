@@ -3,24 +3,23 @@ import type { Alert } from "react-native";
 
 import { lengthLimitMessage, promptText } from "../dialogs/text-prompt";
 
-type Dependencies<T> = {
+type Dependencies = {
   currentName: string;
   pending: { current: boolean };
-  saveVersion: { current: number };
   Platform: { OS: string };
   Alert: Pick<typeof Alert, "prompt">;
   errorText: (error: unknown, fallback: string) => string;
   updateAccountName: (name: string) => Promise<void>;
-  refresh: () => Promise<T>;
   onSaved: (name: string) => void;
-  onRefreshed: (account: T) => void;
+  /** Marks the account read stale, so it is read again after a save. */
+  markStale: () => Promise<void>;
   setNameDraft: (value: string) => void;
   setNameError: (error: string | null) => void;
   setNamePending: (pending: boolean) => void;
   setNameDialogOpen: (open: boolean) => void;
 };
 
-export function createAccountNameEditor<T>(deps: Dependencies<T>) {
+export function createAccountNameEditor(deps: Dependencies) {
   const { pending } = deps;
   function prompt(value: string, message?: string) {
     promptText(deps.Alert, {
@@ -50,15 +49,9 @@ export function createAccountNameEditor<T>(deps: Dependencies<T>) {
     let failure: string | undefined;
     try {
       await deps.updateAccountName(name);
-      const version = ++deps.saveVersion.current;
       deps.onSaved(name);
       deps.setNameDialogOpen(false);
-      void deps
-        .refresh()
-        .then((account) => {
-          if (version === deps.saveVersion.current) deps.onRefreshed(account);
-        })
-        .catch(() => undefined);
+      void deps.markStale();
     } catch (error) {
       failure = deps.errorText(error, t`Could not update name`);
       if (deps.Platform.OS !== "ios") deps.setNameError(failure);
