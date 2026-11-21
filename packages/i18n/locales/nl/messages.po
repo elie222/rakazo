@@ -62,7 +62,7 @@ msgstr "{0, plural, one {# tool} other {# tools}}"
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "{0, plural, one {The code expires in about # minute.} other {The code expires in about # minutes.}}"
-msgstr ""
+msgstr "{0, plural, one {De code verloopt over ongeveer # minuut.} other {De code verloopt over ongeveer # minuten.}}"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
@@ -139,7 +139,7 @@ msgstr "{0} MB"
 #. placeholder {0}: recurrence.count
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "{0} occurrences"
-msgstr ""
+msgstr "{0} keer"
 
 #. placeholder {0}: sender.name
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -254,11 +254,11 @@ msgstr "{connectedCount, plural, one {# gekoppeld} other {# gekoppeld}}"
 
 #: apps/web/src/pages/model-settings/space-bots-model.tsx
 msgid "{count, plural, one {{names} keeps its own model} other {{names} keep their own model}}"
-msgstr ""
+msgstr "{count, plural, one {{names} houdt een eigen model} other {{names} houden een eigen model}}"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "{count, plural, one {# bot has its own model: {names}} other {# bots have their own model: {names}}}"
-msgstr ""
+msgstr "{count, plural, one {# bot heeft een eigen model: {names}} other {# bots hebben een eigen model: {names}}}"
 
 #: apps/mobile/components/thread/peer-receipt-line.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
@@ -275,11 +275,11 @@ msgstr "{count, plural, one {# geselecteerd} other {# geselecteerd}}"
 
 #: apps/mobile/app/(settings)/skills.tsx
 msgid "{count, plural, one {# skill} other {# skills}}"
-msgstr ""
+msgstr "{count, plural, one {# skill} other {# skills}}"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "{count, plural, one {Switch # bot to the space default?} other {Switch # bots to the space default?}}"
-msgstr ""
+msgstr "{count, plural, one {# bot overzetten naar de spacestandaard?} other {# bots overzetten naar de spacestandaard?}}"
 
 #: apps/mobile/components/thread/thread-list-controls.tsx
 msgid "{count} agents working"
@@ -400,11 +400,11 @@ msgstr "{hiddenSelectedCount, plural, one {# geselecteerd model wordt verborgen 
 
 #: packages/i18n/src/computer-usage.ts
 msgid "{hours} bot computer hours/month"
-msgstr ""
+msgstr "{hours} bot-computeruren/maand"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "{hours} bot computer hours/month at Standard size · Up to {size}"
-msgstr ""
+msgstr "{hours} bot-computeruren/maand op standaardformaat · Tot {size}"
 
 #: apps/web/src/lib/locale/relative-time.ts
 msgid "{hours}h ago"
@@ -438,7 +438,7 @@ msgstr "{minutes}m geleden"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
-msgstr ""
+msgstr "{moved, plural, one {# bot gebruikt nu de spacestandaard.} other {# bots gebruiken nu de spacestandaard.}}"
 
 #: apps/mobile/lib/routines/cron.ts
 msgid "{n} {unit}"
@@ -447,7 +447,7 @@ msgstr "{n} {unit}"
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
 msgid "{name} (copy)"
-msgstr ""
+msgstr "{name} (kopie)"
 
 #: apps/mobile/lib/thread/send/thread-attachments.ts
 msgid "{name} (could not read)"
@@ -913,7 +913,7 @@ msgstr "1 ongelezen"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "2. Enter this code at {host}"
-msgstr ""
+msgstr "2. Voer deze code in op {host}"
 
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -1002,7 +1002,7 @@ msgstr "Accountstandaard"
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/PagePeople.tsx
 msgid "Account email"
-msgstr ""
+msgstr "E-mailadres van account"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -1092,7 +1092,7 @@ msgstr "{0} aan de groep toevoegen"
 
 #: apps/web/src/pages/plugins/parts.tsx
 msgid "Add {label}"
-msgstr ""
+msgstr "{label} toevoegen"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -1172,7 +1172,7 @@ msgstr "Nog een {name} toevoegen"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Add calendar event?"
-msgstr ""
+msgstr "Agenda-afspraak toevoegen?"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -1243,7 +1243,7 @@ msgstr "Aanbieder toevoegen"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Add reminder?"
-msgstr ""
+msgstr "Herinnering toevoegen?"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/approvals.tsx
@@ -1298,7 +1298,7 @@ msgstr "Toegevoegd"
 
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Added: {name}"
-msgstr ""
+msgstr "Toegevoegd: {name}"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -1394,7 +1394,7 @@ msgstr "Alle bots"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "All day"
-msgstr ""
+msgstr "Hele dag"
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -1634,7 +1634,7 @@ msgstr "Iedereen bij @{ownerDomain}"
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Anyone can view. Removes people you added."
-msgstr ""
+msgstr "Iedereen kan bekijken. Verwijdert de mensen die je hebt toegevoegd."
 
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
@@ -1793,7 +1793,7 @@ msgstr "Vragen"
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Ask bot to revise"
-msgstr ""
+msgstr "Bot vragen om te herzien"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -1955,17 +1955,17 @@ msgstr "Terug naar chat"
 #: apps/mobile/app/page-review.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 msgid "Back to comments"
-msgstr ""
+msgstr "Terug naar opmerkingen"
 
 #: apps/mobile/app/shared-pages.tsx
 msgid "Back to first page"
-msgstr ""
+msgstr "Terug naar eerste pagina"
 
 #: apps/mobile/app/page-review.tsx
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 msgid "Back to latest"
-msgstr ""
+msgstr "Terug naar nieuwste"
 
 #: apps/web/src/pages/shell/meetings/meetings-dialog.tsx
 msgid "Back to meetings"
@@ -2050,7 +2050,7 @@ msgstr "Bord"
 
 #: apps/web/src/pages/space/Board.tsx
 msgid "Board view"
-msgstr ""
+msgstr "Bordweergave"
 
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
 #: packages/i18n/src/computer-preview.ts
@@ -2098,11 +2098,11 @@ msgstr "Bot-acties"
 
 #: packages/i18n/src/page-review.ts
 msgid "Bot couldn't draft a revision"
-msgstr ""
+msgstr "Bot kon geen revisie opstellen"
 
 #: packages/i18n/src/page-review.ts
 msgid "Bot draft requested"
-msgstr ""
+msgstr "Botconcept aangevraagd"
 
 #: apps/mobile/components/bots/bot-email.tsx
 #: apps/web/src/components/vault/BotEmailAddresses.tsx
@@ -2612,7 +2612,7 @@ msgstr "Kies een aanbieder"
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Choose a section"
-msgstr ""
+msgstr "Kies een sectie"
 
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Choose backup"
@@ -2837,7 +2837,7 @@ msgstr "Code"
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Code from {host}"
-msgstr ""
+msgstr "Code van {host}"
 
 #. placeholder {0}: headerName(group)
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
@@ -2893,12 +2893,12 @@ msgstr "Opmerking"
 
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Comment actions"
-msgstr ""
+msgstr "Acties voor opmerking"
 
 #: apps/mobile/app/page-review.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 msgid "Comments"
-msgstr ""
+msgstr "Opmerkingen"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/use-catalog-browse.ts
@@ -2917,7 +2917,7 @@ msgstr "Voltooid"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Complete reminder?"
-msgstr ""
+msgstr "Herinnering voltooien?"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/SubagentCard.tsx
@@ -3311,7 +3311,7 @@ msgstr "Gekopieerd"
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Copied, open again"
-msgstr ""
+msgstr "Gekopieerd, opnieuw openen"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/cards/run-error-sheet.tsx
@@ -3352,7 +3352,7 @@ msgstr "Code kopiëren"
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Copy code and open"
-msgstr ""
+msgstr "Code kopiëren en openen"
 
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "Copy diagram source"
@@ -3378,7 +3378,7 @@ msgstr "Prompt kopiëren"
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/PagePeople.tsx
 msgid "Copy review link"
-msgstr ""
+msgstr "Beoordelingslink kopiëren"
 
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "Copy rows"
@@ -4098,7 +4098,7 @@ msgstr "Deze bestanden konden niet worden gelezen"
 
 #: apps/mobile/lib/board/board.ts
 msgid "Could not refresh the board. {detail}"
-msgstr ""
+msgstr "Kon het bord niet vernieuwen. {detail}"
 
 #: apps/web/src/pages/plugins/PluginSubmissionsPanel.tsx
 msgid "Could not reject plugin"
@@ -4267,7 +4267,7 @@ msgstr "Regel opslaan mislukt"
 
 #: apps/web/src/components/computers/SaveScreenshotButton.tsx
 msgid "Could not save screenshot"
-msgstr ""
+msgstr "Schermafbeelding opslaan mislukt"
 
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/web/src/components/teach/SkillDraftCard.tsx
@@ -5054,7 +5054,7 @@ msgstr "Verwijderd"
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Deleted account"
-msgstr ""
+msgstr "Verwijderd account"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 #: apps/web/src/pages/shell/chat/transcript-member-name.ts
@@ -5368,11 +5368,11 @@ msgstr "Bezig met downloaden…"
 
 #: packages/i18n/src/page-review.ts
 msgid "Draft ready"
-msgstr ""
+msgstr "Concept klaar"
 
 #: apps/mobile/app/page-review.tsx
 msgid "Draft revision"
-msgstr ""
+msgstr "Conceptrevisie"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "Draft skill"
@@ -5392,7 +5392,7 @@ msgstr "Elke naam kan maar één keer worden gebruikt."
 
 #: packages/i18n/src/page-review.ts
 msgid "Earlier revision"
-msgstr ""
+msgstr "Eerdere revisie"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/bot-profile.tsx
@@ -5554,7 +5554,7 @@ msgstr "Voer elke site in als een HTTPS-adres waarvoor een login kan worden opge
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Enter this code at {host}"
-msgstr ""
+msgstr "Voer deze code in op {host}"
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "Environment ID"
@@ -5764,7 +5764,7 @@ msgstr "Extra hoog"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Extra large"
-msgstr ""
+msgstr "Extra groot"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Extra large (uses {rate}× hours)"
@@ -5998,11 +5998,11 @@ msgstr "Krijg een gratis maand voor elke vriend die een proefperiode start."
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Get a new code"
-msgstr ""
+msgstr "Nieuwe code ophalen"
 
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Get a sign-in code"
-msgstr ""
+msgstr "Aanmeldcode ophalen"
 
 #: apps/mobile/app/bot-profile.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -6219,7 +6219,7 @@ msgstr "Transcript verbergen"
 
 #: apps/mobile/components/calls/VoiceChatCard.tsx
 msgid "Hide transcript: {title}, {duration}"
-msgstr ""
+msgstr "Transcript verbergen: {title}, {duration}"
 
 #: apps/mobile/lib/models/thinking-level.ts
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
@@ -6645,7 +6645,7 @@ msgstr "zojuist"
 
 #: apps/web/src/pages/space/Board.tsx
 msgid "Kanban"
-msgstr ""
+msgstr "Kanban"
 
 #. Keeps the account's current timezone instead of switching
 #: apps/mobile/lib/i18n/device-timezone.ts
@@ -6707,7 +6707,7 @@ msgstr "Taal"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Large"
-msgstr ""
+msgstr "Groot"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Large (uses {rate}× hours)"
@@ -6723,11 +6723,11 @@ msgstr "Lange tekst direct geplakt"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Last check {checkedAt}: changed"
-msgstr ""
+msgstr "Laatste controle {checkedAt}: gewijzigd"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Last check {checkedAt}: no changes"
-msgstr ""
+msgstr "Laatste controle {checkedAt}: geen wijzigingen"
 
 #: apps/web/src/components/account/SocialSignInButtons.tsx
 msgid "Last used"
@@ -7018,7 +7018,7 @@ msgstr "Hoofdmodel"
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Make a copy"
-msgstr ""
+msgstr "Kopie maken"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
@@ -7269,7 +7269,7 @@ msgstr "{name} berichten"
 #. placeholder {0}: [speakerName, when].filter(Boolean).join(" ")
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {0}"
-msgstr ""
+msgstr "Berichtacties, {0}"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Message composer"
@@ -7304,7 +7304,7 @@ msgstr "{peer} een bericht gestuurd"
 #: apps/mobile/lib/thread/send/thread-send.ts
 #: apps/web/src/pages/shell/composer/use-composer-actions.ts
 msgid "Messages can be up to {limit} characters."
-msgstr ""
+msgstr "Berichten mogen maximaal {limit} tekens bevatten."
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines."
@@ -7759,7 +7759,7 @@ msgstr "Nieuwe variabele"
 
 #: apps/mobile/lib/pages/page-review-comments.tsx
 msgid "Newest comments"
-msgstr ""
+msgstr "Nieuwste opmerkingen"
 
 #: apps/mobile/app/new-group.tsx
 msgid "Next"
@@ -7787,7 +7787,7 @@ msgstr "Volgende instellingssecties"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Next thinking level"
-msgstr ""
+msgstr "Volgend denkniveau"
 
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -7837,7 +7837,7 @@ msgstr "Geen bots gevonden"
 
 #: apps/mobile/lib/pages/page-review-comments.tsx
 msgid "No comments yet."
-msgstr ""
+msgstr "Nog geen opmerkingen."
 
 #: packages/i18n/src/computer-usage.ts
 msgid "No computer hours used yet"
@@ -7910,7 +7910,7 @@ msgstr "Geen pagina's komen overeen met ‘{query}’."
 #: apps/mobile/app/shared-pages.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 msgid "No pages shared with you yet."
-msgstr ""
+msgstr "Nog geen pagina's met je gedeeld."
 
 #: apps/mobile/app/(settings)/computers.tsx
 msgid "No paired computers"
@@ -7976,7 +7976,7 @@ msgstr "Geen aanmelding nodig"
 
 #: apps/web/src/components/integrations/skills-dialog.tsx
 msgid "No skills match your search."
-msgstr ""
+msgstr "Geen skills gevonden voor je zoekopdracht."
 
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "No skills yet"
@@ -8195,7 +8195,7 @@ msgstr "Oké, ik schakel over naar {name}."
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Older comments"
-msgstr ""
+msgstr "Oudere opmerkingen"
 
 #: apps/mobile/components/calls/CallCard.tsx
 msgid "On a call with {name}"
@@ -8236,7 +8236,7 @@ msgstr "Eenmalige aankoop. Tegoed vervalt niet."
 
 #: apps/web/src/pages/routines/routine-editor/access-note.tsx
 msgid "Only {name} can change this routine."
-msgstr ""
+msgstr "Alleen {name} kan deze routine wijzigen."
 
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
@@ -8295,7 +8295,7 @@ msgstr "{0} openen"
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Open {host}"
-msgstr ""
+msgstr "{host} openen"
 
 #: apps/mobile/components/cards/ImportSetupCard.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
@@ -8365,7 +8365,7 @@ msgstr "Rakazo openen"
 
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Open settings"
-msgstr ""
+msgstr "Instellingen openen"
 
 #: apps/mobile/lib/composer/composer-dictation.ts
 #: apps/mobile/lib/thread/thread-voice.ts
@@ -8504,7 +8504,7 @@ msgstr "Pagina"
 
 #: apps/web/src/components/pages/PageCard.tsx
 msgid "Page · {sharing} · {when}"
-msgstr ""
+msgstr "Pagina · {sharing} · {when}"
 
 #: apps/web/src/components/pages/PageCard.tsx
 msgid "Page · {when}"
@@ -8554,7 +8554,7 @@ msgstr "Pagina's"
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Pages shared with you"
-msgstr ""
+msgstr "Pagina's gedeeld met jou"
 
 #: apps/mobile/app/pages.tsx
 msgid "Pages this bot builds for you appear here."
@@ -8640,11 +8640,11 @@ msgstr "Plak een vervangende sleutel"
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Paste code"
-msgstr ""
+msgstr "Code plakken"
 
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Paste the code it shows you"
-msgstr ""
+msgstr "Plak de code die je te zien krijgt"
 
 #: apps/web/src/pages/shell/bots/agent-import.tsx
 msgid "Paste the reply"
@@ -8662,7 +8662,7 @@ msgstr "Pauzeren"
 
 #: apps/mobile/components/media/audio-attachment.tsx
 msgid "Pause {name}"
-msgstr ""
+msgstr "{name} pauzeren"
 
 #: apps/mobile/lib/cards/import-setup.ts
 #: apps/mobile/lib/routines/routine.ts
@@ -8817,7 +8817,7 @@ msgstr "Plaats een chatbericht wanneer een controle geen wijzigingen vindt. De r
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Post comment"
-msgstr ""
+msgstr "Opmerking plaatsen"
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -8849,7 +8849,7 @@ msgstr "{0} bekijken"
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Preview draft"
-msgstr ""
+msgstr "Concept bekijken"
 
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
@@ -8874,7 +8874,7 @@ msgstr "Prioriteit"
 
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Priority support for $100 / month"
-msgstr ""
+msgstr "Prioriteitssupport voor $100 / maand"
 
 #: apps/mobile/app/paywall.tsx
 msgid "Privacy"
@@ -8954,11 +8954,11 @@ msgstr "Openbare servers vereisen https://. HTTP werkt alleen op je lokale netwe
 #: apps/mobile/app/page-review.tsx
 #: apps/web/src/components/pages/PageReviewHost.tsx
 msgid "Publish revision"
-msgstr ""
+msgstr "Revisie publiceren"
 
 #: packages/i18n/src/page-review.ts
 msgid "Published in revision {version}"
-msgstr ""
+msgstr "Gepubliceerd in revisie {version}"
 
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/CloudAgentCard.tsx
@@ -9004,7 +9004,7 @@ msgstr "Rakazo-tegoed"
 
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Rakazo is free to self-host. If you'd like to support it, subscribers can email support@rakazo.com for help."
-msgstr ""
+msgstr "Rakazo is gratis te self-hosten. Wil je het steunen? Abonnees kunnen voor hulp mailen naar support@rakazo.com."
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
@@ -9012,7 +9012,7 @@ msgstr "rakazo-shared en ID's die beginnen met bot- zijn gereserveerd voor Rakaz
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "Rate Rakazo"
-msgstr ""
+msgstr "Rakazo beoordelen"
 
 #: apps/mobile/components/thread/message-row.tsx
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
@@ -9025,7 +9025,7 @@ msgstr "Reacties"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read calendar events?"
-msgstr ""
+msgstr "Agenda-afspraken lezen?"
 
 #: apps/mobile/components/cards/ask-receipt.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -9034,7 +9034,7 @@ msgstr "Van de pagina gelezen, niet gecontroleerd"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read reminders?"
-msgstr ""
+msgstr "Herinneringen lezen?"
 
 #: apps/mobile/app/bot-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
@@ -9335,16 +9335,16 @@ msgstr "{site} verwijderen"
 
 #: apps/mobile/app/page-share.tsx
 msgid "Remove access"
-msgstr ""
+msgstr "Toegang intrekken"
 
 #. placeholder {0}: person.email
 #: apps/web/src/components/pages/PagePeople.tsx
 msgid "Remove access for {0}"
-msgstr ""
+msgstr "Toegang intrekken voor {0}"
 
 #: apps/mobile/app/page-share.tsx
 msgid "Remove access?"
-msgstr ""
+msgstr "Toegang intrekken?"
 
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Remove change trigger"
@@ -9406,7 +9406,7 @@ msgstr "Webhook verwijderen"
 #: apps/mobile/app/page-share.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 msgid "Removes everyone you added"
-msgstr ""
+msgstr "Verwijdert iedereen die je hebt toegevoegd"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -9465,12 +9465,12 @@ msgstr "Dubbel in het bestand"
 #. placeholder {0}: recurrence.interval
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Repeats every {0} day(s)"
-msgstr ""
+msgstr "Herhaalt elke {0} dag(en)"
 
 #. placeholder {0}: recurrence.interval
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Repeats every {0} week(s)"
-msgstr ""
+msgstr "Herhaalt elke {0} week/weken"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/components/models/model-providers.tsx
@@ -9531,7 +9531,7 @@ msgstr "Vraag een nieuwe code aan"
 
 #: packages/i18n/src/page-review.ts
 msgid "Request cancelled"
-msgstr ""
+msgstr "Verzoek geannuleerd"
 
 #: apps/mobile/lib/computers/use-computer-boot.ts
 msgid "Request timed out"
@@ -9619,11 +9619,11 @@ msgstr "Paneel van grootte veranderen"
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Resolve"
-msgstr ""
+msgstr "Oplossen"
 
 #: packages/i18n/src/page-review.ts
 msgid "Resolved"
-msgstr ""
+msgstr "Opgelost"
 
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
@@ -9750,7 +9750,7 @@ msgstr "Terug naar Rakazo"
 #: apps/mobile/app/page.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "Review page"
-msgstr ""
+msgstr "Pagina beoordelen"
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -9760,12 +9760,12 @@ msgstr "Beoordeelt pull requests die op je wachten"
 #. placeholder {0}: comment.version
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Revision {0}"
-msgstr ""
+msgstr "Revisie {0}"
 
 #: apps/mobile/app/page-review.tsx
 #: apps/mobile/lib/pages/page-review-comments.tsx
 msgid "Revision {version}"
-msgstr ""
+msgstr "Revisie {version}"
 
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/web/src/pages/auth/AdminAccessPage.tsx
@@ -9962,7 +9962,7 @@ msgstr "Mijn versie opslaan"
 
 #: apps/web/src/components/computers/SaveScreenshotButton.tsx
 msgid "Save screenshot"
-msgstr ""
+msgstr "Schermafbeelding opslaan"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 msgid "Save section name"
@@ -10189,7 +10189,7 @@ msgstr "Geheim"
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Section"
-msgstr ""
+msgstr "Sectie"
 
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 msgid "Section actions for {name}"
@@ -10203,7 +10203,7 @@ msgstr "Sectienaam"
 
 #: apps/web/src/pages/shell/app-rail.tsx
 msgid "Sections"
-msgstr ""
+msgstr "Secties"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Security"
@@ -10425,7 +10425,7 @@ msgstr "{name} delen"
 
 #: apps/web/src/components/call/AiDataConsentDialog.tsx
 msgid "Share data with {name}?"
-msgstr ""
+msgstr "Gegevens delen met {name}?"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -10536,7 +10536,7 @@ msgstr "Transcript tonen"
 
 #: apps/mobile/components/calls/VoiceChatCard.tsx
 msgid "Show transcript: {title}, {duration}"
-msgstr ""
+msgstr "Transcript tonen: {title}, {duration}"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sidebar density"
@@ -10577,11 +10577,11 @@ msgstr "Toch aanmelden"
 
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Sign in at {host}"
-msgstr ""
+msgstr "Aanmelden bij {host}"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Sign in at {host}, then paste the code it shows you here."
-msgstr ""
+msgstr "Meld je aan bij {host} en plak hier de code die je te zien krijgt."
 
 #: apps/mobile/app/sign-in.tsx
 #: apps/web/src/pages/auth/Auth.tsx
@@ -10896,7 +10896,7 @@ msgstr "Spreekt"
 #: apps/web/src/components/pages/SharePopover.tsx
 #: packages/i18n/src/page-review.ts
 msgid "Specific people"
-msgstr ""
+msgstr "Specifieke personen"
 
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -10953,7 +10953,7 @@ msgstr "Start gratis proefperiode"
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Start over"
-msgstr ""
+msgstr "Opnieuw beginnen"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -11140,12 +11140,12 @@ msgstr "zondag"
 
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Support for $25 / month"
-msgstr ""
+msgstr "Support voor $25 / maand"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/lib/billing/self-hosted-support.ts
 msgid "Support Rakazo"
-msgstr ""
+msgstr "Rakazo steunen"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
@@ -11172,7 +11172,7 @@ msgstr "Toch wisselen"
 
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
 msgid "Switch model"
-msgstr ""
+msgstr "Model wisselen"
 
 #: apps/mobile/app/(settings)/billing.tsx
 msgid "Switch to {name}?"
@@ -11388,7 +11388,7 @@ msgstr "De eigenaar heeft de link misschien uitgezet of de pagina verwijderd."
 
 #: packages/i18n/src/page-review.ts
 msgid "The page and selected comment are sent to draft a revision."
-msgstr ""
+msgstr "De pagina en de geselecteerde opmerking worden verstuurd om een revisie op te stellen."
 
 #: apps/mobile/lib/cards/run-error-presentation.ts
 msgid "The provider couldn't serve the model selected for this bot."
@@ -11574,7 +11574,7 @@ msgstr "Dit kan niet ongedaan worden gemaakt."
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 #: apps/web/src/lib/models/use-model-oauth-signin.ts
 msgid "This code expired. Start again."
-msgstr ""
+msgstr "Deze code is verlopen. Begin opnieuw."
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "this computer"
@@ -11610,7 +11610,7 @@ msgstr "Dit apparaat"
 
 #: apps/web/src/components/pages/PageReviewHost.tsx
 msgid "This draft isn't available"
-msgstr ""
+msgstr "Dit concept is niet beschikbaar"
 
 #: apps/web/src/lib/bots/agent-import-errors.ts
 msgid "This export is newer than Rakazo can read. Update Rakazo and try again."
@@ -11814,7 +11814,7 @@ msgstr "donderdag"
 
 #: apps/web/src/pages/space/board-views.tsx
 msgid "Ticket"
-msgstr ""
+msgstr "Ticket"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
@@ -11857,7 +11857,7 @@ msgstr "Te doen"
 
 #: apps/mobile/lib/settings/ai-consent.ts
 msgid "To turn this off, use Withdraw all permissions in Account → AI data sharing."
-msgstr ""
+msgstr "Zet dit uit met “Alle toestemmingen intrekken” in Account → AI-gegevensdeling."
 
 #: apps/mobile/components/composer/bot-chip-picker.tsx
 #: apps/web/src/pages/shell/bots/bot-picker.tsx
@@ -12326,7 +12326,7 @@ msgstr "{hostLabel} gebruiken"
 
 #: apps/mobile/lib/dialogs/text-prompt.ts
 msgid "Use {maxLength} characters or fewer"
-msgstr ""
+msgstr "Gebruik maximaal {maxLength} tekens"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Use {oauthEnvReference} for the access token."
@@ -12522,7 +12522,7 @@ msgstr "Alles bekijken"
 
 #: apps/mobile/app/page-review.tsx
 msgid "View page"
-msgstr ""
+msgstr "Pagina bekijken"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -12574,11 +12574,11 @@ msgstr "Wachten op het antwoord van deze bot."
 
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Waiting for you to sign in"
-msgstr ""
+msgstr "Wachten tot je je aanmeldt"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Waiting for you to sign in. The code expires in about {minutes} minutes."
-msgstr ""
+msgstr "Wachten tot je je aanmeldt. De code verloopt over ongeveer {minutes} minuten."
 
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Waiting in line…"
@@ -12843,7 +12843,7 @@ msgstr "Werkruimte"
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Write a comment"
-msgstr ""
+msgstr "Schrijf een opmerking"
 
 #: apps/mobile/app/routine.tsx
 msgid "Write what this routine should do."
