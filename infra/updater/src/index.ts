@@ -42,6 +42,12 @@ import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
 import type { Context } from "hono";
 import { Hono } from "hono";
+import {
+  endSnapshotCycle,
+  SNAPSHOT_STEP_ID,
+  snapshotDatabase,
+  withSnapshotStep,
+} from "./database-snapshot.js";
 import type { ComputerTagChange } from "./runtime-state.js";
 import {
   COMPUTER_TAG_ENV,
@@ -623,6 +629,7 @@ export function createUpdaterApp(
     return rememberRun(
       await execute({
         request,
+        snapshot: config.databaseSnapshots > 0,
         recoveryAllowed,
         imageEnvironment,
         computerTags,
@@ -690,6 +697,8 @@ export function createUpdaterApp(
   async function execute(input: {
     request: { repoUrl: string; branch: string };
     strategy: "pull" | "build";
+    /** Only an update snapshots: a rollback must not replace the file it may need to restore. */
+    snapshot?: boolean;
     recoveryAllowed?: boolean;
     imageEnvironment?: Record<string, string>;
     computerTags?: ComputerTagChange;
@@ -762,7 +771,10 @@ export function createUpdaterApp(
     }
     try {
       const gitSteps = input.steps.filter((step) => step.command === "git");
-      const composeSteps = input.steps.filter((step) => step.command !== "git");
+      const composeSteps = withSnapshotStep(
+        input.steps.filter((step) => step.command !== "git"),
+        input.snapshot === true,
+      );
 
       for (const step of gitSteps) {
         if (step.id === "checkout" || step.id === "merge") checkoutNeedsRestore = true;
@@ -861,6 +873,8 @@ export function createUpdaterApp(
       }
       record.ok = true;
       record.restart = "recreated";
+      // Any update, snapshotted or not; a rollback leaves `snapshot` unset and the cycle open.
+      if (input.snapshot !== undefined) await bestEffort("end cycle", endSnapshotCycle(config));
       await bestEffort(
         "prune obsolete update images",
         readEnvFile().then((env) =>
@@ -898,11 +912,17 @@ export function createUpdaterApp(
     env?: Record<string, string>,
     setError = true,
   ) {
-    const result = await run(step.command, step.args, {
-      cwd: config.deployDir,
-      timeoutMs: STEP_TIMEOUT_MS[step.id] ?? DEFAULT_TIMEOUT_MS,
-      env: step.command === "docker" ? { COMPOSE_PROJECT_NAME: config.projectName, ...env } : env,
-    });
+    const result =
+      step.id === SNAPSHOT_STEP_ID
+        ? await snapshotDatabase(config, composeTarget, record, run)
+        : await run(step.command, step.args, {
+            cwd: config.deployDir,
+            timeoutMs: STEP_TIMEOUT_MS[step.id] ?? DEFAULT_TIMEOUT_MS,
+            env:
+              step.command === "docker"
+                ? { COMPOSE_PROJECT_NAME: config.projectName, ...env }
+                : env,
+          });
     record.steps.push({
       id: step.id,
       label: step.label,
