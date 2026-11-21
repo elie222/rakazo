@@ -244,7 +244,8 @@ describeBreakdown("usage.breakdown", () => {
         inputTokens: 1,
         outputTokens: 1,
         cacheReadTokens,
-        totalTokens: cacheReadTokens + 2,
+        // A measured cache read counts even when the call reported no total.
+        totalTokens: cacheReadTokens === 2 ? null : cacheReadTokens + 2,
       })),
     });
     const cached = await get({ range: "30d", botId: alpha.id });
