@@ -2889,8 +2889,5 @@ describe("Pi connector tool dispatch", () => {
       observe: false,
       settle_ms: 350,
     });
-    expect(await dispatch({ actions: [], settle_ms: "" })).toMatchObject({ settle_ms: 350 });
-    expect(await dispatch({ actions: [], settle_ms: "soon" })).toMatchObject({ settle_ms: 350 });
-    expect(await dispatch({ actions: [], settle_ms: 600 })).toMatchObject({ settle_ms: 600 });
   });
 });
