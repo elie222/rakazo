@@ -179,6 +179,23 @@ describe("local history retrieval", () => {
       ),
     );
   });
+  it.each(["Aurora deadline", "Aurora, deadline?"])(
+    "prefers a later excerpt that contains more distinct query words for %s",
+    async (query) => {
+      const { mock, prisma } = db();
+      const evidence = "Final deadline for Aurora is July 18.";
+      const original = `Aurora weekly notes.\n${"Routine status update.\n".repeat(50)}${evidence}`;
+      mock.$queryRaw.mockResolvedValue([row(1, original)]);
+
+      const result = await searchHistory(prisma, scope, { query });
+      const message = result.messages[0]!;
+      expect(message.messageId).toBe("message-1");
+      expect(message.text).toContain(evidence);
+      expect(message.text).toBe(
+        original.slice(message.textOffset, message.textOffset + message.text.length),
+      );
+    },
+  );
   it("restricts channel inputs and bot output using the run source, including neighbors", async () => {
     const { mock, prisma } = db();
     mock.$queryRaw.mockResolvedValueOnce([row(4)]).mockResolvedValueOnce([row(3), row(4)]);
