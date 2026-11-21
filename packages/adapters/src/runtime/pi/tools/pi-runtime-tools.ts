@@ -23,7 +23,7 @@ import type { FinishedShellCommand } from "../../../computers/sandbox/shell-comm
 import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
-import { textContentArg } from "../../../runs/turn/tool-text.js";
+import { settleMsArg, textContentArg } from "../../../runs/turn/tool-text.js";
 import {
   connectionIdArgument,
   credentialArgument,
@@ -443,8 +443,8 @@ function toAgentTool(
       if (tool.name === "computer_act") {
         return {
           actions: Array.isArray(raw.actions) ? raw.actions : [],
-          observe: raw.observe === undefined ? true : Boolean(raw.observe),
-          settle_ms: Number(raw.settle_ms ?? 350),
+          observe: raw.observe == null ? true : Boolean(raw.observe),
+          settle_ms: settleMsArg(raw.settle_ms),
         };
       }
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };
