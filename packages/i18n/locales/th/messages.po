@@ -6883,6 +6883,10 @@ msgstr "กำลังโหลดการตั้งค่าความจ
 msgid "Loading model catalog…"
 msgstr "กำลังโหลดแคตตาล็อกโมเดล…"
 
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Loading model name…"
+msgstr ""
+
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
 msgstr "กำลังโหลดหน้า…"
@@ -7382,6 +7386,10 @@ msgstr "โมเดล"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Model id"
 msgstr "ID โมเดล"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Model name unavailable"
+msgstr ""
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -12120,6 +12128,10 @@ msgstr "หน่วย"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "ยกเลิกการเชื่อมโยง"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Unlisted model"
+msgstr ""
 
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
