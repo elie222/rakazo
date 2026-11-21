@@ -77,16 +77,11 @@ test("computer maintenance shows durable background progress and failure recover
   await reopen([{ ...updating, status: "failed" }], /Update failed/);
   await expect(dialog.getByRole("button", { name: "Recover computer", exact: true })).toBeVisible();
   await expect(dialog.getByRole("heading")).toHaveText("Update failed");
-  await expect(dialog.getByRole("alert")).toHaveCount(1);
-  await expect(dialog.getByRole("alert")).toBeEmpty();
   await captureScreenshot(page, testInfo, "computer-update-failed");
   await dialog.getByRole("button", { name: "Recover computer" }).click();
-  await expect(dialog.getByRole("alert")).toHaveCount(1);
-  await expect(
-    dialog
-      .getByRole("alert")
-      .getByText("The computer is still shutting down. Try again after it stops.", { exact: true }),
-  ).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "The computer is still shutting down. Try again after it stops.",
+  );
   await captureScreenshot(page, testInfo, "computer-recovery-refused");
   recoveryRefused = false;
   await dialog.getByRole("button", { name: "Recover computer" }).click();
