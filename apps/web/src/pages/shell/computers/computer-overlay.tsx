@@ -167,7 +167,7 @@ export function ComputerOverlay({
                 onRefresh={onRefreshTeaching}
               />
             ) : null}
-            {canSaveScreenshot ? <SaveScreenshotButton botId={bot.id} /> : null}
+            {canSaveScreenshot ? <SaveScreenshotButton key={bot.id} botId={bot.id} /> : null}
             <Button
               variant="ghost"
               size="icon-sm"
