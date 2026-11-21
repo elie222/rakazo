@@ -62,16 +62,14 @@ test("subscription descriptors retain existing translation keys", async () => {
       (message) => message.id === "oCbawp" && message.message === "Claude subscription",
     ),
   );
-});
-
-test("generated subscription ids preserve the existing PO entry format", async () => {
-  const po = await formatter().serialize(
-    {
-      XrwIDk: { message: "ChatGPT subscription", translation: "ChatGPT-Abonnement" },
-      oCbawp: { message: "Claude subscription", translation: "Claude-Abonnement" },
-    },
-    { locale: "de", sourceLocale: "en", filename: "messages.po", existing: undefined },
-  );
-  assert(!po.includes("js-lingui-explicit-id"));
-  assert(po.includes('msgid "Claude subscription"'));
+  for (const { id, message, context } of messages) {
+    const po = await formatter().serialize(
+      { [id]: { message, context, translation: message } },
+      { locale: "de", sourceLocale: "en", filename: "messages.po", existing: undefined },
+    );
+    assert(
+      !po.includes("js-lingui-explicit-id"),
+      "Subscription descriptor IDs must match Lingui's generated message IDs",
+    );
+  }
 });
