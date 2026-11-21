@@ -19,6 +19,8 @@ export function judgeSettings(model: AgentRunModel) {
     model.projectId,
     model.region,
   ].map((value) => value?.trim() || null);
+  // It can send calls to other servers behind the same URL.
+  if (model.zeroDataRetention) routing.push("zero-data-retention");
   const baseUrl = model.baseUrl?.trim() ? normalizeUrl(model.baseUrl.trim()) : null;
   return {
     endpoint:

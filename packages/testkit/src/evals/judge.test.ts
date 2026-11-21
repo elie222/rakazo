@@ -117,6 +117,9 @@ describe("judgeSettings", () => {
       settings.endpoint,
     );
     expect(judgeSettings({ ...model, region: "eu" }).endpoint).not.toBe(settings.endpoint);
+    expect(judgeSettings({ ...model, zeroDataRetention: true }).endpoint).not.toBe(
+      settings.endpoint,
+    );
     expect(judgeSettings({ provider: "fake", id: "judge" }).endpoint).toBeNull();
   });
 });
