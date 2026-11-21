@@ -11,6 +11,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import GroupSettingsScreen from "../../app/group-settings";
 import { queryClient } from "../query/query";
 
+const { announce } = vi.hoisted(() => ({ announce: vi.fn() }));
 const { rpc, router, alert, selection, archivedListeners, params } = vi.hoisted(() => ({
   params: { groupId: "group-1" },
   rpc: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock("../inbox/archived/archived-chats", () => ({
   },
 }));
 vi.mock("../native/native", () => ({ native: {}, useMobileTokens: () => ({}) }));
+vi.mock("../native/announce", () => ({ announceToScreenReader: announce }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useLocalSearchParams: () => params,
@@ -165,6 +167,7 @@ it("shows a failed save and offers Save again", async () => {
   await act(async () => button("Save")!.click());
   await act(async () => write.reject(new Error("Name taken")));
   expect(container.textContent).toContain("Name taken");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Name taken");
   expect(button("Save")!.disabled).toBe(false);
   expect(router.back).not.toHaveBeenCalled();
 });
@@ -216,4 +219,29 @@ it("says when the group is gone", async () => {
   rpc.mockImplementation(async (procedure: string) => (procedure === "groups/list" ? [] : bots));
   await act(async () => root.render(<GroupSettingsScreen />));
   expect(container.textContent).toContain("Group not found");
+});
+
+it("announces each failed save, and a repeat of the same failure again", async () => {
+  await act(async () => root.render(<GroupSettingsScreen />));
+  await rename("Crew");
+  await act(async () => button("Save")!.click());
+  expect(announce).not.toHaveBeenCalled();
+  await act(async () => write.reject(new Error("Name taken")));
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Name taken");
+
+  write = deferred();
+  await act(async () => button("Save")!.click());
+  await act(async () => write.reject(new Error("Name taken")));
+  expect(announce).toHaveBeenCalledTimes(2);
+  expect(announce).toHaveBeenLastCalledWith("Name taken");
+});
+
+it("announces a failed load once, when it appears", async () => {
+  rpc.mockImplementation(async (procedure: string) => {
+    if (procedure === "groups/list") throw new Error("Groups are unavailable");
+    return bots;
+  });
+  await act(async () => root.render(<GroupSettingsScreen />));
+  expect(container.textContent).toContain("Groups are unavailable");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Groups are unavailable");
 });

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { UsageBreakdownBot, UsageDateRange } from "@rakazo/contracts";
+import type { ModelCatalogEntry, UsageBreakdownBot, UsageDateRange } from "@rakazo/contracts";
 import {
   Field,
   FieldLabel,
@@ -23,6 +23,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useEffect, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
+import { usageModelKey, usageModelLabels } from "./usage-model-labels";
 
 export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivElement | null> }) {
   const { t, i18n } = useLingui();
@@ -47,6 +48,15 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
     staleTime: 30_000,
   });
 
+  const catalogQuery = useQuery(queries.models.list.queryOptions());
+  const catalog = catalogQuery.data ?? NO_CATALOG;
+  const fallbackLabel =
+    catalogQuery.data !== undefined
+      ? t`Unlisted model`
+      : catalogQuery.isError
+        ? t`Model name unavailable`
+        : t`Loading model name…`;
+
   const count = new Intl.NumberFormat(i18n.locale);
   const usd = new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" });
   const number = (value: number | null | undefined) => (value == null ? "—" : count.format(value));
@@ -67,18 +77,8 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const overTime = fresh?.overTime ?? [];
   const monthly = fresh?.overTimeUnit === "month";
   const totals = fresh?.totals;
-  const modelNames = data?.modelOptions ?? [];
-  const modelOptions = data
-    ? modelNames.map((m) => ({
-        key: JSON.stringify([m.provider, m.model]),
-        label:
-          modelNames.filter((other) => other.model === m.model).length > 1
-            ? `${m.model} (${m.provider})`
-            : m.model,
-      }))
-    : selectedModel
-      ? [selectedModel]
-      : [];
+  const modelLabels = usageModelLabels(data?.modelOptions ?? [], catalog, fallbackLabel);
+  const modelOptions = data ? modelLabels.options : selectedModel ? [selectedModel] : [];
 
   // A new date range can drop the selected bot or model from the lists: go back to all.
   useEffect(() => {
@@ -247,24 +247,32 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
               </TableRow>
             </TableHeader>
             <TableBody>
-              {models.map((row) => (
-                <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
-                  <TableCell>
-                    <div className="text-foreground">{row.model}</div>
-                    <div className="text-label text-muted-foreground">{row.provider}</div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.modelCalls)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.inputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {number(row.outputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
-                </TableRow>
-              ))}
+              {models.map((row) => {
+                const display = modelLabels.byKey.get(usageModelKey(row));
+                const { modelLabel, providerLabel } = modelLabels.labelsFor(row);
+                return (
+                  <TableRow key={`${row.provider}:${row.model}`} className="hover:bg-transparent">
+                    <TableCell>
+                      <div className="text-foreground">{display?.label ?? modelLabel}</div>
+                      {(display ? display.providerLabel : providerLabel) && (
+                        <div className="text-label text-muted-foreground">
+                          {display ? display.providerLabel : providerLabel}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {number(row.modelCalls)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {number(row.inputTokens)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {number(row.outputTokens)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -284,3 +292,5 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
     </div>
   );
 }
+
+const NO_CATALOG: ModelCatalogEntry[] = [];

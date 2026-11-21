@@ -21,6 +21,13 @@ export class ErrorBoundary extends Component<{ children?: ReactNode }, { message
   static getDerivedStateFromError(error: unknown) {
     return { message: error instanceof Error ? error.message : String(error) };
   }
+  override componentDidUpdate(prevProps: { children?: ReactNode }) {
+    // New content (say, after the reader picks another period) gets a fresh try. Unchanged
+    // content that throws again keeps its panel, so a repeat error cannot loop.
+    if (this.state.message !== null && this.props.children !== prevProps.children) {
+      this.setState({ message: null });
+    }
+  }
   override render() {
     return this.state.message === null ? (
       this.props.children

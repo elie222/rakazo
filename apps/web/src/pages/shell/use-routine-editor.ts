@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
-import { cronFromPreset, localTimezone } from "@rakazo/core";
+import { cronFromPreset, localTimezone, routineCopy } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
@@ -338,6 +338,44 @@ export function useRoutineEditor({
             return;
           }
           await refreshThread(targetBotId).catch(() => undefined);
+        },
+        onSetActive: async (on) => {
+          const targetBotId = active.id;
+          const targetRoutine = editingRoutine;
+          if (!targetRoutine || targetRoutine.botId !== targetBotId) return;
+          if (routineSavePending.current) return;
+          const saveRequest = ++routineSaveRequest.current;
+          routineSavePending.current = true;
+          setSavingRoutine(true);
+          setRoutineError(null);
+          setRoutineDraft((current) => ({ ...current, active: on }));
+          try {
+            const saved = await rpc.routines.update({ routineId: targetRoutine.id, active: on });
+            if (routineSaveRequest.current === saveRequest && activeBotId.current === targetBotId) {
+              setEditingRoutine(saved);
+              setRoutineDraft((current) => ({ ...current, active: saved.active }));
+            }
+          } catch (error) {
+            if (routineSaveRequest.current !== saveRequest || activeBotId.current !== targetBotId) {
+              return;
+            }
+            setRoutineDraft((current) => ({ ...current, active: targetRoutine.active }));
+            setRoutineError(errorText(error, t`Could not save routine`));
+            return;
+          } finally {
+            routineSavePending.current = false;
+            setSavingRoutine(false);
+          }
+          await refreshThread(targetBotId).catch(() => undefined);
+        },
+        onCopy: () => {
+          if (!editingRoutine) return;
+          const name = editingRoutine.name;
+          const copy = routineCopy(editingRoutine, t`${name} (copy)`);
+          if (!copy) return;
+          setRoutineDraft(draftStateFromRoutine(copy));
+          setEditingRoutine(null);
+          setRoutineError(null);
         },
         onTestRun: async () => {
           if (routineRunPending.current) return;

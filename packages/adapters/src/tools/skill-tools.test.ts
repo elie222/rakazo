@@ -10,25 +10,53 @@ import {
   skillUpdateFromTool,
 } from "./skill-tools.js";
 
-type Scope = { spaceId?: string; userId?: string; OR?: Array<{ spaceId?: string }> };
-/** The owner's rows here: added in this space (no fixture is available beyond one). */
+type Scope = {
+  spaceId?: string;
+  userId?: string;
+  name?: { equals: string } | string;
+  NOT?: { id: string };
+  OR?: Array<{ spaceId?: string; allSpaces?: boolean }>;
+};
+/** The owner's rows here: added in this space or available in all of the owner's spaces. */
 function inScope(row: Record<string, unknown>, where: Scope): boolean {
   if (where.userId && row.userId !== where.userId) return false;
   if (where.spaceId && row.spaceId !== where.spaceId) return false;
-  if (where.OR && !where.OR.some((branch) => branch.spaceId === row.spaceId)) return false;
+  if (
+    typeof where.name === "object" &&
+    String(row.name).toLowerCase() !== where.name.equals.toLowerCase()
+  )
+    return false;
+  if (where.NOT && row.id === where.NOT.id) return false;
+  if (
+    where.OR &&
+    !where.OR.some(
+      (branch) => branch.spaceId === row.spaceId || (branch.allSpaces && row.allSpaces === true),
+    )
+  )
+    return false;
   return true;
 }
 
-function makePrisma(rows: Array<Record<string, unknown>> = []) {
+function makePrisma(
+  rows: Array<Record<string, unknown>> = [],
+  routines: Array<{ id: string; userId: string; spaceId: string; prompt: string }> = [],
+) {
   const store = [...rows];
-  return {
+  const client = {
     agentSkill: {
       findMany: vi.fn(async ({ where }: { where?: Scope } = {}) =>
         store.filter((row) => !where || inScope(row, where)).map((row) => ({ ...row })),
       ),
       findFirst: vi.fn(async ({ where }: { where: Scope & { id: string } }) => {
         const row = store.find((item) => item.id === where.id && inScope(item, where));
-        return row ? { files: row.files ?? null } : null;
+        return row
+          ? {
+              files: row.files ?? null,
+              spaceId: row.spaceId,
+              allSpaces: row.allSpaces === true,
+              availableIn: [],
+            }
+          : null;
       }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row = {
@@ -54,15 +82,15 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
           where,
           data,
         }: {
-          where: Record<string, string>;
+          where: Scope & Record<string, unknown>;
           data: Record<string, unknown>;
         }) => {
           const index = store.findIndex(
             (row) =>
               row.id === where.id &&
-              row.spaceId === where.spaceId &&
-              row.userId === where.userId &&
-              row.source === where.source,
+              inScope(row, where) &&
+              row.source === where.source &&
+              (where.name === undefined || row.name === where.name),
           );
           if (index < 0) return { count: 0 };
           store[index] = { ...store[index], ...data, updatedAt: new Date() };
@@ -75,21 +103,42 @@ function makePrisma(rows: Array<Record<string, unknown>> = []) {
         const [removed] = store.splice(index, 1);
         return removed;
       }),
-      deleteMany: vi.fn(async ({ where }: { where: Record<string, string> }) => {
+      deleteMany: vi.fn(async ({ where }: { where: Scope & Record<string, unknown> }) => {
         const index = store.findIndex(
-          (row) =>
-            row.id === where.id &&
-            row.spaceId === where.spaceId &&
-            row.userId === where.userId &&
-            row.source === where.source,
+          (row) => row.id === where.id && inScope(row, where) && row.source === where.source,
         );
         if (index < 0) return { count: 0 };
         store.splice(index, 1);
         return { count: 1 };
       }),
     },
+    routine: {
+      findMany: vi.fn(
+        async ({ where }: { where: { userId: string; spaceId?: { in: string[] } } }) =>
+          routines.filter(
+            (row) =>
+              row.userId === where.userId &&
+              (!where.spaceId || where.spaceId.in.includes(row.spaceId)) &&
+              row.prompt.includes("@"),
+          ),
+      ),
+      updateMany: vi.fn(
+        async ({ where, data }: { where: { id: string; prompt: string }; data: object }) => {
+          const row = routines.find((r) => r.id === where.id && r.prompt === where.prompt);
+          if (!row) return { count: 0 };
+          Object.assign(row, data);
+          return { count: 1 };
+        },
+      ),
+    },
+    $executeRaw: vi.fn(async () => 0),
+    $queryRaw: vi.fn(async () => [{ bypass: null, key: null, login: "test" }]),
     _store: store,
+    _routines: routines,
   };
+  return Object.assign(client, {
+    $transaction: vi.fn(async (run: (tx: typeof client) => unknown) => run(client)),
+  });
 }
 
 const owner = { spaceId: "ws-1", userId: "user-1" };
@@ -214,6 +263,148 @@ describe("skill tools", () => {
       newName: "Renamed",
     });
     expect(renamed).toMatchObject({ ok: true, name: "Renamed" });
+  });
+
+  it("points routines that mention a renamed skill at its new name", async () => {
+    const routine = (id: string, userId: string, spaceId: string, prompt: string) => ({
+      id,
+      userId,
+      spaceId,
+      prompt,
+    });
+    prisma = makePrisma(
+      [],
+      [
+        routine("r1", "user-1", "ws-1", "Run @Original, then @Original tools."),
+        routine("r2", "user-1", "ws-2", "Run @Original here."),
+        routine("r3", "user-2", "ws-1", "Run @Original here."),
+      ],
+    );
+    const created = await skillCreateFromTool(prisma as never, owner, {
+      name: "Original",
+      description: "d",
+      body: "body",
+    });
+    await skillCreateFromTool(prisma as never, owner, {
+      name: "Original tools",
+      description: "d",
+      body: "body",
+    });
+    const publishSpaceChange = vi.fn(async () => undefined);
+    await skillUpdateFromTool(
+      prisma as never,
+      owner,
+      { skillId: String(created.id), newName: "Renamed" },
+      { publishSpaceChange },
+    );
+    expect(publishSpaceChange.mock.calls).toEqual([["ws-1", "routines"]]);
+    expect(prisma._routines.map((row) => row.prompt)).toEqual([
+      "Run @Renamed, then @Original tools.",
+      "Run @Original here.",
+      "Run @Original here.",
+    ]);
+  });
+
+  it("edits and deletes the owner's skills that other spaces also use", async () => {
+    prisma = makePrisma(
+      [
+        {
+          id: "shared",
+          spaceId: "ws-2",
+          userId: "user-1",
+          allSpaces: true,
+          name: "Shared",
+          description: "d",
+          content: buildSkillMd({ name: "Shared", description: "d", body: "old" }),
+          source: "user",
+        },
+      ],
+      [
+        { id: "r1", userId: "user-1", spaceId: "ws-1", prompt: "Run @Shared." },
+        { id: "r2", userId: "user-1", spaceId: "ws-3", prompt: "Run @Shared." },
+      ],
+    );
+    const publishSpaceChange = vi.fn(async () => undefined);
+    const updated = await skillUpdateFromTool(
+      prisma as never,
+      owner,
+      { name: "Shared", newName: "Better", body: "new" },
+      { publishSpaceChange },
+    );
+    expect(updated).toMatchObject({ ok: true, name: "Better" });
+    expect(prisma._store[0]?.content).toContain("new");
+    expect(prisma._routines.map((row) => row.prompt)).toEqual(["Run @Better.", "Run @Better."]);
+    expect(publishSpaceChange.mock.calls).toEqual([
+      ["ws-1", "routines"],
+      ["ws-3", "routines"],
+    ]);
+
+    expect(await skillDeleteFromTool(prisma as never, owner, { name: "Better" })).toMatchObject({
+      ok: true,
+    });
+    expect(prisma._store).toHaveLength(0);
+  });
+
+  it("refuses a rename that would clash with a skill in another space it reaches", async () => {
+    const skill = (id: string, spaceId: string, name: string, allSpaces: boolean) => ({
+      id,
+      spaceId,
+      userId: "user-1",
+      allSpaces,
+      name,
+      description: "d",
+      content: buildSkillMd({ name, description: "d", body: "b" }),
+      source: "user",
+    });
+    prisma = makePrisma([
+      skill("shared", "ws-1", "Shared", true),
+      skill("local", "ws-2", "Taken", false),
+    ]);
+    const result = await skillUpdateFromTool(prisma as never, owner, {
+      name: "Shared",
+      newName: "Taken",
+    });
+    expect(result).toEqual({
+      error: "A skill with that name already exists in one of these spaces.",
+    });
+    expect(prisma._store[0]?.name).toBe("Shared");
+  });
+
+  it("leaves routines alone when another rename got there first", async () => {
+    prisma = makePrisma([], [{ id: "r1", userId: "user-1", spaceId: "ws-1", prompt: "@Old" }]);
+    const created = await skillCreateFromTool(prisma as never, owner, {
+      name: "Old",
+      description: "d",
+      body: "body",
+    });
+    const publishSpaceChange = vi.fn(async () => undefined);
+    // The skill was renamed between this tool's read and its write.
+    const [stored] = (await prisma.agentSkill.findMany()) as Array<{ id: string }>;
+    await prisma.agentSkill.update({ where: { id: String(stored?.id) }, data: { name: "Other" } });
+    prisma.agentSkill.findMany.mockResolvedValueOnce([{ ...stored, name: "Old" }]);
+    const result = await skillUpdateFromTool(
+      prisma as never,
+      owner,
+      { skillId: String(created.id), newName: "New" },
+      { publishSpaceChange },
+    );
+    expect(result).toHaveProperty("error");
+    expect(prisma._routines[0]?.prompt).toBe("@Old");
+    expect(publishSpaceChange).not.toHaveBeenCalled();
+  });
+
+  it("leaves routines alone when the skill keeps its name", async () => {
+    prisma = makePrisma([], [{ id: "r1", userId: "user-1", spaceId: "ws-1", prompt: "@Keep" }]);
+    const created = await skillCreateFromTool(prisma as never, owner, {
+      name: "Keep",
+      description: "d",
+      body: "body",
+    });
+    await skillUpdateFromTool(prisma as never, owner, {
+      skillId: String(created.id),
+      description: "new",
+    });
+    expect(prisma.routine.updateMany).not.toHaveBeenCalled();
   });
 
   it("scopes list to the owner workspace and injects catalog lines", async () => {
