@@ -269,9 +269,7 @@ export function BotOrganizeModal({
           ) : null}
         </>
       )}
-      <Text accessibilityRole="alert" style={error ? styles.error : undefined}>
-        {error}
-      </Text>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
       <NativeActionButton
         label={t`Cancel`}
         prominence="secondary"

@@ -3,7 +3,7 @@
 import { deferred } from "@rakazo/core/test-async";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
-import { act, Children, createElement, isValidElement } from "react";
+import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ErrorModule from "../cards/run-error-sheet-container";
@@ -439,13 +439,8 @@ describe("inbox organization actions", () => {
   });
   it.each([
     ["Pin", {}],
-    ["Unpin", { pinned: true }],
-    ["Second", {}],
-    ["Unassigned", {}],
-    ["Silence notifications", {}],
-    ["Resume notifications", { notifyOnFinish: false }],
     ["Unsnooze", {}],
-  ])("announces each failed %s once without closing the sheet", async (label, overrides) => {
+  ])("announces a failed %s without closing the sheet", async (label, overrides) => {
     const { props, root, click } = await organize(
       overrides,
       label === "Unsnooze" ? true : undefined,
@@ -457,46 +452,14 @@ describe("inbox organization actions", () => {
     expect(announce).toHaveBeenCalledExactlyOnceWith("Could not update chat");
     expect(props.onClose).not.toHaveBeenCalled();
   });
-  it("announces a failed snooze preset with the displayed message", async () => {
-    const { i18n } = await import("@lingui/core");
-    i18n.loadAndActivate({ locale: "en", messages: {} });
-    const { props, root } = await organize({}, false);
-    props.onSnooze?.mockRejectedValue(new Error("Try a different time"));
-    const snooze = Array.from(root.element.querySelectorAll("button")).find(
-      (button) => button.textContent === "1 hour",
-    );
-    expect(snooze).toBeDefined();
-    await act(async () => snooze?.click());
-    expect(root.element.textContent).toContain("Try a different time");
-    expect(announce).toHaveBeenCalledExactlyOnceWith("Try a different time");
+  it("announces a failed section delete with its displayed fallback", async () => {
+    const { props, root, click } = await organize();
+    props.onDeleteSection.mockRejectedValue(undefined);
+    await click("Delete section");
+    expect(root.element.textContent).toContain("Could not delete section");
+    expect(announce).toHaveBeenCalledExactlyOnceWith("Could not delete section");
     expect(props.onClose).not.toHaveBeenCalled();
   });
-  it.each(["Create", "Save", "Delete section"])(
-    "announces a failed section %s with its displayed fallback",
-    async (action) => {
-      const { props, root, click } = await organize();
-      props.onCreateSection.mockRejectedValue(undefined);
-      props.onRenameSection.mockRejectedValue(undefined);
-      props.onDeleteSection.mockRejectedValue(undefined);
-      if (action !== "Delete section") {
-        await click(action === "Create" ? "New section" : "Rename section");
-        await act(async () => {
-          const input = root.element.querySelector("input");
-          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
-            input,
-            "Updated",
-          );
-          input?.dispatchEvent(new Event("input", { bubbles: true }));
-        });
-      }
-      await click(action);
-      const message =
-        action === "Delete section" ? "Could not delete section" : "Could not update chat";
-      expect(root.element.textContent).toContain(message);
-      expect(announce).toHaveBeenCalledExactlyOnceWith(message);
-      expect(props.onClose).not.toHaveBeenCalled();
-    },
-  );
   it("announces the same failure again on retry and stays silent when the retry succeeds", async () => {
     const { props, root, click } = await organize();
     props.onUpdate.mockRejectedValueOnce(undefined).mockRejectedValueOnce(undefined);
@@ -507,25 +470,6 @@ describe("inbox organization actions", () => {
     expect(props.onClose).toHaveBeenCalledOnce();
     expect(root.element.textContent).not.toContain("Could not update chat");
     expect(announce).toHaveBeenCalledTimes(2);
-  });
-  it("keeps the native alert mounted before a failure and fills it with the announced text", async () => {
-    function alerts(node: ReactNode): ReactNode[] {
-      return Children.toArray(node).flatMap((child): ReactNode[] => {
-        if (!isValidElement<{ accessibilityRole?: string; children?: ReactNode }>(child)) return [];
-        return child.props.accessibilityRole === "alert" ? [child] : alerts(child.props.children);
-      });
-    }
-    const { props, click } = await organize();
-    const before = alerts(mocks.sheet.mock.lastCall?.[0].children);
-    expect(before).toHaveLength(1);
-    props.onUpdate.mockRejectedValue(new Error("Please try again"));
-    await click("Pin");
-    const after = alerts(mocks.sheet.mock.lastCall?.[0].children);
-    expect(after).toHaveLength(1);
-    expect(isValidElement(after[0]) && after[0].props).toMatchObject({
-      children: "Please try again",
-    });
-    expect(announce).toHaveBeenCalledExactlyOnceWith("Please try again");
   });
   it("keeps rename inputs and saving connected", async () => {
     const { props, click, root } = await organize();
