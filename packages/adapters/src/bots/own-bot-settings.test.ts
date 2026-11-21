@@ -162,6 +162,17 @@ describe("readOwnBotSettings", () => {
     expect(text).toBe(heavy.instructions);
   });
 
+  it("leaves long team chat rules out of a page of instructions", async () => {
+    const settings = await readSettings({
+      ...bot,
+      description: "d".repeat(4_000),
+      teamChatRules: '"'.repeat(4_000),
+      instructions: "x".repeat(19_000),
+    });
+    expect(settings).toMatchObject({ instructionsOffset: 0 });
+    expect(settings).not.toHaveProperty("teamChatRules");
+  });
+
   it("refuses a read when the rest of the settings leave no room for instructions", async () => {
     const crowded = { ...bot, description: '"'.repeat(6_000), instructions: "x".repeat(19_000) };
     const settings = await readOwnBotSettings(deps(), scope, crowded);

@@ -93,7 +93,8 @@ export async function readOwnBotSettings(
     voice: bot.voiceId ?? "default",
     replyMode: bot.replyMode,
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled,
-    ...(bot.teamChatRules ? { teamChatRules: bot.teamChatRules } : {}),
+    // Rules can be long, so only a whole read carries them, never a page of instructions.
+    ...(bot.teamChatRules && !paging ? { teamChatRules: bot.teamChatRules } : {}),
     ...(bot.memoryScope ? { memoryScope: bot.memoryScope } : {}),
     disabledTools: bot.disabledBuiltinTools,
     models: [...providers].map(([provider, ids]) => ({
