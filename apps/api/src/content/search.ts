@@ -29,12 +29,6 @@ const UNINDEXED_SCAN_LIMIT = 200;
  * paging so deliveries can't fill the candidate pages; `kind` stays plaintext when encrypted.
  */
 const NOT_DELIVERY = Prisma.sql`NOT (m.blocks @> ${JSON.stringify([{ kind: "delivery" }])}::jsonb)`;
-const OPEN_GROUP = Prisma.sql`g."archivedAt" IS NULL
-  AND (
-    SELECT COUNT(*) FROM chat_group_members gm
-    INNER JOIN bots gb ON gb.id = gm."botId"
-    WHERE gm."groupId" = g.id AND gb."archivedAt" IS NULL
-  ) >= ${GROUP_MEMBER_MIN}`;
 
 interface MessageMatch {
   sql: Prisma.Sql;
@@ -78,7 +72,6 @@ async function messageMatch(
 interface MessageScope {
   destination: Prisma.Sql;
   from: Prisma.Sql;
-  recheck?: Prisma.Sql;
 }
 
 interface SearchMessage {
@@ -129,7 +122,7 @@ async function* messagePages(
     signal?.throwIfAborted();
     const ids = candidates.slice(offset, offset + match.limit).map(({ id }) => id);
     const rows = await prisma.$queryRaw<SearchMessage[]>(Prisma.sql`
-      ${select} ${scope.from} AND m.id = ANY(${ids}::text[]) ${scope.recheck ?? Prisma.empty}
+      ${select} ${scope.from} AND m.id = ANY(${ids}::text[])
       ORDER BY array_position(${ids}::text[], m.id)`);
     signal?.throwIfAborted();
     yield await open(rows);
@@ -231,7 +224,13 @@ export async function querySpaceSearch(
   const openableGroups = await prisma.$queryRaw<Array<{ id: string }>>(
     Prisma.sql`
       SELECT g.id FROM chat_groups g
-      WHERE g."spaceId" = ${actor.spaceId} AND ${OPEN_GROUP}
+      WHERE g."spaceId" = ${actor.spaceId}
+        AND g."archivedAt" IS NULL
+        AND (
+          SELECT COUNT(*) FROM chat_group_members gm
+          INNER JOIN bots gb ON gb.id = gm."botId"
+          WHERE gm."groupId" = g.id AND gb."archivedAt" IS NULL
+        ) >= ${GROUP_MEMBER_MIN}
     `,
   );
   const openableGroupIds = openableGroups.map(({ id }) => id);
@@ -394,7 +393,6 @@ export async function querySpaceSearch(
         WHERE t."spaceId" = ${actor.spaceId}
           AND g.id IN (${Prisma.join(openableGroupIds.length ? openableGroupIds : [null])})
           AND ${NOT_DELIVERY}`,
-      recheck: Prisma.sql`AND ${OPEN_GROUP}`,
     },
   ];
   for (const scope of scopes) {
