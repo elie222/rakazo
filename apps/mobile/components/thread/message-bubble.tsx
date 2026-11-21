@@ -68,19 +68,6 @@ import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-car
 
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
 
-function FileAttachmentSize({
-  bytes,
-  locale,
-  color,
-}: {
-  bytes: number;
-  locale: string;
-  color: string;
-}) {
-  const label = formatFileSize(bytes, locale);
-  return label ? <Text style={{ color, marginTop: 4, fontSize: 13 }}>{label}</Text> : null;
-}
-
 function formatApprovalAnswer(
   answer: string | undefined,
   actions: AskAction[] | undefined,
@@ -752,11 +739,17 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 >
                   📎 {attachment.name ?? t`File`}
                 </Text>
-                <FileAttachmentSize
-                  bytes={attachment.size}
-                  locale={i18n.locale}
-                  color={outgoing ? tokens.chatUserForeground : tokens.mutedForeground}
-                />
+                {formatFileSize(attachment.size, i18n.locale) ? (
+                  <Text
+                    style={{
+                      color: outgoing ? tokens.chatUserForeground : tokens.mutedForeground,
+                      marginTop: 4,
+                      fontSize: 13,
+                    }}
+                  >
+                    {formatFileSize(attachment.size, i18n.locale)}
+                  </Text>
+                ) : null}
               </Pressable>
             )}
           </View>
