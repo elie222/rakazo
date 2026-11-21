@@ -10,6 +10,7 @@ import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { NativeSymbol } from "../native/native-symbol";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
+import { Chevron } from "../ui/row-accessories";
 import { useTextEditDialog } from "./profile-edit-dialog";
 
 /** A bot's open work, or its memory notes; each shows only once it has something. */
@@ -17,6 +18,9 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
   const { t } = useLingui();
   const router = useRouter();
   const tokens = useMobileTokens();
+  // Folded like Advanced, so a long list never pushes the rest of the screen away.
+  const [workOpen, setWorkOpen] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [allWork, setAllWork] = useState(false);
   const [allDocs, setAllDocs] = useState(false);
   // Read again on return, so an edited or deleted note shows its saved state.
@@ -42,6 +46,7 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
     ) => {
       if (action.kind === "create") {
         const item = await send("scratchpad/create", { botId, title: action.title });
+        setWorkOpen(true);
         await writeSaved(queryClient, workRead.queryKey, (items) => [item, ...(items ?? [])]);
       } else {
         await send("scratchpad/update", { itemId: action.itemId, status: "done" });
@@ -73,13 +78,19 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
               flexDirection: "row",
               justifyContent: "space-between",
               alignItems: "center",
-              marginBottom: 8,
               paddingEnd: 16,
             }}
           >
-            <Text accessibilityRole="header" style={heading}>
-              {t`Open work`}
-            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: workOpen }}
+              onPress={() => setWorkOpen((open) => !open)}
+              style={{ flex: 1, minHeight: 44, flexDirection: "row", alignItems: "center", gap: 6 }}
+            >
+              <Text style={heading}>{t`Open work`}</Text>
+              <Text style={{ ...heading, fontVariant: ["tabular-nums"] }}>{work.length}</Text>
+              <Chevron expanded={workOpen} />
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t`Add open work`}
@@ -94,53 +105,66 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
               <NativeSymbol ios="plus" android="add" size={18} color={tokens.mutedForeground} />
             </Pressable>
           </View>
-          <View style={card}>
-            {(allWork ? work : work.slice(0, 5)).map((item) => (
-              <View
-                key={item.id}
-                style={{ minHeight: 44, flexDirection: "row", gap: 12, alignItems: "center" }}
-              >
-                <Pressable
-                  accessibilityLabel={`${t`Complete`} ${item.title}`}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: false }}
-                  hitSlop={11}
-                  style={{
-                    width: 22,
-                    minHeight: 22,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                  disabled={busy}
-                  onPress={() => change.run({ kind: "complete", itemId: item.id })}
+          {workOpen ? (
+            <View style={{ ...card, marginTop: 8 }}>
+              {(allWork ? work : work.slice(0, 5)).map((item) => (
+                <View
+                  key={item.id}
+                  style={{ minHeight: 44, flexDirection: "row", gap: 12, alignItems: "center" }}
                 >
-                  <NativeSymbol
-                    ios="circle"
-                    android="ellipse-outline"
-                    size={22}
-                    color={tokens.mutedForeground}
-                  />
-                </Pressable>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: tokens.foreground, fontSize: 14 }}>{item.title}</Text>
-                  {item.notes ? (
-                    <Text style={{ color: tokens.mutedForeground, fontSize: 12, marginTop: 4 }}>
-                      {item.notes}
+                  <Pressable
+                    accessibilityLabel={`${t`Complete`} ${item.title}`}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: false }}
+                    hitSlop={11}
+                    style={{
+                      width: 22,
+                      minHeight: 22,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    disabled={busy}
+                    onPress={() => change.run({ kind: "complete", itemId: item.id })}
+                  >
+                    <NativeSymbol
+                      ios="circle"
+                      android="ellipse-outline"
+                      size={22}
+                      color={tokens.mutedForeground}
+                    />
+                  </Pressable>
+                  {/* One line each until opened, so the list stays scannable whatever a note holds. */}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: expandedId === item.id }}
+                    onPress={() => setExpandedId((id) => (id === item.id ? null : item.id))}
+                    style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
+                  >
+                    <Text
+                      numberOfLines={expandedId === item.id ? undefined : 1}
+                      style={{ color: tokens.foreground, fontSize: 14 }}
+                    >
+                      {item.title}
                     </Text>
-                  ) : null}
+                    {item.notes && expandedId === item.id ? (
+                      <Text style={{ color: tokens.mutedForeground, fontSize: 12, marginTop: 4 }}>
+                        {item.notes}
+                      </Text>
+                    ) : null}
+                  </Pressable>
                 </View>
-              </View>
-            ))}
-            {!allWork && work.length > 5 ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setAllWork(true)}
-                style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
-              >
-                <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
-              </Pressable>
-            ) : null}
-          </View>
+              ))}
+              {!allWork && work.length > 5 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setAllWork(true)}
+                  style={{ minHeight: 44, alignItems: "center", justifyContent: "center" }}
+                >
+                  <Text style={{ color: tokens.mutedForeground }}>{t`Show more`}</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       ) : null}
       {addWork.dialog}

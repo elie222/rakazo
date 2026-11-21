@@ -100,6 +100,13 @@ it("renders open and parked work without status chrome and removes a wrapped ite
     );
     expect(container.querySelector('[aria-label="New open-work item"]')).not.toBeNull();
     expect(container.textContent).toContain(title);
+    // Notes stay out of the list until their item is opened.
+    expect(container.textContent).not.toContain("Compare both themes");
+    const row = [...container.querySelectorAll("button")].find(
+      (node) => node.textContent === title,
+    )!;
+    await act(async () => row.click());
+    expect(row.getAttribute("aria-expanded")).toBe("true");
     expect(container.textContent).toContain("Compare both themes");
     expect(container.textContent).not.toContain("parked");
     expect(container.querySelector('[aria-label="Park"]')).toBeNull();
@@ -114,6 +121,35 @@ it("renders open and parked work without status chrome and removes a wrapped ite
   } finally {
     await act(async () => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("stays folded behind its count until the heading is opened", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  rpcMock.scratchpad.list.mockResolvedValueOnce([workItem("a", "First"), workItem("b", "Second")]);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await mount(root, "bot-fixture");
+    const heading = host.querySelector<HTMLButtonElement>('[data-slot="collapsible-trigger"]')!;
+    const list = host.querySelector<HTMLElement>('[data-slot="collapsible-content"]')!;
+    expect(heading.closest("h3")?.textContent).toBe("Open work2");
+    expect(heading.getAttribute("aria-expanded")).toBe("false");
+    expect(list.getAttribute("hidden")).toBe("until-found");
+    await act(async () => heading.click());
+    expect(heading.getAttribute("aria-expanded")).toBe("true");
+    expect(list.hasAttribute("hidden")).toBe(false);
+    await act(async () => heading.click());
+    expect(heading.getAttribute("aria-expanded")).toBe("false");
+    // Adding opens the list, so the new field is never hidden behind the fold.
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Add open work"]')!.click(),
+    );
+    expect(heading.getAttribute("aria-expanded")).toBe("true");
+    expect(host.querySelector('[aria-label="New open-work item"]')).not.toBeNull();
+  } finally {
+    await act(async () => root.unmount());
     vi.unstubAllGlobals();
   }
 });

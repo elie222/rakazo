@@ -59,15 +59,22 @@ vi.mock("react-native", () => {
   const Pressable = ({
     children,
     accessibilityLabel,
+    accessibilityState,
     onPress,
   }: {
     children?: ReactNode;
     accessibilityLabel?: string;
+    accessibilityState?: { expanded?: boolean };
     onPress?: () => void;
   }) =>
     createElement(
       "button",
-      { type: "button", "aria-label": accessibilityLabel, onClick: onPress },
+      {
+        type: "button",
+        "aria-label": accessibilityLabel,
+        "aria-expanded": accessibilityState?.expanded,
+        onClick: onPress,
+      },
       children,
     );
   return {
@@ -118,8 +125,17 @@ afterEach(() => {
 const work = [{ id: "work-a", title: "Review draft", notes: "", status: "open" }];
 const memory = [{ id: "memory-a", path: "notes.md", content: "Saved context" }];
 
+// The heading has no label of its own, so its spoken name is its text and count.
+const workHeading = () =>
+  [
+    ...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]:not([aria-label])"),
+  ].find((button) => button.textContent?.startsWith("Open work"));
+
+/** Renders with the work list opened, as most cases act on its rows. */
 async function render(botId = "bot-a", section: "work" | "memory" = "work") {
   await act(async () => root.render(createElement(BotContextCards, { botId, section })));
+  if (workHeading()?.getAttribute("aria-expanded") === "false")
+    await act(async () => workHeading()!.click());
 }
 
 describe("bot context cards", () => {
@@ -135,6 +151,25 @@ describe("bot context cards", () => {
     expect(container.textContent).toContain(heading);
     expect(container.textContent).toContain(item);
     expect(container.textContent).not.toContain(other);
+  });
+
+  it("folds open work behind its count and shows notes only for an opened item", async () => {
+    rpc.mockResolvedValue([{ ...work[0], notes: "Compare both themes" }]);
+    await act(async () =>
+      root.render(createElement(BotContextCards, { botId: "bot-a", section: "work" })),
+    );
+    expect(workHeading()!.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).toBe("Open work1");
+    await act(async () => workHeading()!.click());
+    expect(container.textContent).toContain("Review draft");
+    expect(container.textContent).not.toContain("Compare both themes");
+    const row = [...container.querySelectorAll("button")].find(
+      (node) => node.textContent === "Review draft",
+    )!;
+    await act(async () => row.click());
+    expect(container.textContent).toContain("Compare both themes");
+    await act(async () => workHeading()!.click());
+    expect(container.textContent).toBe("Open work1");
   });
 
   it.each(["work", "memory"] as const)("shows a failed %s load", async (section) => {

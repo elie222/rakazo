@@ -192,7 +192,14 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   });
   await page.getByRole("button", { name: "Close panel" }).click();
   await openBotSettings(page);
+  // Open work folds behind its count, so a long list never crowds the panel.
+  const openWorkHeading = openWork.getByRole("button", { name: /^Open work/ });
+  await expect(openWorkHeading).toHaveAttribute("aria-expanded", "false");
+  await expect(openWork.getByText("First fixture task", { exact: true })).toBeHidden();
+  await captureScreenshot(page, testInfo, "open-work-folded");
+  await openWorkHeading.click();
   await expect(openWork.getByText("First fixture task", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "open-work-opened");
   await openWork.getByRole("button", { name: "Add open work" }).click();
   await openWork.getByRole("textbox", { name: "New open-work item" }).fill("Second fixture task");
   await openWork.getByRole("button", { name: "Add", exact: true }).click();
