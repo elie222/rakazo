@@ -54,6 +54,7 @@ export const BUILTIN_TOOL_NAMES = [
   "remove_mcp_server",
   "remember",
   "save_shared_memory",
+  "delete_shared_memory",
   "web_search",
   "web_fetch",
   "service_search",
