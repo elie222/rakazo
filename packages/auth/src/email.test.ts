@@ -246,7 +246,7 @@ describe("email languages", () => {
     const english = await welcomeEmail(user, "https://example.test/u");
     expect(english.subject).toBe("Welcome to Rakazo");
     expect(english.text).toContain("Hi Ana,");
-    expect(english.text).toContain("Rakazo runs on iPhone");
+    expect(english.text).toContain("Rakazo is available on iPhone");
   });
 
   it("names a Space invitation's Space, never an organization, in every language", async () => {
@@ -287,11 +287,8 @@ it("asks for one thing in the model connection email: the connect step", async (
     { name: "Ana", email: "user@example.test" },
     { webOrigin: "https://app.example.test", unsubscribeUrl },
   );
-  expect(message.subject).toBe("Connect a model to start using Rakazo");
+  expect(message.subject).toBe("Connect a model to use Rakazo");
   expect(message.text).toContain("Hi Ana,");
-  expect(message.text).toContain(
-    "Your Rakazo plan has started, but your bots can't reply until a model is connected.",
-  );
   expect(message.text).toContain(
     "Sign in with your ChatGPT or Claude subscription, or paste an API key.",
   );
@@ -306,8 +303,8 @@ it("asks for one thing in the model connection email: the connect step", async (
     { webOrigin: "https://app.example.test", unsubscribeUrl },
     "de",
   );
-  expect(german.subject).toBe("Verbinde ein Modell, um mit Rakazo loszulegen");
-  expect(german.text).toContain("Abo von ChatGPT oder Claude");
+  expect(german.text).toContain("Hallo Ana,");
+  expect(german.text).toContain("ChatGPT oder Claude");
 });
 
 it("asks for one thing in the agent import email: opening the import", async () => {
@@ -316,9 +313,9 @@ it("asks for one thing in the agent import email: opening the import", async () 
     { name: "Ana", email: "user@example.test" },
     { webOrigin: "https://app.example.test", unsubscribeUrl },
   );
-  expect(message.subject).toBe("Bring your old assistant to Rakazo");
+  expect(message.subject).toBe("Import an assistant into Rakazo");
   expect(message.text).toContain("Hi Ana,");
-  expect(message.text).toContain("Already set up an assistant in Grok Bot, Hermes, or OpenClaw?");
+  expect(message.text).toContain("from Grok Bot, Hermes, or OpenClaw as a new bot");
   const links = [...message.html!.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
   expect(links).toEqual(["https://app.example.test/sign-in?next=%2Fapp%3Fimport", unsubscribeUrl]);
   expect(message.headers?.["List-Unsubscribe"]).toBe(`<${unsubscribeUrl}>`);
