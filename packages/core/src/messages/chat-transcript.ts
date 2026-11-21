@@ -88,27 +88,39 @@ function holdsSecret(block: AskBlock): boolean {
  */
 function closeOpenFence(markdown: string): string {
   let open: string | undefined;
+  // The closing fence sits in the opener's column (indentation, list or quote markers), so an
+  // indented code block or list item stays the one it was.
+  let closer = "";
   const lines = markdown.split("\n").map((line) => {
-    const fence = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    const fence = /^((?:\s*(?:[-+*]|\d+[.)]|>)\s+)*\s*)(`{3,}|~{3,})(.*)$/.exec(line);
     if (!fence) return open ? line : escapeHtml(line);
-    const mark = fence[1] ?? "";
-    const rest = fence[2] ?? "";
+    const lead = fence[1] ?? "";
+    const mark = fence[2] ?? "";
+    const rest = fence[3] ?? "";
     if (!open) {
       // A backtick fence's info string cannot hold a backtick; otherwise the line is text.
-      if (!(mark[0] === "`" && rest.includes("`"))) open = mark;
+      if (!(mark[0] === "`" && rest.includes("`"))) {
+        open = mark;
+        closer = `${lead.replace(/\S/g, " ")}${mark}`;
+      }
     } else if (mark[0] === open[0] && mark.length >= open.length && rest.trim() === "") {
       open = undefined;
     }
     return line;
   });
   const text = lines.join("\n");
-  return open ? `${text}\n${open}` : text;
+  return open ? `${text}\n${closer}` : text;
 }
 
 /** The chat shows a bot's raw HTML as nothing; escaped here, an unclosed tag cannot hide what follows. */
 function escapeHtml(line: string): string {
-  return line.replace(/(`+)[^`]*?\1|<(?![a-z][a-z0-9+.-]*:[^\s<>]*>)/gi, (match) =>
-    match === "<" ? "\\<" : match,
+  return line.replace(
+    /(`+)[^`]*?\1|(\\*)<(?![a-z][a-z0-9+.-]*:[^\s<>]*>)/gi,
+    (match, code: string | undefined, slashes: string = "") => {
+      if (code) return match;
+      // An odd run of backslashes already escapes the "<"; an even one needs a backslash of its own.
+      return slashes.length % 2 ? match : `${slashes}\\<`;
+    },
   );
 }
 
@@ -163,10 +175,15 @@ function askMarkdown(block: AskBlock, words: AskWords, answeredInOwnMessage: boo
     block.status === "answered" && block.answer && !block.expired
       ? resolveAskChoice(block.answer, actions)
       : undefined;
+  // The secret card shows a detail only for a one-time code; the prompt card shows it always.
+  const shownDetail =
+    block.detail && (!isSecretAskBlock(block) || block.oneTimeCode) ? block.detail : "";
   const detail = block.receipt
     ? receiptMarkdown(block.receipt, words)
-    : block.detail
-      ? fenced(block.detail)
+    : shownDetail
+      ? block.detailFormat === "text"
+        ? literal(shownDetail)
+        : fenced(shownDetail)
       : "";
   const options = actions
     .map((action) => `- ${oneLine(action.label)}${action.id === chosen?.id ? " \u2713" : ""}`)

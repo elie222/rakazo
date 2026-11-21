@@ -223,8 +223,10 @@ describe("chatTranscriptMarkdown", () => {
         },
       ]),
     ]);
-    expect(text).toContain("Let Mail read your inbox?\n\n```\nReads the last 7 days\n```");
-    expect(text).toContain("- Allow once\n- Deny \u2713");
+    // A text detail is prose, as the card draws it; only a code detail is fenced.
+    expect(text).toContain(
+      "Let Mail read your inbox?\n\nReads the last 7 days\n\n- Allow once\n- Deny \u2713",
+    );
   });
 
   it("marks no option as chosen for an expired approval, and says it expired", () => {
@@ -339,6 +341,30 @@ describe("chatTranscriptMarkdown", () => {
       message("bot", [{ kind: "text", text: "Done" }], "2026-03-04T10:01:00.000Z"),
     ]);
     expect(text).toContain("```js\nconst a = 1;\n```\n\n---\n\n");
+  });
+
+  it("closes an open fence in the column it was opened in, so it stays in its code block or list item", () => {
+    const indented = transcript([
+      message("bot", [{ kind: "text", text: "Indented:\n\n    ```js\n    const a = 1;" }]),
+      message("bot", [{ kind: "text", text: "Done" }], "2026-03-04T10:01:00.000Z"),
+    ]);
+    expect(indented).toContain("    const a = 1;\n    ```\n\n---\n\n");
+    expect(indented).not.toContain("\n```\n\n---");
+    const listed = transcript([
+      message("bot", [{ kind: "text", text: "- ```js\n  const a = 1;" }]),
+      message("bot", [{ kind: "text", text: "Done" }], "2026-03-04T10:01:00.000Z"),
+    ]);
+    expect(listed).toContain("- ```js\n  const a = 1;\n  ```\n\n---\n\n");
+  });
+
+  it("leaves a fence nested in a list item as code, not escaped", () => {
+    const text = transcript([
+      message("bot", [
+        { kind: "text", text: "1. Run:\n\n    ```html\n    <div>hi</div>\n    ```" },
+      ]),
+    ]);
+    expect(text).toContain("    <div>hi</div>\n    ```");
+    expect(text).not.toContain("\\<div>");
   });
 
   it("keeps a typed line's leading spaces and tabs, without making it a code block", () => {
@@ -494,6 +520,41 @@ describe("chatTranscriptMarkdown", () => {
     expect(text).toContain("\\<!-- note");
     expect(text).toContain("Use `<b>` and <https://example.com>");
     expect(text).toContain("```\n<pre>\n```");
+  });
+
+  it("escapes a < that follows backslashes so the escape is not cancelled", () => {
+    const text = transcript([message("bot", [{ kind: "text", text: "C:\\\\<b> and \\<i>" }])]);
+    expect(text).toContain("C:\\\\\\<b> and \\<i>");
+  });
+
+  it("writes a secret ask's detail only when its card shows it, a one-time code", () => {
+    const secretAsk = {
+      kind: "ask" as const,
+      text: "Enter the code",
+      input: "secret" as const,
+      detail: "Hidden detail text",
+      status: "pending" as const,
+    };
+    expect(transcript([message("bot", [secretAsk])])).not.toContain("Hidden detail text");
+    expect(
+      transcript([
+        message("bot", [{ ...secretAsk, oneTimeCode: { origin: "https://example.com" } }]),
+      ]),
+    ).toContain("Hidden detail text");
+    // An approval is drawn by the prompt card, which shows its detail.
+    expect(transcript([message("bot", [{ ...secretAsk, approvalEffectId: "eff_1" }])])).toContain(
+      "Hidden detail text",
+    );
+  });
+
+  it("writes a text detail as prose, as its card shows it, and a code detail as code", () => {
+    const detail = "Total *due*";
+    const prose = transcript([
+      message("bot", [{ kind: "ask", text: "Pay?", detail, detailFormat: "text" }]),
+    ]);
+    expect(prose).toContain("Total \\*due\\*");
+    const code = transcript([message("bot", [{ kind: "ask", text: "Pay?", detail }])]);
+    expect(code).toContain("```\nTotal *due*\n```");
   });
 
   it("never writes an answer typed into a secret ask, even one tied to an approval", () => {
