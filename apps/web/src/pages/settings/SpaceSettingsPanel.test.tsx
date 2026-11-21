@@ -20,6 +20,11 @@ vi.mock("@lingui/react/macro", () => {
 vi.mock("@rakazo/ui-web", () => {
   const Box = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    FieldContent: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldTitle: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldDescription: ({ children, id }: { children?: React.ReactNode; id?: string }) => (
+      <p id={id}>{children}</p>
+    ),
     Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     Field: Box,

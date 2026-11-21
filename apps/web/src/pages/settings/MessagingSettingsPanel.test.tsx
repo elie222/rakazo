@@ -51,6 +51,15 @@ vi.mock("@lingui/react/macro", () => {
 vi.mock("@rakazo/ui-web", () => {
   const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    Field: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldContent: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldLabel: ({ children, htmlFor }: { children?: React.ReactNode; htmlFor?: string }) => (
+      <label htmlFor={htmlFor}>{children}</label>
+    ),
+    FieldTitle: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldDescription: ({ children, id }: { children?: React.ReactNode; id?: string }) => (
+      <p id={id}>{children}</p>
+    ),
     Button: ({
       children,
       onClick,

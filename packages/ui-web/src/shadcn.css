@@ -138,41 +138,15 @@
 }
 
 @media (hover: none) {
+  /* Touch has no hover to reveal the actions, so they keep their own slot in the row instead of
+     covering the time and unread dot the row ends with. */
   [data-slot="list-row"] > .row-reveal-action {
+    position: static;
+    transform: none;
+    translate: none;
     opacity: 1;
     scale: 1;
     pointer-events: auto;
-  }
-
-  [data-slot="list-row"]:has(> .row-reveal-action)
-    > [data-slot="list-row-link"]
-    > [data-slot="list-row-content"] {
-    -webkit-mask-image: linear-gradient(
-      to left,
-      transparent var(--row-reveal-fade, 32px),
-      var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
-    );
-    mask-image: linear-gradient(
-      to left,
-      transparent var(--row-reveal-fade, 32px),
-      var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
-    );
-  }
-
-  [dir="rtl"]
-    [data-slot="list-row"]:has(> .row-reveal-action)
-    > [data-slot="list-row-link"]
-    > [data-slot="list-row-content"] {
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent var(--row-reveal-fade, 32px),
-      var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
-    );
-    mask-image: linear-gradient(
-      to right,
-      transparent var(--row-reveal-fade, 32px),
-      var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
-    );
   }
 }
 

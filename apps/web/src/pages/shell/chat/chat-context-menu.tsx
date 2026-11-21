@@ -54,7 +54,11 @@ export function ChatMenu({
   useEffect(() => {
     if (!open) return;
     return () =>
-      setMenu((current) => (current?.kind === kind && current.id === id ? null : current));
+      setMenu((current) =>
+        current?.kind === kind && current.id === id && (current.via ?? "context") === "context"
+          ? null
+          : current,
+      );
   }, [open, kind, id, setMenu]);
   return (
     <ContextMenu
@@ -65,7 +69,9 @@ export function ChatMenu({
         setMenu((current) =>
           next
             ? { kind, id, via: "context" }
-            : current?.kind === kind && current.id === id
+            : current?.kind === kind &&
+                current.id === id &&
+                (current.via ?? "context") === "context"
               ? null
               : current,
         )
@@ -101,7 +107,9 @@ export function ChatRowMenu({
   useEffect(() => {
     if (!open) return;
     return () =>
-      setMenu((current) => (current?.kind === kind && current.id === id ? null : current));
+      setMenu((current) =>
+        current?.kind === kind && current.id === id && current.via === "dropdown" ? null : current,
+      );
   }, [open, kind, id, setMenu]);
   return (
     <DropdownMenu
@@ -111,7 +119,7 @@ export function ChatRowMenu({
         setMenu((current) =>
           next
             ? { kind, id, via: "dropdown" }
-            : current?.kind === kind && current.id === id
+            : current?.kind === kind && current.id === id && current.via === "dropdown"
               ? null
               : current,
         )

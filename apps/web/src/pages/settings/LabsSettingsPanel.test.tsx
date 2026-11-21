@@ -10,6 +10,15 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
 }));
 vi.mock("@rakazo/ui-web", () => ({
+  Field: (props: React.ComponentProps<"div">) => <div {...props} />,
+  FieldContent: (props: React.ComponentProps<"div">) => <div {...props} />,
+  FieldLabel: ({ htmlFor, children, ...props }: React.ComponentProps<"label">) => (
+    <label htmlFor={htmlFor} {...props}>
+      {children}
+    </label>
+  ),
+  FieldTitle: (props: React.ComponentProps<"div">) => <div {...props} />,
+  FieldDescription: (props: React.ComponentProps<"p">) => <p {...props} />,
   Label: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
   ),

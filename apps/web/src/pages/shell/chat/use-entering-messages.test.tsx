@@ -17,6 +17,12 @@ function message(id: string, seq: number, role: ThreadMessage["role"] = "bot"): 
   } as unknown as ThreadMessage;
 }
 
+/** A live row (progress, tool step or subagent) carries no message seq. */
+function liveMessage(id: string): ThreadMessage {
+  const { seq: _seq, ...rest } = message(id, 0);
+  return rest as unknown as ThreadMessage;
+}
+
 let root: Root;
 let container: HTMLDivElement;
 let latest: ReadonlySet<string>;
@@ -62,6 +68,13 @@ describe("useEnteringMessages", () => {
     await expect(show([message("m1", 1), message("progress:bot-1", 2)])).resolves.toEqual(
       new Set(),
     );
+  });
+
+  it("keeps the high-water mark numeric when a live row has no seq", async () => {
+    await show([message("m1", 1)]);
+    await expect(
+      show([message("m1", 1), liveMessage("subagent:bot-1"), message("m2", 2)]),
+    ).resolves.toEqual(new Set(["m2"]));
   });
 
   it("clears the mark once the entrance has played", async () => {

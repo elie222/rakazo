@@ -7,7 +7,11 @@ const FLIP_EASING = "cubic-bezier(0.4, 0, 0.2, 1)";
 
 type Snapshot = {
   order: string;
-  rects: Map<string, DOMRect>;
+  /** Positions in the list's own scroll space, so scrolling between revisions cannot shift them. */
+  positions: Map<string, { x: number; y: number }>;
+  /** A resize changes every row's offset without changing the order; that is not a reorder. */
+  width: number;
+  height: number;
 };
 
 function prefersReducedMotion() {
@@ -36,22 +40,40 @@ export function useFlip(container: RefObject<HTMLElement | null>, revision: stri
       .filter((key): key is string => Boolean(key))
       .join("|");
     const previous = snapshot.current;
-    const rects = new Map<string, DOMRect>();
+    const rootRect = root.getBoundingClientRect();
+    const positions = new Map<string, { x: number; y: number }>();
     for (const node of nodes) {
       const key = node.getAttribute(FLIP_KEY);
-      if (key) rects.set(key, node.getBoundingClientRect());
+      if (!key) continue;
+      const rect = node.getBoundingClientRect();
+      positions.set(key, {
+        x: rect.left - rootRect.left + root.scrollLeft,
+        y: rect.top - rootRect.top + root.scrollTop,
+      });
     }
-    snapshot.current = { order, rects };
-    if (!previous || previous.order === order || prefersReducedMotion()) return;
+    snapshot.current = {
+      order,
+      positions,
+      width: root.clientWidth,
+      height: root.clientHeight,
+    };
+    if (
+      !previous ||
+      previous.order === order ||
+      previous.width !== root.clientWidth ||
+      previous.height !== root.clientHeight ||
+      prefersReducedMotion()
+    )
+      return;
 
     for (const node of nodes) {
       const key = node.getAttribute(FLIP_KEY);
       if (!key) continue;
-      const before = previous.rects.get(key);
-      const after = rects.get(key);
+      const before = previous.positions.get(key);
+      const after = positions.get(key);
       if (!before || !after) continue;
-      const dx = before.left - after.left;
-      const dy = before.top - after.top;
+      const dx = before.x - after.x;
+      const dy = before.y - after.y;
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
       running.current.get(key)?.cancel();
       const animation = node.animate(

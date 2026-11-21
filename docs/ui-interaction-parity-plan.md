@@ -60,7 +60,8 @@
 - 菜单项仍是点击激活；悬停只揭示按钮，破坏性操作没有变成悬停即触发。
 - 设置行：`SettingsRow` 支持 `htmlFor`、`description`、`descriptionId`，标签与控件建立真实关联；账号、Labs、本机授权三处手写 `<Label>` 已移除；错误提示保留在所属行内。
 - 新增 `chat-row-menu.test.tsx` 覆盖按钮打开、surface 状态与 Escape 关闭；`chat/sidebar.spec.ts` 新增一条 E2E，覆盖悬停揭示、菜单打开、焦点返回与行链接仍可点击。
-- 验证：UI 包 103 测试、Web 2,751 测试、`pnpm checks` 154 项、typecheck、生产构建通过；Web 启动体积 818.3/860 kB，桌面 main 2,194.3/2,300 kB。
+- 无悬停设备上，行操作改为占位而不是覆盖行尾：时间、未读点不再被常驻遮罩吃掉；滚动或改变容器尺寸时 FLIP 不再按过期坐标重排。
+- 验证：UI 包 103 测试、Web 2,753 测试、`pnpm checks` 154 项、typecheck、生产构建通过；Web 启动体积 818.4/860 kB，桌面 main 2,194.3/2,300 kB。
 
 ## 2. 交付边界
 

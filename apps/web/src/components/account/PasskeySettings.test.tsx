@@ -23,6 +23,15 @@ vi.mock("@rakazo/ui-web", () => {
       size: _size,
       ...props
     }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
+    Field: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldContent: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldLabel: ({ htmlFor, children, ...props }: React.ComponentProps<"label">) => (
+      <label htmlFor={htmlFor} {...props}>
+        {children}
+      </label>
+    ),
+    FieldTitle: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldDescription: (props: React.ComponentProps<"p">) => <p {...props} />,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     AlertDialog: Plain,
     AlertDialogAction: Plain,
