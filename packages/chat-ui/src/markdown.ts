@@ -27,12 +27,25 @@ export function markdownPageId(href: string | undefined): string | undefined {
 }
 
 const MENTION_URL_PREFIX = "rakazo-mention:";
+// Ends a mention the renderer put in front of text that doesn't name the bot. An encoded id
+// never holds a `#`, so the mark can't be part of one.
+const ADDED_MENTION_MARK = "#added";
+
+/** Whether a mention link was put in front of the text, so its name isn't part of the message. */
+export function markdownMentionAdded(href: string | undefined): boolean {
+  return Boolean(href?.startsWith(MENTION_URL_PREFIX) && href.endsWith(ADDED_MENTION_MARK));
+}
 
 /** The id of a mention link, if this href is one. */
 export function markdownMentionId(href: string | undefined): string | undefined {
   if (!href?.startsWith(MENTION_URL_PREFIX)) return undefined;
+  const id = href.slice(MENTION_URL_PREFIX.length);
   try {
-    return decodeURIComponent(href.slice(MENTION_URL_PREFIX.length)) || undefined;
+    return (
+      decodeURIComponent(
+        id.endsWith(ADDED_MENTION_MARK) ? id.slice(0, -ADDED_MENTION_MARK.length) : id,
+      ) || undefined
+    );
   } catch {
     return undefined;
   }
@@ -144,7 +157,10 @@ export function withMentions(
     const firstIndex = result.findIndex((text) => trees.get(text) !== null);
     if (firstIndex === -1) continue;
     const first = result[firstIndex]!;
-    result[firstIndex] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
+    const added = `${link.slice(0, -1)}${ADDED_MENTION_MARK})`;
+    result[firstIndex] = OPENS_WITH_BLOCK.test(first)
+      ? `${added}\n\n${first}`
+      : `${added} ${first}`;
   }
   return result;
 }
