@@ -470,7 +470,7 @@ describe("botSecrets router", () => {
     const owned = botSecretDeps();
     const removed = await owned.call("remove", { botId: "bot-1", name: "Legacy Name" });
     expect(removed.status).toBe(200);
-    expect(removed.body.json).toEqual({ ok: true });
+    expect(removed.body.json).toEqual({ ok: true, removed: false });
     expect(owned.prisma.vaultCredential.deleteMany).toHaveBeenCalledWith({
       where: { userId: "user-1", spaceId: null, name: "Legacy Name" },
     });
@@ -485,7 +485,7 @@ describe("botSecrets router", () => {
     const { prisma, call } = botSecretDeps();
     const result = await call("remove", { botId: "bot-1", name: "router" });
     expect(result.status).toBe(200);
-    expect(result.body.json).toEqual({ ok: true });
+    expect(result.body.json).toEqual({ ok: true, removed: false });
     expect(prisma.vaultCredential.deleteMany).toHaveBeenCalledWith({
       where: { userId: "user-1", spaceId: null, name: "router" },
     });
@@ -900,6 +900,81 @@ describe("vault router", () => {
       title: "Home",
     });
     expect(unnamed.status).toBe(400);
+  });
+
+  it("remove-missing-credential-no-audit", async () => {
+    const { rows, call } = botSecretDeps();
+    const deletions = () =>
+      events.record.mock.calls.flatMap(([event]) =>
+        event?.type === "credential.deleted" ? [event] : [],
+      );
+
+    events.record.mockClear();
+    const missingVault = await call("vault/remove", { scope: "account", name: "never-saved" });
+    expect(missingVault.status).toBe(200);
+    expect(deletions()).toEqual([]);
+    expect(missingVault.body.json).toEqual({ ok: true, removed: false });
+
+    events.record.mockClear();
+    const missingBot = await call("botSecrets/remove", {
+      botId: "bot-1",
+      name: "never-saved",
+    });
+    expect(missingBot.status).toBe(200);
+    expect(deletions()).toEqual([]);
+    expect(missingBot.body.json).toEqual({ ok: true, removed: false });
+
+    await call("vault/put", { scope: "account", destination, value: FAKE_VALUE });
+    events.record.mockClear();
+    const removedVault = await call("vault/remove", { scope: "account", name: "portal" });
+    expect(removedVault.status).toBe(200);
+    expect(removedVault.body.json).toEqual({ ok: true, removed: true });
+    expect(deletions()).toEqual([
+      {
+        type: "credential.deleted",
+        userId: "user-1",
+        spaceId: "space-1",
+        metadata: {
+          procedure: "vault.remove",
+          kind: "vault_credential",
+          scope: "account",
+          name: "portal",
+        },
+      },
+    ]);
+    expect(rows).toEqual([]);
+
+    events.record.mockClear();
+    const goneVault = await call("vault/remove", { scope: "account", name: "portal" });
+    expect(goneVault.status).toBe(200);
+    expect(goneVault.body.json).toEqual({ ok: true, removed: false });
+    expect(deletions()).toEqual([]);
+
+    await call("vault/put", { scope: "account", destination, value: FAKE_VALUE });
+    events.record.mockClear();
+    const removedBot = await call("botSecrets/remove", { botId: "bot-1", name: "portal" });
+    expect(removedBot.status).toBe(200);
+    expect(removedBot.body.json).toEqual({ ok: true, removed: true });
+    expect(deletions()).toEqual([
+      {
+        type: "credential.deleted",
+        userId: "user-1",
+        spaceId: "space-1",
+        metadata: {
+          procedure: "botSecrets.remove",
+          kind: "bot_secret",
+          botId: "bot-1",
+          name: "portal",
+        },
+      },
+    ]);
+    expect(rows).toEqual([]);
+
+    events.record.mockClear();
+    const goneBot = await call("botSecrets/remove", { botId: "bot-1", name: "portal" });
+    expect(goneBot.status).toBe(200);
+    expect(goneBot.body.json).toEqual({ ok: true, removed: false });
+    expect(deletions()).toEqual([]);
   });
 
   it("saves, lists and removes in the account vault by default", async () => {
