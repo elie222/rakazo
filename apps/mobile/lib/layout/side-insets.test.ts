@@ -6,8 +6,9 @@ import { expect, it, vi } from "vitest";
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 12, right: 72 }),
 }));
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
-const { InboxBesideContext, useSideInsets } = await import("./side-insets");
+const { InboxBesideContext, useSheetPadding, useSideInsets } = await import("./side-insets");
 
 async function sideInsets(besideInbox?: boolean) {
   let value: ReturnType<typeof useSideInsets> | undefined;
@@ -35,4 +36,16 @@ it("keeps content clear of a side status bar and the far cutout", async () => {
 
 it("leaves the left edge to the chat list beside the screen", async () => {
   expect(await sideInsets(true)).toEqual({ paddingLeft: 0, paddingRight: 72 });
+});
+
+it("keeps a page sheet clear of a side status bar", async () => {
+  let value: ReturnType<typeof useSheetPadding> | undefined;
+  function Probe() {
+    value = useSheetPadding();
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+  await act(async () => root.unmount());
+  expect(value).toEqual({ paddingTop: 12, paddingBottom: 0, paddingLeft: 12, paddingRight: 72 });
 });
