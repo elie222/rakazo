@@ -1,4 +1,4 @@
-import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@rakazo/ui-web";
+import { Field, FieldDescription, FieldLabel, FieldTitle } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 
 export const SETTINGS_CONTENT_WIDTH = "max-w-2xl";
@@ -57,7 +57,9 @@ export function SettingsRow({
       orientation="horizontal"
       className="min-h-9 flex-wrap gap-x-4 gap-y-2 px-4 py-3"
     >
-      <FieldContent className="min-w-0 flex-1 justify-center">
+      {/* A plain block, not FieldContent: the horizontal field pins a content child to the top,
+          which leaves the label high beside a taller select or button. */}
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 leading-snug">
         {htmlFor ? (
           <FieldLabel htmlFor={htmlFor} className="w-full text-body font-normal text-foreground">
             {label}
@@ -70,7 +72,7 @@ export function SettingsRow({
             {description}
           </FieldDescription>
         ) : null}
-      </FieldContent>
+      </div>
       {control ? <div className="flex max-w-full min-w-0 items-center gap-2">{control}</div> : null}
       {children ? <div className="w-full">{children}</div> : null}
     </Field>
