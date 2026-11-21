@@ -79,6 +79,19 @@ async function pathExists(target: string) {
   }
 }
 
+it("lists remaining entries when a file disappears between realpath and stat", async () => {
+  const { desktop, computer } = await fixture("list-race");
+  const removed = path.join(computer.providerRef, "removed.txt");
+  await writeFile(removed, "remove");
+  await writeFile(path.join(computer.providerRef, "kept.txt"), "keep");
+  lstatRace.afterRealpath = async (target) => {
+    if (target === removed) await rm(removed);
+  };
+  const entries = await desktop.listFiles(computer, "", ctx);
+  expect(entries.map((entry) => entry.path)).toContain("kept.txt");
+  expect(entries.map((entry) => entry.path)).not.toContain("removed.txt");
+});
+
 describe("desktop sandbox write containment without O_NOFOLLOW", () => {
   it("rejects an existing final symlink without changing its outside target", async () => {
     const { root, desktop, computer } = await fixture("static-link");

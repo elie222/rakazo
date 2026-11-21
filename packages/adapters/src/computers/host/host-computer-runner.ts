@@ -4,7 +4,7 @@ import path from "node:path";
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { DesktopSandboxProvider } from "../../providers/computer/desktop/desktop-sandbox.js";
-import { WorkspacePathError } from "../screens/computer-support.js";
+import { WorkspaceDirectoryError, WorkspacePathError } from "../screens/computer-support.js";
 import type { HostScreen } from "../screens/host-screen.js";
 import { HostScreenError } from "../screens/host-screen.js";
 import type { HostComputerFrame, HostComputerRequest } from "./host-computer-protocol.js";
@@ -218,10 +218,15 @@ export function createHostComputerRunner(options: { root: string; screen?: HostS
             }
             if (!signal.aborted) await sink.write({ done: true });
           } catch (error) {
-            if (!signal.aborted)
-              await Promise.resolve(sink.write({ error: hostComputerErrorMessage(error) })).catch(
-                () => undefined,
-              );
+            if (!signal.aborted) {
+              await Promise.resolve(
+                sink.write({
+                  error: hostComputerErrorMessage(error),
+                  code:
+                    error instanceof WorkspaceDirectoryError ? "workspace_directory" : undefined,
+                }),
+              ).catch(() => undefined);
+            }
           } finally {
             clearTimeout(deadline);
             clearInterval(heartbeat);

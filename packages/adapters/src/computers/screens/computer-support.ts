@@ -62,14 +62,19 @@ export function clampRounded(value: number, min: number, max: number): number {
   return Math.min(Math.max(Math.round(value), min), max);
 }
 
-/**
- * A path that leaves the folder it must stay in. Not a refusal by itself: the path may be one a
- * provider listed, which is a fault to log. A route that passes a caller's own path answers it.
- */
+/** A path rejected by workspace validation, including paths returned by a provider. */
 export class WorkspacePathError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "WorkspacePathError";
+  }
+}
+
+/** The provider could not open the directory requested by listFiles. */
+export class WorkspaceDirectoryError extends WorkspacePathError {
+  constructor(message = "Could not list the workspace directory") {
+    super(message);
+    this.name = "WorkspaceDirectoryError";
   }
 }
 

@@ -1,10 +1,15 @@
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { WorkspacePathError } from "../computers/screens/computer-support.js";
+import { DesktopSandboxProvider } from "../providers/computer/desktop/desktop-sandbox.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../runtime/pi/pi-runtime-limits.js";
 import type { RunWorkspace } from "./workspace-file-tools.js";
-import { readFileFromTool } from "./workspace-file-tools.js";
+import { listFilesFromTool, readFileFromTool } from "./workspace-file-tools.js";
 
 function fileWorkspace(content: string, runSecrets: string[] = []) {
   const bytes = new TextEncoder().encode(content);
@@ -38,6 +43,74 @@ type ReadFileResult = {
   nextOffset?: number;
   note?: string;
 };
+
+describe("listFilesFromTool paths", () => {
+  it.each(["dedicated", "team"] as const)(
+    "guides a %s bot from a missing directory to its home or a relative directory",
+    async (computerMode) => {
+      const { workspace } = fileWorkspace("");
+      workspace.computerMode = computerMode;
+      const root = await mkdtemp(path.join(tmpdir(), "rakazo-list-files-"));
+      try {
+        const sandbox = new DesktopSandboxProvider({ root });
+        const computer = await sandbox.provision(
+          { botId: workspace.botId, homePath: root },
+          workspace.context,
+        );
+        workspace.computer = async () => computer;
+        const home = computerMode === "team" ? `bots/${workspace.botId}` : "";
+        const notes = path.join(computer.providerRef, home, "notes");
+        await mkdir(notes, { recursive: true });
+        await expect(listFilesFromTool(sandbox, workspace, { path: "missing" })).resolves.toEqual({
+          error: expect.stringContaining('Omit path or use "."'),
+        });
+        await expect(
+          listFilesFromTool(sandbox, workspace, { path: "../outside" }),
+        ).resolves.toEqual({
+          error: expect.stringContaining('"notes"'),
+        });
+        const entries = [{ path: "notes", kind: "dir", size: expect.any(Number) }];
+        await expect(listFilesFromTool(sandbox, workspace, {})).resolves.toEqual({
+          path: "",
+          entries,
+        });
+        await expect(listFilesFromTool(sandbox, workspace, { path: "." })).resolves.toEqual({
+          path: ".",
+          entries,
+        });
+        await expect(listFilesFromTool(sandbox, workspace, { path: "notes" })).resolves.toEqual({
+          path: "notes",
+          entries: [],
+        });
+        await writeFile(path.join(notes, "file.txt"), "example");
+        await expect(
+          listFilesFromTool(sandbox, workspace, { path: "notes/file.txt" }),
+        ).resolves.toEqual({
+          error: expect.stringContaining('Omit path or use "."'),
+        });
+
+        await rename(computer.providerRef, path.join(root, "moved-home"));
+        await expect(
+          listFilesFromTool(sandbox, workspace, { path: "notes" }),
+        ).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([
+    new Error("computer offline"),
+    Object.assign(new Error("entry disappeared during stat"), { code: "ENOENT", syscall: "stat" }),
+    new WorkspacePathError("Invalid entry returned by the provider"),
+  ])("propagates failures unrelated to the requested directory", async (failure) => {
+    const { sandbox, workspace } = fileWorkspace("");
+    sandbox.listFiles = vi.fn().mockRejectedValue(failure);
+    await expect(listFilesFromTool(sandbox, workspace, { path: "notes" })).rejects.toBe(failure);
+  });
+});
 
 /** Walk a file chunk by chunk the way the model would, following nextOffset. */
 async function readFileInChunks(content: string, runSecrets: string[] = []) {

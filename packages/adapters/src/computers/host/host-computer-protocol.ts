@@ -75,7 +75,7 @@ export interface HostComputerEnvironment {
 export type HostComputerFrame<T> =
   | { value: T }
   | { done: true }
-  | { error: string }
+  | { error: string; code?: "workspace_directory" }
   | { heartbeat: true };
 
 /**
