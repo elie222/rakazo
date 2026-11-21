@@ -4,6 +4,7 @@ import {
   KeyboardController,
   KeyboardEvents,
   useKeyboardHandler,
+  useKeyboardState,
   useReanimatedFocusedInput,
 } from "react-native-keyboard-controller";
 import { useAnimatedReaction, useSharedValue } from "react-native-reanimated";
@@ -20,6 +21,15 @@ export const KEYBOARD_SETTLE_MS = 600;
  */
 export function useThreadKeyboard() {
   const progress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
+  // The keyboard's own height, so the composer can be lifted by it without measuring where the
+  // screen starts. Android has no other reliable anchor: a screen-level avoiding view works the
+  // distance out from where it sits in the window, and that measurement is taken once, before the
+  // native header settles.
+  //
+  // Seeded from the keyboard's current height, not zero: a thread can mount while the keyboard is
+  // already up, as when it replaces another chat, and then no transition frame arrives to set it.
+  const keyboardStateHeight = useKeyboardState((state) => state.height);
+  const height = useSharedValue(KeyboardController.isVisible() ? keyboardStateHeight : 0);
   const [avoiding, setAvoiding] = useState(true);
   const [focused, setFocused] = useState(false);
 
@@ -28,14 +38,17 @@ export function useThreadKeyboard() {
       onMove: (event) => {
         "worklet";
         progress.value = event.progress;
+        height.value = event.height;
       },
       onInteractive: (event) => {
         "worklet";
         progress.value = event.progress;
+        height.value = event.height;
       },
       onEnd: (event) => {
         "worklet";
         progress.value = event.progress;
+        height.value = event.height;
       },
     },
     [],
@@ -50,6 +63,7 @@ export function useThreadKeyboard() {
     () => {
       if (progress.value === 0) return;
       progress.value = 0;
+      height.value = 0;
       setAvoiding(false);
     },
     focused ? null : KEYBOARD_SETTLE_MS,
@@ -63,5 +77,5 @@ export function useThreadKeyboard() {
     },
   );
 
-  return { progress, avoiding };
+  return { progress, height, avoiding };
 }

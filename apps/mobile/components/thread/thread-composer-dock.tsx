@@ -12,6 +12,7 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
 import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
 import type { ThreadColumnPadding } from "../../lib/thread/scroll/thread-edges";
+import { keyboardDockMaxHeight } from "../../lib/thread/scroll/thread-keyboard-offset";
 import type { PendingAttachment } from "../../lib/thread/send/thread-attachments";
 import { previewMessageText } from "../../lib/thread/thread-message-text";
 import { ComposerReplyPreview } from "../composer/composer-reply-preview";
@@ -27,6 +28,8 @@ import { ThreadEdgeFade } from "./thread-edge-fade";
 export function ThreadComposerDock({
   hidden,
   keyboardProgress,
+  keyboardHeight,
+  availableHeight,
   columnPadding,
   notice,
   onHeight,
@@ -44,6 +47,10 @@ export function ThreadComposerDock({
   hidden: boolean;
   /** Frame by frame, including a swipe that drags the keyboard down. */
   keyboardProgress: SharedValue<number>;
+  /** The keyboard's height; the dock lifts by exactly this on Android. */
+  keyboardHeight: SharedValue<number>;
+  /** The room the dock is laid out in, used to cap how tall it may be while lifted. */
+  availableHeight: number;
   columnPadding: ThreadColumnPadding;
   /** Shown above the reply, as part of the dock. */
   notice: ReactNode;
@@ -65,6 +72,19 @@ export function ThreadComposerDock({
   const { t } = useLingui();
   const insets = useSafeAreaInsets();
   const rootOwnsBottom = useContext(CallKeyboardContext);
+  // Android: lift the dock by the keyboard's own height. Its bottom edge is the window's bottom
+  // edge, so this needs no measurement of where the screen or the header starts.
+  const liftsItself = Platform.OS === "android" && !rootOwnsBottom;
+  const dockLift = useAnimatedStyle(() => {
+    if (!liftsItself) return { transform: [{ translateY: 0 }] };
+    const lift = { transform: [{ translateY: -keyboardHeight.value }] };
+    // Before the body has been measured there is no room to cap against; capping to nothing would
+    // collapse the dock, so it stays uncapped for that first frame.
+    if (availableHeight <= 0) return lift;
+    // Lifting does not shrink the dock's room, so cap it to what is left above the keyboard.
+    return { ...lift, maxHeight: keyboardDockMaxHeight(availableHeight, keyboardHeight.value) };
+  });
+
   // On iOS the input rests just above the home indicator rather than a full safe area up.
   const composerRestingPadding = rootOwnsBottom
     ? 12
@@ -94,11 +114,12 @@ export function ThreadComposerDock({
 
   return (
     // Floats over the messages, which scroll underneath it; only its controls take touches.
-    <View
+    <Animated.View
       pointerEvents="box-none"
       style={[
         { position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "100%" },
         columnPadding,
+        dockLift,
       ]}
     >
       {controlsShown ? <ThreadEdgeFade edge="bottom" style={fadeHeight} /> : null}
@@ -227,6 +248,6 @@ export function ThreadComposerDock({
           </View>
         </View>
       </Animated.View>
-    </View>
+    </Animated.View>
   );
 }

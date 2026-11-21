@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Android chat composer stays above the keyboard. The dock now lifts by the keyboard's own height instead of relying on where the screen sits in the window, a measurement taken before the native header settles that left the composer behind the keyboard.
+
 ## [0.13.0] - 2026-11-19
 
 ### Security
