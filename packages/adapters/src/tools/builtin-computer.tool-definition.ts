@@ -5,7 +5,7 @@ import { BROWSER_ACT_KINDS } from "../browser/browser-tools.js";
 import {
   HOST_SCREEN_CONTROL_WAIT_MS,
   HOST_SCREEN_MAX_ACTIONS,
-  hostScreenControl,
+  hostScreenNamedAction,
 } from "../computers/screens/host-screen.js";
 
 export const READ_FILE_MAX_BYTES = 250_000;
@@ -285,7 +285,7 @@ export const computerTools: ConnectorTool[] = [
   },
   {
     name: "user_computer_act",
-    description: `Act in one app on the user's own computer in the background and return its window afterwards. On Windows, batch clickControl and setControl using the exact accessible name and role (setControl also takes value). Each finds a unique control in the current window and waits up to waitMs (default ${HOST_SCREEN_CONTROL_WAIT_MS}). When names and roles are known, send one batch to open, fill and save a form, then use the returned rows to verify it. Windows returns rows only unless includeScreenshot is true. On any platform, observe first to use numbered elements. Up to ${HOST_SCREEN_MAX_ACTIONS} ordered actions: click (element, or x,y in screenshot pixels; button, double), type (text, into element or the focused field), set (value of element: a pop-up's choice, a field's whole text), key (key such as return, tab, escape, up, a; modifiers cmd, shift, option, ctrl), scroll (direction, amount, at element or x,y), menu (path from the menu bar, like ["File","New"]; use it instead of shortcuts), wait (ms). Element numbers come from the latest observation of that app.`,
+    description: `Act in one app on the user's own computer in the background and return its window afterwards. On Windows, batch clickControl and setControl using the exact accessible name and role (setControl also takes value). Each finds a unique control in the current window and waits up to waitMs (default ${HOST_SCREEN_CONTROL_WAIT_MS}, 0 for one lookup). When names and roles are known, send one batch to open, fill and save a form, then use the returned rows to verify it. Windows returns rows only unless includeScreenshot is true. On any platform, observe first to use numbered elements. Up to ${HOST_SCREEN_MAX_ACTIONS} ordered actions: click (element, or x,y in screenshot pixels; button, double), type (text, into element or the focused field), set (value of element: a pop-up's choice, a field's whole text), key (key such as return, tab, escape, up, a; modifiers cmd, shift, option, ctrl), scroll (direction, amount, at element or x,y), menu (path from the menu bar, like ["File","New"]; use it instead of shortcuts), wait (ms). Element numbers come from the latest observation of that app.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -302,41 +302,35 @@ export const computerTools: ConnectorTool[] = [
           minItems: 1,
           maxItems: HOST_SCREEN_MAX_ACTIONS,
           items: {
-            type: "object",
-            properties: {
-              kind: {
-                type: "string",
-                enum: [
-                  "click",
-                  "clickControl",
-                  "type",
-                  "set",
-                  "setControl",
-                  "key",
-                  "scroll",
-                  "menu",
-                  "wait",
-                ],
+            oneOf: [
+              ...z.toJSONSchema(hostScreenNamedAction, { io: "input" }).oneOf!,
+              {
+                type: "object",
+                properties: {
+                  kind: {
+                    type: "string",
+                    enum: ["click", "type", "set", "key", "scroll", "menu", "wait"],
+                  },
+                  element: { type: "integer", minimum: 0 },
+                  x: { type: "number" },
+                  y: { type: "number" },
+                  button: { type: "string", enum: ["left", "right"] },
+                  double: { type: "boolean" },
+                  text: { type: "string" },
+                  value: { type: "string" },
+                  key: { type: "string" },
+                  modifiers: {
+                    type: "array",
+                    items: { type: "string", enum: ["cmd", "shift", "option", "ctrl"] },
+                  },
+                  direction: { type: "string", enum: ["up", "down", "left", "right"] },
+                  amount: { type: "integer", minimum: 1, maximum: 20 },
+                  path: { type: "array", items: { type: "string" } },
+                  ms: { type: "integer", minimum: 0, maximum: 5000 },
+                },
+                required: ["kind"],
               },
-              element: { type: "integer", minimum: 0 },
-              ...z.toJSONSchema(hostScreenControl, { io: "input" }).properties,
-              x: { type: "number" },
-              y: { type: "number" },
-              button: { type: "string", enum: ["left", "right"] },
-              double: { type: "boolean" },
-              text: { type: "string" },
-              value: { type: "string" },
-              key: { type: "string" },
-              modifiers: {
-                type: "array",
-                items: { type: "string", enum: ["cmd", "shift", "option", "ctrl"] },
-              },
-              direction: { type: "string", enum: ["up", "down", "left", "right"] },
-              amount: { type: "integer", minimum: 1, maximum: 20 },
-              path: { type: "array", items: { type: "string" } },
-              ms: { type: "integer", minimum: 0, maximum: 5000 },
-            },
-            required: ["kind"],
+            ],
           },
         },
       },

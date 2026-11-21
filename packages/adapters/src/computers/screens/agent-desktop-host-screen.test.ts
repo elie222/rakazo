@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentDesktopEnvelope } from "./agent-desktop-host-screen.js";
 import {
@@ -169,6 +170,23 @@ describe("agent-desktop host screen", () => {
     expect(result).toMatchObject({ completed: 0, error: expect.stringContaining(error) });
     expect(acted().map(([name]) => name)).toEqual(["find"]);
     expect(calls.some(([name]) => name === "screenshot")).toBe(false);
+  });
+
+  it("allows one complete lookup when waitMs is zero", async () => {
+    const { screen, acted } = cli({
+      async find() {
+        await sleep(300);
+        return ok({
+          matches: [{ name: "Save", role: "button", ref_id: "@s0000000b:e9" }],
+          total_matches: 1,
+        });
+      },
+    });
+    const result = await screen.act(scope, "notepad", [
+      { kind: "clickControl", name: "Save", role: "button", waitMs: 0 },
+    ]);
+    expect(result.completed).toBe(1);
+    expect(acted().map(([name]) => name)).toEqual(["find", "click"]);
   });
 
   it("aborts a slow lookup and stops before acting on its result", async () => {

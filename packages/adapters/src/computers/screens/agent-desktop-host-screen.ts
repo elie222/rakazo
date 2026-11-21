@@ -332,7 +332,7 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
   ) {
     const waitMs = action.waitMs ?? HOST_SCREEN_CONTROL_WAIT_MS;
     // Zero allows one traversal without polling for a control to appear.
-    const budget = waitMs || 250;
+    const budget = waitMs || HOST_SCREEN_CONTROL_WAIT_MS;
     const deadline = Date.now() + budget;
     const lookup = deadlineSignal(budget, signal);
     const control = `${action.role} ${JSON.stringify(action.name)} in ${found.name}`;
@@ -369,7 +369,7 @@ export function createAgentDesktopHostScreen(options: AgentDesktopHostScreenOpti
             total_matches?: number;
             truncated?: boolean;
           } | null;
-          if (Date.now() >= deadline) return notFound();
+          lookup.throwIfAborted();
           if ((data?.total_matches ?? 0) > 1 || (data?.matches?.length ?? 0) > 1)
             throw new HostScreenError(
               `More than one ${control} matched. Observe to choose an element number.`,

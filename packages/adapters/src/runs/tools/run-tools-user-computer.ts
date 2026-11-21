@@ -249,17 +249,21 @@ export function userComputerObserve(ctx: RunContext, call: ToolCall) {
   });
 }
 
+export function parseUserComputerActions(input: unknown) {
+  const actions = screenActions.safeParse(input);
+  if (actions.success) return { actions: actions.data };
+  const issue = actions.error.issues[0];
+  const where = issue?.path.length ? `actions.${issue.path.join(".")}: ` : "actions: ";
+  return { error: `${where}${issue?.message ?? "invalid"}` };
+}
+
 export function userComputerAct(ctx: RunContext, call: ToolCall) {
-  const actions = screenActions.safeParse(call.args.actions);
-  if (!actions.success) {
-    const issue = actions.error.issues[0];
-    const where = issue?.path.length ? `actions.${issue.path.join(".")}: ` : "actions: ";
-    return call.finish({ error: `${where}${issue?.message ?? "invalid"}` });
-  }
+  const parsed = parseUserComputerActions(call.args.actions);
+  if (parsed.error !== undefined) return call.finish({ error: parsed.error });
   return userComputerScreen(ctx, call, {
     method: "screenAct",
     app: userComputerAppName(call.args.app),
-    actions: actions.data,
+    actions: parsed.actions,
   });
 }
 

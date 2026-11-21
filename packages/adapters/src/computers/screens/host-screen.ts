@@ -12,14 +12,19 @@ export const HOST_SCREEN_MAX_IMAGE_DIMENSION = 1_568;
 const app = z.string().trim().min(1).max(200);
 const element = z.number().int().min(0).max(100_000);
 const coordinate = z.number().finite().min(0).max(20_000);
-export const hostScreenControl = z.object({
+const control = {
   name: z.string().min(1).max(200),
   role: z
     .string()
     .regex(/^[a-zA-Z][a-zA-Z0-9]*$/)
     .max(40),
   waitMs: z.number().int().min(0).max(5_000).optional(),
-});
+};
+
+export const hostScreenNamedAction = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("clickControl"), ...control }),
+  z.object({ kind: z.literal("setControl"), ...control, value: z.string().max(10_000) }),
+]);
 
 export const hostScreenAction = z.discriminatedUnion("kind", [
   z.object({
@@ -32,12 +37,7 @@ export const hostScreenAction = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("type"), text: z.string().max(10_000), element: element.optional() }),
   z.object({ kind: z.literal("set"), element, value: z.string().max(10_000) }),
-  z.object({ kind: z.literal("clickControl"), ...hostScreenControl.shape }),
-  z.object({
-    kind: z.literal("setControl"),
-    ...hostScreenControl.shape,
-    value: z.string().max(10_000),
-  }),
+  hostScreenNamedAction,
   z.object({
     kind: z.literal("key"),
     key: z.string().min(1).max(32),
