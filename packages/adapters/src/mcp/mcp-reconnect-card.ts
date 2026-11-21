@@ -7,6 +7,7 @@ import {
   readMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { McpReauthorizationRequiredError } from "./mcp-oauth.js";
 
 const RECENT_MESSAGES = 50;
@@ -17,6 +18,29 @@ export function needsMcpReauthorization(error: unknown, depth = 0): boolean {
   if (error instanceof McpReauthorizationRequiredError) return true;
   const inner = error instanceof AggregateError ? error.errors : [error.cause];
   return inner.some((cause) => needsMcpReauthorization(cause, depth + 1));
+}
+
+/**
+ * After discovery loses a bot's own server inside a live run, leave its authorization card when
+ * the cause is a sign-in only the user can renew. Best effort: the run keeps its other tools.
+ */
+export async function reportExpiredMcpSignIn(
+  deps: { prisma: PrismaClient; events?: Partial<Pick<ThreadEvents, "notify">> },
+  context: { runId?: string; botId?: string; signal: AbortSignal },
+  server: Pick<McpServer, "id" | "name" | "transport" | "endpoint">,
+  error: unknown,
+): Promise<void> {
+  const events = deps.events;
+  if (!events?.notify || context.signal.aborted || !context.runId || !context.botId) return;
+  if (!needsMcpReauthorization(error)) return;
+  await bestEffort(
+    "post the MCP reconnect card",
+    postMcpReconnectCard(
+      { prisma: deps.prisma, events: { notify: events.notify.bind(events) } },
+      { runId: context.runId, botId: context.botId },
+      server,
+    ),
+  );
 }
 
 /**

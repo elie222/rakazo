@@ -26,13 +26,13 @@ import { allowlistDrift, DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-c
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import type * as reconnectCard from "./mcp-reconnect-card.js";
-import { postMcpReconnectCard } from "./mcp-reconnect-card.js";
+import { reportExpiredMcpSignIn } from "./mcp-reconnect-card.js";
 import { McpSession } from "./mcp-transport.js";
 import { MCP_TOOL_TIMEOUT_MS } from "./remote-mcp.js";
 
 vi.mock("./mcp-reconnect-card.js", async (original) => ({
   ...(await original<typeof reconnectCard>()),
-  postMcpReconnectCard: vi.fn(async () => true),
+  reportExpiredMcpSignIn: vi.fn(async () => undefined),
 }));
 
 // No server is shared with every agent, so only assignments reach a bot.
@@ -2013,7 +2013,6 @@ describe("MCP connector session cache", () => {
     async function discover(
       prisma: Record<string, unknown>,
       events: { append: ReturnType<typeof vi.fn>; notify?: ReturnType<typeof vi.fn> },
-      runId: string | undefined = "run-1",
     ) {
       const connector = new McpConnector(
         {
@@ -2035,7 +2034,7 @@ describe("MCP connector session cache", () => {
           spaceId: "w1",
           userId: "u1",
           botId: "bot-1",
-          runId,
+          runId: "run-1",
           signal: new AbortController().signal,
         } as never);
       } finally {
@@ -2048,28 +2047,22 @@ describe("MCP connector session cache", () => {
     };
 
     afterEach(() => {
-      vi.mocked(postMcpReconnectCard).mockClear();
+      vi.mocked(reportExpiredMcpSignIn).mockClear();
     });
 
-    it("leaves the server's authorization card in that run's chat", async () => {
-      const notify = vi.fn();
-      const tools = await discover(assigned, { append: vi.fn(), notify });
+    it("reports the failure of a server assigned to the bot", async () => {
+      const tools = await discover(assigned, { append: vi.fn(), notify: vi.fn() });
       expect(tools).toEqual(unavailableOnly());
-      expect(postMcpReconnectCard).toHaveBeenCalledTimes(1);
-      expect(postMcpReconnectCard).toHaveBeenCalledWith(
-        expect.objectContaining({ events: { notify: expect.any(Function) } }),
-        { runId: "run-1", botId: "bot-1" },
+      expect(reportExpiredMcpSignIn).toHaveBeenCalledTimes(1);
+      expect(reportExpiredMcpSignIn).toHaveBeenCalledWith(
+        expect.objectContaining({ events: expect.anything() }),
+        expect.objectContaining({ runId: "run-1", botId: "bot-1" }),
         SERVER,
+        expect.anything(),
       );
     });
 
-    it("posts no card outside a run or without a way to announce it", async () => {
-      await discover(assigned, { append: vi.fn(), notify: vi.fn() }, "");
-      await discover(assigned, { append: vi.fn() });
-      expect(postMcpReconnectCard).not.toHaveBeenCalled();
-    });
-
-    it("posts no card for a server shared with every bot", async () => {
+    it("reports nothing for a server shared with every bot", async () => {
       await discover(
         {
           mcpServer: {
@@ -2080,13 +2073,7 @@ describe("MCP connector session cache", () => {
         },
         { append: vi.fn(), notify: vi.fn() },
       );
-      expect(postMcpReconnectCard).not.toHaveBeenCalled();
-    });
-
-    it("still offers the stand-in tool when the card cannot be posted", async () => {
-      vi.mocked(postMcpReconnectCard).mockRejectedValueOnce(new Error("database is down"));
-      const tools = await discover(assigned, { append: vi.fn(), notify: vi.fn() });
-      expect(tools).toEqual(unavailableOnly());
+      expect(reportExpiredMcpSignIn).not.toHaveBeenCalled();
     });
   });
 

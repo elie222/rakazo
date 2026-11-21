@@ -2,7 +2,11 @@ import type { MessageBlock } from "@rakazo/contracts";
 import type * as db from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { McpReauthorizationRequiredError } from "./mcp-oauth.js";
-import { needsMcpReauthorization, postMcpReconnectCard } from "./mcp-reconnect-card.js";
+import {
+  needsMcpReauthorization,
+  postMcpReconnectCard,
+  reportExpiredMcpSignIn,
+} from "./mcp-reconnect-card.js";
 
 type Stored = { blocks: MessageBlock[]; clientNonce: string };
 const stored = vi.hoisted(() => [] as { blocks: unknown; clientNonce: string }[]);
@@ -139,6 +143,45 @@ describe("MCP reconnect card", () => {
     expect(await fixture(null).post()).toBe(false);
     expect(await fixture().post("run", { ...server, transport: "carrier-pigeon" })).toBe(false);
     expect(stored).toHaveLength(0);
+  });
+});
+
+describe("reportExpiredMcpSignIn", () => {
+  const expired = new McpReauthorizationRequiredError("server");
+  const live = { runId: "run", botId: "bot", signal: new AbortController().signal };
+  const report = (
+    deps: ReturnType<typeof fixture>["deps"],
+    context: Partial<typeof live> = {},
+    error: unknown = expired,
+  ) =>
+    reportExpiredMcpSignIn(
+      { prisma: deps.prisma, events: deps.events },
+      { ...live, ...context },
+      server,
+      error,
+    );
+
+  it("leaves the card for an expired sign-in in a live run", async () => {
+    const f = fixture();
+    await report(f.deps);
+    expect(stored).toHaveLength(1);
+  });
+
+  it("leaves nothing outside a live run or for another failure", async () => {
+    const f = fixture();
+    const stopped = new AbortController();
+    stopped.abort();
+    await report(f.deps, { runId: "" });
+    await report(f.deps, { signal: stopped.signal });
+    await report(f.deps, {}, new Error("fetch failed"));
+    await reportExpiredMcpSignIn({ prisma: f.deps.prisma }, live, server, expired);
+    expect(stored).toHaveLength(0);
+  });
+
+  it("keeps a failed post from reaching the run", async () => {
+    const f = fixture();
+    vi.mocked(f.deps.prisma.run.findUnique).mockRejectedValueOnce(new Error("database is down"));
+    await expect(report(f.deps)).resolves.toBeUndefined();
   });
 });
 
