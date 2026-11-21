@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useEventListener } from "../../lib/use-event-listener";
-import { useAppSidebar } from "./app-rail";
+import { useAppRailMetrics } from "./app-rail";
 import { useBotsSidebarWidth } from "./sidebar/sidebar-layout";
 
 const STORAGE_KEY = "rakazo:right-panel-width";
@@ -44,7 +44,7 @@ export function ResizableSidePanel({
   children: ReactNode;
 }) {
   const listWidth = useBotsSidebarWidth();
-  const { listCollapsed, railWidth } = useAppSidebar();
+  const { listCollapsed, railWidth } = useAppRailMetrics();
   const [preferredWidth, setPreferredWidth] = useState(readPreferredWidth);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const belowMd = viewportWidth < MD_BREAKPOINT;

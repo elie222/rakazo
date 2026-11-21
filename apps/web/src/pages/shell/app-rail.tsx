@@ -47,6 +47,14 @@ export function useAppSidebar() {
   return context;
 }
 
+/** Layout widths a surface can read without requiring the rail; standalone panels see zero. */
+export function useAppRailMetrics() {
+  const context = use(AppSidebarContext);
+  return context
+    ? { listCollapsed: context.listCollapsed, railWidth: context.railWidth }
+    : { listCollapsed: false, railWidth: 0 };
+}
+
 /**
  * The app shell: a primary rail for destinations and the page (which owns the secondary
  * list) beside it. The rail stays in place when the page changes, so Artifacts and Board
