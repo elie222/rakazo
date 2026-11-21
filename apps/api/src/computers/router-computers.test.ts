@@ -624,6 +624,18 @@ describe("computer terminal and file transfer", () => {
     );
   });
 
+  it.each(["files", "readFile", "downloadFile"] as const)(
+    "answers 400 when %s is given a path that leaves the workspace",
+    async (procedure) => {
+      const { sandbox, call } = setup(controlled);
+      await expect(call(procedure, { path: "../x" })).resolves.toMatchObject({
+        status: 400,
+        body: { json: { code: "BAD_REQUEST", message: "Path escapes the computer workspace" } },
+      });
+      expect(sandbox.readFile).not.toHaveBeenCalled();
+    },
+  );
+
   it("rejects team uploads into another bot workspace", async () => {
     const contentBase64 = Buffer.from("x").toString("base64");
     const { sandbox, call } = setup(controlled);

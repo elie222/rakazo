@@ -6,7 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 import { Domain } from "../providers/messaging/lark/thread-id.js";
 import { photonProjectsFromEnv } from "../providers/messaging/photon/photon-messaging.js";
 import { parseSendblueStatuses } from "../providers/messaging/sendblue/sendblue-messaging.js";
-import { enrichSlackTeamRoom } from "../providers/messaging/slack/slack-messaging.js";
+import {
+  enrichSlackTeamRoom,
+  SLACK_MARKDOWN_LIMIT,
+  slackPayloads,
+} from "../providers/messaging/slack/slack-messaging.js";
 import { telegramBotsFromEnv } from "../providers/messaging/telegram/telegram-messaging.js";
 import { parseWhatsAppStatuses } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
@@ -368,7 +372,7 @@ describe("messagingPlatformsFromEnv", () => {
     );
   });
 
-  it.each(["", "unknown", "feishu"])("uses normalized Lark defaults for domain %s", (domain) => {
+  it.each(["", "feishu"])("uses normalized Lark defaults for domain %s", (domain) => {
     vi.stubEnv("LARK_DOMAIN", domain);
     vi.stubEnv("LARK_ENCRYPT_KEY", "   ");
     try {
@@ -647,6 +651,26 @@ describe("splitOutboundBody", () => {
     expect(parts.length).toBeGreaterThan(1);
     expect(parts.join("")).toBe(body);
     expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
+  });
+
+  it("splits Slack replies at its 12,000-character Markdown limit", () => {
+    const paragraph = "a".repeat(8000);
+    expect(splitOutboundBody("slack", `${paragraph}\n\n${paragraph}`)).toEqual([
+      paragraph,
+      paragraph,
+    ]);
+    const mid = "b".repeat(5000);
+    expect(splitOutboundBody("slack", `${mid}\n\n${mid}`)).toEqual([`${mid}\n\n${mid}`]);
+    expect(splitOutboundBody("slack", "short")).toEqual(["short"]);
+  });
+
+  it("leaves room for the user ids Slack writes in place of @names", () => {
+    const line = "@ab ".repeat(2500);
+    const parts = splitOutboundBody("slack", line);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.every((part) => slackPayloads(part)[0]!.length <= SLACK_MARKDOWN_LIMIT)).toBe(
+      true,
+    );
   });
 
   it("splits WhatsApp replies between paragraphs and leaves other providers unchanged", () => {

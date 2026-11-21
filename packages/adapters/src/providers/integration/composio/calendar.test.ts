@@ -138,6 +138,107 @@ describe("connected calendar contract", () => {
     });
   });
 
+  it("reads Outlook events in Windows time zones on their local day and time", async () => {
+    const event = (id: string, zone: string, allDay: boolean, start: string, end: string) => ({
+      id,
+      subject: id,
+      isAllDay: allDay,
+      start: { dateTime: start, timeZone: "UTC" },
+      end: { dateTime: end, timeZone: "UTC" },
+      originalStartTimeZone: zone,
+      originalEndTimeZone: zone,
+    });
+    const proxy = vi.fn(async () => ({
+      status: 200,
+      data: {
+        value: [
+          event(
+            "tokyo",
+            "Tokyo Standard Time",
+            true,
+            "2026-11-19T15:00:00.0000000",
+            "2026-11-20T15:00:00.0000000",
+          ),
+          event(
+            "pacific",
+            "Pacific Standard Time",
+            true,
+            "2026-11-20T08:00:00.0000000",
+            "2026-11-21T08:00:00.0000000",
+          ),
+          event(
+            "iana",
+            "Asia/Tokyo",
+            true,
+            "2026-11-19T15:00:00.0000000",
+            "2026-11-20T15:00:00.0000000",
+          ),
+          event(
+            "unknown",
+            "Custom Zone",
+            true,
+            "2026-11-19T15:00:00.0000000",
+            "2026-11-20T15:00:00.0000000",
+          ),
+          event(
+            "timed",
+            "Pacific Standard Time",
+            false,
+            "2026-11-20T17:00:00.0000000",
+            "2026-11-20T18:00:00.0000000",
+          ),
+        ],
+      },
+    }));
+    const result = await executeConnectedCalendar(
+      proxy,
+      { ...connection, externalId: "outlook" },
+      {
+        action: "list_calendar_events",
+        input: { calendar, window: { from: "2026-11-01T00:00:00Z", to: "2026-12-01T00:00:00Z" } },
+      },
+      "read",
+    );
+    expect(result).toEqual({
+      status: "ok",
+      data: {
+        truncated: false,
+        events: [
+          expect.objectContaining({
+            id: "tokyo",
+            start: "2026-11-20",
+            end: "2026-11-21",
+            timeZone: "Asia/Tokyo",
+          }),
+          expect.objectContaining({
+            id: "pacific",
+            start: "2026-11-20",
+            end: "2026-11-21",
+            timeZone: "America/Los_Angeles",
+          }),
+          expect.objectContaining({
+            id: "iana",
+            start: "2026-11-20",
+            end: "2026-11-21",
+            timeZone: "Asia/Tokyo",
+          }),
+          expect.objectContaining({
+            id: "unknown",
+            start: "2026-11-19T15:00:00.000Z",
+            end: "2026-11-20T15:00:00.000Z",
+            timeZone: "Custom Zone",
+          }),
+          expect.objectContaining({
+            id: "timed",
+            start: "2026-11-20T17:00:00.000Z",
+            end: "2026-11-20T18:00:00.000Z",
+            timeZone: "America/Los_Angeles",
+          }),
+        ],
+      },
+    });
+  });
+
   it("never posts for a read-only calendar or an account-relative calendar alias", async () => {
     const proxy = vi.fn(async () => ({
       status: 200,

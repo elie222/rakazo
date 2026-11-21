@@ -5,6 +5,8 @@ import { containsSecret, redactSecrets } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
+import type { Mock } from "vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   kickModelCredentialRefresh,
@@ -1679,9 +1681,39 @@ describe("PiOAuthLogins", () => {
     expect(promptSettled).toBe(true);
     await expect(logins.complete(started.loginId, actor)).resolves.toEqual({
       status: "error",
-      error: "Callback completed elsewhere",
+      error: "Sign-in failed. Start again.",
       provider: "anthropic",
     });
+  });
+
+  it("shows a fixed message for a provider failure and keeps the provider's words out", async () => {
+    const ended: PiOAuthEnded[] = [];
+    const logins = new PiOAuthLogins<string>(
+      async (_provider, _type, interaction) => {
+        interaction.notify({
+          type: "device_code",
+          userCode: "ABCD-1234",
+          verificationUri: "https://example.com/device",
+        });
+        await flushMicrotasks();
+        throw new Error("Device auth failed with status 503: <html>upstream trace 7f3a</html>");
+      },
+      undefined,
+      (end) => ended.push(end),
+    );
+    const actor = { userId: "u", spaceId: "w" };
+    const started = await logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
+    });
+    await flushMicrotasks();
+
+    await expect(logins.complete(started.loginId, actor)).resolves.toMatchObject({
+      status: "error",
+      error: "Sign-in is unavailable right now. Try again in a minute.",
+    });
+    expect(ended).toMatchObject([{ reason: "provider_refused", errorClass: "unavailable" }]);
   });
 
   it("rejects non-HTTPS authorization URLs", async () => {
@@ -2418,57 +2450,83 @@ describe("PiOAuthLogins across API processes", () => {
   });
 
   it("finishes a sign-in on the API process that receives the code", async () => {
-    const { rows, store, secrets } = handoffStore();
-    const before = apiProcess(store);
-    const started = await before.logins.begin({
-      ...member,
-      provider: "anthropic",
-      modelId: "claude-model",
-      label: "Claude",
-      codePage: true,
-      persist: keep,
-    });
-    const row = rows.get(started.loginId);
-    expect(row).toMatchObject({ ...member, provider: "anthropic", leaseExpiresAt: null });
-    expect(secrets.put).toHaveBeenCalledWith(expect.any(String), expect.anything(), {
-      recordId: started.loginId,
-      ephemeral: true,
-    });
-    // A deploy replaces the process that started the sign-in.
-    await before.logins.abortAll();
-    expect(rows.get(started.loginId)?.status).toBe("pending");
+    const previousLogger = getLogger();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      const { rows, store, secrets } = handoffStore();
+      const before = apiProcess(store);
+      const started = await before.logins.begin({
+        ...member,
+        provider: "anthropic",
+        modelId: "claude-model",
+        label: "Claude",
+        codePage: true,
+        persist: keep,
+      });
+      const row = rows.get(started.loginId);
+      expect(row).toMatchObject({ ...member, provider: "anthropic", leaseExpiresAt: null });
+      expect(secrets.put).toHaveBeenCalledWith(expect.any(String), expect.anything(), {
+        recordId: started.loginId,
+        ephemeral: true,
+      });
+      // A deploy replaces the process that started the sign-in.
+      await before.logins.abortAll();
+      expect(rows.get(started.loginId)?.status).toBe("pending");
 
-    const after = apiProcess(store);
-    const saved: PiOAuthConnected[] = [];
-    await expect(
-      after.logins.submit(started.loginId, member, "the-code", async (login) => {
-        saved.push(login);
-        return login.credential.access;
-      }),
-    ).resolves.toEqual({ ok: true });
-    await flushMicrotasks();
-    const stored = JSON.parse(await secrets.load(row?.ciphertext ?? "")) as { verifier: string };
-    expect(stored.verifier).toEqual(expect.any(String));
-    expect(after.seen).toEqual([{ verifier: stored.verifier, code: "the-code" }]);
-    expect(saved).toEqual([
-      expect.objectContaining({ provider: "anthropic", modelId: "claude-model", label: "Claude" }),
-    ]);
+      const after = apiProcess(store);
+      const saved: PiOAuthConnected[] = [];
+      await expect(
+        after.logins.submit(started.loginId, member, "the-code", async (login) => {
+          saved.push(login);
+          return login.credential.access;
+        }),
+      ).resolves.toEqual({ ok: true });
+      await flushMicrotasks();
+      const stored = JSON.parse(await secrets.load(row?.ciphertext ?? "")) as { verifier: string };
+      expect(stored.verifier).toEqual(expect.any(String));
+      expect(after.seen).toEqual([{ verifier: stored.verifier, code: "the-code" }]);
+      expect(saved).toEqual([
+        expect.objectContaining({
+          provider: "anthropic",
+          modelId: "claude-model",
+          label: "Claude",
+        }),
+      ]);
 
-    // Any process reports and finishes it.
-    const elsewhere = apiProcess(store);
-    await expect(elsewhere.logins.complete(started.loginId, member)).resolves.toEqual({
-      status: "connected",
-      provider: "anthropic",
-    });
-    await expect(elsewhere.logins.finish(started.loginId, member)).resolves.toEqual({
-      status: "connected",
-      value: "exchanged-the-code",
-      provider: "anthropic",
-    });
-    expect(rows.size).toBe(0);
-    await expect(
-      apiProcess(store).logins.submit(started.loginId, member, "the-code", keep),
-    ).rejects.toThrow(/not found/);
+      // Any process reports and finishes it.
+      const elsewhere = apiProcess(store);
+      await expect(elsewhere.logins.complete(started.loginId, member)).resolves.toEqual({
+        status: "connected",
+        provider: "anthropic",
+      });
+      await expect(elsewhere.logins.finish(started.loginId, member)).resolves.toEqual({
+        status: "connected",
+        value: "exchanged-the-code",
+        provider: "anthropic",
+      });
+      const trace = sink.events.filter((event) => event.message === "model sign-in lifecycle");
+      expect(trace.map((event) => event["model.sign_in.stage"])).toEqual([
+        "started",
+        "authorization_ready",
+        "resumed",
+        "code_submitted",
+        "authorized",
+        "saving",
+        "connected",
+      ]);
+      expect(new Set(trace.map((event) => event["model.sign_in.id"]))).toEqual(
+        new Set([started.loginId]),
+      );
+      expect(JSON.stringify(trace)).not.toContain(stored.verifier);
+      expect(JSON.stringify(trace)).not.toContain("the-code");
+      expect(rows.size).toBe(0);
+      await expect(
+        apiProcess(store).logins.submit(started.loginId, member, "the-code", keep),
+      ).rejects.toThrow(/not found/);
+    } finally {
+      installLogger(previousLogger);
+    }
   });
 
   it("only hands a sign-in to the member who started it", async () => {
@@ -2515,6 +2573,35 @@ describe("PiOAuthLogins across API processes", () => {
     });
   });
 
+  it.each([
+    ["the app's reason", "left"],
+    ["a shutdown", "interrupted"],
+  ] as const)(
+    "reports a sign-in stopped before its row was stored with why it stopped: %s",
+    async (_case, expected) => {
+      const { store } = handoffStore();
+      const create = (store as unknown as { prisma: { modelOAuthSession: { create: Mock } } })
+        .prisma.modelOAuthSession.create;
+      const stored = create.getMockImplementation()!;
+      const held = deferred<void>();
+      create.mockImplementationOnce(async (args: unknown) => {
+        await held.promise;
+        return stored(args);
+      });
+      const ended: PiOAuthEnded[] = [];
+      const process = apiProcess(store, ended);
+      const started = process.logins.begin({ ...member, provider: "anthropic", persist: keep });
+      await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+      const loginId = (create.mock.calls[0]![0] as { data: { id: string } }).data.id;
+      if (expected === "left") await process.logins.cancel(loginId, member, "left");
+      else await process.logins.abortAll();
+      held.resolve();
+      await started;
+
+      expect(ended.map((end) => end.reason)).toEqual([expected]);
+    },
+  );
+
   it("reports a sign-in another process cancels once, and not again when it runs out", async () => {
     vi.useFakeTimers();
     const { store } = handoffStore();
@@ -2547,7 +2634,7 @@ describe("PiOAuthLogins across API processes", () => {
     ]);
   });
 
-  it("reports a stored sign-in nobody finished in time as timed out", async () => {
+  it("reports a stored sign-in nobody finished in time as timed out, and says it expired", async () => {
     vi.useFakeTimers();
     const { rows, store } = handoffStore();
     const ended: PiOAuthEnded[] = [];
@@ -2560,10 +2647,19 @@ describe("PiOAuthLogins across API processes", () => {
     await vi.advanceTimersByTimeAsync(started.expiresInSeconds * 1000);
 
     expect(ended.map((end) => end.reason)).toEqual(["timed_out"]);
+    const after = apiProcess(store);
+    await expect(after.logins.submit(started.loginId, member, "the-code", keep)).rejects.toThrow(
+      "This code expired. Start again.",
+    );
+    await expect(after.logins.complete(started.loginId, member)).resolves.toMatchObject({
+      status: "error",
+      error: "This code expired. Start again.",
+    });
     expect(rows.has(started.loginId)).toBe(false);
+    expect(after.seen).toEqual([]);
   });
 
-  it("does not resume an expired sign-in", async () => {
+  it("does not resume an expired sign-in, and says it expired", async () => {
     const { rows, store } = handoffStore();
     const started = await apiProcess(store).logins.begin({
       ...member,
@@ -2574,7 +2670,7 @@ describe("PiOAuthLogins across API processes", () => {
     if (row) row.createdAt = new Date(Date.now() - 16 * 60_000);
     const after = apiProcess(store);
     await expect(after.logins.submit(started.loginId, member, "the-code", keep)).rejects.toThrow(
-      /not found/,
+      "This code expired. Start again.",
     );
     expect(after.seen).toEqual([]);
   });
@@ -2603,8 +2699,12 @@ describe("PiOAuthLogins across API processes", () => {
       provider: "anthropic",
       persist: keep,
     });
-    await local.logins.cancelProvider({ userId: "u", provider: "anthropic" });
+    const ended: PiOAuthEnded[] = [];
+    await apiProcess(store, ended).logins.cancelProvider({ userId: "u", provider: "anthropic" });
     expect(rows.has(elsewhere.loginId)).toBe(false);
+    expect(ended).toEqual([
+      expect.objectContaining({ provider: "anthropic", reason: "cancelled" }),
+    ]);
   });
 
   it("cancels a sign-in another process started", async () => {
@@ -2792,7 +2892,7 @@ describe("PiOAuthLogins across API processes", () => {
     expect(save.saved).toEqual(["access-token"]);
   });
 
-  it("drops an expired device-code sign-in at once on every process", async () => {
+  it("ends an expired device-code sign-in at once on every process, and says it expired", async () => {
     vi.useFakeTimers();
     const { rows, store } = handoffStore();
     const a = deviceCodeProcess(store);
@@ -2803,10 +2903,11 @@ describe("PiOAuthLogins across API processes", () => {
     });
     await vi.advanceTimersByTimeAsync(15 * 60_000 + 1);
     expect(a.stopped).toBe(true);
-    expect(rows.has(started.loginId)).toBe(false);
+    expect(rows.get(started.loginId)?.status).toBe("failed");
     await expect(
       deviceCodeProcess(store).logins.complete(started.loginId, member),
-    ).resolves.toMatchObject({ status: "error", error: expect.stringMatching(/not found/) });
+    ).resolves.toMatchObject({ status: "error", error: "This code expired. Start again." });
+    expect(rows.has(started.loginId)).toBe(false);
   });
 
   it("lets a save under way finish before shutdown completes", async () => {

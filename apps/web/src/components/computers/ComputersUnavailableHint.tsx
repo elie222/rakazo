@@ -108,13 +108,15 @@ export function ComputersUnavailableHint({
         </p>
       ) : null}
 
-      {showRetry && (unavailable || phase === "failure") ? (
+      {showRetry && (unavailable || phase === "failure" || phase === "loading") ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="secondary"
             size="sm"
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
             disabled={phase === "loading"}
+            focusableWhenDisabled
             onClick={() => void handleCheckAgain()}
           >
             {phase === "loading" ? <Trans>Checking…</Trans> : <Trans>Check again</Trans>}

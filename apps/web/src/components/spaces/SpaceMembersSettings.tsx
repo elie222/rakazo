@@ -130,6 +130,8 @@ export function SpaceMembersSettings({
             ? { ...current, members: current.members.filter((item) => item.userId !== userId) }
             : current,
         );
+        // The removed person may be addable again, so the list is re-read from the server.
+        setReload((value) => value + 1);
         setConfirm(null);
       } else {
         const result = await rpc.spaces.members.leave({ spaceId: space.id });

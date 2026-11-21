@@ -549,7 +549,8 @@ export function Table({
 
 export type SegmentedOption =
   | string
-  | { value: string; label?: ReactNode; count?: number | string };
+  | number
+  | { value: string | number; label?: ReactNode; count?: number | string };
 
 /** More options than this is a list, not tabs; the chosen one is always kept. */
 const SEGMENTED_MAX = 200;
@@ -560,10 +561,11 @@ export function Segmented({
   onChange,
 }: {
   options?: SegmentedOption[];
-  value?: string;
+  value?: string | number;
   onChange?: (value: string) => void;
 }) {
   type Item = { value: string; label: ReactNode; count?: number | string };
+  const current = value === undefined || value === null ? undefined : String(value);
   const items = (Array.isArray(options) ? options : []).flatMap((option): Item[] =>
     typeof option === "string" || typeof option === "number"
       ? [{ value: String(option), label: String(option) }]
@@ -572,7 +574,7 @@ export function Segmented({
         : [],
   );
   const shown = items.slice(0, SEGMENTED_MAX);
-  const chosen = items.findIndex((item) => item.value === value);
+  const chosen = items.findIndex((item) => item.value === current);
   if (chosen >= SEGMENTED_MAX) shown[SEGMENTED_MAX - 1] = items[chosen]!;
   return (
     <fieldset className="rk-segmented">
@@ -580,7 +582,7 @@ export function Segmented({
         <button
           key={item.value}
           type="button"
-          aria-pressed={item.value === value}
+          aria-pressed={item.value === current}
           onClick={() => onChange?.(item.value)}
         >
           <span className="rk-segment">
