@@ -34,6 +34,7 @@ import { useSplitView } from "../../lib/layout/split-view";
 import { useThemedStyles } from "../../lib/native/native";
 import { NewestPageCards } from "../../lib/pages/page-card";
 import { useChatOnScreen } from "../../lib/pages/page-card-detail";
+import { useDeviceCalendar } from "../../lib/personal-calendar/use-device-calendar";
 import { useAppForeground } from "../../lib/platform/app-foreground";
 import { rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
@@ -148,6 +149,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const contentBottomInset = useContentBottomInset();
   const onCall = Boolean(botId) && call?.botId === botId;
+  useDeviceCalendar(botId, focused && !readOnly && !inGroup && !onCall);
   // The composer floats over the list, which scrolls underneath; this keeps the newest message
   // clear of it. A read-only chat has no composer.
   const [dockHeight, setDockHeight] = useState(0);

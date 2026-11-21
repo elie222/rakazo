@@ -663,6 +663,7 @@ describe("compactHistory", () => {
     expect(request.instructions).toContain(`under ${MAX_COMPACTED_SUMMARY_CHARS} characters`);
     expect(request.tools).toEqual([]);
     expect(request.model).toEqual({
+      billing: "deployment",
       provider: "openrouter",
       id: "anthropic/claude-haiku-5.5",
       apiKey: "openrouter-key",
@@ -1091,6 +1092,7 @@ describe("compactHistory", () => {
 
     const [request] = harness.runtime.run.mock.calls[0]!;
     expect(request.model).toEqual({
+      billing: "deployment",
       provider: "openrouter",
       id: "deepseek/deepseek-v4-flash-0731",
       apiKey: undefined,
@@ -1110,6 +1112,7 @@ describe("compactHistory", () => {
 
     const [request] = harness.runtime.run.mock.calls[0]!;
     expect(request.model).toEqual({
+      billing: "deployment",
       provider: "openrouter",
       id: "moonshotai/kimi-k2",
       apiKey: "openrouter-key",
@@ -1128,6 +1131,7 @@ describe("compactHistory", () => {
 
     const [request] = harness.runtime.run.mock.calls[0]!;
     expect(request.model).toEqual({
+      billing: "deployment",
       provider: "amazon-bedrock",
       id: "eu.anthropic.claude-sonnet-5",
       apiKey: undefined,

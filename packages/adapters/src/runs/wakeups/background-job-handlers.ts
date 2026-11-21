@@ -2,6 +2,7 @@ import type {
   AgentHomeStore,
   AgentRuntime,
   ArtifactStore,
+  BackgroundJobAttempt,
   BackgroundJobExecution,
   BackgroundJobHandlers,
   BackgroundJobPayloads,
@@ -122,6 +123,7 @@ export function createBackgroundJobHandlers(deps: {
   maxUploadSizeBytes?: number;
   /** Sends a lifecycle mail; absent where account mail is not configured, and the job is dropped. */
   meetingCalendarSync?: (job: BackgroundJobPayloads["meeting.calendar-sync"]) => Promise<void>;
+  pageRevisionWork?: (requestId: string, attempt?: BackgroundJobAttempt) => Promise<void>;
   meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
   lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
 }): BackgroundJobHandlers {
@@ -164,6 +166,9 @@ export function createBackgroundJobHandlers(deps: {
     )?.computer ?? null;
 
   return {
+    "page.revise": async ({ requestId }, _execution, attempt) => {
+      await deps.pageRevisionWork?.(requestId, attempt);
+    },
     "run.continue": asOwner(run, async (payload, execution, { spaceId }) => {
       try {
         if (execution)

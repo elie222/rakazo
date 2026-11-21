@@ -63,13 +63,15 @@ const AGENT_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const MAX_AGENT_TOOL_NAME_LENGTH = 64;
 const FALLBACK_AGENT_TOOL_NAME = "connector_tool";
 
-/** Optional self-host fuse. Unset, empty, or 0 means unlimited (default). */
+/** Optional self-host fuse. Unset, empty, or 0 means unlimited (default); anything else must be a whole number. */
 export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.MAX_TOOL_CALLS_PER_TURN?.trim();
   if (!raw) return 0;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-  return Math.floor(parsed);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)))
+    throw new Error(
+      `MAX_TOOL_CALLS_PER_TURN must be a whole number of 0 or more (0 or unset means unlimited), got "${raw}"`,
+    );
+  return Number(raw);
 }
 
 export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {

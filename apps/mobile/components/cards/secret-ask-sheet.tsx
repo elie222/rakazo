@@ -92,10 +92,12 @@ export function SecretAskSheet({
         accessibilityViewIsModal
         style={[
           styles.sheet,
-          // Page sheets clear the notch on iOS; Android modals are full-screen.
+          // The page sheet clears the top on iOS, but can extend under side status controls.
           {
             paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
             paddingBottom: insets.bottom,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
           },
         ]}
       >
@@ -143,7 +145,11 @@ export function SecretAskSheet({
               onValueChange={setRemember}
             />
           </View>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          ) : null}
         </ScrollView>
       </View>
     </Modal>

@@ -1,5 +1,6 @@
 import { hostname } from "node:os";
 import type {
+  AgentRuntime,
   ArtifactStore,
   BackgroundJobPayloads,
   ConnectorProvider,
@@ -22,6 +23,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   chatHistoryRetentionDays,
   createChatHistoryPruner,
+  createRetentionPruner,
   createSecurityEventPruner,
   securityEventRetentionDays,
 } from "@rakazo/db";
@@ -48,7 +50,9 @@ import {
   resolveDeploymentModel,
 } from "../../models/deployment-model.js";
 import { ExpoPushProvider } from "../../notifications/expo-push.js";
+import { createPageRevisions } from "../../pages/page-revision.js";
 import { reconcilePurchases } from "../../payments/purchase-poll.js";
+import { pruneExpiredNativeCalendarRequests } from "../../personal-calendar/native-calendar.js";
 import { T3CodeConnections } from "../../providers/cloud-agent/t3code/t3code-connections.js";
 import type { ComposioProvider } from "../../providers/integration/composio/composio-connector.js";
 import {
@@ -242,6 +246,7 @@ export function createRunRuntime(
     /** Also keeps one sender's direct-message settles in order. */
     jobs: JobPublisher & JobQueueOrder;
     artifacts: ArtifactStore;
+    pageRevisionRuntime: AgentRuntime;
     messaging?: MessagingSurface;
     /** Whether a connected workspace still has its bot installed. */
     isMessagingInstallationActive?: (installationId: string) => Promise<boolean>;
@@ -257,6 +262,7 @@ export function createRunRuntime(
     lifecycleEmail,
     meetingWork,
     meetingCalendarSync,
+    pageRevisionRuntime,
     ...executorDeps
   } = deps;
   const runtime = cliModelRuntime(env, deps.runtime, deps);
@@ -329,7 +335,15 @@ export function createRunRuntime(
     messagingDelivery,
     web: executorDeps.web ?? createWebProvider(),
   });
+  const pageRevisions = createPageRevisions({
+    prisma: deps.prisma,
+    events: deps.events,
+    jobs: deps.jobs,
+    runtime: cliModelRuntime(env, pageRevisionRuntime, deps),
+    resolveModel: executor.resolveModel,
+  });
   const jobHandlers = createBackgroundJobHandlers({
+    pageRevisionWork: pageRevisions.work,
     executor,
     prisma: deps.prisma,
     sandbox: deps.sandbox,
@@ -357,7 +371,7 @@ export function createRunRuntime(
     meetingWork,
     meetingCalendarSync,
   });
-  return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
+  return { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions };
 }
 
 type JobReconcilerDeps = Parameters<typeof createJobReconciler>[0];
@@ -422,6 +436,11 @@ export function createRunReconciler(
     reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
     reconcileChatHistoryRetention:
       chatHistoryDays === null ? undefined : createChatHistoryPruner(prisma, chatHistoryDays),
+    reconcileNativeCalendarRetention: createRetentionPruner(
+      "native_calendar_requests",
+      (now) => pruneExpiredNativeCalendarRequests(prisma, now),
+      { intervalMs: 60_000 },
+    ),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
     reconcileMemoryDreams: async () => {
       await reconcileMemoryDreams({ prisma, jobs });

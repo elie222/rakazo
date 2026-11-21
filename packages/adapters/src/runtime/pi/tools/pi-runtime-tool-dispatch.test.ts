@@ -2357,14 +2357,21 @@ describe("Pi connector tool dispatch", () => {
     expect(events.filter((event) => (event as { type?: string }).type === "subagent")).toEqual([]);
   });
 
-  it("treats unset, empty, and non-positive MAX_TOOL_CALLS_PER_TURN as unlimited", () => {
+  it("reads MAX_TOOL_CALLS_PER_TURN strictly, with unset, empty, and 0 meaning unlimited", () => {
     expect(maxToolCallsPerTurn({})).toBe(0);
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "" })).toBe(0);
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "0" })).toBe(0);
-    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "-5" })).toBe(0);
-    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "abc" })).toBe(0);
-    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "80" })).toBe(80);
-    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: " 12.9 " })).toBe(12);
+    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "25" })).toBe(25);
+    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: " 80 " })).toBe(80);
+    for (const bad of ["25x", "-1", "1.5", "fifty", "1e3"])
+      expect(() => maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: bad })).toThrow(
+        /MAX_TOOL_CALLS_PER_TURN/,
+      );
+  });
+
+  it("refuses to construct the runtime when MAX_TOOL_CALLS_PER_TURN is malformed", () => {
+    process.env.MAX_TOOL_CALLS_PER_TURN = "50x";
+    expect(() => new PiAgentRuntime()).toThrow(/MAX_TOOL_CALLS_PER_TURN/);
   });
 
   it("uses the bot's own limit instead of the process default", () => {

@@ -23,7 +23,7 @@ import {
   modelProviderAllowlist,
 } from "../../models/model-provider-allowlist.js";
 import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
-import { secretValuesToRedact } from "../../models/model-secret.js";
+import { modelBilling, secretValuesToRedact } from "../../models/model-secret.js";
 import {
   hasHostedModelCredits,
   validateCreditOfferingChoice,
@@ -288,7 +288,14 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
         : undefined;
       return {
-        model: { provider, id: modelId, ...material, ...(apiKey ? { apiKey } : {}), callObserver },
+        model: {
+          provider,
+          id: modelId,
+          ...material,
+          ...(apiKey ? { apiKey } : {}),
+          callObserver,
+          billing: modelBilling({ credits: Boolean(callObserver || material) }),
+        },
       };
     }
 
@@ -313,6 +320,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     );
     const parsed = auth.secret;
     const modelSettings = connectionModelSettings(parsed, provider, modelId, credential);
+    const billing = modelBilling({ secret: parsed });
     const limit = {
       ...(modelSettings.maxTokens !== undefined ? { maxTokens: modelSettings.maxTokens } : {}),
       ...(modelSettings.contextWindow !== undefined
@@ -326,6 +334,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
+          billing,
           ...limit,
           oauth: {
             credential: { ...parsed.credential },
@@ -352,6 +361,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
+          billing,
           apiKey: parsed.apiKey,
           baseUrl: parsed.baseUrl,
           headers: parsed.headers,
@@ -367,6 +377,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       model: {
         provider,
         id: modelId,
+        billing,
         apiKey: auth.apiKey,
         projectId: parsed.projectId,
         region: parsed.region,

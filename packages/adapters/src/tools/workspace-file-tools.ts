@@ -340,6 +340,7 @@ export async function renderPlotFromTool(
           prisma: deps.prisma,
           artifacts: deps.artifacts,
           maxUploadSizeBytes: deps.maxUploadSizeBytes,
+          events: deps.events,
         },
         {
           spaceId: run.spaceId,

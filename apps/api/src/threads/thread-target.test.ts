@@ -1628,7 +1628,9 @@ describe("threadSnapshot", () => {
       },
       run: {
         findFirst: vi.fn(async (args: { where?: { status?: unknown } }) =>
-          args.where?.status === "waiting_takeover" ? { id: "run-waiting" } : null,
+          args.where?.status === "waiting_takeover"
+            ? { id: "run-waiting", userId: "user-1" }
+            : null,
         ),
         findMany: vi.fn().mockResolvedValue([]),
       },

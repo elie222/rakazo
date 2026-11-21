@@ -309,6 +309,8 @@ export interface SandboxKindCapabilities {
   storedHomeIsBackup: boolean;
   /** The provider can read the disk of a stopped sandbox without starting it. */
   readStoppedFiles?: boolean;
+  /** Largest file one transfer can carry, when the provider's transport is tighter than the server's limit. */
+  maxFileBytes?: number;
   /** The provider confirms machine size for size-based allowance accounting. */
   sizedUsage?: boolean;
 }
@@ -657,9 +659,18 @@ export interface AgentSteeringMessage {
 /** Adapter-supplied cache policy metadata; absent fields mean unknown. */
 export type CacheCapabilities = ConnectionCacheCapabilities;
 
+/** Who pays for a model call: the user's subscription or key, the deployment, or its credits. */
+export type ModelBilling =
+  | "subscription"
+  | "api_key"
+  | "custom_endpoint"
+  | "credits"
+  | "deployment";
+
 export interface AgentRunModel {
   /** Server-side spending authorization, carried with the resolved credential. */
   callObserver?: ModelCallObserver;
+  billing?: ModelBilling;
   cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
@@ -940,6 +951,7 @@ export type AgentRuntimeEvent =
       callId?: string;
       operationKind?: UsageOperationKind;
       agentId?: string;
+      billing?: ModelBilling;
     } & AgentUsage)
   | { type: "checkpoint"; blob: string }
   /**
@@ -1041,6 +1053,7 @@ export interface VoiceTranscribeRequest {
 
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
+  "page.revise": { requestId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };

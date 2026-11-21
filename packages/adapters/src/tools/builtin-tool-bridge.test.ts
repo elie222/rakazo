@@ -141,7 +141,7 @@ describe("bridge tool definitions", () => {
       {
         name: "find_tool",
         description:
-          "Get the parameters of built-in tools not in your tool list, including ones your instructions name. Call this before use_tool. Pass names for exact tools or query to search.\nmedia:\n  render_plot\nsecrets:\n  list_secrets",
+          "Find deferred tool parameters by name or query before calling use_tool.\nmedia:\n  render_plot\nsecrets:\n  list_secrets",
         inputSchema: {
           type: "object",
           properties: {
@@ -153,7 +153,7 @@ describe("bridge tool definitions", () => {
       },
       {
         name: "use_tool",
-        description: "Run a built-in tool whose parameters find_tool returned in this turn.",
+        description: "Run a tool returned by find_tool this turn.",
         inputSchema: {
           type: "object",
           properties: {
