@@ -241,6 +241,7 @@ vi.mock("../api/api", () => ({
                       signInSetup: {
                         label: "Turn on device code sign-in in security settings",
                         url: "https://example.com/security",
+                        note: "Workspace accounts need an admin to turn this on.",
                       },
                     }
                   : {}),
@@ -1039,9 +1040,11 @@ describe("provider connection screen", () => {
     mocks.completeOAuth.mockReturnValueOnce(completeSignIn.promise);
     mocks.copyCode.mockReturnValueOnce(copied.promise);
     await renderConnection();
-    await act(async () =>
-      buttonWithText("1. Turn on device code sign-in in security settings")!.click(),
+    expect(container.textContent).toContain("Workspace accounts need an admin to turn this on.");
+    const setupLink = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="1. Turn on device code sign-in in security settings"]',
     );
+    await act(async () => setupLink!.click());
     expect(mocks.openURL).toHaveBeenCalledWith("https://example.com/security");
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/beginOAuth", expect.anything());
     mocks.openURL.mockClear();

@@ -581,6 +581,7 @@ export default function ModelConnection() {
             <SettingsRow
               accessibilityRole="link"
               title={`1. ${signInSetup.label}`}
+              detail={signInSetup.note}
               trailing={
                 <NativeSymbol
                   ios="arrow.up.right"
