@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -37,6 +37,13 @@
         }
       ],
       "expo-localization",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow Rakazo to read and add events in calendars you choose for your bots.",
+          "remindersPermission": "Allow Rakazo to create and complete reminders in lists you choose for your bots."
+        }
+      ],
       "@react-native-vector-icons/ionicons",
       "@react-native-vector-icons/material-design-icons",
       [

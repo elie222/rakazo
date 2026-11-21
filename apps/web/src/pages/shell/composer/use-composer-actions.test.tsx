@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { Bot, ComputerStatus, Me, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
+import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
 import { flush as flushTimer } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -17,7 +18,7 @@ vi.mock("@lingui/react/macro", () => {
   // every callback and hide stale-closure bugs.
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
-  return { useLingui: () => ({ t }) };
+  return { useLingui: () => ({ t, i18n: { locale: "en" } }) };
 });
 vi.mock("../../../lib/composer/prepare-image", () => ({
   canPrepareImage: () => false,
@@ -624,4 +625,21 @@ it("clears a quoted reply re-picked as a fresh object after a thread refresh", a
   );
   expect(latest.replyTarget).toBeNull();
   expect(latest.replyQuote).toBeNull();
+});
+
+it("refuses text over the message limit before any request and keeps the draft", async () => {
+  rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
+  let accepted!: boolean;
+  await act(async () => {
+    accepted = await latest.sendMessage("a".repeat(THREAD_MESSAGE_TEXT_MAX_LENGTH + 1), [], "n-1");
+  });
+  expect(accepted).toBe(false);
+  expect(rpc.threads.send).not.toHaveBeenCalled();
+  expect(latest.sendError).toBe("Messages can be up to 100,000 characters.");
+
+  await act(async () => {
+    accepted = await latest.sendMessage("a".repeat(THREAD_MESSAGE_TEXT_MAX_LENGTH), [], "n-2");
+  });
+  expect(accepted).toBe(true);
+  expect(rpc.threads.send).toHaveBeenCalledTimes(1);
 });

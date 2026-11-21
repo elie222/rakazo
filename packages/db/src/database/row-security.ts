@@ -126,6 +126,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "MeetingCalendarBooking",
   "MeetingCalendarConnection",
   "MeetingCalendarRule",
+  "NativeCalendarRequest",
   "MemoryRevision",
   "Artifact",
   "Secret",
@@ -189,6 +190,9 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "AuditEvent",
   "Page",
   "PageVersion",
+  "PageGrant",
+  "PageComment",
+  "PageRevisionRequest",
 ]);
 
 /**

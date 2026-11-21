@@ -1415,6 +1415,31 @@ describe("bot settings device voice menu", () => {
     expect(container.querySelector("i")!.dataset.ios).toBe("chevron.up.chevron.down");
   });
 
+  it("shows a placeholder until a choice is explicitly selected", async () => {
+    const onChange = vi.fn();
+    await act(async () =>
+      root.render(
+        <MenuPicker
+          label="Section"
+          placeholder="Choose a section"
+          choices={[
+            { key: "first", label: "Timeline (1)" },
+            { key: "second", label: "Timeline (2)" },
+          ]}
+          value=""
+          onChange={onChange}
+        />,
+      ),
+    );
+    expect(container.querySelector('[aria-label="Section"]')?.getAttribute("aria-valuetext")).toBe(
+      "Choose a section",
+    );
+    const actions = [...container.querySelectorAll("button")];
+    expect(actions.map((action) => action.dataset.state)).toEqual(["off", "off"]);
+    await act(async () => actions[1]!.click());
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("second");
+  });
+
   it.each([false, true])(
     "sizes the menu trigger to its measured width (plain=%s)",
     async (plain) => {

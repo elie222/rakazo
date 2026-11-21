@@ -234,6 +234,20 @@ describe("shared Linux desktop lifecycle", () => {
     expect(ensureScreenCommand(0, "bot", "view")).not.toMatch(/-wait 5|-defer 5/);
   });
 
+  it("leaves key autorepeat to the process a person types into", () => {
+    const view = ensureScreenCommand(0, "bot", "view");
+    expect(view).toMatch(/nohup x11vnc [^\n]* -viewonly -repeat /);
+    expect(interactiveScreenCommand(true, "control")).not.toMatch(/x11vnc [^\n]* -repeat /);
+    // A viewer started before -repeat is replaced rather than reused.
+    const reuse = view.match(/! pgrep -f '([^']+)'"\$\{desktop_view_token\}"'([^']+)'/);
+    expect(reuse).not.toBeNull();
+    const pattern = new RegExp(`${reuse![1]}view${reuse![2]}`);
+    const viewer = (flags: string) =>
+      `/usr/bin/x11vnc -display :1 -forever -shared ${flags} -nopw -rfbport 0 -unixsock /tmp/rakazo/sockets/view-1-view -xkb -ncache 0`;
+    expect(viewer("-viewonly -repeat")).toMatch(pattern);
+    expect(viewer("-viewonly")).not.toMatch(pattern);
+  });
+
   it.each([undefined, "127.0.0.1", "localhost", "192.0.2.10", "0.0.0.0"])(
     "binds and identifies the configured gateway (%s)",
     (bindHost) => {

@@ -20,9 +20,10 @@ import type {
   TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
-import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { abortableDelay } from "@rakazo/core";
+import { SandboxFileTooLargeError, SandboxRateLimitError } from "@rakazo/adapter-kit";
+import { abortableDelay, parseRetryAfter } from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -285,6 +286,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         { timeout: 120 },
       );
     } catch (error) {
+      // Refused by Daytona, so nothing was created to delete; a delete would hit the same limit.
+      const limited = await daytonaRateLimitError(error);
+      if (limited) throw limited;
       await this.deleteAbandoned(name, request.botId);
       throw error;
     }
@@ -305,7 +309,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       return sandbox.state === (await daytonaSdk()).SandboxState.STARTED;
     } catch (error) {
       if (await isDaytonaSandboxMissing(error)) return false;
-      throw error;
+      throw (await daytonaRateLimitError(error)) ?? error;
     }
   }
 
@@ -437,10 +441,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   async *exportWorkspace(
     computer: ComputerRef,
     context: AdapterContext,
+    limits?: WorkspaceExportLimits,
   ): AsyncIterable<PortableFile> {
     const sandbox = await this.box(computer);
     await this.desktops.stopBrowsers(computer, context);
-    yield* walkDaytonaWorkspace(sandbox, await this.workspaceRoot(sandbox), "", context);
+    yield* walkDaytonaWorkspace(sandbox, await this.workspaceRoot(sandbox), "", context, limits);
   }
 
   async importWorkspace(
@@ -514,7 +519,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       await sandbox.delete(120, true);
     } catch (error) {
       // Deletion is idempotent even when the sandbox disappears after lookup.
-      if (!(await isDaytonaSandboxMissing(error))) throw error;
+      if (!(await isDaytonaSandboxMissing(error))) {
+        throw (await daytonaRateLimitError(error)) ?? error;
+      }
     }
   }
 
@@ -566,9 +573,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       this.checkedAt.set(id, Date.now());
       return { sandbox, started };
     })()
-      .catch((error: unknown) => {
+      .catch(async (error: unknown) => {
         if (isSandboxGoneError(error) && this.connections.get(id) === connection) this.forget(id);
-        throw error;
+        throw (await daytonaRateLimitError(error)) ?? error;
       })
       .finally(() => {
         if (this.connections.get(id) === connection) this.connections.delete(id);
@@ -588,7 +595,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       return await this.client.get(id);
     } catch (error) {
       if (await isDaytonaSandboxMissing(error)) return undefined;
-      throw error;
+      throw (await daytonaRateLimitError(error)) ?? error;
     }
   }
 
@@ -608,7 +615,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     try {
       await (await this.client.get(nameOrId)).delete(timeoutMs / 1_000);
     } catch (error) {
-      if (!(await isDaytonaSandboxMissing(error))) throw error;
+      if (!(await isDaytonaSandboxMissing(error))) {
+        throw (await daytonaRateLimitError(error)) ?? error;
+      }
     }
   }
 
@@ -768,6 +777,23 @@ async function isDaytonaSandboxMissing(error: unknown): Promise<boolean> {
   if (error instanceof DaytonaNotFoundError || error instanceof DaytonaGoneError) return true;
   const status = (error as { statusCode?: unknown } | null)?.statusCode;
   return status === 404 || status === 410;
+}
+
+/**
+ * Daytona's 429 as the shared computer rate limit, so callers defer the work and users see the
+ * rate-limit message. The wait is the Retry-After that Daytona sent with the refusal.
+ */
+async function daytonaRateLimitError(error: unknown): Promise<SandboxRateLimitError | undefined> {
+  const { DaytonaRateLimitError } = await daytonaSdk();
+  if (!(error instanceof DaytonaRateLimitError)) return undefined;
+  const headers = error.headers;
+  // The SDK passes axios headers; a plain record with the same keys is read the same way.
+  const value: unknown =
+    typeof headers?.get === "function" ? headers.get("retry-after") : headers?.["retry-after"];
+  return new SandboxRateLimitError({
+    cause: error,
+    retryAfterMs: parseRetryAfter(typeof value === "string" ? value : undefined),
+  });
 }
 
 /** Named so the shared isSandboxGoneError recognizes it and the computer is replaced. */
@@ -950,7 +976,7 @@ async function stopDaytonaSandbox(sandbox: DaytonaSandbox): Promise<void> {
     }
   } catch (error) {
     if (isSandboxGoneError(error)) return;
-    throw error;
+    throw (await daytonaRateLimitError(error)) ?? error;
   }
 }
 

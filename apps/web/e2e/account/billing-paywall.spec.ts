@@ -2,6 +2,11 @@ import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { BillingStatus } from "@rakazo/contracts";
 import {
+  BYOK_TIERS,
+  SANDBOX_SIZE_HOURLY_COST_MICROS,
+  sandboxAllowanceHours,
+} from "@rakazo/contracts";
+import {
   captureScreenshot,
   completeOnboarding,
   openUserSettings,
@@ -52,6 +57,14 @@ const tiers: NonNullable<BillingStatus["byokTiers"]> = [
     annualPriceCents: 94800,
     computerSize: "xlarge",
     computerHours: 200,
+  },
+  {
+    tier: "ultra",
+    name: "Ultra",
+    monthlyPriceCents: 19900,
+    annualPriceCents: 190800,
+    computerSize: "xlarge",
+    computerHours: 600,
   },
 ];
 
@@ -393,6 +406,7 @@ test("start a bigger tier's trial from the tiers layout", async ({ page }, testI
   await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
   await page.reload();
   await expect(page.getByRole("heading", { name: "Max" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ultra" })).toHaveCount(0);
   await expect(page.getByText("A 2× more powerful computer for your bot")).toBeVisible();
   await expect(page.getByText("$49", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Monthly credits" })).toContainText(
@@ -567,7 +581,15 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
     byokInterval: "month",
     byokAnnualPriceCents: 14400,
     byokTier: "standard",
-    byokTiers: tiers,
+    byokTiers: tiers.map((offer) => ({
+      ...offer,
+      computerSizeChoice: true,
+      computerHours: sandboxAllowanceHours(
+        BYOK_TIERS[offer.tier].computerAllowanceCents,
+        SANDBOX_SIZE_HOURLY_COST_MICROS.standard,
+      ),
+    })),
+    standardComputerHours: true,
     funding: "byok",
     balanceUsd: 0,
     monthlyAmountCents: null,
@@ -581,30 +603,49 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
     changedTo = route.request().postDataJSON()?.json?.tier;
     status = {
       ...status,
-      byokPriceCents: 4900,
-      byokAnnualPriceCents: 46800,
-      byokTier: "pro",
-      computerHoursLeft: 400,
+      byokPriceCents: 19900,
+      byokAnnualPriceCents: 190800,
+      byokTier: "ultra",
+      computerHoursLeft: 2400,
     };
+    await route.fulfill({ json: { json: status } });
+  });
+  await page.route("**/rpc/billing/switchToYearly", async (route) => {
+    status = { ...status, byokPriceCents: 190800, byokInterval: "year" };
     await route.fulfill({ json: { json: status } });
   });
   await page.reload();
   const settings = await openUserSettings(page, "billing");
   const plan = settings.getByTestId("own-key-plan");
-  await expect(plan.getByText("4 vCPU, 8 GB, 25 computer hours a month")).toBeVisible();
+  await expect(
+    plan.getByText("Up to 4 vCPU and 8 GB, 100 Standard computer hours a month"),
+  ).toBeVisible();
   await plan.getByRole("combobox", { name: "Plan" }).click();
   await expect(page.getByRole("option", { name: /Max · \$99 \/ month/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-own-key-tiers");
-  await page.getByRole("option", { name: /Pro · \$49 \/ month/ }).click();
-  const confirm = page.getByRole("alertdialog", { name: "Switch to Pro?" });
+  await page.getByRole("option", { name: /Ultra · \$199 \/ month/ }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Switch to Ultra?" });
   await expect(
     confirm.getByText("Your card is charged the prorated difference today."),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-own-key-tier-confirm");
   await confirm.getByRole("button", { name: "Switch", exact: true }).click();
-  await expect.poll(() => changedTo).toBe("pro");
-  await expect(plan.getByText("$49 / month", { exact: true })).toBeVisible();
-  await expect(plan.getByText("8 vCPU, 16 GB, 100 computer hours a month")).toBeVisible();
+  await expect.poll(() => changedTo).toBe("ultra");
+  await expect(plan.getByText("$199 / month", { exact: true })).toBeVisible();
+  const ultraComputer = "Up to 16 vCPU and 32 GB, 2400 Standard computer hours a month";
+  await expect(plan.getByText(ultraComputer)).toBeVisible();
+  await plan.getByRole("button", { name: /Switch to yearly.*20%/ }).click();
+  const yearly = page.getByRole("alertdialog", { name: "Switch to yearly?" });
+  await expect(yearly.getByText(/charged \$1,908 today/)).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-ultra-switch-to-yearly");
+  await yearly.getByRole("button", { name: "Switch", exact: true }).click();
+  await expect(plan.getByText("$1,908 / year", { exact: true })).toBeVisible();
+  await plan.getByRole("combobox", { name: "Plan" }).click();
+  const ultra = page.getByRole("option", { name: /Ultra · \$1,908 \/ year/ });
+  await expect(
+    ultra.getByText("2,400 bot computer hours/month at Standard size · Up to Extra large"),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "billing-own-key-tiers-yearly");
 });
 
 test("computers settings set each cloud computer's size within the plan", async ({

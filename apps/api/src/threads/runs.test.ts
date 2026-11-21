@@ -41,6 +41,12 @@ describe("run activity copy", () => {
     },
   );
 
+  it.each(["created", "call_end"])("shows no prompt for a %s run", (trigger) => {
+    expect(
+      activityPreview({ trigger, prompt: "You were just created. Call ask_user right away." }),
+    ).toEqual({ promptSnippet: "", agentMessage: null });
+  });
+
   it("caps the whole legacy label and the structured text independently", () => {
     expect(activityPreview({ trigger: "user", prompt: " hello\n world " })).toEqual({
       promptSnippet: "hello world",

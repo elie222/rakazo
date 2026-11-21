@@ -322,3 +322,36 @@ describe("api and worker environment allowlists", () => {
     },
   );
 });
+
+describe("supervisor environment", () => {
+  /** SANDBOX_* settings the supervisor reads for computers, found in its computer spec. */
+  const NOT_OPERATOR_SETTINGS = new Set(["SANDBOX_SCREEN_HOST"]);
+  const supervisorSettings = [
+    ...new Set(
+      readFileSync(
+        path.join(repoRoot, "infra/sandboxes/supervisor/src/computer-spec.ts"),
+        "utf8",
+      ).match(/\bSANDBOX_[A-Z0-9_]+/g),
+    ),
+  ]
+    .filter((name) => !NOT_OPERATOR_SETTINGS.has(name))
+    .sort();
+
+  it("finds the settings it is meant to find", () => {
+    expect(supervisorSettings).toContain("SANDBOX_TEAM_SCREEN_LIMIT");
+    expect(supervisorSettings).toContain("SANDBOX_MAX_COMPUTERS_PER_SPACE");
+  });
+
+  it.each(
+    [
+      ["docker-compose.images.yml"],
+      ["docker-compose.yml"],
+      ["docker-compose.prod.yml", "docker-compose.prod.docker.yml"],
+    ].map((files) => [files.join(" + "), files] as const),
+  )("%s passes the supervisor every setting it reads", (_name, files) => {
+    const environment = stackEnvironment(files, "supervisor");
+    expect(Object.keys(environment).length).toBeGreaterThan(0);
+    const missing = supervisorSettings.filter((name) => !(name in environment));
+    expect(missing).toEqual([]);
+  });
+});

@@ -57,13 +57,34 @@ describe("system browser authentication", () => {
       `${callback}/wrong?code=x&state=test-state`,
       `${callback}?code=x&state=test-state&state=wrong`,
       `${callback}?code=x&code=y&state=test-state`,
-      `${callback}?error=denied&state=test-state`,
+      `${callback}?error=denied&state=wrong`,
+      `${callback}?error=denied&code=x&state=test-state`,
     ])
       expect((await fetch(url)).status).toBe(400);
     expect((await fetch(`${callback}?code=x&state=test-state`, { method: "POST" })).status).toBe(
       400,
     );
     expect(options.onCallback).not.toHaveBeenCalled();
+    expect((await fetch(`${callback}?code=x&state=test-state`)).status).toBe(200);
+    expect(options.onCallback).toHaveBeenCalledOnce();
+  });
+
+  it("stops waiting when the user declines at the provider", async () => {
+    const { authorization, callback, options } = await setup();
+    await openBrowserAuth(authorization.href, options);
+    const response = await fetch(`${callback}?error=access_denied&state=test-state`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("You can close this tab and return to BotONE.");
+    expect(options.onCallback).not.toHaveBeenCalled();
+    expect(options.onClose).toHaveBeenCalledOnce();
+    await expect(fetch(`${callback}?code=x&state=test-state`)).rejects.toThrow();
+  });
+
+  it("keeps waiting when a refusal carries the wrong state", async () => {
+    const { authorization, callback, options } = await setup();
+    await openBrowserAuth(authorization.href, options);
+    expect((await fetch(`${callback}?error=access_denied&state=wrong`)).status).toBe(400);
+    expect(options.onClose).not.toHaveBeenCalled();
     expect((await fetch(`${callback}?code=x&state=test-state`)).status).toBe(200);
     expect(options.onCallback).toHaveBeenCalledOnce();
   });

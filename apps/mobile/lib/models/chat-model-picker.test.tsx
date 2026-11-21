@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { CSSProperties, ReactNode, Ref } from "react";
@@ -42,6 +43,8 @@ const mocks = vi.hoisted(() => ({
   alert: vi.fn(),
   prompt: vi.fn(),
   completeOAuth: vi.fn(),
+  submitOAuthCode: vi.fn(),
+  pasteBackSignIn: false,
   rpc: vi.fn(),
   dismissKeyboard: vi.fn(),
   listProps: {} as Record<string, unknown>,
@@ -81,6 +84,7 @@ const WORK_CREDENTIAL_ID = "credential-work";
 const catalog = Array.from({ length: 11 }, (_, index) => ({
   provider: "openrouter",
   providerName: "OpenRouter",
+  subscriptionName: "Example subscription",
   id: `vendor/model-${index + 1}`,
   label: `Model ${index + 1}`,
   billing: "",
@@ -96,7 +100,7 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => createElement("div", {}, children),
 }));
 vi.mock("../layout/floating-header", () => ({ useFloatingHeaderInset: () => mocks.headerInset }));
-vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../messages/message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 vi.mock("../notifications/live-notifications", () => ({
@@ -159,6 +163,14 @@ vi.mock("../api/api", () => ({
         hasKey: true,
       };
     }
+    if (procedure === "models/beginOAuth" && mocks.pasteBackSignIn)
+      return {
+        loginId: `login-${mocks.rpc.mock.calls.filter(([name]) => name === "models/beginOAuth").length}`,
+        mode: "auth-url",
+        verificationUri: "https://example.com/authorize",
+        expiresInSeconds: 600,
+      };
+    if (procedure === "models/submitOAuthCode") return mocks.submitOAuthCode(input);
     if (procedure === "models/beginOAuth")
       return {
         loginId: "login-fixture",
@@ -221,7 +233,11 @@ vi.mock("../api/api", () => ({
                     : entry.label,
             }))
           : mocks.subscriptionSignIn
-            ? catalog.map((entry) => ({ ...entry, signIn: "device-code" }))
+            ? catalog.map((entry) => ({
+                ...entry,
+                auth: "both",
+                signIn: "device-code",
+              }))
             : [
                 ...catalog.map((entry) => ({
                   ...entry,
@@ -624,6 +640,7 @@ beforeEach(() => {
   mocks.savedGatewayId = "gateway-fixture";
   mocks.vendorLabels = false;
   mocks.subscriptionSignIn = false;
+  mocks.pasteBackSignIn = false;
   mocks.reconnectRequired = false;
   mocks.secondConnection = false;
   mocks.backups = [];
@@ -687,6 +704,25 @@ describe("chat model list", () => {
       options.headerSearchBarOptions.onChangeText({ nativeEvent: { text } });
     });
   const rows = () => [...container.querySelectorAll("li button")];
+
+  it.each([
+    [true, "Example Abonnement"],
+    [false, "OpenRouter"],
+  ])(
+    "names the serving connection in the model list (subscription: %s)",
+    async (subscription, name) => {
+      mocks.subscriptionSignIn = subscription;
+      i18n.load("de", { "Example subscription": "Example Abonnement" });
+      i18n.activate("de");
+      try {
+        mocks.params = { botId: "bot-fixture", value: "" };
+        await act(async () => root.render(<BotModelScreen />));
+        expect(container.querySelector("h2")?.textContent).toBe(name);
+      } finally {
+        i18n.activate("en");
+      }
+    },
+  );
 
   it("checks the current model, filters by name or id, and returns the pick", async () => {
     mocks.params = { botId: "bot-fixture", value: "openrouter::vendor/model-2" };
@@ -838,6 +874,32 @@ function editField(label: string, value: string) {
 }
 
 describe("provider connection screen", () => {
+  it.each([
+    [true, "Example Abonnement"],
+    [false, "OpenRouter"],
+  ])("keeps list and page names consistent (subscription: %s)", async (subscription, name) => {
+    mocks.subscriptionSignIn = subscription;
+    mocks.secondConnection = true;
+    i18n.load("de", { "Example subscription": "Example Abonnement" });
+    i18n.activate("de");
+    try {
+      await renderModels();
+      const rows = [...container.querySelectorAll("[data-settings-row]")].map((row) =>
+        row.getAttribute("aria-label"),
+      );
+      expect(rows).toEqual(expect.arrayContaining([name, "OpenRouter (Work)"]));
+      mocks.setOptions.mockClear();
+      await renderConnection();
+      expect(mocks.setOptions).toHaveBeenCalledWith({ title: name });
+      act(() => root.render(null));
+      mocks.setOptions.mockClear();
+      await renderConnection({ credentialId: WORK_CREDENTIAL_ID });
+      expect(mocks.setOptions).toHaveBeenCalledWith({ title: "OpenRouter (Work)" });
+    } finally {
+      i18n.activate("en");
+    }
+  });
+
   it("connects a provider with only its connection controls", async () => {
     mocks.connected = false;
     await renderConnection({ makeDefault: true });
@@ -943,15 +1005,41 @@ describe("provider connection screen", () => {
     );
     const signal = mocks.completeOAuth.mock.lastCall![0] as AbortSignal;
     expect(signal.aborted).toBe(false);
+    // The code shows first; the page opens only from its button.
+    expect(mocks.rpc).not.toHaveBeenCalledWith("analytics/modelSignInStep", expect.anything());
+    await act(async () => buttonWithText("Copy code and open")!.click());
     expect(mocks.rpc).toHaveBeenCalledWith("analytics/modelSignInStep", {
       loginId: "login-fixture",
       step: "page_opened",
     });
     act(() => root.render(null));
     expect(signal.aborted).toBe(true);
-    expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", { loginId: "login-fixture" });
+    expect(mocks.rpc).toHaveBeenCalledWith("models/cancelOAuth", {
+      loginId: "login-fixture",
+      reason: "left",
+    });
     await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
+  });
+  it("lets a new sign-in submit its code while the one it replaced is still submitting", async () => {
+    mocks.connected = false;
+    mocks.subscriptionSignIn = true;
+    mocks.pasteBackSignIn = true;
+    mocks.completeOAuth.mockReturnValue(new Promise(() => {}));
+    const firstSubmit = deferred<unknown>();
+    mocks.submitOAuthCode.mockReturnValueOnce(firstSubmit.promise);
+    await renderConnection();
+    await act(async () => buttonWithText("Sign in")!.click());
+    editField("Code from example.com", "first-code");
+    await act(async () => buttonWithText("Submit")!.click());
+    await act(async () => buttonWithText("Start over")!.click());
+    editField("Code from example.com", "second-code");
+    await act(async () => buttonWithText("Submit")!.click());
+    await act(async () => firstSubmit.reject(new Error("aborted")));
+    expect(mocks.submitOAuthCode.mock.calls.map(([input]) => input)).toEqual([
+      { loginId: "login-1", code: "first-code" },
+      { loginId: "login-2", code: "second-code" },
+    ]);
   });
 });
 

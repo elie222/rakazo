@@ -1,5 +1,7 @@
-import type { TextDirection } from "@rakazo/core";
-import { matchUiLocale, textDirectionForLocale, translate } from "@rakazo/core";
+import type { TextDirection } from "@rakazo/core/text-direction";
+import { textDirectionForLocale } from "@rakazo/core/text-direction";
+import { translate } from "@rakazo/core/translate";
+import { matchUiLocale } from "@rakazo/core/ui-locale";
 import { DE_MESSAGES } from "./locales/de.js";
 import { EN_MESSAGES } from "./locales/en.js";
 import { ES_MESSAGES } from "./locales/es.js";

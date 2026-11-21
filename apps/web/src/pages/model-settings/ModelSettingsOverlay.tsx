@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { SettingsScope } from "@rakazo/contracts";
+import type { ModelSignInCancelReason, SettingsScope } from "@rakazo/contracts";
 import {
-  connectionDisplayName,
+  modelConnectionNames,
   modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -13,6 +13,7 @@ import {
   isFirstModelConnection,
   popularModelProvidersFirst,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   Dialog,
@@ -134,11 +135,10 @@ function ConnectionModelSettings({
   );
   const connectionName = (entry: ModelCredential) => {
     const group = groups.find((item) => item.id === entry.provider);
-    return connectionDisplayName(
+    return modelConnectionNames(
+      localizeModelEntry(group?.entries[0] ?? { provider: entry.provider }),
       entry,
-      group?.name ?? entry.provider,
-      group?.entries[0]?.providerName ? [group.entries[0].providerName] : [],
-    );
+    ).connectionName;
   };
   const providerLabel = (id: string) =>
     credentialByProvider.get(id)?.endpointName ??
@@ -190,8 +190,8 @@ function ConnectionModelSettings({
     setConnectionAt(at);
   }
 
-  function closeConnection() {
-    cancelOAuthAttempt();
+  function closeConnection(reason: ModelSignInCancelReason = "left") {
+    cancelOAuthAttempt(reason);
     intentRef.current = null;
     setConnectionAt(null);
   }
@@ -199,13 +199,13 @@ function ConnectionModelSettings({
   function openProvider(credentialId: string) {
     const target = credentials.find((entry) => entry.id === credentialId);
     if (!target) return;
-    closeConnection();
+    closeConnection("replaced");
     model.chooseProvider(target.provider, undefined, target.id);
     setPage({ kind: "provider", credentialId });
   }
 
   function openModel(credentialId: string, modelId: string, back: SettingsPage | null) {
-    closeConnection();
+    closeConnection("replaced");
     setPage({ kind: "model", credentialId, modelId, back });
   }
 
@@ -329,7 +329,7 @@ function ConnectionModelSettings({
           {connected ? selectedConnectionName : <Trans>Connect {selectedProviderName}</Trans>}
         </span>
       ),
-      onClose: closeConnection,
+      onClose: () => closeConnection(),
       children: (
         <>
           {connectionPanel}

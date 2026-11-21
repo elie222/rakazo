@@ -93,6 +93,7 @@ import {
   createLocalComputerChoice,
   saveLocalComputerHost,
 } from "./this-computer/local-settings.js";
+import { syncLocalSignup } from "./this-computer/local-signup.js";
 import {
   defaultSleep,
   LocalStackController,
@@ -358,10 +359,22 @@ function configureHeaderSession(value: Session | undefined) {
     () => desktop.mainWindow?.webContents.id,
   );
 }
-async function openAppOnce(targetUrl: string, switching: boolean) {
-  desktop.hostComputer?.activate(
-    desktop.currentSetup?.mode === "new" && targetUrl === desktop.localStack.webUrl(),
+async function allowLocalSignupIn(value: Session, managedLocal: boolean) {
+  const token = managedLocal ? await readStackToken(stackDir(app.getPath("userData"))) : null;
+  await syncLocalSignup(value, desktop.localStack.webUrl(), token);
+}
+/** Opening another server removed the cookie from a session it may share with this window. */
+function restoreLocalSignup(window: BrowserWindow) {
+  if (appWindowTargets.get(window) !== desktop.localStack.webUrl()) return;
+  void bestEffort(
+    "restore the local signup cookie",
+    allowLocalSignupIn(window.webContents.session, true),
   );
+}
+async function openAppOnce(targetUrl: string, switching: boolean) {
+  const managedLocal =
+    desktop.currentSetup?.mode === "new" && targetUrl === desktop.localStack.webUrl();
+  desktop.hostComputer?.activate(managedLocal);
   const target = await resolveSessionForTarget(targetUrl);
   configureHeaderSession(target.value);
   // A failed switch must leave telemetry with the window that remains selected.
@@ -369,6 +382,7 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
   const previous = desktop.mainWindow;
   let win: BrowserWindow | null = null;
   try {
+    await allowLocalSignupIn(target.value, managedLocal);
     const documentError = await probeDocument(targetUrl);
     if (documentError !== null) throw documentError;
     await installBundledRenderer(
@@ -410,7 +424,10 @@ async function openAppOnce(targetUrl: string, switching: boolean) {
     }
     desktop.replacedAppWindow = null;
     // Keep the previous app window so Cancel / close can restore it.
-    if (previous !== null && !previous.isDestroyed()) desktop.mainWindow = previous;
+    if (previous !== null && !previous.isDestroyed()) {
+      desktop.mainWindow = previous;
+      restoreLocalSignup(previous);
+    }
     // Closing the window while it loads is the user leaving, not a failure to explain.
     if (closed) return false;
     // Show the setup window BEFORE destroying the failed one: on Windows/Linux,
@@ -497,6 +514,7 @@ function abandonPendingAppSwitch(
     desktop.mainWindow = previous;
     desktop.currentSetup = previousSetup;
     configureHeaderSession(desktop.mainWindow?.webContents.session);
+    restoreLocalSignup(previous);
     desktop.currentTargetUrl = previousUrl;
     activateDesktopMonitoring(previousUrl ?? undefined, previous.webContents.session);
     syncHostComputerAccess();

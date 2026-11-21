@@ -83,6 +83,24 @@ function versionedHomeStore(home: AgentHomeStore, kind: string) {
   return home;
 }
 
+/** A path the caller typed that leaves the workspace is theirs to fix. */
+function callerWorkspacePath(resolve: () => string): string {
+  try {
+    return resolve();
+  } catch (error) {
+    if (error instanceof WorkspacePathError) throw new ClientError("BAD_REQUEST", error.message);
+    throw error;
+  }
+}
+
+/** The server's file limit, lowered to what the computer's own transport can carry. */
+function transferMaxBytes(deps: RouterContext["deps"], kind: string) {
+  return Math.min(
+    attachmentMaxBytes(deps.env),
+    sandboxKindCapabilities(kind).maxFileBytes ?? Number.POSITIVE_INFINITY,
+  );
+}
+
 export function computerRoutes(ctx: RouterContext) {
   const { deps, repos, taughtSkills, authed } = ctx;
   return {
@@ -480,7 +498,9 @@ export function computerRoutes(ctx: RouterContext) {
         const computer = bot.computer;
         const computerMode = parseComputerMode(computer.scope);
         const ctx = computerContext(context.actor, bot.id, "files");
-        const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
+        const storedPath = callerWorkspacePath(() =>
+          resolveBotWorkspacePath(computerMode, bot.id, input.path),
+        );
         let entries: Awaited<ReturnType<SandboxProvider["listFiles"]>>;
         if (computer.state === "running" && computer.providerRef) {
           await deps.prisma.computer.updateMany({
@@ -504,7 +524,9 @@ export function computerRoutes(ctx: RouterContext) {
         if (!bot.computer) throw new IsolationError();
         const computerMode = parseComputerMode(bot.computer.scope);
         const ctx = computerContext(context.actor, bot.id, "read");
-        const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
+        const storedPath = callerWorkspacePath(() =>
+          resolveBotWorkspacePath(computerMode, bot.id, input.path),
+        );
         let content: string;
         if (bot.computer.state === "running" && bot.computer.providerRef) {
           await deps.prisma.computer.updateMany({
@@ -555,23 +577,21 @@ export function computerRoutes(ctx: RouterContext) {
           throw new ORPCError("CONFLICT", { message: "Start the computer first." });
         }
         await keepComputerAwake(deps, computer.id);
-        const storedPath = resolveBotWorkspacePath(
-          parseComputerMode(computer.scope),
-          bot.id,
-          input.path,
+        const storedPath = callerWorkspacePath(() =>
+          resolveBotWorkspacePath(parseComputerMode(computer.scope), bot.id, input.path),
         );
         const bytes = await deps.sandbox
           .readFile(
             await wakeableComputerRef(deps.prisma, computer),
             storedPath,
             computerContext(context.actor, bot.id, "download"),
-            { maxBytes: attachmentMaxBytes(deps.env) },
+            { maxBytes: transferMaxBytes(deps, computer.kind) },
           )
           .catch((error: unknown) => {
             if (error instanceof SandboxFileTooLargeError) {
               throw new ClientError(
                 "BAD_REQUEST",
-                `File exceeds the ${attachmentSizeLabel(attachmentMaxBytes(deps.env))} download limit.`,
+                `File exceeds the ${attachmentSizeLabel(error.maxBytes)} download limit.`,
               );
             }
             throw error;
@@ -591,7 +611,7 @@ export function computerRoutes(ctx: RouterContext) {
         if (!holdsComputerControl(computer, bot.id, context.actor)) {
           throw new ORPCError("FORBIDDEN", { message: "Take control first." });
         }
-        const maxBytes = attachmentMaxBytes(deps.env);
+        const maxBytes = transferMaxBytes(deps, computer.kind);
         if (input.contentBase64.length > Math.ceil(maxBytes / 3) * 4) {
           throw new ORPCError("BAD_REQUEST", {
             message: `File exceeds the ${attachmentSizeLabel(maxBytes)} upload limit.`,
@@ -604,15 +624,9 @@ export function computerRoutes(ctx: RouterContext) {
           });
         }
         await keepComputerAwake(deps, computer.id);
-        let storedPath: string;
-        try {
-          storedPath = resolveBotUploadPath(parseComputerMode(computer.scope), bot.id, input.path);
-        } catch (error) {
-          // This path is the caller's own, so leaving the workspace is theirs to fix.
-          if (error instanceof WorkspacePathError)
-            throw new ClientError("BAD_REQUEST", error.message);
-          throw error;
-        }
+        const storedPath = callerWorkspacePath(() =>
+          resolveBotUploadPath(parseComputerMode(computer.scope), bot.id, input.path),
+        );
         await deps.sandbox.writeFile(
           await wakeableComputerRef(deps.prisma, computer),
           { path: storedPath, content },

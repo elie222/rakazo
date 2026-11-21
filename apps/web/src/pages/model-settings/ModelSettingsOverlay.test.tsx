@@ -70,7 +70,6 @@ vi.mock("../../lib/query/rpc", () => {
 vi.mock("../../lib/models/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
   providerRowHint: () => null,
-  providerDisplayName: (_id: string, name: string) => name,
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -325,7 +324,7 @@ async function renderSettings(
     enabled: accountOnly,
     modelAccountOnly: accountOnly,
   });
-  await act(async () => {
+  const render = () =>
     root.render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
@@ -333,12 +332,19 @@ async function renderSettings(
         </MemoryRouter>
       </QueryClientProvider>,
     );
+  await act(async () => {
+    render();
   });
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   return {
     container,
+    async rerender() {
+      await act(async () => {
+        render();
+      });
+    },
     async unmount() {
       await act(async () => {
         root.unmount();
@@ -1782,6 +1788,40 @@ it("opens a connection's page with its models, then a model's page, and goes bac
   }
 });
 
+it("saves a connection opened from Providers without making it the main model", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
+  models.probeOpenAiCompatible.mockResolvedValue({ models: ["model-a", "model-b"] });
+  models.list.mockResolvedValue([deepseekEntry, compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    deepseekCredential,
+    { ...compatibleCredential, isDefault: false },
+  ]);
+  const view = await renderSettings();
+  try {
+    const row = [...providersSection().querySelectorAll('[data-testid="provider-row-name"]')]
+      .map((entry) => entry.textContent)
+      .find((name) => name?.includes("Local"));
+    await openProvider(row ?? "");
+    await act(async () =>
+      vi.waitFor(() => expect(models.probeOpenAiCompatible).toHaveBeenCalled()),
+    );
+    await act(async () => {
+      modelCheckbox(view.container, "model-b").click();
+    });
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai-compatible",
+        credentialId: "cred-compatible",
+        enabledModelIds: ["model-b"],
+        makeDefault: false,
+      }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("replaces one connection's key and disconnects only that connection", async () => {
   models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
   const view = await renderSettings();
@@ -1989,6 +2029,90 @@ it("offers only account credentials even when the server lists ordinary connecti
     expect(pickerOptions().some((name) => name?.includes("Connect"))).toBe(false);
     await choose("Account backup");
     expect(models.setRole).toHaveBeenCalled();
+  } finally {
+    await view.unmount();
+  }
+});
+
+it.each([false, true])(
+  "names mixed-auth connections independently (API first: %s)",
+  async (apiFirst) => {
+    models.list.mockResolvedValue([
+      { ...deepseekEntry, auth: "both", subscriptionName: "Example subscription" },
+    ]);
+    const signedIn = { ...deepseekCredential, authKind: "oauth" };
+    const apiKey = { ...deepseekCredential, id: "api-key", authKind: "api_key", isDefault: false };
+    models.credentials.mockResolvedValue(apiFirst ? [apiKey, signedIn] : [signedIn, apiKey]);
+    i18n.load("de", { "Example subscription": "Example Abonnement" });
+    i18n.activate("de");
+    const view = await renderSettings();
+    try {
+      expect(providerNames().sort()).toEqual(["DeepSeek", "Example Abonnement"]);
+      for (const name of ["DeepSeek", "Example Abonnement"]) {
+        await openProvider(name);
+        expect(titles(view.container)).toEqual([name]);
+        await click(view.container.querySelector('button[aria-label="Back"]'));
+      }
+    } finally {
+      await view.unmount();
+      i18n.activate("en");
+    }
+  },
+);
+
+it("updates subscription group names when the language changes with the same catalog", async () => {
+  models.list.mockResolvedValue([
+    { ...deepseekEntry, auth: "oauth", subscriptionName: "Example subscription" },
+  ]);
+  models.credentials.mockResolvedValue([{ ...deepseekCredential, authKind: "oauth" }]);
+  i18n.load("en", { "Example subscription": "Example subscription" });
+  i18n.load("de", { "Example subscription": "Example Abonnement" });
+  const view = await renderSettings();
+  try {
+    expect(view.container.textContent).toContain("Example subscription");
+    await act(async () => {
+      i18n.activate("de");
+    });
+    await view.rerender();
+    expect(view.container.textContent).toContain("Example Abonnement");
+    expect(view.container.textContent).not.toContain("Example subscription");
+  } finally {
+    await view.unmount();
+    i18n.activate("en");
+  }
+});
+
+it("counts a sign-in as replaced when another connection opens over it", async () => {
+  models.list.mockResolvedValue([
+    deepseekEntry,
+    {
+      provider: "openai-codex",
+      providerName: "ChatGPT",
+      id: "fixture-model",
+      label: "Fixture model",
+      auth: "oauth",
+      signIn: "device-code",
+      oauthLabel: "Sign in with ChatGPT",
+    },
+  ]);
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  models.beginOAuth.mockResolvedValue({
+    mode: "device-code",
+    loginId: "login-1",
+    verificationUri: "https://auth.example.test/device",
+    userCode: "ABCD-1234",
+    expiresInSeconds: 300,
+  });
+  models.completeOAuth.mockResolvedValue({ status: "pending" });
+  models.cancelOAuth.mockResolvedValue({ ok: true });
+  const view = await renderSettings();
+  try {
+    await openPicker("Add fallback");
+    await choose("ChatGPT");
+    await click(buttons(view.container, "Sign in with ChatGPT")[0]);
+    expect(models.beginOAuth).toHaveBeenCalledOnce();
+    await manage();
+    expect(models.cancelOAuth).toHaveBeenCalledWith({ loginId: "login-1", reason: "replaced" });
   } finally {
     await view.unmount();
   }
