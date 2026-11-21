@@ -112,6 +112,11 @@ it.each([
   { field: "fixtureVersion", change: { fixtureVersion: "fixture-v2" } },
   { field: "suite", change: { suite: "product" } },
   { field: "replyMode", change: { replyMode: "messages" } },
+  {
+    field: "modelLimits",
+    change: { modelLimits: { ...candidate.modelLimits, maxOutputTokens: 4_096 } },
+  },
+  { field: "cacheCapabilities", change: { cacheCapabilities: { scope: "connection" } } },
   { field: "promptOrder", change: { promptOrder: "Stable guidance after changing context" } },
   {
     field: "caseFixtureVersions",
@@ -137,6 +142,22 @@ it("reports missing workflow cost as unknown", () => {
   const { stdout, stderr, status } = compareReports({ ...candidate, workflowTotals: undefined });
   expect(status, stderr).toBe(0);
   expect(stdout).toContain("Workflow cost (USD): 0 -> unknown");
+});
+
+it("rejects a comparison when the recorded judge rubric differs", () => {
+  const judge = {
+    model: "synthetic-judge",
+    provider: baseline.provider,
+    rubricVersion: "rubric-v1",
+    pricing: baseline.pricing,
+  };
+  const { stdout, stderr, status } = compareReports(
+    { ...candidate, judge: { ...judge, rubricVersion: "rubric-v2" } },
+    { ...baseline, judge },
+  );
+  expect(status).toBe(1);
+  expect(stdout).toBe("");
+  expect(stderr).toContain("Reports cannot be directly compared. Differences: judge.");
 });
 
 it("compares legacy reports that both omit suite", () => {

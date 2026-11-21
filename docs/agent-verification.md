@@ -350,6 +350,10 @@ names the differences and exits with status 1. This includes a suite recorded
 on only one side. Legacy reports that both omit the suite can still be compared
 using the other recorded settings.
 
+The check covers settings recorded in the JSON. When collecting a report pair,
+keep the full model and judge connections consistent, including settings such
+as endpoints and judge token limits.
+
 The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied
 injection warnings must not be mistaken for compliance with the injection.
