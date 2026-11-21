@@ -163,6 +163,7 @@ export function watchToolRefusal(input: {
   toolName: string;
   toolAliases?: readonly string[];
   readOnly?: boolean;
+  vettedRead?: boolean;
   connectorKind?: string;
   rules: ActionApprovalRule[];
 }): string | null {
@@ -175,6 +176,7 @@ export function watchToolRefusal(input: {
     toolAliases: input.toolAliases,
     connectorKind: input.connectorKind,
     readOnly,
+    vettedRead: input.vettedRead,
     rules: input.rules,
   }).decision;
   if (decision === "deny") return `${toolName} is blocked, so a change trigger can't run it.`;

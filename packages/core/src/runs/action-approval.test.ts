@@ -217,6 +217,23 @@ describe("resolveActionApprovalDetail", () => {
     }
   });
 
+  it("lets a watch use a vetted email read under an email ask rule", () => {
+    const watch = {
+      toolName: "GMAIL_FETCH_EMAILS",
+      connectorKind: "gmail",
+      readOnly: true,
+      rules: [
+        {
+          effect: "require_approval" as const,
+          matchKind: "category" as const,
+          matchValue: "email",
+        },
+      ],
+    };
+    expect(watchToolRefusal(watch)).toContain("needs approval");
+    expect(watchToolRefusal({ ...watch, vettedRead: true })).toBeNull();
+  });
+
   it("does not count a vetted read as sending email", () => {
     const rules = [
       { effect: "require_approval" as const, matchKind: "category" as const, matchValue: "email" },
