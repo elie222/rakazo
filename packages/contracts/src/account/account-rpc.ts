@@ -29,6 +29,7 @@ export const accountRpc = {
           scope: z.string(),
           version: z.string(),
           keys: z.array(z.string()).min(1).max(200),
+          pageId: z.string().optional(),
           /** The settings copy the reviewed recipients came from, as in `status`. */
           settingsScope: SettingsScopeSchema.optional(),
         }),
@@ -80,6 +81,11 @@ export const accountRpc = {
   onboarding: {
     /** Record the optional signup survey; an empty submission marks it skipped. */
     signupSurvey: oc.input(SignupSurveySchema).output(z.object({ ok: z.literal(true) })),
+    /**
+     * The Space's first-run bot, created and greeted when the Space has never held a chat; null
+     * once it has (or had) other bots, so deleting them never brings it back.
+     */
+    firstBot: oc.output(z.object({ botId: Id.nullable() })),
     /** Seed the first-run greeting into the bot's thread (focus card is separate). */
     start: oc.input(z.object({ botId: Id })).output(z.object({ ok: z.literal(true) })),
     /** Post the focus choice card when the thread is still idle. */

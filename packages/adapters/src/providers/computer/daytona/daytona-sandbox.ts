@@ -20,6 +20,7 @@ import type {
   TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { abortableDelay } from "@rakazo/core";
@@ -437,10 +438,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   async *exportWorkspace(
     computer: ComputerRef,
     context: AdapterContext,
+    limits?: WorkspaceExportLimits,
   ): AsyncIterable<PortableFile> {
     const sandbox = await this.box(computer);
     await this.desktops.stopBrowsers(computer, context);
-    yield* walkDaytonaWorkspace(sandbox, await this.workspaceRoot(sandbox), "", context);
+    yield* walkDaytonaWorkspace(sandbox, await this.workspaceRoot(sandbox), "", context, limits);
   }
 
   async importWorkspace(

@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { PageIcon } from "@rakazo/chat-ui/web";
+import type { PageSectionAnchor } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
 import { cn, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { Pencil, X } from "lucide-react";
@@ -33,6 +34,7 @@ export function PageView({
   share,
   composer,
   onReply,
+  onSections,
   returnFocus,
   compact = false,
   notice = null,
@@ -48,6 +50,7 @@ export function PageView({
   composer?: ReactNode;
   /** Takes a page's reply text into the docked composer. */
   onReply?: (text: unknown) => void;
+  onSections?: (sections: PageSectionAnchor[]) => void;
   /** Puts focus back on close; false tells the dialog it is done. */
   returnFocus?: () => boolean;
   /** Touch screens get larger round controls. */
@@ -69,8 +72,8 @@ export function PageView({
     setDrawn(false);
     setStalled(false);
   }
-  const waiting = document !== null && !drawn && notice === null;
-  useTimeout(() => setStalled(true), waiting ? FRAME_TIMEOUT_MS : null, attempt);
+  const waiting = document !== null && !drawn && !stalled && notice === null;
+  useTimeout(() => setStalled(true), waiting ? FRAME_TIMEOUT_MS : null, document);
   const onDrawn = useCallback(() => setDrawn(true), []);
   // In the macOS app the window controls sit in the top-left corner over a full-window page, so
   // its top row starts below them, as the main window's rows do.
@@ -102,7 +105,9 @@ export function PageView({
           !next &&
           details.reason === "escape-key" &&
           target instanceof Element &&
-          target.closest('[data-slot="popover-content"], [data-slot="dropdown-menu-content"]')
+          target.closest(
+            '[data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="select-content"]',
+          )
         ) {
           details.cancel();
           return;
@@ -194,6 +199,7 @@ export function PageView({
                       title={title}
                       interactive
                       onReply={onReply}
+                      onSections={onSections}
                       onHeight={onDrawn}
                     />
                   </div>

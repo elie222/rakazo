@@ -10,6 +10,7 @@ import {
   nextBotMessageHop,
   resolveBotAddress,
   retry,
+  sanitizeMessagingLabel,
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
@@ -68,6 +69,32 @@ export async function loadBotMessageContext(
   return { ...context, repliesToRequest };
 }
 
+/** Bots named in a resolution error; a large Space must not turn one tool result into a wall. */
+const REACHABLE_BOTS_MAX = 12;
+
+/**
+ * What a failed lookup could have used instead. The candidates are already loaded for the
+ * lookup, and a bare "no bot found" leaves a weaker model retrying the same name or reporting
+ * the tool broken. Bots without a chat cannot be delivered to, and a bot cannot message
+ * itself, so neither is offered.
+ */
+export function unresolvedBotError(
+  candidates: readonly { id: string; name: string; thread: unknown }[],
+  senderId: string,
+): string {
+  const reachable = candidates.filter((bot) => bot.id !== senderId && bot.thread);
+  if (reachable.length === 0) {
+    return "no bot found with that id or name. No other bot in this space has a chat to message";
+  }
+  const listed = reachable
+    .slice(0, REACHABLE_BOTS_MAX)
+    .map((bot) => `${sanitizeMessagingLabel(bot.name)} (${bot.id})`);
+  const hidden = reachable.length - listed.length;
+  return `no bot found with that id or name. Bots reachable from this space (use bot_id): ${listed.join("; ")}${
+    hidden > 0 ? `; and ${hidden} more` : ""
+  }`;
+}
+
 export async function messageBot(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
   run: {
@@ -109,7 +136,9 @@ export async function messageBot(
     botId: input.bot_id,
     name: input.confirm_name,
   });
-  if (!target) return { ok: false as const, error: "no bot found with that id or name" };
+  if (!target) {
+    return { ok: false as const, error: unresolvedBotError(candidates, sender.id) };
+  }
   if (target.id === sender.id) return { ok: false as const, error: "a bot cannot message itself" };
   if (!target.thread)
     return { ok: false as const, error: `${target.name} has no chat to deliver to` };

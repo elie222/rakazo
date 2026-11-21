@@ -54,6 +54,7 @@ describe("mobile i18n", () => {
     ["ru", "Аккаунт", "Удалить Scout?"],
     ["de", "Konto", "Scout löschen?"],
     ["pl", "Konto", "Usunąć Scout?"],
+    ["th", "บัญชี", "ลบ Scout ไหม?"],
   ] as const)(
     "translates from the shared %s catalog and keeps interpolations",
     async (locale, account, del) => {
@@ -65,6 +66,22 @@ describe("mobile i18n", () => {
       expect(dateLocaleForUi()).toBe(locale);
     },
   );
+
+  it.each([
+    ["zh-CN", "公共服务器需要 https://。HTTP 仅适用于本地网络。"],
+    ["zh-TW", "公開伺服器需要使用 https://。HTTP 僅適用於區域網路。"],
+  ] as const)("shows the HTTPS validation error in %s", async (locale, error) => {
+    const { resetI18nForTests } = await import("./i18n");
+    const { probeApiBase } = await import("../api/endpoint");
+    resetI18nForTests(locale);
+
+    const fetchImpl = vi.fn<typeof fetch>();
+    await expect(probeApiBase("http://public.example", fetchImpl)).resolves.toEqual({
+      ok: false,
+      error,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 
   it.each([
     [1, "1 сообщение с Scout"],
@@ -203,10 +220,11 @@ describe("plural rules without Intl.PluralRules", () => {
     expect(pluralCategory("ru", count)).toBe(form);
   });
 
-  it("reads Chinese and Japanese as one form and English-like languages as one or other", async () => {
+  it("reads Chinese, Japanese and Thai as one form and English-like languages as one or other", async () => {
     const { pluralCategory } = await import("./plural-rules");
     expect(pluralCategory("zh-CN", 1)).toBe("other");
     expect(pluralCategory("ja", 3)).toBe("other");
+    expect(pluralCategory("th", 3)).toBe("other");
     expect(pluralCategory("de", 1)).toBe("one");
     expect(pluralCategory("es", 2)).toBe("other");
   });

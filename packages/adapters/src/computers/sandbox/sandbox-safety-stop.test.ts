@@ -1,4 +1,5 @@
 import type { AgentHomeStore, JobPublisher } from "@rakazo/adapter-kit";
+import { COMPUTER_RECOVERY_REQUIRED_ERROR } from "@rakazo/contracts";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { DesktopSandbox, SandboxNotFoundError } from "novita-sandbox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -138,7 +139,7 @@ describe("unsafe computer stop", () => {
         "computer",
         { ...context, runId: "scheduled-run" },
       ),
-    ).rejects.toThrow("requires recovery");
+    ).rejects.toThrow(COMPUTER_RECOVERY_REQUIRED_ERROR);
     expect(native.desktop.connect).not.toHaveBeenCalled();
     expect(native.desktop.create).toHaveBeenCalledOnce();
     expect(cloudState).toBe("paused");

@@ -65,7 +65,7 @@ export async function resolveVoiceKey(
     if (!row) throw missing();
     const stored = await deps.secretStore.load(row.ciphertext, row.id);
     try {
-      const { apiKey } = await resolveStoredModelAuth(
+      const { secret, apiKey } = await resolveStoredModelAuth(
         deps.prisma,
         deps.secretStore,
         scope,
@@ -75,6 +75,13 @@ export async function resolveVoiceKey(
         { signal },
       );
       if (!apiKey) throw missing();
+      // Audio requests carry no retention routing, so a protected connection is never borrowed.
+      if (secret.kind === "api_key" && secret.zeroDataRetention) {
+        throw new VoiceAccountError(
+          undefined,
+          "This model connection keeps zero data retention, which voice can't enforce. Add a separate key.",
+        );
+      }
       return apiKey;
     } catch (error) {
       if (isRetiredModelCredentialError(error)) throw missing();

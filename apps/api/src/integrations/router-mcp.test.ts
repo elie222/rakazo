@@ -54,11 +54,7 @@ describe("MCP server deletion", () => {
     await expect(response.json()).resolves.toEqual({ json: { ok: true } });
     expect(deleteServer).toHaveBeenCalledWith({ where: { id: "server-1" } });
     expect(deleteSecrets).toHaveBeenCalledWith({
-      where: {
-        id: "old-secret",
-        userId: "user-1",
-        OR: [{ spaceId: "workspace-1" }, { spaceId: null }],
-      },
+      where: { id: "old-secret", userId: "user-1" },
     });
   });
 });

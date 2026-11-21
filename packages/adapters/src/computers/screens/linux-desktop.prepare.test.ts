@@ -75,6 +75,12 @@ describe("provider desktop preparation", () => {
     expect(result.calls[3]).toContain("xvfb");
   });
 
+  it("waits for another preparation of the same computer before checking its tools", () => {
+    const lock = PREPARE_LINUX_DESKTOP.indexOf("flock 9");
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(PREPARE_LINUX_DESKTOP.indexOf('missing=""'));
+  });
+
   it("stops if dependencies cannot be repaired without removing packages", () => {
     const result = prepareDesktop({ repairExitCode: 100 });
     expect(result.status).toBe(100);
@@ -164,6 +170,34 @@ describe("provider desktop preparation", () => {
     }
   });
 
+  it("retries the package-list refresh while its lock is busy, then gives up", () => {
+    const bin = mkdtempSync(path.join(tmpdir(), "rakazo-prepare-"));
+    try {
+      const calls = path.join(bin, "calls");
+      const fakes = {
+        id: "#!/bin/sh\necho 1000\n",
+        sudo: '#!/bin/sh\n[ "$1" = -n ] && shift\nexec "$@"\n',
+        sleep: "#!/bin/sh\n",
+        "apt-get": `#!/bin/sh\nshift 2\necho "$*" >> ${JSON.stringify(calls)}\necho "E: Could not get lock /var/lib/apt/lists/lock" >&2\nexit 100\n`,
+      };
+      for (const [name, script] of Object.entries(fakes)) {
+        writeFileSync(path.join(bin, name), script);
+        chmodSync(path.join(bin, name), 0o755);
+      }
+      const result = spawnSync("/bin/sh", ["-c", PREPARE_LINUX_DESKTOP], {
+        env: { PATH: bin },
+        encoding: "utf8",
+      });
+      expect(result.status).not.toBe(0);
+      expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(
+        Array.from({ length: 12 }, () => "update -qq"),
+      );
+      expect(result.stderr).toContain("Could not get lock");
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
   it("fails when the package index cannot be updated", () => {
     const bin = mkdtempSync(path.join(tmpdir(), "rakazo-prepare-"));
     try {
@@ -172,7 +206,8 @@ describe("provider desktop preparation", () => {
       const fakes = {
         id: "#!/bin/sh\necho 1000\n",
         sudo: '#!/bin/sh\n[ "$1" = -n ] && shift\nexec "$@"\n',
-        "apt-get": `#!/bin/sh\necho "$*" >> ${JSON.stringify(calls)}\n[ "$1" != update ]\n`,
+        // Every call waits for APT's lock; the fake records only what it was asked to do.
+        "apt-get": `#!/bin/sh\n[ "$1" = -o ] && [ "$2" = DPkg::Lock::Timeout=60 ] || exit 2\nshift 2\necho "$*" >> ${JSON.stringify(calls)}\n[ "$1" != update ]\n`,
       };
       for (const [name, script] of Object.entries(fakes)) {
         writeFileSync(path.join(bin, name), script);

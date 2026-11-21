@@ -1,15 +1,27 @@
 import {
   runContinueJob,
+  SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
+import {
+  COMPUTER_DAMAGED_ERROR,
+  COMPUTER_RECOVERY_REQUIRED_ERROR,
+  COMPUTER_START_FAILED_ERROR,
+} from "@rakazo/contracts";
+import { normalizeRunError } from "@rakazo/core";
 import { databaseOutage } from "@rakazo/db";
 import type { TestSink } from "@rakazo/logging";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ComputerBusyError } from "../../computers/computer-lifecycle.js";
+import {
+  ComputerBusyError,
+  ComputerRecoveryRequiredError,
+} from "../../computers/computer-lifecycle.js";
 import { VaultKeyUnavailableError } from "../../secrets/bot-secrets.js";
 import { returnHelperOutcome } from "../../tasks/background-helpers.js";
+import { RunComputerFailedError } from "../assembly/run-computer.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import {
   failRunBeforeTurn,
@@ -157,18 +169,26 @@ describe("retrying a run whose setup failed", () => {
     installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
   });
 
-  async function retry(setupError: unknown, options: { leaseValid?: boolean } = {}) {
+  async function retry(
+    setupError: unknown,
+    options: { leaseValid?: boolean; findBot?: () => Promise<{ name: string }> } = {},
+  ) {
     const requeueRun = vi.fn(async (_: { data: { error: string | null } }) => ({ count: 1 }));
     const recordAttempt = vi.fn(async (_: { data: { status: string; error: string | null } }) => ({
       id: "attempt-1",
     }));
     const priorAttempts = vi.fn(async () => []);
+    const finalizeRun = vi.fn(async (_: { outcome: string; error: string }) => ({
+      continuationRunId: null,
+    }));
     const deps = {
       prisma: {
         run: { updateMany: requeueRun },
         attempt: { update: recordAttempt, findMany: priorAttempts },
+        bot: { findUnique: vi.fn(options.findBot ?? (async () => ({ name: "Chief" }))) },
       },
       jobs: { enqueue: vi.fn(async () => undefined) },
+      events: { finalizeRun },
     } as unknown as ExecutorDeps;
     await retryRunSetup(
       deps,
@@ -186,7 +206,10 @@ describe("retrying a run whose setup failed", () => {
     return {
       attempt: recordAttempt.mock.calls[0]?.[0].data,
       runError: requeueRun.mock.calls[0]?.[0].data.error,
+      failedWith: finalizeRun.mock.calls[0]?.[0].error,
+      requeueRun,
       priorAttempts,
+      ended: finalizeRun.mock.calls[0]?.[0],
       logged: sink.events.filter((event) => event.message === "run.setup_failed"),
     };
   }
@@ -202,10 +225,84 @@ describe("retrying a run whose setup failed", () => {
     expect(failed.priorAttempts).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ["a damaged computer", () => new SandboxDamagedError(), COMPUTER_DAMAGED_ERROR],
+    [
+      "a computer waiting for Recover",
+      () => new ComputerRecoveryRequiredError(),
+      COMPUTER_RECOVERY_REQUIRED_ERROR,
+    ],
+    [
+      "a damaged computer whose rollback also failed",
+      () => new AggregateError([new SandboxDamagedError(), new Error("stop refused")], "both"),
+      COMPUTER_DAMAGED_ERROR,
+    ],
+  ])("ends the run at once for %s, saying to Recover it", async (_name, error, message) => {
+    const failed = await retry(error());
+
+    expect(failed.failedWith).toBe(message);
+    expect(failed.requeueRun).not.toHaveBeenCalled();
+    expect(failed.priorAttempts).not.toHaveBeenCalled();
+    expect(failed.logged).toEqual([expect.objectContaining({ level: "warn" })]);
+  });
+
+  it("names the computer, not the model, when the run's computer did not start", async () => {
+    const failed = await retry(
+      new RunComputerFailedError(
+        new Error("could not prepare computer desktop tools", {
+          cause: new Error("exit 100: E: Could not get lock /var/lib/dpkg/lock-frontend"),
+        }),
+      ),
+    );
+
+    expect(failed.attempt?.error).toBe(COMPUTER_START_FAILED_ERROR);
+    expect(normalizeRunError(COMPUTER_START_FAILED_ERROR).summary).toBe(
+      COMPUTER_START_FAILED_ERROR,
+    );
+    expect(failed.runError).toBe(RETRYING);
+    expect(failed.logged).toEqual([
+      expect.objectContaining({
+        level: "error",
+        error: expect.objectContaining({ message: "could not prepare computer desktop tools" }),
+      }),
+    ]);
+  });
+
+  it("classifies a run's failed computer start by its cause", async () => {
+    const failed = await retry(new RunComputerFailedError(new SandboxUnavailableError()));
+
+    expect(failed.logged).toEqual([expect.objectContaining({ level: "warn" })]);
+    expect(failed.attempt?.error).toBe(COMPUTER_START_FAILED_ERROR);
+  });
+
   it("stores no more of a long reason than the limit", async () => {
     const failed = await retry(new Error("x".repeat(RUN_SETUP_FAILURE_REASON_MAX * 3)));
 
     expect(failed.attempt?.error).toBe("x".repeat(RUN_SETUP_FAILURE_REASON_MAX));
+  });
+
+  it.each([
+    ["whose system is damaged", () => new SandboxDamagedError()],
+    ["too large to start", () => new SandboxDiskTooLargeError()],
+  ])("ends the run at once, with a warning, for a computer %s", async (_name, error) => {
+    const failure = error();
+    const ended = await retry(failure);
+
+    expect(ended.ended).toMatchObject({ outcome: "failed", error: failure.message });
+    expect(ended.runError).toBeUndefined();
+    expect(ended.logged).toEqual([expect.objectContaining({ level: "warn" })]);
+  });
+
+  it("waits out a database outage while ending the run", async () => {
+    const findBot = vi
+      .fn<() => Promise<{ name: string }>>()
+      .mockRejectedValueOnce(databaseDown())
+      .mockResolvedValue({ name: "Chief" });
+    const failure = new SandboxDamagedError();
+    const ended = await retry(failure, { findBot });
+
+    expect(findBot).toHaveBeenCalledTimes(2);
+    expect(ended.ended).toMatchObject({ outcome: "failed", error: failure.message });
   });
 
   it.each([

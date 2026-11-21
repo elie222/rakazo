@@ -8,7 +8,12 @@ import type {
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
-import { connectedBackupOptions, MAX_MODEL_BACKUPS, modelRoleChoiceKey } from "@rakazo/contracts";
+import {
+  connectedBackupOptions,
+  MAX_MODEL_BACKUPS,
+  modelConnectionNames,
+  modelRoleChoiceKey,
+} from "@rakazo/contracts";
 import {
   catalogEntryFor,
   connectionForModelChoice,
@@ -17,6 +22,7 @@ import {
   modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   DropdownMenu,
@@ -195,7 +201,7 @@ export function ModelRoleSettings({
     catalogEntryFor(state.catalog, choice.provider, choice.modelId);
   // Grouped by the connection that runs them.
   const options: RoleModelOption[] = connectedBackupOptions(
-    state.catalog,
+    state.catalog.map(localizeModelEntry),
     credentials,
     role === "computer",
   ).map((choice) => ({
@@ -206,11 +212,7 @@ export function ModelRoleSettings({
       billing: "",
     }),
     creditOfferingId: choice.creditOfferingId,
-    providerName: choice.creditOfferingId
-      ? t`Rakazo credits`
-      : choice.credentialId
-        ? choice.connectionName
-        : providerLabel(choice.provider),
+    providerName: choice.creditOfferingId ? t`Rakazo credits` : choice.connectionName,
     ...(choice.credentialId ? { credentialId: choice.credentialId } : {}),
   }));
   // A pinned row runs on its connection; others on the provider's newest.
@@ -221,14 +223,26 @@ export function ModelRoleSettings({
           (level) => level !== "off",
         )
       : [];
-  const providerName = (choice: ModelRoleChoice) =>
-    (choice.creditOfferingId ? t`Rakazo credits` : undefined) ||
-    (choice.credentialId &&
-      options.find((option) => option.credentialId === choice.credentialId)?.providerName) ||
-    providerLabel(choice.provider);
+  const providerName = (choice: ModelRoleChoice) => {
+    const named =
+      (choice.creditOfferingId ? t`Rakazo credits` : undefined) ||
+      (choice.credentialId &&
+        options.find((option) => option.credentialId === choice.credentialId)?.providerName);
+    if (named) return named;
+    const entry = entryFor(choice);
+    return entry?.managed
+      ? modelConnectionNames(localizeModelEntry(entry)).providerName
+      : providerLabel(choice.provider);
+  };
   // What runs when the member chose no first model; named in the empty row and offered to
   // return to from the picker.
   const deployment = settings?.deploymentPrimary ?? null;
+  // The deployment pays for its default, so it reads as included rather than as a provider bill.
+  const deploymentSource = deployment
+    ? settings?.deploymentIncluded
+      ? t`Included`
+      : providerName(deployment)
+    : undefined;
   const modelLabel = (choice: ModelBackupChoice) => entryFor(choice)?.label ?? choice.modelId;
   const busy = state.busy || state.stale || !settings;
   // Picks build their change from the settings loaded when they save, so a reload in flight
@@ -342,7 +356,7 @@ export function ModelRoleSettings({
               trigger={pickerTrigger(
                 // Blank until loaded, so an unloaded role never reads as unconfigured.
                 !settings ? "\u00a0" : deployment ? modelLabel(deployment) : defaultLabel,
-                deployment ? providerName(deployment) : undefined,
+                deploymentSource,
               )}
               label={hideHeading ? defaultLabel : t`Change ${title}`}
               options={options}
@@ -420,7 +434,9 @@ export function ModelRoleSettings({
                 label={t`Change ${name}`}
                 options={options}
                 defaultOption={
-                  isPrimary && role !== "main" && deployment ? modelLabel(deployment) : undefined
+                  isPrimary && role !== "main" && deployment
+                    ? { label: modelLabel(deployment), included: settings?.deploymentIncluded }
+                    : undefined
                 }
                 providers={providers}
                 disabled={pickerLocked}

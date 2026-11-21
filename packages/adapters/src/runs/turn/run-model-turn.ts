@@ -12,6 +12,7 @@ import { promptVersion } from "../assembly/prompt-version.js";
 import type { AssembledTurn } from "../assembly/run-assembly.js";
 import {
   botEmailInstruction,
+  currentTurnDataPrompt,
   runIdentityInstruction,
   userTurnInstructions,
 } from "../assembly/run-instructions.prompt.js";
@@ -133,7 +134,7 @@ async function modelTurnRequest(
     sourceMessage,
     userComputer,
   } = turn.capabilities;
-  const { strategicBuiltins, taskCatalogInstruction, tools } = turn.tools;
+  const { strategicBuiltins, taskCatalogInstruction, tools, unavailableToolReasons } = turn.tools;
   const { computerInstruction, workspaceInstruction } = turn.computerInstructions;
   const {
     agentSkillsLine,
@@ -160,6 +161,19 @@ async function modelTurnRequest(
   const offersHistory =
     !scripted && tools.some((tool) => tool.name === "search_history" && !tool.route);
   let myChatsAvailable = offersHistory && (await historyMyChatsAvailable(ctx));
+  // The scripted runtime interprets the prompt as fixture commands.
+  const currentTurnDataInPrompt =
+    !scripted && (run.trigger === "user" || run.trigger === "follow_up");
+  const redactedMemoryContext = memoryContext
+    ? redactSecrets(memoryContext, runSecrets)
+    : undefined;
+  const redactedScratchpadContext = scratchpadContext
+    ? redactSecrets(scratchpadContext, runSecrets)
+    : undefined;
+  // Keep these snapshots on the live turn. Replayed history comes from stored chat messages.
+  const turnData = currentTurnDataInPrompt
+    ? currentTurnDataPrompt(redactedMemoryContext, redactedScratchpadContext)
+    : undefined;
   return {
     botId: bot.id,
     verbatimMcpServers,
@@ -178,7 +192,7 @@ async function modelTurnRequest(
         operationId: runId,
       });
     },
-    prompt,
+    prompt: turnData ? `${prompt}\n\n${turnData}` : prompt,
     ...(speakers &&
     (run.trigger === "user" || (run.trigger === "follow_up" && sourceMessage?.role === "user"))
       ? { promptSpeaker: personSpeaker(people, run.userId) }
@@ -204,10 +218,9 @@ async function modelTurnRequest(
         ? [groupContext, GROUP_UNADDRESSED_REPLY_GUIDANCE].filter(Boolean).join("\n")
         : groupContext,
       messagingContext,
-      redactedMemoryContext: memoryContext ? redactSecrets(memoryContext, runSecrets) : undefined,
-      redactedScratchpadContext: scratchpadContext
-        ? redactSecrets(scratchpadContext, runSecrets)
-        : undefined,
+      redactedMemoryContext,
+      redactedScratchpadContext,
+      currentTurnDataInPrompt,
       redactedTicketContext: ticketContext ? redactSecrets(ticketContext, runSecrets) : undefined,
       hasHistoricalContext: historicalContext.length > 0,
       // A background helper is not offered the history tools, so it gets no guidance on them.
@@ -253,6 +266,7 @@ async function modelTurnRequest(
     getBuiltinToolDeclarations: offersHistory
       ? () => (myChatsAvailable ? undefined : thisChatHistoryDeclaration)
       : undefined,
+    unavailableToolReasons,
     // The live array: secrets learned later in the run redact too.
     secrets: runSecrets,
     model: mainRunModel,

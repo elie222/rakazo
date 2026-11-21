@@ -25,6 +25,7 @@ import {
   IMAGE_RETURNING_COMPUTER_TOOLS,
   modelAcceptsImageInput,
 } from "../../models/model-vision.js";
+import { selectCompactedHistory } from "../../runtime/context/history-compaction.js";
 import { RetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
 import {
   modelsForRequest,
@@ -1491,7 +1492,7 @@ describe("userTurnInstructions", () => {
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-    'update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it) and readAloud. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; a standing rule for how you work ("from now on", "always") is a request to add it to your instructions, not just to follow it now. When you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.',
+    'update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it), readAloud, voice, replyMode, team chat listening and rules, memoryScope, and disableTools to turn built-in tools off. With bot_id it changes the name, description, color, notifications and those settings of another bot in this space, plus its computer; set_child_instructions and set_child_bot_model change its instructions and model. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; a standing rule for how you work ("from now on", "always") is a request to add it to your instructions, not just to follow it now. When you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.',
     "run_subagent delegates work independently and returns immediately. Use it for work another agent can complete. Its result comes back later; end your turn when nothing else needs doing, and remain available for new user messages. Wait for the needed results before giving a final answer, combine related results, and honor newer instructions or cancellation. Subagents can act under the applicable permissions and request approval in this chat.",
   ];
   const archiveBot =
@@ -1723,6 +1724,30 @@ describe("userTurnInstructions", () => {
     expect(clause).toMatch(/untrusted/);
     expect(clause).not.toContain("Instructions edits");
     expect(clause).toContain("any bot in your current space");
+    expect(clause).not.toContain("Subagents cannot use bot management tools");
+    const delegating = (disabledBuiltinTools?: ReadonlySet<string>) =>
+      userTurnInstructions({
+        ...base,
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        offeredFleetTools: ["set_child_instructions"],
+        backgroundHelpersAllowed: true,
+        disabledBuiltinTools,
+      }).join("\n");
+    expect(delegating()).toContain(
+      "Subagents cannot use bot management tools; make these changes yourself.",
+    );
+    expect(delegating(new Set(["run_subagent"]))).not.toContain(
+      "Subagents cannot use bot management tools",
+    );
     const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
     expect(narrowed).not.toContain("needs the owner's approval");
     expect(narrowed).not.toContain("set_child_instructions");
@@ -2153,21 +2178,62 @@ describe("createRunExecutor", () => {
 
   it("keeps the current reaction out of history because its target is supplied in the prompt", () => {
     const messages = [
-      { id: "parent", role: "assistant", content: "Proceed?" },
+      { id: "parent", seq: 0, role: "assistant" as const, content: "Proceed?" },
       {
         id: "reaction",
-        role: "user",
+        seq: 1,
+        role: "user" as const,
         content: "User reacted with 👍 to <reaction_target>Proceed?</reaction_target>",
       },
     ];
-    expect(
-      threadContextForRun(
-        "reaction",
-        { messages, summary: null, historyCompactedUpToSeq: null },
-        false,
-        "reaction",
-      ).messages,
-    ).toEqual([messages[0]]);
+    const context = threadContextForRun(
+      "reaction",
+      { messages, summary: null, historyCompactedUpToSeq: null },
+      false,
+      "reaction",
+    );
+    expect(selectCompactedHistory(context).history).toEqual([messages[0]]);
+  });
+
+  it("keeps the compacted summary when a message newer than the reaction exists", () => {
+    const message = (id: string, seq: number) => ({
+      id,
+      seq,
+      role: "user" as const,
+      content: id,
+    });
+    const messages = [message("m5", 5), message("m6", 6), message("r7", 7), message("m8", 8)];
+    const summary = "S";
+    const reaction = threadContextForRun(
+      "reaction",
+      { messages, summary, historyCompactedUpToSeq: 4 },
+      false,
+      "r7",
+    );
+    expect(selectCompactedHistory(reaction)).toMatchObject({
+      usedLocalSummary: true,
+      summary: "S",
+      history: [message("m5", 5), message("m6", 6), message("m8", 8)],
+    });
+    // Without a newer message the reaction is still left out and the summary kept.
+    const latest = threadContextForRun(
+      "reaction",
+      { messages: messages.slice(0, 3), summary, historyCompactedUpToSeq: 4 },
+      false,
+      "r7",
+    );
+    expect(selectCompactedHistory(latest)).toMatchObject({
+      usedLocalSummary: true,
+      history: [message("m5", 5), message("m6", 6)],
+    });
+    // A run that is not a reaction keeps every message.
+    const user = threadContextForRun(
+      "user",
+      { messages, summary, historyCompactedUpToSeq: 4 },
+      false,
+      "r7",
+    );
+    expect(selectCompactedHistory(user).history).toHaveLength(4);
   });
 
   it("isolates routine runs from every thread-history source", () => {

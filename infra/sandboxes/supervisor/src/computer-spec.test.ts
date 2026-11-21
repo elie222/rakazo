@@ -651,7 +651,7 @@ describe("graphical computer spec", () => {
     expect(start).toMatch(/failed to set default web browser/);
     expect(start).toMatch(/xdg-settings set default-web-browser rakazo-browser\.desktop/);
     expect(start).not.toMatch(/xdg-mime default rakazo-browser\.desktop .*\|\| true/);
-    expect(start).toMatch(/x11vnc .* -viewonly /);
+    expect(start).toMatch(/x11vnc .* -viewonly -repeat /);
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
     expect(browser).toMatch(/chromium-screen-\$DISPLAY_NUM/);
     expect(browser).toMatch(/USER_DATA_DIR_SET/);
@@ -2334,6 +2334,39 @@ describe("graphical computer spec", () => {
       "20",
       "click",
       "1",
+    ]);
+  });
+
+  it("maps DOM key names to X11 keysyms for xdotool", () => {
+    expect(xdotoolCommand({ kind: "key", key: "PageDown" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "Page_Down",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "ArrowDown" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "Down",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "ArrowLeft", modifiers: ["ctrl"] })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "ctrl+Left",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "a" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "a",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "F5" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "F5",
     ]);
   });
 });

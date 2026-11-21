@@ -3,8 +3,12 @@ import {
   ATTACHMENT_MAX_COUNT,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
+  ComputerModeSchema,
   FEEDBACK_DESCRIPTION_MAX_LENGTH,
   FEEDBACK_KINDS,
+  MemoryScopeSchema,
+  ReplyModeSchema,
+  TEAM_CHAT_RULES_MAX_LENGTH,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import { scheduleCreateBranch } from "./builtin-work.tool-definition.js";
@@ -123,11 +127,11 @@ export const fleetTools: ConnectorTool[] = [
         },
         model_provider: {
           type: "string",
-          description: "Optional connected model provider. Set together with model_id.",
+          description: "Provider id (e.g. opencode-go). Set together with model_id.",
         },
         model_id: {
           type: "string",
-          description: "Optional connected model ID. Set together with model_provider.",
+          description: "Model id or provider/id. Set together with model_provider.",
         },
       },
       required: ["name", "task"],
@@ -250,9 +254,30 @@ export const fleetTools: ConnectorTool[] = [
           type: "string",
           description: 'Voice to read replies in: a voice name, or "default".',
         },
+        replyMode: {
+          type: "string",
+          enum: [...ReplyModeSchema.options],
+          description: "messages: only what you send reaches people.",
+        },
+        teamChatAmbientEnabled: {
+          type: "boolean",
+          description: "Read all team chat, not only mentions.",
+        },
+        teamChatRules: { type: "string", maxLength: TEAM_CHAT_RULES_MAX_LENGTH },
+        memoryScope: { type: "string", enum: [...MemoryScopeSchema.options] },
+        disableTools: {
+          type: "array",
+          items: { type: "string" },
+          description: "Built-in tools to turn off.",
+        },
+        computer: {
+          type: "string",
+          enum: [...ComputerModeSchema.options],
+          description: "With bot_id only.",
+        },
         bot_id: {
           type: "string",
-          description: "A bot in this space, to update its profile instead of yours.",
+          description: "A bot in this space, to change it instead of yourself.",
         },
       },
     },

@@ -13,7 +13,12 @@ describe("current model compatibility", () => {
   });
 
   it.each([
+    ["anthropic", "claude-fable-5-2"],
     ["anthropic", "claude-sonnet-5-5"],
+    ["openrouter", "anthropic/claude-fable-5.2"],
+    ["vercel-ai-gateway", "anthropic/claude-fable-5.2"],
+    ["amazon-bedrock", "global.anthropic.claude-fable-5-2"],
+    ["amazon-bedrock", "us.anthropic.claude-fable-5-2"],
     ["opencode", "claude-haiku-5-5"],
     ["opencode", "claude-sonnet-5-5"],
     ["opencode-go", "claude-haiku-5-5"],
@@ -114,13 +119,16 @@ describe("current model compatibility", () => {
     const models = builtinModels();
     expect(models.getModel("amazon-bedrock", id)?.cost).toEqual(cost);
   });
+  const allLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  // Sonnet 5.5 always thinks, as on Anthropic's own API.
+  const alwaysThinking = allLevels.filter((level) => level !== "off");
   it.each([
-    ["opencode", "claude-haiku-5-5", "claude-haiku-4-5"],
-    ["opencode", "claude-sonnet-5-5", "claude-sonnet-5"],
-    ["opencode-go", "claude-haiku-5-5", "minimax-m3"],
+    ["opencode", "claude-haiku-5-5", "claude-haiku-4-5", allLevels],
+    ["opencode", "claude-sonnet-5-5", "claude-sonnet-5", alwaysThinking],
+    ["opencode-go", "claude-haiku-5-5", "minimax-m3", allLevels],
   ])(
     "exposes %s/%s in the picker and runtime on the same endpoint as %s",
-    (provider, id, baseId) => {
+    (provider, id, baseId, levels) => {
       const models = modelsForRequest(
         { model: { provider, id } } as Parameters<typeof modelsForRequest>[0],
         provider,
@@ -132,7 +140,6 @@ describe("current model compatibility", () => {
       expect(model?.api).toBe(base?.api);
       expect(model?.input).toContain("image");
       expect(model?.contextWindow).toBe(1000000);
-      const levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
       expect(getSupportedThinkingLevels(model!)).toEqual(levels);
       expect(
         listPiCatalog().find((entry) => entry.provider === provider && entry.id === id)
