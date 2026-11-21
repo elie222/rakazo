@@ -6,12 +6,20 @@ import { useSave } from "../../lib/query/query";
 import { IconTooltip } from "../IconTooltip";
 
 const DATA_URL = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i;
-const EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/webp": "webp" };
 
-/** The file a still of the screen is saved as, named for when it was taken. */
+/** The file a still of the screen is saved as, named for when it was taken on the user's clock. */
 export function screenshotFileName(mimeType: string, takenAt: Date): string {
-  const stamp = takenAt.toISOString().slice(0, 19).replace(/[T:]/g, "-");
-  return `screen-${stamp}.${EXTENSIONS[mimeType.toLowerCase()] ?? "png"}`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = [
+    takenAt.getFullYear(),
+    pad(takenAt.getMonth() + 1),
+    pad(takenAt.getDate()),
+    pad(takenAt.getHours()),
+    pad(takenAt.getMinutes()),
+    pad(takenAt.getSeconds()),
+  ].join("-");
+  const subtype = mimeType.toLowerCase().split("/")[1]?.split("+")[0] ?? "png";
+  return `screen-${stamp}.${subtype === "jpeg" ? "jpg" : subtype}`;
 }
 
 /** Saves a picture of what the bot's screen shows right now, for a code, a page or an error to keep. */

@@ -72,10 +72,12 @@ it("saves what the bot's screen shows right now under a dated name", async () =>
 });
 
 it("names the file for the image type the computer sent", () => {
-  const at = new Date("2026-03-04T05:06:07.890Z");
+  // Local time, as the user's own clock shows it.
+  const at = new Date(2026, 2, 4, 5, 6, 7, 890);
   expect(screenshotFileName("image/png", at)).toBe("screen-2026-03-04-05-06-07.png");
   expect(screenshotFileName("image/jpeg", at)).toBe("screen-2026-03-04-05-06-07.jpg");
   expect(screenshotFileName("image/webp", at)).toBe("screen-2026-03-04-05-06-07.webp");
+  expect(screenshotFileName("image/svg+xml", at)).toBe("screen-2026-03-04-05-06-07.svg");
 });
 
 it("says so, and saves nothing, when the computer has no screen to show", async () => {
