@@ -542,6 +542,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["export/accountToken"],
       ["notifications/subscribe"],
       ["notifications/subscribeCalls"],
+      ["notifications/incomingCalls"],
       ["notifications/declineIncomingCall", { callId: "00000000-0000-4000-8000-000000000001" }],
       [
         "notifications/registerCallPush",

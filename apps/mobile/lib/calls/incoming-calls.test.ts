@@ -110,6 +110,7 @@ beforeEach(() => {
   fake.native.incomingState.mockResolvedValue({ token: "", actions: [] });
   fake.rpc.mockImplementation(async (path: string) => {
     if (path === "spaces/list") return { current: { bots: [bot] }, spaces: [] };
+    if (path === "notifications/incomingCalls") return [];
     if (path === "threads/get") return { cursor: 1, messages: [] };
     if (path === "threads/answerCall") return { opening: "Hello" };
     if (path === "voice/status") return { transcribe: true };
@@ -222,6 +223,34 @@ describe("mobile incoming calls", () => {
     await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-b")));
     expect(fake.native.finishAnswer).toHaveBeenCalledWith("call-b", true);
   });
+  it("finds a guest Space's incoming caller before the account stream connects", async () => {
+    const call = { ...orgBot, incomingCall: { ...block(), callId: "call-guest" } };
+    const answer = fake.rpc.getMockImplementation()!;
+    fake.rpc.mockImplementation(async (path: string, ...rest: unknown[]) =>
+      path === "notifications/incomingCalls" ? [call] : answer(path, ...rest),
+    );
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      actions: [],
+      ringing: [{ callId: "call-guest", botId: orgBot.id, expiresAt: call.incomingCall.expiresAt }],
+    });
+    stop = startIncomingCalls();
+    await vi.waitFor(() => expect(getIncomingCall()?.id).toBe(orgBot.id));
+    fake.native.incomingState.mockResolvedValue({
+      token: "",
+      actions: [
+        {
+          action: "answer",
+          callId: "call-guest",
+          botId: orgBot.id,
+          expiresAt: call.incomingCall.expiresAt,
+        },
+      ],
+    });
+    fake.onAppState?.("active");
+    await vi.waitFor(() => expect(fake.rpc).toHaveBeenCalledWith(...orgAnswerRpc("call-guest")));
+  });
+
   it("answers a same-organization native call from the roster without waiting on the stream", async () => {
     stop = startIncomingCalls();
     await tick();

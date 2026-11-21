@@ -202,11 +202,22 @@ function loadRoster(): Promise<void> {
   return load;
 }
 
+async function lookupCaller(botId: string, callId: string) {
+  try {
+    await loadRoster();
+    const bot = roster.get(botId);
+    if (bot) return bot;
+  } catch {
+    // The account snapshot can still identify a caller if the selected Space is unavailable.
+  }
+  const incoming = await rpc("notifications/incomingCalls");
+  return incoming.find((call) => call.id === botId && call.incomingCall.callId === callId) ?? null;
+}
+
 /**
- * Resolves the caller for a native or notification answer. The account stream knows callers
- * across every organization; the roster covers only the active one. A cached roster entry
- * answers at once. Otherwise the roster load races the stream's first snapshot, which a cold
- * start may not have yet, for a few seconds, and the first source to name the caller answers.
+ * Resolves the caller for a native ring or notification response. A cached roster entry answers
+ * at once. A cold start races the account stream against a read that can also find callers
+ * outside the selected Space.
  * Returns undefined when the lookup's feed or session is gone: the answer belongs to neither,
  * so its caller abandons it without answering or completing the native action.
  */
@@ -221,9 +232,10 @@ async function callerFor(
     calls.find((entry) => entry.id === botId && entry.incomingCall.callId === callId) ?? null;
   const known = fromStream() ?? roster.get(botId);
   if (known) return known;
-  // Whichever source names the caller first answers; a failed load surfaces only if neither does.
-  const rostered = loadRoster();
-  rostered.catch(() => undefined);
+  const lookup = lookupCaller(botId, callId).then(
+    (caller) => ({ caller }),
+    (error: unknown) => ({ error }),
+  );
   if (streamSnapshot) {
     let stopWaiting: (() => void) | undefined;
     let giveUp: ReturnType<typeof setTimeout> | undefined;
@@ -239,12 +251,9 @@ async function callerFor(
           giveUp = setTimeout(resolve, SNAPSHOT_WAIT_MS);
         }),
         new Promise<void>((resolve) => {
-          rostered.then(
-            () => {
-              if (roster.has(botId)) resolve();
-            },
-            () => undefined,
-          );
+          void lookup.then((result) => {
+            if ("caller" in result && result.caller) resolve();
+          });
         }),
       ]);
     } finally {
@@ -255,16 +264,12 @@ async function callerFor(
     const late = fromStream() ?? roster.get(botId);
     if (late) return late;
   }
-  // The stream may name the caller after an empty snapshot, so a failed load throws only after it.
-  const failure = await rostered.then(
-    () => null,
-    (error: unknown) => ({ error }),
-  );
+  const result = await lookup;
   if (stale()) return undefined;
   const caller = fromStream() ?? roster.get(botId);
   if (caller) return caller;
-  if (failure) throw failure.error;
-  return null;
+  if ("error" in result) throw result.error;
+  return result.caller;
 }
 
 export async function respondToMobileCall(call: IncomingBotCall, action: "answer" | "decline") {
@@ -373,13 +378,12 @@ async function drainNative() {
   }
   for (const ring of state.ringing ?? []) {
     if (!callIsRinging(ring)) continue;
-    // A failed roster load only leaves this ring unshown.
-    if (!roster.has(ring.botId)) await loadRoster().catch(() => undefined);
+    const bot = await callerFor(ring.botId, ring.callId).catch(() => null);
+    if (bot === undefined || !running || generation !== currentSessionGeneration()) return;
     // A ring the stream listed and then dropped has ended, for example answered on another
     // phone while the answers above were joining; the older native state must not bring it back.
     pruneEndedCalls();
     if (endedInStream.has(ring.callId)) continue;
-    const bot = roster.get(ring.botId);
     if (bot) update(bot, { ...ring, reason: "", opening: "" });
   }
 }
