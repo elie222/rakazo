@@ -20,6 +20,7 @@ type Row = [
   serverHomeMount: SandboxKindCapabilities["serverHomeMount"],
   serverOwnsStoredTeamHome: boolean,
   storedHomeIsBackup: boolean,
+  sleepStopsMachine: boolean,
   readStoppedFiles?: true,
   sizedUsage?: true,
   maxFileBytes?: number,
@@ -28,20 +29,32 @@ type Row = [
 // What the per-kind id lists in shared code answered before providers declared these themselves,
 // except boxd and railway: those lists had left out their terminal and stored team home.
 const EXPECTED: Record<KnownSandboxKind, Row> = {
-  none: [false, false, false, false, DEFAULT_SCREEN, "never", false, false],
-  docker: [true, true, false, false, DEFAULT_SCREEN, "always", false, true],
-  e2b: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  novita: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  daytona: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  createos: [false, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  boat: [true, true, false, false, LARGE_SCREEN, "never", true, false, true, true],
-  boxd: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  instabox: [true, true, false, false, DEFAULT_SCREEN, "never", true, false, undefined, true],
-  railway: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  kubernetes: [true, true, false, false, DEFAULT_SCREEN, "optional", true, false],
-  incus: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  "local-vm": [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
-  wuying: [false, false, true, false, DEFAULT_SCREEN, "never", false, true],
+  none: [false, false, false, false, DEFAULT_SCREEN, "never", false, false, false],
+  docker: [true, true, false, false, DEFAULT_SCREEN, "always", false, true, true],
+  e2b: [true, true, false, false, DEFAULT_SCREEN, "never", true, false, false],
+  novita: [true, true, false, false, DEFAULT_SCREEN, "never", true, false, false],
+  daytona: [true, true, false, false, DEFAULT_SCREEN, "never", true, false, false],
+  createos: [false, true, false, false, DEFAULT_SCREEN, "never", true, false, false],
+  boat: [true, true, false, false, LARGE_SCREEN, "never", true, false, false, true, true],
+  boxd: [true, true, false, false, DEFAULT_SCREEN, "never", true, false, false],
+  instabox: [
+    true,
+    true,
+    false,
+    false,
+    DEFAULT_SCREEN,
+    "never",
+    true,
+    false,
+    false,
+    undefined,
+    true,
+  ],
+  railway: [true, true, false, false, DEFAULT_SCREEN, "never", true, false, false],
+  kubernetes: [true, true, false, false, DEFAULT_SCREEN, "optional", true, false, false],
+  incus: [true, true, false, false, DEFAULT_SCREEN, "never", true, false, false],
+  "local-vm": [true, true, false, false, DEFAULT_SCREEN, "never", true, false, false],
+  wuying: [false, false, true, false, DEFAULT_SCREEN, "never", false, true, false],
   desktop: [
     false,
     false,
@@ -51,14 +64,15 @@ const EXPECTED: Record<KnownSandboxKind, Row> = {
     "never",
     false,
     true,
+    false,
     undefined,
     undefined,
     8 * 1024 * 1024,
   ],
-  fake: [true, true, false, false, DEFAULT_SCREEN, "never", false, false],
+  fake: [true, true, false, false, DEFAULT_SCREEN, "never", false, false, false],
 };
 const OFFERS_HOST_COMPUTER: string[] = ["docker", "local-vm"];
-const UNDECLARED: Row = [false, true, false, false, DEFAULT_SCREEN, "never", false, false];
+const UNDECLARED: Row = [false, true, false, false, DEFAULT_SCREEN, "never", false, false, false];
 
 function capabilities([
   terminal,
@@ -69,6 +83,7 @@ function capabilities([
   serverHomeMount,
   serverOwnsStoredTeamHome,
   storedHomeIsBackup,
+  sleepStopsMachine,
   readStoppedFiles,
   sizedUsage,
   maxFileBytes,
@@ -82,6 +97,7 @@ function capabilities([
     serverHomeMount,
     serverOwnsStoredTeamHome,
     storedHomeIsBackup,
+    sleepStopsMachine,
     ...(readStoppedFiles ? { readStoppedFiles } : {}),
     ...(sizedUsage ? { sizedUsage } : {}),
     ...(maxFileBytes ? { maxFileBytes } : {}),
@@ -120,5 +136,7 @@ describe("sandbox kind capabilities", () => {
     expect(sandboxKindsWhere((entry) => entry.offersHostComputer === true).sort()).toEqual(
       OFFERS_HOST_COMPUTER,
     );
+    // Docker's supervisor stops a sleeping computer's container, never pauses it.
+    expect(sandboxKindsWhere((entry) => entry.sleepStopsMachine)).toEqual(["docker"]);
   });
 });

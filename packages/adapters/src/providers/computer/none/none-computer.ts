@@ -12,6 +12,7 @@ export const noneComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: false,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   async create() {
     return new NoneSandboxProvider();

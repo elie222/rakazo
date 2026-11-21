@@ -12,6 +12,7 @@ export const e2bComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   env: { e2bApiKey: { name: "E2B_API_KEY", read: raw, required: true } },
   settings: {

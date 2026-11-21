@@ -12,6 +12,7 @@ export const railwayComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   env: {
     railwayApiToken: { name: "RAILWAY_API_TOKEN", read: raw, required: true },

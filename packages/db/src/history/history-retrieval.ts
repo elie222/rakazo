@@ -6,7 +6,7 @@ import {
   HistoryQueriesSchema,
 } from "@rakazo/contracts";
 import {
-  attachmentComputerPath,
+  attachmentComputerPathFor,
   originalLowercaseOffset,
   shortenedTextLength,
   textBoundary,
@@ -337,7 +337,7 @@ async function messageAttachments(
     (
       await prisma.artifact.findMany({
         where: { id: { in: ids }, spaceId: scope.spaceId },
-        select: { id: true, name: true, mimeType: true, size: true },
+        select: { id: true, name: true, mimeType: true, size: true, computerPath: true },
       })
     ).map((row) => [row.id, row]),
   );
@@ -353,7 +353,7 @@ async function messageAttachments(
                 name: row.name,
                 mimeType: row.mimeType,
                 size: row.size,
-                path: attachmentComputerPath(row.id, row.mimeType),
+                path: attachmentComputerPathFor(row),
               },
             ]
           : [];

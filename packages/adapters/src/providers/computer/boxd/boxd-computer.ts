@@ -11,6 +11,7 @@ export const boxdComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   env: {
     boxdApiKey: { name: "BOXD_API_KEY", required: true },

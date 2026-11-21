@@ -2121,12 +2121,15 @@ model Artifact {
   meetingSession MeetingSession? @relation(fields: [meetingSessionId], references: [id], onDelete: Cascade)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
+  // Where its copy lives in the bot's workspace, named when it arrived; null keeps the id path.
+  computerPath   String?
 
   @@unique([spaceId, userId, clientNonce])
   @@index([spaceId, botId])
   @@index([groupId])
   @@index([rootArtifactId])
   // artifacts_family_version_key is raw SQL: Prisma cannot express COALESCE indexes.
+  // artifacts_space_computer_path_key is raw SQL too: a partial unique index.
   @@map("artifacts")
 }
 

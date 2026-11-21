@@ -1,9 +1,14 @@
+import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES } from "@rakazo/adapters";
 import { AttachmentValidationError } from "@rakazo/core";
+import { deferred, flush } from "@rakazo/core/test-async";
+import type { PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
+import type { CopyAttachment } from "../attachments/arrival-copy.js";
+import { createSenderQueue } from "../messaging/intake/sender-queue.js";
 import type { EmailInboundDeps } from "./email-inbound.js";
 import { INBOUND_EMAIL_PATH, INBOX_DAILY_LIMIT, mountEmailInboundRoute } from "./email-inbound.js";
 
@@ -52,6 +57,7 @@ function setup(
     routines?: Array<Record<string, unknown>>;
     owner?: { email: string; emailVerified?: boolean; deactivatedAt?: Date | null };
     storeAttachment?: EmailInboundDeps["storeAttachment"];
+    arrivalCopy?: EmailInboundDeps["arrivalCopy"];
     /** Messages the bot saved in the last day. */
     savedToday?: number;
   } = {},
@@ -120,6 +126,7 @@ function setup(
     secret: SECRET,
     readEmail,
     ...(options.storeAttachment ? { storeAttachment: options.storeAttachment } : {}),
+    ...(options.arrivalCopy ? { arrivalCopy: options.arrivalCopy } : {}),
   };
   const app = new Hono();
   mountEmailInboundRoute(app, deps);
@@ -311,6 +318,80 @@ describe("inbound email route", () => {
     // A readdressed copy of an old message must not replace the owner's current file.
     expect(storeAttachment).toHaveBeenCalledWith(expect.objectContaining({ standalone: true }));
     expect(saveEmail.mock.calls[0]?.[0].data).toMatchObject({ verified: false });
+  });
+
+  // The sender's display name, else their address.
+  it.each([
+    { name: "Owner", sender: "Owner" },
+    { name: " ", sender: "owner@example.test" },
+  ])("names a kept file by its sender ($sender)", async ({ name, sender }) => {
+    const storeAttachment = vi.fn(async () => ({
+      id: "artifact-1",
+      name: "invoice.pdf",
+      mimeType: "application/pdf",
+      size: 3,
+    }));
+    const { post } = setup({
+      storeAttachment,
+      message: email({
+        from: { address: "owner@example.test", name },
+        attachments: [
+          { name: "invoice.pdf", mimeType: "application/pdf", bytes: new Uint8Array(3) },
+        ],
+      }),
+    });
+
+    await post();
+    expect(storeAttachment).toHaveBeenCalledWith(expect.objectContaining({ sender }));
+  });
+
+  it("answers the relay while each kept file is still being copied into the bot's computer", async () => {
+    const paths = ["attachments/2026-11-05_1000_Owner_invoice.pdf", null];
+    const storeAttachment = vi.fn<NonNullable<EmailInboundDeps["storeAttachment"]>>(
+      async ({ attachment }) => ({
+        id: `artifact-${attachment.name}`,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 3,
+        computerPath: paths.shift() ?? null,
+      }),
+    );
+    const slow = deferred<{ copied: string }>();
+    const copy = vi.fn<CopyAttachment>(() => slow.promise);
+    const invoice = new Uint8Array([1, 2, 3]);
+    const { post } = setup({
+      storeAttachment,
+      arrivalCopy: {
+        prisma: {
+          bot: { findUnique: vi.fn(async () => ({ computerId: "computer-1" })) },
+        } as unknown as PrismaClient,
+        artifacts: {} as ArtifactStore,
+        enabled: true,
+        copy,
+        queue: createSenderQueue(),
+      },
+      message: email({
+        attachments: [
+          { name: "invoice.pdf", mimeType: "application/pdf", bytes: invoice },
+          { name: "notes.txt", mimeType: "text/plain", bytes: new Uint8Array([4]) },
+        ],
+      }),
+    });
+
+    expect(await (await post()).json()).toMatchObject({ ok: true, runId: "run-1" });
+
+    await vi.waitFor(() => expect(copy).toHaveBeenCalledOnce());
+    // The file without a path is left for the run to copy.
+    await flush();
+    expect(copy).toHaveBeenCalledExactlyOnceWith(
+      {
+        bot: { id: "bot-1", computerId: "computer-1" },
+        path: "attachments/2026-11-05_1000_Owner_invoice.pdf",
+        bytes: invoice,
+      },
+      expect.objectContaining({ spaceId: "space-1", userId: "user-1", botId: "bot-1" }),
+    );
+    slow.resolve({ copied: "x" });
   });
 
   it.each([false, true])(

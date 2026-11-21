@@ -11,6 +11,7 @@ import {
   realpath,
   rename,
   rm,
+  rmdir,
   stat,
   unlink,
   utimes,
@@ -214,18 +215,44 @@ export class LocalAgentHomeStore implements AgentHomeStore {
     content: string,
     _context: AdapterContext,
   ): Promise<void> {
+    await this.writeContent(botId, filePath, content, { create: false });
+  }
+
+  /** Creates the file; rejects with `EEXIST` when the path is taken, never replacing it. */
+  async writeBinaryFile(
+    botId: string,
+    filePath: string,
+    content: Uint8Array,
+    _context: AdapterContext,
+  ): Promise<void> {
+    await this.writeContent(botId, filePath, content, { create: true });
+  }
+
+  private async writeContent(
+    botId: string,
+    filePath: string,
+    content: string | Uint8Array,
+    { create }: { create: boolean },
+  ) {
     await this.withBotWrite(botId, async () => {
       await this.recoverInterruptedCommit(botId);
       const full = await containedWritePath(this.botDir(botId), filePath);
       const handle = await open(
         full,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+        constants.O_WRONLY |
+          constants.O_CREAT |
+          (create ? constants.O_EXCL : constants.O_TRUNC) |
+          constants.O_NOFOLLOW,
         0o666,
       );
+      let written = false;
       try {
-        await handle.writeFile(content, "utf8");
+        await handle.writeFile(content);
+        written = true;
       } finally {
         await handle.close();
+        // A file this call created holds only part of its content.
+        if (create && !written) await rm(full, { force: true });
       }
     });
   }
@@ -250,6 +277,32 @@ export class LocalAgentHomeStore implements AgentHomeStore {
       }),
     );
     return listed.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  }
+
+  async removeFiles(
+    botId: string,
+    paths: readonly string[],
+    root: string,
+    _context: AdapterContext,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<number> {
+    return this.withBotWrite(botId, async () => {
+      await this.recoverInterruptedCommit(botId);
+      const home = this.botDir(botId);
+      const folder = safeJoin(home, root);
+      if (folder === path.resolve(home)) throw new Error("Remove root is the whole home");
+      for (const relative of paths) {
+        if (!isContained(folder, safeJoin(home, relative)) || safeJoin(home, relative) === folder) {
+          throw new Error("Path is outside the folder files are removed from");
+        }
+      }
+      let removed = 0;
+      for (const relative of paths) {
+        if (options.signal?.aborted) break;
+        if (await removeContainedFile(home, relative, root)) removed += 1;
+      }
+      return removed;
+    });
   }
 
   /**
@@ -480,6 +533,47 @@ function assertContained(root: string, candidate: string) {
 
 function isHiddenTopEntry(root: string, candidate: string) {
   return path.relative(root, candidate).split(path.sep)[0]!.startsWith(".");
+}
+
+/**
+ * Deletes one regular file in a home and the folders above it that this empties, up to but not
+ * including `keepFolder`. A link, a folder or a path through a link is left alone. Returns
+ * whether it deleted the file.
+ */
+async function removeContainedFile(root: string, relative: string, keepFolder: string) {
+  const target = safeJoin(root, relative);
+  const resolvedParent = await realpath(path.dirname(target)).catch((error: unknown) => {
+    if (isMissing(error)) return null;
+    throw error;
+  });
+  if (!resolvedParent) return false;
+  // Any link on the way makes the real folder differ from the one the path names.
+  const lexicalParent = path.relative(path.resolve(root), path.dirname(target));
+  const resolvedRoot = await realpath(root);
+  if (resolvedParent !== path.join(resolvedRoot, lexicalParent)) return false;
+  const keep = safeJoin(root, keepFolder);
+  // Checked again on the real path: the kept folder itself must not be a link out.
+  if (
+    !isContained(path.join(resolvedRoot, path.relative(path.resolve(root), keep)), resolvedParent)
+  ) {
+    return false;
+  }
+  const info = await lstat(target).catch((error: unknown) => {
+    if (isMissing(error)) return null;
+    throw error;
+  });
+  if (!info?.isFile()) return false;
+  await unlink(target);
+  for (let folder = path.dirname(target); folder !== keep && isContained(keep, folder); ) {
+    try {
+      await rmdir(folder);
+    } catch (error) {
+      if (isMissing(error) || (error as NodeJS.ErrnoException).code === "ENOTEMPTY") break;
+      throw error;
+    }
+    folder = path.dirname(folder);
+  }
+  return true;
 }
 
 /** Delete one folder in a home. A symlinked parent is refused; a final symlink is unlinked. */

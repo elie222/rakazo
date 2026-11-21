@@ -11,7 +11,7 @@ import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rak
 import { encodeLoginSecret } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
-  attachmentComputerPath,
+  attachmentComputerPathFor,
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
   isTerminal,
@@ -483,7 +483,11 @@ export async function runTrial(
             contentBase64: Buffer.from(m.file.content).toString("base64"),
           },
         );
-        seededPaths[artifact.name] = attachmentComputerPath(artifact.id, artifact.mimeType);
+        const { computerPath } = await prisma.artifact.findUniqueOrThrow({
+          where: { id: artifact.id },
+          select: { computerPath: true },
+        });
+        seededPaths[artifact.name] = attachmentComputerPathFor({ ...artifact, computerPath });
         files.set(m.seq, {
           kind: "file",
           artifactId: artifact.id,

@@ -286,8 +286,142 @@ room for base64 encoding (about 4/3 of the file size) and the JSON envelope.
 Files sent in direct messages from chat apps download in the background, up to
 `MAX_UPLOAD_SIZE_MB`, with retries. The sender is told when a file can't be received.
 
+The bot gets a copy of each one in its computer; see
+[attachment copies in computers](#attachment-copies-in-computers).
+
 `MAX_ATTACHMENTS_PER_MESSAGE` sets the chat attachment count per message. It defaults
 to `4` and accepts integers from `1` to `100`. Set it in `.env` and restart the API.
 Web, desktop, and mobile use the advertised count; older clients and clients connected
 to older servers keep the default of four. Chat bridges retain their existing safe
 platform limits, and model image budgets still apply.
+
+## Attachment copies in computers
+
+When a bot's run uses a file, Rakazo copies it into the bot's computer, under `attachments/` in
+the bot's folder (`bots/<bot>/attachments/` on a team computer). The original stays in Rakazo's
+storage. Three groups of settings change how a copy is named, when it is made and how long it
+stays. With none set, nothing changes: copies are named `attachments/<id>.<ext>`, are made when
+a run needs them, and are never cleaned up. The bot is told each copy's path in the attachment
+list of its message, so there is one copy and one path for each file.
+
+### Names and folders
+
+`ATTACHMENT_COPY_NAMES` is `id` (default) or `readable`. A readable copy of a new file gets a
+path like this, and Rakazo stores it with the file so it never changes:
+
+```text
+attachments/<YYYY>/<MM>/<YYYY-MM-DD>_<HHMM>[_<sender>]_<name>.<ext>
+```
+
+`ATTACHMENT_COPY_FOLDERS` is `none` (default) or `month`, and applies only to readable names. With
+`none` the files are in one folder, `attachments/<YYYY-MM-DD>_<HHMM>[_<sender>]_<name>.<ext>`.
+Set it in `.env`; the API and worker both receive it.
+
+- The date and time are when Rakazo received the file, not an email's own date. They are in the
+  time zone of the account the file belongs to, or UTC when it has none set.
+- The sender is the chat contact's label, an email's sender name (or its address when there is no
+  name), or the name of the user who uploaded the file. When it is unknown, the part is left out.
+- The sender and name lose characters a path can't hold, get `_` for each one Windows does not
+  allow in a name, and are shortened to fit. A name already taken in the same space gets `-2`,
+  `-3` and so on before the extension, so a copy never replaces a file.
+- Only files that arrive after a change follow it. Files that already have a path keep it, and
+  files without one (earlier ones, imports, files a bot attaches from its own computer) keep
+  `attachments/<id>.<ext>`.
+- A chat contact's label can be a phone number or an address, and a copy's name can carry it.
+  Everyone with access to the computer can see it.
+
+### Copy on arrival
+
+`ATTACHMENT_COPY_ON_ARRIVAL=true` copies each file into the bot's computer when the message
+arrives, so a large file is there by the time the bot's run starts. It is off by default: the
+copy is then made when a run needs it. The API reads this setting. It covers direct chat-app
+messages, email to a bot, and messages sent to one bot from the web or the apps. Files in group
+and team chats are still copied when a run needs them. A web upload is copied when its message
+is sent, not when the file is uploaded.
+
+The copy never delays or fails the message. A run that finds the file already there does not
+copy it again. Which computers get a copy:
+
+- A running computer of any kind, Docker included, written straight into it, even while the bot
+  works in it.
+- An asleep Docker computer, written into the server's copy of its home. Its container is
+  stopped while it sleeps, so nothing in it runs until it wakes.
+- A stopped computer with no machine left whose home the server holds, written into that stored
+  home for its next start. This covers Docker computers whose container was removed, and remote
+  computers whose stored home only the server writes, except Kubernetes computers set up to
+  mount the server's home directory.
+
+Other computers get no copy on arrival: one starting or going to sleep, an asleep or stopped one
+whose provider keeps its machine and disk, a stopped remote one whose stored home it writes
+itself, a stopped one on a person's own device, and a bot with no computer. A run copies the
+file when it needs it, as before.
+
+### Cleanup
+
+Cleanup deletes old attachment copies from computers. It is off by default.
+
+| Setting                        | Default | Meaning                                                                       |
+| ------------------------------ | ------- | ----------------------------------------------------------------------------- |
+| `FILES_CLEANUP_ATTACHMENTS`    | `false` | `true` turns the cleanup on.                                                  |
+| `FILES_CLEANUP_MAX_AGE_DAYS`   | `31`    | How old a copy gets before it is deleted. A whole number from `1` to `36500`. |
+| `FILES_CLEANUP_INTERVAL_HOURS` | `24`    | How often the cleanup runs. A whole number from `1` to `8760`.                |
+
+The worker does the cleanup and checks these settings: a value that is not understood stops the
+worker from starting, with an error naming the setting. The two number settings are shared with
+other file cleanups. The other settings are checked at startup too, by the API:
+`ATTACHMENT_COPY_NAMES` and `ATTACHMENT_COPY_FOLDERS` stop it with an error naming the setting
+when they hold any other value. `ATTACHMENT_COPY_ON_ARRIVAL` is not checked: only `true` turns it
+on, and any other value leaves it off.
+
+An age comes from the file's own record, because a home's file list has no file times:
+
+- a readable copy, by the date at the start of its name, inside matching `YYYY/MM` folders or
+  directly in `attachments/` when folders are off;
+- an old copy named `attachments/<id>.<ext>`, by when that file was created in Rakazo.
+
+The cleanup then removes the year and month folders that this leaves empty. It cleans
+`attachments/` on a private computer, and each bot's `bots/<bot>/attachments/` on a team
+computer. It leaves alone anything in `attachments/` that
+is not named like a copy. The original stays in Rakazo's storage, and a later run copies it back
+if it needs it; the new copy gets a fresh age.
+
+It only cleans homes the server holds while nothing runs in them: the same computers that get a
+copy on arrival while not running. It never cleans a running computer. Copies on a running
+computer go once it is asleep or stopped and its home is back with the server, and a computer
+that never stops is not cleaned. Neither are computers that keep their own disk, such as one
+whose provider keeps its machine. Turning the setting off stops the cleanup, so copies already
+made stay until removed by hand.
+
+### Limits
+
+- A message settled by its backup job, because receiving it here failed or the API restarted
+  first, reaches the bot without an arrival copy, and so does a message the chat app delivers
+  again after such a restart. The run copies the file when it needs it.
+- One copy at a time is made on a computer, across all API processes, and the cleanup takes the
+  same turn. Each arrival copy has 30 seconds, waiting included; one not made by then is skipped,
+  and the next copy goes ahead. A copy still being written at that point can land later; the
+  cleanup removes it like any other.
+- A run that starts while a file is being copied on arrival can write the same file again. The
+  result is the same file.
+- A message's files are copied between its downloads, so each later file of the message starts
+  downloading a little later, within the same download time limit.
+- A copy into an asleep or stopped computer's stored home, and the cleanup of one, are not held
+  against a start or a save of that computer. If the computer starts from its previous save and
+  then saves again, the copy can be lost although the bot was told its path; the same can happen
+  on a running computer that saves and stops between the check of its state and the write. An
+  asleep Docker computer that wakes between that check and the write has its container running
+  again while the server writes in its home. The cleanup looks at the computer again before
+  every 25 deletions and stops at any change, deletes at most 500 copies in one home per pass,
+  and leaves the rest for the next pass.
+- A stopped Docker computer is treated as having no container only once Rakazo removed its
+  container or found it gone. If a container is still there although Rakazo took it for gone,
+  the server can write in or clean a home that container still mounts.
+- With homes kept in object storage, an asleep Docker computer whose last save was skipped
+  because its home was too large still gets the copy in its home, but storing the home fails, so
+  the copy is lost.
+- With homes kept in object storage, each copy into a computer that is not running downloads its
+  stored home and uploads it again whole. A large home can take longer than the 30 seconds,
+  leaving the file to be copied by the run. The cleanup downloads every home it looks at, and
+  uploads it again after every 25 deletions.
+- A message handed to a message routine still gets its copies, but the routine is not told where
+  they are.

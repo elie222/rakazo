@@ -2,13 +2,16 @@ import { readFileSync } from "node:fs";
 import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import type {
   ApnsVoipConfig,
+  AttachmentNaming,
   MessagingEnvironmentValues,
   SandboxProviderOptions,
 } from "@rakazo/adapters";
 import {
   absoluteHttpOrigin,
   apnsVoipConfig,
+  attachmentNamingFromEnv,
   autoReviewMinConfidence,
+  copyAttachmentsOnArrivalFromEnv,
   deploymentLabsFromEnv,
   inboundOrigin,
   liveModelCatalogEnabled,
@@ -107,6 +110,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   maxUploadSizeBytes: number;
   /** What one computer save may copy; the worker reads the same setting. */
   workspaceSaveLimits: WorkspaceExportLimits;
+  /** How copies of incoming files are named in a bot's computer. */
+  attachmentNaming: AttachmentNaming;
   maxAttachmentsPerMessage: number;
   /** Bot replies longer than this are read aloud as a summary; unset reads every reply in full. */
   voiceSummaryMinChars: number | undefined;
@@ -159,6 +164,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   slackClientSecret?: string;
   /** Unknown chat senders auto-provision their own accounts when true. */
   messagingOpenSignup: boolean;
+  /** ATTACHMENT_COPY_ON_ARRIVAL=true copies incoming attachments into the bot's computer. */
+  copyAttachmentsOnArrival: boolean;
   /** Bot that owns team/external chat rooms on the messaging surface. */
   teamChatBotId: string | undefined;
   /** Optional model override for ambient engagement judging. */
@@ -314,6 +321,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     workspaceSaveLimits: workspaceSaveLimits(source),
+    attachmentNaming: attachmentNamingFromEnv(source),
     maxAttachmentsPerMessage: attachmentCountFromEnv(source),
     deploymentVoice: deploymentVoiceFromEnv(
       source.DEPLOYMENT_VOICE,
@@ -366,6 +374,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     slackClientId: optional(source.SLACK_CLIENT_ID),
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
+    copyAttachmentsOnArrival: copyAttachmentsOnArrivalFromEnv(source),
     teamChatBotId: optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
     teamChatJudgeProvider: optional(source.TEAM_CHAT_JUDGE_PROVIDER),
     teamChatJudgeModel: optional(source.TEAM_CHAT_JUDGE_MODEL),

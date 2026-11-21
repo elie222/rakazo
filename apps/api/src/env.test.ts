@@ -26,6 +26,16 @@ describe("loadEnv", () => {
       "MAX_ATTACHMENTS_PER_MESSAGE",
     );
   });
+  it("reads how attachment copies are named, and refuses to start on a bad value", () => {
+    expect(loadEnv(base).attachmentNaming).toEqual({ names: "id", folders: "none" });
+    expect(
+      loadEnv({ ...base, ATTACHMENT_COPY_NAMES: "readable", ATTACHMENT_COPY_FOLDERS: "month" })
+        .attachmentNaming,
+    ).toEqual({ names: "readable", folders: "month" });
+    expect(() => loadEnv({ ...base, ATTACHMENT_COPY_NAMES: "dated" })).toThrow(
+      "ATTACHMENT_COPY_NAMES",
+    );
+  });
 
   it("keeps calls off unless explicitly enabled", () => {
     expect(loadEnv(base).phoneCallsEnabled).toBe(false);
@@ -108,6 +118,14 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, PI_SESSION_RECORDING: "false" }).piSessionRecording).toBe(false);
     expect(loadEnv({ ...base, PI_SESSION_RECORDING: "1" }).piSessionRecording).toBe(false);
     expect(loadEnv({ ...base, PI_SESSION_RECORDING: "true" }).piSessionRecording).toBe(true);
+  });
+
+  it("copies incoming attachments into the bot's computer on arrival only when asked", () => {
+    const copies = (value?: string) =>
+      loadEnv({ ...base, ATTACHMENT_COPY_ON_ARRIVAL: value }).copyAttachmentsOnArrival;
+    expect(copies()).toBe(false);
+    expect(copies("1")).toBe(false);
+    expect(copies("true")).toBe(true);
   });
 
   it("keeps explicit emulator settings for pnpm test", () => {

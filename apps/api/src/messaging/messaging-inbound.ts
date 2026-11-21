@@ -53,6 +53,8 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
+import type { ArrivalCopyDeps } from "../attachments/arrival-copy.js";
+import { copyOnArrival } from "../attachments/arrival-copy.js";
 import {
   cancelThreadRuns,
   finishThreadStop,
@@ -99,6 +101,8 @@ export interface MessagingInboundDeps {
   openSignup: boolean;
   acknowledge?: MessagingReceipts["acknowledge"];
   storeAttachment?: InboundAttachmentStore;
+  /** Copies each file a direct message brings into the bot's computer, when that is on. */
+  arrivalCopy?: ArrivalCopyDeps;
   /**
    * Transcribes inbound audio with the bot owner's voice provider. On null or
    * a throw only the file reference is delivered. `signal` aborts when the
@@ -755,7 +759,7 @@ function writeJob<T>(
   return result;
 }
 
-/** A message's stored files and the lines of those that did not arrive. */
+/** A message's stored files, and the lines of those that did not arrive. */
 type StoredMedia = Awaited<ReturnType<typeof storeInboundMedia>>;
 
 const NO_MEDIA: StoredMedia = { artifacts: [], unavailable: [] };
@@ -851,13 +855,17 @@ const VOICE_TRANSCRIBE_BUDGET_MS = 20_000;
  */
 const ROSTER_TIME_SKEW_MS = 5 * 60_000;
 
-/** Download provider-held files into thread artifacts, then transcribe voice notes. */
+/**
+ * Download provider-held files into thread artifacts, copying each into the bot's computer when
+ * that is on, then transcribe voice notes.
+ */
 async function storeInboundMedia(
   deps: MessagingInboundDeps,
   ids: ProvisionedMessagingIdentity,
   event: MessagingInboundMessage,
   downloadDeadline: number,
 ) {
+  const arrivalCopy = deps.arrivalCopy;
   const { stored, unavailable } = await storeInboundAttachments(
     deps.storeAttachment,
     ids,
@@ -868,7 +876,18 @@ async function storeInboundMedia(
       downloadDeadline,
       downloadTimeoutMs: DIRECT_ATTACHMENT_TIMEOUT_MS,
       attempts: DIRECT_ATTACHMENT_ATTEMPTS,
+      // The sender's display name, else their raw id.
+      sender: event.fromLabel?.trim() || event.from,
       reasons: true,
+      // Each file is in the computer before the bot is told of it.
+      ...(arrivalCopy
+        ? {
+            onStored: (artifact: { computerPath?: string | null }, bytes: Uint8Array) =>
+              copyOnArrival(arrivalCopy, ids, [
+                { computerPath: artifact.computerPath ?? null, bytes },
+              ]),
+          }
+        : {}),
     },
   );
   // Transcribe only after every download, so a slow transcription cannot use up the
