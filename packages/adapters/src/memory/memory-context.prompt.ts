@@ -34,13 +34,7 @@ export function buildAgentMemoryPrompt(
   };
   if (input.length === 0) return { plan };
 
-  const documents = [...input].sort(
-    (left, right) =>
-      memoryTimestamp(right.updatedAt) - memoryTimestamp(left.updatedAt) ||
-      right.revision - left.revision ||
-      left.scope.localeCompare(right.scope) ||
-      left.path.localeCompare(right.path),
-  );
+  const documents = [...input].sort(compareMemoryDocuments);
 
   const fixedBytes = byteLength(PREAMBLE) + byteLength(CLOSING);
   if (maxBytes <= fixedBytes) {
@@ -109,6 +103,39 @@ function leaveOut(document: MemoryPromptDocument): MemoryPromptDocumentUse {
     includedBytes: 0,
     truncated: false,
   };
+}
+
+/**
+ * A bot's own memory outranks shared memory: however often shared documents
+ * change, the bot still sees its private notes, so they can never be evicted
+ * by a wave of shared edits. The memory index leads its scope, and within a
+ * scope documents keep recency order (newest first, then revision, then path,
+ * then content) so shared documents stay useful and every ordering stays
+ * deterministic.
+ */
+function compareMemoryDocuments(left: MemoryPromptDocument, right: MemoryPromptDocument): number {
+  return (
+    scopeRank(left) - scopeRank(right) ||
+    indexRank(left) - indexRank(right) ||
+    memoryTimestamp(right.updatedAt) - memoryTimestamp(left.updatedAt) ||
+    right.revision - left.revision ||
+    left.path.localeCompare(right.path) ||
+    compareContent(left.content, right.content)
+  );
+}
+
+function scopeRank(document: MemoryPromptDocument): number {
+  return document.scope === "bot" ? 0 : 1;
+}
+
+function indexRank(document: MemoryPromptDocument): number {
+  return document.path === MEMORY_INDEX_PATH ? 0 : 1;
+}
+
+/** Code-unit tie-break, so duplicate keys order the same in every locale. */
+function compareContent(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 function memoryTimestamp(updatedAt: string | undefined): number {

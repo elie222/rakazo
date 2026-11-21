@@ -321,7 +321,7 @@ export function useComputerControls({
     if (computer?.botId !== id) {
       setScreenUrlLoadedBotId(null);
       commitComputer(targetComputer);
-      setScreenUrl(targetScreen);
+      setScreenUrl(targetScreen, id);
     }
     // Reopening during a boot shows it; a second boot would be refused as busy.
     const bootInFlight = bootsInFlight.current.has(id) || targetComputer?.state === "booting";

@@ -1760,6 +1760,40 @@ it("opens a connection's page with its models, then a model's page, and goes bac
   }
 });
 
+it("saves a connection opened from Providers without making it the main model", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
+  models.probeOpenAiCompatible.mockResolvedValue({ models: ["model-a", "model-b"] });
+  models.list.mockResolvedValue([deepseekEntry, compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    deepseekCredential,
+    { ...compatibleCredential, isDefault: false },
+  ]);
+  const view = await renderSettings();
+  try {
+    const row = [...providersSection().querySelectorAll('[data-testid="provider-row-name"]')]
+      .map((entry) => entry.textContent)
+      .find((name) => name?.includes("Local"));
+    await openProvider(row ?? "");
+    await act(async () =>
+      vi.waitFor(() => expect(models.probeOpenAiCompatible).toHaveBeenCalled()),
+    );
+    await act(async () => {
+      modelCheckbox(view.container, "model-b").click();
+    });
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai-compatible",
+        credentialId: "cred-compatible",
+        enabledModelIds: ["model-b"],
+        makeDefault: false,
+      }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("replaces one connection's key and disconnects only that connection", async () => {
   models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
   const view = await renderSettings();
