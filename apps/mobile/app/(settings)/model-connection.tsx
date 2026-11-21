@@ -4,11 +4,12 @@ import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
-  connectionDisplayName,
   matchCompatibleEndpointPreset,
+  modelConnectionNames,
   modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -24,6 +25,7 @@ import {
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -280,10 +282,10 @@ export default function ModelConnection() {
     }, [cancelInFlightWork, load]),
   );
 
-  const providerName = selected?.providerName ?? selected?.provider ?? "";
+  const selectedEntry = localizeModelEntry(selected ?? { provider, providerName: "" });
   const selectedProviderLabel = credential
-    ? connectionDisplayName(credential, providerName)
-    : (endpointPreset?.name ?? providerName);
+    ? modelConnectionNames(selectedEntry, credential).connectionName
+    : (endpointPreset?.name ?? providerDisplayName(selectedEntry));
   useScreenHeader({ title: selectedProviderLabel || undefined });
   const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
     selected?.routingFields,

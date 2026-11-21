@@ -40,7 +40,20 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   await expect(section.getByText("Planning Notes", { exact: true })).toBeVisible();
   // A skill pack has nothing to connect, so it is offered under Skills instead.
   await expect(dialog.getByText("Review Kit", { exact: true })).toHaveCount(0);
+  const heading = dialog.getByRole("heading", { name: "Integrations", exact: true });
+  const addCustom = dialog.getByRole("button", { name: "Add custom", exact: true });
+  const headingBox = await heading.boundingBox();
+  const addBox = await addCustom.boundingBox();
+  expect(Math.abs(headingBox!.y - addBox!.y)).toBeLessThan(32);
   await captureScreenshot(page, testInfo, "integrations-plugins");
+  const originalViewport = page.viewportSize();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const close = dialog.getByRole("button", { name: "Close integrations", exact: true });
+  await expect(close).toBeInViewport();
+  await expect(dialog.getByRole("button", { name: "Add custom", exact: true })).toBeInViewport();
+  await captureScreenshot(page, testInfo, "integrations-narrow-header");
+  if (originalViewport) await page.setViewportSize(originalViewport);
+
   await dialog.getByRole("textbox", { name: "Search apps", exact: true }).fill("planning");
   const row = dialog.getByTestId("plugin-results").getByTestId("plugin-row");
   await expect(row).toHaveCount(1);

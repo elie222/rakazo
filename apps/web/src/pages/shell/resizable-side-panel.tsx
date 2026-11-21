@@ -36,11 +36,14 @@ export function ResizableSidePanel({
   panel,
   children,
   onCoversChat,
+  onOverlays,
 }: {
   open: boolean;
   panel: string;
   /** Tells the shell when the open panel covers nearly all of the chat, so it can make the chat inert. */
   onCoversChat?: (covers: boolean) => void;
+  /** Tells the shell when the open panel floats over the chat instead of sitting beside it. */
+  onOverlays?: (overlays: boolean) => void;
   children: ReactNode;
 }) {
   const listWidth = useBotsSidebarWidth();
@@ -83,6 +86,11 @@ export function ResizableSidePanel({
     onCoversChat?.(covering);
     return () => onCoversChat?.(false);
   }, [covering, onCoversChat]);
+  const overlays = open && overlay;
+  useEffect(() => {
+    onOverlays?.(overlays);
+    return () => onOverlays?.(false);
+  }, [overlays, onOverlays]);
   useEventListener(window, "resize", () => setViewportWidth(window.innerWidth));
 
   function stopDrag(event: PointerEvent<HTMLHRElement>) {
