@@ -1,6 +1,7 @@
 import {
   SandboxDamagedError,
   SandboxDiskTooLargeError,
+  SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
@@ -516,6 +517,7 @@ export async function retryRunSetup(
   // offline, is retried like any setup failure, but is not a Rakazo bug to report.
   const providerOutage =
     setupError instanceof SandboxUnavailableError ||
+    setupError instanceof SandboxRateLimitError ||
     setupError instanceof SandboxUnresponsiveError ||
     setupError instanceof PausedTurnToolsUnavailableError ||
     setupError instanceof PausedTurnModelUnlistedError ||
