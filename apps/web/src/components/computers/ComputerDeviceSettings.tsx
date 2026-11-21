@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
-import { Button, Label, Switch } from "@rakazo/ui-web";
+import { Button, Switch } from "@rakazo/ui-web";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useId } from "react";
@@ -105,11 +105,8 @@ export function ComputerDeviceSettings() {
         </p>
       ) : thisComputer ? (
         <SettingsRow
-          label={
-            <Label htmlFor={switchId} className="text-body font-normal text-foreground">
-              <Trans>Let bots use this computer</Trans>
-            </Label>
-          }
+          htmlFor={switchId}
+          label={<Trans>Let bots use this computer</Trans>}
           control={
             <Switch
               id={switchId}

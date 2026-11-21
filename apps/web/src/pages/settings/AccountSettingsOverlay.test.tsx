@@ -20,6 +20,9 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 
 vi.mock("@rakazo/ui-web", async (importOriginal) => ({
+  FieldContent: (props: React.ComponentProps<"div">) => <div {...props} />,
+  FieldTitle: (props: React.ComponentProps<"div">) => <div {...props} />,
+  FieldDescription: (props: React.ComponentProps<"p">) => <p {...props} />,
   BotAvatar: () => null,
   Button: ({ children, ...props }: React.ComponentProps<"button">) => (
     <button type="button" {...props}>

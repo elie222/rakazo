@@ -26,12 +26,12 @@ afterEach(async () => {
   host.remove();
 });
 
-async function render(path: string, enabled: boolean) {
+async function render(path: string, boardEnabled: boolean) {
   await act(async () =>
     root.render(
       <MemoryRouter key={path} initialEntries={[path]}>
         <Routes>
-          <Route element={<AppRailLayout enabled={enabled} />}>
+          <Route element={<AppRailLayout boardEnabled={boardEnabled} />}>
             <Route path="/app" element={<p>chats</p>} />
             <Route path="/app/board" element={<p>board</p>} />
           </Route>
@@ -58,8 +58,10 @@ it("marks the section on screen", async () => {
   expect(current()).toBe("Board");
 });
 
-it("leaves the page alone when the board is off", async () => {
+it("keeps the rail but leaves Board out when the board is off", async () => {
   await render("/app", false);
   expect(host.textContent).toContain("chats");
-  expect(host.querySelector('[data-testid="app-rail"]')).toBeNull();
+  expect(host.querySelector('[data-testid="app-rail"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="app-rail"] [aria-label="Board"]')).toBeNull();
+  expect(current()).toBe("Chats");
 });

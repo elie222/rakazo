@@ -88,6 +88,79 @@
   }
 }
 
+/* Sidebar rows share one hover grammar: at rest only the title shows; hovering or focusing
+   fades the actions in over the row's end and masks the title underneath them. */
+@utility row-reveal-action {
+  opacity: 0;
+  scale: 0.92;
+  pointer-events: none;
+  transition:
+    opacity var(--motion-micro) var(--ease-standard),
+    scale var(--motion-floating) var(--ease-out);
+}
+
+[data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"]))
+  > .row-reveal-action {
+  opacity: 1;
+  scale: 1;
+  pointer-events: auto;
+}
+
+[data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"])):has(
+    > .row-reveal-action
+  )
+  > [data-slot="list-row-link"]
+  > [data-slot="list-row-content"] {
+  -webkit-mask-image: linear-gradient(
+    to left,
+    transparent var(--row-reveal-fade, 32px),
+    var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
+  );
+  mask-image: linear-gradient(
+    to left,
+    transparent var(--row-reveal-fade, 32px),
+    var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
+  );
+}
+
+[dir="rtl"]
+  [data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"])):has(
+    > .row-reveal-action
+  )
+  > [data-slot="list-row-link"]
+  > [data-slot="list-row-content"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent var(--row-reveal-fade, 32px),
+    var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent var(--row-reveal-fade, 32px),
+    var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
+  );
+}
+
+@media (hover: none) {
+  /* Touch has no hover to reveal the actions, so they stay visible and the row reserves their
+     width; without the reservation they would cover the time and unread dot at the end. */
+  [data-slot="list-row"] > .row-reveal-action {
+    opacity: 1;
+    scale: 1;
+    pointer-events: auto;
+  }
+
+  [data-slot="list-row"]:has(> .row-reveal-action) > [data-slot="list-row-link"] {
+    padding-inline-end: 2.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-reveal-action {
+    transition: none;
+  }
+}
+
 /* scroll-fade */
 @property --scroll-fade-t {
   syntax: "<length-percentage>";
@@ -173,8 +246,8 @@
   --scroll-fade-block: linear-gradient(
     to bottom,
     transparent 0,
-    #000 var(--scroll-fade-t, 0px),
-    #000 calc(100% - var(--scroll-fade-b, 0px)),
+    var(--foreground) var(--scroll-fade-t, 0px),
+    var(--foreground) calc(100% - var(--scroll-fade-b, 0px)),
     transparent 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
@@ -213,8 +286,8 @@
   --scroll-fade-block: linear-gradient(
     to bottom,
     transparent 0,
-    #000 var(--scroll-fade-t, 0px),
-    #000 calc(100% - var(--scroll-fade-b, 0px)),
+    var(--foreground) var(--scroll-fade-t, 0px),
+    var(--foreground) calc(100% - var(--scroll-fade-b, 0px)),
     transparent 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
@@ -253,16 +326,16 @@
   --scroll-fade-inline: linear-gradient(
     to right,
     transparent 0,
-    #000 var(--scroll-fade-s, 0px),
-    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    var(--foreground) var(--scroll-fade-s, 0px),
+    var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
     transparent 100%
   );
   &:where([dir="rtl"], [dir="rtl"] *) {
     --scroll-fade-inline: linear-gradient(
       to left,
       transparent 0,
-      #000 var(--scroll-fade-s, 0px),
-      #000 calc(100% - var(--scroll-fade-e, 0px)),
+      var(--foreground) var(--scroll-fade-s, 0px),
+      var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
       transparent 100%
     );
   }
@@ -298,8 +371,8 @@
   --scroll-fade-mask: linear-gradient(
     to bottom,
     transparent 0,
-    #000 var(--scroll-fade-t, 0px),
-    #000 100%
+    var(--foreground) var(--scroll-fade-t, 0px),
+    var(--foreground) 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask);
   mask-image: var(--scroll-fade-mask);
@@ -327,8 +400,8 @@
   );
   --scroll-fade-mask: linear-gradient(
     to bottom,
-    #000 0,
-    #000 calc(100% - var(--scroll-fade-b, 0px)),
+    var(--foreground) 0,
+    var(--foreground) calc(100% - var(--scroll-fade-b, 0px)),
     transparent 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask);
@@ -358,8 +431,8 @@
   --scroll-fade-mask: linear-gradient(
     to right,
     transparent 0,
-    #000 var(--scroll-fade-s, 0px),
-    #000 100%
+    var(--foreground) var(--scroll-fade-s, 0px),
+    var(--foreground) 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask);
   mask-image: var(--scroll-fade-mask);
@@ -387,8 +460,8 @@
   );
   --scroll-fade-mask: linear-gradient(
     to right,
-    #000 0,
-    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    var(--foreground) 0,
+    var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
     transparent 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask);
@@ -418,15 +491,15 @@
   --scroll-fade-mask: linear-gradient(
     to right,
     transparent 0,
-    #000 var(--scroll-fade-s, 0px),
-    #000 100%
+    var(--foreground) var(--scroll-fade-s, 0px),
+    var(--foreground) 100%
   );
   &:where([dir="rtl"], [dir="rtl"] *) {
     --scroll-fade-mask: linear-gradient(
       to left,
       transparent 0,
-      #000 var(--scroll-fade-s, 0px),
-      #000 100%
+      var(--foreground) var(--scroll-fade-s, 0px),
+      var(--foreground) 100%
     );
   }
   -webkit-mask-image: var(--scroll-fade-mask);
@@ -455,15 +528,15 @@
   );
   --scroll-fade-mask: linear-gradient(
     to right,
-    #000 0,
-    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    var(--foreground) 0,
+    var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
     transparent 100%
   );
   &:where([dir="rtl"], [dir="rtl"] *) {
     --scroll-fade-mask: linear-gradient(
       to left,
-      #000 0,
-      #000 calc(100% - var(--scroll-fade-e, 0px)),
+      var(--foreground) 0,
+      var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
       transparent 100%
     );
   }

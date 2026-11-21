@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { LabFeature } from "@rakazo/contracts";
 import { withLab } from "@rakazo/contracts";
-import { Label, Switch } from "@rakazo/ui-web";
+import { Switch } from "@rakazo/ui-web";
 import { useId } from "react";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { useSave } from "../../lib/query/query";
@@ -30,22 +30,10 @@ export function LabsSettingsPanel({
         {available.map((feature) => (
           <SettingsRow
             key={feature}
-            label={
-              <>
-                <Label
-                  htmlFor={`${id}-${feature}`}
-                  className="text-body font-normal text-foreground"
-                >
-                  {copy[feature].title}
-                </Label>
-                <p
-                  id={`${id}-${feature}-description`}
-                  className="mt-0.5 text-body-sm text-muted-foreground"
-                >
-                  {copy[feature].description}
-                </p>
-              </>
-            }
+            htmlFor={`${id}-${feature}`}
+            label={copy[feature].title}
+            description={copy[feature].description}
+            descriptionId={`${id}-${feature}-description`}
             control={
               <Switch
                 id={`${id}-${feature}`}

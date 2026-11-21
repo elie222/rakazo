@@ -8,10 +8,12 @@ import { PageLoading } from "../components/PageLoading";
 import { WindowChrome } from "../components/WindowChrome";
 import { desktopBridge } from "../lib/platform/desktop";
 import { rpc } from "../lib/query/rpc";
+import { useAppRail } from "./shell/app-rail";
 
 export function NavLinkPage() {
   const { t } = useLingui();
   const { linkId } = useParams();
+  const rail = useAppRail();
   // The desktop renderer is not served from the deployment's origin, so the path would miss.
   const desktop = Boolean(desktopBridge());
   const me = useQuery({
@@ -26,7 +28,7 @@ export function NavLinkPage() {
   if (!link) return <Navigate to="/app" replace />;
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
-      <WindowChrome />
+      <WindowChrome className={rail ? "md:hidden" : undefined} />
       <header className="flex items-center gap-3 border-b px-4 py-3">
         <Link
           to="/app"

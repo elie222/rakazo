@@ -722,7 +722,7 @@ const ComposerBody = memo(function Composer({
         ref={composerBarRef}
         data-testid="composer-bar"
         data-expanded={expanded}
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
+        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-[border-color,box-shadow] focus-within:border-input focus-within:shadow-control ${
           docked ? "bg-card" : "bg-background dark:bg-card"
         } ${
           expanded
@@ -924,6 +924,7 @@ const ComposerBody = memo(function Composer({
           running={running}
           showTalk={Boolean(phoneCallsEnabled) && draft.trim().length === 0}
           talkDisabled={disabled || onCall}
+          sending={sending}
           sendDisabled={sending || !canSend || disabled}
           stopDisabled={sending}
           sendColors={sendColors}

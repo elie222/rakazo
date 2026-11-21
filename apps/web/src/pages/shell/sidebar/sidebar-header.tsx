@@ -1,11 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
-import { Bell, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
+import { Bell, PanelLeftClose, Plus, Search, X } from "lucide-react";
 import { IconTooltip } from "../../../components/IconTooltip";
 import { WindowChrome } from "../../../components/WindowChrome";
 import { desktopBridge } from "../../../lib/platform/desktop";
-import { useAppRail } from "../app-rail";
 import { BotCreatePicker } from "../bots/bot-picker";
 import type { Panel } from "../right-panel-state";
 
@@ -13,119 +12,89 @@ import type { Panel } from "../right-panel-state";
 const ICON = "size-4.5";
 const STROKE = 1.75;
 
+/**
+ * The secondary list's header: the current destination, search, create, and the control
+ * that gives the list back to the page. The primary rail owns the window controls.
+ */
 export function SidebarHeader({
-  mini = false,
+  title,
+  isMobile,
+  activityMode,
+  onToggleActivity,
   createMenuOpen,
   setCreateMenuOpen,
-  activityMode,
-  toggleActivityMode,
   searchOpen = false,
   onSearch,
-  setBotsSidebarCollapsedPref,
+  onCollapse,
+  onCloseMobile,
   bots,
-  setMobileSidebarOpen,
   setPanel,
   navigate,
   setNewSpaceOpen,
   setCreateBotOpen,
 }: {
-  mini?: boolean;
+  title: string;
+  isMobile: boolean;
+  activityMode: boolean;
+  onToggleActivity: () => void;
   createMenuOpen: boolean;
   setCreateMenuOpen: (open: boolean) => void;
-  activityMode: boolean;
-  toggleActivityMode: () => void;
   searchOpen?: boolean;
   onSearch?: () => void;
-  setBotsSidebarCollapsedPref: (collapsed: boolean) => void;
+  onCollapse: () => void;
+  onCloseMobile: () => void;
   bots: Bot[];
-  setMobileSidebarOpen: (open: boolean) => void;
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
   setCreateBotOpen: (open: boolean) => void;
 }) {
   const { t } = useLingui();
-  const hasWindowChrome = Boolean(desktopBridge());
-  // The rail holds the window controls from md up; the phone drawer still needs them.
-  const rail = useAppRail();
-  const toggleLabel = mini ? t`Show bots` : t`Minimize bots`;
-  // In the icon rail the actions stack, so a label above or below covers its neighbour.
-  const labelSide = mini ? "inline-end" : undefined;
-  // In the rail the buttons share the bot tiles' box, so hover shapes line up.
-  const railTile = mini ? "size-12 rounded-xl" : "";
-  const toggle = (
-    <IconTooltip label={toggleLabel} side={labelSide}>
-      <Button
-        variant="ghost"
-        size="icon"
-        className={`app-no-drag hidden text-muted-foreground md:inline-flex ${railTile}`}
-        aria-label={toggleLabel}
-        data-testid={mini ? "restore-bots-sidebar" : "minimize-bots-sidebar"}
-        onClick={() => setBotsSidebarCollapsedPref(!mini)}
-      >
-        {mini ? (
-          <PanelLeftOpen className={ICON} strokeWidth={STROKE} aria-hidden="true" />
-        ) : (
-          <PanelLeftClose className={ICON} strokeWidth={STROKE} aria-hidden="true" />
-        )}
-      </Button>
-    </IconTooltip>
-  );
   return (
-    <div
-      className={`app-drag flex items-center ${mini ? `flex-col gap-1 px-0 pb-3 ${hasWindowChrome && !rail ? "pt-4" : "pt-2"}` : "justify-between px-3 pb-3 pt-[14px]"}`}
-    >
-      <div className={`flex items-center ${mini ? "flex-col gap-2" : "gap-2"}`}>
-        {hasWindowChrome ? <WindowChrome className={rail ? "md:hidden" : undefined} /> : null}
-        {toggle}
-      </div>
-      {/* Fits beside the macOS window controls at the narrowest sidebar width. */}
-      <div className={`relative flex items-center ${mini ? "flex-col gap-1" : "gap-0.5"}`}>
-        {onSearch && !mini ? (
-          <IconTooltip label={t`Search`} side={labelSide}>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t`Search`}
-              aria-pressed={searchOpen}
-              data-testid="sidebar-search-trigger"
-              onClick={onSearch}
-              className="app-no-drag text-muted-foreground"
-            >
-              <Search className={ICON} strokeWidth={STROKE} aria-hidden="true" />
-            </Button>
-          </IconTooltip>
-        ) : null}
-        {mini ? null : (
-          <IconTooltip label={t`Activity`} side={labelSide}>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t`Activity`}
-              aria-pressed={activityMode}
-              data-activity-mode={activityMode ? "on" : "off"}
-              onClick={toggleActivityMode}
-              className={`app-no-drag ${activityMode ? "bg-accent text-foreground" : "text-muted-foreground"}`}
-            >
-              {/* A filled bell marks Activity on, so on and hovered never look alike. */}
-              <Bell
-                className={ICON}
-                strokeWidth={STROKE}
-                fill={activityMode ? "currentColor" : "none"}
-                aria-hidden="true"
-              />
-            </Button>
-          </IconTooltip>
-        )}
+    <div className="app-drag flex h-15 shrink-0 items-center gap-1.5 px-3 pb-3 pt-[14px]">
+      {isMobile && desktopBridge() ? <WindowChrome /> : null}
+      <span className="min-w-0 flex-1 truncate text-body-lg font-medium">{title}</span>
+      {isMobile ? (
+        <IconTooltip label={t`Activity`} side="inline-end">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t`Activity`}
+            aria-pressed={activityMode}
+            data-activity-mode={activityMode ? "on" : "off"}
+            onClick={onToggleActivity}
+            className="app-no-drag text-muted-foreground"
+          >
+            <Bell
+              className={ICON}
+              strokeWidth={STROKE}
+              fill={activityMode ? "currentColor" : "none"}
+              aria-hidden="true"
+            />
+          </Button>
+        </IconTooltip>
+      ) : null}
+      {onSearch ? (
+        <IconTooltip label={activityMode ? t`Search runs` : t`Search`} side="inline-end">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={activityMode ? t`Search runs` : t`Search`}
+            aria-pressed={searchOpen}
+            data-testid="sidebar-search-trigger"
+            onClick={onSearch}
+            className="app-no-drag text-muted-foreground"
+          >
+            <Search className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          </Button>
+        </IconTooltip>
+      ) : null}
+      {!activityMode ? (
         <Popover open={createMenuOpen} onOpenChange={setCreateMenuOpen}>
-          <IconTooltip label={t`Create`} side={labelSide}>
+          <IconTooltip label={t`Create`} side="inline-end">
             <PopoverTrigger
               render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`app-no-drag text-muted-foreground ${railTile}`}
-                />
+                <Button variant="ghost" size="icon" className="app-no-drag text-muted-foreground" />
               }
               aria-label={t`Create`}
               data-testid="create-menu-trigger"
@@ -143,29 +112,44 @@ export function SidebarHeader({
                 bots={bots}
                 onCreateBot={() => {
                   setCreateMenuOpen(false);
-                  setMobileSidebarOpen(false);
+                  if (isMobile) onCloseMobile();
                   setCreateBotOpen(true);
                 }}
                 onOpenBot={(id) => {
                   setCreateMenuOpen(false);
-                  setMobileSidebarOpen(false);
+                  if (isMobile) onCloseMobile();
                   navigate(`/app/${id}`);
                 }}
                 onCreateGroup={() => {
                   setCreateMenuOpen(false);
-                  setMobileSidebarOpen(false);
+                  if (isMobile) onCloseMobile();
                   setPanel("create-group");
                 }}
                 onCreateSpace={() => {
                   setCreateMenuOpen(false);
-                  setMobileSidebarOpen(false);
+                  if (isMobile) onCloseMobile();
                   setNewSpaceOpen(true);
                 }}
               />
             </PopoverContent>
           ) : null}
         </Popover>
-      </div>
+      ) : null}
+      <IconTooltip label={isMobile ? t`Close navigation` : t`Hide chat list`} side="inline-end">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={isMobile ? t`Close navigation` : t`Hide chat list`}
+          onClick={isMobile ? onCloseMobile : onCollapse}
+          className="app-no-drag text-muted-foreground"
+        >
+          {isMobile ? (
+            <X className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          ) : (
+            <PanelLeftClose className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          )}
+        </Button>
+      </IconTooltip>
     </div>
   );
 }

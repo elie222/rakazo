@@ -32,6 +32,16 @@ vi.mock("@rakazo/ui-web", () => {
     GroupAvatar: () => <i data-avatar="group" />,
     Input: () => null,
     Label: Container,
+    ListRow: ({ children, actions }: { children?: ReactNode; actions?: ReactNode }) => (
+      <div>
+        {children}
+        {actions}
+      </div>
+    ),
+    ListRowLink: ({
+      render: _render,
+      ...props
+    }: ComponentProps<"button"> & { render?: ReactNode }) => <button type="button" {...props} />,
     OptionSelect: () => null,
     SectionHeading: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,

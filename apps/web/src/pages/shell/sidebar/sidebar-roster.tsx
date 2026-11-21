@@ -12,7 +12,15 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
+  cn,
   GroupAvatar,
+  ListRow,
+  ListRowAvatar,
+  ListRowContent,
+  ListRowDescription,
+  ListRowLink,
+  ListRowTitle,
+  RowActions,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -35,7 +43,7 @@ import {
 } from "../../../lib/chat/roster-status";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
 import type { ChatMenuState } from "../chat/chat-context-menu";
-import { ChatMenu } from "../chat/chat-context-menu";
+import { ChatMenu, ChatRowMenu } from "../chat/chat-context-menu";
 import { useRedrawAtMidnight } from "../chat/use-redraw-at-midnight";
 import type { RosterDropAction, RosterDropTarget } from "./roster-drop";
 import type { sidebarGroupsForSpaces } from "./space-sidebar";
@@ -336,7 +344,7 @@ export function SidebarRoster({
                   );
                 const chatTrigger = (
                   <ContextMenuTrigger
-                    render={<button type="button" />}
+                    render={<ListRowLink render={<button type="button" />} />}
                     draggable={item.kind === "bot"}
                     data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
                     data-roster-unread={item.chat.unread ? "true" : undefined}
@@ -405,17 +413,14 @@ export function SidebarRoster({
                     }}
                     // Focus the row so closing the menu returns focus here.
                     onContextMenu={(event) => event.currentTarget.focus()}
-                    className={`flex items-center ${
+                    className={cn(
+                      "text-start",
                       mini
-                        ? "mx-auto size-12 justify-center rounded-xl"
+                        ? "mx-auto min-h-12 size-12 justify-center rounded-xl"
                         : compact
-                          ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
-                          : "w-full gap-3 rounded-xl px-2.5 py-[10px]"
-                    } text-start ${
-                      selected || rosterDropKey === rowDropKey
-                        ? "bg-sidebar-accent"
-                        : "group-hover/row:bg-accent"
-                    }`}
+                          ? "min-h-11 gap-2 px-2.5 py-1.5"
+                          : "gap-3 px-2.5",
+                    )}
                   >
                     {mini ? (
                       <span className="relative shrink-0">
@@ -451,21 +456,22 @@ export function SidebarRoster({
                         ) : null}
                       </span>
                     ) : (
-                      avatar
+                      <ListRowAvatar className={compact ? "size-7" : undefined}>
+                        {avatar}
+                      </ListRowAvatar>
                     )}
                     {!mini ? (
-                      <div className="min-w-0 flex-1">
+                      <ListRowContent>
                         <div className="flex items-center justify-between gap-1.5">
                           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                            <span
+                            <ListRowTitle
                               dir="auto"
                               data-roster-bot-name={item.kind === "bot" ? "" : undefined}
-                              className={`max-w-full shrink-0 truncate text-body-sm text-foreground ${
-                                item.chat.unread ? "font-semibold" : "font-medium"
-                              }`}
+                              unread={item.chat.unread}
+                              className="max-w-full shrink-0 text-body-sm text-foreground"
                             >
                               {item.chat.name}
-                            </span>
+                            </ListRowTitle>
                             {item.chat.unread ? (
                               <span className="sr-only">
                                 <Trans> (unread)</Trans>
@@ -521,10 +527,10 @@ export function SidebarRoster({
                             </div>
                           ) : null
                         ) : (
-                          <div
+                          <ListRowDescription
                             dir="auto"
                             data-roster-preview={!workStatusLabel ? "true" : undefined}
-                            className={`mt-1 truncate text-label ${
+                            className={`mt-1 ${
                               workStatusLabel
                                 ? "font-semibold text-status-working"
                                 : item.chat.unread
@@ -533,19 +539,36 @@ export function SidebarRoster({
                             }`}
                           >
                             {rosterLine}
-                          </div>
+                          </ListRowDescription>
                         )}
-                      </div>
+                      </ListRowContent>
                     ) : null}
                   </ContextMenuTrigger>
                 );
                 return (
-                  <div
+                  <ListRow
                     key={`${item.kind}:${item.chat.id}`}
-                    className="group/row relative"
-                    style={{
-                      opacity: item.kind === "bot" && draggedBotId === item.chat.id ? 0.55 : 1,
-                    }}
+                    active={selected || rosterDropKey === rowDropKey}
+                    current={selected}
+                    data-flip-key={`${item.kind}:${item.chat.id}`}
+                    className={cn(
+                      "group/row",
+                      mini && "mx-auto w-12 rounded-xl",
+                      item.kind === "bot" && draggedBotId === item.chat.id && "opacity-55",
+                    )}
+                    actions={
+                      mini || item.chat.spaceId !== bootstrapMe?.spaceId ? undefined : (
+                        <RowActions>
+                          <ChatRowMenu
+                            target={{ kind: item.kind, id: item.chat.id }}
+                            state={chatMenu}
+                            label={t`Actions for ${item.chat.name}`}
+                          >
+                            <MoreHorizontal />
+                          </ChatRowMenu>
+                        </RowActions>
+                      )
+                    }
                   >
                     <ChatMenu
                       target={{ kind: item.kind, id: item.chat.id }}
@@ -602,7 +625,7 @@ export function SidebarRoster({
                         chatTrigger
                       )}
                     </ChatMenu>
-                  </div>
+                  </ListRow>
                 );
               })}
             </CollapsibleContent>

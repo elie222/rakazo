@@ -92,7 +92,7 @@ it("opens the chat menu on bot and group results only, for chats in the roster",
         chatMenu={{
           menu,
           setMenu,
-          content: (
+          content: () => (
             <ContextMenuContent>
               <ContextMenuItem>Pin {menu?.id}</ContextMenuItem>
             </ContextMenuContent>
@@ -112,11 +112,11 @@ it("opens the chat menu on bot and group results only, for chats in the roster",
   };
 
   expect(await rightClick(0)).toBe(true);
-  expect(open).toEqual({ kind: "bot", id: "bot-1" });
+  expect(open).toEqual({ kind: "bot", id: "bot-1", via: "context" });
   expect(document.querySelector('[role="menuitem"]')?.textContent).toBe("Pin bot-1");
 
   expect(await rightClick(1)).toBe(true);
-  expect(open).toEqual({ kind: "group", id: "group-1" });
+  expect(open).toEqual({ kind: "group", id: "group-1", via: "context" });
   await act(async () =>
     document.activeElement?.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),

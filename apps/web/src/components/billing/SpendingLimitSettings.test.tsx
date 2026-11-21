@@ -36,6 +36,15 @@ vi.mock("@rakazo/ui-web", async () => {
   };
   const Choices = createContext<Choice | null>(null);
   return {
+    Field: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldContent: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldLabel: ({ children, htmlFor }: { children?: React.ReactNode; htmlFor?: string }) => (
+      <label htmlFor={htmlFor}>{children}</label>
+    ),
+    FieldTitle: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldDescription: ({ children, id }: { children?: React.ReactNode; id?: string }) => (
+      <p id={id}>{children}</p>
+    ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     Button: ({
       variant: _variant,

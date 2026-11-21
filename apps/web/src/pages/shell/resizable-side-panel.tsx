@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useEventListener } from "../../lib/use-event-listener";
+import { useAppRailMetrics } from "./app-rail";
 import { isComposingKey } from "./shell-shortcuts";
 import { useBotsSidebarWidth } from "./sidebar/sidebar-layout";
 
@@ -49,9 +50,13 @@ export function ResizableSidePanel({
   onEscape?: () => void;
   children: ReactNode;
 }) {
-  const reservedLeadingPx = useBotsSidebarWidth();
+  const listWidth = useBotsSidebarWidth();
+  const { listCollapsed, railWidth } = useAppRailMetrics();
   const [preferredWidth, setPreferredWidth] = useState(readPreferredWidth);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const belowMd = viewportWidth < MD_BREAKPOINT;
+  // The rail and an open list are both in front of the chat; a collapsed list takes no room.
+  const reservedLeadingPx = belowMd ? 0 : railWidth + (listCollapsed ? 0 : listWidth);
   const maxWidth = maximumWidth(reservedLeadingPx, viewportWidth);
   const overlay = viewportWidth - reservedLeadingPx < MIN_CHAT_WIDTH + MIN_WIDTH;
   const [dragging, setDragging] = useState(false);
@@ -71,7 +76,6 @@ export function ResizableSidePanel({
     setViewportWidth(window.innerWidth);
   }, []);
 
-  const belowMd = viewportWidth < MD_BREAKPOINT;
   const chatWidth = belowMd ? viewportWidth : viewportWidth - reservedLeadingPx;
   const panelWidth = belowMd ? Math.min(viewportWidth, MOBILE_PANEL_MAX_WIDTH) : width;
   const opener = useRef<Element | null>(null);

@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { describe, expect, it } from "vitest";
-import { buttonVariants } from "./components/ui/button.js";
+import { Button, buttonVariants } from "./components/ui/button.js";
 import { cn } from "./lib/utils.js";
 
 describe("buttonVariants", () => {
@@ -12,4 +15,15 @@ describe("buttonVariants", () => {
       expect(classes.filter((name) => /^rounded-(?!full$)/.test(name))).toEqual([]);
     },
   );
+});
+
+describe("Button", () => {
+  it("announces its loading state through the spinner's live status", () => {
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    act(() => root.render(<Button loading>Send</Button>));
+    expect(host.querySelector("button")?.getAttribute("aria-busy")).toBe("true");
+    expect(host.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe("Loading");
+    act(() => root.unmount());
+  });
 });

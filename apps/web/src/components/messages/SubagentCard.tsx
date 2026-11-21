@@ -43,7 +43,7 @@ export function SubagentCard({
         setOpen(next);
       }}
       data-testid="subagent-card"
-      className="w-[420px] max-w-full rounded-[18px] border border-border bg-muted px-[18px] py-4"
+      className="w-[420px] max-w-full rounded-xl border border-border bg-muted p-4 shadow-control"
     >
       <CollapsibleTrigger className="block w-full min-w-0 cursor-pointer rounded-md text-start outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-muted">
         <span className="flex items-center justify-between gap-3">

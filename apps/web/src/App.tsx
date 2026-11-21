@@ -21,6 +21,7 @@ import { CallLayout } from "./components/call/CallLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarkdownLinkPrompt } from "./components/messages/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
+import { RouteLoading } from "./components/RouteLoading";
 import { authClient } from "./lib/auth/auth";
 import { hasSignedInBefore, rememberSignedIn } from "./lib/auth/returning-user";
 import {
@@ -190,7 +191,7 @@ function SessionApp() {
       <AiDataConsentPrompt key={user?.id ?? "anonymous"} />
       <MarkdownLinkPrompt>
         <div className="h-full" data-rakazo-app-state="ready">
-          <Suspense fallback={<PageLoading />}>
+          <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route
                 path="/"
@@ -329,7 +330,7 @@ function SessionApp() {
                   )
                 }
               >
-                <Route element={<AppRailLayout enabled={boardEnabled} />}>
+                <Route element={<AppRailLayout boardEnabled={boardEnabled} />}>
                   <Route path="/app" element={<ShellPage />} />
                   <Route path="/app/g/:groupId" element={<ShellPage />} />
                   <Route path="/app/:botId" element={<ShellPage />} />
@@ -338,12 +339,14 @@ function SessionApp() {
                       <Route path="/app/board" element={<BoardPage />} />
                     </Route>
                   ) : null}
+                  <Route element={<CallLayout />}>
+                    <Route path="/app/artifacts" element={<ArtifactsPage />} />
+                    <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
+                    <Route path="/app/x/:linkId" element={<NavLinkPage />} />
+                  </Route>
                 </Route>
                 <Route element={<CallLayout />}>
                   <Route path="/onboarding/:step?" element={<OnboardingPage />} />
-                  <Route path="/app/artifacts" element={<ArtifactsPage />} />
-                  <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
-                  <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 </Route>
               </Route>
               <Route path="*" element={<NotFoundPage />} />

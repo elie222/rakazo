@@ -38,11 +38,100 @@
   --text-display: 32px;
   --text-display--line-height: 40px;
   --text-display--letter-spacing: -0.02em;
+
+  /* Motion: state changes and entrances share one curve, so every control moves alike. */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --motion-micro: 150ms;
+  --motion-floating: 150ms;
+  --motion-layout: 200ms;
+  --motion-pop: 450ms;
+  --motion-sweep: 1.6s;
 }
 
 /* The system font reads light at 400 on macOS; regular text uses 420 there. Medium and semibold stay. */
 :root[data-os="mac"] {
   --font-weight-normal: 420;
+}
+
+/* Shadow utilities read the generated tokens; naming them in `@theme` would self-reference.
+   They set `--tw-shadow` and compose it with the ring, like Tailwind's own shadows, so a
+   surface can carry both its token shadow and the 1px hairline. */
+@utility shadow-outline {
+  --tw-shadow: var(--shadow-outline);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
+}
+
+@utility shadow-control {
+  --tw-shadow: var(--shadow-control);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
+}
+
+@utility shadow-popover {
+  --tw-shadow: var(--shadow-popover);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
+}
+
+@utility shadow-dialog {
+  --tw-shadow: var(--shadow-dialog);
+  box-shadow:
+    var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+    var(--tw-ring-shadow), var(--tw-shadow);
+}
+
+/* A message that lands while the chat is open rises into place once; history stays still. */
+@keyframes message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+
+[data-enter="pop"] {
+  animation: message-enter var(--motion-pop) var(--ease-out) both;
+}
+
+/* A live reply keeps every word on screen; a faint band sweeps over it as text arrives. */
+@keyframes stream-sweep {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+[data-streaming]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  pointer-events: none;
+  background-image: linear-gradient(
+    100deg,
+    transparent 35%,
+    color-mix(in oklch, var(--foreground) 7%, transparent) 50%,
+    transparent 65%
+  );
+  background-size: 220% 100%;
+  animation: stream-sweep var(--motion-sweep) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-enter="pop"] {
+    animation: none;
+  }
+
+  [data-streaming]::after {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 @theme inline {

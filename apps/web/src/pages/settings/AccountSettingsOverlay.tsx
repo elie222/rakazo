@@ -14,7 +14,6 @@ import {
   Field,
   FieldLabel,
   Input,
-  Label,
   OptionSelect,
   Switch,
   ToggleGroup,
@@ -425,11 +424,8 @@ export function GeneralSettingsPanels({
 
       <SettingsGroup title={<Trans>Chat</Trans>}>
         <SettingsRow
-          label={
-            <Label htmlFor={enterToSendId} className="text-body font-normal text-foreground">
-              <Trans>Send with Enter</Trans>
-            </Label>
-          }
+          htmlFor={enterToSendId}
+          label={<Trans>Send with Enter</Trans>}
           control={
             <Switch
               id={enterToSendId}
@@ -440,11 +436,8 @@ export function GeneralSettingsPanels({
           }
         />
         <SettingsRow
-          label={
-            <Label htmlFor={composerModelId} className="text-body font-normal text-foreground">
-              <Trans>Model picker in chat</Trans>
-            </Label>
-          }
+          htmlFor={composerModelId}
+          label={<Trans>Model picker in chat</Trans>}
           control={
             <Switch
               id={composerModelId}
@@ -455,11 +448,8 @@ export function GeneralSettingsPanels({
           }
         />
         <SettingsRow
-          label={
-            <Label htmlFor={streamRepliesId} className="text-body font-normal text-foreground">
-              <Trans>Stream replies</Trans>
-            </Label>
-          }
+          htmlFor={streamRepliesId}
+          label={<Trans>Stream replies</Trans>}
           control={
             <Switch
               id={streamRepliesId}
@@ -470,11 +460,8 @@ export function GeneralSettingsPanels({
           }
         />
         <SettingsRow
-          label={
-            <Label htmlFor={showToolActivityId} className="text-body font-normal text-foreground">
-              <Trans>Show tool activity</Trans>
-            </Label>
-          }
+          htmlFor={showToolActivityId}
+          label={<Trans>Show tool activity</Trans>}
           control={
             <Switch
               id={showToolActivityId}
@@ -485,11 +472,8 @@ export function GeneralSettingsPanels({
           }
         />
         <SettingsRow
-          label={
-            <Label htmlFor={loadRemoteImagesId} className="text-body font-normal text-foreground">
-              <Trans>Load web images automatically</Trans>
-            </Label>
-          }
+          htmlFor={loadRemoteImagesId}
+          label={<Trans>Load web images automatically</Trans>}
           control={
             <Switch
               id={loadRemoteImagesId}

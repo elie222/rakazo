@@ -20,6 +20,15 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@rakazo/ui-web", () => ({
+  Field: (props: React.ComponentProps<"div">) => <div {...props} />,
+  FieldContent: (props: React.ComponentProps<"div">) => <div {...props} />,
+  FieldLabel: ({ htmlFor, children, ...props }: React.ComponentProps<"label">) => (
+    <label htmlFor={htmlFor} {...props}>
+      {children}
+    </label>
+  ),
+  FieldTitle: (props: React.ComponentProps<"div">) => <div {...props} />,
+  FieldDescription: (props: React.ComponentProps<"p">) => <p {...props} />,
   Button: ({
     variant: _variant,
     size: _size,
