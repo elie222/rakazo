@@ -77,5 +77,4 @@ describe("useFlip", () => {
     await act(async () => root.render(<Rows listRef={listRef} />));
     expect(animate).not.toHaveBeenCalled();
   });
-
 });

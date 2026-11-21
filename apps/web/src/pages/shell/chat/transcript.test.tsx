@@ -141,9 +141,7 @@ it("pops only a reply that lands while the chat is open", () => {
 
   const reply = textMessage("m5", "bot", "Here are three cabins");
   render(baseProps([...initial, reply]));
-  expect(container.querySelector('[data-message-id="m5"]')?.getAttribute("data-enter")).toBe(
-    "pop",
-  );
+  expect(container.querySelector('[data-message-id="m5"]')?.getAttribute("data-enter")).toBe("pop");
   expect(container.querySelector('[data-message-id="m2"]')?.getAttribute("data-enter")).toBeNull();
 });
 
