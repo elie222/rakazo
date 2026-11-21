@@ -55,7 +55,7 @@ export function SettingsRow({
     <Field
       data-slot="settings-row"
       orientation="horizontal"
-      className="min-h-9 flex-wrap gap-x-4 gap-y-2 px-4 py-3"
+      className="min-h-9 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
     >
       {/* A plain block, not FieldContent: the horizontal field pins a content child to the top,
           which leaves the label high beside a taller select or button. */}
