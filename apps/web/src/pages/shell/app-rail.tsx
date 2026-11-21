@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { buttonVariants } from "@rakazo/ui-web";
 import { MessagesSquare, SquareKanban } from "lucide-react";
 import type { ReactNode } from "react";
-import { createContext, use } from "react";
+import { createContext, Suspense, use } from "react";
 import { Link, Outlet, useMatch } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
 import { WindowChrome } from "../../components/WindowChrome";
@@ -23,7 +23,10 @@ export function AppRailLayout({ enabled }: { enabled: boolean }) {
       <div className="flex h-full min-w-0">
         <AppRail />
         <div className="h-full min-w-0 flex-1">
-          <Outlet />
+          {/* A page still loading leaves the rail on screen instead of blanking the window. */}
+          <Suspense fallback={null}>
+            <Outlet />
+          </Suspense>
         </div>
       </div>
     </AppRailContext>

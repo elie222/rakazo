@@ -12,10 +12,12 @@ import { ClientError, customMcpServerInput } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
+  assertNameFreeWhereAvailable,
   availableInSpace,
   IsolationError,
   isUniqueViolation,
   itemSecretIn,
+  lockOwner,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -33,12 +35,7 @@ import {
   mcpAssignmentDto,
   mcpServerDto,
 } from "../integrations/mcp-servers.js";
-import {
-  assertNameFreeWhereAvailable,
-  lockOwner,
-  serverAvailability,
-  serverSecretSpace,
-} from "../spaces/name-claims.js";
+import { serverAvailability, serverSecretSpace } from "../spaces/name-claims.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 

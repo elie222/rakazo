@@ -22,36 +22,9 @@ export function HostComputerPrompt({
   initialMe?: Me;
   onMeUpdated?: (me: Me) => void;
 }) {
-  const { t } = useLingui();
   const desktop = desktopBridge();
   const [configuring, setConfiguring] = useState(false);
   const [open, setOpen] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const choice = useSave({
-    // Resolves false when the person declined access, which leaves the choice open.
-    save: async (computerHost: "docker" | "this-mac", client) => {
-      if (!desktop?.computer?.managesHostChoice)
-        throw new Error(t`Local computer access requires the latest desktop app.`);
-      if (computerHost === "this-mac") {
-        if (!(await desktop.computer.requestAccess())) return false;
-      } else {
-        await desktop.computer.revokeAccess();
-      }
-      try {
-        onMeUpdated?.(await client.me());
-      } catch {
-        // The choice is already saved. A failed refresh must not look like a failed save.
-      }
-      return true;
-    },
-    onSaved: (chosen) => {
-      if (chosen) setOpen(false);
-    },
-  });
-  const pending = choice.pending;
-  const mac = desktop?.platform === "darwin";
-  const hostLabel = mac ? t`this Mac` : t`this computer`;
 
   useEffect(
     () =>
@@ -83,7 +56,54 @@ export function HostComputerPrompt({
       .catch(() => undefined);
   }, [desktop, initialMe]);
 
+  // Each opening mounts a fresh dialog, so nothing from an earlier attempt shows in it.
   if (!open) return null;
+  return (
+    <HostComputerDialog
+      configuring={configuring}
+      onClose={() => setOpen(false)}
+      onMeUpdated={onMeUpdated}
+    />
+  );
+}
+
+function HostComputerDialog({
+  configuring,
+  onClose,
+  onMeUpdated,
+}: {
+  configuring: boolean;
+  onClose: () => void;
+  onMeUpdated?: (me: Me) => void;
+}) {
+  const { t } = useLingui();
+  const desktop = desktopBridge();
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const choice = useSave({
+    // Resolves false when the person declined access, which leaves the choice open.
+    save: async (computerHost: "docker" | "this-mac", client) => {
+      if (!desktop?.computer?.managesHostChoice)
+        throw new Error(t`Local computer access requires the latest desktop app.`);
+      if (computerHost === "this-mac") {
+        if (!(await desktop.computer.requestAccess())) return false;
+      } else {
+        await desktop.computer.revokeAccess();
+      }
+      try {
+        onMeUpdated?.(await client.me());
+      } catch {
+        // The choice is already saved. A failed refresh must not look like a failed save.
+      }
+      return true;
+    },
+    onSaved: (chosen) => {
+      if (chosen) onClose();
+    },
+  });
+  const pending = choice.pending;
+  const mac = desktop?.platform === "darwin";
+  const hostLabel = mac ? t`this Mac` : t`this computer`;
 
   async function refreshChoiceState() {
     setChecking(true);
@@ -93,7 +113,7 @@ export function HostComputerPrompt({
       const me = await rpc.me();
       onMeUpdated?.(me);
       if (!me.canChooseHostComputer || me.computerHost != null) {
-        setOpen(false);
+        onClose();
       }
     } catch (err) {
       setError(sandboxCheckFailureMessage(err));
@@ -116,7 +136,8 @@ export function HostComputerPrompt({
     <Dialog
       open
       onOpenChange={(next) => {
-        if (configuring) setOpen(next);
+        // A choice still saving would land after one made in the next opening, so it holds the dialog.
+        if (configuring && !next && !busy) onClose();
       }}
     >
       <DialogContent showCloseButton={configuring} className="rounded-2xl sm:max-w-[440px]">

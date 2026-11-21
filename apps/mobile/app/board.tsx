@@ -18,6 +18,7 @@ export default function BoardScreen() {
   const sideInsets = useSideInsets();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [error, setError] = useState("");
+  const [refreshFailures, setRefreshFailures] = useState(0);
   const [loading, setLoading] = useState(true);
   const live = useRef(true);
   // A load that started before a later load, a move, or a blur must not overwrite newer rows.
@@ -34,6 +35,7 @@ export default function BoardScreen() {
     } catch (cause) {
       if (current !== generation.current) return;
       setError(errorText(cause, t`Try again.`));
+      setRefreshFailures((count) => count + 1);
     } finally {
       if (current === generation.current) setLoading(false);
     }
@@ -90,6 +92,7 @@ export default function BoardScreen() {
     <BoardList
       sections={boardSections(tickets)}
       error={error}
+      refreshFailures={refreshFailures}
       onMove={(ticket, status) => void move(ticket, status)}
       onRefresh={load}
     />

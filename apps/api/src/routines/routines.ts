@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import {
+  firstWatchCheck,
   parseRoutineWatch,
   parseRoutineWatchState,
   routineGroupThreadId,
@@ -81,11 +82,6 @@ export function nextRoutineDate(crons: string[], timezone: string): Date {
   }
   if (!next) throw new ORPCError("BAD_REQUEST", { message: "Enter a valid cron expression." });
   return next;
-}
-
-/** A new or re-armed watch takes its first reading a moment from now. */
-export function firstWatchCheck(): Date {
-  return new Date(Date.now() + 2_000);
 }
 
 export function mapRoutine(row: {

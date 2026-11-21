@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, ThinkingLevel } from "@rakazo/contracts";
 import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { Command, CommandGroup, CommandItem, CommandList, Kbd, toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
@@ -94,7 +95,7 @@ export function ComposerModelPicker({
     nothingConnected,
   } = botModelState({
     credentials,
-    catalog,
+    catalog: catalog.map(localizeModelEntry),
     me,
     modelKey: pendingModel ?? savedKey,
     spaceDefaultLabel: t`Space default`,
@@ -165,8 +166,13 @@ export function ComposerModelPicker({
       // With no provider connected there is nothing to switch to, so the list offers a connection.
       onConnect={nothingConnected ? onConnect : undefined}
       staysOpen={(key) =>
-        botModelState({ credentials, catalog, me, modelKey: key, spaceDefaultLabel: "" })
-          .thinkingLevels.length > 0
+        botModelState({
+          credentials,
+          catalog: catalog.map(localizeModelEntry),
+          me,
+          modelKey: key,
+          spaceDefaultLabel: "",
+        }).thinkingLevels.length > 0
       }
       aside={
         thinkingLevels.length

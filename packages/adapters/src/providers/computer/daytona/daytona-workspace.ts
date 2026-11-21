@@ -1,4 +1,5 @@
-import type { AdapterContext, PortableFile } from "@rakazo/adapter-kit";
+import type { AdapterContext, PortableFile, WorkspaceExportLimits } from "@rakazo/adapter-kit";
+import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
 import {
   normalizeWorkspacePath,
@@ -16,6 +17,8 @@ export async function* walkDaytonaWorkspace(
   root: string,
   directory: string,
   context: AdapterContext,
+  limits?: WorkspaceExportLimits,
+  counted = { bytes: 0, files: 0 },
 ): AsyncIterable<PortableFile> {
   if (context.signal.aborted) throw context.signal.reason ?? new Error("export aborted");
   const entries = await sandbox.fs.listFiles(workspacePath(root, directory));
@@ -27,6 +30,15 @@ export async function* walkDaytonaWorkspace(
     }))
     .filter(({ relative }) => !shouldSkipPortableWorkspaceFile(relative));
   const directories = entries.filter((entry) => entry.isDir);
+  if (limits) {
+    // Sizes come from the listing: refuse before any file of this folder is downloaded.
+    for (const { entry } of files) {
+      counted.files += 1;
+      counted.bytes += entry.size;
+    }
+    if (counted.files > limits.maxFiles) throw new WorkspaceTooLargeError("files");
+    if (counted.bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
+  }
   for (const entries of daytonaExportBatches(files)) {
     const batch = await Promise.all(
       entries.map(async ({ entry, relative }) => {
@@ -43,7 +55,7 @@ export async function* walkDaytonaWorkspace(
   for (const entry of directories) {
     const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
     if (!shouldSkipPortableWorkspaceFile(relative, true)) {
-      yield* walkDaytonaWorkspace(sandbox, root, relative, context);
+      yield* walkDaytonaWorkspace(sandbox, root, relative, context, limits, counted);
     }
   }
 }
