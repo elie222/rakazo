@@ -8,10 +8,15 @@ test("a failed saved-files read offers Retry and restores once it works", async 
   await signup(page, `computer-files-${Date.now()}@rakazo.test`, "password12", "Computer Files");
   await completeOnboarding(page);
 
-  // A 502 is what the proxy answers while object storage is down.
+  // Simulate a temporary failed read.
   let storageDown = true;
+  let holdRetry = false;
+  let reads = 0;
+  const failedRetry = deferred<void>();
   const reading = deferred<void>();
   await page.route("**/rpc/computer/homeVersions", async (route) => {
+    reads += 1;
+    if (holdRetry) await failedRetry.promise;
     if (storageDown) {
       await route.fulfill({ status: 502 });
       return;
@@ -30,14 +35,30 @@ test("a failed saved-files read offers Retry and restores once it works", async 
   await expect(retry).toBeEnabled();
   await captureScreenshot(page, testInfo, "computer-files-load-failed");
 
+  holdRetry = true;
+  await retry.focus();
+  await page.keyboard.press("Enter");
+  await expect(retry).toBeDisabled();
+  await expect(retry).toBeFocused();
+  await expect(settings.getByRole("alert")).toBeEmpty();
+  const pendingReads = reads;
+  await page.keyboard.press("Enter");
+  await expect(retry).toBeFocused();
+  expect(reads).toBe(pendingReads);
+  failedRetry.resolve();
+  await expect(settings.getByRole("alert")).toHaveText("Could not load");
+  await expect(retry).toBeEnabled();
+  await expect(retry).toBeFocused();
+
+  holdRetry = false;
   storageDown = false;
-  await retry.click();
+  await page.keyboard.press("Enter");
   await expect(retry).toBeDisabled();
   reading.resolve();
 
   await expect(
     settings.getByRole("button", { name: "Restore earlier version", exact: true }),
   ).toBeVisible();
-  await expect(settings.getByRole("alert")).toHaveCount(0);
+  await expect(settings.getByRole("alert")).toBeEmpty();
   await captureScreenshot(page, testInfo, "computer-files-restored");
 });
