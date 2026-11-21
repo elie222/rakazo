@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { AnalyticsSurface } from "../account/analytics.js";
+import { AnalyticsSurface, ModelSignInCancelReason } from "../account/analytics.js";
 import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema, settingsScopeInput } from "../settings-scope.js";
 import {
@@ -26,6 +26,7 @@ import {
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
   VoiceInfoSchema,
+  VoiceModelInfoSchema,
   VoiceStatusSchema,
 } from "./voice.js";
 
@@ -111,7 +112,7 @@ export const modelsRpc = {
       ),
     finishOAuth: oc.input(z.object({ loginId: z.string() })).output(ModelCredentialSchema),
     cancelOAuth: oc
-      .input(z.object({ loginId: z.string() }))
+      .input(z.object({ loginId: z.string(), reason: ModelSignInCancelReason.optional() }))
       .output(z.object({ ok: z.literal(true) })),
     setDefault: oc
       .input(
@@ -194,6 +195,9 @@ export const modelsRpc = {
         }),
       )
       .output(z.array(VoiceInfoSchema)),
+    models: oc
+      .input(settingsScopeInput.extend({ provider: z.string().min(1) }))
+      .output(z.array(VoiceModelInfoSchema)),
     prepare: oc
       .input(
         z.object({

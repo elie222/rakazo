@@ -5,11 +5,19 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ listSpace: vi.fn(), remove: vi.fn() }));
+const api = vi.hoisted(() => ({
+  listSpace: vi.fn(),
+  remove: vi.fn(),
+  listVersions: vi.fn(),
+  getById: vi.fn(),
+  copy: vi.fn(),
+}));
+vi.mock("../../lib/copy-text", () => ({ useCopyText: () => [false, api.copy] }));
 const rpcClient = vi.hoisted(() => ({ artifacts: api, bootstrap: vi.fn() }));
+const uiLocale = vi.hoisted(() => ({ current: "en" }));
 vi.mock("../../lib/query/rpc", () => ({
   rpc: rpcClient,
   rpcForSpace: () => rpcClient,
@@ -20,13 +28,17 @@ vi.mock("../../lib/bootstrap", () => ({
   takeInitialBootstrap: vi.fn().mockResolvedValue({ bots: [] }),
 }));
 vi.mock("../../lib/pages/artifact-open", () => ({
-  decodeArtifactBase64: vi.fn(),
+  decodeArtifactBase64: (source: string) => new TextEncoder().encode(atob(source)),
   downloadArtifactBytes: vi.fn(),
 }));
 vi.mock("../../lib/locale/relative-time", () => ({ formatRelativeTime: () => "just now" }));
 vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray) => parts.join("");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
+  return {
+    useLingui: () => ({ t, i18n: { locale: uiLocale.current } }),
+    Trans: ({ children }: { children: ReactNode }) => children,
+  };
 });
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -48,6 +60,7 @@ vi.mock("@rakazo/ui-web", () => {
     AlertDialogHeader: Container,
     AlertDialogTitle: Container,
     BotAvatar: () => <span />,
+    CopyTextFallback: () => null,
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
     Button: (props: ComponentProps<"button">) => <button {...props} />,
     buttonVariants: () => "",
@@ -132,22 +145,27 @@ function typeSearch(container: HTMLElement, value: string) {
 
 let queryClient: QueryClient;
 beforeEach(() => {
+  uiLocale.current = "en";
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
-async function renderArtifacts() {
+async function renderArtifacts(entry = "/app/artifacts") {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={["/app/artifacts"]}>
-          <ArtifactsPage />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    ),
-  );
+  const rerender = () =>
+    act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[entry]}>
+            <Routes>
+              <Route path="/app/artifacts/:artifactId?" element={<ArtifactsPage />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+  await rerender();
   // Let query results reach the screen.
   if (vi.isFakeTimers()) {
     await act(async () => vi.advanceTimersByTimeAsync(0));
@@ -156,6 +174,7 @@ async function renderArtifacts() {
   }
   return {
     container,
+    rerender,
     async cleanup() {
       await act(async () => root.unmount());
       container.remove();
@@ -292,6 +311,68 @@ it("reopens with cached artifacts and refreshes them in the background", async (
 });
 
 it.each([
+  { locale: "fr", legacy: false },
+  { locale: "de", legacy: false },
+  { locale: "fr", legacy: true },
+])(
+  "starts This week on Monday in $locale (without Intl week info: $legacy)",
+  async ({ locale, legacy }) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    if (legacy) {
+      const browserIntl = Object.create(Intl);
+      Object.defineProperty(browserIntl, "Locale", {
+        value: class {
+          constructor(readonly baseName: string) {}
+        },
+      });
+      vi.stubGlobal("Intl", browserIntl);
+    }
+    vi.useFakeTimers();
+    const sunday = new Date(2026, 10, 15, 23, 59, 59);
+    vi.setSystemTime(sunday);
+    api.listSpace.mockReset().mockResolvedValue({
+      items: [
+        artifact("Monday report", "monday", new Date(2026, 10, 9, 0, 0, 0).toISOString()),
+        artifact("Sunday report", "sunday", sunday.toISOString()),
+      ],
+      nextCursor: null,
+    });
+    const page = await renderArtifacts();
+    try {
+      const select = page.container.querySelector<HTMLSelectElement>(
+        'select[aria-label="Filter by date"]',
+      )!;
+      await act(async () => {
+        select.value = "week";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      // English and Hebrew keep their Sunday week start; French and German include last Monday.
+      expect(page.container.textContent).toContain("Sunday report");
+      expect(page.container.textContent).not.toContain("Monday report");
+      uiLocale.current = locale;
+      await page.rerender();
+      expect(page.container.textContent).toContain("Monday report");
+      uiLocale.current = "he";
+      await page.rerender();
+      expect(page.container.textContent).not.toContain("Monday report");
+      expect(page.container.textContent).toContain("Sunday report");
+      uiLocale.current = locale;
+      await page.rerender();
+      expect(page.container.textContent).toContain("Monday report");
+
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(page.container.textContent).not.toContain("Monday report");
+      expect(page.container.textContent).not.toContain("Sunday report");
+    } finally {
+      await page.cleanup();
+      queryClient.clear();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it.each([
   ["today", new Date(2026, 10, 12, 23, 59, 59)],
   ["week", new Date(2026, 10, 14, 23, 59, 59)],
   ["month", new Date(2026, 10, 30, 23, 59, 59)],
@@ -418,3 +499,45 @@ it("says why an artifact was not deleted and offers the confirmation again", asy
     vi.unstubAllGlobals();
   }
 });
+
+it.each(["text/markdown", "text/plain"])(
+  "copies raw %s in the preview pane and scopes select-all",
+  async (mimeType) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const source = "# Raw source\n\n**Keep** the markup";
+    const file = { ...artifact("notes.md", "artifact-1"), mimeType, contentBase64: btoa(source) };
+    api.listSpace.mockResolvedValue({ items: [file], nextCursor: null });
+    api.listVersions.mockResolvedValue([file]);
+    api.getById.mockResolvedValue(file);
+    api.copy.mockReset();
+    const page = await renderArtifacts("/app/artifacts/artifact-1");
+    try {
+      await act(async () =>
+        vi.waitFor(() =>
+          expect(page.container.querySelector("[data-file-preview-body]")).not.toBeNull(),
+        ),
+      );
+      const copy = page.container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Copy notes.md"]',
+      );
+      expect(copy).not.toBeNull();
+      await act(async () => copy!.click());
+      expect(api.copy).toHaveBeenCalledExactlyOnceWith(source);
+      const body = page.container.querySelector<HTMLElement>("[data-file-preview-body]")!;
+      body.focus();
+      expect(document.activeElement).toBe(body);
+      const event = new KeyboardEvent("keydown", {
+        key: "a",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      await act(async () => body.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(true);
+      expect(window.getSelection()?.toString()).toBe(source);
+    } finally {
+      await page.cleanup();
+      vi.unstubAllGlobals();
+    }
+  },
+);

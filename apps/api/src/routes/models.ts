@@ -6,6 +6,7 @@ import {
 } from "@rakazo/adapter-kit";
 import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
+  assertModelProviderAllowed,
   compatibleEndpointPreset,
   listPiCatalog,
   ModelSignInError,
@@ -99,7 +100,7 @@ export function modelsRoutes(ctx: RouterContext) {
     refreshExpiredCredential,
     chatCatalog,
     withServingConnections,
-    withDeploymentDefault,
+    deploymentDefault,
     withImageInput,
     modelRoleCatalog,
     validateRoleChoices,
@@ -235,19 +236,15 @@ export function modelsRoutes(ctx: RouterContext) {
       role: authed.models.role.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
           throw new ORPCError("FORBIDDEN");
-        return withImageInput(
-          context.actor,
-          input.role,
-          await withDeploymentDefault(
-            context.actor,
-            input.role,
-            await getModelRole(
-              deps.prisma,
-              await modelRoleTarget(deps.prisma, context.actor, input.scope),
-              input.role,
-            ),
+        const { actor } = context;
+        const { role, scope } = input;
+        const [settings, deployment] = await Promise.all([
+          modelRoleTarget(deps.prisma, actor, scope).then((target) =>
+            getModelRole(deps.prisma, target, role),
           ),
-        );
+          deploymentDefault(actor, role),
+        ]);
+        return withImageInput(actor, role, { ...settings, ...deployment });
       }),
       setRole: authed.models.setRole.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
@@ -260,21 +257,14 @@ export function modelsRoutes(ctx: RouterContext) {
           [...(primary ? [primary] : []), ...(backups ?? [])],
           reads,
         );
-        return withImageInput(
-          context.actor,
+        const deployment = await deploymentDefault(context.actor, role);
+        const settings = await updateModelRole(
+          deps.prisma,
+          { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
           role,
-          await withDeploymentDefault(
-            context.actor,
-            role,
-            await updateModelRole(
-              deps.prisma,
-              { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
-              role,
-              { primary, backups },
-            ),
-          ),
-          reads,
+          { primary, backups },
         );
+        return withImageInput(context.actor, role, { ...settings, ...deployment }, reads);
       }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
@@ -330,9 +320,11 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
+          assertModelProviderAllowed(OPENAI_COMPATIBLE_PROVIDER_ID);
+          const preset = compatibleEndpointPreset(input.baseUrl);
           let apiKey = input.apiKey;
           let headers = input.headers;
-          if (!apiKey?.trim() || headers === undefined) {
+          if (!preset?.publicModels && (!apiKey?.trim() || headers === undefined)) {
             try {
               const preferred = await findModelCredential(
                 deps.prisma,
@@ -384,7 +376,7 @@ export function modelsRoutes(ctx: RouterContext) {
           try {
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
-              compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
+              preset ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );
@@ -395,6 +387,7 @@ export function modelsRoutes(ctx: RouterContext) {
         },
       ),
       probeCatalog: authed.models.probeCatalog.handler(async ({ context, input }) => {
+        assertModelProviderAllowed(input.provider);
         try {
           const models = await probeCatalogProviderModels(
             { provider: input.provider, apiKey: input.apiKey },
@@ -407,6 +400,7 @@ export function modelsRoutes(ctx: RouterContext) {
         }
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
+        assertModelProviderAllowed(input.provider);
         // An older app's sign-in renews the provider's newest connection, bound now so a
         // disconnect of that connection retires it and it never lands on another one.
         const target = await modelConnectionTarget(
@@ -479,11 +473,8 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, context.actor);
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          return { status: "error" as const, error: result.error };
-        }
+        // The sign-in already reported how it ended, as model_connect_ended.
+        if (result.status === "error") return { status: "error" as const, error: result.error };
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
@@ -492,19 +483,16 @@ export function modelsRoutes(ctx: RouterContext) {
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          throw new ORPCError("NOT_FOUND", { message: result.error });
-        }
+        if (result.status === "error") throw new ORPCError("NOT_FOUND", { message: result.error });
         // The save already counted the connection.
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
-        await deps.oauthLogins.cancel(input.loginId, context.actor);
+        await deps.oauthLogins.cancel(input.loginId, context.actor, input.reason);
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
+        assertModelProviderAllowed(input.provider);
         const modelId = usableModelId(input.modelId);
         if (!modelId) throw new ORPCError("BAD_REQUEST", { message: "Choose a model" });
         // An omitted level keeps the one this model already has in the main list: on the

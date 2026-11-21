@@ -179,12 +179,12 @@ export function CreateGroupForm({
         </span>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           aria-label={t`Cancel new group`}
           onClick={onCancel}
           className="text-muted-foreground"
         >
-          <X />
+          <X className="size-4.5" strokeWidth={1.75} />
         </Button>
       </div>
       {error ? (
@@ -316,12 +316,12 @@ export function GroupSettings({
         </span>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           aria-label={t`Close panel`}
           disabled={saving}
           onClick={onClose}
         >
-          <X size={16} strokeWidth={1.8} />
+          <X className="size-4.5" strokeWidth={1.75} />
         </Button>
       </div>
       {error ? (

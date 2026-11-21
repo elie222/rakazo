@@ -7,11 +7,15 @@ import {
   historyCompactJob,
   historyCompactJobKey,
   MACHINE_CLEANUP_MAX_ATTEMPTS,
+  MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS,
+  MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
   MESSAGING_SEND_MAX_ATTEMPTS,
   machineCleanupJob,
   machineCleanupJobKey,
   memoryPurgeHistoryJob,
   memoryRetainTurnJob,
+  messagingInboundSettleJob,
+  messagingInboundSettleJobKey,
   messagingSendJob,
   parseBackgroundJob,
   RetryJobLaterError,
@@ -31,11 +35,13 @@ function handlers(): BackgroundJobHandlers {
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
     "run.forget-secrets": vi.fn(async () => undefined),
+    "approval.expire": vi.fn(async () => undefined),
     "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "memory.retain-turn": vi.fn(async () => undefined),
     "memory.purge-history": vi.fn(async () => undefined),
     "messaging.send": vi.fn(async () => undefined),
+    "messaging.inbound_settle": vi.fn(async () => undefined),
     "messaging.reply": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "messaging.progress": vi.fn(async () => undefined),
@@ -46,6 +52,9 @@ function handlers(): BackgroundJobHandlers {
     "team_chat.engage": vi.fn(async () => undefined),
     "team_chat.ambient": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
+    "meeting.calendar-sync": vi.fn(async () => undefined),
+    "page.revise": vi.fn(async () => undefined),
+    "meeting.work": vi.fn(async () => undefined),
     "purchase.poll": vi.fn(async () => undefined),
     "media.poll": vi.fn(async () => undefined),
     "push.receipt": vi.fn(async () => undefined),
@@ -110,6 +119,73 @@ describe("background job contracts", () => {
       replaceKey: "team_chat.ambient:conversation-1",
       queueName: "team_chat.ambient:conversation-1",
     });
+  });
+
+  it("queues one sender's inbound settling in order and keys it to the message", async () => {
+    const due = new Date("2026-11-17T12:31:00.000Z");
+    const payload = {
+      provider: "chat",
+      handle: "message:1",
+      identityId: "identity-1",
+      spaceId: "space-1",
+      botId: "bot-1",
+      receivedAt: due.getTime(),
+      text: "make a short of these",
+      attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
+    };
+    expect(messagingInboundSettleJob(payload, due)).toStrictEqual({
+      name: "messaging.inbound_settle",
+      payload,
+      availableAt: due,
+      replaceKey: messagingInboundSettleJobKey("chat", "message:1"),
+      queueName: "messaging.inbound:identity-1",
+      maxAttempts: MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
+    });
+    // A handle may contain the separator; the key keeps provider and handle apart.
+    expect(messagingInboundSettleJobKey("chat", "message:1")).not.toBe(
+      messagingInboundSettleJobKey("chat:message", "1"),
+    );
+    const target = handlers();
+    await dispatchBackgroundJob(target, "messaging.inbound_settle", payload);
+    expect(target["messaging.inbound_settle"]).toHaveBeenCalledWith(payload);
+    expect(() =>
+      parseBackgroundJob("messaging.inbound_settle", { ...payload, identityId: "" }),
+    ).toThrow();
+  });
+
+  it("reads settle payloads with and without the file sizes", () => {
+    const earlier = {
+      provider: "chat",
+      handle: "message:1",
+      identityId: "identity-1",
+      spaceId: "space-1",
+      botId: "bot-1",
+      receivedAt: 0,
+      text: "",
+      attachments: [{ name: "clip.mov", mimeType: "video/quicktime" }],
+    };
+    expect(parseBackgroundJob("messaging.inbound_settle", earlier).payload).toStrictEqual(earlier);
+    const current = {
+      ...earlier,
+      attachments: [{ name: "clip.mov", mimeType: "video/quicktime", size: 42 }],
+    };
+    expect(parseBackgroundJob("messaging.inbound_settle", current).payload).toStrictEqual(current);
+    const file = { name: "photo.jpg", mimeType: "image/jpeg" };
+    expect(() =>
+      parseBackgroundJob("messaging.inbound_settle", {
+        ...earlier,
+        attachments: Array.from(
+          { length: MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS + 1 },
+          () => file,
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      parseBackgroundJob("messaging.inbound_settle", {
+        ...earlier,
+        attachments: [{ ...file, size: -1 }],
+      }),
+    ).toThrow();
   });
 
   it("carries the earliest time a job asked to be retried", () => {

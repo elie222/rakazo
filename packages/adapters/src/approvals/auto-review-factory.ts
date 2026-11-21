@@ -14,6 +14,7 @@ import {
   resolveAutoReviewProviderKind,
   typesafeApiKey,
 } from "./auto-review.js";
+import { AutoReviewSetupError } from "./auto-review-failures.js";
 import { ScriptedAutoReviewProvider } from "./scripted-auto-review.js";
 
 export type CreateAutoReviewProviderOptions = {
@@ -41,7 +42,7 @@ export function createAutoReviewProvider(
   switch (kind ?? resolveAutoReviewProviderKind(env)) {
     case "jev": {
       const apiKey = options.apiKey ?? typesafeApiKey(env);
-      if (!apiKey) throw new Error("TYPESAFE_API_KEY is required");
+      if (!apiKey) throw new AutoReviewSetupError("TYPESAFE_API_KEY is required");
       return new JevAutoReviewProvider({
         apiKey,
         callObserver: options.callObserver,
@@ -55,9 +56,12 @@ export function createAutoReviewProvider(
     case "scripted":
       return new ScriptedAutoReviewProvider(options.scripted);
     case "llm":
-      if (!options.llm) throw new Error("LLM auto-review requires a runtime checker");
+      if (!options.llm)
+        throw new AutoReviewSetupError("LLM auto-review requires a runtime checker");
       return new LlmAutoReviewProvider(options.llm);
     default:
-      throw new Error(`Unknown auto-review provider "${kind}". Use jev | llm | scripted.`);
+      throw new AutoReviewSetupError(
+        `Unknown auto-review provider "${kind}". Use jev | llm | scripted.`,
+      );
   }
 }

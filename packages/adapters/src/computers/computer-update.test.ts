@@ -427,6 +427,18 @@ describe("background computer maintenance", () => {
     );
   });
 
+  it("explains why recovery has to wait for an in-flight shutdown", async () => {
+    const { row, deps, computer, computerUpdate, jobs } = fixture();
+    computer.findUniqueOrThrow.mockResolvedValueOnce(
+      Object.assign(row.computer, { state: "suspending" }),
+    );
+    await expect(queueComputerUpdate(deps, row.computerId, row.botId, "recover")).rejects.toThrow(
+      "The computer is still shutting down. Try again after it stops.",
+    );
+    expect(computerUpdate.create).not.toHaveBeenCalled();
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
   it("claims maintenance and an idle takeover together, then revokes before publishing", async () => {
     const harness = takeoverQueue();
     let revoked = false;

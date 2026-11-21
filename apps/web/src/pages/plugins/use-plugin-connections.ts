@@ -9,12 +9,12 @@ import {
   catalogItemAccounts,
   catalogItemKey,
   connectCatalogItem,
+  connectedAppMarks,
   isCatalogItemConnected,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { queryOptions, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { connectedAppMarks } from "../../lib/integrations/connected-apps";
 import { optionalCatalogFeedProbe } from "../../lib/integrations/optional-catalog-feed";
 import { useSpaceQueries } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";

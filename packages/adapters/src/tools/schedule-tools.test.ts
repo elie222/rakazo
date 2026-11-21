@@ -1,6 +1,5 @@
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
-import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ROUTINE_CHAT_TRIGGER_NOTE,
@@ -50,6 +49,48 @@ describe("resolveScheduleTiming", () => {
       ok: false,
       error: "minimum interval is 1 minute",
     });
+  });
+
+  it.each([
+    [90, "minutes", /1 hours? or every 2 hours/],
+    [120, "minutes", /exactly 2 hours: use every 2, unit "hours"/],
+    [1440, "minutes", /exactly 1 day: use every 1, unit "days"/],
+    [25, "hours", /1 days? or every 2 days/],
+    [48, "hours", /exactly 2 days: use every 2, unit "days"/],
+    [40, "days", /use cron/],
+    [756, "hours", /nearest is every 31 days \(/],
+    [1000, "hours", /use cron/],
+    [57600, "minutes", /use cron/],
+  ])("rejects every %i %s with the intervals that work", (every, unit, hint) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(`every ${every} ${unit} is out of range`);
+    expect(result.error).toMatch(hint);
+  });
+
+  it.each([
+    [1000, "hours"],
+    [57600, "minutes"],
+    [100000, "minutes"],
+  ])("never suggests more than 31 days for every %i %s", (every, unit) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toMatch(/unit "days"/);
+  });
+
+  it.each([
+    [7, "minutes", "*/7 * * * *"],
+    [45, "minutes", "*/45 * * * *"],
+    [59, "minutes", "*/59 * * * *"],
+    [60, "minutes", "*/60 * * * *"],
+    [23, "hours", "0 */23 * * *"],
+    [24, "hours", "0 */24 * * *"],
+    [31, "days", "0 0 */31 * *"],
+  ])("still accepts every %i %s", (every, unit, cron) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok && result.cron).toBe(cron);
   });
 
   it("accepts every 1 minute", () => {
@@ -967,12 +1008,27 @@ describe("schedule_create with a watch", () => {
 });
 
 describe("cancelScheduleFromTool", () => {
+  it("refuses a name more than one schedule has", async () => {
+    const deleteMany = vi.fn();
+    const deps = {
+      prisma: { routine: { count: vi.fn(async () => 2), findFirst: vi.fn(), deleteMany } },
+      events: { append: vi.fn() },
+      jobs: { enqueue: vi.fn(), cancel: vi.fn() },
+    } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
+    await expect(
+      cancelScheduleFromTool(deps, { spaceId: "ws-1", botId: "bot-1", name: "Daily" }),
+    ).resolves.toEqual({
+      error: 'More than one schedule is named "Daily". Pass routineId instead.',
+    });
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
   it("deletes with the caller's scope and does not cancel the job when the row moved", async () => {
     const findFirst = vi.fn(async () => ({ id: "routine-1", name: "Daily" }));
     const deleteMany = vi.fn(async () => ({ count: 1 }));
     const cancel = vi.fn(async () => undefined);
     const deps = {
-      prisma: { routine: { findFirst, deleteMany } },
+      prisma: { routine: { count: vi.fn(async () => 1), findFirst, deleteMany } },
       events: { append: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined), cancel },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
@@ -1135,23 +1191,23 @@ describe("updateScheduleFromTool", () => {
     },
   );
 
-  it("takes over another member's schedule and restarts its watch baseline", async () => {
-    const { findFirst, updateMany, update } = setup();
+  it("refuses another member's change to what a schedule does", async () => {
+    const { updateMany, update } = setup();
     await expect(update({ userId: "user-2", prompt: "Order less" })).resolves.toMatchObject({
-      ok: true,
+      error: expect.stringContaining("Only the person who owns this routine"),
     });
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
-    });
+    await expect(
+      update({ userId: "user-2", schedule: { cron: "0 9 * * 1" } }),
+    ).resolves.toHaveProperty("error");
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("lets another member pause a schedule, which stays its owner's", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ userId: "user-2", active: false })).resolves.toMatchObject({ ok: true });
     expect(updateMany).toHaveBeenCalledWith({
-      where: {
-        spaceId: "ws-1",
-        botId: "bot-1",
-        userId: "user-1",
-        id: "routine-1",
-        bot: { archivedAt: null },
-      },
-      data: { userId: "user-2", watchState: Prisma.DbNull, prompt: "Order less" },
+      where: expect.objectContaining({ userId: "user-1", id: "routine-1" }),
+      data: { active: false, crons: ["0 10 * * 1"], timezone: "Europe/Berlin", nextRunAt: null },
     });
   });
 
@@ -1396,17 +1452,61 @@ describe("updateScheduleFromTool", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
-  it("keeps a watch's own interval", async () => {
-    const { update } = setup({
-      ...weekly,
-      crons: [],
-      watch: { kind: "files", paths: ["inbox"], everyMinutes: 15 },
-    });
+  const fileWatch = { kind: "files", paths: ["inbox"], everyMinutes: 15, loud: false };
+  const watching = { ...weekly, crons: [], watch: fileWatch };
+
+  it("points a watch's retime at everyMinutes", async () => {
+    const { updateMany, update } = setup(watching);
     await expect(update({ schedule: { cron: "0 9 * * *" } })).resolves.toEqual({
-      error:
-        "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.",
+      error: expect.stringContaining("everyMinutes"),
     });
+    expect(updateMany).not.toHaveBeenCalled();
     await expect(update({ name: "Inbox" })).resolves.toMatchObject({ ok: true, name: "Inbox" });
+  });
+
+  it("changes how often a watch checks and checks again right away", async () => {
+    const { updateMany, enqueue, update } = setup(watching);
+    await expect(update({ everyMinutes: 60 })).resolves.toMatchObject({
+      ok: true,
+      everyMinutes: 60,
+      changes: { everyMinutes: { before: 15, after: 60 } },
+    });
+    const firstCheck = new Date(Date.now() + 2_000);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ watch: { equals: fileWatch }, nextRunAt: weekly.nextRunAt }),
+      data: expect.objectContaining({
+        watch: { ...fileWatch, everyMinutes: 60 },
+        nextRunAt: firstCheck,
+      }),
+    });
+    expect(enqueue).toHaveBeenCalledWith(routineWakeupJob("routine-1", firstCheck));
+  });
+
+  it("keeps a paused watch paused when its interval changes", async () => {
+    const { updateMany, enqueue, update } = setup({ ...watching, active: false, nextRunAt: null });
+    await expect(update({ everyMinutes: 30 })).resolves.toMatchObject({ ok: true, active: false });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.anything(),
+      data: expect.objectContaining({ watch: { ...fileWatch, everyMinutes: 30 }, nextRunAt: null }),
+    });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses an interval outside the watch bounds or on a non-watch", async () => {
+    const { updateMany, update } = setup(watching);
+    for (const everyMinutes of [4, 1441, 7.5, "often"]) {
+      await expect(update({ everyMinutes })).resolves.toEqual({
+        error: "everyMinutes must be a whole number from 5 to 1440.",
+      });
+    }
+    await expect(update({ everyMinutes: 15 })).resolves.toEqual({ error: "Nothing to update." });
+    await expect(setup().update({ everyMinutes: 30 })).resolves.toEqual({
+      error: "everyMinutes is only for a routine that watches for changes.",
+    });
+    await expect(update({ userId: "user-2", everyMinutes: 30 })).resolves.toMatchObject({
+      error: expect.stringContaining("Only the person who owns this routine"),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });
 
@@ -1953,7 +2053,7 @@ describe("schedule tools with events", () => {
     expect(await update({})).toEqual({
       error: "A routine needs a schedule or an event. Cancel it instead.",
     });
-    // Another member's edit would take the routine over and leave its events off.
+    // Only the owner changes what it does; another member may still pause it, which keeps it theirs.
     expect(
       await updateScheduleFromTool(updateDeps, {
         ...owner,
@@ -1962,8 +2062,22 @@ describe("schedule tools with events", () => {
         prompt: "Summarize less",
         schedule: {},
       }),
-    ).toMatchObject({ error: expect.stringContaining("run only for the person who owns it") });
+    ).toMatchObject({ error: expect.stringContaining("Only the person who owns this routine") });
     expect(updateMany).not.toHaveBeenCalled();
+    await updateScheduleFromTool(updateDeps, {
+      ...owner,
+      userId: "user-2",
+      routineId: "routine-1",
+      active: false,
+      schedule: {},
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: "user-1" }),
+        data: expect.not.objectContaining({ userId: expect.anything() }),
+      }),
+    );
+    updateMany.mockClear();
 
     const result = await update({ git: true });
     expect(updateMany).toHaveBeenCalledWith(

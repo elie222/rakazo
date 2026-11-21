@@ -3,23 +3,42 @@ import { recordUsage } from "@rakazo/db";
 import type { AutoReviewChecker } from "../../approvals/auto-review.js";
 import {
   autoReviewTimeoutMs,
+  includedReviewChecker,
   isAutoReviewCheckerConfigured,
   resolveAutoReviewProviderKind,
 } from "../../approvals/auto-review.js";
 import { createAutoReviewProvider } from "../../approvals/auto-review-factory.js";
+import { CheckerConnectionUnavailableError } from "../../approvals/auto-review-failures.js";
 import { DecisionAutoReviewProvider } from "../../approvals/decision-auto-review.js";
 import { decisionModel } from "../../approvals/decision-models.js";
 import { operatorReviewObserver } from "../../approvals/operator-review-usage.js";
+import { DataRetentionRefusedError } from "../../models/endpoints/data-retention.js";
 import {
   findConnectedModelCredential,
   hasHostedModelCredits,
 } from "../../models/model-selection.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { modelCreditBillingEnabled, resolveModelKey } from "./run-model.js";
+
+/** The deployment's operator-funded reviewer, when hosted credits include one. */
+export async function includedAutoReviewChecker(
+  deps: Pick<ExecutorDeps, "prisma" | "billingEnabled">,
+): Promise<AutoReviewChecker | null> {
+  return includedReviewChecker(await modelCreditBillingEnabled(deps));
+}
+
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(
   deps: ExecutorDeps,
-  scope: { runId: string; spaceId: string; userId: string; botId: string; threadId: string },
+  scope: {
+    runId: string;
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    /** Names the reviewed action on the review's usage records. */
+    operationId: string;
+  },
   options: {
     injectedReview?: AutoReviewProvider;
     memberChecker: boolean;
@@ -27,7 +46,7 @@ export async function autoReviewCheckerProvider(
   },
   checker: AutoReviewChecker,
 ): Promise<AutoReviewProvider> {
-  const { runId, spaceId, userId, botId, threadId } = scope;
+  const { runId, spaceId, userId, botId, threadId, operationId } = scope;
   const { injectedReview, memberChecker, registerSecrets } = options;
   if (injectedReview) return injectedReview;
   const deploymentChoice = !memberChecker && !checker.credentialId && !checker.creditOfferingId;
@@ -65,7 +84,7 @@ export async function autoReviewCheckerProvider(
         botId,
         runId,
         parentRunId: runId,
-        operationId: `auto-review:${runId}`,
+        operationId,
         operationKind: "setup",
       })
     : undefined;
@@ -76,7 +95,7 @@ export async function autoReviewCheckerProvider(
       botId,
       parentRunId: runId,
       runId,
-      operationId: `auto-review:${runId}`,
+      operationId,
       operationKind: "setup",
       fundingSource: operatorFunded ? "operator" : "customer",
     });
@@ -92,7 +111,7 @@ export async function autoReviewCheckerProvider(
     !checker.creditOfferingId &&
     !(await hasHostedModelCredits(deps.prisma, { userId, spaceId }, checker.provider))
   ) {
-    throw new Error("Selected checker connection is unavailable");
+    throw new CheckerConnectionUnavailableError();
   }
   const decision = decisionModel(checker.provider, checker.model);
   const deploymentKey =
@@ -115,17 +134,22 @@ export async function autoReviewCheckerProvider(
         },
       );
   const callObserver = operatorObserver ?? judgeKey?.callObserver;
+  if (decision && judgeKey?.zeroDataRetention && !decision.dataRetentionControl) {
+    throw new DataRetentionRefusedError("Selected checker cannot restrict data retention");
+  }
   if (decision)
     return new DecisionAutoReviewProvider({
       provider: decision.create({
         apiKey: deploymentKey ?? judgeKey?.apiKey ?? "",
+        ...(judgeKey?.zeroDataRetention ? { zeroDataRetention: true } : {}),
         callObserver,
         onUsage: operatorFunded ? undefined : onUsage,
       }),
       providerId: checker.provider,
       model: checker.model,
+      calibration: decision.calibration,
     });
-  if (!judgeKey) throw new Error("Selected checker connection is unavailable");
+  if (!judgeKey) throw new CheckerConnectionUnavailableError();
   return createAutoReviewProvider("llm", {
     llm: {
       onUsage,
@@ -133,10 +157,12 @@ export async function autoReviewCheckerProvider(
       checker,
       apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
       callObserver,
+      billing: judgeKey.billing,
       accountId: judgeKey.accountId,
       gatewayId: judgeKey.gatewayId,
       projectId: judgeKey.projectId,
       region: judgeKey.region,
+      zeroDataRetention: judgeKey.zeroDataRetention,
       baseUrl: judgeKey.baseUrl,
       headers: judgeKey.headers,
       allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,

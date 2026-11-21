@@ -1,9 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { describe, expect, it } from "vitest";
+import type * as MessageQuote from "@rakazo/core/message-quote";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyLocalChoiceDismissals,
   choiceCardOptions,
   DISMISSED_CHOICE_ANSWER_ID,
+  hasQuotableText,
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
   messageHasInlineControls,
@@ -12,8 +14,21 @@ import {
   threadCardWidth,
 } from "./message-presentation";
 
+const parsedMarkdown = vi.hoisted(() => vi.fn());
+vi.mock("@rakazo/core/message-quote", async (importOriginal) => {
+  const actual = await importOriginal<typeof MessageQuote>();
+  return {
+    ...actual,
+    visibleTextFromMarkdown: (markdown: string) => {
+      parsedMarkdown(markdown);
+      return actual.visibleTextFromMarkdown(markdown);
+    },
+  };
+});
+beforeEach(() => parsedMarkdown.mockClear());
+
 describe("mobile message presentation", () => {
-  it("centers handoffs, inter-agent messages, and channel mirrors", () => {
+  it("centers handoffs, inter-agent messages, channel mirrors and routine changes", () => {
     const blocks = [
       { kind: "handoff", fromBotId: "a", toBotId: "b", text: "Go" },
       { kind: "bot_message_sent", toBotId: "b", toBotName: "Research", text: "Go" },
@@ -31,6 +46,7 @@ describe("mobile message presentation", () => {
         fromLabel: "Alex",
         text: "Hello from the group",
       },
+      { kind: "routine_event", change: "created", name: "Morning joke" },
     ] as MessageBlock[];
 
     for (const block of blocks) expect(isCenteredAgentEvent([block])).toBe(true);
@@ -247,6 +263,55 @@ describe("quotableMessageSegments", () => {
     expect(quotableMessageSegments("user", blocks)).not.toBe(
       quotableMessageSegments("bot", blocks),
     );
+  });
+});
+
+describe("hasQuotableText", () => {
+  const text = (value: string) => [{ kind: "text", text: value } as MessageBlock];
+
+  it("agrees with the quote sheet's segments", () => {
+    const samples = [
+      "Plain words",
+      "## Heading\n\n- **bold** item\n1. step",
+      "2024 was a year",
+      "> quoted line",
+      "```ts\nconst a = 1;\n```",
+      "    indented code",
+      "| a | b |\n|---|---|\n| 1 | 2 |",
+      "![](https://example.com/chart.png)",
+      "![chart](https://example.com/chart.png)",
+      "<!-- hidden -->",
+      "<div>\nhidden\n</div>",
+      "[ref]:\nhttps://example.com",
+      "[](\nhttps://example.com)",
+      "1.",
+      "1. \n2. ",
+      "---",
+      "* * *",
+      "&nbsp;",
+      "`inline` code",
+      "   ",
+    ];
+    for (const sample of samples) {
+      for (const role of ["bot", "user"] as const) {
+        const expected = quotableMessageSegments(role, text(sample)).length > 0;
+        expect([sample, role, hasQuotableText(role, text(sample))]).toEqual([
+          sample,
+          role,
+          expected,
+        ]);
+      }
+    }
+    expect(hasQuotableText("bot", [])).toBe(false);
+    expect(hasQuotableText("bot", text("x".repeat(100_001)))).toBe(false);
+  });
+
+  it("skips the Markdown parse when the words plainly show", () => {
+    const blocks = text("**Done**, the report is ready.");
+    expect(hasQuotableText("bot", blocks)).toBe(true);
+    expect(parsedMarkdown).not.toHaveBeenCalled();
+    expect(hasQuotableText("bot", text("![](https://example.com/chart.png)"))).toBe(false);
+    expect(parsedMarkdown).toHaveBeenCalledTimes(1);
   });
 });
 

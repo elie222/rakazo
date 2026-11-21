@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   apiBase: "https://example.test",
   dismiss: vi.fn(),
   alert: vi.fn(),
+  announce: vi.fn(),
   platform: { OS: "ios" },
 }));
 const bot = {
@@ -125,6 +126,7 @@ vi.mock("../../components/native/glass-icon-button", () => ({
   ),
 }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { announceForAccessibility: state.announce },
   Platform: state.platform,
   Alert: { alert: state.alert },
   StyleSheet: { create: (styles: unknown) => styles },
@@ -290,11 +292,62 @@ it("ignores stale server responses and restores chats when cleared", async () =>
   await type("second");
   await act(async () => vi.advanceTimersByTime(200));
   expect(container.textContent).toContain("No results");
+  expect(state.announce).toHaveBeenCalledExactlyOnceWith("No results");
   await act(async () => held.resolve([message]));
   expect(row("Found note, Message")).toBeNull();
   await type("");
   expect(row("Scout, Bot")).not.toBeNull();
 });
+it("announces No results once when a finished query has no rows", async () => {
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(container.textContent).toContain("No results");
+  expect(state.announce).toHaveBeenCalledExactlyOnceWith("No results");
+});
+
+it("says nothing while the query is still searching", async () => {
+  const held = deferred<(typeof message)[]>();
+  state.search.mockImplementationOnce(() => held.promise);
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(container.textContent).toContain("Searching…");
+  expect(state.announce).not.toHaveBeenCalled();
+  await act(async () => held.resolve([]));
+  expect(state.announce).toHaveBeenCalledExactlyOnceWith("No results");
+});
+
+it("does not announce a failed search, which has its own alert", async () => {
+  state.search.mockRejectedValueOnce(new Error("Search is unavailable right now"));
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Search is unavailable right now",
+  );
+  expect(state.announce).not.toHaveBeenCalled();
+});
+
+it("does not announce when the query is cleared mid-search", async () => {
+  const held = deferred<(typeof message)[]>();
+  state.search.mockImplementationOnce(() => held.promise);
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  await type("");
+  await act(async () => held.resolve([]));
+  expect(container.textContent).not.toContain("No results");
+  expect(state.announce).not.toHaveBeenCalled();
+});
+
+it("does not announce a query typed after clearing until its own search finishes", async () => {
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  await type("");
+  await type("nothing else");
+  expect(state.announce).toHaveBeenCalledOnce();
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(state.announce).toHaveBeenCalledTimes(2);
+  expect(state.announce).toHaveBeenLastCalledWith("No results");
+});
+
 it("says the search failed instead of no results, ignoring superseded and cleared requests", async () => {
   const pending: {
     resolve: (hits: (typeof message)[]) => void;
@@ -325,6 +378,7 @@ it("says the search failed instead of no results, ignoring superseded and cleare
   expect(state.search).toHaveBeenLastCalledWith("first", expect.any(AbortSignal));
   await act(async () => pending[1]!.resolve([]));
   expect(container.textContent).toBe("CloseNo results");
+  expect(state.announce).toHaveBeenCalledExactlyOnceWith("No results");
 
   await search("Scout");
   expect(container.textContent).not.toContain("Search is unavailable right now");

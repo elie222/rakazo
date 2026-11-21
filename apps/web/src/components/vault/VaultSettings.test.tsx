@@ -7,6 +7,8 @@ import {
   encodeLoginSecret,
   FULL_VAULT_ANSWER,
   noneSkipped,
+  VAULT_IMPORT_BATCH_LIMIT,
+  VAULT_ITEM_LIMIT,
 } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -958,6 +960,31 @@ describe("an older server", () => {
     expect(buttonIn(editor(), "Save")!.disabled).toBe(false);
   });
 
+  it("marks the authenticator key and other sites invalid, described by their messages", async () => {
+    await render();
+    await startNew("login");
+    await click(buttonIn(editor(), "Add an authenticator key")!);
+    const key = field("Authenticator key");
+    expect(key.getAttribute("aria-invalid")).toBeNull();
+    expect(key.getAttribute("aria-describedby")).toBeNull();
+    await type(key, "not a key");
+    expect(key.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(key.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "This authenticator key can't be read.",
+    );
+    await type(key, "");
+    expect(key.getAttribute("aria-invalid")).toBeNull();
+    await click(buttonIn(editor(), "Add other sites")!);
+    const sites = field("Also on");
+    await type(sites, "http://www.github.com");
+    expect(sites.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(sites.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "Enter each site as an HTTPS address a login can be saved for.",
+    );
+    await type(sites, "https://www.github.com");
+    expect(sites.getAttribute("aria-invalid")).toBeNull();
+  });
+
   it("keeps a typed authenticator key when the save fails", async () => {
     vault.put.mockRejectedValueOnce(new Error("offline"));
     await render();
@@ -1451,6 +1478,7 @@ describe("VaultSettings item details", () => {
     vault.import.mockResolvedValue({
       added: 1,
       skipped: { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 },
+      notSaved: [],
     });
     await click(buttonIn(find("vault-import-page"), "Import")!);
     expect(vault.import).toHaveBeenCalledWith({
@@ -1544,7 +1572,10 @@ describe("VaultSettings item details", () => {
     // The Vault already holds the five listed items.
     const csv = [
       "url,password",
-      ...Array.from({ length: 97 }, (_, index) => `https://s${index}.example.com,fake`),
+      ...Array.from(
+        { length: VAULT_ITEM_LIMIT - 3 },
+        (_, index) => `https://s${index}.example.com,fake`,
+      ),
     ].join("\n");
     const input = byTestId<HTMLInputElement>("vault-import-file");
     Object.defineProperty(input, "files", { value: [new File([csv], "export.csv")] });
@@ -1555,9 +1586,17 @@ describe("VaultSettings item details", () => {
     const counts = [...document.querySelectorAll("[data-testid=vault-import-count]")].map(
       (row) => row.textContent,
     );
-    expect(counts).toEqual(["To add95", "Vault full2"]);
+    expect(counts).toEqual([`To add${VAULT_ITEM_LIMIT - 5}`, "Vault full2"]);
+    vault.import.mockImplementation(async ({ rows }: { rows: unknown[] }) => ({
+      added: rows.length,
+      skipped: noneSkipped(),
+      notSaved: [],
+    }));
     await click(buttonIn(find("vault-import-page"), "Import")!);
-    expect(vault.import.mock.lastCall?.[0].rows).toHaveLength(97);
+    // A request at a time, each no bigger than a server from before the larger Vault accepts.
+    const sent = vault.import.mock.calls.map(([input]) => input.rows.length);
+    expect(Math.max(...sent)).toBe(VAULT_IMPORT_BATCH_LIMIT);
+    expect(sent.reduce((total, count) => total + count, 0)).toBe(VAULT_ITEM_LIMIT - 3);
   });
 
   it("says an import that stopped partway may have saved some, and plans again without them", async () => {

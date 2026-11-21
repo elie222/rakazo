@@ -330,7 +330,7 @@ describe("persistMemoryProviderConfig", () => {
       connectionInput("local", "http://10.0.0.8:6767"),
     );
 
-    expect(fetchMock.mock.calls[0]![0]).toBe("http://10.0.0.8:6767/v3/container-tags/list");
+    expect(fetchMock.mock.calls[0]![0]).toBe("http://10.0.0.8:6767/namespaces?limit=1");
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
@@ -417,7 +417,7 @@ describe("persistMemoryProviderConfig", () => {
       connectionInput("local", "http://[::1]:6767"),
     );
 
-    expect(fetchMock.mock.calls[0]![0]).toBe("http://[::1]:6767/v3/container-tags/list");
+    expect(fetchMock.mock.calls[0]![0]).toBe("http://[::1]:6767/namespaces?limit=1");
     expect(upsert).toHaveBeenCalled();
     vi.unstubAllGlobals();
   });

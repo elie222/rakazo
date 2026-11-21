@@ -622,6 +622,15 @@ describe("provisioning network rollback", () => {
 });
 
 describe("restricted egress rekeying", () => {
+  async function egressReport() {
+    const { supervisorApp } = await import("./index.js");
+    const response = await supervisorApp.request("/diagnostics/egress", {
+      headers: { authorization: `Bearer ${resolveSupervisorToken(process.env)}` },
+    });
+    expect(response.status).toBe(200);
+    return response.text();
+  }
+
   function setupExisting(botNet: string) {
     const homePath = path.join(process.env.DATA_DIR!, "homes", "bot");
     const info = {
@@ -703,33 +712,56 @@ describe("restricted egress rekeying", () => {
       COMPUTER_IMAGE,
       ["1.1.1.1", "9.9.9.9"],
     );
+    expect(await egressReport()).toContain("Restricted egress.");
   });
 
   it("refuses restricted computers until the host ruleset is verified", async () => {
     vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
     const { existing } = setupExisting(computerNetworkNameFor("bot"));
-    mocks.verifyRestrictedEgress.mockRejectedValueOnce(new Error("egress is not enforced"));
+    const { EgressNotEnforced } = await import("./egress-probe.js");
+    mocks.verifyRestrictedEgress.mockRejectedValueOnce(new EgressNotEnforced("rules missing"));
 
     const response = await provision();
     expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ error: "egress is not enforced" });
+    expect(await response.json()).toEqual({ error: "rules missing" });
     expect(existing.start).not.toHaveBeenCalled();
     expect(mocks.docker.createContainer).not.toHaveBeenCalled();
     expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
+    expect(await egressReport()).toContain("Computer starts are blocked");
+  });
+
+  it("reports configured open egress without probing", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "open");
+    expect(await egressReport()).toContain("SANDBOX_COMPUTER_EGRESS=open\nOpen egress.");
+    expect(mocks.verifyRestrictedEgress).not.toHaveBeenCalled();
+  });
+
+  it("does not report verified restrictions for the shared screen network", async () => {
+    vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "restricted");
+    vi.stubEnv("SANDBOX_SCREEN_NETWORK", "internal");
+    expect(await egressReport()).toContain("Computers use a shared network.");
+    expect(mocks.verifyRestrictedEgress).not.toHaveBeenCalled();
   });
 
   it("auto egress stays open only after a probe shows the rules are missing", async () => {
     vi.stubEnv("SANDBOX_COMPUTER_EGRESS", "auto");
     const { existing } = setupExisting(computerNetworkNameFor("bot"));
     const { EgressNotEnforced } = await import("./egress-probe.js");
+    const probe = deferred<void>();
     mocks.verifyRestrictedEgress
-      .mockRejectedValueOnce(new Error("probe timed out"))
+      .mockReturnValueOnce(probe.promise)
       .mockRejectedValueOnce(new EgressNotEnforced("a computer bridge reached the host"));
 
-    // A probe that could not finish decides nothing: refuse, and probe again next time.
-    const refused = await provision();
+    const provisioning = provision();
+    await vi.waitFor(() => expect(mocks.verifyRestrictedEgress).toHaveBeenCalledOnce());
+    expect(await egressReport()).toContain("Waiting for the host firewall check.");
+    probe.reject(new Error("probe timed out"));
+    const refused = await provisioning;
     expect(refused.status).toBe(500);
     expect(existing.start).not.toHaveBeenCalled();
+    expect(await egressReport()).toBe(
+      "SANDBOX_COMPUTER_EGRESS=auto\nEgress check failed. See the supervisor logs for details.\n",
+    );
 
     mocks.docker.getNetwork.mockReturnValue({
       inspect: vi.fn().mockResolvedValue({ Id: "bot-network", Options: {} }),
@@ -741,6 +773,7 @@ describe("restricted egress rekeying", () => {
     const opened = await provision();
     expect(await opened.clone().text()).not.toMatch(/probe/);
     expect(opened.status).toBe(200);
+    expect(await egressReport()).toContain("Open egress fallback.");
     // The completed answer is kept: no third probe.
     await provision();
     expect(mocks.verifyRestrictedEgress).toHaveBeenCalledTimes(2);

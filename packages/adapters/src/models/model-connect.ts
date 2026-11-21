@@ -25,11 +25,13 @@ import {
   cloudflareModelRouting,
   isCloudflareModelProvider,
 } from "./endpoints/cloudflare-ai-gateway.js";
+import { dataRetentionForConnect } from "./endpoints/data-retention.js";
 import { vertexRoutingForConnect } from "./endpoints/google-vertex-routing.js";
 import {
   compatibleEndpointPreset,
   normalizeOpenAiCompatibleBaseUrl,
 } from "./endpoints/openai-compatible-url.js";
+import { modelProviderDefinition } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
@@ -84,6 +86,8 @@ export function buildModelConnectPlaintext(
     ...(cacheCapabilities !== undefined ? { cacheCapabilities } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
   };
+  const retention = dataRetentionForConnect(input, inherited?.zeroDataRetention);
+  const zdr = retention ? { zeroDataRetention: retention } : {};
   if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
     const policy = { allowPrivate: options?.allowPrivateEndpoint };
     const prepared = prepareOpenAiCompatibleConnect(input, policy);
@@ -195,6 +199,7 @@ export function buildModelConnectPlaintext(
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...limits,
       ...routing,
+      ...zdr,
       ...models,
     });
   }
@@ -208,6 +213,7 @@ export function buildModelConnectPlaintext(
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...limits,
       ...routing,
+      ...zdr,
       ...models,
     });
   }
@@ -339,6 +345,9 @@ export function modelCredentialDto(
     id: row.id,
     provider: canonicalPiProviderId(row.provider),
     label: row.label,
+    ...(modelProviderDefinition(row.provider)?.preserveModelOrder
+      ? { preserveModelOrder: true }
+      : {}),
     hasKey: storedModelSecretHasApiKey(plaintext),
     isDefault: row.isDefault ?? false,
     ...(row.defaultModel ? { modelId: row.defaultModel } : {}),
@@ -364,6 +373,7 @@ export function modelCredentialDto(
       ...(parsed.kind === "api_key" && parsed.gatewayId ? { gatewayId: parsed.gatewayId } : {}),
       ...(parsed.kind === "api_key" && parsed.projectId ? { projectId: parsed.projectId } : {}),
       ...(parsed.kind === "api_key" && parsed.region ? { region: parsed.region } : {}),
+      ...(parsed.kind === "api_key" && parsed.zeroDataRetention ? { zeroDataRetention: true } : {}),
       ...(parsed.models ? { modelSettings: parsed.models } : {}),
     };
   }

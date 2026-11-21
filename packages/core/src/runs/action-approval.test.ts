@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { ActionApprovalRule, ApprovalMode } from "./action-approval.js";
 import {
   applyJudgeDecision,
+  approvalCardExpires,
   approvalModeFromPreference,
   approvalPreferenceFromMode,
   approvalRuleApplies,
   approvalRuleChoices,
   approvalRuleEffectChoices,
   batchActions,
+  clicksBeforeTyping,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -15,19 +17,21 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
-  newSiteOutcome,
+  lastingWriteKind,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
+  ownComputerActionNeedsReview,
   planActionGate,
   receiptItems,
   repeatsDeniedAction,
   resolveActionApproval,
   resolveActionApprovalDetail,
   resolveActionApprovalForTools,
-  savedContextWriteNeedsApproval,
+  savedContextWriteNeedsReview,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   toolResultTaintsRun,
+  unattendedApprovalExpireAfterMs,
   watchToolRefusal,
 } from "./action-approval.js";
 
@@ -62,6 +66,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("secret_request", false)).toBe(true);
     expect(toolRequiresApproval("forget_secret", false)).toBe(true);
     expect(toolRequiresApproval("forget_memory", false)).toBe(true);
+    expect(toolRequiresApproval("delete_shared_memory", false)).toBe(true);
+    expect(toolRequiresApproval("skill_delete", false)).toBe(true);
+    expect(toolRequiresApproval("remove_mcp_server", false)).toBe(true);
     expect(toolRequiresApproval("list_secrets", false)).toBe(false);
     // A random value the bot cannot read exposes nothing, and never replaces a saved credential.
     expect(toolRequiresApproval("generate_secret", false)).toBe(false);
@@ -71,7 +78,7 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("archive_bot", false)).toBe(true);
     expect(toolRequiresApproval("cloud_agent_launch", false)).toBe(true);
     expect(toolRequiresApproval("create_space", false)).toBe(true);
-    expect(toolRequiresExplicitApproval("create_space")).toBe(true);
+    expect(toolRequiresExplicitApproval("create_space")).toBe(false);
     // The wallet owner approves every purchase on the provider's side.
     expect(toolRequiresApproval("request_purchase", false)).toBe(false);
     expect(toolRequiresApproval("purchase_status", false)).toBe(false);
@@ -95,16 +102,19 @@ describe("toolRequiresApproval", () => {
     }
   });
 
-  it("always asks before bot management writes that cost money or rewrite a bot", () => {
-    for (const name of ["set_child_instructions", "set_child_bot_model"]) {
-      expect(toolRequiresApproval(name, false)).toBe(true);
-      expect(toolRequiresExplicitApproval(name)).toBe(true);
-    }
+  it("always asks a person before rewriting another bot's instructions", () => {
+    expect(toolRequiresApproval("set_child_instructions", false)).toBe(true);
+    expect(toolRequiresExplicitApproval("set_child_instructions")).toBe(true);
   });
 
-  it("treats grouping and scheduling other bots as ordinary approvals that Never ask skips", () => {
-    for (const name of ["create_group", "update_group", "create_child_routine"]) {
-      expect(toolRequiresApproval(name, false)).toBe(true);
+  it("treats a child bot's model as an ordinary approval", () => {
+    expect(toolRequiresApproval("set_child_bot_model", false)).toBe(true);
+    expect(toolRequiresExplicitApproval("set_child_bot_model")).toBe(false);
+  });
+
+  it("does not ask before grouping or scheduling other bots, like spawning one", () => {
+    for (const name of ["create_group", "update_group", "create_child_routine", "spawn_bot"]) {
+      expect(toolRequiresApproval(name, false)).toBe(false);
       expect(toolRequiresExplicitApproval(name)).toBe(false);
     }
   });
@@ -210,16 +220,35 @@ describe("isOwnerStartedRun", () => {
     ["call_end", false, true],
     ["follow_up", true, true],
     ["follow_up", false, false],
+    ["routine", false, true],
+    ["messaging", false, true],
     ["bot_message", true, false],
-    ["messaging", true, false],
     ["spawn", true, false],
     ["tickets", true, false],
     ["webhook", true, false],
-    ["routine", true, false],
     ["resume", true, false],
     ["unknown", true, false],
   ])("treats %s (follow-up from user: %s) as owner-started: %s", (trigger, fromUser, expected) => {
     expect(isOwnerStartedRun(trigger, fromUser)).toBe(expected);
+  });
+
+  it("does not count a chat-app message from someone else", () => {
+    expect(isOwnerStartedRun("messaging", false, true)).toBe(false);
+  });
+});
+
+describe("approvalCardExpires", () => {
+  it.each([
+    ["routine", true],
+    ["webhook", true],
+    ["bot_message", true],
+    ["spawn", true],
+    ["tickets", true],
+    ["user", false],
+    ["messaging", false],
+    ["follow_up", false],
+  ])("expires a card from a %s run: %s", (trigger, expected) => {
+    expect(approvalCardExpires(trigger)).toBe(expected);
   });
 });
 
@@ -484,13 +513,17 @@ describe("planActionGate", () => {
     }
   });
 
-  it("asks for a purchase in every mode, past an allow rule, and still refuses a block", () => {
-    for (const mode of ["never", "auto", "ask"] as const) {
+  it("asks for a purchase in Auto and Ask, past an allow rule, and still refuses a block", () => {
+    for (const mode of ["auto", "ask"] as const) {
       expect(gate(mode, { purchase: true, consequential: false })).toBe("ask");
       expect(gate(mode, { purchase: true, resolved: allowed })).toBe("ask");
-      expect(gate(mode, { purchase: true, mandatory: true, steerable: true })).toBe("ask");
       expect(gate(mode, { purchase: true, resolved: blocked })).toBe("deny");
     }
+  });
+
+  it("runs a purchase in Never ask, where only a block or the spending limit stops it", () => {
+    expect(gate("never", { purchase: true, consequential: false })).toBe("allow");
+    expect(gate("never", { purchase: true, resolved: blocked })).toBe("deny");
   });
 
   it("runs reads in every mode", () => {
@@ -820,24 +853,6 @@ describe("applyJudgeDecision", () => {
   });
 });
 
-describe("newSiteOutcome", () => {
-  it("allows a new site Auto Review passed, in any run", () => {
-    for (const trigger of ["user", "routine", "webhook"]) {
-      expect(newSiteOutcome({ trigger, decision: "allow" })).toBe("allow");
-    }
-  });
-
-  it("asks a person about a new site that was not passed", () => {
-    for (const trigger of ["user", "follow_up", "routine", "messaging"]) {
-      expect(newSiteOutcome({ trigger, decision: "ask" })).toBe("ask");
-    }
-  });
-
-  it("refuses it in a webhook run, which has nobody to ask", () => {
-    expect(newSiteOutcome({ trigger: "webhook", decision: "ask" })).toBe("deny");
-  });
-});
-
 describe("watchToolRefusal", () => {
   const rule = (matchKind: string, matchValue: string, effect = "require_approval") =>
     ({ effect, matchKind, matchValue }) as Parameters<typeof watchToolRefusal>[0]["rules"][number];
@@ -947,15 +962,77 @@ describe("connectorReadRequiresApproval", () => {
   });
 });
 
-describe("savedContextWriteNeedsApproval", () => {
+describe("lastingWriteKind", () => {
+  it("names the write that outlives the run", () => {
+    expect(lastingWriteKind({ toolName: "remember", args: {}, savedContextWrite: true })).toBe(
+      "memory",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "create_child_routine", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { on: "email" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "update_bot", args: { instructions: "i" } })).toBe(
+      "instructions",
+    );
+  });
+
+  it("leaves pauses, new times, other settings and other paths to their own rubric", () => {
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { active: false } })).toBe(
+      undefined,
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { cron: "0 9 * * *" } })).toBe(
+      undefined,
+    );
+    expect(
+      lastingWriteKind({ toolName: "schedule_update", args: { prompt: "  ", active: false } }),
+    ).toBe(undefined);
+    expect(lastingWriteKind({ toolName: "update_bot", args: { model: "m" } })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "update_bot", args: { model: "m", instructions: "  " } }),
+    ).toBe(undefined);
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructions_offset: 0 },
+      }),
+    ).toBe(undefined);
+    // A null or blank offset is not a paged read: the update still writes the instructions.
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructions_offset: null },
+      }),
+    ).toBe("instructions");
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructionsOffset: "" },
+      }),
+    ).toBe("instructions");
+    expect(
+      lastingWriteKind({ toolName: "set_child_instructions", args: { instructions: "i" } }),
+    ).toBe(undefined);
+    expect(lastingWriteKind({ toolName: "remember", args: {} })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" }, newSite: true }),
+    ).toBe(undefined);
+  });
+});
+
+describe("savedContextWriteNeedsReview", () => {
   const readOutside = async () => true;
   const readNothing = async () => false;
 
   it.each(["remember", "save_memory", "save_shared_memory", "skill_create", "skill_update"])(
-    "gates %s only once outside content entered the run",
+    "reviews %s only once outside content entered the run",
     async (name) => {
-      await expect(savedContextWriteNeedsApproval(name, readOutside)).resolves.toBe(true);
-      await expect(savedContextWriteNeedsApproval(name, readNothing)).resolves.toBe(false);
+      await expect(savedContextWriteNeedsReview(name, readOutside)).resolves.toBe(true);
+      await expect(savedContextWriteNeedsReview(name, readNothing)).resolves.toBe(false);
     },
   );
 
@@ -973,9 +1050,95 @@ describe("savedContextWriteNeedsApproval", () => {
       "write_file",
       "send_email",
     ]) {
-      await expect(savedContextWriteNeedsApproval(name, check)).resolves.toBe(false);
+      await expect(savedContextWriteNeedsReview(name, check)).resolves.toBe(false);
     }
     expect(checked).toBe(false);
+  });
+});
+
+describe("ownComputerActionNeedsReview", () => {
+  const yes = async () => true;
+  const no = async () => false;
+  const review = (name: string, args: Record<string, unknown>, tainted = yes, pageSiteGiven = no) =>
+    ownComputerActionNeedsReview(name, args, { tainted, pageSiteGiven });
+
+  it.each([
+    ["shell", { command: "ls" }],
+    [
+      "browser_act",
+      {
+        actions: [
+          { kind: "click", ref: "e1" },
+          { kind: "fill", ref: "e2", text: "x" },
+        ],
+      },
+    ],
+    ["browser_act", { actions: [{ kind: "upload", ref: "e2", paths: ["a.pdf"] }] }],
+    ["browser_navigate", { url: "https://collect.example.net/?d=1" }],
+    ["open_path", { path: "https://collect.example.net/?d=1" }],
+    ["computer_act", { actions: [{ kind: "type", text: "notes" }] }],
+    ["computer_act", { actions: [{ kind: "key", key: "v", modifiers: ["ctrl"] }] }],
+    [
+      "computer_act",
+      { actions: [{ kind: "focus", application: "Mail", uri: "mailto:a@example.com" }] },
+    ],
+    ["launch_app", { application: "Mail", uri: "mailto:a@example.com?body=notes" }],
+  ])(
+    "reviews %s that could send something only once outside content entered the run",
+    async (name, args) => {
+      await expect(review(name, args)).resolves.toBe(true);
+      await expect(review(name, args, no)).resolves.toBe(false);
+    },
+  );
+
+  it.each([
+    ["browser_act", { actions: [{ kind: "fill", ref: "e2", text: "Porto" }] }],
+    ["browser_navigate", { url: "https://shop.example.com/orders" }],
+    ["open_path", { path: "https://shop.example.com/orders" }],
+  ])("leaves %s on a site the run was given alone", async (name, args) => {
+    await expect(review(name, args, yes, yes)).resolves.toBe(false);
+  });
+
+  it("leaves calls that send nothing the bot chose alone, without checking the run", async () => {
+    let checked = false;
+    const check = async () => {
+      checked = true;
+      return true;
+    };
+    for (const [name, args] of [
+      ["browser_act", { actions: [{ kind: "click", ref: "e1" }] }],
+      [
+        "computer_act",
+        {
+          actions: [
+            { kind: "click", x: 1, y: 2 },
+            { kind: "scroll", amount: 3 },
+          ],
+        },
+      ],
+      ["open_path", { path: "reports/q4.pdf" }],
+      ["open_path", { path: "report:2026.txt" }],
+      ["open_path", { path: "mailto:a@example.com?body=notes" }],
+      ["open_path", { path: "C:\\Users\\bot\\notes.txt" }],
+      ["launch_app", { application: "Calculator" }],
+      ["write_file", { path: "a.txt" }],
+      ["browser_snapshot", {}],
+    ] as const) {
+      await expect(review(name, args, check, check)).resolves.toBe(false);
+    }
+    expect(checked).toBe(false);
+  });
+});
+
+describe("clicksBeforeTyping", () => {
+  it("is true only when a click comes before something typed or uploaded", () => {
+    const of = (...kinds: string[]) =>
+      clicksBeforeTyping({ actions: kinds.map((kind) => ({ kind })) });
+    expect(of("click", "fill")).toBe(true);
+    expect(of("click", "upload")).toBe(true);
+    expect(of("fill", "click")).toBe(false);
+    expect(of("click", "click")).toBe(false);
+    expect(of("type")).toBe(false);
   });
 });
 
@@ -1105,7 +1268,7 @@ describe("approvalRuleEffectChoices", () => {
       matchKind,
       matchValue,
     });
-    expect(approvalRuleEffectChoices(rule("tool", "create_space"))).toEqual([
+    expect(approvalRuleEffectChoices(rule("tool", "set_child_instructions"))).toEqual([
       "require_approval",
       "deny",
     ]);
@@ -1115,5 +1278,19 @@ describe("approvalRuleEffectChoices", () => {
       "deny",
     ]);
     expect(approvalRuleEffectChoices(rule("category", "email"))).toEqual([]);
+  });
+});
+
+describe("unattendedApprovalExpireAfterMs", () => {
+  it("uses the deployment's span when it is a usable one", () => {
+    expect(unattendedApprovalExpireAfterMs("7200000")).toBe(7_200_000);
+    expect(unattendedApprovalExpireAfterMs(" 60000 ")).toBe(60_000);
+    expect(unattendedApprovalExpireAfterMs("2592000000")).toBe(2_592_000_000);
+  });
+
+  it("keeps 30 minutes for a blank, unreadable or out-of-range value", () => {
+    for (const raw of [undefined, "", "   ", "soon", "0", "-1000", "59999", "2592000001"]) {
+      expect(unattendedApprovalExpireAfterMs(raw), String(raw)).toBe(30 * 60 * 1000);
+    }
   });
 });

@@ -2,11 +2,22 @@ import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
-import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import {
+  createLogger,
+  createTestSink,
+  getLogContext,
+  installLogger,
+  runWithLogContext,
+} from "@rakazo/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "./voice.js";
-import { mountVoiceHttpRoutes, persistVoiceCredential, voiceCredentialPlaintext } from "./voice.js";
+import {
+  mountVoiceHttpRoutes,
+  persistVoiceCredential,
+  voiceCredentialPlaintext,
+  withVoiceConnection,
+} from "./voice.js";
 
 const actor = { userId: "user-1", spaceId: "space-1" } as Actor;
 
@@ -179,5 +190,33 @@ describe("saving a voice connection linked to the model connection", () => {
     const outage = Object.assign(new Error("Can't reach database server"), { code: "P1001" });
 
     await expect(save(outage)).rejects.toBe(outage);
+  });
+});
+
+describe("withVoiceConnection on a provider outage", () => {
+  afterEach(() => installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] })));
+
+  it("answers a provider that timed out as an outage to wait out, logged once as expected", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const timeout = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    await runWithLogContext({}, async () => {
+      const failure = await withVoiceConnection("voice-provider", false, () =>
+        Promise.reject(timeout),
+      ).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(adapters.VoiceProviderUnavailableError);
+      expect(failure).toMatchObject({ kind: "SERVICE_UNAVAILABLE", cause: timeout });
+      expect(getLogContext()["error.expected"]).toBe(true);
+    });
+    expect(sink.events.map(({ level, message }) => ({ level, message }))).toEqual([
+      { level: "warn", message: "voice provider unavailable" },
+    ]);
+  });
+
+  it("leaves other provider failures as they were", async () => {
+    const refusal = new Error("speaking failed: voice not found");
+    await expect(
+      withVoiceConnection("voice-provider", false, () => Promise.reject(refusal)),
+    ).rejects.toBe(refusal);
   });
 });

@@ -5,6 +5,8 @@ import {
   hasHostedModelCredits,
   isAutoReviewCheckerConfigured,
   loadUserIncomingCalls,
+  meetingCalendarScope,
+  nativeCalendarScope,
   PushSessionEndedError,
   settleCallRequest,
   validateCreditOfferingChoice,
@@ -26,7 +28,8 @@ import {
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
-  auditLogOrganization,
+  auditLogAccess,
+  auditLogScope,
   commitBotUpdate,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
@@ -39,6 +42,7 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
+  pageChangesScope,
   removeApprovalRule,
   runAsSystem,
   runAsTenant,
@@ -127,6 +131,16 @@ export function accountRoutes(ctx: RouterContext) {
     },
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    cloudComputers: {
+      list: authed.cloudComputers.list.handler(
+        async ({ context }) => (await deps.billing?.cloudComputers(context.actor)) ?? null,
+      ),
+      setSize: authed.cloudComputers.setSize.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        await billing.setComputerSize(context.actor, input.computerId, input.size);
+        return { ok: true as const };
+      }),
+    },
     billing: {
       selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) => {
         const billing = requireBilling(deps);
@@ -156,6 +170,9 @@ export function accountRoutes(ctx: RouterContext) {
         if (input?.referralCode) await billing.claimReferral(context.actor, input.referralCode);
         return billing.status(context.actor);
       }),
+      computerUsage: authed.billing.computerUsage.handler(async ({ context }) =>
+        requireBilling(deps).computerUsage(context.actor),
+      ),
       refresh: authed.billing.refresh.handler(async ({ context }) => {
         const billing = requireBilling(deps);
         await billing.syncForActor(context.actor);
@@ -299,10 +316,10 @@ export function accountRoutes(ctx: RouterContext) {
     },
     audit: {
       events: authed.audit.events.handler(async ({ context, input }) => {
-        const organizationId = await auditLogOrganization(deps.prisma, context.actor);
-        if (!organizationId) throw new ORPCError("FORBIDDEN");
+        const access = await auditLogAccess(deps.prisma, context.actor);
+        if (!access) throw new ORPCError("FORBIDDEN");
         return runAsSystem("read the organization's audit log", () =>
-          listAuditEvents(deps.prisma, organizationId, input),
+          listAuditEvents(deps.prisma, access.organizationId, auditLogScope(access, input)),
         );
       }),
     },
@@ -406,14 +423,33 @@ export function accountRoutes(ctx: RouterContext) {
         };
         const spaceChanges = async function* (
           signal: AbortSignal,
+          special?: "meetingCalendar" | "nativeCalendar" | "pages",
         ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
           if (!followSpaceChanges) return;
+          let scope = spaceId;
+          if (special === "meetingCalendar") {
+            if (!deps.meetingCalendar) return;
+            scope = meetingCalendarScope(spaceId, userId);
+          } else if (special === "nativeCalendar") {
+            if (!context.nativeSessionId) return;
+            scope = nativeCalendarScope({ spaceId, userId, sessionId: context.nativeSessionId });
+          } else if (special === "pages") {
+            scope = pageChangesScope(userId);
+          }
           // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
           // failure costs one reconnect every half minute rather than a tight loop.
           try {
-            for await (const spaceChange of followSpaceChanges(spaceId, signal))
-              yield { spaceChange };
+            for await (const spaceChange of followSpaceChanges(scope, signal)) {
+              if (
+                special
+                  ? spaceChange === special
+                  : spaceChange !== "meetingCalendar" &&
+                    spaceChange !== "nativeCalendar" &&
+                    spaceChange !== "pages"
+              )
+                yield { spaceChange };
+            }
           } catch (error) {
             await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
             throw error;
@@ -436,6 +472,9 @@ export function accountRoutes(ctx: RouterContext) {
             followChatAlerts(userId, spaceId, signal),
             rosterChanges(signal),
             spaceChanges(signal),
+            spaceChanges(signal, "meetingCalendar"),
+            spaceChanges(signal, "nativeCalendar"),
+            spaceChanges(signal, "pages"),
             organizationChanges(signal),
           ),
         );
@@ -632,7 +671,7 @@ export function accountRoutes(ctx: RouterContext) {
         return toVoiceStatus(cred);
       }),
       setSpeechModel: authed.voice.setSpeechModel.handler(async ({ context, input }) =>
-        updateVoiceSpeechModel(deps, context.actor, input),
+        updateVoiceSpeechModel(deps, context.actor, { ...input, signal: context.signal }),
       ),
       voices: authed.voice.voices.handler(async ({ context, input }) => {
         // A named provider lists its voices even before the copy has a default voice.
@@ -650,7 +689,23 @@ export function accountRoutes(ctx: RouterContext) {
         return withVoiceConnection(row.cred.provider, row.linked, () =>
           provider.listVoices(row.apiKey, voiceContext(context.actor, context.signal), {
             language: input.language,
+            model: row.cred.speechModel || undefined,
           }),
+        );
+      }),
+      models: authed.voice.models.handler(async ({ context, input }) => {
+        const row = await loadVoiceCredential(
+          deps,
+          context.actor,
+          input.provider,
+          input.scope,
+          context.signal,
+        );
+        if (!row) return [];
+        const provider = await voiceProviderFor(deps, row.cred.provider);
+        if (!provider.listModels) return [];
+        return withVoiceConnection(row.cred.provider, row.linked, () =>
+          provider.listModels!(row.apiKey, voiceContext(context.actor, context.signal)),
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>

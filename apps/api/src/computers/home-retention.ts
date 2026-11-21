@@ -86,8 +86,8 @@ interface HomeRetentionDeps {
  * is read again right before each email and inside the deletion's transaction, so resubscribing
  * or using a bot in the meantime cancels it.
  *
- * Deleting clears the computer's pointer to its stored home and the key that decrypts it; the
- * worker's storage sweep then removes the unowned objects. The computer row and its provider
+ * Deleting clears the computer's pointer to its stored home, its kept versions and the key that
+ * decrypts them; the worker's storage sweep then removes the unowned objects. The computer row and its provider
  * reference stay, so a provider that keeps its own disk resumes it; any other computer, or one
  * whose provider copy has expired, starts empty next time. Computers whose stored
  * home is only a backup are skipped: they work in a copy on a host. Aborting stops it
@@ -353,6 +353,7 @@ async function removeHome(prisma: PrismaClient, computerId: string) {
         homeRevisionAt: null,
       },
     });
+    await tx.computerHomeVersion.deleteMany({ where: { computerId } });
     await tx.homeDeletionNotice.delete({ where: { computerId } });
     return true;
   });
