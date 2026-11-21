@@ -14,15 +14,17 @@ import { ClientError, installedPluginParts } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
+  assertNameFreeWhereAvailable,
   availableInSpace,
   isUniqueViolation,
   JsonObject,
+  lockOwner,
+  NameTakenError,
   readJsonColumn,
   runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { assertNameFreeWhereAvailable, lockOwner, NameTakenError } from "../spaces/name-claims.js";
 
 export type PluginInstallDeps = {
   prisma: PrismaClient;
