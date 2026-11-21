@@ -1,6 +1,11 @@
 import type { Routine, RpcInput } from "@rakazo/contracts";
 import type { RoutineDraft } from "@rakazo/core";
-import { cronFromPreset, draftFromRoutine, isOneShotRoutineCrons } from "@rakazo/core";
+import {
+  cronFromPreset,
+  draftFromRoutine,
+  isOneShotRoutineCrons,
+  sendToChatChange,
+} from "@rakazo/core";
 import type { RoutineWebTrigger } from "./routine";
 import { routineTriggerNames } from "./routine";
 
@@ -44,7 +49,7 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(!routineScheduleLocked(routine) && !sameCrons(crons, savedCrons) ? { crons } : {}),
     ...(draft.emailSenders !== routine.emailSenders ? { emailSenders: draft.emailSenders } : {}),
     ...(draft.active !== routine.active ? { active: draft.active } : {}),
-    ...(draft.sendToChat !== routine.sendToChat ? { sendToChat: draft.sendToChat } : {}),
+    ...sendToChatChange(draft, routine),
     ...(draft.webhookEnabled === false && routine.webhookEnabled ? { webhookEnabled: false } : {}),
     ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),

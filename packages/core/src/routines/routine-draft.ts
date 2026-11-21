@@ -25,6 +25,17 @@ export function emptyRoutineDraft(): RoutineDraft {
   };
 }
 
+/**
+ * The send-to-chat field of an update: sent only when the draft changes it, so a stale draft
+ * does not undo a change made elsewhere since it opened (the draft's own change still wins).
+ */
+export function sendToChatChange(
+  draft: Pick<RoutineDraft, "sendToChat">,
+  saved: Pick<Routine, "sendToChat">,
+): { sendToChat?: boolean } {
+  return draft.sendToChat !== saved.sendToChat ? { sendToChat: draft.sendToChat } : {};
+}
+
 export function draftFromRoutine(
   routine: Pick<Routine, "name" | "prompt" | "crons" | "emailSenders" | "active" | "sendToChat">,
 ): RoutineDraft {

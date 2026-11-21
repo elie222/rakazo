@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
-import { cronFromPreset, localTimezone } from "@rakazo/core";
+import { cronFromPreset, localTimezone, sendToChatChange } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
@@ -281,10 +281,7 @@ export function useRoutineEditor({
                 ...(armOneShot || routineDraft.active !== targetRoutine.active
                   ? { active: armOneShot ? true : routineDraft.active }
                   : {}),
-                // Sent only when this save changes it, like active.
-                ...(routineDraft.sendToChat !== targetRoutine.sendToChat
-                  ? { sendToChat: routineDraft.sendToChat }
-                  : {}),
+                ...sendToChatChange(routineDraft, targetRoutine),
                 webhookEnabled: routineDraft.webhookEnabled,
                 githubEnabled: routineDraft.githubEnabled,
                 messageProvider: routineDraft.messageProvider,
