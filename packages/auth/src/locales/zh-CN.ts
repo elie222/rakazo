@@ -88,4 +88,8 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "其他任何助手也可以：给它发送一条提示词，再粘贴它的回复。",
   "Import an agent": "导入智能体",
+  "Send a message": "发送消息",
+  "Send your first message": "发送你的第一条消息",
+  "Your bot is ready. Send it a message to get started.":
+    "你的机器人已准备好。给它发一条消息开始吧。",
 };

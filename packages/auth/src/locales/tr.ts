@@ -99,4 +99,8 @@ export const TR_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "Başka herhangi bir asistanla da çalışır: ona tek bir istem gönderin ve yanıtını yapıştırın.",
   "Import an agent": "Ajan içe aktar",
+  "Send a message": "Mesaj gönder",
+  "Send your first message": "İlk mesajınızı gönderin",
+  "Your bot is ready. Send it a message to get started.":
+    "Botunuz hazır. Başlamak için ona bir mesaj gönderin.",
 };

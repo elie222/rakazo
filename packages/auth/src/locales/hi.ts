@@ -94,4 +94,8 @@ export const HI_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "यह किसी भी दूसरे असिस्टेंट के साथ भी काम करता है: उसे एक प्रॉम्प्ट भेजें और उसका जवाब पेस्ट करें।",
   "Import an agent": "एजेंट इंपोर्ट करें",
+  "Send a message": "मैसेज भेजें",
+  "Send your first message": "अपना पहला मैसेज भेजें",
+  "Your bot is ready. Send it a message to get started.":
+    "आपका बॉट तैयार है। शुरू करने के लिए उसे एक मैसेज भेजें।",
 };

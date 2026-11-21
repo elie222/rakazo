@@ -94,4 +94,8 @@ export const HE_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "זה עובד גם עם כל עוזר אחר: שלחו לו פרומפט אחד והדביקו את התשובה שלו.",
   "Import an agent": "ייבוא סוכן",
+  "Send a message": "שליחת הודעה",
+  "Send your first message": "שלחו את ההודעה הראשונה שלכם",
+  "Your bot is ready. Send it a message to get started.":
+    "הבוט שלכם מוכן. שלחו לו הודעה כדי להתחיל.",
 };

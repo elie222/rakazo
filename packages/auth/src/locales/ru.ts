@@ -97,4 +97,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "Это работает и с любым другим ассистентом: отправьте ему один промпт и вставьте его ответ.",
   "Import an agent": "Импортировать агента",
+  "Send a message": "Отправить сообщение",
+  "Send your first message": "Отправьте первое сообщение",
+  "Your bot is ready. Send it a message to get started.":
+    "Ваш бот готов. Отправьте ему сообщение, чтобы начать.",
 };

@@ -164,7 +164,7 @@ import { storeInboundAttachment } from "./content/artifacts.js";
 import { mountSharedPages } from "./content/shared-pages.js";
 import { configuredEmailProvider } from "./email/email.js";
 import { mountEmailInboundRoute } from "./email/email-inbound.js";
-import { lifecycleEmailScheduler } from "./email/lifecycle-email.js";
+import { lifecycleEmailPreparer, lifecycleEmailScheduler } from "./email/lifecycle-email.js";
 import { marketingEmailRoutes, sendWelcomeEmail } from "./email/marketing-email.js";
 import { sendReferralEmails } from "./email/referral-email.js";
 import type { AppEnv } from "./env.js";
@@ -469,6 +469,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     } else getLogger().error(message, error);
   };
   const onEmailError = emailErrorLogger("transactional email delivery failed");
+  const lifecycleEmailLinks = {
+    webOrigin: env.webOrigin,
+    origin: env.authUrl,
+    secret: env.authSecret,
+  };
   const stripeBilling = stripeBillingConfigFromEnv(env);
   const localBillingEmulator =
     !billingOverride && !stripeBilling && env.billingEmulator
@@ -492,13 +497,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         experiments: createExperiments(env.experiments),
         partnerProgram,
         scheduleLifecycleEmail: lifecycleEmailsEnabled
-          ? lifecycleEmailScheduler({
-              prisma,
-              jobs,
-              webOrigin: env.webOrigin,
-              origin: env.authUrl,
-              secret: env.authSecret,
-            })
+          ? lifecycleEmailScheduler({ prisma, jobs, ...lifecycleEmailLinks })
           : undefined,
       })
     : undefined;
@@ -905,6 +904,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     onEmailError,
     dataDir: env.dataDir,
     billing,
+    // Only a billed deployment's lifecycle mails can still apply when their jobs fire.
+    prepareLifecycleEmail:
+      billing && lifecycleEmailsEnabled
+        ? lifecycleEmailPreparer({ prisma, ...lifecycleEmailLinks })
+        : undefined,
     messagingInstallations,
     messagingDelivery,
     messaging: {

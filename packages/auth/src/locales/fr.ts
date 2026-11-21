@@ -100,4 +100,8 @@ export const FR_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "Cela fonctionne aussi avec n'importe quel autre assistant : envoyez-lui un prompt et collez sa réponse.",
   "Import an agent": "Importer un agent",
+  "Send a message": "Envoyer un message",
+  "Send your first message": "Envoyez votre premier message",
+  "Your bot is ready. Send it a message to get started.":
+    "Votre bot est prêt. Envoyez-lui un message pour commencer.",
 };

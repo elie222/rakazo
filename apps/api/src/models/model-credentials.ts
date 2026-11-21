@@ -50,6 +50,7 @@ import {
   deleteUnreferencedCredentialSecret,
   findNewestUserModelCredential,
   getModelRole,
+  isOwnerRole,
   modelCredentialProviderFilter,
   modelRoleTarget,
   Prisma,
@@ -60,6 +61,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { assertNoDanglingModelPins } from "../bots/model-pins.js";
+import { FIRST_CHAT_EMAIL_DELAY_MS } from "../email/lifecycle-email.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
 import type { RouterDeps } from "../router.js";
 
@@ -329,11 +331,24 @@ export async function persistModelCredential(
   codexCatalog: CodexLiveCatalog,
 ) {
   const prepared = await prepareModelCredential(deps, actor, input, codexCatalog);
+  const firstChatEmail = await firstChatEmailJob(deps, actor);
   throwIfAborted(input.signal);
   const cred = await withTransactionRetry(() =>
-    deps.prisma.$transaction((tx) => writeModelCredential(tx, actor, input, prepared), {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    }),
+    deps.prisma.$transaction(
+      async (tx) => {
+        const first =
+          firstChatEmail &&
+          !(await tx.userModelCredential.findFirst({
+            where: { userId: actor.userId },
+            select: { id: true },
+          }));
+        const saved = await writeModelCredential(tx, actor, input, prepared);
+        // Only a connection that runs the main model lets the person's bot reply.
+        if (first && saved.isDefault) await deps.jobs.enqueueIn(tx, firstChatEmail);
+        return saved;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ),
   );
   (deps.providerCatalog ?? providerCatalogCache).invalidate(canonicalPiProviderId(input.provider));
   // The connection is the account's, so the routines it held are released in every Space.
@@ -348,6 +363,50 @@ export async function persistModelCredential(
     ),
   );
   return modelCredentialDto(cred, input.plaintext);
+}
+
+/**
+ * The mail that nudges a person to send their first message a day after their first model
+ * connection, written before the save so its transaction only queues it. Undefined once they
+ * have a connection, or where account mail is off; a failure to write it never stops the save.
+ */
+function firstChatEmailJob(deps: RouterDeps, actor: Actor) {
+  const prepare = deps.prepareLifecycleEmail;
+  if (!prepare) return undefined;
+  return bestEffort(
+    "prepare the first chat email",
+    runAsSystem("prepare the first chat email", async () => {
+      const [connected, space, memberships] = await Promise.all([
+        deps.prisma.userModelCredential.findFirst({
+          where: { userId: actor.userId },
+          select: { id: true },
+        }),
+        deps.prisma.space.findUnique({
+          where: { id: actor.spaceId },
+          select: { organizationId: true },
+        }),
+        deps.prisma.member.findMany({
+          where: { userId: actor.userId },
+          select: { organizationId: true, role: true },
+          orderBy: { createdAt: "asc" },
+        }),
+      ]);
+      if (connected) return undefined;
+      // The mail goes to an owner about their plan: the one they are in now when they own it,
+      // else the first they own.
+      const owned = memberships.filter(({ role }) => isOwnerRole(role));
+      const organizationId = (
+        owned.find(({ organizationId }) => organizationId === space?.organizationId) ?? owned[0]
+      )?.organizationId;
+      if (!organizationId) return undefined;
+      const job = await prepare(
+        "first-chat",
+        { organizationId, userId: actor.userId },
+        new Date(Date.now() + FIRST_CHAT_EMAIL_DELAY_MS),
+      );
+      return job ?? undefined;
+    }),
+  );
 }
 
 /** One model's settings on one of the member's connections. */

@@ -97,4 +97,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "It works for any other assistant too: send it one prompt and paste its reply.":
     "Het werkt ook met elke andere assistent: stuur één prompt en plak het antwoord.",
   "Import an agent": "Een agent importeren",
+  "Send a message": "Stuur een bericht",
+  "Send your first message": "Stuur je eerste bericht",
+  "Your bot is ready. Send it a message to get started.":
+    "Je bot is klaar. Stuur hem een bericht om te beginnen.",
 };

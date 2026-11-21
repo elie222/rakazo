@@ -5,7 +5,7 @@ import type {
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
 import { lifecycleEmailJob } from "@rakazo/adapter-kit";
-import type { LifecycleEmailKind } from "@rakazo/contracts";
+import type { LifecycleEmailKind, RunTrigger } from "@rakazo/contracts";
 import { ActorSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { claimProductEmail, hasBillingAccess, isOwnerRole } from "@rakazo/db";
@@ -27,7 +27,14 @@ const STILL_WANTED: Record<
 > = {
   "model-connection": needsModelConnection,
   "agent-import": hasImportedNothing,
+  "first-chat": hasNotChatted,
 };
+
+/**
+ * The run triggers a person's own message can set off, in the app or from a chat app; routines,
+ * webhooks and the bots' own work do not count.
+ */
+const OWN_MESSAGE_TRIGGERS: RunTrigger[] = ["user", "follow_up", "messaging"];
 
 /**
  * A paid or trialing own-key plan whose owner has connected no model. Hosted credits need no
@@ -67,6 +74,34 @@ async function hasImportedNothing(prisma: PrismaClient, target: Target): Promise
   ]);
   return (
     Boolean(organization?.billing && hasBillingAccess(organization.billing.status)) && !imported
+  );
+}
+
+/**
+ * A plan that is still running whose owner still has a model connected and has not yet sent a
+ * bot a message they wrote themselves.
+ */
+async function hasNotChatted(prisma: PrismaClient, target: Target): Promise<boolean> {
+  const { userId } = target;
+  const [organization, connection, chatted] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: target.organizationId },
+      select: { billing: { select: { status: true } } },
+    }),
+    prisma.userModelCredential.findFirst({ where: { userId }, select: { id: true } }),
+    prisma.run.findFirst({
+      where: {
+        userId,
+        trigger: { in: OWN_MESSAGE_TRIGGERS },
+        sourceMessage: { role: "user", authorUserId: userId },
+      },
+      select: { id: true },
+    }),
+  ]);
+  return (
+    Boolean(organization?.billing && hasBillingAccess(organization.billing.status)) &&
+    Boolean(connection) &&
+    !chatted
   );
 }
 
