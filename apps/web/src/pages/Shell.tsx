@@ -202,10 +202,15 @@ function SpaceShell() {
     refreshBots,
   });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
-  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
-  useEffect(() => {
+  // Read while rendering, so returning to chats does not animate the sidebar shut.
+  const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(() =>
+    readBotsSidebarCollapsed(userId),
+  );
+  const [sidebarCollapsedFor, setSidebarCollapsedFor] = useState(userId);
+  if (sidebarCollapsedFor !== userId) {
+    setSidebarCollapsedFor(userId);
     setBotsSidebarCollapsed(readBotsSidebarCollapsed(userId));
-  }, [userId]);
+  }
   const search = useSidebarSearch({ rpc, navigate });
   const thread = useThreadState();
   const { snapshot } = thread;
@@ -259,6 +264,7 @@ function SpaceShell() {
     useQuery(queries.voice.status.queryOptions()).data ?? null;
   const { mobileSidebarOpen, setMobileSidebarOpen, swipeHandlers } = useMobileSidebar();
   const isMobileSidebar = useIsMobile();
+  const [panelCoversChat, setPanelCoversChat] = useState(false);
   const pages = usePagesForChat();
   const miniSidebar = botsSidebarCollapsed && !isMobileSidebar;
   const [botMenu, setBotMenu] = useState<ChatMenuTarget | null>(null);
@@ -1124,7 +1130,7 @@ function SpaceShell() {
       <main
         data-space-switch="main"
         aria-hidden={mobileSidebarOpen || undefined}
-        inert={mobileSidebarOpen}
+        inert={mobileSidebarOpen || panelCoversChat}
         className="isolate flex min-w-0 flex-1 flex-col bg-background"
       >
         {/* Inside main so the composer and its menus stay above it. */}
@@ -1345,6 +1351,7 @@ function SpaceShell() {
         refreshBots={refreshBots}
         refreshGroupThread={refreshGroupThread}
         discardChatAttachments={composer.discardThreadAttachments}
+        onCoversChat={setPanelCoversChat}
         computerOpen={computerOpen}
         computerPanel={
           active ? (

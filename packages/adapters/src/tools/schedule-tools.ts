@@ -38,6 +38,8 @@ import {
 } from "../routines/routine-triggers.prompt.js";
 import { validateRoutineWatch } from "../routines/routine-watch.js";
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
+import type { ScheduleUnit } from "./schedule-intervals.js";
+import { intervalRangeError } from "./schedule-intervals.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
@@ -72,8 +74,6 @@ export function filterBuiltinToolsForThread<T extends { name: string }>(
       !groupId || tool.name !== "message_bot",
   );
 }
-
-type ScheduleUnit = "minutes" | "hours" | "days" | "seconds";
 
 export type ResolvedSchedule =
   | { ok: true; cron: string; nextRunAt: Date; oneShot: boolean }
@@ -247,6 +247,8 @@ export function resolveScheduleTiming(
   if (unit === "minutes" && every < 1) {
     return { ok: false, error: "minimum interval is 1 minute" };
   }
+  const rangeError = intervalRangeError(every, unit);
+  if (rangeError) return { ok: false, error: rangeError };
   const cron = cronFromPreset({ freq: "Interval", n: every, unit });
   const intervalError = validateRepeatingCron(cron);
   if (intervalError) return { ok: false, error: intervalError };

@@ -1,8 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { LOCAL_COMPUTER_HOST_PATH, LOCAL_SETTINGS_TOKEN_HEADER } from "@rakazo/contracts";
+import { LOCAL_SIGNUP_COOKIE, localSignupKey } from "@rakazo/core/node/local-signup";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import type { Hono } from "hono";
+import { parse } from "hono/utils/cookie";
 import { readBoundedBody } from "../http/http-body.js";
 
 export function validLocalSettingsToken(
@@ -16,6 +18,16 @@ export function validLocalSettingsToken(
       /^[a-f0-9]{64}$/.test(supplied) &&
       timingSafeEqual(Buffer.from(expected), Buffer.from(supplied)),
   );
+}
+
+/** Accepts a signup only from the desktop app's own window, the one place its cookie is set. */
+export function localSignupAdmitter(stackToken: string) {
+  const expected = localSignupKey(stackToken);
+  return (headers: Headers | undefined) =>
+    validLocalSettingsToken(
+      expected,
+      parse(headers?.get("cookie") ?? "", LOCAL_SIGNUP_COOKIE)[LOCAL_SIGNUP_COOKIE],
+    );
 }
 
 /** Native host choice uses a local OS capability, never an app account. */

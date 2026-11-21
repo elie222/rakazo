@@ -36,3 +36,31 @@ export async function reviewOwnerContext(
     ...(targets.length ? { outsideOnlyTargets: targets } : {}),
   };
 }
+
+/**
+ * The stored prompt a routine edit replaces, redacted like the call, so the review can show only
+ * the change. Found as the update finds it (this bot's routine, this thread's in a group); a failed
+ * lookup leaves the review of the whole new prompt.
+ */
+export async function currentRoutinePrompt(
+  ctx: RunContext,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<string | undefined> {
+  if (toolName !== "schedule_update" || typeof args.prompt !== "string") return undefined;
+  const routineId = typeof args.routineId === "string" ? args.routineId.trim() : "";
+  if (!routineId) return undefined;
+  const routine = await bestEffort(
+    "auto_review.routine_prompt",
+    ctx.deps.prisma.routine.findFirst({
+      where: {
+        id: routineId,
+        spaceId: ctx.run.spaceId,
+        botId: ctx.bot.id,
+        ...(ctx.thread.groupId ? { threadId: ctx.thread.id } : {}),
+      },
+      select: { prompt: true },
+    }),
+  );
+  return routine ? redactSecrets(routine.prompt, ctx.secrets) : undefined;
+}
