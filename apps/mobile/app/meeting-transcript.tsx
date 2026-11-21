@@ -3,6 +3,7 @@ import { transcriptTime } from "@rakazo/i18n/meeting";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, View } from "react-native";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
+import { LoadFailure } from "../components/ui/load-failure";
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
@@ -60,6 +61,7 @@ export default function MeetingTranscriptScreen() {
       : null,
   });
   const error = transcript.error ?? removal.error;
+  const errorMessage = error ? errorText(error, t`Could not open the transcript`) : null;
   return (
     <FlatList
       style={[styles.screen, sideInsets]}
@@ -83,10 +85,17 @@ export default function MeetingTranscriptScreen() {
           {!turns && transcript.isFetching ? (
             <ActivityIndicator accessibilityLabel={t`Loading transcript…`} />
           ) : null}
-          {error ? (
-            <Text accessibilityRole="alert" style={styles.error}>
-              {errorText(error, t`Could not open the transcript`)}
-            </Text>
+          {errorMessage !== null ? (
+            id && transcript.isLoadingError ? (
+              <LoadFailure
+                message={errorMessage}
+                onRetry={() => void transcript.refetch({ cancelRefetch: false })}
+              />
+            ) : (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {errorMessage}
+              </Text>
+            )
           ) : null}
         </View>
       }
