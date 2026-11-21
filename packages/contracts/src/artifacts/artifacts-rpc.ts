@@ -79,7 +79,11 @@ export const artifactsRpc = {
       .input(
         threadTarget.and(
           z.object({
-            name: z.string().min(1).max(ARTIFACT_NAME_MAX_LENGTH),
+            name: z
+              .string()
+              .min(1)
+              .max(ARTIFACT_NAME_MAX_LENGTH)
+              .refine((name) => name.trim().length > 0),
             description: z.string().max(ARTIFACT_DESCRIPTION_MAX_LENGTH).optional(),
             mimeType: z.string().min(1),
             contentBase64: z.string().min(1),

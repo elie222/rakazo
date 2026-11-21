@@ -397,6 +397,24 @@ describe("model credential persistence", () => {
     expect(roles.createMany).not.toHaveBeenCalled();
   });
 
+  it("still makes a first connection the main model when makeDefault is omitted", async () => {
+    const { deps, handler } = persistDeps();
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "only-model",
+    });
+
+    expect(response.status).toBe(200);
+    const roles = deps.prisma.userModelRoleChoice as unknown as {
+      createMany: ReturnType<typeof vi.fn>;
+    };
+    expect(roles.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ role: "main", modelId: "only-model" })],
+    });
+  });
+
   it("makes the connection's model the main model when asked, through the role table", async () => {
     const { upsert, deps, handler } = persistDeps();
 

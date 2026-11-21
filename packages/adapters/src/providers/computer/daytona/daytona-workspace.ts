@@ -6,6 +6,7 @@ import {
   workspacePath,
 } from "../../../computers/screens/computer-support.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
+import { daytonaRateLimitError } from "./daytona-rate-limit.js";
 import type { DaytonaSandbox } from "./daytona-sandbox.js";
 
 export function isDaytonaExecutable(mode: string, permissions: string): boolean {
@@ -21,7 +22,8 @@ export async function* walkDaytonaWorkspace(
   counted = { bytes: 0, files: 0 },
 ): AsyncIterable<PortableFile> {
   if (context.signal.aborted) throw context.signal.reason ?? new Error("export aborted");
-  const entries = await sandbox.fs.listFiles(workspacePath(root, directory));
+  const entries = await listDaytonaFolder(sandbox, root, directory);
+  if (!entries) return;
   const files = entries
     .filter((entry) => !entry.isDir)
     .map((entry) => ({
@@ -42,7 +44,8 @@ export async function* walkDaytonaWorkspace(
   for (const entries of daytonaExportBatches(files)) {
     const batch = await Promise.all(
       entries.map(async ({ entry, relative }) => {
-        const content = await sandbox.fs.downloadFile(workspacePath(root, relative));
+        const content = await downloadDaytonaFile(sandbox, root, relative);
+        if (!content) return undefined;
         return {
           path: relative,
           content: new Uint8Array(content.buffer, content.byteOffset, content.byteLength),
@@ -50,7 +53,7 @@ export async function* walkDaytonaWorkspace(
         };
       }),
     );
-    for (const file of batch) yield file;
+    for (const file of batch) if (file) yield file;
   }
   for (const entry of directories) {
     const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
@@ -58,6 +61,49 @@ export async function* walkDaytonaWorkspace(
       yield* walkDaytonaWorkspace(sandbox, root, relative, context, limits, counted);
     }
   }
+}
+
+/** Lists a folder. A subfolder deleted since its parent listed it is left out, the root never. */
+async function listDaytonaFolder(sandbox: DaytonaSandbox, root: string, directory: string) {
+  try {
+    return await sandbox.fs.listFiles(workspacePath(root, directory));
+  } catch (error) {
+    const limited = await daytonaRateLimitError(error);
+    if (limited) throw limited;
+    if (directory && (await isVanishedEntry(sandbox, root, error))) return undefined;
+    throw error;
+  }
+}
+
+/** Downloads a file. One deleted since it was listed is left out. */
+async function downloadDaytonaFile(sandbox: DaytonaSandbox, root: string, relative: string) {
+  try {
+    return await sandbox.fs.downloadFile(workspacePath(root, relative));
+  } catch (error) {
+    const limited = await daytonaRateLimitError(error);
+    if (limited) throw limited;
+    if (await isVanishedEntry(sandbox, root, error)) return undefined;
+    throw error;
+  }
+}
+
+/**
+ * Not found for an entry that was listed before. A deleted sandbox also answers not found, and
+ * skipping its entries would commit a partial home, so the entry only counts as gone while the
+ * workspace root still lists. Any other error is not vanished and propagates.
+ */
+async function isVanishedEntry(
+  sandbox: DaytonaSandbox,
+  root: string,
+  error: unknown,
+): Promise<boolean> {
+  if ((error as { statusCode?: unknown } | null)?.statusCode !== 404) return false;
+  try {
+    await sandbox.fs.listFiles(workspacePath(root, ""));
+  } catch {
+    throw error;
+  }
+  return true;
 }
 
 function daytonaExportBatches<T extends { entry: { size: number } }>(files: readonly T[]): T[][] {

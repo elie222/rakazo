@@ -154,6 +154,7 @@ export function CommandPalette({
           value={search}
           onValueChange={setSearch}
           placeholder={t`Search`}
+          aria-label={t`Search`}
           data-testid="command-palette-search"
         />
         <CommandList className="max-h-80" data-testid="command-palette-list">

@@ -4,11 +4,12 @@ import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
-  connectionDisplayName,
   matchCompatibleEndpointPreset,
+  modelConnectionNames,
   modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -24,6 +25,7 @@ import {
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -280,10 +282,10 @@ export default function ModelConnection() {
     }, [cancelInFlightWork, load]),
   );
 
-  const providerName = selected?.providerName ?? selected?.provider ?? "";
+  const selectedEntry = localizeModelEntry(selected ?? { provider, providerName: "" });
   const selectedProviderLabel = credential
-    ? connectionDisplayName(credential, providerName)
-    : (endpointPreset?.name ?? providerName);
+    ? modelConnectionNames(selectedEntry, credential).connectionName
+    : (endpointPreset?.name ?? providerDisplayName(selectedEntry));
   useScreenHeader({ title: selectedProviderLabel || undefined });
   const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
     selected?.routingFields,
@@ -560,6 +562,17 @@ export default function ModelConnection() {
   const catalogConnectionControls =
     !isOpenAiCompatible && selected ? (
       <>
+        {subscriptionSignIn &&
+        signInSetup &&
+        (oauth || credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL(signInSetup.url)}
+            style={{ marginTop: 12 }}
+          >
+            <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
+          </Pressable>
+        ) : null}
         {subscriptionSignIn ? (
           oauth ? (
             <View style={styles.oauthCard}>
@@ -595,14 +608,6 @@ export default function ModelConnection() {
                 </>
               ) : (
                 <>
-                  {signInSetup ? (
-                    <Pressable
-                      accessibilityRole="link"
-                      onPress={() => void Linking.openURL(signInSetup.url)}
-                    >
-                      <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
-                    </Pressable>
-                  ) : null}
                   <Text style={styles.secondary}>
                     {signInSetup
                       ? t`2. Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`
@@ -611,7 +616,7 @@ export default function ModelConnection() {
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
                     fill
-                    label={codeCopied ? t`Code copied, open again` : t`Copy code and open`}
+                    label={codeCopied ? t`Copied, open again` : t`Copy code and open`}
                     onPress={() => {
                       copyOAuthCode(oauth.userCode);
                       void openSignInPage(oauth.verificationUri);
@@ -619,14 +624,17 @@ export default function ModelConnection() {
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
-                    {t`Waiting for sign-in — the code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
+                    {t`Waiting for you to sign in. The code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
                   </Text>
                 </>
               )}
               <NativeActionButton
                 fill
-                label={t`Cancel`}
-                onPress={() => cancelOAuth()}
+                label={oauth.mode === "device-code" ? t`Get a new code` : t`Start over`}
+                onPress={() => {
+                  cancelOAuth("replaced");
+                  void startSubscriptionSignIn();
+                }}
                 prominence="secondary"
                 style={{ marginTop: 12 }}
               />
