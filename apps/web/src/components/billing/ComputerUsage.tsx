@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
 
-export function ComputerUsage() {
+export function ComputerUsage({ standardHours = false }: { standardHours?: boolean }) {
   const { i18n } = useLingui();
   const [open, setOpen] = useState(false);
   const queries = useSpaceQueries();
@@ -16,7 +16,9 @@ export function ComputerUsage() {
     <Disclosure
       className="mt-3"
       summaryClassName="text-body"
-      summary={<Trans>Hours by computer</Trans>}
+      summary={
+        standardHours ? <Trans>Standard hours by computer</Trans> : <Trans>Hours by computer</Trans>
+      }
       open={open}
       onOpenChange={setOpen}
     >

@@ -176,7 +176,7 @@ it("shows each service's permission, and allows one only after its consent promp
   expect(toggle("Allow Speech on mobile").checked).toBe(false);
 
   await act(async () => toggle("Allow Speech on mobile").click());
-  expect(mocks.prompt).toHaveBeenCalledWith(opened.recipients[1], undefined);
+  expect(mocks.prompt).toHaveBeenCalledWith(opened.recipients[1]);
   expect(allow.calls()).toEqual([
     ["aiConsent/allow", { scope: "mobile", version: "v1", keys: ["Speech"] }, pinned],
   ]);

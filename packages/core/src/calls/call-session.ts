@@ -6,6 +6,20 @@ import { spokenDecision } from "./speech-text.js";
 /** One line of a call's transcript. */
 export type CallExchange = { role: "user" | "bot"; text: string };
 
+/**
+ * The transcript with what the bot just said: a new line, or, while it says a reply as the run
+ * writes it, more of the line it is still saying.
+ */
+export function withBotSpeech(
+  exchanges: readonly CallExchange[],
+  text: string,
+  continues: boolean,
+): CallExchange[] {
+  const last = exchanges.at(-1);
+  if (!continues || last?.role !== "bot") return [...exchanges, { role: "bot", text }];
+  return [...exchanges.slice(0, -1), { role: "bot", text: `${last.text} ${text}` }];
+}
+
 /** How long a goodbye waits for a reply that may never come before hanging up anyway. */
 export const CALL_FAREWELL_TIMEOUT_MS = 20_000;
 
@@ -76,6 +90,14 @@ export function callTurn(thread: CallThread | null, text: string): CallTurn {
     return { kind: "answer", messageId: ask.message.id, runId: ask.runId, answer };
   }
   return isRunWorking(thread?.run?.status) ? { kind: "follow_up" } : { kind: "send" };
+}
+
+/** The status the thread shows for `runId`, among its active runs or as its run. */
+export function callRunStatus(thread: CallThread | null, runId: string): string | undefined {
+  const run =
+    thread?.activeRuns?.find((active) => active.id === runId) ??
+    (thread?.run?.id === runId ? thread.run : undefined);
+  return run?.status;
 }
 
 /** The bot is waiting on a code or password, which the call must not listen for. */

@@ -80,6 +80,17 @@ whenever the rules are missing. A host-run supervisor (`pnpm dev`) and the deskt
 **This computer** stack default to open: Docker Desktop keeps its bridges in a VM the host
 rules cannot reach.
 
+To see the supervisor's current egress decision, run this from the Compose install directory:
+
+```bash
+docker compose -f docker-compose.images.yml exec supervisor pnpm --filter @rakazo/sandbox-supervisor egress
+```
+
+Use the same Compose files and project options you used to start the stack. The report shows
+whether the firewall check is pending, verified, or failed, and explains when `auto` fell back to
+open egress. It reports the supervisor's last check for new computer starts. Recreate the
+supervisor after changing the host rules to run that check again.
+
 Screen streaming is unaffected: the supervisor and web proxy join each computer's bridge,
 and the ruleset exempts traffic whose in- and out-interface are both `rakazo-c*` before
 any drop (that exemption is load-bearing on hosts where `br_netfilter` feeds bridged

@@ -16,6 +16,7 @@ import {
   lazyComponent,
   readPreloadRecoveryState,
   recoveringByReload,
+  recoveryReload,
 } from "./preload-recovery";
 
 const uninstalls: Array<() => void> = [];
@@ -131,6 +132,35 @@ describe("preload recovery", () => {
 
     await expect(importChunk(failChunk)).rejects.toThrow("dynamically imported module");
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("leaves the error to the app when storage cannot save the reload guard", async () => {
+    const store = new Map<string, string>();
+    vi.spyOn(store, "set").mockImplementation(() => {
+      throw new DOMException("Storage is full", "QuotaExceededError");
+    });
+    const { failChunk, reload } = createTarget(store);
+
+    expect(recoveryReload()).toBe(false);
+    await expect(importChunk(failChunk)).rejects.toThrow("dynamically imported module");
+    expect(reload).not.toHaveBeenCalled();
+    expect(recoveringByReload()).toBe(false);
+  });
+
+  it("still reloads if only the optional overlay snapshot exceeds the storage quota", () => {
+    const store = new Map<string, string>();
+    const set = store.set.bind(store);
+    vi.spyOn(store, "set").mockImplementation((key, value) => {
+      if (key === "rk:preload-recovery-state") {
+        throw new DOMException("Storage is full", "QuotaExceededError");
+      }
+      return set(key, value);
+    });
+    const { reload } = createTarget(store);
+
+    expect(recoveryReload()).toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(store.get("rk:preload-recovery")).toBe("1");
   });
 
   it("passes through imports that load", async () => {

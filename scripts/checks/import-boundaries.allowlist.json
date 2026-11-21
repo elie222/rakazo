@@ -43,6 +43,7 @@
     "packages/testkit/src/cli/approval-eval.ts -> ../../../adapters/src/approvals/decision-models.ts",
     "packages/testkit/src/cli/approval-eval.ts -> ../../../adapters/src/approvals/http-decisions.ts",
     "packages/testkit/src/cli/approval-eval.ts -> ../../../adapters/src/approvals/review-owner-messages.ts",
+    "packages/testkit/src/cli/approval-eval.ts -> ../../../adapters/src/approvals/review-target-sources.ts",
     "packages/testkit/src/cli/approval-eval.ts -> ../../../adapters/src/providers/decision/typesafe/jev-auto-review.ts",
     "packages/testkit/src/cli/approval-eval.ts -> ../../../adapters/src/runtime/pi/pi-runtime.ts",
     "packages/testkit/src/cli/evals.ts -> ../../../adapters/src/runtime/pi/pi-runtime.ts",

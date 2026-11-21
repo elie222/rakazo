@@ -30,6 +30,7 @@ export * from "./components/ui/input.js";
 export * from "./components/ui/input-group.js";
 export * from "./components/ui/input-otp.js";
 export * from "./components/ui/kbd.js";
+export * from "./components/ui/kit-labels.js";
 export * from "./components/ui/label.js";
 export * from "./components/ui/list-search-input";
 export * from "./components/ui/option-select.js";

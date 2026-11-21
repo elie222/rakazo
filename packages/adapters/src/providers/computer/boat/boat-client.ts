@@ -8,6 +8,7 @@ import {
   BoatApiError,
   BoatRequestGate,
   boatResponseError,
+  boatResumeInProgress,
   boatSdk,
   callerSignal,
   wrapBoatCall,
@@ -125,7 +126,7 @@ function boatClient(api: BoatSandboxSdk, apiKey: string, gate: BoatRequestGate):
       } catch (error) {
         const durationMs = Math.round(performance.now() - started);
         // Another caller's resume is already waking it; the caller waits for it to be ready.
-        if (error instanceof BoatApiError && error.code === "sandbox_resuming") {
+        if (boatResumeInProgress(error)) {
           getLogger().info("sandbox.start", {
             provider: "boat",
             operation,

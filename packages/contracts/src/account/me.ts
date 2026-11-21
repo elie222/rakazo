@@ -98,6 +98,8 @@ export const AppBootstrapSchema = z.object({
   thread: ThreadSnapshotSchema.nullable(),
   routines: z.array(RoutineSchema),
   spaces: z.array(SpaceSchema),
+  /** As SpaceNavigation's `firstBotDue`. */
+  firstBotDue: z.boolean().default(true),
   /** Set when the requested bot is the caller's but lives in another of their Spaces. */
   botSpaceId: Id.optional(),
   /** Set when the requested group is one the caller can open in another of their Spaces. */

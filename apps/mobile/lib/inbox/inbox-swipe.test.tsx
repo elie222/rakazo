@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OpenSwipe } from "../../components/inbox/inbox-swipe-context";
+import { InboxSwipeContext } from "../../components/inbox/inbox-swipe-context";
 import type { InboxSwipeRowProps } from "../../components/inbox/inbox-swipe-row";
 import { InboxSwipeRow } from "../../components/inbox/inbox-swipe-row.ios";
 import { NativeListRowContext } from "../../components/native/native-list-row";
@@ -20,20 +22,93 @@ import {
   unreadOverrideKey,
 } from "./inbox-swipe";
 
-const swift = vi.hoisted(() => ({
-  groups: [] as Array<{ edge?: string; allowsFullSwipe?: boolean; labels: string[] }>,
+const swipe = vi.hoisted(() => ({
+  touch: () => {},
+  start: () => {},
+  update: (_event: { translationX: number }) => {},
+  end: (_event: { translationX: number }, _success: boolean) => {},
+  measure: (_event: { nativeEvent: { layout: { width: number } } }) => {},
+  foreground: () => ({ transform: [{ translateX: 0 }] }),
+  actionStyles: [] as Array<
+    () => {
+      opacity: number;
+      transform: Array<{ translateX: number } | { scale: number }>;
+    }
+  >,
 }));
 
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios", Version: "27.1" },
+  I18nManager: { isRTL: false },
+  StyleSheet: { absoluteFill: {}, create: (styles: object) => styles },
+  Pressable: () => null,
   PlatformColor: (name: string) => ({ semantic: [name] }),
   useWindowDimensions: () => ({ width: 390, height: 844 }),
-  View: ({ children, style }: { children: ReactNode; style?: { width?: number } }) => (
-    <div data-width={style?.width}>{children}</div>
-  ),
+  View: ({
+    children,
+    style,
+    onLayout,
+  }: {
+    children: ReactNode;
+    style?: { width?: number };
+    onLayout?: typeof swipe.measure;
+  }) => {
+    if (onLayout) swipe.measure = onLayout;
+    return <div data-width={style?.width}>{children}</div>;
+  },
 }));
 vi.mock("../native/native", () => ({
   native: { page: "page", fill: "fill" },
+  useMobileTokens: () => ({ background: "page", muted: "muted", foreground: "ink" }),
   useResolvedAppearance: () => "light",
+}));
+vi.mock("../native/haptics", () => ({ hapticSelection: vi.fn() }));
+vi.mock("react-native-gesture-handler", () => {
+  const pan = {
+    activeOffsetX: () => pan,
+    failOffsetY: () => pan,
+    maxPointers: () => pan,
+    onBegin: (callback: typeof swipe.touch) => {
+      swipe.touch = callback;
+      return pan;
+    },
+    onStart: (callback: typeof swipe.start) => {
+      swipe.start = callback;
+      return pan;
+    },
+    onUpdate: (callback: typeof swipe.update) => {
+      swipe.update = callback;
+      return pan;
+    },
+    onEnd: (callback: typeof swipe.end) => {
+      swipe.end = callback;
+      return pan;
+    },
+  };
+  return {
+    Gesture: { Pan: () => pan },
+    GestureDetector: ({ children }: { children: ReactNode }) => children,
+  };
+});
+vi.mock("react-native-reanimated", () => ({
+  default: { View: ({ children }: { children: ReactNode }) => children },
+  useSharedValue: <T,>(initial: T) => useState(() => ({ value: initial }))[0],
+  cancelAnimation: () => {},
+  withTiming: (target: number, _config: undefined, done?: (finished: boolean) => void) => {
+    done?.(true);
+    return target;
+  },
+  useAnimatedStyle: (style: typeof swipe.foreground | (typeof swipe.actionStyles)[number]) => {
+    const result = style();
+    if ("opacity" in result) swipe.actionStyles.push(style as (typeof swipe.actionStyles)[number]);
+    else swipe.foreground = style as typeof swipe.foreground;
+    return result;
+  },
+}));
+vi.mock("react-native-worklets", () => ({
+  scheduleOnUI: (callback: () => void) => callback(),
+  scheduleOnRN: <T extends unknown[]>(callback: (...args: T) => void, ...args: T) =>
+    callback(...args),
 }));
 // SwiftUI views render as plain DOM so tests can read the row's structure.
 // Tests load the shared module; the list rows are the iOS one.
@@ -41,38 +116,10 @@ vi.mock(
   "../../components/native/native-row",
   () => import("../../components/native/native-row.ios"),
 );
-vi.mock("@expo/ui/swift-ui", async () => {
-  const { Children, isValidElement } = await import("react");
+vi.mock("@expo/ui/swift-ui", () => {
   const box =
     (name: string) =>
     ({ children }: { children?: ReactNode }) => <div data-ui={name}>{children}</div>;
-  const SwipeActions = (({
-    children,
-    modifiers,
-  }: {
-    children?: ReactNode;
-    modifiers?: Array<{ name: string }>;
-  }) => (
-    <div
-      data-ui="SwipeActions"
-      data-row-modifiers={(modifiers ?? []).map((modifier) => modifier.name).join(" ")}
-    >
-      {children}
-    </div>
-  )) as ReturnType<typeof box> & {
-    Actions: (props: {
-      edge?: string;
-      allowsFullSwipe?: boolean;
-      children: ReactNode;
-    }) => ReactNode;
-  };
-  SwipeActions.Actions = ({ edge, allowsFullSwipe, children }) => {
-    const labels = Children.toArray(children).map((child) =>
-      isValidElement<{ label: string }>(child) ? child.props.label : "",
-    );
-    swift.groups.push({ edge, allowsFullSwipe, labels });
-    return <div data-ui="SwipeActions.Actions">{children}</div>;
-  };
   const ContextMenu = Object.assign(
     ({ children, modifiers }: { children?: ReactNode; modifiers?: unknown[] }) => (
       <div data-ui="ContextMenu" data-modifiers={JSON.stringify(modifiers ?? [])}>
@@ -87,14 +134,30 @@ vi.mock("@expo/ui/swift-ui", async () => {
   );
   return {
     Host: box("Host"),
+    Group: ({
+      children,
+      modifiers,
+    }: {
+      children: ReactNode;
+      modifiers: Array<{ name: string }>;
+    }) => (
+      <div
+        data-ui="Group"
+        data-row-modifiers={modifiers.map((modifier) => modifier.name).join(" ")}
+      >
+        {children}
+      </div>
+    ),
     List: box("List"),
     RNHostView: box("RNHostView"),
     VStack: box("VStack"),
     HStack: box("HStack"),
+    ZStack: box("ZStack"),
+    Circle: box("Circle"),
+    Image: ({ systemName }: { systemName: string }) => <span data-symbol={systemName} />,
     Text: ({ children }: { children?: ReactNode }) => <span data-ui="Text">{children}</span>,
     Spacer: () => null,
     Divider: () => <hr />,
-    SwipeActions,
     ContextMenu,
     Menu: ({
       label,
@@ -132,12 +195,14 @@ vi.mock("@expo/ui/swift-ui", async () => {
       role,
       modifiers,
       onPress,
+      children,
     }: {
       label: string;
       systemImage?: string;
       role?: string;
       modifiers?: unknown[];
       onPress: () => void;
+      children?: ReactNode;
     }) => (
       <button
         type="button"
@@ -147,7 +212,9 @@ vi.mock("@expo/ui/swift-ui", async () => {
         data-role={role}
         data-modifiers={JSON.stringify(modifiers ?? [])}
         onClick={onPress}
-      />
+      >
+        {children}
+      </button>
     ),
   };
 });
@@ -155,17 +222,19 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
   const modifier = (name: string) => (value: unknown) => ({ name, value });
   return {
     shapes: {
+      circle: () => ({ shape: "circle" }),
       roundedRectangle: (value: unknown) => ({ shape: "roundedRectangle", value }),
       rectangle: () => ({ shape: "rectangle" }),
     },
     ...Object.fromEntries(
       [
+        "accessibilityLabel",
         "background",
+        "buttonStyle",
         "contentShape",
         "font",
         "foregroundStyle",
         "frame",
-        "labelStyle",
         "lineLimit",
         "listRowBackground",
         "listRowInsets",
@@ -174,7 +243,6 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
         "padding",
         "scrollContentBackground",
         "scrollDisabled",
-        "tint",
       ].map((name) => [name, modifier(name)]),
     ),
   };
@@ -182,7 +250,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  swift.groups = [];
+  swipe.actionStyles = [];
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -278,7 +346,8 @@ describe("iOS swipe row", () => {
     row: Partial<InboxSwipeRowProps> & { key?: string } = {},
     preview: InboxSwipeRowProps["preview"] = { title: "Ada", message: "Hi", avatar: <i /> },
   ) {
-    const key = row.key ?? "bot:1";
+    const { key = "bot:1", ...props } = row;
+    const activeSwipe: { current: OpenSwipe | null } = { current: null };
     const onAction = vi.fn<(action: InboxRowAction) => void>();
     const onOrganize = vi.fn<InboxSwipeRowProps["onOrganize"]>();
     const onEditSection = vi.fn<InboxSwipeRowProps["onEditSection"]>();
@@ -287,26 +356,39 @@ describe("iOS swipe row", () => {
     const root = createRoot(container);
     act(() =>
       root.render(
-        <InboxSwipeRow
-          rowKey={key}
-          sections={sections}
-          preview={preview}
-          onAction={onAction}
-          onOrganize={onOrganize}
-          onEditSection={onEditSection}
-          snoozed={false}
-          onSnooze={onSnooze}
-          {...row}
-        >
-          <span>{key}</span>
-        </InboxSwipeRow>,
+        <InboxSwipeContext.Provider value={activeSwipe}>
+          <InboxSwipeRow
+            rowKey={key}
+            sections={sections}
+            preview={preview}
+            onAction={onAction}
+            onOrganize={onOrganize}
+            onEditSection={onEditSection}
+            snoozed={false}
+            onSnooze={onSnooze}
+            {...props}
+          >
+            <span>{key}</span>
+          </InboxSwipeRow>
+        </InboxSwipeContext.Provider>,
       ),
     );
     const find = (selector: string) => container.querySelector<HTMLElement>(selector);
     const items = find('[data-ui="ContextMenu.Items"]')!;
     const press = (label: string) =>
       act(() => items.querySelector<HTMLElement>(`[data-label="${label}"]`)!.click());
-    return { container, find, items, press, onAction, onOrganize, onEditSection, onSnooze, root };
+    return {
+      container,
+      find,
+      items,
+      press,
+      activeSwipe,
+      onAction,
+      onOrganize,
+      onEditSection,
+      onSnooze,
+      root,
+    };
   }
 
   const entry = (item: Element) => [
@@ -319,33 +401,102 @@ describe("iOS swipe row", () => {
       .filter((child) => child.getAttribute("data-ui"))
       .map(entry);
 
-  it("uses system swipe actions with a full swipe only on the read toggle", () => {
+  it("offers native buttons for the revealed actions", () => {
     const { container, onAction, root } = render({ unread: true, pinned: true });
-    expect(swift.groups).toEqual([
-      { edge: "leading", allowsFullSwipe: undefined, labels: ["Mark as Read"] },
-      { edge: "trailing", allowsFullSwipe: undefined, labels: ["Archive", "Unpin"] },
-    ]);
+    expect(container.querySelector('[data-ui="ContextMenu.Trigger"] button')).toBeNull();
+    act(() => swipe.start());
     const buttons = Array.from(
-      container.querySelectorAll<HTMLElement>('[data-ui="SwipeActions.Actions"] > button'),
+      container.querySelectorAll<HTMLElement>('[data-ui="ContextMenu.Trigger"] button'),
     );
-    expect(buttons.map(entry)).toEqual([
-      ["Mark as Read", "checkmark.message.fill", null],
-      // Not destructive: SwiftUI would remove the row at the tap, and a failed archive left a gap.
-      ["Archive", "eye.slash", null],
-      ["Unpin", "pin.slash", null],
-    ]);
-    expect(JSON.parse(buttons[0]!.dataset.modifiers!)).toContainEqual({
-      name: "tint",
-      value: { semantic: ["systemBlue"] },
-    });
-    expect(JSON.parse(buttons[1]!.dataset.modifiers!)).toContainEqual({
-      name: "tint",
-      value: { semantic: ["systemRed"] },
-    });
+    expect(
+      buttons.map((button) => button.querySelector("[data-symbol]")?.getAttribute("data-symbol")),
+    ).toEqual(["checkmark.message.fill", "eye.slash.fill", "pin.slash.fill"]);
+    expect(buttons.every((button) => button.querySelector('[data-ui="Circle"]'))).toBe(true);
     act(() => {
       for (const button of buttons) button.click();
     });
     expect(onAction.mock.calls).toEqual([["read"], ["archive"], ["unpin"]]);
+    act(() => root.unmount());
+  });
+
+  it.each([
+    [1, "read"],
+    [-1, "archive"],
+  ] as const)(
+    "reveals the action while dragging in direction %s and commits a full swipe on release",
+    (direction, action) => {
+      const { onAction, root } = render({ unread: true });
+      swipe.measure({ nativeEvent: { layout: { width: 300 } } });
+
+      act(() => {
+        swipe.start();
+        swipe.update({ translationX: direction * 19 });
+      });
+      const firstAction = swipe.actionStyles[direction === 1 ? 0 : 1]!;
+      expect(swipe.foreground().transform).toEqual([{ translateX: direction * 19 }]);
+      expect(firstAction().opacity).toBe(0);
+      act(() => swipe.update({ translationX: direction * 24 }));
+      expect(firstAction().opacity).toBe(1);
+      expect(firstAction().transform[1]).toMatchObject({ scale: expect.closeTo(0.32) });
+      act(() => swipe.update({ translationX: direction * 45 }));
+      expect(firstAction().transform[1]).toMatchObject({ scale: expect.closeTo(0.63) });
+      act(() => swipe.update({ translationX: direction * 70 }));
+      expect(firstAction().transform[1]).toEqual({ scale: 1 });
+      expect(swipe.actionStyles[2]!().opacity).toBe(0);
+
+      act(() => swipe.update({ translationX: direction * 150 }));
+      const restingWidth = direction === 1 ? 70 : 130;
+      expect(Math.abs(swipe.foreground().transform[0]!.translateX)).toBeGreaterThan(restingWidth);
+      expect(firstAction().transform[1]).toEqual({ scale: 1 });
+      act(() => swipe.update({ translationX: direction * 190 }));
+      expect(firstAction().transform[1]).toEqual({ scale: 1.2 });
+      if (direction === -1) expect(swipe.actionStyles[2]!().opacity).toBeLessThan(1);
+      act(() => swipe.update({ translationX: direction * 150 }));
+      expect(firstAction().transform[1]).toEqual({ scale: 1 });
+      if (direction === -1) expect(swipe.actionStyles[2]!().opacity).toBe(1);
+      act(() => swipe.update({ translationX: direction * 190 }));
+      expect(onAction).not.toHaveBeenCalled();
+      act(() => swipe.end({ translationX: direction * 190 }, false));
+      expect(onAction).not.toHaveBeenCalled();
+      expect(swipe.foreground().transform).toEqual([{ translateX: 0 }]);
+
+      act(() => {
+        swipe.start();
+        swipe.update({ translationX: direction * 190 });
+        swipe.end({ translationX: direction * 190 }, true);
+      });
+      expect(onAction).toHaveBeenCalledExactlyOnceWith(action);
+      act(() => root.unmount());
+    },
+  );
+
+  it("stays closed when scrolling dismisses the row mid-swipe", () => {
+    const { container, activeSwipe, onAction, root } = render();
+    act(() => {
+      swipe.start();
+      swipe.update({ translationX: -45 });
+    });
+    expect(container.querySelector('[data-ui="ContextMenu.Trigger"] button')).not.toBeNull();
+    act(() => activeSwipe.current?.close());
+    act(() => {
+      swipe.update({ translationX: -65 });
+      swipe.end({ translationX: -65 }, true);
+    });
+    expect(container.querySelector('[data-ui="ContextMenu.Trigger"] button')).toBeNull();
+    expect(swipe.foreground().transform).toEqual([{ translateX: 0 }]);
+    expect(onAction).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
+  it("dismisses another row's swipe on touch before a pan starts", () => {
+    const { activeSwipe, root } = render();
+    const close = vi.fn(() => {
+      activeSwipe.current = null;
+    });
+    activeSwipe.current = { id: "another-row", close };
+    act(() => swipe.touch());
+    expect(close).toHaveBeenCalledOnce();
+    expect(activeSwipe.current).toBeNull();
     act(() => root.unmount());
   });
 
@@ -371,10 +522,10 @@ describe("iOS swipe row", () => {
       ),
     );
     // No list of its own: the row takes the list's row modifiers.
-    expect(container.querySelector('[data-ui="Host"]')).toBeNull();
-    expect(
-      container.querySelector<HTMLElement>('[data-ui="SwipeActions"]')?.dataset.rowModifiers,
-    ).toBe("listRowInsets");
+    expect(container.querySelector('[data-ui="List"]')).toBeNull();
+    expect(container.querySelector<HTMLElement>('[data-ui="Group"]')?.dataset.rowModifiers).toBe(
+      "listRowInsets",
+    );
     // Hosted content takes the width the list lays the row out at.
     const trigger = container.querySelector('[data-ui="ContextMenu.Trigger"]');
     expect(trigger?.querySelector("[data-width]")?.getAttribute("data-width")).toBe("300");
@@ -383,7 +534,7 @@ describe("iOS swipe row", () => {
 
   it("opens the system context menu with a preview on the same list row as the swipe actions", () => {
     const { find, root } = render();
-    const menu = find('[data-ui="SwipeActions"] > [data-ui="ContextMenu"]');
+    const menu = find('[data-ui="Group"] > [data-ui="ContextMenu"]');
     expect(menu?.querySelector('[data-ui="ContextMenu.Trigger"]')?.textContent).toBe("bot:1");
     expect(menu?.querySelector('[data-ui="ContextMenu.Preview"]')).not.toBeNull();
     act(() => root.unmount());
@@ -391,7 +542,7 @@ describe("iOS swipe row", () => {
 
   it("gives the chat row context menu a rectangular hit area", () => {
     const { find, root } = render();
-    const menu = find('[data-ui="SwipeActions"] > [data-ui="ContextMenu"]');
+    const menu = find('[data-ui="Group"] > [data-ui="ContextMenu"]');
     expect(JSON.parse(menu?.dataset.modifiers ?? "[]")).toEqual([
       { name: "contentShape", value: { shape: "rectangle" } },
     ]);
