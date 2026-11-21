@@ -145,7 +145,6 @@ export function Matrix2x2({
   );
   const clamp = (v: number) => Math.min(1, Math.max(0, v));
   const percent = (v: number) => Math.round(v * 10_000) / 100;
-  // Keep the axes and dot layout aligned with physical left/top coordinates.
   return (
     <div className="rk-matrix rk-frame" dir="ltr">
       <div className="rk-matrix-y" aria-hidden="true">
