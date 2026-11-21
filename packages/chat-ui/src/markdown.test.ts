@@ -11,6 +11,7 @@ import {
   markdownLinkNeedsPrompt,
   markdownLinkRequiresConfirmation,
   markdownLinkSite,
+  markdownMentionAdded,
   markdownMentionId,
   plainTextLinkParts,
   sanitizeMarkdownImageUrl,
@@ -457,6 +458,7 @@ it("highlights the destination host after userinfo containing the same host text
 describe("withMentions", () => {
   const planner = { id: "bot-1", name: "Planner" };
   const link = "[Planner](rakazo-mention:bot-1)";
+  const added = "[Planner](rakazo-mention:bot-1#added)";
 
   it("links the first appearance of the name across the message", () => {
     expect(
@@ -466,10 +468,10 @@ describe("withMentions", () => {
 
   it("puts the mention once at the start when the message does not name it", () => {
     expect(withMentions(["Ready when you are.", "Done."], [planner])).toEqual([
-      `${link} Ready when you are.`,
+      `${added} Ready when you are.`,
       "Done.",
     ]);
-    expect(withMentions(["- first step"], [planner])).toEqual([`${link}\n\n- first step`]);
+    expect(withMentions(["- first step"], [planner])).toEqual([`${added}\n\n- first step`]);
   });
 
   it("leaves code, links, and longer words alone", () => {
@@ -494,7 +496,7 @@ describe("withMentions", () => {
 
   it("keeps an unclosed streaming fence intact and prepends the mention", () => {
     const code = "```md\nPlanner\n\nPlanner is ready.";
-    expect(withMentions([code], [planner])).toEqual([`${link}\n\n${code}`]);
+    expect(withMentions([code], [planner])).toEqual([`${added}\n\n${code}`]);
   });
 
   it.each([
@@ -510,12 +512,12 @@ describe("withMentions", () => {
 
   it("preserves literal mention syntax in an ordinary link's code label", () => {
     const text = "[`[Planner](rakazo-mention:bot-1)`](https://example.com)";
-    expect(withMentions([text], [planner])).toEqual([`${link} ${text}`]);
+    expect(withMentions([text], [planner])).toEqual([`${added} ${text}`]);
   });
 
   it("strips a model mention wrapper while preserving inline code in its label", () => {
     expect(withMentions(["[Use `Planner`](rakazo-mention:bot-1) is ready."], [planner])).toEqual([
-      `${link} Use \`Planner\` is ready.`,
+      `${added} Use \`Planner\` is ready.`,
     ]);
   });
 
@@ -537,14 +539,17 @@ describe("withMentions", () => {
       `${link} is ready.`,
     ]);
     const code = "`[Planner](rakazo-mention:bot-1)`\n\n```\n[Planner](rakazo-mention:bot-1)\n```";
-    expect(withMentions([code], [planner])).toEqual([`${link} ${code}`]);
+    expect(withMentions([code], [planner])).toEqual([`${added} ${code}`]);
   });
 
   it("escapes markdown in the name and encodes the id", () => {
     expect(withMentions(["hi"], [{ id: "a/b", name: "[x]_y" }])).toEqual([
-      "[\\[x\\]\\_y](rakazo-mention:a%2Fb) hi",
+      "[\\[x\\]\\_y](rakazo-mention:a%2Fb#added) hi",
     ]);
     expect(markdownMentionId("rakazo-mention:a%2Fb")).toBe("a/b");
+    expect(markdownMentionId("rakazo-mention:a%2Fb#added")).toBe("a/b");
+    expect(markdownMentionAdded("rakazo-mention:a%2Fb#added")).toBe(true);
+    expect(markdownMentionAdded("rakazo-mention:a%2Fb")).toBe(false);
     expect(markdownMentionId("https://example.test")).toBeUndefined();
   });
 
