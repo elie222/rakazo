@@ -76,6 +76,25 @@ describePostgres("bot fleetManagement (PostgreSQL)", () => {
     }),
   );
 
+  it("starts a bot created by another bot on the owner's default model", () =>
+    runAsTenant(owner, async () => {
+      const repos = createRepos(prisma);
+      const parent = await repos.createBot(actor(), {
+        ...botInput("Pinned parent"),
+        modelProvider: "scripted",
+        modelId: "scripted",
+        thinkingLevel: "high",
+      });
+      const child = await repos.createBot(actor(), botInput("Default child", parent.id));
+      expect(child).toMatchObject({ modelProvider: null, modelId: null, thinkingLevel: null });
+      const chosen = await repos.createBot(actor(), {
+        ...botInput("Chosen child", parent.id),
+        modelProvider: "scripted",
+        modelId: "scripted",
+      });
+      expect(chosen).toMatchObject({ modelProvider: "scripted", modelId: "scripted" });
+    }));
+
   it.each(["modelProvider", "modelId", "thinkingLevel"] as const)(
     "preserves an intervening owner edit to %s",
     (field) =>

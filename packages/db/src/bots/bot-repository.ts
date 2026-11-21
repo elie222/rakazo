@@ -460,9 +460,11 @@ export function createRepos(
     ): Promise<Bot> {
       // A reserved preview identity is also an idempotency key if the response is lost.
       const spawnKey = input.spawnKey ?? input.id;
-      let modelProvider = input.modelProvider ?? null;
-      let modelId = input.modelId ?? null;
-      let thinkingLevel = input.thinkingLevel ?? null;
+      // A bot created by another bot follows the owner's default model, like one created by hand;
+      // the model stays an explicit input.
+      const modelProvider = input.modelProvider ?? null;
+      const modelId = input.modelId ?? null;
+      const thinkingLevel = input.thinkingLevel ?? null;
       let disabledBuiltinTools = input.disabledBuiltinTools ?? [];
       if (input.parentBotId) {
         const parent = await prisma.bot.findFirst({
@@ -472,11 +474,6 @@ export function createRepos(
           },
         });
         if (!parent) throw new IsolationError();
-        if (!modelId) {
-          modelProvider = parent.modelProvider ?? null;
-          modelId = parent.modelId ?? null;
-        }
-        if (thinkingLevel == null) thinkingLevel = parent.thinkingLevel ?? null;
         if (input.disabledBuiltinTools === undefined) {
           disabledBuiltinTools = parent.disabledBuiltinTools;
         }
