@@ -51,11 +51,12 @@ describe("routineRunNowTarget", () => {
 
 describe("findRoutineTestRun", () => {
   it("finds the original run by nonce wherever it went, scoped to the caller and routine", async () => {
-    const findFirst = vi.fn(async () => ({ id: "run-1" }));
+    const findFirst = vi.fn(async () => ({ id: "run-1", thread: { groupId: null } }));
     const db = { run: { findFirst } } as unknown as Pick<PrismaClient, "run">;
     const nonce = routineTestRunNonce(actor, "n1");
     await expect(findRoutineTestRun(db, actor, "routine-1", nonce)).resolves.toEqual({
       id: "run-1",
+      thread: { groupId: null },
     });
     expect(findFirst).toHaveBeenCalledWith({
       where: {
@@ -64,7 +65,7 @@ describe("findRoutineTestRun", () => {
         routineId: "routine-1",
         clientNonce: nonce,
       },
-      select: { id: true, threadId: true },
+      select: { id: true, thread: { select: { groupId: true } } },
     });
   });
 

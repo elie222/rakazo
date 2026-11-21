@@ -377,21 +377,15 @@ export function routinesRoutes(ctx: RouterContext) {
           input.routineId,
         );
         // The group chat a run went to, so the client can follow it there.
-        const runResult = async (run: { id: string; threadId: string }) => ({
+        const runResult = (run: { id: string; thread: { groupId: string | null } }) => ({
           runId: run.id,
-          groupId:
-            (
-              await deps.prisma.thread.findUnique({
-                where: { id: run.threadId },
-                select: { groupId: true },
-              })
-            )?.groupId ?? null,
+          groupId: run.thread.groupId,
         });
         const existing = await findExisting();
         if (existing) return runResult(existing);
         const skillRecords = await agentSkills.listWithContent(context.actor);
         const prompt = expandSkillReferencesInPrompt(target.routine.prompt, skillRecords);
-        let run: { id: string; threadId: string };
+        let run: { id: string; thread: { groupId: string | null } };
         try {
           // Task + run must commit together so a nonce collision cannot leave an orphan queued Task.
           run = await deps.prisma.$transaction(async (tx) => {

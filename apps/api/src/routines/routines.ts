@@ -255,6 +255,9 @@ export function routineTestRunNonce(actor: Actor, clientNonce: string): string {
   return `routine-run:${actor.userId}:${clientNonce}`;
 }
 
+/** A test run and the group chat it went to, null when it ran in the bot's own chat. */
+const testRunSelect = { id: true, thread: { select: { groupId: true } } } as const;
+
 /**
  * The run a nonce already created. The database keeps a nonce unique across the Space, so the
  * lookup is never narrowed to a thread: a retry must find the original run even after its group
@@ -274,7 +277,7 @@ export async function findRoutineTestRun(
       routineId,
       clientNonce: nonce,
     },
-    select: { id: true, threadId: true },
+    select: testRunSelect,
   });
 }
 
@@ -315,6 +318,6 @@ export async function createRoutineTestRun(
       ...routineRunModelPin(currentModel),
       clientNonce: nonce,
     },
-    select: { id: true, status: true, threadId: true },
+    select: { ...testRunSelect, status: true },
   });
 }
