@@ -11,7 +11,7 @@ import {
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
 import type { ReactNode, UIEvent } from "react";
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { PasskeyOffer } from "../../../components/account/PasskeyOffer";
 import { useUsageHint } from "../../../components/billing/PlanUsage";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
@@ -28,6 +28,7 @@ import { useAppRail } from "../app-rail";
 import type { ChatMenuState } from "../chat/chat-context-menu";
 import type { Panel } from "../right-panel-state";
 import type { SettingsSection } from "../shell-overlay-url";
+import { useFlip } from "../use-flip";
 import { SidebarFooter } from "./sidebar-footer";
 import { SidebarHeader } from "./sidebar-header";
 import type { SidebarSearch } from "./use-sidebar-search";
@@ -103,6 +104,26 @@ export function ShellSidebar({
   footer?: ReactNode;
 }) {
   const { t } = useLingui();
+  const listRef = useRef<HTMLDivElement>(null);
+  const flipRevision = useMemo(
+    () =>
+      [
+        bots
+          .map(
+            (bot) =>
+              `${bot.id}:${bot.pinned ? 1 : 0}:${bot.sectionId ?? ""}:${bot.spaceId}:${bot.updatedAt}`,
+          )
+          .join(","),
+        groups
+          .map(
+            (group) =>
+              `${group.id}:${group.pinned ? 1 : 0}:${group.sectionId ?? ""}:${group.spaceId}:${group.updatedAt}`,
+          )
+          .join(","),
+      ].join(";"),
+    [bots, groups],
+  );
+  useFlip(listRef, flipRevision);
   const rail = useAppRail();
   const {
     query,
@@ -116,6 +137,7 @@ export function ShellSidebar({
     showSpaceSearch,
     jumpToSearchHit,
     activityMode,
+    toggleActivityMode,
     activityFilters,
     setActivityFilters,
     activityFiltersExpanded,
@@ -123,6 +145,8 @@ export function ShellSidebar({
     activityFiltersId,
     activityFilterCount,
   } = search;
+  // A closed drawer and a collapsed desktop list are both off screen, so neither may keep focus.
+  const listHidden = isMobile ? !mobileOpen : collapsed;
   return (
     <>
       <button
@@ -141,21 +165,26 @@ export function ShellSidebar({
         side={document.documentElement.dir === "rtl" ? "right" : "left"}
         data-testid="bots-sidebar"
         data-space-switch="sidebar"
-        inert={isMobile && !mobileOpen ? true : undefined}
-        aria-hidden={isMobile && !mobileOpen ? true : undefined}
+        inert={listHidden || undefined}
+        aria-hidden={listHidden || undefined}
         data-bots-sidebar-density={density}
         data-collapsed={collapsed ? "true" : "false"}
         className={
           isMobile
             ? `absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform duration-200 ease-out motion-reduce:transition-none ${mobileOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"}`
             : // The sidebar is fixed to the window edge, so it steps aside for the rail there.
-              `h-full overflow-hidden border-sidebar-border ${rail ? "data-[side=left]:left-(--app-rail-width) data-[side=right]:right-(--app-rail-width)" : ""}`
+              `h-full overflow-hidden border-sidebar-border ${
+                rail
+                  ? "data-[side=left]:left-(--app-rail-width) data-[side=right]:right-(--app-rail-width) data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--app-rail-width)-var(--sidebar-width))] data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--app-rail-width)-var(--sidebar-width))]"
+                  : ""
+              }`
         }
       >
         <SidebarHeader
           title={activityMode ? t`Activity` : t`Chats`}
           isMobile={isMobile}
           activityMode={activityMode}
+          onToggleActivity={toggleActivityMode}
           createMenuOpen={createMenuOpen}
           setCreateMenuOpen={setCreateMenuOpen}
           searchOpen={searchOpen}
@@ -237,6 +266,7 @@ export function ShellSidebar({
           </InputGroup>
         )}
         <div
+          ref={listRef}
           onScroll={resetFadeWhenUnscrollable}
           className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5"
         >

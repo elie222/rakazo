@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
-import { PanelLeftClose, Plus, Search, X } from "lucide-react";
+import { Bell, PanelLeftClose, Plus, Search, X } from "lucide-react";
 import { IconTooltip } from "../../../components/IconTooltip";
 import { WindowChrome } from "../../../components/WindowChrome";
 import { desktopBridge } from "../../../lib/platform/desktop";
@@ -20,6 +20,7 @@ export function SidebarHeader({
   title,
   isMobile,
   activityMode,
+  onToggleActivity,
   createMenuOpen,
   setCreateMenuOpen,
   searchOpen = false,
@@ -35,6 +36,7 @@ export function SidebarHeader({
   title: string;
   isMobile: boolean;
   activityMode: boolean;
+  onToggleActivity: () => void;
   createMenuOpen: boolean;
   setCreateMenuOpen: (open: boolean) => void;
   searchOpen?: boolean;
@@ -52,6 +54,26 @@ export function SidebarHeader({
     <div className="app-drag flex h-15 shrink-0 items-center gap-1.5 px-3 pb-3 pt-[14px]">
       {isMobile && desktopBridge() ? <WindowChrome /> : null}
       <span className="min-w-0 flex-1 truncate text-body-lg font-medium">{title}</span>
+      {isMobile ? (
+        <IconTooltip label={t`Activity`} side="inline-end">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t`Activity`}
+            aria-pressed={activityMode}
+            data-activity-mode={activityMode ? "on" : "off"}
+            onClick={onToggleActivity}
+            className="app-no-drag text-muted-foreground"
+          >
+            <Bell
+              className={ICON}
+              strokeWidth={STROKE}
+              fill={activityMode ? "currentColor" : "none"}
+              aria-hidden="true"
+            />
+          </Button>
+        </IconTooltip>
+      ) : null}
       {onSearch ? (
         <IconTooltip label={activityMode ? t`Search runs` : t`Search`} side="inline-end">
           <Button

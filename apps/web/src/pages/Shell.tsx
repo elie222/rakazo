@@ -1068,6 +1068,7 @@ function SpaceShell() {
         chatMenu={chatMenu}
         roster={
           <SidebarRoster
+            mini={botsSidebarCollapsed}
             sidebarGroups={sidebarGroups}
             collapsedSidebarSections={collapsedSidebarSections}
             bootstrapMe={bootstrapMe}

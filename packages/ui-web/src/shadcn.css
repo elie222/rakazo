@@ -93,6 +93,7 @@
 @utility row-reveal-action {
   opacity: 0;
   scale: 0.92;
+  pointer-events: none;
   transition:
     opacity var(--motion-micro) var(--ease-standard),
     scale var(--motion-floating) var(--ease-out);
@@ -102,6 +103,7 @@
   > .row-reveal-action {
   opacity: 1;
   scale: 1;
+  pointer-events: auto;
 }
 
 [data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"]))
@@ -139,6 +141,7 @@
   [data-slot="list-row"] > .row-reveal-action {
     opacity: 1;
     scale: 1;
+    pointer-events: auto;
   }
 }
 

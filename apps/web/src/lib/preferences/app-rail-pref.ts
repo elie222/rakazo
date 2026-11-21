@@ -11,10 +11,12 @@ export function readAppRailExpanded(userId: string | null | undefined): boolean 
   const key = appRailExpandedStorageKey(userId);
   if (!key) return null;
   const raw = readStoredString(key);
-  return raw === null ? null : raw === "1";
+  if (raw === "1") return true;
+  if (raw === "0") return false;
+  return null;
 }
 
 export function writeAppRailExpanded(userId: string | null | undefined, expanded: boolean): void {
   const key = appRailExpandedStorageKey(userId);
-  if (key) writeStoredString(key, expanded ? "1" : null);
+  if (key) writeStoredString(key, expanded ? "1" : "0");
 }

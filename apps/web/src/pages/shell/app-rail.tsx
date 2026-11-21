@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { createContext, Suspense, use, useEffect, useState } from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
 import { WindowChrome } from "../../components/WindowChrome";
 import { desktopBridge } from "../../lib/platform/desktop";
@@ -122,15 +122,16 @@ function PrimaryRail({
 }) {
   const { t } = useLingui();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const activityMode = activityModePreference.use();
-  const onChats =
-    !activityMode &&
-    (pathname === "/app" ||
-      pathname.startsWith("/app/g/") ||
-      (pathname.startsWith("/app/") &&
-        !pathname.startsWith("/app/board") &&
-        !pathname.startsWith("/app/artifacts") &&
-        !pathname.startsWith("/app/x/")));
+  const onChatShell =
+    pathname === "/app" ||
+    pathname.startsWith("/app/g/") ||
+    (pathname.startsWith("/app/") &&
+      !pathname.startsWith("/app/board") &&
+      !pathname.startsWith("/app/artifacts") &&
+      !pathname.startsWith("/app/x/"));
+  const onChats = !activityMode && onChatShell;
   const onArtifacts = pathname === "/app/artifacts" || pathname.startsWith("/app/artifacts/");
   const onBoard = pathname === "/app/board" || pathname === "/app/board/";
 
@@ -138,7 +139,7 @@ function PrimaryRail({
     <nav
       data-testid="app-rail"
       aria-label={t`Sections`}
-      className="app-drag hidden w-(--app-rail-width) shrink-0 flex-col border-e border-sidebar-border bg-sidebar pb-3 transition-[width] duration-(--motion-layout) ease-(--ease-standard) motion-reduce:transition-none md:flex"
+      className="app-drag relative z-20 hidden w-(--app-rail-width) shrink-0 flex-col border-e border-sidebar-border bg-sidebar pb-3 transition-[width] duration-(--motion-layout) ease-(--ease-standard) motion-reduce:transition-none md:flex"
     >
       <div className={cn("flex shrink-0 flex-col gap-2 pt-4", expanded ? "px-4" : "items-center")}>
         {desktopBridge() ? <WindowChrome className="self-start" /> : null}
@@ -185,12 +186,14 @@ function PrimaryRail({
           }}
         />
         <RailItem
-          active={activityMode}
+          active={activityMode && onChatShell}
           expanded={expanded}
           icon={<Bell className="size-5" strokeWidth={1.75} aria-hidden="true" />}
           label={t`Activity`}
           onClick={() => {
-            activityModePreference.set(!activityMode);
+            // From another page the first press opens Activity there; on the chat shell it toggles.
+            activityModePreference.set(onChatShell ? !activityMode : true);
+            navigate("/app");
             if (listCollapsed) onShowChats();
           }}
         />
