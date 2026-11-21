@@ -186,6 +186,9 @@ export default function ArtifactDetailScreen() {
   }, [artifactId]);
 
   useEffect(() => {
+    // The reset effect above already pointed the ref at the new route id; applying
+    // this render's stale id would show the previous artifact and start a wasted load.
+    if (activeIdRef.current !== activeId) return;
     let cancelled = false;
     const exactVersionId = exact === "1" && activeId === artifactId ? artifactId : null;
     const cached = pages.current.get(activeId);

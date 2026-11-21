@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
   alert: vi.fn(),
   remove: vi.fn(),
   download: vi.fn(),
+  getArtifact: vi.fn(),
   mimeType: "text/plain",
   fileUri: "file:///test",
   fileExists: true,
@@ -75,12 +76,7 @@ vi.mock("../../components/media/video-preview", () => ({ VideoPreview: () => nul
 vi.mock("../../components/media/artifact-media-pager", () => ({ ArtifactMediaPager: () => null }));
 vi.mock("./artifacts", () => ({
   listArtifactVersions: async (id: string) => [{ id }],
-  getArtifactById: async (id: string) => ({
-    id,
-    name: id,
-    mimeType: state.mimeType,
-    contentBase64: "",
-  }),
+  getArtifactById: (id: string) => state.getArtifact(id),
   artifactThreadTarget: () => null,
   removeArtifact: state.remove,
 }));
@@ -115,6 +111,13 @@ beforeEach(() => {
   state.alert.mockReset();
   state.remove.mockReset();
   state.download.mockReset();
+  state.getArtifact.mockReset();
+  state.getArtifact.mockImplementation(async (id: string) => ({
+    id,
+    name: id,
+    mimeType: state.mimeType,
+    contentBase64: "",
+  }));
   state.mimeType = "text/plain";
   state.fileUri = "file:///test";
   state.fileExists = true;
@@ -255,4 +258,19 @@ it("starts the next artifact's save while one is pending", async () => {
   expect(state.download).toHaveBeenCalledTimes(2);
   await act(async () => saving.resolve("saved"));
   expect(state.alert).not.toHaveBeenCalled();
+});
+it("does not load the artifact the route left", async () => {
+  const slow = deferred<{ id: string; name: string; mimeType: string; contentBase64: string }>();
+  state.getArtifact.mockImplementation((id: string) =>
+    id === "a"
+      ? slow.promise
+      : Promise.resolve({ id, name: id, mimeType: state.mimeType, contentBase64: "" }),
+  );
+  await render();
+  state.id = "b";
+  await render();
+  expect(state.getArtifact.mock.calls.map(([id]) => id)).toEqual(["a", "b"]);
+  await act(async () =>
+    slow.resolve({ id: "a", name: "a", mimeType: state.mimeType, contentBase64: "" }),
+  );
 });
