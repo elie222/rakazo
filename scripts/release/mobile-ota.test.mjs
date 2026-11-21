@@ -25,6 +25,11 @@ test("bundled JavaScript, TypeScript and shared CSS ship over the air", () => {
   assert.deepEqual(otaEligibility(files), { publish: true, blocked: [] });
 });
 
+test("bundled translation catalogs ship over the air on their own", () => {
+  const files = ["packages/i18n/locales/de/messages.po", "packages/i18n/locales/zh-TW/messages.po"];
+  assert.deepEqual(otaEligibility(files), { publish: true, blocked: [] });
+});
+
 test("files that never ship are ignored", () => {
   const files = [
     "apps/mobile/lib/query/query.test.ts",
@@ -51,6 +56,9 @@ test("anything else that changed blocks the update", () => {
     "packages/core/src/data.json",
     "packages/core/package.json",
     "packages/logging/src/style.css",
+    "packages/i18n/package.json",
+    "packages/i18n/locales/de/extra.po",
+    "packages/ui-web/locales/de/messages.po",
     "pnpm-lock.yaml (mobile dependency tree)",
   ];
   assert.deepEqual(otaEligibility(["apps/mobile/lib/query/query.ts", ...blocked]), {
@@ -79,7 +87,7 @@ test("the summary explains the decision against the base commit", () => {
   );
   assert.equal(
     otaSummary(BASE, { publish: true, blocked: [] }),
-    "### Mobile OTA eligible\n\nSince `012345678`, only JavaScript, TypeScript, or bundled CSS used by the mobile client changed.\n",
+    "### Mobile OTA eligible\n\nSince `012345678`, only the mobile bundle's JavaScript, TypeScript, stylesheets, or translation catalogs changed.\n",
   );
   assert.equal(
     otaSummary(BASE, { publish: false, blocked: [] }),
