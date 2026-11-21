@@ -17,6 +17,8 @@ export function routineTimerScheduledFor(
   return Number.isFinite(scheduledFor.getTime()) ? scheduledFor : undefined;
 }
 
+const PAGE = 100;
+
 /**
  * Call while holding the routine row lock. Keep at most one unstarted catch-up
  * for the same work; never fold an event, manual test, retry, or actually attempted run.
@@ -64,9 +66,12 @@ export async function findPendingRoutineTick(
     steeringMessages: { none: {} },
     task: { status: "queued" },
   };
-  // The prompt is encrypted under a fresh IV each time, so it is compared once read back.
-  const candidates = (
-    await tx.run.findMany({
+  // The prompt is encrypted under a fresh IV each time, so it is compared once read back, a page
+  // at a time until a page of matches, so work under an older prompt never hides a match.
+  const candidates: Array<{ id: string; taskId: string; leaseFence: number; updatedAt: Date }> = [];
+  let cursor: string | undefined;
+  while (candidates.length < PAGE) {
+    const page = await tx.run.findMany({
       where: pristine,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: {
@@ -76,9 +81,14 @@ export async function findPendingRoutineTick(
         updatedAt: true,
         task: { select: { prompt: true } },
       },
-      take: 100,
-    })
-  ).filter((candidate) => candidate.task.prompt === config.prompt);
+      take: PAGE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    for (const { task, ...candidate } of page)
+      if (task.prompt === config.prompt && candidates.length < PAGE) candidates.push(candidate);
+    if (page.length < PAGE) break;
+    cursor = page.at(-1)!.id;
+  }
   if (!candidates.length) return null;
   const runIds = candidates.map((candidate) => candidate.id);
   const leases = await tx.computerExecutionLease.findMany({
