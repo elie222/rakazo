@@ -447,23 +447,26 @@ class GalleryHelperTest(unittest.TestCase):
     helper = SCRIPT.parents[2] / ".agents/skills/pr-watch/pr-screenshots"
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs Bash and jq")
-    def test_only_emits_current_pr_and_head(self):
-        for pr, sha, ok in ((42, "current", True), (42, "stale", False), (43, "current", False)):
-            with self.subTest(pr=pr, sha=sha), tempfile.TemporaryDirectory() as directory:
+    def test_only_emits_the_current_head(self):
+        current, stale = "a" * 40, "b" * 40
+        gallery = "https://example.com/gallery/runs/200-1/screenshots/index.html"
+        for commit, ok in ((current, True), (stale, False), (None, False)):
+            with self.subTest(commit=commit), tempfile.TemporaryDirectory() as directory:
                 root = pathlib.Path(directory)
+                marker = f"<!-- screenshot-commit:{commit} -->" if commit else ""
+                body = f"<!-- rakazo-playwright-screenshots -->\n{marker}\n[Open screenshot gallery]({gallery})"
                 gh = root / "gh"
-                gh.write_bytes(b"""#!/usr/bin/env bash
+                gh.write_text(f"""#!/usr/bin/env bash
 if [[ "$1" == pr ]]; then
-  echo current
+  echo {current}
 else
-  echo '[[{"user":{"login":"github-actions[bot]"},"body":"<!-- rakazo-playwright-screenshots --> https://example.com/gallery/prs/42/index.html"}]]'
+  printf '%s\\n' "$COMMENTS"
 fi
 """)
                 curl = root / "curl"
                 curl.write_bytes(b"""#!/usr/bin/env bash
 case "$2" in
-  */history.json) printf '%s\\n' "$HISTORY" ;;
-  */manifest.json) printf '%s\\n' 'manifest requested' >&2
+  */runs/200-1/screenshots/manifest.json) printf '%s\\n' 'manifest requested' >&2
     echo '{"screenshots":[{"captureType":"checkpoint","source":"sidebar.spec.ts","title":"Sidebar","fileName":"sidebar.png"}]}' ;;
   *) exit 2 ;;
 esac
@@ -475,11 +478,7 @@ esac
                      "test", root.as_posix(), self.helper.as_posix()],
                     env={
                         **os.environ,
-                        "HISTORY": json.dumps([{
-                            "pullRequestNumber": pr,
-                            "sha": sha,
-                            "screenshotsUrl": "https://example.com/gallery/prs/42/index.html",
-                        }]),
+                        "COMMENTS": json.dumps([[{"user": {"login": "github-actions[bot]"}, "body": body}]]),
                     },
                     check=False,
                     capture_output=True,
@@ -487,12 +486,14 @@ esac
                 )
                 if ok:
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertIn("![Sidebar](https://example.com/gallery/prs/42/sidebar.png)", result.stdout)
+                    self.assertIn(
+                        "![Sidebar](https://example.com/gallery/runs/200-1/screenshots/sidebar.png)",
+                        result.stdout,
+                    )
                 else:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(result.stdout, "")
                     self.assertNotIn("manifest requested", result.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()
