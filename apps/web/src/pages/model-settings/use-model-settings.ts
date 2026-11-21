@@ -357,7 +357,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       credential,
       credentialId: credential?.id ?? null,
       settingsOnly,
-      ...(intent ? { makeDefault: { makeDefault: intent.makeDefault, scope } } : {}),
+      // Always explicit: a save from a provider page has no intent and must not move the main model.
+      makeDefault: { makeDefault: intent?.makeDefault ?? false, scope },
     });
     if (request.status === "incomplete") return;
     const { input, savingWithoutKey, activeModelId } = request;
@@ -431,7 +432,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       provider: selected.provider,
       credentialId: credential?.id ?? null,
       modelId: selected.id,
-      ...(intent ? { makeDefault: intent.makeDefault, scope } : {}),
+      makeDefault: intent?.makeDefault ?? false,
+      scope,
       thinkingLevel: clampCatalogThinkingLevel(
         thinkingLevel,
         selected.thinkingLevels,
