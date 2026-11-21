@@ -90,11 +90,11 @@ describe("resolveScheduleTiming", () => {
   it("rejects one-shot delays too far out to be a date", () => {
     expect(resolveScheduleTiming({ delayMinutes: 1e15 })).toEqual({
       ok: false,
-      error: "delayMinutes is too far in the future.",
+      error: "The delay is too far in the future.",
     });
     expect(resolveScheduleTiming({ delaySeconds: 1e14 })).toEqual({
       ok: false,
-      error: "delaySeconds is too far in the future.",
+      error: "The delay is too far in the future.",
     });
   });
 
