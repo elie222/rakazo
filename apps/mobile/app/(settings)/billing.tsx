@@ -336,7 +336,10 @@ export default function BillingScreen() {
         >
           <SettingsRow
             title={t`Available credits`}
-            value={`$${(status.balanceUsd ?? 0).toFixed(2)}`}
+            value={new Intl.NumberFormat(dateLocaleForUi(), {
+              style: "currency",
+              currency: "USD",
+            }).format(status.balanceUsd ?? 0)}
           />
           {status.canManage && recurring ? (
             <>
