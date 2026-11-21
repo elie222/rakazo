@@ -5,7 +5,11 @@ import { isSecretAskBlock } from "../asks/ask-kind.js";
 import { separateAskAnswers } from "../asks/ask-replies.js";
 import { callDurationText } from "../calls/voice-chat-groups.js";
 import { cloudAgentHttpsUrl } from "../integrations/cloud-agent.js";
-import { receiptItems } from "../runs/action-approval.js";
+import {
+  ALLOW_IN_SPACE_LABELS,
+  isApprovalAskBlock,
+  receiptItems,
+} from "../runs/action-approval.js";
 import { helperCardState } from "../runs/run-state.js";
 import { isRetiredImportSetup, isToolActivityBlock } from "../runs/tool-activity.js";
 import {
@@ -49,6 +53,15 @@ export type AskWords = {
   commandVariable: string;
   /** Where a one-time code came from, by the site's host. */
   codeFrom: (host: string) => string;
+  /** An answered card's state line once its buttons are gone, as the card words it. */
+  answered: string;
+  created: string;
+  cancelled: string;
+  allowedInSpace: string;
+  allowedOnce: string;
+  alwaysAllowed: string;
+  denied: string;
+  answeredWith: (answer: string) => string;
 };
 
 /** The state words the chat's cards show, in the reader's language. */
@@ -67,6 +80,10 @@ export type CardStatusWords = {
   phoneCall: string;
   /** The label on the card of an answered call the bot placed, before its length. */
   incomingCall: string;
+  /** A call the bot placed while it rings, after it was missed or declined, and the declined note. */
+  callingYou: string;
+  missedCall: string;
+  youDeclined: string;
   /** A connection or server the person connected. */
   connected: string;
   /** A tool's question the person declined. */
@@ -156,10 +173,10 @@ function holdsSecret(block: AskBlock): boolean {
  * its own, so an unclosed fence must not run into the next message in the file.
  */
 function closeOpenFence(markdown: string): string {
-  let open: string | undefined;
-  // The closing fence sits in the opener's column (indentation, list or quote markers), so an
-  // indented code block or list item stays the one it was.
-  let closer = "";
+  // The open fence and the container it sits in: a list item's content column, a quote, or an
+  // indented block (four or more columns before it). A line outside that container ends the fence
+  // with it, as Markdown reads it, so a bare fence after it opens a new block rather than closing.
+  let open: { mark: string; quote: boolean; column: number; closer: string } | undefined;
   // Indented code (four spaces or a tab, after a blank line or more indented code) is shown as
   // typed, so its "<" stays as it is, like a fence's. The start of the message counts as blank.
   // Inside a list item or quote the same indent continues the item's text, which stays escaped, so
@@ -167,21 +184,58 @@ function closeOpenFence(markdown: string): string {
   let afterBlank = true;
   let inIndentedCode = false;
   let inContainer = false;
+  // The content columns of the list items seen since the list began, so a fence on an item's
+  // continuation line belongs to its item rather than the margin.
+  let itemColumns: number[] = [];
   const lines = markdown.split("\n").map((line) => {
-    // One optional list or quote marker before the fence; no nested repeats, so a long run of spaces cannot backtrack.
-    const fence = /^([ \t]*(?:(?:[-+*]|\d+[.)]|>)[ \t]+)?)(`{3,}|~{3,})(.*)$/.exec(line);
     const blank = line.trim() === "";
     const wasAfterBlank = afterBlank;
     afterBlank = blank;
+    if (open) {
+      // The line with the container's own prefix taken off, or undefined when it leaves the container.
+      const inside = open.quote
+        ? /^ {0,3}>/.test(line)
+          ? line.replace(/^ {0,3}> ?/, "")
+          : undefined
+        : blank || indentWidth(line) >= open.column
+          ? dropColumns(line, open.column)
+          : undefined;
+      if (inside !== undefined) {
+        const closing = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(inside)?.[1];
+        if (closing && closing[0] === open.mark[0] && closing.length >= open.mark.length) {
+          open = undefined;
+        }
+        return line;
+      }
+      open = undefined;
+    }
+    // One optional list or quote marker before the fence; no nested repeats, so a long run of spaces cannot backtrack.
+    const fence = /^([ \t]*(?:(?:[-+*]|\d+[.)]|>)[ \t]+)?)(`{3,}|~{3,})(.*)$/.exec(line);
     if (!fence) {
-      if (open) return line;
       if (blank) return line;
       const indented = /^(?: {4}|\t)/.test(line);
+      // A heading or thematic break at the margin ends a list, blank line or not; checked before
+      // the item marker so "- - -" reads as the break it is.
+      const breaksList =
+        /^(?:#{1,6}(?:[ \t]|$)|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$|(?:_[ \t]*){3,}$)/.test(line);
       if (!indented) {
-        if (/^ {0,3}(?:[-+*]|\d+[.)])(?:[ \t]|$)|^ {0,3}>/.test(line)) inContainer = true;
+        if (breaksList) {
+          inContainer = false;
+          itemColumns = [];
+        } else if (/^ {0,3}(?:[-+*]|\d+[.)])(?:[ \t]|$)|^ {0,3}>/.test(line)) {
+          inContainer = true;
+          // A quote at the margin ends any list before it.
+          if (line.startsWith(">")) itemColumns = [];
+        }
         // Only a line at the margin ends a list: an item's own later paragraphs sit a few spaces in.
-        else if (wasAfterBlank && !/^[ \t]/.test(line)) inContainer = false;
+        else if (wasAfterBlank && !/^[ \t]/.test(line)) {
+          inContainer = false;
+          itemColumns = [];
+        }
       }
+      // A nested item sits under its parent's content, so it may be indented four or more.
+      const item = !breaksList && (!indented || inContainer) ? listItemColumn(line) : undefined;
+      if (item !== undefined) itemColumns.push(item);
       inIndentedCode = indented && !inContainer && (wasAfterBlank || inIndentedCode);
       return inIndentedCode ? line : escapeHtml(line);
     }
@@ -190,19 +244,76 @@ function closeOpenFence(markdown: string): string {
     if (/\S/.test(lead)) inContainer = true;
     const mark = fence[2] ?? "";
     const rest = fence[3] ?? "";
-    if (!open) {
-      // A backtick fence's info string cannot hold a backtick; otherwise the line is text.
-      if (!(mark[0] === "`" && rest.includes("`"))) {
-        open = mark;
-        closer = `${lead.replace(/\S/g, " ")}${mark}`;
+    const quote = lead.includes(">");
+    const width = indentWidth(lead.replace(/\S/g, " "));
+    if (/\S/.test(lead) && !quote) itemColumns.push(width);
+    // A backtick fence's info string cannot hold a backtick; otherwise the line is text.
+    if (!(mark[0] === "`" && rest.includes("`"))) {
+      // Without a marker of its own, a fence in a list belongs to the deepest item it reaches.
+      const itemColumn = inContainer
+        ? itemColumns.reduce(
+            (deepest, column) => (column <= width ? Math.max(deepest, column) : deepest),
+            -1,
+          )
+        : -1;
+      // A plain fence that reaches no item sits outside the list, which it ends.
+      if (!/\S/.test(lead) && itemColumn < 0) {
+        inContainer = false;
+        itemColumns = [];
       }
-    } else if (mark[0] === open[0] && mark.length >= open.length && rest.trim() === "") {
-      open = undefined;
+      open = {
+        mark,
+        quote,
+        // A fence indented less than four columns at the margin has no container to leave.
+        column:
+          quote || /\S/.test(lead) ? width : itemColumn >= 0 ? itemColumn : width >= 4 ? width : 0,
+        // The closer sits in the opener's column, keeping a quote's marker so it stays in the quote.
+        closer: `${quote ? lead.replace(/[^\s>]/g, " ") : " ".repeat(width)}${mark}`,
+      };
     }
     return line;
   });
   const text = lines.join("\n");
-  return open ? `${text}\n${closer}` : text;
+  return open ? `${text}\n${open.closer}` : text;
+}
+
+/**
+ * Where a list item's content starts when the line opens one: past its marker and the spaces after
+ * it, or one column past the marker when five or more follow (the rest is then indented code).
+ */
+function listItemColumn(line: string): number | undefined {
+  const item = /^( *(?:[-+*]|\d{1,9}[.)]))( *)/.exec(line);
+  if (!item) return undefined;
+  const marker = item[1]?.length ?? 0;
+  const spaces = item[2]?.length ?? 0;
+  const rest = line.slice(item[0].length);
+  if (spaces === 0 && rest !== "") return undefined;
+  return rest === "" || spaces > 4 ? marker + 1 : marker + spaces;
+}
+
+/** How many columns a line's leading whitespace takes, a tab reaching the next multiple of four. */
+function indentWidth(line: string): number {
+  let width = 0;
+  for (const char of line) {
+    if (char === " ") width += 1;
+    else if (char === "\t") width += 4 - (width % 4);
+    else break;
+  }
+  return width;
+}
+
+/** The line with its first `columns` columns of leading whitespace taken off. */
+function dropColumns(line: string, columns: number): string {
+  let width = 0;
+  let i = 0;
+  while (i < line.length && width < columns) {
+    const char = line[i];
+    if (char === " ") width += 1;
+    else if (char === "\t") width += 4 - (width % 4);
+    else break;
+    i += 1;
+  }
+  return line.slice(i);
 }
 
 /**
@@ -344,6 +455,18 @@ function askMarkdown(
   // The card translates its own "Update instructions?" question; the stored text is English.
   const question = block.instructionUpdate ? words.updateInstructions : closeOpenFence(block.text);
   const actions = block.actions ?? [];
+  const approval = isApprovalAskBlock(block);
+  const answered = block.status === "answered";
+  // As the card: only a plain question keeps its options once answered, with the chosen one marked;
+  // an approval or instructions update swaps its buttons for the outcome.
+  const optionQuestion = !approval && !block.instructionUpdate && actions.length > 0;
+  const typed =
+    answered &&
+    !optionQuestion &&
+    !approval &&
+    !block.instructionUpdate &&
+    Boolean(block.answer) &&
+    block.answer !== "approved";
   // An expired approval stores its refusal as the answer, but no option was chosen.
   const chosen =
     block.status === "answered" && block.answer && !block.expired
@@ -363,22 +486,21 @@ function askMarkdown(
         ? literal(shownDetail)
         : fenced(shownDetail)
       : "";
-  const options = actions
+  const options = (optionQuestion || !answered ? actions : [])
     .map((action) => `- ${oneLine(action.label)}${action.id === chosen?.id ? " \u2713" : ""}`)
     .join("\n");
   const answer =
-    !actions.length &&
-    block.status === "answered" &&
-    block.answer &&
-    block.answer !== "approved" &&
-    !block.expired &&
-    !answeredInOwnMessage &&
-    !holdsSecret(block)
+    typed && block.answer && !block.expired && !answeredInOwnMessage && !holdsSecret(block)
       ? `${words.answer}: ${literal(block.answer)}`
       : "";
   // A protected answer is never written, but the card's outcome for it is.
-  const outcome =
-    block.status === "answered" && isSecretAskBlock(block) ? secretOutcome(block, status) : "";
+  const outcome = !answered
+    ? ""
+    : isSecretAskBlock(block)
+      ? secretOutcome(block, status)
+      : optionQuestion || typed || block.expired
+        ? ""
+        : answeredState(block, approval, words, status);
   return [
     question,
     destination,
@@ -390,6 +512,30 @@ function askMarkdown(
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** An answered card's state line once its buttons are gone, as the card words it. */
+function answeredState(
+  block: AskBlock,
+  approval: boolean,
+  words: AskWords,
+  status: CardStatusWords,
+): string {
+  const answer = block.answer;
+  if (block.instructionUpdate) return answer === "deny" ? status.dismissed : words.allowedOnce;
+  if (!answer) return words.answered;
+  if (!approval) return status.sent;
+  const outcome = block.actions?.find((action) => action.id === answer)?.outcome;
+  if (outcome === "created") return words.created;
+  if (outcome === "cancelled") return words.cancelled;
+  if (answer === "allow") {
+    return block.actions?.some((action) => ALLOW_IN_SPACE_LABELS.has(action.label))
+      ? words.allowedInSpace
+      : words.allowedOnce;
+  }
+  if (answer === "always") return words.alwaysAllowed;
+  if (answer === "deny") return words.denied;
+  return oneLine(words.answeredWith(answer));
 }
 
 const FORM_AUTH_TYPES = new Set(["card", "contact"]);
@@ -468,6 +614,8 @@ function blockMarkdown(
     attachment: string;
     isSetupComplete: (block: Extract<MessageBlock, { kind: "import_setup" }>) => boolean;
     placedCalls: ReadonlyMap<string, { durationSeconds?: number }>;
+    /** When the export is written, in epoch milliseconds: a call still ringing past its end reads as missed. */
+    now: number;
   },
   answeredInOwnMessage: boolean,
 ): string {
@@ -549,10 +697,18 @@ function blockMarkdown(
         .filter(Boolean)
         .join("\n\n");
     }
-    case "call_request":
-      // The card shows the opening, which is spoken text, once the call is answered; the reason
-      // while it rings or after it was missed.
-      return block.status === "answered" ? literal(block.opening) : literal(block.reason);
+    case "call_request": {
+      // The card shows the opening, which is spoken text, once the call is answered (its marker
+      // writes the state); otherwise its state, then the reason. A ring past its end reads as missed.
+      if (block.status === "answered") return literal(block.opening);
+      const ringing = block.status === "ringing" && Date.parse(block.expiresAt) > words.now;
+      const state = ringing
+        ? words.status.callingYou
+        : block.status === "declined"
+          ? `${words.status.missedCall} · ${words.status.youDeclined}`
+          : words.status.missedCall;
+      return [oneLine(state), literal(block.reason)].filter(Boolean).join("\n\n");
+    }
     case "subagent": {
       // The card shows the helper's name with its state, then its task, then its result (or its
       // progress while it works) as Markdown; a stopped helper shows no body.
@@ -666,6 +822,8 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   attachment: string;
   /** Whether a checklist's card shows it complete, which the caller checks against the bot's setup. */
   isSetupComplete: (block: Extract<MessageBlock, { kind: "import_setup" }>) => boolean;
+  /** When the export is written, in epoch milliseconds; the current time unless a test fixes it. */
+  now?: number;
 }): string {
   // Folded as the chat folds them: work a bot did for another bot stays under its receipt, and an
   // emoji-only reply shows under the message it reacts to.
@@ -681,6 +839,7 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
     memberName: options.memberName,
     attachment: options.attachment,
     isSetupComplete: options.isSetupComplete,
+    now: options.now ?? Date.now(),
     placedCalls: new Map(
       options.messages.flatMap((message) =>
         message.blocks.flatMap((block) =>

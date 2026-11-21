@@ -28,6 +28,8 @@ const TOTAL_TIMEOUT_MS = 5 * 60_000;
 const SETUP_CHECK_TIMEOUT_MS = 15_000;
 /** Setup checks running at once, so a chat with many checklists does not send them all together. */
 const SETUP_CHECK_CONCURRENCY = 4;
+/** All the setup checks together: a check not finished by then keeps its full list, as a failed one does. */
+const SETUP_CHECKS_TIMEOUT_MS = 60_000;
 
 export type ChatToExport = { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group };
 
@@ -99,14 +101,18 @@ async function completedSetups(
     }
   }
   // A check that fails or never answers leaves the card's full list on show, so the export keeps it too.
-  // Each check's deadline starts when the check does, not while it waits for a free slot.
-  const states = await mapConcurrent(checks, SETUP_CHECK_CONCURRENCY, ({ botId, block }) =>
-    bestEffort(
-      "import setup state",
-      rpc.bots.importSetupState(importSetupStateInput(botId, block), {
-        signal: deadlineSignal(SETUP_CHECK_TIMEOUT_MS),
-      }),
-    ),
+  // Each check's deadline starts when the check does, not while it waits for a free slot, and none
+  // outlives the shared one; once that passes, the checks still waiting are not sent.
+  const allChecks = deadlineSignal(SETUP_CHECKS_TIMEOUT_MS);
+  const states = await mapConcurrent(checks, SETUP_CHECK_CONCURRENCY, async ({ botId, block }) =>
+    allChecks.aborted
+      ? null
+      : bestEffort(
+          "import setup state",
+          rpc.bots.importSetupState(importSetupStateInput(botId, block), {
+            signal: deadlineSignal(SETUP_CHECK_TIMEOUT_MS, allChecks),
+          }),
+        ),
   );
   const done = new Set<ImportSetupBlock>();
   checks.forEach(({ block }, i) => {

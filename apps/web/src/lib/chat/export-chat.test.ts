@@ -62,6 +62,14 @@ const labels = {
     discarded: "Discarded",
     commandVariable: "Command variable",
     codeFrom: (host: string) => `Only enter a code ${host} sent you.`,
+    answered: "Answered",
+    created: "Created",
+    cancelled: "Cancelled",
+    allowedInSpace: "Allowed in this space",
+    allowedOnce: "Allowed once",
+    alwaysAllowed: "Always allowed",
+    denied: "Denied",
+    answeredWith: (answer: string) => `Answered: ${answer}`,
   },
   status: {
     saved: "Saved",
@@ -76,6 +84,9 @@ const labels = {
     setupComplete: "Setup complete",
     phoneCall: "Phone call",
     incomingCall: "Incoming call",
+    callingYou: "Calling you…",
+    missedCall: "Missed call",
+    youDeclined: "You declined",
     connected: "Connected",
     declined: "Declined",
     needsYou: "Needs you",
@@ -190,6 +201,50 @@ describe("exportChat", () => {
       setupDeadline?.controller.abort(new DOMException("timed out", "TimeoutError"));
       await exporting;
       expect(exported().text).toContain("- Morning digest");
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("ends all setup checks at one shared deadline, sending none still waiting", async () => {
+    // As above: controllable signals stand in for Node's timeouts, and the shared one is aborted.
+    const controllers: { ms: number; controller: AbortController }[] = [];
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controllers.push({ ms, controller });
+      return controller.signal;
+    });
+    try {
+      const lists = Array.from({ length: 6 }, (_, i) => ({
+        kind: "import_setup" as const,
+        items: [{ kind: "routine" as const, routineId: `r_${i}`, name: `Routine ${i}` }],
+      }));
+      const importSetupState = vi.fn(
+        (_input: unknown, options: { signal: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) =>
+            options.signal.addEventListener("abort", () => reject(options.signal.reason)),
+          ),
+      );
+      const messages = vi.fn(async (_input: unknown) => ({
+        threadId: "t_1",
+        messages: [message("", { blocks: lists })],
+        olderCursor: null,
+      }));
+      const rpc = { threads: { messages }, bots: { importSetupState } } as unknown as RpcClient;
+      const exporting = exportChat({
+        rpc,
+        target: { kind: "bot", chat: bot },
+        labels,
+        time,
+        memberName: noMembers,
+      });
+      await vi.waitFor(() => expect(importSetupState).toHaveBeenCalledTimes(4));
+      const allChecks = controllers.find(({ ms }) => ms === 60_000);
+      expect(allChecks).toBeDefined();
+      allChecks?.controller.abort(new DOMException("timed out", "TimeoutError"));
+      await exporting;
+      expect(importSetupState).toHaveBeenCalledTimes(4);
+      for (let i = 0; i < 6; i += 1) expect(exported().text).toContain(`- Routine ${i}`);
     } finally {
       vi.restoreAllMocks();
     }

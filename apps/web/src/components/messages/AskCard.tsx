@@ -4,6 +4,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  ALLOW_IN_SPACE_LABELS,
   isApprovalAskBlock,
   isQuestionAskBlock,
   isSecretAskBlock,
@@ -92,14 +93,8 @@ function formatAnsweredState(
   return t`Answered: ${answer}`;
 }
 
-/**
- * The server's labels on the user's-computer approval, whose "allow" covers the whole space. Cards
- * from before it covered the space carry the older label.
- */
-const ALLOW_IN_SPACE = new Set(["Allow in this space", "Allow for this chat"]);
-
 function allowsSpace(actions: AskBlock["actions"]): boolean {
-  return actions?.some((action) => ALLOW_IN_SPACE.has(action.label)) ?? false;
+  return actions?.some((action) => ALLOW_IN_SPACE_LABELS.has(action.label)) ?? false;
 }
 
 function approvalActionLabel(
@@ -110,7 +105,8 @@ function approvalActionLabel(
 ): string {
   if (outcome === "created") return t`Create space`;
   if (outcome === "cancelled") return t`Cancel`;
-  if (id === "allow") return ALLOW_IN_SPACE.has(fallback) ? t`Allow in this space` : t`Allow once`;
+  if (id === "allow")
+    return ALLOW_IN_SPACE_LABELS.has(fallback) ? t`Allow in this space` : t`Allow once`;
   if (id === "always") return site ? t`Always allow ${site}` : t`Always allow this tool`;
   if (id === "deny") return t`Deny`;
   return fallback;

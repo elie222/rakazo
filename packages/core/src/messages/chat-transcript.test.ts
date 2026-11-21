@@ -30,6 +30,14 @@ const askWords = {
   discarded: "Discarded",
   commandVariable: "Command variable",
   codeFrom: (host: string) => `Only enter a code ${host} sent you.`,
+  answered: "Answered",
+  created: "Created",
+  cancelled: "Cancelled",
+  allowedInSpace: "Allowed in this space",
+  allowedOnce: "Allowed once",
+  alwaysAllowed: "Always allowed",
+  denied: "Denied",
+  answeredWith: (answer: string) => `Answered: ${answer}`,
 };
 
 const cardStatus = {
@@ -45,6 +53,9 @@ const cardStatus = {
   setupComplete: "Setup complete",
   phoneCall: "Phone call",
   incomingCall: "Incoming call",
+  callingYou: "Calling you…",
+  missedCall: "Missed call",
+  youDeclined: "You declined",
   connected: "Connected",
   declined: "Declined",
   needsYou: "Needs you",
@@ -369,26 +380,128 @@ describe("chatTranscriptMarkdown", () => {
     expect(typed).toContain("Which day?\n\nAnswer: Tuesday");
   });
 
-  it("writes a call as the chat's card shows it: the opening once answered, the reason otherwise", () => {
-    const call = (status: "answered" | "missed") =>
-      transcript([
-        message("bot", [
-          {
-            kind: "call_request",
-            callId: "c_1",
-            reason: "Your invoice is overdue",
-            opening: "Hi Sam, *calling* about the invoice.",
-            status,
-            expiresAt: "2026-03-04T10:05:00.000Z",
-          },
-        ]),
-      ]);
+  it("writes a call as the chat's card shows it: the opening once answered, else its state and reason", () => {
+    const call = (status: "answered" | "missed" | "declined" | "ringing", now = 0) =>
+      chatTranscriptMarkdown({
+        title: "Ada",
+        messages: [
+          message("bot", [
+            {
+              kind: "call_request",
+              callId: "c_1",
+              reason: "Your invoice is overdue",
+              opening: "Hi Sam, *calling* about the invoice.",
+              status,
+              expiresAt: "2026-03-04T10:05:00.000Z",
+            },
+          ]),
+        ],
+        speaker: () => "Ada",
+        time: () => "10:00",
+        routineEvent: (change, name) => `${change} ${name}`,
+        askWords,
+        cardStatus,
+        cardLabels,
+        memberName: (botId: string) => botId,
+        attachment: "Attachment",
+        isSetupComplete: () => false,
+        now,
+      });
     const answered = call("answered");
     expect(answered).toContain("Hi Sam, \\*calling\\* about the invoice.");
     expect(answered).not.toContain("Your invoice is overdue");
+    expect(answered).not.toContain("Missed call");
     const missed = call("missed");
-    expect(missed).toContain("Your invoice is overdue");
+    expect(missed).toContain("Missed call\n\nYour invoice is overdue");
     expect(missed).not.toContain("Hi Sam");
+    expect(call("declined")).toContain("Missed call · You declined\n\nYour invoice is overdue");
+    expect(call("ringing", Date.parse("2026-03-04T10:01:00.000Z"))).toContain(
+      "Calling you…\n\nYour invoice is overdue",
+    );
+    // A ring past its end reads as missed, as the card turns it.
+    expect(call("ringing", Date.parse("2026-03-04T10:06:00.000Z"))).toContain(
+      "Missed call\n\nYour invoice is overdue",
+    );
+  });
+
+  it("writes an answered card's state once its buttons are gone, as the card does", () => {
+    const approval = {
+      kind: "ask" as const,
+      text: "Let Mail send the reply?",
+      approvalEffectId: "eff_1",
+      status: "answered" as const,
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "always", label: "Always allow this tool" },
+        { id: "deny", label: "Deny" },
+      ],
+    };
+    const state = (block: ThreadMessage["blocks"][number]) => transcript([message("bot", [block])]);
+    const allowed = state({ ...approval, answer: "allow" });
+    expect(allowed).toContain("Let Mail send the reply?\n\nAllowed once");
+    expect(allowed).not.toContain("- Deny");
+    expect(state({ ...approval, answer: "always" })).toContain("Always allowed");
+    expect(state({ ...approval, answer: "deny" })).toContain("Denied");
+    expect(
+      state({
+        ...approval,
+        answer: "allow",
+        actions: [
+          { id: "allow", label: "Allow in this space" },
+          { id: "deny", label: "Deny" },
+        ],
+      }),
+    ).toContain("Allowed in this space");
+    // A plain ask answered with "approved" reads Sent; one with no answer reads Answered.
+    expect(
+      state({ kind: "ask", text: "Ready to send?", status: "answered", answer: "approved" }),
+    ).toContain("Ready to send?\n\nSent");
+    expect(state({ kind: "ask", text: "Ready?", status: "answered" })).toContain(
+      "Ready?\n\nAnswered",
+    );
+    // A question keeps its options with the chosen one marked, and adds no state line.
+    const question = state({
+      kind: "ask",
+      text: "Which day?",
+      status: "answered",
+      answer: "tue",
+      actions: [
+        { id: "mon", label: "Monday" },
+        { id: "tue", label: "Tuesday" },
+      ],
+    });
+    expect(question).toContain("- Monday\n- Tuesday \u2713");
+    expect(question).not.toContain("Sent");
+  });
+
+  it("closes a fence that a line outside its list item or quote ended, as Markdown does", () => {
+    const written = (text: string) =>
+      transcript([
+        message("bot", [{ kind: "text", text }]),
+        message("bot", [{ kind: "text", text: "Done" }], "2026-03-04T10:01:00.000Z"),
+      ]);
+    // The bare fence at the margin ends the item, so it opens a new block that must be closed.
+    expect(written("- ```js\n  const a = 1;\n```")).toContain(
+      "- ```js\n  const a = 1;\n```\n```\n\n---\n\n",
+    );
+    expect(written("> ```\n> quoted\nplain\n```")).toContain("plain\n```\n```\n\n---\n\n");
+    // Inside its container the same fence closes it, and nothing is added.
+    expect(written("- ```js\n  const a = 1;\n  ```")).toContain("  ```\n\n---\n\n");
+    expect(written("> ```\n> quoted\n> ```")).toContain("> ```\n\n---\n\n");
+    // A fence on an item's own continuation line belongs to the item, so the margin fence ends it too.
+    expect(written("1. Install\n   ```bash\n   npm i\n```")).toContain(
+      "   npm i\n```\n```\n\n---\n\n",
+    );
+    // A line indented less than the fence but still inside the item keeps the fence open.
+    expect(written("1. item\n\n    ```js\n    code\n   more\n    ```")).toContain(
+      "   more\n    ```\n\n---\n\n",
+    );
+    // A fence at the margin ends the list, so a later shallow fence is not taken for an item's.
+    expect(written("- a\n\n```\nx\n```\n\n  ```\n  code\n```")).toContain("  code\n```\n\n---\n\n");
+    // So does a thematic break, without a blank line.
+    expect(written("- a\n***\n  ```\n  code\n```")).toContain("  code\n```\n\n---\n\n");
+    // An open fence in a quote is closed inside the quote.
+    expect(written("> ```\n> quoted")).toContain("> quoted\n> ```\n\n---\n\n");
   });
 
   it("closes a code fence a bot left open, so it cannot run into the next message", () => {
