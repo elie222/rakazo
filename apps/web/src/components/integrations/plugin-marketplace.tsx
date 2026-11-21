@@ -473,7 +473,7 @@ export function PluginDetail({
               serverId: server.id,
               name: tool.name,
               description: tool.description,
-              enabled: toolEnabled(assignment, tool.name, server.allBots),
+              enabled: toolEnabled(assignment, tool.name, server.allBots ?? false),
               locked,
             };
           }),
