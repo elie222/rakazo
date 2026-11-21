@@ -85,11 +85,18 @@ afterEach(async () => {
   delete document.documentElement.dataset.rosterDrag;
 });
 
-function pointer(target: EventTarget, type: string, x: number, y: number, pointerType = "mouse") {
+function pointer(
+  target: EventTarget,
+  type: string,
+  x: number,
+  y: number,
+  { pointerType = "mouse", buttons = type === "pointerup" ? 0 : 1 } = {},
+) {
   const event = new MouseEvent(type, {
     bubbles: true,
     cancelable: true,
     button: 0,
+    buttons,
     clientX: x,
     clientY: y,
   });
@@ -154,21 +161,86 @@ it("keeps a short press a click", () => {
   expect(open).toHaveBeenCalledOnce();
 });
 
-it("cancels the drag on Escape", () => {
+const key = (name: string) =>
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: name }));
+  });
+
+it("cancels the drag on Escape and still keeps its release from opening the chat", () => {
   pointer(el("a1"), "pointerdown", 10, 10);
   pointer(window, "pointermove", 50, 40);
-  act(() => {
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-  });
+  key("Escape");
   expect(cursor()).toBeUndefined();
   expect(handlers.setDraggedBotId).toHaveBeenLastCalledWith(null);
-  pointer(window, "pointerup", 50, 40);
+  expect(handlers.setRosterDropKey).toHaveBeenLastCalledWith(null);
+
+  pointer(window, "pointermove", 60, 40);
+  expect(cursor()).toBeUndefined();
+  pointer(window, "pointerup", 60, 40);
+  expect(handlers.applyRosterDrop).not.toHaveBeenCalled();
+  act(() => el("a1").click());
+  expect(open).not.toHaveBeenCalled();
+});
+
+it("never starts a drag after a release the page missed", () => {
+  pointer(el("a1"), "pointerdown", 10, 10);
+  // Released outside the window before the drag began: the next move has no button held.
+  pointer(window, "pointermove", 50, 40, { buttons: 0 });
+  pointer(window, "pointermove", 60, 40, { buttons: 0 });
+  expect(handlers.setDraggedBotId).not.toHaveBeenCalled();
+  expect(cursor()).toBeUndefined();
+});
+
+it("ends a started drag whose release the page missed, without dropping", () => {
+  pointer(el("a1"), "pointerdown", 10, 10);
+  pointer(window, "pointermove", 50, 40);
+  pointer(window, "pointermove", 60, 40, { buttons: 0 });
+  expect(cursor()).toBeUndefined();
+  expect(handlers.setDraggedBotId).toHaveBeenLastCalledWith(null);
+  expect(handlers.applyRosterDrop).not.toHaveBeenCalled();
+  act(() => el("a1").click());
+  expect(open).toHaveBeenCalledOnce();
+});
+
+it("lets keyboard clicks through after a drag ends without a release", () => {
+  for (const end of [
+    () => act(() => window.dispatchEvent(new Event("blur"))),
+    () => pointer(window, "pointercancel", 50, 40),
+  ]) {
+    pointer(el("a1"), "pointerdown", 10, 10);
+    pointer(window, "pointermove", 50, 40);
+    end();
+    expect(cursor()).toBeUndefined();
+    // Enter on a focused row clicks it with no pointer press first.
+    act(() => el("a1").click());
+  }
+  expect(open).toHaveBeenCalledTimes(2);
   expect(handlers.applyRosterDrop).not.toHaveBeenCalled();
 });
 
+it("clears a swallowed click that never came at the next key press", () => {
+  pointer(el("a1"), "pointerdown", 10, 10);
+  pointer(window, "pointermove", 150, 40);
+  pointer(window, "pointerup", 150, 40);
+  key("Enter");
+  act(() => el("a1").click());
+  expect(open).toHaveBeenCalledOnce();
+});
+
+it("clears the drag in the parent when the roster goes away mid-drag", async () => {
+  pointer(el("a1"), "pointerdown", 10, 10);
+  pointer(window, "pointermove", 50, 40);
+  handlers.setDraggedBotId.mockClear();
+  handlers.setRosterDropKey.mockClear();
+  await act(async () => root.render(null));
+  expect(handlers.setDraggedBotId).toHaveBeenCalledExactlyOnceWith(null);
+  expect(handlers.setRosterDropKey).toHaveBeenCalledExactlyOnceWith(null);
+  expect(cursor()).toBeUndefined();
+});
+
 it("leaves touch presses to scrolling", () => {
-  pointer(el("a1"), "pointerdown", 10, 10, "touch");
-  pointer(window, "pointermove", 50, 40, "touch");
+  pointer(el("a1"), "pointerdown", 10, 10, { pointerType: "touch" });
+  pointer(window, "pointermove", 50, 40, { pointerType: "touch" });
   expect(handlers.setDraggedBotId).not.toHaveBeenCalled();
   expect(cursor()).toBeUndefined();
 });

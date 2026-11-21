@@ -21,6 +21,8 @@ type Drag = {
   x: number;
   y: number;
   started: boolean;
+  /** Escape ended the drag; the press is still held until its release. */
+  cancelled: boolean;
   /** The row or header that takes the drop where the pointer is, if any. */
   overKey: string | null;
 };
@@ -62,27 +64,48 @@ export function useRosterPointerDrag(options: {
     latest.current.setRosterDropKey(accepted);
   };
 
-  const finish = (drop: boolean) => {
+  /** Stops showing the drag: the cursor, the dimmed bot and the highlighted target. */
+  const clearShown = () => {
+    delete document.documentElement.dataset.rosterDrag;
+    latest.current.setDraggedBotId(null);
+    latest.current.setRosterDropKey(null);
+  };
+
+  /** Lets go of the press without a release that ends in a click, so nothing is dropped. */
+  const abort = () => {
     const current = drag.current;
     drag.current = null;
     if (!current?.started) return;
-    if (current.source.hasPointerCapture(current.pointerId)) {
-      current.source.releasePointerCapture(current.pointerId);
-    }
-    delete document.documentElement.dataset.rosterDrag;
+    releaseCapture(current);
+    if (!current.cancelled) clearShown();
+  };
+
+  const release = () => {
+    const current = drag.current;
+    drag.current = null;
+    if (!current?.started) return;
+    releaseCapture(current);
+    // The release ends in a click on the row the drag started from, which must not open it.
     swallowClick.current = true;
-    const slot = drop && current.overKey ? latest.current.slots.get(current.overKey) : undefined;
-    if (slot?.target) {
-      latest.current.applyRosterDrop(slot.target, sameList(slot, current), slot.groupBotIds);
+    if (current.cancelled) return;
+    const slot = current.overKey ? latest.current.slots.get(current.overKey) : undefined;
+    if (!slot?.target) {
+      clearShown();
       return;
     }
-    latest.current.setDraggedBotId(null);
-    latest.current.setRosterDropKey(null);
+    delete document.documentElement.dataset.rosterDrag;
+    latest.current.applyRosterDrop(slot.target, sameList(slot, current), slot.groupBotIds);
   };
 
   useEventListener(window, "pointermove", (event) => {
     const current = drag.current;
     if (!current || event.pointerId !== current.pointerId) return;
+    // The release happened where the page could not see it, such as outside the window.
+    if ((event.buttons & 1) === 0) {
+      abort();
+      return;
+    }
+    if (current.cancelled) return;
     if (!current.started) {
       const moved = Math.hypot(event.clientX - current.x, event.clientY - current.y);
       if (moved < DRAG_THRESHOLD_PX) return;
@@ -98,36 +121,35 @@ export function useRosterPointerDrag(options: {
     hover(current);
   });
   useEventListener(window, "pointerup", (event) => {
-    if (drag.current?.pointerId === event.pointerId) finish(true);
+    if (drag.current?.pointerId === event.pointerId) release();
   });
   useEventListener(window, "pointercancel", (event) => {
-    if (drag.current?.pointerId === event.pointerId) finish(false);
+    if (drag.current?.pointerId === event.pointerId) abort();
   });
+  useEventListener(window, "blur", abort);
   useEventListener(window, "keydown", (event) => {
-    if (event.key !== "Escape" || !drag.current?.started) return;
+    const current = drag.current;
+    if (event.key !== "Escape" || !current?.started || current.cancelled) return;
     event.preventDefault();
-    finish(false);
+    current.cancelled = true;
+    clearShown();
   });
-  useEventListener(window, "blur", () => finish(false));
   // Scrolling the list under a still pointer changes what it is over.
   useEventListener(
     window,
     "scroll",
     () => {
-      if (drag.current?.started) hover(drag.current);
+      if (drag.current?.started && !drag.current.cancelled) hover(drag.current);
     },
     { capture: true, passive: true },
   );
-  // A drag ends with a click on the row it started from, which must not open that chat. Any
-  // later press clears the flag, in case no click came.
-  useEventListener(
-    window,
-    "pointerdown",
-    () => {
-      swallowClick.current = false;
-    },
-    true,
-  );
+  // Only the click that ends a drag is swallowed: any later press or key clears the flag, in
+  // case that click never came (a release outside the window, say).
+  const clearSwallow = () => {
+    swallowClick.current = false;
+  };
+  useEventListener(window, "pointerdown", clearSwallow, true);
+  useEventListener(window, "keydown", clearSwallow, true);
   useEventListener(
     window,
     "click",
@@ -139,10 +161,16 @@ export function useRosterPointerDrag(options: {
     },
     true,
   );
-  // Leaving mid-drag must not leave the page's cursor behind.
+  // The roster can give way mid-drag (to search results, say). The dragged bot and target
+  // live in the parent, so clear them too, or the bot stays dimmed when the roster returns.
   useEffect(
     () => () => {
-      if (drag.current?.started) delete document.documentElement.dataset.rosterDrag;
+      const current = drag.current;
+      drag.current = null;
+      if (!current?.started || current.cancelled) return;
+      delete document.documentElement.dataset.rosterDrag;
+      latest.current.setDraggedBotId(null);
+      latest.current.setRosterDropKey(null);
     },
     [],
   );
@@ -160,6 +188,7 @@ export function useRosterPointerDrag(options: {
       x: event.clientX,
       y: event.clientY,
       started: false,
+      cancelled: false,
       overKey: null,
     };
   };
@@ -167,4 +196,10 @@ export function useRosterPointerDrag(options: {
 
 function sameList(slot: RosterDropSlot, current: Drag): boolean {
   return !slot.header && slot.groupBotIds.includes(current.botId);
+}
+
+function releaseCapture(current: Drag) {
+  if (current.source.hasPointerCapture(current.pointerId)) {
+    current.source.releasePointerCapture(current.pointerId);
+  }
 }
