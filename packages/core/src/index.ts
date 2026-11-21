@@ -103,6 +103,7 @@ export * from "./models/model-probe.js";
 export * from "./models/model-providers.js";
 export * from "./models/model-role-settings.js";
 export * from "./models/model-settings-form.js";
+export * from "./models/model-suggestions.js";
 export * from "./models/provider-settings-form.js";
 export * from "./pages/review.js";
 export * from "./peers/peer-exchanges.js";
