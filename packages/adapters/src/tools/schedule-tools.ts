@@ -1344,6 +1344,9 @@ export async function cancelScheduleFromTool(
     botId: input.botId,
     ...(input.threadId ? { threadId: input.threadId } : {}),
   };
+  if (!routineId && (await deps.prisma.routine.count({ where: { ...scope, name: name! } })) > 1) {
+    return { error: `More than one schedule is named "${name}". Pass routineId instead.` };
+  }
   const existing = await deps.prisma.routine.findFirst({
     where: { ...scope, ...(routineId ? { id: routineId } : { name: name! }) },
   });
