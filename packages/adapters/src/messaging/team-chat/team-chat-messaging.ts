@@ -47,12 +47,11 @@ function looksLikeMention(content: string, channelName: string | null): boolean 
 }
 
 /**
- * Chat SDK room thread ids name the platform's own nesting. Team-chat stores the
- * room conversation id separately from the reply thread, so outbound sends must
- * recombine them when a reply thread is present:
- *
- * - `slack:CHANNEL:threadTs` — the thread occupies the third segment.
- * - `discord:GUILD:CHANNEL:threadId` — the thread occupies the fourth.
+ * The room's own thread id with the reply thread re-attached. Every provider nests a
+ * reply thread one segment past its room, however many segments its room takes
+ * (`slack:CHANNEL`, `slack~install:CHANNEL`, `discord:GUILD:CHANNEL`), so the rule is
+ * the same for all of them and shared code names none of them. A caller passes the
+ * room id (`conversationChannelThreadId`), never a thread that already holds one.
  */
 export function resolveMessagingThreadId(
   conversationId: string,
@@ -60,15 +59,6 @@ export function resolveMessagingThreadId(
 ): string {
   if (!replyThreadId) return conversationId;
   if (conversationId.endsWith(`:${replyThreadId}`)) return conversationId;
-  const parts = conversationId.split(":");
-  // provider:guild:channel[:thread] → provider:guild:channel:replyThreadId
-  if (parts[0] === "discord" && parts[1] && parts[2]) {
-    return `${parts[0]}:${parts[1]}:${parts[2]}:${replyThreadId}`;
-  }
-  // provider:channel[:existingTs] → provider:channel:replyThreadId
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    return `${parts[0]}:${parts[1]}:${replyThreadId}`;
-  }
   return `${conversationId}:${replyThreadId}`;
 }
 

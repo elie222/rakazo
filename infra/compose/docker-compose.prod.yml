@@ -330,6 +330,7 @@ x-app-environment: &app-environment # Runtime
   DISCORD_PUBLIC_KEY:
   DISCORD_APPLICATION_ID:
   DISCORD_MENTION_ROLE_IDS:
+  DISCORD_ALLOWED_GUILD_IDS:
   # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
   HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
   HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}

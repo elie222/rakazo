@@ -104,8 +104,9 @@ describe("resolveMessagingThreadId", () => {
     expect(resolveMessagingThreadId("slack:C1", "100.1")).toBe("slack:C1:100.1");
   });
 
-  it("replaces a stale thread segment when replyThreadId differs", () => {
-    expect(resolveMessagingThreadId("slack:C1:999.9", "100.1")).toBe("slack:C1:100.1");
+  it("keeps an installed app's channel when re-attaching a thread", () => {
+    // Callers pass the room, so a thread never has to be replaced in place.
+    expect(resolveMessagingThreadId("slack~install:C1", "100.1")).toBe("slack~install:C1:100.1");
   });
 
   it("leaves conversationId alone when it already ends with replyThreadId", () => {
@@ -116,9 +117,24 @@ describe("resolveMessagingThreadId", () => {
     expect(resolveMessagingThreadId("discord:G1:C1", "T1")).toBe("discord:G1:C1:T1");
     // A channel-level conversation resumes a thread it already holds.
     expect(resolveMessagingThreadId("discord:G1:C1:T1", "T1")).toBe("discord:G1:C1:T1");
-    // A later message in another thread replaces the stale one.
-    expect(resolveMessagingThreadId("discord:G1:C1:T1", "T2")).toBe("discord:G1:C1:T2");
     expect(resolveMessagingThreadId("discord:G1:C1", null)).toBe("discord:G1:C1");
+  });
+
+  it("strips a thread the stored conversation still holds, whatever the provider", () => {
+    // This is what lets the shared helper stay provider-neutral: the room is rebuilt
+    // first, so a reply thread is only ever appended one segment past it.
+    const room = {
+      provider: "discord",
+      externalKey: "discord:G1:C1",
+      conversationId: "discord:G1:C1:T1",
+    };
+    expect(teamChatReplyThreadId(room, "T2")).toBe("discord:G1:C1:T2");
+    expect(
+      teamChatReplyThreadId(
+        { provider: "slack", externalKey: "C1", conversationId: "slack:C1:999.9" },
+        "100.1",
+      ),
+    ).toBe("slack:C1:100.1");
   });
 });
 

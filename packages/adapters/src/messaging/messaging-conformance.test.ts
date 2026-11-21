@@ -78,6 +78,7 @@ const fixtures = {
       DISCORD_PUBLIC_KEY: "0123456789abcdef".repeat(4),
       DISCORD_APPLICATION_ID: "discord-app",
       DISCORD_MENTION_ROLE_IDS: "123456789012345678",
+      DISCORD_ALLOWED_GUILD_IDS: "123456789012345678,234567890123456789",
     },
   },
 } satisfies Record<keyof typeof messagingPlatforms, Fixture>;

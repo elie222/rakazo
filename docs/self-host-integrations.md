@@ -175,16 +175,16 @@ linking.
 Each platform turns on when its full set of credentials is present on the API and worker.
 Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
 
-| Platform                    | Settings                                                                                                                                                                                           |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| iMessage and SMS (Sendblue) | `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET`, `SENDBLUE_SIGNING_SECRET`, `SENDBLUE_PHONE_NUMBER`                                                                                                   |
-| WhatsApp Business Cloud     | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`; optional `WHATSAPP_API_URL`, `WHATSAPP_BOT_USERNAME`                                          |
-| Telegram                    | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`; `TELEGRAM_GROUPS=off` for direct chats only                                                                                                 |
-| iMessage (Photon)           | `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`; `PHOTON_WEBHOOK_SECRET` to receive by webhook instead of the stream; more projects as `PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>` |
-| Feishu/Lark                 | `LARK_APP_ID`, `LARK_APP_SECRET`, `LARK_VERIFICATION_TOKEN`; `LARK_ENCRYPT_KEY` when event encryption is on; `LARK_DOMAIN` (`feishu`, the default, or `lark`)                                      |
-| Microsoft Teams             | `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, `TEAMS_APP_TENANT_ID` (single-tenant, direct messages only)                                                                                                  |
-| Slack                       | See below                                                                                                                                                                                          |
-| Discord                     | `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID`; optional `DISCORD_MENTION_ROLE_IDS`, `DISCORD_TEAM_CHAT_BOT_ID` (guild rooms; falls back to `TEAM_CHAT_BOT_ID`)               |
+| Platform                    | Settings                                                                                                                                                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| iMessage and SMS (Sendblue) | `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET`, `SENDBLUE_SIGNING_SECRET`, `SENDBLUE_PHONE_NUMBER`                                                                                                                   |
+| WhatsApp Business Cloud     | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`; optional `WHATSAPP_API_URL`, `WHATSAPP_BOT_USERNAME`                                                          |
+| Telegram                    | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`; `TELEGRAM_GROUPS=off` for direct chats only                                                                                                                 |
+| iMessage (Photon)           | `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`; `PHOTON_WEBHOOK_SECRET` to receive by webhook instead of the stream; more projects as `PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>`                 |
+| Feishu/Lark                 | `LARK_APP_ID`, `LARK_APP_SECRET`, `LARK_VERIFICATION_TOKEN`; `LARK_ENCRYPT_KEY` when event encryption is on; `LARK_DOMAIN` (`feishu`, the default, or `lark`)                                                      |
+| Microsoft Teams             | `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, `TEAMS_APP_TENANT_ID` (single-tenant, direct messages only)                                                                                                                  |
+| Slack                       | See below                                                                                                                                                                                                          |
+| Discord                     | `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID`, `DISCORD_ALLOWED_GUILD_IDS` (guild rooms); optional `DISCORD_MENTION_ROLE_IDS`, `DISCORD_TEAM_CHAT_BOT_ID` (falls back to `TEAM_CHAT_BOT_ID`) |
 
 ### WhatsApp Business Cloud
 
@@ -227,7 +227,16 @@ application ID and public key into `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`
 `DISCORD_PUBLIC_KEY` on both the API and worker. Enable **Message Content Intent** for the bot.
 Invite it to a guild with the `bot` scope and the **Send Messages**, **Send Messages in Threads**,
 **Create Public Threads**, **Read Message History** and **Add Reactions** permissions; add
-**Manage Threads** only if the bot should rename the threads it opens. `DISCORD_MENTION_ROLE_IDS`
+**Manage Threads** only if the bot should rename the threads it opens.
+
+`DISCORD_ALLOWED_GUILD_IDS` is the comma-separated list of server ids the bot works
+in. A Discord invite carries nothing but the bot's public application id, so anyone
+can add it to their own server; without this list the bot answers direct messages
+only, and a guild channel it is invited to is ignored with one warning naming the
+guild. Add a server's id (Discord's **Server Settings → Widget**, or right-click the
+server with developer mode on) to let it run there.
+
+`DISCORD_MENTION_ROLE_IDS`
 is optional: a comma-separated list of role ids whose mentions count as mentions of the bot. The
 adapter and discord.js load only when configured.
 

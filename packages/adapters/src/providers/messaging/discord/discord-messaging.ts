@@ -18,17 +18,24 @@ export const discordMessaging = defineMessagingPlatform({
     discordPublicKey: { name: "DISCORD_PUBLIC_KEY", required: true },
     discordApplicationId: { name: "DISCORD_APPLICATION_ID", required: true },
     discordMentionRoleIds: { name: "DISCORD_MENTION_ROLE_IDS" },
+    discordAllowedGuildIds: { name: "DISCORD_ALLOWED_GUILD_IDS" },
   },
   mount(env, options) {
-    const mentionRoleIds = env.discordMentionRoleIds
-      ?.split(",")
-      .map((id) => id.trim())
-      .filter(Boolean);
+    const list = (value: string | undefined) =>
+      value
+        ?.split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+    const mentionRoleIds = list(env.discordMentionRoleIds);
+    // Without this list the bot answers only direct messages: a Discord invite carries
+    // nothing but the public application id, so the guilds it may serve must be named.
+    const allowedGuildIds = list(env.discordAllowedGuildIds);
     const adapter = new LazyDiscordAdapter({
       botToken: env.discordBotToken,
       publicKey: env.discordPublicKey,
       applicationId: env.discordApplicationId,
       ...(mentionRoleIds?.length ? { mentionRoleIds } : {}),
+      ...(allowedGuildIds?.length ? { allowedGuildIds } : {}),
       pollInboundMessages: options.pollInboundMessages ?? false,
     });
     return {

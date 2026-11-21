@@ -1,3 +1,4 @@
+import { abortableDelay, retry } from "@rakazo/core";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type {
   Adapter,
@@ -17,6 +18,13 @@ export interface DiscordAdapterConfig {
   applicationId: string;
   /** Roles whose mentions count as mentions of the bot. */
   mentionRoleIds?: string[] | undefined;
+  /**
+   * The guilds this bot answers in. A Discord invite URL carries only the public
+   * application id, so anyone can add the bot to their own server; a guild is
+   * served only when the operator named it, the same way a static Slack
+   * deployment is bound to the one workspace whose token it holds.
+   */
+  allowedGuildIds?: string[] | undefined;
   /** Consume the Gateway WebSocket in the one process that owns the inbound sink. */
   pollInboundMessages: boolean;
 }
@@ -49,6 +57,13 @@ export const DISCORD_GATEWAY_RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
  * window, so a recoverable start failure costs seconds of ingress, not a window.
  */
 export const DISCORD_START_RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
+
+/**
+ * A channel whose name could not be read is asked again after this long. An error
+ * says nothing about the channel, so the name still arrives once Discord answers;
+ * asking on every message would only add a failing request to each one.
+ */
+export const DISCORD_CHANNEL_NAME_RETRY_MS = 300_000;
 
 // The adapter logs every Gateway re-arm at info; keep only its warnings and errors.
 const discordLogger: Logger = {
@@ -117,14 +132,23 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
   private window: AbortController | undefined;
   private startRetry: ReturnType<typeof setTimeout> | undefined;
   private readonly retries = new Set<ReturnType<typeof setTimeout>>();
+  /** Aborted when polling stops, so no retry wait outlives the listener it belongs to. */
+  private stopSignal = new AbortController();
   // Channel name by channel id, learned once per channel. Discord's gateway message
   // carries no channel name, and team chat lists a conversation by the name it is
   // given, so one lookup per channel keeps the settings list readable.
   private readonly channelNames = new Map<string, string>();
-  // A channel that could not be read is not retried on every message, so a bot without
-  // Read History does not log once per message forever.
-  private readonly unnamedChannels = new Set<string>();
-  private readonly naming = new Set<string>();
+  // A channel Discord answered for without a name has none to show: asking again would
+  // only repeat the same answer.
+  private readonly namelessChannels = new Set<string>();
+  // The lookup already running, so a second message in the same channel waits for its
+  // name instead of racing it and recording the conversation unnamed.
+  private readonly naming = new Map<string, Promise<void>>();
+  // When a channel whose lookup failed may be asked again; an error says nothing about
+  // the channel, so it must not be treated as permanently unreadable.
+  private readonly nameRetryAt = new Map<string, number>();
+  // One warning per guild the operator did not allow, never one per message.
+  private readonly refusedGuilds = new Set<string>();
   constructor(readonly config: DiscordAdapterConfig) {}
 
   /** The name of the channel a thread id belongs to, when this process has seen it. */
@@ -138,23 +162,62 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
    * Learn the channel's name the first time a message arrives in it or goes out to
    * it. A channel that cannot be read stays unnamed rather than failing the message.
    */
-  private async rememberChannelName(adapter: LoadedDiscordAdapter, threadId: string) {
+  private rememberChannelName(adapter: LoadedDiscordAdapter, threadId: string): Promise<void> {
     const { channelId, guildId } = decodeDiscordThreadId(threadId);
-    if (guildId === "@me" || this.channelNames.has(channelId)) return;
-    if (this.unnamedChannels.has(channelId) || this.naming.has(channelId)) return;
-    this.naming.add(channelId);
+    if (guildId === "@me" || this.channelNames.has(channelId)) return Promise.resolve();
+    const running = this.naming.get(channelId);
+    // The lookup already under way carries the name this message wants.
+    if (running) return running;
+    if (this.namelessChannels.has(channelId)) return Promise.resolve();
+    const retryAt = this.nameRetryAt.get(channelId);
+    if (retryAt !== undefined && retryAt > Date.now()) return Promise.resolve();
+    const lookup = this.lookupChannelName(adapter, threadId, channelId);
+    this.naming.set(channelId, lookup);
+    return lookup.finally(() => this.naming.delete(channelId));
+  }
+
+  private async lookupChannelName(
+    adapter: LoadedDiscordAdapter,
+    threadId: string,
+    channelId: string,
+  ) {
     try {
-      // A channel name is a nicety: an unreadable channel stays unnamed, logged once.
-      const info = await bestEffort(
-        `Discord channel name for ${channelId}`,
-        adapter.fetchChannelInfo?.(threadId),
-      );
+      const info = await adapter.fetchChannelInfo?.(threadId);
       const name = info?.name?.trim();
-      if (name) this.channelNames.set(channelId, name);
-      else this.unnamedChannels.add(channelId);
-    } finally {
-      this.naming.delete(channelId);
+      if (name) {
+        this.channelNames.set(channelId, name);
+        this.nameRetryAt.delete(channelId);
+        return;
+      }
+      // Answered, with no name to show.
+      this.namelessChannels.add(channelId);
+    } catch (error: unknown) {
+      // A failed lookup is not a channel without a name: keep the conversation unnamed
+      // for now and ask again later.
+      this.nameRetryAt.set(channelId, Date.now() + DISCORD_CHANNEL_NAME_RETRY_MS);
+      getLogger().warn("discord channel name lookup failed", {
+        channelId,
+        error: String(error),
+      });
     }
+  }
+
+  /**
+   * Whether this process answers in a room. A direct message is nobody's guild; a
+   * guild channel is served only when the operator listed the guild.
+   */
+  private isAllowedRoom(threadId: string): boolean {
+    const { guildId } = decodeDiscordThreadId(threadId);
+    if (guildId === "@me") return true;
+    if (this.config.allowedGuildIds?.includes(guildId)) return true;
+    if (!this.refusedGuilds.has(guildId)) {
+      this.refusedGuilds.add(guildId);
+      getLogger().warn("discord guild message ignored: guild is not allowed", {
+        guildId,
+        hint: "add the guild id to DISCORD_ALLOWED_GUILD_IDS to answer in its channels",
+      });
+    }
+    return false;
   }
 
   get userName() {
@@ -198,16 +261,14 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
    */
   private retryingChat(chat: ChatInstance): ChatInstance {
     const router = chat as ChatRouter;
-    const deliver = async (
-      adapter: Adapter,
-      threadId: string,
-      message: Message,
-      attempt = 0,
-    ): Promise<void> => {
+    const deliver = async (adapter: Adapter, threadId: string, message: Message): Promise<void> => {
+      // A guild the operator did not name is nobody's to run: the bot is public, so its
+      // invite proves nothing about who owns the server.
+      if (!this.isAllowedRoom(threadId)) return;
       // Read once per channel before the message is routed: team chat stores the name on the
       // conversation when it first sees the room, and an id is not a name. A second message in
-      // the same channel is answered from the cache, and an unreadable channel stays unnamed.
-      if (attempt === 0 && this.implementation) {
+      // the same channel waits on the lookup in flight or is answered from the cache.
+      if (this.implementation) {
         await bestEffort(
           "Discord channel name",
           this.rememberChannelName(this.implementation, threadId),
@@ -215,30 +276,48 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
       }
       // A first delivery keeps the SDK's dedupe, so a replayed event stays a no-op. A retry
       // must not: the attempt that failed already claimed that key.
-      const task =
-        attempt === 0 || !router.routeIncomingMessage
-          ? chat.handleIncomingMessage(adapter, threadId, message)
-          : router.routeIncomingMessage.call(chat, adapter, threadId, message, false);
-      // The retry handles the failure while the caller still learns of it.
-      void task.catch((error: unknown) => {
-        const delay = DISCORD_GATEWAY_RETRY_DELAYS_MS[attempt];
-        getLogger().warn("discord inbound processing failed", {
-          error: String(error),
-          retrying: delay !== undefined && Boolean(this.listening),
-        });
-        if (delay === undefined || !this.listening) return;
-        const timer = setTimeout(() => {
-          this.retries.delete(timer);
-          // The last attempt has no retry left to handle its failure, so it is logged here.
-          void bestEffort(
-            "Discord gateway retry delivery",
-            deliver(adapter, threadId, message, attempt + 1),
-          );
-        }, delay);
-        timer.unref?.();
-        this.retries.add(timer);
-      });
-      return task;
+      let first = true;
+      const attempt = () => {
+        const retrying = !first;
+        first = false;
+        return retrying && router.routeIncomingMessage
+          ? router.routeIncomingMessage.call(chat, adapter, threadId, message, false)
+          : chat.handleIncomingMessage(adapter, threadId, message);
+      };
+      const deliverable = attempt();
+      // The first failure reaches the caller at once; the retries run on the shared retry
+      // primitive behind it, so a wait honors shutdown and the last failure is logged once.
+      let step = 0;
+      void deliverable.catch(() =>
+        bestEffort(
+          "Discord gateway retry delivery",
+          retry(
+            async () => {
+              // Each try waits its own turn of the ladder first: the first attempt has
+              // just failed, so retrying it again with no wait would only hammer the sink.
+              const wait = DISCORD_GATEWAY_RETRY_DELAYS_MS[step++] ?? 0;
+              await abortableDelay(wait, this.stopSignal.signal);
+              return attempt();
+            },
+            {
+              attempts: DISCORD_GATEWAY_RETRY_DELAYS_MS.length,
+              // The ladder above is the wait; the primitive adds none of its own.
+              delayMs: 0,
+              // Stopping the listener ends the chain: nothing is left to answer into.
+              retryable: () => Boolean(this.listening),
+              signal: this.stopSignal.signal,
+              onRetry: (error: unknown, retryAttempt: number, delayMs: number) => {
+                getLogger().warn("discord inbound processing failed", {
+                  error: String(error),
+                  attempt: retryAttempt + 2,
+                  retryInMs: delayMs,
+                });
+              },
+            },
+          ),
+        ),
+      );
+      return deliverable;
     };
     return new Proxy(chat, {
       get: (target, key) => {
@@ -253,6 +332,7 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
   async stopPolling() {
     clearInterval(this.listening);
     this.listening = undefined;
+    this.stopSignal.abort();
     clearTimeout(this.startRetry);
     this.startRetry = undefined;
     this.window?.abort();
@@ -263,6 +343,7 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
 
   private startListening(adapter: LoadedDiscordAdapter) {
     if (this.listening) return;
+    if (this.stopSignal.signal.aborted) this.stopSignal = new AbortController();
     const options: WebhookOptions = {
       // No webhook reply is waiting on this work; failures are retried by retryingChat.
       waitUntil: (task) => {
@@ -287,24 +368,31 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
             status: response.status,
             retrying: attempt < DISCORD_START_RETRY_DELAYS_MS.length,
           });
-          retryStart(attempt);
+          retryStart(attempt, window);
         })
         .catch((error: unknown) => {
           getLogger().warn("discord inbound listener failed", {
             error: String(error),
             retrying: attempt < DISCORD_START_RETRY_DELAYS_MS.length,
           });
-          retryStart(attempt);
+          retryStart(attempt, window);
         });
     };
-    /** A start that failed retries on its own, unless a newer window replaced it. */
-    const retryStart = (attempt: number) => {
+    /**
+     * A start that failed retries on its own, unless a newer window replaced it. The
+     * failed start names its own window: a replacement is healthy, and checking the
+     * current window would let a superseded listener retry over it.
+     */
+    const retryStart = (attempt: number, window: AbortController) => {
       const delay = DISCORD_START_RETRY_DELAYS_MS[attempt];
-      if (delay === undefined || !this.listening || this.window?.signal.aborted) return;
+      if (delay === undefined || !this.listening) return;
+      if (window.signal.aborted || this.window !== window) return;
       clearTimeout(this.startRetry);
       const timer = setTimeout(() => {
         this.retries.delete(timer);
         this.startRetry = undefined;
+        // Still the owner of the window, and still listening, when the wait ends.
+        if (window.signal.aborted || this.window !== window) return;
         listen(attempt + 1);
       }, delay);
       timer.unref?.();

@@ -55,16 +55,16 @@ Rakazo 会在传入的 access token 快过期前刷新授权并重启进程，�
 
 每个平台只有在 API 和 worker 上拥有完整凭据集合时才启用。Webhook 地址是 `/api/v1/messaging/webhook/<provider>`。
 
-| 平台                        | 设置                                                                                                                                                                       |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| iMessage 和 SMS（Sendblue） | `SENDBLUE_API_KEY_ID`、`SENDBLUE_API_SECRET`、`SENDBLUE_SIGNING_SECRET`、`SENDBLUE_PHONE_NUMBER`                                                                           |
-| WhatsApp Business Cloud     | `WHATSAPP_ACCESS_TOKEN`、`WHATSAPP_PHONE_NUMBER_ID`、`WHATSAPP_APP_SECRET`、`WHATSAPP_VERIFY_TOKEN`                                                                        |
-| Telegram                    | `TELEGRAM_BOT_TOKEN`、`TELEGRAM_WEBHOOK_SECRET_TOKEN`                                                                                                                      |
-| iMessage（Photon）          | `PHOTON_PROJECT_ID`、`PHOTON_PROJECT_SECRET`；如用 webhook 而不是流，设置 `PHOTON_WEBHOOK_SECRET`；更多项目用 `PHOTON_PROJECT_ID_<NAME>` 和 `PHOTON_PROJECT_SECRET_<NAME>` |
-| Feishu/Lark                 | `LARK_APP_ID`、`LARK_APP_SECRET`、`LARK_VERIFICATION_TOKEN`；开启事件加密时用 `LARK_ENCRYPT_KEY`；`LARK_DOMAIN`（默认 `feishu`，或 `lark`）                                |
-| Microsoft Teams             | `TEAMS_APP_ID`、`TEAMS_APP_PASSWORD`、`TEAMS_APP_TENANT_ID`（单租户，仅私聊）                                                                                              |
-| Slack                       | 见下文                                                                                                                                                                     |
-| Discord                     | `DISCORD_BOT_TOKEN`、`DISCORD_PUBLIC_KEY`、`DISCORD_APPLICATION_ID`；可选 `DISCORD_MENTION_ROLE_IDS`、`DISCORD_TEAM_CHAT_BOT_ID`（服务器频道；回退到 `TEAM_CHAT_BOT_ID`）  |
+| 平台                        | 设置                                                                                                                                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| iMessage 和 SMS（Sendblue） | `SENDBLUE_API_KEY_ID`、`SENDBLUE_API_SECRET`、`SENDBLUE_SIGNING_SECRET`、`SENDBLUE_PHONE_NUMBER`                                                                                                         |
+| WhatsApp Business Cloud     | `WHATSAPP_ACCESS_TOKEN`、`WHATSAPP_PHONE_NUMBER_ID`、`WHATSAPP_APP_SECRET`、`WHATSAPP_VERIFY_TOKEN`                                                                                                      |
+| Telegram                    | `TELEGRAM_BOT_TOKEN`、`TELEGRAM_WEBHOOK_SECRET_TOKEN`                                                                                                                                                    |
+| iMessage（Photon）          | `PHOTON_PROJECT_ID`、`PHOTON_PROJECT_SECRET`；如用 webhook 而不是流，设置 `PHOTON_WEBHOOK_SECRET`；更多项目用 `PHOTON_PROJECT_ID_<NAME>` 和 `PHOTON_PROJECT_SECRET_<NAME>`                               |
+| Feishu/Lark                 | `LARK_APP_ID`、`LARK_APP_SECRET`、`LARK_VERIFICATION_TOKEN`；开启事件加密时用 `LARK_ENCRYPT_KEY`；`LARK_DOMAIN`（默认 `feishu`，或 `lark`）                                                              |
+| Microsoft Teams             | `TEAMS_APP_ID`、`TEAMS_APP_PASSWORD`、`TEAMS_APP_TENANT_ID`（单租户，仅私聊）                                                                                                                            |
+| Slack                       | 见下文                                                                                                                                                                                                   |
+| Discord                     | `DISCORD_BOT_TOKEN`、`DISCORD_PUBLIC_KEY`、`DISCORD_APPLICATION_ID`、`DISCORD_ALLOWED_GUILD_IDS`（服务器频道）；可选 `DISCORD_MENTION_ROLE_IDS`、`DISCORD_TEAM_CHAT_BOT_ID`（回退到 `TEAM_CHAT_BOT_ID`） |
 
 ### WhatsApp Business Cloud
 
@@ -123,7 +123,14 @@ Slack 工作区安装需要在 API 和 worker 上设置 `SLACK_CLIENT_ID`、`SLA
 `DISCORD_BOT_TOKEN`、`DISCORD_APPLICATION_ID` 和 `DISCORD_PUBLIC_KEY`。为机器人开启 **Message Content
 Intent**。用 `bot` scope 和 **Send Messages**、**Send Messages in Threads**、**Create Public Threads**、
 **Read Message History**、**Add Reactions** 权限邀请它进入服务器；只有需要重命名它开启的帖子时才加
-**Manage Threads**。`DISCORD_MENTION_ROLE_IDS` 是可选的逗号分隔角色 ID 列表，这些角色的提及等同于提及机器人。
+**Manage Threads**。
+
+`DISCORD_ALLOWED_GUILD_IDS` 是机器人工作的服务器 ID 的逗号分隔列表。Discord 的邀请链接只包含机器人的公开应用
+ID，任何人都可以把机器人加进自己的服务器；没有这个列表时，机器人只回答私聊，被邀请进入的服务器频道会被忽略，
+并只记录一次包含该服务器 ID 的警告。把服务器 ID（Discord 的 **服务器设置 → 小组件**，或在开发者模式下右键服务器）
+加进去，它才会在那里工作。
+
+`DISCORD_MENTION_ROLE_IDS` 是可选的逗号分隔角色 ID 列表，这些角色的提及等同于提及机器人。
 只有在配置后才加载适配器和 discord.js。
 
 接收请求的 API 持有接收普通消息的 Gateway WebSocket，worker 从不轮询。不需要公开 webhook 地址。Discord 只会

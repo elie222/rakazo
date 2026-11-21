@@ -1,5 +1,6 @@
 import { createMemoryState } from "@chat-adapter/state-memory";
 import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { ChatInstance, WebhookOptions } from "chat";
 import { Chat, Message, parseMarkdown } from "chat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,7 @@ import {
   enrichDiscordTeamRoom,
 } from "./discord-messaging.js";
 import {
+  DISCORD_CHANNEL_NAME_RETRY_MS,
   DISCORD_GATEWAY_RETRY_DELAYS_MS,
   DISCORD_LISTEN_WINDOW_MS,
   DISCORD_START_RETRY_DELAYS_MS,
@@ -34,6 +36,8 @@ const fake = vi.hoisted(() => ({
   listens: [] as { durationMs: number; signal: AbortSignal; options: WebhookOptions }[],
   // Statuses the next Gateway starts answer with; 200 once the queue is empty.
   startStatuses: [] as number[],
+  // Gates a start holds open, so a failure can land after its replacement began.
+  startGates: [] as Promise<void>[],
   chat: undefined as ChatInstance | undefined,
   initialize: vi.fn(async (chat: ChatInstance) => {
     fake.chat = chat;
@@ -56,7 +60,11 @@ vi.mock("@chat-adapter/discord", () => ({
         signal: AbortSignal,
       ) => {
         fake.listens.push({ durationMs, signal, options });
-        return new Response(null, { status: fake.startStatuses.shift() ?? 200 });
+        // The status and the gate belong to this call, whichever start settles first.
+        const status = fake.startStatuses.shift() ?? 200;
+        const gate = fake.startGates.shift();
+        if (gate) await gate;
+        return new Response(null, { status });
       },
     };
   },
@@ -67,14 +75,19 @@ const config = {
   publicKey,
   applicationId: "app-id",
   mentionRoleIds: ["role-1", "role-2"],
+  // Discord invites carry only the public application id, so a guild is served only
+  // when the operator named it.
+  allowedGuildIds: ["G1"],
   pollInboundMessages: false,
 };
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.clearAllMocks();
   fake.created.length = 0;
   fake.listens.length = 0;
   fake.startStatuses.length = 0;
+  fake.startGates.length = 0;
 });
 
 afterEach(() => {
@@ -265,6 +278,50 @@ describe("discord channel naming", () => {
   });
 });
 
+const settle = () => vi.advanceTimersByTimeAsync(0);
+
+describe("discord channel naming under failure", () => {
+  it("asks again later when the lookup fails instead of treating the channel as nameless", async () => {
+    const adapter = new LazyDiscordAdapter({ ...config, allowedGuildIds: ["G1"] });
+    fake.fetchChannelInfo.mockRejectedValueOnce(new Error("discord 503"));
+    await adapter.postMessage("discord:G1:C1", { markdown: "hi" });
+    await settle();
+    expect(adapter.channelNameForThread("discord:G1:C1")).toBeNull();
+
+    // The error said nothing about the channel, so a later message asks again.
+    await vi.advanceTimersByTimeAsync(DISCORD_CHANNEL_NAME_RETRY_MS);
+    await adapter.postMessage("discord:G1:C1", { markdown: "hi" });
+    await settle();
+    expect(adapter.channelNameForThread("discord:G1:C1")).toBe("launch");
+  });
+
+  it("stops asking once Discord answers without a name", async () => {
+    const adapter = new LazyDiscordAdapter({ ...config, allowedGuildIds: ["G1"] });
+    fake.fetchChannelInfo.mockResolvedValueOnce({});
+    await adapter.postMessage("discord:G1:C1", { markdown: "hi" });
+    await settle();
+    const calls = fake.fetchChannelInfo.mock.calls.length;
+    await adapter.postMessage("discord:G1:C1", { markdown: "hi" });
+    await settle();
+    expect(fake.fetchChannelInfo.mock.calls.length).toBe(calls);
+    expect(adapter.channelNameForThread("discord:G1:C1")).toBeNull();
+  });
+
+  it("makes the second concurrent message wait for the lookup in flight", async () => {
+    const adapter = new LazyDiscordAdapter({ ...config, allowedGuildIds: ["G1"] });
+    const lookup = deferred<{ name: string }>();
+    fake.fetchChannelInfo.mockImplementation(() => lookup.promise);
+    const first = adapter.postMessage("discord:G1:C1", { markdown: "one" });
+    const second = adapter.postMessage("discord:G1:C1", { markdown: "two" });
+    await settle();
+    lookup.resolve({ name: "launch" });
+    await Promise.all([first, second]);
+    await settle();
+    expect(fake.fetchChannelInfo).toHaveBeenCalledTimes(1);
+    expect(adapter.channelNameForThread("discord:G1:C1")).toBe("launch");
+  });
+});
+
 describe("discord outbound", () => {
   it("measures the text the adapter sends, resolving emoji placeholders", () => {
     expect(discordPayloads("plain")).toEqual(["plain"]);
@@ -413,6 +470,111 @@ describe("LazyDiscordAdapter", () => {
     );
     expect(adapter.channelNameForThread(threadId)).toBe("launch");
     await adapter.stopPolling();
+  });
+
+  const gatewayMessage = (threadId: string) =>
+    new Message({
+      id: `msg-${threadId}`,
+      threadId,
+      text: "hello",
+      formatted: parseMarkdown("hello"),
+      author: { userId: "U1", userName: "Ada", fullName: "Ada", isBot: false, isMe: false },
+      metadata: { dateSent: new Date(), edited: false },
+      attachments: [],
+      raw: {},
+    });
+
+  it("answers in an allowed guild and drops a guild it was not told to serve", async () => {
+    const adapter = new LazyDiscordAdapter({ ...config, pollInboundMessages: true });
+    const chat = new Chat({
+      userName: "rakazo",
+      adapters: { discord: adapter },
+      state: createMemoryState(),
+      concurrency: "concurrent",
+    });
+    const handler = vi.fn(async () => undefined);
+    chat.onNewMessage(/(?:)/, handler);
+    await chat.initialize();
+
+    await fake.chat!.handleIncomingMessage(
+      adapter,
+      "discord:G1:C1",
+      gatewayMessage("discord:G1:C1"),
+    );
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    // A stranger's server: the bot can be invited by anyone, so only a named guild runs.
+    await fake.chat!.handleIncomingMessage(
+      adapter,
+      "discord:G9:C9",
+      gatewayMessage("discord:G9:C9"),
+    );
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    const dmHandler = vi.fn(async () => undefined);
+    chat.onDirectMessage(dmHandler);
+    // A direct message is nobody's guild and is always served.
+    await fake.chat!.handleIncomingMessage(
+      adapter,
+      "discord:@me:D1",
+      gatewayMessage("discord:@me:D1"),
+    );
+    expect(dmHandler).toHaveBeenCalledTimes(1);
+    await adapter.stopPolling();
+  });
+
+  it("serves no guild at all when the allowlist is empty, and says so once", async () => {
+    const adapter = new LazyDiscordAdapter({
+      ...config,
+      allowedGuildIds: undefined,
+      pollInboundMessages: true,
+    });
+    const chat = new Chat({
+      userName: "rakazo",
+      adapters: { discord: adapter },
+      state: createMemoryState(),
+      concurrency: "concurrent",
+    });
+    const handler = vi.fn(async () => undefined);
+    chat.onNewMessage(/(?:)/, handler);
+    await chat.initialize();
+
+    for (const id of ["m1", "m2"]) {
+      await fake.chat!.handleIncomingMessage(adapter, "discord:G1:C1", gatewayMessage(id));
+    }
+    expect(handler).not.toHaveBeenCalled();
+    await adapter.stopPolling();
+  });
+
+  it("never lets a superseded start failure tear down the healthy listener", async () => {
+    const gate = deferred();
+    fake.startGates.push(gate.promise);
+    // The first start fails, but only after the re-arm has replaced it.
+    fake.startStatuses.push(500, 200);
+    const adapter = new LazyDiscordAdapter({ ...config, pollInboundMessages: true });
+    const chat = new Chat({
+      userName: "rakazo",
+      adapters: { discord: adapter },
+      state: createMemoryState(),
+      concurrency: "concurrent",
+    });
+    await chat.initialize();
+    expect(fake.listens).toHaveLength(1);
+
+    // The five-minute re-arm opens a healthy window while the first start is still open.
+    await vi.advanceTimersByTimeAsync(DISCORD_LISTEN_WINDOW_MS);
+    expect(fake.listens).toHaveLength(2);
+    const healthy = fake.listens[1]!;
+
+    gate.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    // The failed start belongs to the window it was given, so it does not retry over
+    // the replacement: no third start, and the healthy window is left running.
+    await vi.advanceTimersByTimeAsync(DISCORD_START_RETRY_DELAYS_MS[0]! * 2);
+    expect(fake.listens).toHaveLength(2);
+    expect(healthy.signal.aborted).toBe(false);
+    await adapter.stopPolling();
+    expect(healthy.signal.aborted).toBe(true);
   });
 
   it("retries a Gateway delivery whose processing fails, then gives up", async () => {
