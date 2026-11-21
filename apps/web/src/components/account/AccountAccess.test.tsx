@@ -19,12 +19,13 @@ vi.mock("@rakazo/ui-web", () => ({
   Button: ({ variant: _variant, ...props }: ComponentProps<"button"> & { variant?: string }) => (
     <button {...props} />
   ),
-  Input: (props: ComponentProps<"input">) => <input {...props} />,
-  Label: ({ htmlFor, children, ...props }: ComponentProps<"label">) => (
+  Field: ({ children, ...props }: ComponentProps<"div">) => <div {...props}>{children}</div>,
+  FieldLabel: ({ htmlFor, children, ...props }: ComponentProps<"label">) => (
     <label htmlFor={htmlFor} {...props}>
       {children}
     </label>
   ),
+  Input: (props: ComponentProps<"input">) => <input {...props} />,
 }));
 vi.mock("../../lib/auth/account-security", () => ({
   fetchAccountSecurity: vi.fn(),
@@ -250,7 +251,9 @@ it("shows a provider return error only on the row that started linking", async (
     ),
   );
   expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
-  expect(host.querySelector('[role="alert"]')?.parentElement?.textContent).toContain("Google");
+  expect(
+    host.querySelector('[role="alert"]')?.closest('[data-slot="settings-row"]')?.textContent,
+  ).toContain("Google");
 });
 
 it("refreshes authenticated linked-account state after a successful provider link", async () => {

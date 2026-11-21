@@ -1,6 +1,6 @@
 # UI 与交互体系对齐：Linger 参考方案
 
-状态：PR 1–3 已实现；PR 4–5 待执行。
+状态：PR 1–4 已实现；PR 5 待执行。
 
 范围：Web 与 Electron 的产品界面；移动端只同步 Web 抽屉与触控规范。侧边栏的详细方案见
 [`sidebar-redesign.md`](./sidebar-redesign.md)，本文是它的上层设计。

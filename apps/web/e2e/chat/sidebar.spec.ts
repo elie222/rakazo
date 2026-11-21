@@ -3,6 +3,7 @@ import {
   activeBotId,
   captureScreenshot,
   completeOnboarding,
+  createNamedBot,
   rpc,
   signup,
 } from "../helpers/helpers";
@@ -109,4 +110,35 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
   await expect(
     page.getByTestId("bots-sidebar").getByText("Activity", { exact: true }).first(),
   ).toBeVisible();
+});
+
+test("a row's More button opens the chat menu and leaves the row clickable", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await signup(page, `sidebar-more-${Date.now()}@rakazo.test`, "password12", "Sample");
+  await completeOnboarding(page);
+  const first = activeBotId(page);
+  await rpc(page, "onboarding/dismissFocus", { botId: first });
+  const second = await createNamedBot(page, "Second chat");
+  await page.goto(`/app/${first}`);
+
+  const row = page
+    .locator('[data-slot="list-row"]')
+    .filter({ has: page.locator(`[data-roster-bot-id="${second}"]`) });
+  await row.hover();
+  const more = row.getByRole("button", { name: /^Actions for / });
+  await expect(more).toBeVisible();
+  await more.click();
+
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Pin" })).toBeVisible();
+
+  // Escape closes the menu and returns focus to the control that opened it.
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(more).toBeFocused();
+
+  // The button sits beside the link, so the row still navigates.
+  await row.locator(`[data-roster-bot-id="${second}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/app/${second}$`));
 });

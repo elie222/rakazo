@@ -25,3 +25,10 @@ const twMerge = extendTailwindMerge({
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+/**
+ * One surface for every menu and popover: the same radius, token shadow and hairline edge,
+ * so a dropdown, a context menu and a select read as the same material.
+ */
+export const floatingSurface =
+  "rounded-xl bg-popover text-popover-foreground shadow-popover ring-1 ring-foreground/10";

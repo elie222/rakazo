@@ -1,6 +1,6 @@
 import type { Bot, BotSection, Group } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
-import { ContextMenu } from "@rakazo/ui-web";
+import { Button, ContextMenu, DropdownMenu, DropdownMenuTrigger } from "@rakazo/ui-web";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Suspense, useEffect } from "react";
 import { lazyOverlay } from "../../../components/ErrorBoundary";
@@ -15,13 +15,21 @@ const BotContextMenu = lazyOverlay(() =>
 
 type ChatRead = ReturnType<typeof useChatRead>;
 
-export type ChatMenuTarget = { kind: "bot" | "group"; id: string };
+export type ChatMenuSurface = "context" | "dropdown";
+
+export type ChatMenuTarget = {
+  kind: "bot" | "group";
+  id: string;
+  /** Which control opened the menu; a row has both a right-click area and a "More" button. */
+  via?: ChatMenuSurface;
+};
 
 /** Which chat's right-click menu is open, shared by the roster and search results. */
 export type ChatMenuState = {
   menu: ChatMenuTarget | null;
   setMenu: Dispatch<SetStateAction<ChatMenuTarget | null>>;
-  content: ReactNode;
+  /** The menu items, rendered for the surface that opened them. */
+  content: (surface: ChatMenuSurface) => ReactNode;
   /** Whether the menu can act on this chat. */
   has: (target: ChatMenuTarget) => boolean;
 };
@@ -40,7 +48,7 @@ export function ChatMenu({
 }) {
   const { menu, setMenu, content } = state;
   const { kind, id } = target;
-  const open = menu?.kind === kind && menu.id === id;
+  const open = menu?.kind === kind && menu.id === id && (menu.via ?? "context") === "context";
   // The menu doesn't report closing when it unmounts open, such as when new search results
   // replace this row; release it so it can't reopen on its own later.
   useEffect(() => {
@@ -55,18 +63,71 @@ export function ChatMenu({
       // A sibling row's menu may already own the state; only clear our own.
       onOpenChange={(next) =>
         setMenu((current) =>
-          next ? { kind, id } : current?.kind === kind && current.id === id ? null : current,
+          next
+            ? { kind, id, via: "context" }
+            : current?.kind === kind && current.id === id
+              ? null
+              : current,
         )
       }
     >
       {children}
-      {open ? <Suspense fallback={null}>{content}</Suspense> : null}
+      {open ? <Suspense fallback={null}>{content("context")}</Suspense> : null}
     </ContextMenu>
+  );
+}
+
+/**
+ * The row's "More" button. It shows the same menu as a right-click, anchored to the
+ * button, so the row link keeps its whole area and a single menu is open at a time.
+ */
+export function ChatRowMenu({
+  target,
+  state,
+  disabled,
+  label,
+  children,
+}: {
+  target: ChatMenuTarget;
+  state: ChatMenuState;
+  disabled?: boolean;
+  /** The button's accessible name, such as "Actions for Design". */
+  label: string;
+  children: ReactNode;
+}) {
+  const { menu, setMenu, content } = state;
+  const { kind, id } = target;
+  const open = menu?.kind === kind && menu.id === id && menu.via === "dropdown";
+  useEffect(() => {
+    if (!open) return;
+    return () =>
+      setMenu((current) => (current?.kind === kind && current.id === id ? null : current));
+  }, [open, kind, id, setMenu]);
+  return (
+    <DropdownMenu
+      disabled={disabled}
+      open={open}
+      onOpenChange={(next) =>
+        setMenu((current) =>
+          next
+            ? { kind, id, via: "dropdown" }
+            : current?.kind === kind && current.id === id
+              ? null
+              : current,
+        )
+      }
+    >
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={label} />}>
+        {children}
+      </DropdownMenuTrigger>
+      {open ? <Suspense fallback={null}>{content("dropdown")}</Suspense> : null}
+    </DropdownMenu>
   );
 }
 
 /** The right-click menu for a bot or group in the roster or search results. */
 export function ChatContextMenu({
+  surface = "context",
   rpc,
   bot,
   group,
@@ -80,6 +141,7 @@ export function ChatContextMenu({
   openChatSettings,
   navigate,
 }: {
+  surface?: ChatMenuSurface;
   rpc: ReturnType<typeof createSpaceRpc>;
   bot: Bot | undefined;
   group: Group | undefined;
@@ -100,6 +162,7 @@ export function ChatContextMenu({
     : { kind: "group" as const, chat: group! };
   return (
     <BotContextMenu
+      surface={surface}
       bot={chat}
       onClose={onClose}
       sections={sections}

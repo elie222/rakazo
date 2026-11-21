@@ -75,7 +75,11 @@ import { useAppSidebar } from "./shell/app-rail";
 import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
 import type { ImportSetupTarget } from "./shell/bots/import-setup-card";
 import { useTeaching } from "./shell/bots/use-teaching";
-import type { ChatMenuState, ChatMenuTarget } from "./shell/chat/chat-context-menu";
+import type {
+  ChatMenuState,
+  ChatMenuSurface,
+  ChatMenuTarget,
+} from "./shell/chat/chat-context-menu";
 import { ChatContextMenu } from "./shell/chat/chat-context-menu";
 import { ChatFindBar } from "./shell/chat/chat-find-bar";
 import { ChatHeader } from "./shell/chat/chat-header";
@@ -984,9 +988,10 @@ function SpaceShell() {
     botMenu?.kind === "bot" ? bots.find((bot) => bot.id === botMenu.id) : undefined;
   const contextGroup =
     botMenu?.kind === "group" ? groups.find((group) => group.id === botMenu.id) : undefined;
-  const botMenuContent =
+  const botMenuContent = (surface: ChatMenuSurface) =>
     contextBot || contextGroup ? (
       <ChatContextMenu
+        surface={surface}
         rpc={rpc}
         bot={contextBot}
         group={contextGroup}

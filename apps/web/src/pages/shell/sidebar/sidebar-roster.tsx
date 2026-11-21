@@ -20,6 +20,7 @@ import {
   ListRowDescription,
   ListRowLink,
   ListRowTitle,
+  RowActions,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -42,7 +43,7 @@ import {
 } from "../../../lib/chat/roster-status";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
 import type { ChatMenuState } from "../chat/chat-context-menu";
-import { ChatMenu } from "../chat/chat-context-menu";
+import { ChatMenu, ChatRowMenu } from "../chat/chat-context-menu";
 import { useRedrawAtMidnight } from "../chat/use-redraw-at-midnight";
 import type { RosterDropAction, RosterDropTarget } from "./roster-drop";
 import type { sidebarGroupsForSpaces } from "./space-sidebar";
@@ -553,6 +554,19 @@ export function SidebarRoster({
                       "group/row",
                       item.kind === "bot" && draggedBotId === item.chat.id && "opacity-55",
                     )}
+                    actions={
+                      mini || item.chat.spaceId !== bootstrapMe?.spaceId ? undefined : (
+                        <RowActions>
+                          <ChatRowMenu
+                            target={{ kind: item.kind, id: item.chat.id }}
+                            state={chatMenu}
+                            label={t`Actions for ${item.chat.name}`}
+                          >
+                            <MoreHorizontal />
+                          </ChatRowMenu>
+                        </RowActions>
+                      )
+                    }
                   >
                     <ChatMenu
                       target={{ kind: item.kind, id: item.chat.id }}

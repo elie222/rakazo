@@ -1,6 +1,6 @@
 # UI 与交互体系对齐：落地实施计划
 
-状态：PR 1–3 已实现；PR 4–5 待执行。
+状态：PR 1–4 已实现；PR 5 待执行。
 
 设计依据：
 
@@ -52,6 +52,15 @@
 - 新增 `use-flip.test.tsx`、`use-entering-messages.test.tsx`，并在 `transcript.test.tsx`、`composer.test.tsx`、`ActivityList.test.tsx` 补行为断言；`chat/sidebar.spec.ts` 覆盖 56px 行高、隐藏列表的焦点隔离与移动端 Activity 入口。
 - 行尾“More”悬浮菜单留给 PR 4：现有聊天菜单是右键上下文菜单，直接复用到悬浮按钮会在窄行上覆盖整行点击（E2E 已复现），因此 PR 3 不提前上线半成品。
 - 验证：UI 包 101 测试、Web 2,749 测试、`pnpm checks` 153 项、typecheck、生产构建通过；Web 启动体积 817.9/860 kB。
+
+## 1.4 PR 4 结果
+
+- 弹层统一：popover、dropdown、context menu、select 共用 `floatingSurface`（12px 圆角、`shadow-popover`、1px 描边）；dialog、alert dialog、sheet 使用 `shadow-dialog`，进入时长走 `--motion-floating` / `--motion-layout`。
+- 行尾“More”菜单：新增 `ChatRowMenu`，与右键菜单共用 `ChatMenuItems` 和同一份打开状态；`via` 区分 surface，右键与按钮不会同时打开。按钮是行链接的兄弟，点击按钮不会触发导航。
+- 菜单项仍是点击激活；悬停只揭示按钮，破坏性操作没有变成悬停即触发。
+- 设置行：`SettingsRow` 支持 `htmlFor`、`description`、`descriptionId`，标签与控件建立真实关联；账号、Labs、本机授权三处手写 `<Label>` 已移除；错误提示保留在所属行内。
+- 新增 `chat-row-menu.test.tsx` 覆盖按钮打开、surface 状态与 Escape 关闭；`chat/sidebar.spec.ts` 新增一条 E2E，覆盖悬停揭示、菜单打开、焦点返回与行链接仍可点击。
+- 验证：UI 包 103 测试、Web 2,751 测试、`pnpm checks` 154 项、typecheck、生产构建通过；Web 启动体积 818.3/860 kB，桌面 main 2,194.3/2,300 kB。
 
 ## 2. 交付边界
 
