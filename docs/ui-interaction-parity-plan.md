@@ -1,6 +1,6 @@
 # UI 与交互体系对齐：落地实施计划
 
-状态：计划完成，待确认。
+状态：PR 1 已实现；PR 2–5 待执行。
 
 设计依据：
 
@@ -25,6 +25,14 @@
 - **每个 PR 独立可上线。** 不长期保留两套控件、两套侧栏。
 - **不复制品牌皮肤。** 保留 Rakazo 的单色 token、shadcn/Base UI、lucide 和原生移动端。
 - **不做假开关。** 没有后端能力就不上 UI；没有验证就不算完成。
+
+## 1.1 PR 1 结果
+
+- 已落地 motion/shadow token、按下 0.97 缩放、2px 焦点环、Button loading。
+- 已新增 `ListRow`/`RowActions`、`RouteLoading`、`ListSkeleton`、`EmptyState`、`InlineError`。
+- 已统一共享控件和 app 内焦点/按下写法；路由级等待改为 120ms 延迟。
+- 验证：UI 包 100 测试、Web 2701 测试、`pnpm checks` 153 项、typecheck、生产 Web 构建通过；Web 启动体积 891.9/900 kB。
+- 桌面 main 包在本机为 2,760.0/2,760.0 kB（超出 0.0 kB），该包不引用 UI/Web 代码，属于基线紧预算；CI 会确认。
 
 ## 2. 交付边界
 
