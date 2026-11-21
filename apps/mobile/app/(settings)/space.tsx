@@ -16,6 +16,7 @@ import { LoadFailure } from "../../components/ui/load-failure";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { useSideInsets } from "../../lib/layout/side-insets";
+import { announceToScreenReader } from "../../lib/native/announce";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { settingsTarget } from "../../lib/query/settings-target";
@@ -45,6 +46,7 @@ export default function SpaceSettings() {
     queryClient.setQueryData(overridesRead.queryKey, next);
   const open = (setting: SpaceSetting) =>
     router.push({ pathname: SETTING_SCREENS[setting], params: { spaceId: space } });
+  const saveFailure = (failure: Error) => errorText(failure, t`Could not save that preference`);
   const change = useSave({
     target,
     // The answer is the Space's new list, kept even when nobody is left to see it.
@@ -53,9 +55,11 @@ export default function SpaceSettings() {
     onSaved: (_saved, { setting, enabled }) => {
       if (enabled && setting !== "confirmations") open(setting);
     },
+    // Each failed save is read out, so a repeat of the same failure is heard again.
+    onFailed: (failure) => announceToScreenReader(saveFailure(failure)),
   });
   const pending = change.pending;
-  const error = change.error ? errorText(change.error, t`Could not save that preference`) : null;
+  const error = change.error ? saveFailure(change.error) : null;
   // A native switch shows the flip it reported, so keeping a setting on remounts its switch.
   const [kept, setKept] = useState(0);
   const approvals = useApprovalSettings(target, overrides?.includes("confirmations") ?? false);

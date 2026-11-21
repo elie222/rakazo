@@ -18,6 +18,7 @@ import { changePassword } from "../../lib/auth/api-auth";
 import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
 import { endCallBeforeSessionEnd } from "../../lib/calls/call-session";
 import { useSideInsets } from "../../lib/layout/side-insets";
+import { announceToScreenReader } from "../../lib/native/announce";
 import { native, useThemedStyles } from "../../lib/native/native";
 
 export default function ChangePassword() {
@@ -49,7 +50,9 @@ export default function ChangePassword() {
   async function save() {
     if (!ready || submitting.current) return;
     if (newPassword !== confirmation) {
-      setError(t`Passwords do not match`);
+      const message = t`Passwords do not match`;
+      setError(message);
+      announceToScreenReader(message);
       return;
     }
     submitting.current = true;
@@ -65,7 +68,10 @@ export default function ChangePassword() {
       setConfirmation("");
       close();
     } catch (cause) {
-      setError(errorText(cause, t`Could not change password`));
+      if (!mounted.current) return;
+      const message = errorText(cause, t`Could not change password`);
+      setError(message);
+      announceToScreenReader(message);
     } finally {
       submitting.current = false;
       setPending(false);
