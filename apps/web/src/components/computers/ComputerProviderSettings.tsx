@@ -64,6 +64,8 @@ export function ComputerProviderSettings({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saved, setSaved] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loading, setLoading] = useState(false);
   const queries = useSpaceQueries();
   const save = useSave({
     save: (next: Draft, client) => settingsApi(client, scope).update(next),
@@ -82,26 +84,42 @@ export function ComputerProviderSettings({
 
   useEffect(() => {
     let alive = true;
+    setLoading(true);
     settingsApi(rpc, scope)
       .get()
       .then((next) => {
         if (!alive) return;
         setSettings(next);
         setDraft(draftFrom(next));
+        setLoadError(null);
       })
       .catch((caught: unknown) => {
         if (alive) setLoadError(errorText(caught, t`Could not load computer settings`));
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
       });
     return () => {
       alive = false;
     };
-  }, [scope, t]);
+  }, [scope, t, loadAttempt]);
 
   if (!draft || !settings) {
     return loadError ? (
-      <p role="alert" className="mt-3 text-body-sm text-destructive">
-        {loadError}
-      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p role="alert" className="text-body-sm text-destructive">
+          {loadError}
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={loading}
+          onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+        >
+          <Trans>Retry</Trans>
+        </Button>
+      </div>
     ) : null;
   }
 
