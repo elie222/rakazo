@@ -287,11 +287,33 @@ describe("TableOfContents", () => {
     const host = mount(<TableOfContents items={items.slice(0, 5)} title="Contents" />);
     expect(host.querySelector("nav")!.getAttribute("aria-label")).toBe("Contents");
     expect(host.querySelector('a[aria-current="location"]')!.textContent).toBe("Part 1");
-    expect(host.querySelector<HTMLAnchorElement>('a[href="#p5"]')!.style.paddingLeft).toBe("22px");
+    expect(host.querySelector<HTMLAnchorElement>('a[href="#p5"]')!.style.paddingInlineStart).toBe(
+      "22px",
+    );
     act(() => host.querySelector<HTMLAnchorElement>('a[href="#p2"]')!.click());
     expect(target.scrollIntoView).toHaveBeenCalledOnce();
     target.remove();
     expect(html(<TableOfContents items={[]} />)).toBe("");
+  });
+
+  it.each([
+    { lang: "en", direction: "ltr" },
+    { lang: "he", direction: "rtl" },
+  ])("indents nested links from the reading start in $lang", ({ lang, direction }) => {
+    const headings = [
+      { label: "Overview", id: "overview", depth: 0 },
+      { label: "Details", id: "details", depth: 1 },
+      { label: "Notes", id: "notes", depth: 2 },
+    ];
+    const markup = html(
+      <Page title="Plan" lang={lang}>
+        <TableOfContents items={headings} />
+      </Page>,
+    );
+    expect(markup).toContain(`lang="${lang}" dir="${direction}"`);
+    expect(markup).toContain('style="padding-inline-start:22px"');
+    expect(markup).toContain('style="padding-inline-start:38px"');
+    expect(markup).not.toContain("padding-left:");
   });
 
   it("falls back to the first entry when the headings change", () => {
