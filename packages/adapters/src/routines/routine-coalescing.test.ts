@@ -91,17 +91,15 @@ describe("pending routine timer coalescing", () => {
       updatedAt,
       task: { prompt: index === 0 ? config.prompt : "an earlier prompt" },
     }));
-    findMany
-      .mockResolvedValueOnce(first as never)
-      .mockResolvedValueOnce([
-        {
-          id: "run-1",
-          taskId: "task-1",
-          leaseFence: 0,
-          updatedAt,
-          task: { prompt: config.prompt },
-        },
-      ] as never);
+    findMany.mockResolvedValueOnce(first as never).mockResolvedValueOnce([
+      {
+        id: "run-1",
+        taskId: "task-1",
+        leaseFence: 0,
+        updatedAt,
+        task: { prompt: config.prompt },
+      },
+    ] as never);
     vi.mocked(tx.computerExecutionLease.findMany).mockResolvedValueOnce([
       { runId: "held-0" },
     ] as never);
