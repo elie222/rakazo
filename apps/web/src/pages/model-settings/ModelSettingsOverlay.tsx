@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { SettingsScope } from "@rakazo/contracts";
+import type { ModelSignInCancelReason, SettingsScope } from "@rakazo/contracts";
 import {
   connectionDisplayName,
   modelRoleChoiceKey,
@@ -189,8 +189,8 @@ export function ModelSettingsOverlay({
     setConnectionAt(at);
   }
 
-  function closeConnection() {
-    cancelOAuthAttempt();
+  function closeConnection(reason: ModelSignInCancelReason = "left") {
+    cancelOAuthAttempt(reason);
     intentRef.current = null;
     setConnectionAt(null);
   }
@@ -198,13 +198,13 @@ export function ModelSettingsOverlay({
   function openProvider(credentialId: string) {
     const target = credentials.find((entry) => entry.id === credentialId);
     if (!target) return;
-    closeConnection();
+    closeConnection("replaced");
     model.chooseProvider(target.provider, undefined, target.id);
     setPage({ kind: "provider", credentialId });
   }
 
   function openModel(credentialId: string, modelId: string, back: SettingsPage | null) {
-    closeConnection();
+    closeConnection("replaced");
     setPage({ kind: "model", credentialId, modelId, back });
   }
 
@@ -328,7 +328,7 @@ export function ModelSettingsOverlay({
           {connected ? selectedConnectionName : <Trans>Connect {selectedProviderName}</Trans>}
         </span>
       ),
-      onClose: closeConnection,
+      onClose: () => closeConnection(),
       children: (
         <>
           {connectionPanel}

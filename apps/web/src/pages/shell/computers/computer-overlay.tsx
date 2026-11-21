@@ -172,6 +172,7 @@ export function ComputerOverlay({
               variant="ghost"
               size="icon-sm"
               className="text-muted-foreground"
+              data-computer-close=""
               aria-label={t`Close computer`}
               onClick={() => onClose()}
             >

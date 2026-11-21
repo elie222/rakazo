@@ -31,6 +31,7 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -214,6 +215,7 @@ export default function ModelConnection() {
 
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
+  const signInSetup = selected?.signInSetup;
   const {
     oauth,
     pasteCode,
@@ -222,7 +224,7 @@ export default function ModelConnection() {
     codeCopied,
     copyOAuthCode,
     cancelOAuth,
-    cancelSignIn,
+    leaveSignIn,
     openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,
@@ -244,8 +246,8 @@ export default function ModelConnection() {
 
   const cancelInFlightWork = useCallback(() => {
     modelProbe.invalidate();
-    cancelSignIn();
-  }, [cancelSignIn, modelProbe]);
+    leaveSignIn();
+  }, [leaveSignIn, modelProbe]);
 
   useEffect(
     () => () => {
@@ -554,6 +556,7 @@ export default function ModelConnection() {
     />
   ) : null;
 
+  const signInHost = oauth?.mode === "auth-url" ? new URL(oauth.verificationUri).hostname : "";
   const catalogConnectionControls =
     !isOpenAiCompatible && selected ? (
       <>
@@ -562,13 +565,19 @@ export default function ModelConnection() {
             <View style={styles.oauthCard}>
               {oauth.mode === "auth-url" ? (
                 <>
-                  <Text style={styles.secondary}>{t`Finish signing in in your browser:`}</Text>
-                  <Pressable onPress={() => void openSignInPage(oauth.verificationUri)}>
-                    <Text style={styles.link}>{oauth.verificationUri}</Text>
-                  </Pressable>
-                  <Text style={styles.secondary}>{t`Then paste the code here.`}</Text>
+                  <Text style={styles.secondary}>
+                    {t`Sign in at ${ph({ host: signInHost })}, then paste the code it shows you here.`}
+                  </Text>
+                  <NativeActionButton
+                    fill
+                    label={t`Open ${ph({ host: signInHost })}`}
+                    onPress={() => void openSignInPage(oauth.verificationUri)}
+                    style={{ marginTop: 12 }}
+                  />
                   <TextInput
-                    accessibilityLabel={t`Authorization code`}
+                    accessibilityLabel={t`Code from ${ph({ host: signInHost })}`}
+                    placeholder={t`Paste code`}
+                    placeholderTextColor={native.tertiaryLabel}
                     value={pasteCode}
                     onChangeText={setPasteCode}
                     autoCapitalize="none"
@@ -583,24 +592,30 @@ export default function ModelConnection() {
                     prominence="secondary"
                     style={{ marginTop: 12 }}
                   />
-                  <Text style={styles.secondary}>
-                    {t`Waiting for sign-in — the link expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
-                  </Text>
                 </>
               ) : (
                 <>
+                  {signInSetup ? (
+                    <Pressable
+                      accessibilityRole="link"
+                      onPress={() => void Linking.openURL(signInSetup.url)}
+                    >
+                      <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
+                    </Pressable>
+                  ) : null}
                   <Text style={styles.secondary}>
-                    {t`A sign-in page opened — enter this code there:`}
+                    {signInSetup
+                      ? t`2. Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`
+                      : t`Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`}
                   </Text>
-                  <Pressable onPress={() => void openSignInPage(oauth.verificationUri)}>
-                    <Text style={styles.link}>{oauth.verificationUri}</Text>
-                  </Pressable>
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
                     fill
-                    label={codeCopied ? t`Copied` : t`Copy`}
-                    onPress={() => copyOAuthCode(oauth.userCode)}
-                    prominence="secondary"
+                    label={codeCopied ? t`Code copied, open again` : t`Copy code and open`}
+                    onPress={() => {
+                      copyOAuthCode(oauth.userCode);
+                      void openSignInPage(oauth.verificationUri);
+                    }}
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
