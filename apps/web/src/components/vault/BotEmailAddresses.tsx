@@ -1,9 +1,9 @@
-import { Trans, useLingui } from "@lingui/react/macro";
-import { Button, SectionHeading } from "@rakazo/ui-web";
+import { Trans } from "@lingui/react/macro";
+import { SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, Mail } from "lucide-react";
-import { useCopyText } from "../../lib/copy-text";
+import { Mail } from "lucide-react";
 import { useSpaceQueries } from "../../lib/query/query";
+import { BotEmailCopyButton } from "../BotEmailAddressField";
 
 /** The addresses the bots use to sign up and receive mail, beside the logins they use. */
 export function BotEmailAddresses() {
@@ -25,8 +25,6 @@ export function BotEmailAddresses() {
 }
 
 function BotEmailRow({ botName, address }: { botName: string; address: string }) {
-  const { t } = useLingui();
-  const [copied, copy] = useCopyText();
   return (
     <li className="flex items-center gap-3 border-t border-border px-3.5 py-2.5 first:border-t-0">
       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
@@ -36,15 +34,7 @@ function BotEmailRow({ botName, address }: { botName: string; address: string })
         <span className="block truncate text-body font-medium text-foreground">{botName}</span>
         <span className="block truncate font-mono text-label text-muted-foreground">{address}</span>
       </span>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={copied ? t`Copied` : t`Copy ${address}`}
-        onClick={() => copy(address)}
-        className="text-muted-foreground"
-      >
-        {copied ? <Check /> : <Copy />}
-      </Button>
+      <BotEmailCopyButton address={address} />
     </li>
   );
 }
