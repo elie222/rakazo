@@ -35,7 +35,12 @@ export async function findRoutinesTarget(
     ...(thread.groupId ? { groupThreadId: thread.id } : {}),
   };
   if (!reachesManagedRoutines(name, args)) return own;
-  const managed = await resolveBot(run.prisma, run.fleetRun, args);
+  // A prepared call carries both: the id it acts on and the name its card shows.
+  const managed = await resolveBot(
+    run.prisma,
+    run.fleetRun,
+    argumentGiven(args.bot_id) ? { bot_id: args.bot_id } : args,
+  );
   if ("error" in managed) return { error: managed.error };
   // Naming itself keeps a group run to the group's routines.
   if (managed.id === botId) return own;

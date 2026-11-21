@@ -150,7 +150,7 @@ describe("schedule tools on another bot's routines", () => {
       },
       run: { trigger: "user" },
       fleetRun: { spaceId: "space-1" },
-      bot: { id: "bot-1" },
+      bot: { id: "bot-1", name: "Me" },
       runId: "run-1",
       source: { messagingChannelRun: false, ownerStartedRun: input.ownerStartedRun ?? true },
       trust: { receivedOutsideMessage: async () => input.outsideMessage ?? false },
@@ -180,7 +180,7 @@ describe("schedule tools on another bot's routines", () => {
   it("acts on the named bot's id, and treats naming itself as its own routines", async () => {
     const byName = managedRoutineCall({})("schedule_cancel", { bot_name: "Child", name: "r" });
     await expect(byName.prepared).resolves.toBeUndefined();
-    expect(byName.request.args).toEqual({ bot_id: "child", name: "r" });
+    expect(byName.request.args).toEqual({ bot_id: "child", bot_name: "Child", name: "r" });
     const self = managedRoutineCall({ fleetManagement: false })("schedule_update", {
       bot_name: "Me",
       routineId: "r",

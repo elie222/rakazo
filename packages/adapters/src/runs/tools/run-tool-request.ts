@@ -451,13 +451,13 @@ export async function prepareToolRequest(
     const refused = await scheduleCreateRefusal(ctx, args);
     if (refused) return refusal("schedule_create_refused", refused.error);
   }
-  // Settle the named bot before the gate: the card and an approved replay act on its id, and a
-  // bot naming itself is working on its own routines.
-  if (reachesManagedRoutines(name, args) && nextApprovedTool !== name) {
-    const target = await resolveBot(deps.prisma, ctx.fleetRun, args);
-    if ("error" in target) return refusal("bot_management_request_invalid", target.error);
+  // A bot naming itself is working on its own routines, which need no bot management.
+  if (
+    reachesManagedRoutines(name, args) &&
+    (args.bot_id === bot.id || (!argumentGiven(args.bot_id) && args.bot_name === bot.name))
+  ) {
     const { bot_id: _id, bot_name: _name, ...rest } = args;
-    args = target.id === bot.id ? rest : { ...rest, bot_id: target.id };
+    args = rest;
   }
   const managedRoutines = reachesManagedRoutines(name, args);
   const fleetWrite =
@@ -487,6 +487,14 @@ export async function prepareToolRequest(
     if (fleetWrite && (await ctx.trust.receivedOutsideMessage())) {
       request.heldForApproval = true;
       request.ignoresAllowRules = true;
+    }
+    // The card names the bot, and an approved replay acts on its id, not a name another bot
+    // could take by then.
+    if (managedRoutines && nextApprovedTool !== name) {
+      const target = await resolveBot(deps.prisma, ctx.fleetRun, args);
+      if ("error" in target) return refusal("bot_management_request_invalid", target.error);
+      const { bot_id: _id, bot_name: _name, ...rest } = args;
+      args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
     }
   }
   if (name === "update_preferences") request.settingsChange = true;
