@@ -68,6 +68,19 @@ import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-car
 
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
 
+function FileAttachmentSize({
+  bytes,
+  locale,
+  color,
+}: {
+  bytes: number;
+  locale: string;
+  color: string;
+}) {
+  const label = formatFileSize(bytes, locale);
+  return label ? <Text style={{ color, marginTop: 4, fontSize: 13 }}>{label}</Text> : null;
+}
+
 function formatApprovalAnswer(
   answer: string | undefined,
   actions: AskAction[] | undefined,
@@ -284,7 +297,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const outgoing = message.role === "user" && !authorName;
   const showSpeaker = !hideSenderLabel && (showBotSenderName || Boolean(authorName));
@@ -739,17 +752,11 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 >
                   📎 {attachment.name ?? t`File`}
                 </Text>
-                {formatFileSize(attachment.size) ? (
-                  <Text
-                    style={{
-                      color: outgoing ? tokens.chatUserForeground : tokens.mutedForeground,
-                      marginTop: 4,
-                      fontSize: 13,
-                    }}
-                  >
-                    {formatFileSize(attachment.size)}
-                  </Text>
-                ) : null}
+                <FileAttachmentSize
+                  bytes={attachment.size}
+                  locale={i18n.locale}
+                  color={outgoing ? tokens.chatUserForeground : tokens.mutedForeground}
+                />
               </Pressable>
             )}
           </View>
