@@ -94,13 +94,15 @@ export function ResizableSidePanel({
     }
   }, [open]);
   useEventListener(open && onEscape ? document : null, "keydown", (event) => {
+    if (!onEscape) return;
     if (event.key !== "Escape" || event.defaultPrevented || isComposingKey(event)) return;
     const focused = document.activeElement;
     if (focused && focused !== document.body && !panelRef.current?.contains(focused)) return;
     // A field saves when it loses focus, and closing the panel would unmount it before that.
     if (focused?.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])"))
       return;
-    onEscape?.();
+    event.preventDefault();
+    onEscape();
   });
   const covering = open && overlay && chatWidth - panelWidth < MAX_VISIBLE_CHAT_WIDTH;
   useEffect(() => {

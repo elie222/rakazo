@@ -115,6 +115,7 @@ describe("ResizableSidePanel", () => {
 describe("ResizableSidePanel keyboard", () => {
   function Harness({ panel }: { panel: "settings" | "routine" }) {
     const [open, setOpen] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
     return (
       <>
         <button type="button" data-testid="opener" onClick={() => setOpen(true)}>
@@ -135,8 +136,12 @@ describe("ResizableSidePanel keyboard", () => {
               <button
                 type="button"
                 data-testid="menu"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen(true)}
                 onKeyDown={(event) => {
-                  if (event.key === "Escape") event.preventDefault();
+                  if (event.key !== "Escape" || !menuOpen) return;
+                  event.preventDefault();
+                  setMenuOpen(false);
                 }}
               >
                 Menu
@@ -151,11 +156,11 @@ describe("ResizableSidePanel keyboard", () => {
   const byId = (id: string) => host.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
   const panelOpen = () => host.querySelector('[data-testid="close"]') !== null;
   function pressEscape(target: Element) {
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
     act(() => {
-      target.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
-      );
+      target.dispatchEvent(event);
     });
+    return event;
   }
   function openFromButton(panel: "settings" | "routine") {
     sidebarWidth = 0;
@@ -182,7 +187,7 @@ describe("ResizableSidePanel keyboard", () => {
 
   it("closes Chat Details on Escape and returns focus to the opener", () => {
     openFromButton("settings");
-    pressEscape(byId("close"));
+    expect(pressEscape(byId("close")).defaultPrevented).toBe(true);
     expect(panelOpen()).toBe(false);
     expect(document.activeElement).toBe(byId("opener"));
   });
@@ -199,10 +204,16 @@ describe("ResizableSidePanel keyboard", () => {
     expect(panelOpen()).toBe(true);
   });
 
-  it("keeps the panel open when an inner control consumed Escape", () => {
+  it("closes only the inner menu on the first Escape and Chat Details on the second", () => {
     openFromButton("settings");
-    pressEscape(byId("menu"));
+    const menu = byId("menu");
+    menu.focus();
+    act(() => menu.click());
+    expect(pressEscape(menu).defaultPrevented).toBe(true);
+    expect(menu.getAttribute("aria-expanded")).toBe("false");
     expect(panelOpen()).toBe(true);
+    expect(pressEscape(menu).defaultPrevented).toBe(true);
+    expect(panelOpen()).toBe(false);
   });
 
   it("does not take focus the user moved elsewhere", () => {
