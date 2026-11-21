@@ -13,6 +13,19 @@ function message(
   return { id: `m_${seq}`, threadId: "t_1", seq, role, blocks, createdAt, ...extra };
 }
 
+const askWords = {
+  answer: "Answer",
+  expired: "Expired",
+  more: (count: string) => `${count} more`,
+  total: "Total",
+  onTheButton: "On the button",
+  to: "To",
+  subject: "Subject",
+  updateInstructions: "Update instructions?",
+  instructionsUpdated: "Instructions updated",
+  settingsUpdated: "Settings updated",
+};
+
 const transcript = (messages: ThreadMessage[]) =>
   chatTranscriptMarkdown({
     title: "Ada",
@@ -20,6 +33,8 @@ const transcript = (messages: ThreadMessage[]) =>
     speaker: (item) => (item.role === "user" ? "You" : "Ada"),
     time: (createdAt) => createdAt.slice(0, 16).replace("T", " "),
     routineEvent: (change, name) => `${change} routine "${name}"`,
+    askWords,
+    attachment: "Attachment",
   });
 
 describe("chatTranscriptMarkdown", () => {
@@ -53,7 +68,7 @@ describe("chatTranscriptMarkdown", () => {
         { kind: "file", artifactId: "a_3", mimeType: "text/csv", name: "out.csv", size: 4 },
       ]),
     ]);
-    expect(text).toContain("Here you go\nAttachment: chart.png\nAttachment: q1.csv");
+    expect(text).toContain("Here you go\n\nAttachment: chart.png\n\nAttachment: q1.csv");
     expect(text).toContain("**Ada** · 2026-03-04 10:00\n\nAttachment: out.csv");
   });
 
@@ -172,6 +187,8 @@ describe("chatTranscriptMarkdown", () => {
       speaker: () => "Dana**\n\n**Lee",
       time: () => "10:00",
       routineEvent: (change, name) => `${change} ${name}`,
+      askWords,
+      attachment: "Attachment",
     });
     expect(text).toBe(
       "# Project \\#\\# Another heading\n\n---\n\n**Dana\\*\\* \\*\\*Lee** · 10:00\n\nHi\n",
@@ -187,6 +204,313 @@ describe("chatTranscriptMarkdown", () => {
     expect(text).toContain("\n\n\\# Plan\\_v2");
     expect(text).toContain("- \\*Label\\* → \\[x\\](y)");
     expect(text).toContain("\n\n\\> quoted");
+  });
+
+  it("keeps an ask's detail and its options, with the chosen one marked", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "ask",
+          text: "Let Mail read your inbox?",
+          detail: "Reads the last 7 days",
+          detailFormat: "text",
+          actions: [
+            { id: "allow", label: "Allow once" },
+            { id: "deny", label: "Deny" },
+          ],
+          status: "answered",
+          answer: "deny",
+        },
+      ]),
+    ]);
+    expect(text).toContain("Let Mail read your inbox?\n\n```\nReads the last 7 days\n```");
+    expect(text).toContain("- Allow once\n- Deny \u2713");
+  });
+
+  it("marks no option as chosen for an expired approval, and says it expired", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "ask",
+          text: "Let Mail send the reply?",
+          actions: [
+            { id: "allow", label: "Allow once" },
+            { id: "deny", label: "Deny" },
+          ],
+          status: "answered",
+          answer: "deny",
+          expired: true,
+        },
+      ]),
+    ]);
+    expect(text).toContain("- Allow once\n- Deny\n\nExpired");
+    expect(text).not.toContain("\u2713");
+  });
+
+  it("writes a receipt's rows once, without the page's own total row", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "ask",
+          text: "Pay for your order?",
+          receipt: {
+            button: "Pay $12.40",
+            items: [
+              { name: "Oat milk", amount: "$4.00" },
+              { name: "Total", amount: "$12.40" },
+            ],
+            more: { count: 2, atLeast: false },
+            amount: "$12.40",
+            amountSource: "button",
+            total: "$12.40",
+          },
+        },
+      ]),
+    ]);
+    expect(text).toContain("- Oat milk: $4.00\n- 2 more\n- Total: $12.40\n- On the button: $12.40");
+    expect(text.match(/Total: \$12\.40/g)).toHaveLength(1);
+  });
+
+  it("never writes a secret answer, and writes a typed answer unless it is its own message", () => {
+    const secret = transcript([
+      message("bot", [
+        {
+          kind: "ask",
+          text: "Enter your bank PIN",
+          input: "secret",
+          status: "answered",
+          answer: "4921",
+        },
+      ]),
+    ]);
+    expect(secret).toContain("Enter your bank PIN");
+    expect(secret).not.toContain("4921");
+
+    const reply = message("user", [{ kind: "text", text: "Tuesday" }], "2026-03-04T10:01:00.000Z");
+    const separate = transcript([
+      message(
+        "bot",
+        [
+          {
+            kind: "ask",
+            text: "Which day?",
+            status: "answered",
+            answer: "Tuesday",
+            answerMessageId: reply.id,
+          },
+        ],
+        "2026-03-04T10:00:00.000Z",
+      ),
+      reply,
+    ]);
+    expect(separate.split("Tuesday")).toHaveLength(2);
+
+    const typed = transcript([
+      message("bot", [{ kind: "ask", text: "Which day?", status: "answered", answer: "Tuesday" }]),
+    ]);
+    expect(typed).toContain("Which day?\n\nAnswer: Tuesday");
+  });
+
+  it("writes a call as the chat's card shows it: the opening once answered, the reason otherwise", () => {
+    const call = (status: "answered" | "missed") =>
+      transcript([
+        message("bot", [
+          {
+            kind: "call_request",
+            callId: "c_1",
+            reason: "Your invoice is overdue",
+            opening: "Hi Sam, *calling* about the invoice.",
+            status,
+            expiresAt: "2026-03-04T10:05:00.000Z",
+          },
+        ]),
+      ]);
+    const answered = call("answered");
+    expect(answered).toContain("Hi Sam, \\*calling\\* about the invoice.");
+    expect(answered).not.toContain("Your invoice is overdue");
+    const missed = call("missed");
+    expect(missed).toContain("Your invoice is overdue");
+    expect(missed).not.toContain("Hi Sam");
+  });
+
+  it("closes a code fence a bot left open, so it cannot run into the next message", () => {
+    const text = transcript([
+      message("bot", [{ kind: "text", text: "Here is the script:\n\n```js\nconst a = 1;" }]),
+      message("bot", [{ kind: "text", text: "Done" }], "2026-03-04T10:01:00.000Z"),
+    ]);
+    expect(text).toContain("```js\nconst a = 1;\n```\n\n---\n\n");
+  });
+
+  it("keeps a typed line's leading spaces and tabs, without making it a code block", () => {
+    const text = transcript([
+      message("user", [{ kind: "text", text: "    const a = 1;\n\tif (a) {" }]),
+    ]);
+    expect(text).toContain(
+      "\u00a0\u00a0\u00a0\u00a0const a = 1;\\\n\u00a0\u00a0\u00a0\u00a0if (a) {",
+    );
+  });
+
+  it("writes a helper's result or progress under its name, and nothing for a stopped helper", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "subagent",
+          agentId: "h_1",
+          name: "Researcher",
+          task: "Find the invoice",
+          status: "completed",
+          result: "```txt\nInvoice 42",
+        },
+      ]),
+      message("bot", [
+        {
+          kind: "subagent",
+          agentId: "h_2",
+          name: "Reader",
+          task: "Read the page",
+          status: "running",
+          progress: "Reading 3 pages",
+        },
+      ]),
+      message("bot", [
+        {
+          kind: "subagent",
+          agentId: "h_3",
+          name: "Mailer",
+          task: "Send it",
+          status: "failed",
+          result: "stopped",
+        },
+      ]),
+    ]);
+    expect(text).toContain("**Researcher**\n\n```txt\nInvoice 42\n```");
+    expect(text).toContain("**Reader**\n\nReading 3 pages");
+    expect(text).toContain("**Mailer**");
+    expect(text).not.toContain("Find the invoice");
+    expect(text).not.toContain("Read the page");
+    expect(text).not.toContain("stopped");
+  });
+
+  it("writes an outgoing draft as the fields its card shows, not its question", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "ask",
+          text: "Send this email?",
+          outgoingDraft: {
+            source: "Mail",
+            values: {
+              kind: "email",
+              to: "dana@example.com",
+              subject: "Invoice",
+              body: "Hi *Dana*,\n# not a heading",
+            },
+            keys: { to: "to", body: "body", subject: "subject" },
+          },
+        },
+      ]),
+    ]);
+    expect(text).toContain(
+      "To: dana@example.com\n\nSubject: Invoice\n\nHi \\*Dana\\*,\\\n\\# not a heading",
+    );
+    expect(text).not.toContain("Send this email?");
+  });
+
+  it("writes an instructions update's question in the reader's words, as the card shows it", () => {
+    const text = chatTranscriptMarkdown({
+      title: "Ada",
+      messages: [
+        message("bot", [
+          {
+            kind: "ask",
+            text: "Update instructions?",
+            instructionUpdate: {
+              botId: "bot-1",
+              before: "Be brief",
+              after: "Be kind",
+              reason: "Asked",
+            },
+          },
+        ]),
+      ],
+      speaker: () => "Ada",
+      time: () => "10:00",
+      routineEvent: (change, name) => `${change} ${name}`,
+      askWords: { ...askWords, updateInstructions: "Atualizar instruções?" },
+      attachment: "Attachment",
+    });
+    expect(text).toContain("Atualizar instruções?");
+    expect(text).not.toContain("Update instructions?");
+  });
+
+  it("writes a settled instructions or settings change as the card shows it, not as a question", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "ask",
+          text: "Update instructions?",
+          instructionUpdate: {
+            botId: "bot-1",
+            before: "Be brief",
+            after: "Be kind",
+            reason: "Asked",
+            undoVersionId: "v_1",
+          },
+        },
+        {
+          kind: "ask",
+          text: "Change settings?",
+          settingsUpdate: { botId: "bot-1", before: {}, after: { autoSpeak: true } },
+        },
+      ]),
+    ]);
+    expect(text).toContain("Instructions updated\n\nSettings updated");
+    expect(text).not.toContain("Update instructions?");
+    expect(text).not.toContain("Change settings?");
+  });
+
+  it("writes a tool's question under its source", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "tool_question",
+          question: { source: "Calendar", message: "Which day works?", fields: [] },
+          status: "pending",
+          expiresAt: "2026-03-05T10:00:00.000Z",
+          publicKey: "k",
+        },
+      ]),
+    ]);
+    expect(text).toContain("Calendar\n\nWhich day works?");
+  });
+
+  it("escapes a bot's raw HTML outside code, so an open tag cannot hide what follows", () => {
+    const text = transcript([
+      message("bot", [
+        { kind: "text", text: "<!-- note\nUse `<b>` and <https://example.com>\n```\n<pre>\n```" },
+      ]),
+      message("user", [{ kind: "text", text: "Thanks" }], "2026-03-04T10:01:00.000Z"),
+    ]);
+    expect(text).toContain("\\<!-- note");
+    expect(text).toContain("Use `<b>` and <https://example.com>");
+    expect(text).toContain("```\n<pre>\n```");
+  });
+
+  it("never writes an answer typed into a secret ask, even one tied to an approval", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "ask",
+          text: "Enter the code",
+          input: "secret",
+          approvalEffectId: "eff_1",
+          status: "answered",
+          answer: "991122",
+        },
+      ]),
+    ]);
+    expect(text).toContain("Enter the code");
+    expect(text).not.toContain("991122");
   });
 
   it("is just the title for an empty chat", () => {

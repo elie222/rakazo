@@ -1,4 +1,5 @@
 import type { Bot, Group, RoutineEventChange, ThreadMessage } from "@rakazo/contracts";
+import type { AskWords } from "@rakazo/core";
 import { chatTranscriptMarkdown, deadlineSignal, loadPeerHistory, otherAuthor } from "@rakazo/core";
 import { downloadArtifactBytes } from "../pages/artifact-open";
 import type { RpcClient } from "../query/rpc";
@@ -15,7 +16,7 @@ export function chatExportFileName(name: string): string {
   const slug = name
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
   return slug ? `${slug}-chat.md` : "chat.md";
 }
@@ -55,11 +56,13 @@ async function loadAllMessages(rpc: RpcClient, target: ChatToExport): Promise<Th
 export async function exportChat(options: {
   rpc: RpcClient;
   target: ChatToExport;
-  /** What the file calls the person exporting it when a message names no author, the app itself, and a routine's event. */
+  /** What the file calls the person exporting it when a message names no author, the app itself, a routine's event, an ask card's words and the attachment label. */
   labels: {
     you: string;
     system: string;
     routineEvent: (change: RoutineEventChange, name: string) => string;
+    ask: AskWords;
+    attachment: string;
   };
   time: (createdAt: string) => string;
   /** A group bot's name as the transcript shows it, including bots that have left the group. */
@@ -74,6 +77,8 @@ export async function exportChat(options: {
     messages,
     time,
     routineEvent: labels.routineEvent,
+    askWords: labels.ask,
+    attachment: labels.attachment,
     speaker: (message) => {
       if (message.role === "user") return otherAuthor(message.author, meId)?.name ?? labels.you;
       if (message.role === "system") return labels.system;

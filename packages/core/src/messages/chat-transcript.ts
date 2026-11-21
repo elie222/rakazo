@@ -1,8 +1,15 @@
 import type { MessageBlock, RoutineEventChange } from "@rakazo/contracts";
+import { resolveAskChoice } from "../asks/answerable-ask.js";
+import { isSecretAskBlock } from "../asks/ask-kind.js";
+import { separateAskAnswers } from "../asks/ask-replies.js";
+import { receiptItems } from "../runs/action-approval.js";
+import { helperCardState } from "../runs/run-state.js";
 import { isRetiredImportSetup, isToolActivityBlock } from "../runs/tool-activity.js";
 import { projectMessageReactions } from "./message-reactions.js";
 import { channelMessageLine } from "./message-text.js";
 import { foldPeerReplies } from "./message-visibility.js";
+
+type AskBlock = Extract<MessageBlock, { kind: "ask" }>;
 
 type TranscriptMessage = {
   id: string;
@@ -13,35 +20,170 @@ type TranscriptMessage = {
   createdAt: string;
 };
 
+/** The words an ask's card shows, in the reader's language. */
+export type AskWords = {
+  answer: string;
+  expired: string;
+  more: (count: string) => string;
+  total: string;
+  onTheButton: string;
+  to: string;
+  subject: string;
+  updateInstructions: string;
+  instructionsUpdated: string;
+  settingsUpdated: string;
+};
+
 /** Markdown that only character escapes can make, the same in every CommonMark reader. */
 const INLINE_SYNTAX = /[\\`*_[\]<>|~&#]/g;
 /** What starts a list or rule only at the start of a line. */
 const LINE_START_SYNTAX = /^(\s*)([+=-]|\d+[.)])/;
+/** Leading spaces and tabs of a line with text, which Markdown would read as code or drop. */
+const LEADING_WHITESPACE = /^[ \t]+(?=\S)/;
+const NO_BREAK_SPACE = "\u00a0";
 
 /**
  * Text the chat shows as typed, escaped so a Markdown reader shows it the same: no formatting,
  * headings or lists of its own, and each line break kept.
  */
 function literal(text: string): string {
-  const lines = text
-    .split("\n")
-    .map((line) =>
-      line
-        .replace(INLINE_SYNTAX, "\\$&")
-        .replace(
-          LINE_START_SYNTAX,
-          (_, space: string, mark: string) => `${space}${mark.replace(/[+=.)-]/g, "\\$&")}`,
-        ),
-    );
+  const lines = text.split("\n").map((line) =>
+    line
+      .replace(LEADING_WHITESPACE, (indent) =>
+        indent.replace(/\t/g, NO_BREAK_SPACE.repeat(4)).replace(/ /g, NO_BREAK_SPACE),
+      )
+      .replace(INLINE_SYNTAX, "\\$&")
+      .replace(
+        LINE_START_SYNTAX,
+        (_, space: string, mark: string) => `${space}${mark.replace(/[\\+=.)-]/g, "\\$&")}`,
+      ),
+  );
   // A backslash at the end of a line is a hard break; a blank line stays a paragraph break.
   return lines
     .map((line, i) => (line.trim() && lines[i + 1]?.trim() ? `${line}\\` : line))
     .join("\n");
 }
 
+function trimAsciiEdges(text: string): string {
+  return text.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+}
+
 /** A name or title on one line, so it can never start a heading or speaker of its own. */
 function oneLine(text: string): string {
   return literal(text.replace(/\s+/g, " ").trim());
+}
+
+/** A value the user typed for a secret or a login is never written to the file. */
+function holdsSecret(block: AskBlock): boolean {
+  return (
+    block.input === "secret" ||
+    isSecretAskBlock(block) ||
+    Boolean(block.loginFields || block.oneTimeCode || block.credential || block.replaces)
+  );
+}
+
+/**
+ * Raw Markdown from a bot, closed when it leaves a code fence open. The chat renders each message on
+ * its own, so an unclosed fence must not run into the next message in the file.
+ */
+function closeOpenFence(markdown: string): string {
+  let open: string | undefined;
+  const lines = markdown.split("\n").map((line) => {
+    const fence = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!fence) return open ? line : escapeHtml(line);
+    const mark = fence[1] ?? "";
+    const rest = fence[2] ?? "";
+    if (!open) {
+      // A backtick fence's info string cannot hold a backtick; otherwise the line is text.
+      if (!(mark[0] === "`" && rest.includes("`"))) open = mark;
+    } else if (mark[0] === open[0] && mark.length >= open.length && rest.trim() === "") {
+      open = undefined;
+    }
+    return line;
+  });
+  const text = lines.join("\n");
+  return open ? `${text}\n${open}` : text;
+}
+
+/** The chat shows a bot's raw HTML as nothing; escaped here, an unclosed tag cannot hide what follows. */
+function escapeHtml(line: string): string {
+  return line.replace(/(`+)[^`]*?\1|<(?![a-z][a-z0-9+.-]*:[^\s<>]*>)/gi, (match) =>
+    match === "<" ? "\\<" : match,
+  );
+}
+
+/** Text the card shows as preformatted, in a fence longer than any backtick run inside it. */
+function fenced(text: string): string {
+  let longest = 2;
+  for (const run of text.matchAll(/`+/g)) longest = Math.max(longest, run[0].length);
+  const fence = "`".repeat(longest + 1);
+  return `${fence}\n${text}\n${fence}`;
+}
+
+/** A receipt's rows in the order its card shows them. */
+function receiptMarkdown(receipt: NonNullable<AskBlock["receipt"]>, words: AskWords): string {
+  const rows = receiptItems(receipt.items, [words.total, words.onTheButton]).map(
+    (item) => `- ${oneLine(item.name)}: ${oneLine(item.amount)}`,
+  );
+  if (receipt.more) {
+    rows.push(`- ${words.more(`${receipt.more.count}${receipt.more.atLeast ? "+" : ""}`)}`);
+  }
+  if (receipt.total) rows.push(`- ${words.total}: ${oneLine(receipt.total)}`);
+  if (receipt.amount) {
+    const label = receipt.amountSource === "button" ? words.onTheButton : words.total;
+    rows.push(`- ${label}: ${oneLine(receipt.amount)}`);
+  }
+  return rows.join("\n");
+}
+
+/** An outgoing draft's card shows its recipient, subject and body, not the question. */
+function draftMarkdown(values: NonNullable<AskBlock["outgoingDraft"]>["values"], words: AskWords) {
+  const parts = [`${words.to}: ${oneLine(values.to)}`];
+  if (values.kind === "email" && values.subject.trim()) {
+    parts.push(`${words.subject}: ${oneLine(values.subject)}`);
+  }
+  parts.push(literal(values.body));
+  return parts.join("\n\n");
+}
+
+/**
+ * An ask as its card shows it: the question, its detail or receipt, its options with the chosen one
+ * marked, and a typed answer unless that answer is its own message. A secret answer is never written.
+ */
+function askMarkdown(block: AskBlock, words: AskWords, answeredInOwnMessage: boolean): string {
+  if (block.outgoingDraft) return draftMarkdown(block.outgoingDraft.values, words);
+  // A settled change shows only that it happened, with an undo.
+  if (block.instructionUpdate?.undoVersionId) return words.instructionsUpdated;
+  if (block.settingsUpdate) return words.settingsUpdated;
+  // The card translates its own "Update instructions?" question; the stored text is English.
+  const question = block.instructionUpdate ? words.updateInstructions : closeOpenFence(block.text);
+  const actions = block.actions ?? [];
+  // An expired approval stores its refusal as the answer, but no option was chosen.
+  const chosen =
+    block.status === "answered" && block.answer && !block.expired
+      ? resolveAskChoice(block.answer, actions)
+      : undefined;
+  const detail = block.receipt
+    ? receiptMarkdown(block.receipt, words)
+    : block.detail
+      ? fenced(block.detail)
+      : "";
+  const options = actions
+    .map((action) => `- ${oneLine(action.label)}${action.id === chosen?.id ? " \u2713" : ""}`)
+    .join("\n");
+  const answer =
+    !actions.length &&
+    block.status === "answered" &&
+    block.answer &&
+    block.answer !== "approved" &&
+    !block.expired &&
+    !answeredInOwnMessage &&
+    !holdsSecret(block)
+      ? `${words.answer}: ${literal(block.answer)}`
+      : "";
+  return [question, detail, options, answer, block.expired ? words.expired : ""]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 /**
@@ -52,16 +194,22 @@ function oneLine(text: string): string {
 function blockMarkdown(
   block: MessageBlock,
   role: string,
-  routineEvent: (change: RoutineEventChange, name: string) => string,
+  words: {
+    routineEvent: (change: RoutineEventChange, name: string) => string;
+    ask: AskWords;
+    attachment: string;
+  },
+  answeredInOwnMessage: boolean,
 ): string {
   if (isToolActivityBlock(block) || isRetiredImportSetup(block)) return "";
   switch (block.kind) {
     case "text":
-      return role === "user" ? literal(block.text) : block.text;
+      return role === "user" ? literal(block.text) : closeOpenFence(block.text);
     case "progress":
-    case "ask":
     case "computer":
-      return block.text;
+      return closeOpenFence(block.text);
+    case "ask":
+      return askMarkdown(block, words.ask, answeredInOwnMessage);
     case "meta":
     case "handoff":
       return literal(block.text);
@@ -69,17 +217,17 @@ function blockMarkdown(
       return literal(channelMessageLine(block));
     case "image":
     case "file":
-      return `Attachment: ${oneLine(block.name)}`;
-    case "choice":
+      return `${words.attachment}: ${oneLine(block.name)}`;
+    case "choice": {
       if (block.answerId === "_dismissed") return "";
-      return [
-        literal(block.question),
-        ...(block.subtitle ? [literal(block.subtitle)] : []),
-        ...block.options.map(
-          (option) =>
-            `- ${oneLine(option.letter)}. ${oneLine(option.label)}${block.answerId === option.id ? " ✓" : ""}`,
-        ),
-      ].join("\n");
+      const options = block.options.map(
+        (option) =>
+          `- ${oneLine(option.letter)}. ${oneLine(option.label)}${block.answerId === option.id ? " ✓" : ""}`,
+      );
+      // A list may follow the question on the next line, as the chat's card shows it.
+      const head = [literal(block.question), ...(block.subtitle ? [literal(block.subtitle)] : [])];
+      return [head.join("\n\n"), options.join("\n")].filter(Boolean).join("\n");
+    }
     case "card":
       return block.lines.map((line) => `- ${oneLine(line.k)} → ${oneLine(line.v)}`).join("\n");
     case "page":
@@ -87,14 +235,19 @@ function blockMarkdown(
     case "cloud_agent":
       return oneLine(block.title);
     case "call_request":
-      return literal(block.reason);
+      // The card shows the opening, which is spoken text, once the call is answered; the reason
+      // while it rings or after it was missed.
+      return block.status === "answered" ? literal(block.opening) : literal(block.reason);
     case "subagent": {
-      // The card shows the helper's result as Markdown under its name.
-      const body = block.result ?? block.task;
-      return [oneLine(block.name), body].filter(Boolean).join(": ");
+      // The card shows the helper's result (or its progress while it works) as Markdown under its
+      // name; a stopped helper shows no body.
+      const { body } = helperCardState(block);
+      return [`**${oneLine(block.name)}**`, body ? closeOpenFence(body) : ""]
+        .filter(Boolean)
+        .join("\n\n");
     }
     case "routine_event":
-      return oneLine(routineEvent(block.change, block.name));
+      return oneLine(words.routineEvent(block.change, block.name));
     case "chart":
     case "child_bot":
     case "app_connect":
@@ -104,9 +257,13 @@ function blockMarkdown(
     case "app":
       return oneLine(`${block.server}: ${block.tool}`);
     case "tool_question":
-      return literal(block.question.source);
+      return [literal(block.question.source), literal(block.question.message)]
+        .filter(Boolean)
+        .join("\n\n");
     case "import_setup":
-      return block.items.map((item) => oneLine("name" in item ? item.name : item.title)).join("\n");
+      return block.items
+        .map((item) => `- ${oneLine("name" in item ? item.name : item.title)}`)
+        .join("\n");
     // Left out: a delivery is the bot's prompt, tool steps are activity, and a peer receipt is a
     // chip in the chat whose bot-to-bot replies stay folded away.
     case "connect":
@@ -128,17 +285,37 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   time: (createdAt: string) => string;
   /** A routine's creation, change, switch or deletion, in the reader's words. */
   routineEvent: (change: RoutineEventChange, name: string) => string;
+  /** An ask card's labels and totals, in the reader's words. */
+  askWords: AskWords;
+  /** The label before an attached file's name, in the reader's words. */
+  attachment: string;
 }): string {
   // Folded as the chat folds them: work a bot did for another bot stays under its receipt, and an
   // emoji-only reply shows under the message it reacts to.
   const { visibleMessages, reactions } = projectMessageReactions(
     foldPeerReplies(options.messages, { includePeerReceipts: true }).messages,
   );
+  const separateAnswers = separateAskAnswers(visibleMessages);
+  const words = {
+    routineEvent: options.routineEvent,
+    ask: options.askWords,
+    attachment: options.attachment,
+  };
   const entries = visibleMessages.flatMap((message) => {
     const body = message.blocks
-      .map((block) => blockMarkdown(block, message.role, options.routineEvent).trim())
+      .map((block) =>
+        // Only ASCII edges go: a no-break space at the start is typed indentation, not a gap.
+        trimAsciiEdges(
+          blockMarkdown(
+            block,
+            message.role,
+            words,
+            separateAnswers.get(message.id)?.has(block) ?? false,
+          ),
+        ),
+      )
       .filter(Boolean)
-      .join("\n");
+      .join("\n\n");
     if (!body) return [];
     const counts = reactions.get(message.id);
     const reactionLine = counts

@@ -42,6 +42,19 @@ const labels = {
   you: "You",
   system: "System",
   routineEvent: (change: string, name: string) => `${change} routine "${name}"`,
+  attachment: "Attachment",
+  ask: {
+    answer: "Answer",
+    expired: "Expired",
+    more: (count: string) => `${count} more`,
+    total: "Total",
+    onTheButton: "On the button",
+    to: "To",
+    subject: "Subject",
+    updateInstructions: "Update instructions?",
+    instructionsUpdated: "Instructions updated",
+    settingsUpdated: "Settings updated",
+  },
 };
 const time = (createdAt: string) => createdAt.slice(11, 16);
 const noMembers = () => undefined;
@@ -244,6 +257,8 @@ describe("chatExportFileName", () => {
   it("turns a chat's name into a file name in any script, with a fallback", () => {
     expect(chatExportFileName("Ada's inbox  (work)")).toBe("ada-s-inbox-work-chat.md");
     expect(chatExportFileName("研究 ボット")).toBe("研究-ボット-chat.md");
+    // Hindi letters carry vowel signs (combining marks); they are part of the name, not separators.
+    expect(chatExportFileName("हिन्दी ब्लॉग")).toBe("हिन्दी-ब्लॉग-chat.md");
     expect(chatExportFileName("???")).toBe("chat.md");
   });
 });

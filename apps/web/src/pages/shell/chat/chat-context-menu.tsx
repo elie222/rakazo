@@ -181,7 +181,24 @@ export function ChatContextMenu({
         void exportChat({
           rpc,
           target,
-          labels: { you: t`You`, system: t`System`, routineEvent },
+          labels: {
+            you: t`You`,
+            system: t`System`,
+            routineEvent,
+            ask: {
+              answer: t`Answer`,
+              expired: t`Expired`,
+              more: (count) => t`${count} more`,
+              total: t`Total`,
+              onTheButton: t`On the button`,
+              to: t`To`,
+              subject: t`Subject`,
+              updateInstructions: t`Update instructions?`,
+              instructionsUpdated: t`Instructions updated`,
+              settingsUpdated: t`Settings updated`,
+            },
+            attachment: t`Attachment`,
+          },
           meId,
           time: (createdAt) =>
             i18n.date(new Date(createdAt), { dateStyle: "medium", timeStyle: "short" }),
