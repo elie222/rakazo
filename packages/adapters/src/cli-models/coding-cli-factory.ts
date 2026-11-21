@@ -4,10 +4,7 @@ import type {
   ComputerCodingCliResult,
 } from "../providers/cli-model/cursor/cli.js";
 import { executeComputerCodingCli } from "../providers/cli-model/cursor/cli.js";
-import {
-  assertCursorComputerCliBin,
-  cursorComputerCliBin,
-} from "../providers/cli-model/cursor/descriptor.js";
+import { assertCursorComputerCliBin } from "../providers/cli-model/cursor/descriptor.js";
 import { CURSOR_COMPUTER_CLI_ID } from "../providers/cli-model/cursor/provider-id.js";
 import { resolveCodingCliProvider } from "./coding-cli-provider-env.js";
 
@@ -38,4 +35,3 @@ export function createCodingCliConnection(
     execute: executeComputerCodingCli,
   };
 }
-
