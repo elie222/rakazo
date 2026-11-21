@@ -102,7 +102,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
               onCheckedChange={(checked) => run({ item, status: checked ? "done" : "open" })}
               className="mt-[3px]"
             />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 break-words">
               <div
                 className={`text-start text-body-lg ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
                 dir="auto"
