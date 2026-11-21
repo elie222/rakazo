@@ -44,9 +44,9 @@ inexpensive model works well here. See [Approvals](./approvals.md).
 
 ## Per bot and per routine
 
-To give one bot a different model, open its settings, expand **Advanced**, and choose its **Model**
-and **Thinking**. A [routine](./routines.md) can also have its own model, for example a cheaper one
-for a simple daily check.
+To give one bot a different model, open its settings, expand **Settings** (**Advanced** on
+mobile), and choose its **Model** and **Thinking**. A [routine](./routines.md) can also have its own
+model, for example a cheaper one for a simple daily check.
 
 > [!TIP]
 > Bots that use the computer's screen need a model that can read images. Models that can't are

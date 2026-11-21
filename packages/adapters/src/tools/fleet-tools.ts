@@ -36,7 +36,6 @@ import type { FleetCardSummary } from "../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../approvals/approval-ask.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "../bots/bot-avatar.js";
 import { createdByWhere, managedBotsWhere } from "../bots/child-bots.js";
-import type { UpdateBotPatch } from "../bots/update-bot-patch.js";
 import { argumentGiven, parseUpdateBotPatch } from "../bots/update-bot-patch.js";
 import { stopCancelledGroupRuns } from "../computers/computer-idle.js";
 import { asRecord } from "../integrations/connector-http.js";
@@ -479,7 +478,7 @@ const FLEET_GROUP_LIMIT = 100;
 const FLEET_SECTION_LIMIT = 100;
 const FLEET_ROSTER_MAX_LENGTH = 60_000;
 const GROUP_PAGE_SIZE = 200;
-const NOT_FOUND = "That bot or group is no longer available. Call list_fleet and try again.";
+export const NOT_FOUND = "That bot or group is no longer available. Call list_fleet and try again.";
 
 type FleetBot = {
   id: string;
@@ -834,72 +833,6 @@ export async function updateFleetGroup(
 
 const CHILD_CHANGED = "child changed; read it again with list_fleet";
 
-/** `update_bot` with `bot_id`: the profile fields of another bot in the space. */
-export async function updateChildBot(
-  deps: Pick<FleetDeps, "prisma" | "events"> & { runSecrets: readonly string[] },
-  run: FleetRun,
-  args: Record<string, unknown>,
-): Promise<{ ok: true } | { error: string }> {
-  if (argumentGiven(args.artifact_id) || args.use_attached_image === true) {
-    return { error: "artifact_id and use_attached_image work only on yourself." };
-  }
-  if (argumentGiven(args.instructions)) {
-    return { error: "Change another bot's instructions with set_child_instructions." };
-  }
-  const profile = {
-    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
-    name: argumentGiven(args.name) ? args.name : undefined,
-    description: argumentGiven(args.description) ? args.description : undefined,
-    notifyOnFinish: argumentGiven(args.notifyOnFinish)
-      ? args.notifyOnFinish
-      : argumentGiven(args.notify_on_finish)
-        ? args.notify_on_finish
-        : undefined,
-  };
-  const credential = credentialField(
-    { name: profile.name, description: profile.description },
-    deps.runSecrets,
-  );
-  if (credential) return { error: credential };
-
-  const child = await resolveBot(deps.prisma, run, { bot_id: args.bot_id });
-  if ("error" in child) {
-    return { error: child.error };
-  }
-  if (!child.thread) return { error: NOT_FOUND };
-
-  let patch: UpdateBotPatch = {};
-  if (Object.values(profile).some((value) => value !== undefined)) {
-    const parsed = parseUpdateBotPatch(profile);
-    if ("error" in parsed) return parsed;
-    patch = parsed.patch;
-  }
-  if (argumentGiven(args.color)) {
-    const avatar = await resolveUpdateBotAvatar({
-      color: args.color,
-      sourceImageArtifactIds: [],
-      loadArtifact: async () => null,
-    });
-    if ("error" in avatar) return avatar;
-    patch.color = avatar.color;
-  }
-  if (Object.keys(patch).length === 0) {
-    return {
-      error: "Provide at least one of name, description, notify_on_finish, or color.",
-    };
-  }
-  await commitBotUpdate({
-    prisma: deps.prisma,
-    notify: (threadId, seq) => deps.events.notify(threadId, seq),
-    spaceId: run.spaceId,
-    threadId: child.thread.id,
-    botId: child.id,
-    emitBotUpdated: true,
-    data: patch,
-  });
-  return { ok: true };
-}
-
 /** Replace the approved child's instructions, checking ownership and the version again. */
 export async function setChildInstructions(
   deps: Pick<FleetDeps, "prisma" | "events">,
@@ -1114,7 +1047,7 @@ export async function createChildRoutine(
   return "error" in created ? created : { ...created, ...target };
 }
 
-function actorOf(run: FleetRun): Actor {
+export function actorOf(run: FleetRun): Actor {
   return { spaceId: run.spaceId, userId: run.userId, email: "", isDeploymentOwner: false };
 }
 
@@ -1200,7 +1133,11 @@ async function resolveBots(
 }
 
 /** One active bot in the current user’s space, by `bot_id` or exact `bot_name`. */
-async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
+export async function resolveBot(
+  prisma: PrismaClient,
+  run: FleetRun,
+  args: Record<string, unknown>,
+) {
   const id = text(args.bot_id);
   const name = text(args.bot_name);
   if (id && name) return refuse("Pass bot_id or bot_name, not both.");
@@ -1289,7 +1226,7 @@ export function cardName(value: string): string {
 }
 
 /** The first given text field a credential of this run would be redacted from, as a refusal. */
-function credentialField(
+export function credentialField(
   fields: Record<string, unknown>,
   secrets: readonly string[],
 ): string | undefined {
@@ -1307,7 +1244,7 @@ const INVISIBLE_CHARACTERS =
   /[\u{E0000}-\u{E007F}\u200B-\u200F\u2060-\u2064\u202A-\u202E\u2066-\u2069\uFEFF]/u;
 
 /** The first given text field holding characters the card would not show, as a refusal. */
-function invisibleField(fields: Record<string, string>): string | undefined {
+export function invisibleField(fields: Record<string, string>): string | undefined {
   const field = Object.entries(fields).find(([, value]) => INVISIBLE_CHARACTERS.test(value))?.[0];
   return field ? `${field} contains invisible characters.` : undefined;
 }

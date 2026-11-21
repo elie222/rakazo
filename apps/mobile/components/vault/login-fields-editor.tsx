@@ -111,6 +111,7 @@ export function LoginFieldsEditor({
               <Text style={styles.switchLabel}>{t`Hidden`}</Text>
               <NativeSwitch
                 accessibilityLabel={t`Hidden`}
+                accessibilityHint={name}
                 disabled={!editable}
                 value={field.hidden}
                 onValueChange={(hidden) => change(field.id, { hidden })}
