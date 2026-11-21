@@ -17,6 +17,7 @@ import { useUsageHint } from "../../../components/billing/PlanUsage";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { CreateOrganizationDialog } from "../../../components/spaces/CreateOrganizationDialog";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
+import { emptyActivityFilters } from "../../../lib/activity-list-filters";
 import { useSignOut } from "../../../lib/auth/sign-out";
 import { formatBillingDate } from "../../../lib/billing/billing";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
@@ -129,10 +130,13 @@ export function ShellSidebar({
   } = search;
   // A closed drawer and a collapsed desktop list are both off screen, so neither may keep focus.
   const listHidden = isMobile ? !mobileOpen : collapsed;
-  // Activity replaces the roster; a search left over from Chats would replace its results later.
+  // Activity replaces the roster; leftovers from Chats must not filter or replace its results.
   useEffect(() => {
-    if (activityMode) setQuery("");
-  }, [activityMode, setQuery]);
+    if (!activityMode) return;
+    setQuery("");
+    setActivityFilters(emptyActivityFilters());
+    setActivityFiltersExpanded(false);
+  }, [activityMode, setQuery, setActivityFilters, setActivityFiltersExpanded]);
   return (
     <>
       <button
