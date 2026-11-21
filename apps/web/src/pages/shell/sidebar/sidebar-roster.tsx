@@ -111,6 +111,7 @@ export function SidebarRoster({
   );
   const startDrag = useRosterPointerDrag({
     slots: dropSlots,
+    activeSpaceId,
     setDraggedBotId,
     setRosterDropKey,
     rosterDropAction,

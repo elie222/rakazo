@@ -24,8 +24,8 @@ const handlers = {
 };
 const open = vi.fn();
 
-function Roster() {
-  const startDrag = useRosterPointerDrag({ slots, ...handlers });
+function Roster({ activeSpaceId = "a" }: { activeSpaceId?: string }) {
+  const startDrag = useRosterPointerDrag({ slots, activeSpaceId, ...handlers });
   return (
     <>
       <div data-roster-space="a">
@@ -235,6 +235,30 @@ it("clears the drag in the parent when the roster goes away mid-drag", async () 
   await act(async () => root.render(null));
   expect(handlers.setDraggedBotId).toHaveBeenCalledExactlyOnceWith(null);
   expect(handlers.setRosterDropKey).toHaveBeenCalledExactlyOnceWith(null);
+  expect(cursor()).toBeUndefined();
+});
+
+it("judges the drop where the pointer is released, even without a move there", () => {
+  pointer(el("a1"), "pointerdown", 10, 10);
+  pointer(window, "pointermove", 50, 40);
+  expect(handlers.setRosterDropKey).toHaveBeenLastCalledWith("row:bot:a2");
+  // Released over another Space with no move reported at that spot.
+  pointer(window, "pointerup", 150, 40);
+  expect(handlers.applyRosterDrop).not.toHaveBeenCalled();
+  expect(handlers.setDraggedBotId).toHaveBeenLastCalledWith(null);
+  expect(cursor()).toBeUndefined();
+});
+
+it("shows a bot outside the active Space as not movable anywhere", async () => {
+  await act(async () => root.render(<Roster activeSpaceId="b" />));
+  pointer(el("a1"), "pointerdown", 10, 10);
+  pointer(window, "pointermove", 50, 40);
+  expect(cursor()).toBe("refused");
+  expect(handlers.setRosterDropKey).not.toHaveBeenCalled();
+  pointer(window, "pointermove", 300, 300);
+  expect(cursor()).toBe("refused");
+  pointer(window, "pointerup", 50, 40);
+  expect(handlers.applyRosterDrop).not.toHaveBeenCalled();
   expect(cursor()).toBeUndefined();
 });
 

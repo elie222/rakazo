@@ -30,11 +30,13 @@ type Drag = {
 /**
  * Drags a bot in the sidebar with pointer events rather than the browser's native drag, so the
  * page sets the cursor: `grabbing` while moving and `not-allowed` over another Space, where a
- * bot can never go. A native drag lets the browser draw its own cursor and ignores CSS.
+ * bot can never go. A bot outside the active Space is read-only here, so it is `not-allowed`
+ * everywhere. A native drag lets the browser draw its own cursor and ignores CSS.
  * Returns the handler a bot row calls on pointer down.
  */
 export function useRosterPointerDrag(options: {
   slots: ReadonlyMap<string, RosterDropSlot>;
+  activeSpaceId: string | undefined;
   setDraggedBotId: (id: string | null) => void;
   setRosterDropKey: (key: string | null) => void;
   rosterDropAction: (target: RosterDropTarget, sameList: boolean) => RosterDropAction | null;
@@ -50,13 +52,17 @@ export function useRosterPointerDrag(options: {
   const hover = (current: Drag) => {
     const under = document.elementFromPoint(current.x, current.y);
     const spaceId = rosterSpaceAt(under);
-    document.documentElement.dataset.rosterDrag =
-      spaceId && spaceId !== current.spaceId ? "refused" : "moving";
+    const refused =
+      current.spaceId !== latest.current.activeSpaceId ||
+      (spaceId !== undefined && spaceId !== current.spaceId);
+    document.documentElement.dataset.rosterDrag = refused ? "refused" : "moving";
     const key =
       under?.closest<HTMLElement>("[data-roster-drop-key]")?.dataset.rosterDropKey ?? null;
     const slot = key ? latest.current.slots.get(key) : undefined;
     const accepted =
-      slot?.target && latest.current.rosterDropAction(slot.target, sameList(slot, current))
+      !refused &&
+      slot?.target &&
+      latest.current.rosterDropAction(slot.target, sameList(slot, current))
         ? key
         : null;
     if (accepted === current.overKey) return;
@@ -121,7 +127,15 @@ export function useRosterPointerDrag(options: {
     hover(current);
   });
   useEventListener(window, "pointerup", (event) => {
-    if (drag.current?.pointerId === event.pointerId) release();
+    const current = drag.current;
+    if (current?.pointerId !== event.pointerId) return;
+    // Judge the drop where the pointer is released; no move may have reported that spot.
+    if (current.started && !current.cancelled) {
+      current.x = event.clientX;
+      current.y = event.clientY;
+      hover(current);
+    }
+    release();
   });
   useEventListener(window, "pointercancel", (event) => {
     if (drag.current?.pointerId === event.pointerId) abort();
