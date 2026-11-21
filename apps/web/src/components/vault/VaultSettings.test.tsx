@@ -31,7 +31,7 @@ const bots = vi.hoisted(() => ({
   list: vi.fn(),
   listArchived: vi.fn(),
 }));
-const spaces = vi.hoisted(() => ({ list: vi.fn() }));
+const spaces = vi.hoisted(() => ({ accessible: vi.fn() }));
 const spaceSettings = vi.hoisted(() => ({ overrides: vi.fn() }));
 
 // The dialog itself is tested on its own; here it is a pair of buttons that settle it.
@@ -216,7 +216,7 @@ beforeEach(() => {
   vault.remove.mockReset().mockResolvedValue({ ok: true });
   vault.reveal.mockReset();
   vault.activity.mockReset().mockResolvedValue([]);
-  spaces.list.mockReset().mockResolvedValue({ spaces: [{ id: "space-1", name: "Home" }] });
+  spaces.accessible.mockReset().mockResolvedValue([{ id: "space-1", name: "Home" }]);
   spaceSettings.overrides.mockReset().mockResolvedValue([]);
   bots.list.mockReset().mockResolvedValue([
     { id: "bot-1", name: "Ada", color: "#F97316" },
@@ -402,12 +402,10 @@ describe("an item for chosen bots", () => {
       "This limits only this Space's bots. Your other Spaces choose for their own.";
     const custom = { ...rows[3]!, allBots: false, botIds: ["bot-1"] };
     vault.list.mockResolvedValue([...rows.slice(0, 3), custom, rows[4]]);
-    spaces.list.mockResolvedValue({
-      spaces: [
-        { id: "space-1", name: "Home" },
-        { id: "space-2", name: "Work" },
-      ],
-    });
+    spaces.accessible.mockResolvedValue([
+      { id: "space-1", name: "Home" },
+      { id: "space-2", name: "Work" },
+    ]);
     await render();
     await click(rowNamed("custom"));
     await click("vault-item-edit");
