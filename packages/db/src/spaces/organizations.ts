@@ -74,8 +74,7 @@ export async function createOrganizationForUser(
 }
 
 /**
- * Every organization the user is a member of; only those they own can be managed. One they are
- * only a guest in stays out: its Spaces shared with them show with their own.
+ * Lists member organizations and guest Spaces as separate destinations.
  */
 export async function listMemberOrganizations(
   prisma: PrismaClient,
@@ -102,11 +101,15 @@ export async function listMemberOrganizations(
         organizationId: true,
         role: true,
         member: { select: { role: true } },
+        space: { select: { name: true } },
       },
     }),
   ]);
   return {
     activeOrganizationId,
+    guestSpaces: memberships
+      .filter((membership) => membership.member.role === GUEST_ROLE)
+      .map((membership) => ({ id: membership.spaceId, name: membership.space.name })),
     organizations: organizations.map((organization) => {
       const defaultSpaceId = organization.spaces[0]!.id;
       const own = memberships.filter((membership) => membership.organizationId === organization.id);
@@ -123,15 +126,7 @@ export async function listMemberOrganizations(
         canManage: role === "owner",
         role,
         memberCount: organization._count.members,
-        // Spaces shared with them as a guest show beside the active organization's, as in the
-        // sidebar.
-        spaceIds: memberships
-          .filter((membership) =>
-            membership.member.role === GUEST_ROLE
-              ? organization.id === activeOrganizationId
-              : membership.organizationId === organization.id,
-          )
-          .map((membership) => membership.spaceId),
+        spaceIds: own.map((membership) => membership.spaceId),
       };
     }),
   };

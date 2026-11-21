@@ -20,7 +20,11 @@ import { CircleUserRound } from "lucide-react";
 import { useState } from "react";
 import { authClient } from "../../lib/auth/auth";
 import { useQueryUserId } from "../../lib/query/query";
-import { switchOrganization, useOrganizations } from "../../lib/spaces/organizations";
+import {
+  openOrganizationSpace,
+  switchOrganization,
+  useOrganizations,
+} from "../../lib/spaces/organizations";
 import {
   DeleteOrganizationDialog,
   removeOrganization,
@@ -43,7 +47,7 @@ export function AccountMenu({
   const { t } = useLingui();
   const email = authClient.useSession().data?.user.email;
   const userId = useQueryUserId();
-  const { organizations, activeOrganizationId } = useOrganizations();
+  const { organizations, activeOrganizationId, guestSpaces, activeGuestSpace } = useOrganizations();
   // An SSO sign-in to confirm deletion returns here; reopen so its error is seen.
   const [deleting, setDeleting] = useState(hasDeleteRedirectError);
   const [deletingOrganization, setDeletingOrganization] = useState(false);
@@ -76,7 +80,7 @@ export function AccountMenu({
               <DropdownMenuSeparator />
             </>
           ) : null}
-          {organizations.length > 1 ? (
+          {organizations.length > 1 || guestSpaces.length > 0 ? (
             <>
               <DropdownMenuRadioGroup
                 value={activeOrganizationId}
@@ -89,6 +93,28 @@ export function AccountMenu({
                 {organizations.map((organization) => (
                   <DropdownMenuRadioItem key={organization.id} value={organization.id}>
                     <span className="min-w-0 truncate">{organization.name}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
+          {guestSpaces.length > 0 ? (
+            <>
+              <DropdownMenuRadioGroup value={activeGuestSpace?.id}>
+                {guestSpaces.map((space) => (
+                  <DropdownMenuRadioItem
+                    key={space.id}
+                    value={space.id}
+                    onClick={() => {
+                      if (space.id !== activeGuestSpace?.id)
+                        void openOrganizationSpace(userId, space.id, "/");
+                    }}
+                  >
+                    <span className="min-w-0 truncate">{space.name}</span>
+                    <span className="text-muted-foreground">
+                      <Trans>Guest</Trans>
+                    </span>
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>

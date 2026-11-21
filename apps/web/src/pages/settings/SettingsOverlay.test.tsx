@@ -105,6 +105,13 @@ vi.mock("../../components/settings/ApprovalRulesSettings", () => ({
 }));
 vi.mock("../../components/vault/VaultSettings", () => ({ VaultSettings: recordScope("vault") }));
 vi.mock("./LabsSettingsPanel", () => ({ LabsSettingsPanel: () => null }));
+const organizationContext = vi.hoisted(() => ({
+  activeGuestSpace: undefined as { id: string; name: string } | undefined,
+}));
+vi.mock("../../lib/spaces/organizations", () => ({
+  useOrganizations: () => organizationContext,
+}));
+
 vi.mock("./OrganizationSettingsPanel", () => ({
   OrganizationOptionsMenu: ({ onActivityLog }: { onActivityLog: () => void }) => (
     <button type="button" aria-label="Organization options" onClick={onActivityLog} />
@@ -444,6 +451,20 @@ it("keeps the organization options in the page header, on the main Organization 
     expect(page()).toBe("members");
     expect(options()).toBeNull();
   } finally {
+    await cleanup();
+  }
+});
+
+it("keeps organization settings out of a guest Space", async () => {
+  organizationContext.activeGuestSpace = { id: "guest-space", name: "Shared" };
+  const { container, cleanup } = await render({ section: "organization" });
+  try {
+    expect(container.querySelector('[data-testid="settings-nav-organization"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="settings-nav-general"]')?.getAttribute("aria-current"),
+    ).toBe("page");
+  } finally {
+    organizationContext.activeGuestSpace = undefined;
     await cleanup();
   }
 });

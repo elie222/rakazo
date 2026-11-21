@@ -35,6 +35,7 @@ import { desktopBridge } from "../../lib/platform/desktop";
 import { useQueryUserId } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 import { SpaceRpcProvider } from "../../lib/query/space-rpc";
+import { useOrganizations } from "../../lib/spaces/organizations";
 import { useEventListener } from "../../lib/use-event-listener";
 import { ModelSettingsOverlay } from "../model-settings/ModelSettingsOverlay";
 import type { SettingsSpace } from "../shell/create-delete-dialogs";
@@ -159,8 +160,10 @@ export function SettingsOverlay({
     thisComputer !== null ||
     plainHttp;
   const showUpdates = Boolean(desktopBridge()?.update);
+  const { activeGuestSpace } = useOrganizations();
   // A section that isn't available yet (billing before its flag loads) shows General until it is.
   const section =
+    (requestedSection === "organization" && Boolean(activeGuestSpace)) ||
     (requestedSection === "computer" && !showComputer) ||
     (requestedSection === "billing" && !billingEnabled) ||
     (requestedSection === "messaging" && !messagingEnabled) ||
@@ -195,6 +198,7 @@ export function SettingsOverlay({
     computer: showComputer,
     billing: billingEnabled,
     updates: showUpdates,
+    organization: !activeGuestSpace,
     labs: labsAvailable.length > 0,
   });
 

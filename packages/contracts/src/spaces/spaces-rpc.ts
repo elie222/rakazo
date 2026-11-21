@@ -23,7 +23,9 @@ const organizationName = spaceName;
 
 export const spacesRpc = {
   spaces: {
-    list: oc.output(SpaceNavigationSchema),
+    list: oc
+      .input(SpaceNavigationSchema.pick({ scope: true }).optional())
+      .output(SpaceNavigationSchema),
     create: oc.input(z.object({ name: spaceName })).output(SpaceSchema),
     rename: oc
       .input(z.object({ spaceId: Id, name: spaceName }))

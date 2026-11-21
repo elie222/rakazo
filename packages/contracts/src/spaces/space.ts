@@ -109,6 +109,8 @@ export const SpaceInvitePreviewSchema = z.object({
 export type SpaceInvitePreview = z.infer<typeof SpaceInvitePreviewSchema>;
 
 export const SpaceNavigationSchema = z.object({
+  /** The roster contains only the selected organization or guest Space when present. */
+  scope: z.literal("selection").optional(),
   current: z.object({
     id: Id,
     name: z.string(),

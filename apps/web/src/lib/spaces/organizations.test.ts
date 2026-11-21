@@ -119,6 +119,28 @@ describe("leaving an organization", () => {
     });
   });
 
+  it("preserves the cache when the list does not yet know the destination", async () => {
+    const home = spaceQueries("user-1", "home").me.queryKey();
+    const details = { spaceId: "home" } as never;
+    queryClient.setQueryData(home, details);
+    await leaveOrganization("user-1", "home", "new-space");
+    expect(queryClient.getQueryData(home)).toEqual(details);
+    expect(items.has("rakazo:org-spaces")).toBe(false);
+  });
+
+  it("remembers the organization Space when opening a known guest Space", async () => {
+    queryClient.setQueryData(organizationsQuery("user-1").queryKey, {
+      activeOrganizationId: personal.id,
+      organizations: [personal, work],
+      guestSpaces: [{ id: "guest-home", name: "Family" }],
+    });
+    const key = spaceQueries("user-1", "side").me.queryKey();
+    queryClient.setQueryData(key, { spaceId: "side" } as never);
+    await leaveOrganization("user-1", "side", "guest-home");
+    expect(landingSpaceId(personal)).toBe("side");
+    expect(queryClient.getQueryData(key)).toBeUndefined();
+  });
+
   it("keeps everything when moving between Spaces of one organization", async () => {
     queryClient.setQueryData(spaceQueries("user-1", "home").me.queryKey(), {
       spaceId: "home",

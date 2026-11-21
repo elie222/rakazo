@@ -96,7 +96,16 @@ export function readSavedInbox(scope: SavedChatsScope): SavedInbox | null {
       typeof me.name !== "string"
     )
       return null;
-    return displayIdentityResult(["bootstrap"], inbox, identityLabels()) as SavedInbox;
+    // Older snapshots could include guest chats alongside the selected organization.
+    const spaces =
+      data?.scope === "selection"
+        ? inbox.spaces
+        : inbox.spaces.filter((space) => space.id === me.spaceId);
+    return displayIdentityResult(
+      ["bootstrap"],
+      { ...inbox, spaces },
+      identityLabels(),
+    ) as SavedInbox;
   } catch {
     return null;
   }
@@ -180,7 +189,11 @@ export function writeSavedInbox(
       me: { userId: me.userId, spaceId: me.spaceId, name: me.name },
     };
     if (!isIntegrationsScopeCurrent(scope) || me.userId !== scope.userId) return;
-    writeSavedFile(scope, "inbox", { key: scopeKey(scope, "inbox"), inbox });
+    writeSavedFile(scope, "inbox", {
+      key: scopeKey(scope, "inbox"),
+      scope: navigation.scope,
+      inbox,
+    });
   } catch {}
 }
 

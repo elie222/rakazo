@@ -173,6 +173,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     ).resolves.toBe(1);
     await expect(client(ada).organizations.list()).resolves.toEqual({
       activeOrganizationId: ada.spaceId,
+      guestSpaces: [],
       organizations: [
         {
           id: ada.spaceId,

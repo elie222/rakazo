@@ -11,6 +11,7 @@ import {
   organizationSwitchActions,
   organizationSwitchEpoch,
   selectSpaceAcrossOrganizations,
+  switchGuestSpace,
   switchOrganization,
 } from "./organizations";
 
@@ -249,6 +250,27 @@ it("stays on the settings screen when no Space can be selected after deleting", 
 });
 
 describe("organizationSwitchActions", () => {
+  it("opens a guest Space explicitly and keeps Work available in the same menu", async () => {
+    const guest = { id: "space-guest", name: "Family" };
+    const list: OrganizationList = {
+      activeOrganizationId: work.id,
+      organizations: [work],
+      guestSpaces: [guest],
+    };
+    state.selected = "space-a2";
+
+    await expect(switchGuestSpace(guest, [work])).resolves.toBe(true);
+    expect(state.selected).toBe(guest.id);
+    expect(activeOrganization(list)).toBeUndefined();
+    expect(organizationSwitchActions(list)).toEqual([
+      { id: "organization:org-work", title: "Work", state: "off" },
+      { id: "guest-space:space-guest", title: "Family (Guest)", state: "on" },
+    ]);
+
+    await expect(switchOrganization(work, [work])).resolves.toBe(true);
+    expect(state.selected).toBe("space-a2");
+  });
+
   it("lists organizations only once there is a second, checking the active one", () => {
     expect(
       organizationSwitchActions({ activeOrganizationId: work.id, organizations: [work] }),

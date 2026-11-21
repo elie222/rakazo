@@ -62,7 +62,10 @@ export function useInbox(spaceActionRef: RefObject<{ busy: boolean; recoveryId: 
     setError(null);
     setInboxLoading(true);
     try {
-      const [navigation, nextMe] = await Promise.all([rpc("spaces/list"), rpc("me")]);
+      const [navigation, nextMe] = await Promise.all([
+        rpc("spaces/list", { scope: "selection" }),
+        rpc("me"),
+      ]);
       if (
         requestId !== inboxRequestId.current ||
         generation !== currentSessionGeneration() ||
