@@ -230,6 +230,11 @@ if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" != "pull_request" &&
     echo "Skipping stable baseline update because a newer successful main run is already published."
   fi
 fi
+# The run's own files are published, so the history may list it even if the PR alias fails.
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'history_entry=%s\n' "$(jq -c . "$history_entry_path")" >> "$GITHUB_OUTPUT"
+fi
+
 stable_screenshots_url=""
 if [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" ]]; then
   # The caller passes a PR number only while that PR's head is this run's commit.
@@ -247,7 +252,6 @@ if [[ "$update_history" == "true" ]]; then
 fi
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  printf 'history_entry=%s\n' "$(jq -c . "$history_entry_path")" >> "$GITHUB_OUTPUT"
   printf 'stable_screenshots_url=%s\n' "$stable_screenshots_url" >> "$GITHUB_OUTPUT"
 fi
 
