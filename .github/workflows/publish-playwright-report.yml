@@ -260,7 +260,8 @@ jobs:
 
   history:
     needs: publish
-    if: needs.publish.outputs.history_entry != ''
+    # Runs when a later publish step (the comment) failed after the gallery was uploaded.
+    if: ${{ !cancelled() && needs.publish.outputs.history_entry != '' }}
     uses: ./.github/workflows/publish-playwright-history.yml
     permissions:
       contents: read
