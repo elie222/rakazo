@@ -25,6 +25,7 @@ export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
     baseUrl: "https://api.concentrate.ai/v1",
     publicModels: true,
   },
+  { id: "llmtr", name: "LLMTR", baseUrl: "https://llmtr.com/v1" },
 ];
 
 const BUILT_IN_PUBLIC_MODEL_HOSTS = presetHosts(COMPATIBLE_ENDPOINT_PRESETS);
