@@ -52,7 +52,8 @@ jobs:
           if-no-files-found: error
 
   image-tags:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # A fork publishes no images. Named, since a scheduled run's event carries no repository.
+    if: github.repository == 'elie222/rakazo' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

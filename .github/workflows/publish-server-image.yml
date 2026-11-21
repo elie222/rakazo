@@ -47,7 +47,8 @@ concurrency:
 jobs:
   installer-smoke:
     name: Compose installer smokes
-    if: github.event_name == 'pull_request'
+    # A fork ships no images or compose installs.
+    if: github.event_name == 'pull_request' && !github.event.repository.fork
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -60,7 +61,8 @@ jobs:
 
   validate:
     name: Validate ${{ matrix.name }} image
-    if: github.event_name == 'pull_request'
+    # A fork ships no images or compose installs.
+    if: github.event_name == 'pull_request' && !github.event.repository.fork
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:

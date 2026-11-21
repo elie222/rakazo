@@ -113,7 +113,8 @@ jobs:
   # image this run built instead of building on the production host.
   publish-server-image:
     name: Publish server images
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # A fork deploys a desktop server bundle (desktop-server-deploy.yml), not these images.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.repository.fork
     concurrency:
       group: ci-images-main
     uses: ./.github/workflows/publish-server-image.yml

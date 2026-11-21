@@ -24,6 +24,8 @@ concurrency:
 jobs:
   replay:
     name: Docker computer replay
+    # Upstream covers the Docker computer image; a fork runs this only by hand.
+    if: ${{ !github.event.repository.fork || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

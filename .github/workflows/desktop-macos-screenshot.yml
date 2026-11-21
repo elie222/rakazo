@@ -27,6 +27,8 @@ concurrency:
 jobs:
   screenshot:
     name: macOS setup screenshot
+    # A fork checks its own pull requests; main's runs only refresh upstream's capture.
+    if: ${{ !github.event.repository.fork || github.event_name == 'pull_request' }}
     runs-on: macos-26
     timeout-minutes: 20
     steps:
