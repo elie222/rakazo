@@ -12,6 +12,7 @@ import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
  * without an entry is used exactly as the registry describes it.
  */
 export interface ModelProviderDefinition {
+  preserveModelOrder?: true;
   /** Kept where the registry renamed a provider, so existing names stay. */
   displayName?: string;
   /** What a signed-in connection is called, by the plan people pay for. */
@@ -62,6 +63,7 @@ const subscriptionNames = {
 };
 
 export const modelProviders = {
+  "openai-compatible": { preserveModelOrder: true },
   "openai-codex": {
     displayName: "OpenAI Codex",
     subscriptionName: subscriptionNames.codex.message,
