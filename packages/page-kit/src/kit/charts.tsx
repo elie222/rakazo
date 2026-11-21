@@ -234,7 +234,21 @@ export function LineChart({
           )}
           {area ? <path className="rk-line-area" d={area} /> : null}
           {comparison ? (
-            <path className="rk-line-secondary" d={linePath(comparison.values, x, y)} />
+            <g style={{ "--rk-series": "var(--rk-other)" } as CSSProperties}>
+              <path className="rk-line-secondary" d={linePath(comparison.values, x, y)} />
+              {comparison.values.map((value, index) => {
+                if (
+                  !finite(value) ||
+                  finite(comparison.values[index - 1]) ||
+                  finite(comparison.values[index + 1])
+                ) {
+                  return null;
+                }
+                return (
+                  <circle key={index} className="rk-line-dot" cx={x(index)} cy={y(value)} r={3.5} />
+                );
+              })}
+            </g>
           ) : null}
           {series.map((s, index) => (
             <g key={index} style={{ "--rk-series": seriesColor(index) } as CSSProperties}>
