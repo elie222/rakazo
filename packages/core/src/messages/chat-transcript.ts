@@ -32,6 +32,22 @@ export type AskWords = {
   updateInstructions: string;
   instructionsUpdated: string;
   settingsUpdated: string;
+  /** The note under a payment's amounts: they were read from the page and not checked. */
+  readFromPage: string;
+  buttonReadFromPage: (button: string) => string;
+};
+
+/** The state words the chat's cards show, in the reader's language. */
+export type CardStatusWords = {
+  saved: string;
+  sent: string;
+  dismissed: string;
+  running: string;
+  completed: string;
+  failed: string;
+  stopped: string;
+  archived: string;
+  deleted: string;
 };
 
 /** Markdown that only character escapes can make, the same in every CommonMark reader. */
@@ -64,8 +80,15 @@ function literal(text: string): string {
     .join("\n");
 }
 
+const ASCII_SPACE = " \t\r\n";
+
+/** Trims ASCII spaces and line breaks only: a no-break space at an edge is typed text. */
 function trimAsciiEdges(text: string): string {
-  return text.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+  let start = 0;
+  let end = text.length;
+  while (start < end && ASCII_SPACE.includes(text.charAt(start))) start += 1;
+  while (end > start && ASCII_SPACE.includes(text.charAt(end - 1))) end -= 1;
+  return text.slice(start, end);
 }
 
 /** A name or title on one line, so it can never start a heading or speaker of its own. */
@@ -113,16 +136,60 @@ function closeOpenFence(markdown: string): string {
   return open ? `${text}\n${closer}` : text;
 }
 
+/** An autolink's `<scheme:...>` after its `<`, which the chat shows as a link and is left as it is. */
+const AUTOLINK = /[a-z][a-z0-9+.-]*:[^\s<>]*>/iy;
+
+/** The index just after the run of backticks that starts at `from`. */
+function backtickRunEnd(line: string, from: number): number {
+  let end = from;
+  while (line.charAt(end) === "`") end += 1;
+  return end;
+}
+
+/** The index just after the code span a backtick run opens, closed by a run of the same length. */
+function codeSpanEnd(line: string, start: number): number | undefined {
+  const width = backtickRunEnd(line, start) - start;
+  let at = line.indexOf("`", backtickRunEnd(line, start));
+  while (at !== -1) {
+    const end = backtickRunEnd(line, at);
+    if (end - at === width) return end;
+    at = line.indexOf("`", end);
+  }
+  return undefined;
+}
+
 /** The chat shows a bot's raw HTML as nothing; escaped here, an unclosed tag cannot hide what follows. */
 function escapeHtml(line: string): string {
-  return line.replace(
-    /(`+)[^`]*?\1|(\\*)<(?![a-z][a-z0-9+.-]*:[^\s<>]*>)/gi,
-    (match, code: string | undefined, slashes: string = "") => {
-      if (code) return match;
+  let out = "";
+  let i = 0;
+  while (i < line.length) {
+    const char = line.charAt(i);
+    if (char === "\\") {
+      // A backslash escapes the character after it, so an escaped backtick opens no code span.
+      out += line.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+    if (char === "`") {
+      // A backtick run that closes no code span is text, so only its own run is copied.
+      const end = codeSpanEnd(line, i) ?? backtickRunEnd(line, i);
+      out += line.slice(i, end);
+      i = end;
+      continue;
+    }
+    if (char === "<") {
       // An odd run of backslashes already escapes the "<"; an even one needs a backslash of its own.
-      return slashes.length % 2 ? match : `${slashes}\\<`;
-    },
-  );
+      let slashes = 0;
+      while (line.charAt(i - 1 - slashes) === "\\") slashes += 1;
+      AUTOLINK.lastIndex = i + 1;
+      const needsEscape = slashes % 2 === 0 && !AUTOLINK.test(line);
+      out += needsEscape ? "\\<" : "<";
+    } else {
+      out += char;
+    }
+    i += 1;
+  }
+  return out;
 }
 
 /** Text the card shows as preformatted, in a fence longer than any backtick run inside it. */
@@ -146,7 +213,11 @@ function receiptMarkdown(receipt: NonNullable<AskBlock["receipt"]>, words: AskWo
     const label = receipt.amountSource === "button" ? words.onTheButton : words.total;
     rows.push(`- ${label}: ${oneLine(receipt.amount)}`);
   }
-  return rows.join("\n");
+  // The card's note under the rows: the page's amounts are not checked.
+  const note = receipt.button
+    ? words.buttonReadFromPage(oneLine(receipt.button))
+    : words.readFromPage;
+  return [rows.join("\n"), note].filter(Boolean).join("\n\n");
 }
 
 /** An outgoing draft's card shows its recipient, subject and body, not the question. */
@@ -163,7 +234,12 @@ function draftMarkdown(values: NonNullable<AskBlock["outgoingDraft"]>["values"],
  * An ask as its card shows it: the question, its detail or receipt, its options with the chosen one
  * marked, and a typed answer unless that answer is its own message. A secret answer is never written.
  */
-function askMarkdown(block: AskBlock, words: AskWords, answeredInOwnMessage: boolean): string {
+function askMarkdown(
+  block: AskBlock,
+  words: AskWords,
+  status: CardStatusWords,
+  answeredInOwnMessage: boolean,
+): string {
   if (block.outgoingDraft) return draftMarkdown(block.outgoingDraft.values, words);
   // A settled change shows only that it happened, with an undo.
   if (block.instructionUpdate?.undoVersionId) return words.instructionsUpdated;
@@ -199,9 +275,18 @@ function askMarkdown(block: AskBlock, words: AskWords, answeredInOwnMessage: boo
     !holdsSecret(block)
       ? `${words.answer}: ${literal(block.answer)}`
       : "";
-  return [question, detail, options, answer, block.expired ? words.expired : ""]
+  // A protected answer is never written, but the card's outcome for it is.
+  const outcome =
+    block.status === "answered" && isSecretAskBlock(block) ? secretOutcome(block, status) : "";
+  return [question, detail, options, answer, outcome, block.expired ? words.expired : ""]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** A protected answer's outcome, worded as its card words it. */
+function secretOutcome(block: AskBlock, status: CardStatusWords): string {
+  if (block.dismissed) return status.dismissed;
+  return block.remembered === false || block.oneTimeCode ? status.sent : status.saved;
 }
 
 /**
@@ -215,6 +300,7 @@ function blockMarkdown(
   words: {
     routineEvent: (change: RoutineEventChange, name: string) => string;
     ask: AskWords;
+    status: CardStatusWords;
     attachment: string;
   },
   answeredInOwnMessage: boolean,
@@ -227,7 +313,7 @@ function blockMarkdown(
     case "computer":
       return closeOpenFence(block.text);
     case "ask":
-      return askMarkdown(block, words.ask, answeredInOwnMessage);
+      return askMarkdown(block, words.ask, words.status, answeredInOwnMessage);
     case "meta":
     case "handoff":
       return literal(block.text);
@@ -257,17 +343,36 @@ function blockMarkdown(
       // while it rings or after it was missed.
       return block.status === "answered" ? literal(block.opening) : literal(block.reason);
     case "subagent": {
-      // The card shows the helper's result (or its progress while it works) as Markdown under its
-      // name; a stopped helper shows no body.
-      const { body } = helperCardState(block);
-      return [`**${oneLine(block.name)}**`, body ? closeOpenFence(body) : ""]
+      // The card shows the helper's name with its state, then its task, then its result (or its
+      // progress while it works) as Markdown; a stopped helper shows no body.
+      const { stopped, failed, body } = helperCardState(block);
+      const state =
+        block.status === "running"
+          ? words.status.running
+          : stopped
+            ? words.status.stopped
+            : failed
+              ? words.status.failed
+              : words.status.completed;
+      const task = trimAsciiEdges(block.task);
+      return [
+        `**${oneLine(block.name)}** · ${state}`,
+        task ? literal(task) : "",
+        body ? closeOpenFence(body) : "",
+      ]
         .filter(Boolean)
         .join("\n\n");
     }
     case "routine_event":
       return oneLine(words.routineEvent(block.change, block.name));
-    case "chart":
     case "child_bot":
+      // The chat shows an archived or deleted bot's status beside its name.
+      return oneLine(
+        block.status === "created"
+          ? block.name
+          : `${block.name} · ${block.status === "archived" ? words.status.archived : words.status.deleted}`,
+      );
+    case "chart":
     case "app_connect":
     case "mcp_approval":
     case "skill_draft":
@@ -305,6 +410,8 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   routineEvent: (change: RoutineEventChange, name: string) => string;
   /** An ask card's labels and totals, in the reader's words. */
   askWords: AskWords;
+  /** A card's state words (saved, running, archived and so on), in the reader's words. */
+  cardStatus: CardStatusWords;
   /** The label before an attached file's name, in the reader's words. */
   attachment: string;
 }): string {
@@ -317,6 +424,7 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   const words = {
     routineEvent: options.routineEvent,
     ask: options.askWords,
+    status: options.cardStatus,
     attachment: options.attachment,
   };
   const entries = visibleMessages.flatMap((message) => {

@@ -7,7 +7,7 @@ import { ContextMenu, toast } from "@rakazo/ui-web";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Suspense, useEffect } from "react";
 import { lazyOverlay } from "../../../components/ErrorBoundary";
-import { exportChat } from "../../../lib/chat/export-chat";
+import { ChatTooLongError, exportChat } from "../../../lib/chat/export-chat";
 import { reportClientError } from "../../../lib/platform/monitoring";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import type { ShellDialogsState } from "../shell-dialogs";
@@ -15,6 +15,9 @@ import type { SnoozeChat } from "../sidebar/use-chat-snooze";
 import { useRoutineEventLabel } from "./routine-event-row";
 import { resolveTranscriptMemberName } from "./transcript-member-name";
 import type { useChatRead } from "./use-chat-read";
+
+/** Ids of the chats whose export is still reading their history, so each runs once at a time. */
+const exportingChats = new Set<string>();
 
 const BotContextMenu = lazyOverlay(() =>
   import("./bot-context-menu").then((module) => module.BotContextMenu),
@@ -178,6 +181,11 @@ export function ChatContextMenu({
       }}
       onExportChat={() => {
         onClose();
+        const exportId = `chat-export-${target.chat.id}`;
+        // A second click while this chat's history is still being read would read it all again.
+        if (exportingChats.has(exportId)) return;
+        exportingChats.add(exportId);
+        toast.loading(t`Exporting chat…`, { id: exportId });
         void exportChat({
           rpc,
           target,
@@ -196,6 +204,20 @@ export function ChatContextMenu({
               updateInstructions: t`Update instructions?`,
               instructionsUpdated: t`Instructions updated`,
               settingsUpdated: t`Settings updated`,
+              readFromPage: t`Read from the page, not checked`,
+              buttonReadFromPage: (button) =>
+                t`Button “${button}”. Read from the page, not checked`,
+            },
+            status: {
+              saved: t`Saved`,
+              sent: t`Sent`,
+              dismissed: t`Dismissed`,
+              running: t`Running`,
+              completed: t`Completed`,
+              failed: t`Failed`,
+              stopped: t`Stopped`,
+              archived: t`archived`,
+              deleted: t`deleted`,
             },
             attachment: t`Attachment`,
           },
@@ -204,13 +226,22 @@ export function ChatContextMenu({
             i18n.date(new Date(createdAt), { dateStyle: "medium", timeStyle: "short" }),
           memberName: (botId) =>
             resolveTranscriptMemberName({ botId, members: group?.members, bots, archivedBots }),
-        }).catch((error: unknown) => {
-          // The API logs its own failures, and a dropped connection is the network, not a bug.
-          if (!(error instanceof ORPCError) && !isConnectionFailure(error)) {
-            reportClientError(error, "chat.export");
-          }
-          toast.error(t`Could not export chat`);
-        });
+        })
+          .catch((error: unknown) => {
+            // The API logs its own failures, and a dropped connection is the network, not a bug.
+            if (
+              !(error instanceof ORPCError) &&
+              !(error instanceof ChatTooLongError) &&
+              !isConnectionFailure(error)
+            ) {
+              reportClientError(error, "chat.export");
+            }
+            toast.error(t`Could not export chat`);
+          })
+          .finally(() => {
+            exportingChats.delete(exportId);
+            toast.dismiss(exportId);
+          });
       }}
       onClear={() => {
         dialogs.setClearTarget(target);

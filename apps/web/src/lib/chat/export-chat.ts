@@ -1,5 +1,5 @@
 import type { Bot, Group, RoutineEventChange, ThreadMessage } from "@rakazo/contracts";
-import type { AskWords } from "@rakazo/core";
+import type { AskWords, CardStatusWords } from "@rakazo/core";
 import { chatTranscriptMarkdown, deadlineSignal, loadPeerHistory, otherAuthor } from "@rakazo/core";
 import { downloadArtifactBytes } from "../pages/artifact-open";
 import type { RpcClient } from "../query/rpc";
@@ -10,6 +10,11 @@ const MAX_PAGES = 2000;
 const TOTAL_TIMEOUT_MS = 5 * 60_000;
 
 export type ChatToExport = { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group };
+
+/** A chat past MAX_PAGES: the reader gets the generic failure, but it is not reported as an app bug. */
+export class ChatTooLongError extends Error {
+  override name = "ChatTooLongError";
+}
 
 /** `ada-chat.md`: the chat's name as a file name, in any script; `chat.md` when it has no letters. */
 export function chatExportFileName(name: string): string {
@@ -33,7 +38,7 @@ async function loadAllMessages(rpc: RpcClient, target: ChatToExport): Promise<Th
       loadPage: async (before, signal) => {
         pageSignal = signal;
         pages += 1;
-        if (pages > MAX_PAGES) throw new Error("The chat is too long to export");
+        if (pages > MAX_PAGES) throw new ChatTooLongError("The chat is too long to export");
         return rpc.threads.messages(
           { ...thread, ...(before === undefined ? {} : { before }) },
           { signal },
@@ -62,6 +67,7 @@ export async function exportChat(options: {
     system: string;
     routineEvent: (change: RoutineEventChange, name: string) => string;
     ask: AskWords;
+    status: CardStatusWords;
     attachment: string;
   };
   time: (createdAt: string) => string;
@@ -78,6 +84,7 @@ export async function exportChat(options: {
     time,
     routineEvent: labels.routineEvent,
     askWords: labels.ask,
+    cardStatus: labels.status,
     attachment: labels.attachment,
     speaker: (message) => {
       if (message.role === "user") return otherAuthor(message.author, meId)?.name ?? labels.you;

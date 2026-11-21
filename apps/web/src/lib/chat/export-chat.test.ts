@@ -7,7 +7,7 @@ const download = vi.hoisted(() => vi.fn());
 vi.mock("../pages/artifact-open", () => ({ downloadArtifactBytes: download }));
 
 import { resolveTranscriptMemberName } from "../../pages/shell/chat/transcript-member-name";
-import { chatExportFileName, exportChat } from "./export-chat";
+import { ChatTooLongError, chatExportFileName, exportChat } from "./export-chat";
 
 afterEach(() => download.mockReset());
 
@@ -54,6 +54,19 @@ const labels = {
     updateInstructions: "Update instructions?",
     instructionsUpdated: "Instructions updated",
     settingsUpdated: "Settings updated",
+    readFromPage: "Read from the page, not checked",
+    buttonReadFromPage: (button: string) => `Button “${button}”. Read from the page, not checked`,
+  },
+  status: {
+    saved: "Saved",
+    sent: "Sent",
+    dismissed: "Dismissed",
+    running: "Running",
+    completed: "Completed",
+    failed: "Failed",
+    stopped: "Stopped",
+    archived: "archived",
+    deleted: "deleted",
   },
 };
 const time = (createdAt: string) => createdAt.slice(11, 16);
@@ -248,7 +261,7 @@ describe("exportChat", () => {
     const rpc = { threads: { messages } } as unknown as RpcClient;
     await expect(
       exportChat({ rpc, target: { kind: "bot", chat: bot }, labels, time, memberName: noMembers }),
-    ).rejects.toThrow("too long");
+    ).rejects.toBeInstanceOf(ChatTooLongError);
     expect(download).not.toHaveBeenCalled();
   });
 });

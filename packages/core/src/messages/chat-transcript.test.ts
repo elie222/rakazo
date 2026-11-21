@@ -24,6 +24,20 @@ const askWords = {
   updateInstructions: "Update instructions?",
   instructionsUpdated: "Instructions updated",
   settingsUpdated: "Settings updated",
+  readFromPage: "Read from the page, not checked",
+  buttonReadFromPage: (button: string) => `Button “${button}”. Read from the page, not checked`,
+};
+
+const cardStatus = {
+  saved: "Saved",
+  sent: "Sent",
+  dismissed: "Dismissed",
+  running: "Running",
+  completed: "Completed",
+  failed: "Failed",
+  stopped: "Stopped",
+  archived: "archived",
+  deleted: "deleted",
 };
 
 const transcript = (messages: ThreadMessage[]) =>
@@ -34,6 +48,7 @@ const transcript = (messages: ThreadMessage[]) =>
     time: (createdAt) => createdAt.slice(0, 16).replace("T", " "),
     routineEvent: (change, name) => `${change} routine "${name}"`,
     askWords,
+    cardStatus,
     attachment: "Attachment",
   });
 
@@ -188,6 +203,7 @@ describe("chatTranscriptMarkdown", () => {
       time: () => "10:00",
       routineEvent: (change, name) => `${change} ${name}`,
       askWords,
+      cardStatus,
       attachment: "Attachment",
     });
     expect(text).toBe(
@@ -376,7 +392,7 @@ describe("chatTranscriptMarkdown", () => {
     );
   });
 
-  it("writes a helper's result or progress under its name, and nothing for a stopped helper", () => {
+  it("writes a helper's name with its state and task, then its result or progress, and no result for a stopped helper", () => {
     const text = transcript([
       message("bot", [
         {
@@ -409,11 +425,11 @@ describe("chatTranscriptMarkdown", () => {
         },
       ]),
     ]);
-    expect(text).toContain("**Researcher**\n\n```txt\nInvoice 42\n```");
-    expect(text).toContain("**Reader**\n\nReading 3 pages");
-    expect(text).toContain("**Mailer**");
-    expect(text).not.toContain("Find the invoice");
-    expect(text).not.toContain("Read the page");
+    expect(text).toContain(
+      "**Researcher** · Completed\n\nFind the invoice\n\n```txt\nInvoice 42\n```",
+    );
+    expect(text).toContain("**Reader** · Running\n\nRead the page\n\nReading 3 pages");
+    expect(text).toContain("**Mailer** · Stopped\n\nSend it");
     expect(text).not.toContain("stopped");
   });
 
@@ -463,6 +479,7 @@ describe("chatTranscriptMarkdown", () => {
       time: () => "10:00",
       routineEvent: (change, name) => `${change} ${name}`,
       askWords: { ...askWords, updateInstructions: "Atualizar instruções?" },
+      cardStatus,
       attachment: "Attachment",
     });
     expect(text).toContain("Atualizar instruções?");
@@ -522,6 +539,13 @@ describe("chatTranscriptMarkdown", () => {
     expect(text).toContain("```\n<pre>\n```");
   });
 
+  it("escapes a tag after an escaped backtick, which opens no code span", () => {
+    const text = transcript([
+      message("bot", [{ kind: "text", text: "Type \\` then <span hidden> x`" }]),
+    ]);
+    expect(text).toContain("\\<span hidden>");
+  });
+
   it("escapes a < that follows backslashes so the escape is not cancelled", () => {
     const text = transcript([message("bot", [{ kind: "text", text: "C:\\\\<b> and \\<i>" }])]);
     expect(text).toContain("C:\\\\\\<b> and \\<i>");
@@ -572,6 +596,63 @@ describe("chatTranscriptMarkdown", () => {
     ]);
     expect(text).toContain("Enter the code");
     expect(text).not.toContain("991122");
+  });
+
+  it("writes a payment's note under its amounts, naming the button as the card does", () => {
+    const receipt = {
+      items: [{ name: "Oat milk", amount: "$4.00" }],
+      amount: "$4.00",
+      amountSource: "page" as const,
+    };
+    expect(transcript([message("bot", [{ kind: "ask", text: "Pay?", receipt }])])).toContain(
+      "- Oat milk: $4.00\n- Total: $4.00\n\nRead from the page, not checked",
+    );
+    expect(
+      transcript([
+        message("bot", [
+          {
+            kind: "ask",
+            text: "Pay?",
+            receipt: { ...receipt, button: "Pay $4.00", amountSource: "button" as const },
+          },
+        ]),
+      ]),
+    ).toContain("- On the button: $4.00\n\nButton “Pay $4.00”. Read from the page, not checked");
+  });
+
+  it("writes a protected answer's outcome as its card words it, never its value", () => {
+    const pin = {
+      kind: "ask" as const,
+      text: "Enter your PIN",
+      input: "secret" as const,
+      status: "answered" as const,
+      answer: "4921",
+    };
+    expect(transcript([message("bot", [pin])])).toContain("Enter your PIN\n\nSaved");
+    expect(transcript([message("bot", [{ ...pin, remembered: false as const }])])).toContain(
+      "Enter your PIN\n\nSent",
+    );
+    expect(
+      transcript([message("bot", [{ ...pin, oneTimeCode: { origin: "https://example.com" } }])]),
+    ).toContain("Enter your PIN\n\nSent");
+    expect(transcript([message("bot", [{ ...pin, dismissed: true as const }])])).toContain(
+      "Enter your PIN\n\nDismissed",
+    );
+    const pending = transcript([message("bot", [{ ...pin, status: "pending" as const }])]);
+    expect(pending).not.toContain("Saved");
+    expect(pending).not.toContain("4921");
+  });
+
+  it("writes an archived or deleted bot's status beside its name, and a live bot's name alone", () => {
+    expect(
+      transcript([
+        message("bot", [
+          { kind: "child_bot", botId: "b_2", name: "Lee", status: "archived" },
+          { kind: "child_bot", botId: "b_3", name: "Max", status: "deleted" },
+          { kind: "child_bot", botId: "b_4", name: "Ada", status: "created" },
+        ]),
+      ]),
+    ).toContain("Lee · archived\n\nMax · deleted\n\nAda");
   });
 
   it("is just the title for an empty chat", () => {
