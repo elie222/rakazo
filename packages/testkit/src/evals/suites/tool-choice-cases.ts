@@ -2,7 +2,7 @@ import type { ToolChoiceCase } from "./tool-choice.js";
 import { toolChoiceEvalCase } from "./tool-choice.js";
 
 /** Synthetic prompts only. Production-derived cases belong in a local --cases-file. */
-const PRODUCT_HELP = { anyOf: [{ tool: "skill_read", args: { name: "~rakazo" } }] };
+const OPS_GROUP = { name: "Ops", members: { Mira: "Runs infrastructure and on-call checks." } };
 
 export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
   // Bot settings the user asks for.
@@ -223,9 +223,12 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     id: "help-computer",
     area: "product-help",
     kind: "guard",
-    purpose: "Look up how to give a bot a computer.",
+    purpose: "Explain how to give a bot a computer.",
     prompt: "How do I let you use my computer?",
-    expect: PRODUCT_HELP,
+    expect: {
+      replyMeans:
+        "Explains that the person turns on letting bots use this computer in the Rakazo desktop app on that computer. Invents no other setup step or screen.",
+    },
   },
   {
     id: "help-general-knowledge",
@@ -353,6 +356,40 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
       calls: [{ tool: "update_bot", args: { bot_id: "*", name: "~librarian" } }],
       bot: { name: "Assistant" },
     },
+  },
+  {
+    id: "group-post",
+    area: "group",
+    kind: "guard",
+    purpose: "Post into its group itself when asked to post there.",
+    group: OPS_GROUP,
+    prompt: "Post 'Deploy finished, all green' in the Ops group.",
+    expect: {
+      calls: [{ tool: "post_to_group", args: { message: "~deploy finished, all green" } }],
+      notCalls: ["handoff_to_bot", "message_bot"],
+      maxCalls: { post_to_group: 1 },
+    },
+  },
+  {
+    id: "group-handoff-not-post",
+    area: "group",
+    kind: "guard",
+    purpose: "Hand work to a group member rather than only posting in the group.",
+    group: OPS_GROUP,
+    prompt: "Get Mira to check why last night's backup failed, in the Ops group.",
+    expect: {
+      calls: [{ tool: "handoff_to_bot", args: { group_id: "*" } }],
+      notCalls: ["post_to_group"],
+    },
+  },
+  {
+    id: "group-chat-control",
+    area: "group",
+    kind: "control",
+    purpose: "Answer ordinary chat itself when it belongs to a group.",
+    group: OPS_GROUP,
+    prompt: "Write a two-line status update about a successful deploy that I can paste somewhere.",
+    expect: { notCalls: ["post_to_group", "handoff_to_bot", "message_bot"] },
   },
   {
     id: "secrets-request",

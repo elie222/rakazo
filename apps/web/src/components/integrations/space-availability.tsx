@@ -100,9 +100,9 @@ export function AvailabilityControl({
           render={
             <Button
               variant="ghost"
-              size="sm"
+              size="xs"
               disabled={saving}
-              className="h-6 gap-1 px-1.5 text-label font-normal text-foreground"
+              className="gap-1 px-1.5 text-label font-normal text-foreground"
             />
           }
         >

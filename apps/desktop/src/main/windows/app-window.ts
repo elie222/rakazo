@@ -3,7 +3,11 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Session } from "electron";
 import { app, BrowserWindow, Menu, net, screen, session, shell } from "electron";
-import { mcpOAuthCallbackFrom, oauthCallbackFrom } from "../auth/oauth-callback.js";
+import {
+  mcpLoopbackRefusalFrom,
+  mcpOAuthCallbackFrom,
+  oauthCallbackFrom,
+} from "../auth/oauth-callback.js";
 import { appWindowTargets, desktop } from "../desktop-state.js";
 import { t, withDetail } from "../i18n.js";
 import {
@@ -216,7 +220,10 @@ export function createWindow(url: string, partition: string | null) {
       // will-redirect can fire for iframes; only the top-level callback counts.
       if (details.isMainFrame === false) return;
       if (mcpServerId !== null && appOrigin !== null) {
-        const mcpCallback = mcpOAuthCallbackFrom(details.url, appOrigin);
+        // The app's own callback, or a refusal on a loopback redirect that is not the app's.
+        const mcpCallback =
+          mcpOAuthCallbackFrom(details.url, appOrigin) ??
+          (safeOrigin(details.url) === appOrigin ? undefined : mcpLoopbackRefusalFrom(details.url));
         if (mcpCallback) {
           details.preventDefault();
           if (!win.isDestroyed())

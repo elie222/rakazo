@@ -8,6 +8,7 @@ import type {
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
+import { memoryConnectionIdentity } from "../../../memory/memory-provider-descriptor.js";
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
@@ -20,6 +21,7 @@ import type { ResolveHostname } from "../../../network/network-address.js";
 import type { SupermemoryConnectionConfig } from "./supermemory-client.js";
 import {
   deleteSupermemoryContainer,
+  MAX_MEMORY_CONTENT_CHARS,
   probeSupermemory,
   SUPERMEMORY_CLOUD_BASE_URL,
   saveSupermemoryMemoryToContainers,
@@ -112,9 +114,10 @@ export async function prepareSupermemoryConnection(
 export function createSupermemoryProvider(
   settings: Record<string, string>,
   credentials: Record<string, string>,
+  connectionVersion?: string,
 ): SemanticMemoryProvider {
   const { baseUrl, apiKey, trust } = parseSupermemoryConnection(settings, credentials);
-  return new SupermemoryMemoryProvider({ baseUrl, apiKey, trust });
+  return new SupermemoryMemoryProvider({ baseUrl, apiKey, trust }, connectionVersion);
 }
 
 export function decodeLegacySupermemoryCredentials(
@@ -142,9 +145,14 @@ function recallContainerTags(request: SemanticMemoryRecallRequest, spaceId: stri
 }
 
 export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
+  readonly connectionIdentity?: string;
   private readonly localHost?: LocalServiceHost;
 
-  constructor(private readonly connection: SupermemoryConnectionConfig) {
+  constructor(
+    private readonly connection: SupermemoryConnectionConfig,
+    connectionVersion?: string,
+  ) {
+    this.connectionIdentity = memoryConnectionIdentity(connectionVersion, connection.baseUrl);
     if (!isSupermemoryCloudBaseUrl(connection.baseUrl)) {
       this.localHost = new LocalServiceHost(
         connection.baseUrl,
@@ -209,6 +217,15 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
   ): Promise<SemanticMemoryResponse> {
     const blocked = await this.localBaseUrlBlock();
     if (blocked) return { ok: false, error: blocked };
+    if (
+      request.source.kind !== "history" &&
+      request.content.trim().length > MAX_MEMORY_CONTENT_CHARS
+    ) {
+      return {
+        ok: false,
+        error: `Supermemory save skipped: memory content is longer than ${MAX_MEMORY_CONTENT_CHARS} characters. Save a shorter fact.`,
+      };
+    }
     const tags =
       request.source.kind === "history"
         ? [historyContainerTag(request.botId, request.source.generation)]

@@ -45,6 +45,8 @@ export {
   openAgentImportArchive,
   safeArchivePath,
 } from "./archive.js";
+export type { AgentImportAssistant } from "./assistants.js";
+export { AGENT_IMPORT_ASSISTANTS } from "./assistants.js";
 export {
   AGENT_IMPORT_PROVIDER_KEYS,
   hasAgentImportSecrets,
