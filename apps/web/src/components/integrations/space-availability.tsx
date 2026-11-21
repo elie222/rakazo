@@ -16,8 +16,8 @@ import { errorText } from "../../lib/query/user-error";
 /** The user's spaces; choosing where something is available only matters with two or more. */
 export function useOwnSpaces(): Array<{ id: string; name: string }> {
   const queries = useSpaceQueries();
-  const spaces = useQuery(queries.spaces.accessible.queryOptions());
-  return spaces.data ?? [];
+  const spaces = useQuery(queries.spaces.list.queryOptions());
+  return spaces.data?.spaces ?? [];
 }
 
 /** True when removing an item takes it from more than this one space. */

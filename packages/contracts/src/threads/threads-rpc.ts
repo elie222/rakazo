@@ -236,7 +236,6 @@ export const threadsRpc = {
         }),
       ),
     ),
-    incomingCalls: oc.output(z.array(IncomingBotCallSchema)),
     subscribeCalls: oc.output(
       eventIterator(
         z.object({

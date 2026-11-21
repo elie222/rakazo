@@ -10,7 +10,6 @@ import {
   respondToIncomingCall,
   retryDelayMs,
 } from "@rakazo/core";
-import { bestEffort } from "@rakazo/logging/best-effort";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
@@ -196,25 +195,18 @@ async function fetchRoster() {
 let rosterLoad: Promise<void> | undefined;
 function loadRoster(): Promise<void> {
   if (rosterLoad) return rosterLoad;
-  const load = bestEffort("load the incoming call roster", fetchRoster()).finally(() => {
+  const load = fetchRoster().finally(() => {
     if (rosterLoad === load) rosterLoad = undefined;
   });
   rosterLoad = load;
   return load;
 }
 
-async function lookupCaller(botId: string, callId: string) {
-  await loadRoster();
-  const bot = roster.get(botId);
-  if (bot) return bot;
-  const incoming = await rpc("notifications/incomingCalls");
-  return incoming.find((call) => call.id === botId && call.incomingCall.callId === callId) ?? null;
-}
-
 /**
- * Resolves the caller for a native ring or notification response. A cached roster entry answers
- * at once. A cold start races the account stream against a read that can also find callers
- * outside the selected Space.
+ * Resolves the caller for a native or notification answer. The account stream knows callers
+ * across every organization; the roster covers only the active one. A cached roster entry
+ * answers at once. Otherwise the roster load races the stream's first snapshot, which a cold
+ * start may not have yet, for a few seconds, and the first source to name the caller answers.
  * Returns undefined when the lookup's feed or session is gone: the answer belongs to neither,
  * so its caller abandons it without answering or completing the native action.
  */
@@ -229,10 +221,9 @@ async function callerFor(
     calls.find((entry) => entry.id === botId && entry.incomingCall.callId === callId) ?? null;
   const known = fromStream() ?? roster.get(botId);
   if (known) return known;
-  const lookup = lookupCaller(botId, callId).then(
-    (caller) => ({ caller }),
-    (error: unknown) => ({ error }),
-  );
+  // Whichever source names the caller first answers; a failed load surfaces only if neither does.
+  const rostered = loadRoster();
+  rostered.catch(() => undefined);
   if (streamSnapshot) {
     let stopWaiting: (() => void) | undefined;
     let giveUp: ReturnType<typeof setTimeout> | undefined;
@@ -248,9 +239,12 @@ async function callerFor(
           giveUp = setTimeout(resolve, SNAPSHOT_WAIT_MS);
         }),
         new Promise<void>((resolve) => {
-          void lookup.then((result) => {
-            if ("caller" in result && result.caller) resolve();
-          });
+          rostered.then(
+            () => {
+              if (roster.has(botId)) resolve();
+            },
+            () => undefined,
+          );
         }),
       ]);
     } finally {
@@ -261,12 +255,16 @@ async function callerFor(
     const late = fromStream() ?? roster.get(botId);
     if (late) return late;
   }
-  const result = await lookup;
+  // The stream may name the caller after an empty snapshot, so a failed load throws only after it.
+  const failure = await rostered.then(
+    () => null,
+    (error: unknown) => ({ error }),
+  );
   if (stale()) return undefined;
   const caller = fromStream() ?? roster.get(botId);
   if (caller) return caller;
-  if ("error" in result) throw result.error;
-  return result.caller;
+  if (failure) throw failure.error;
+  return null;
 }
 
 export async function respondToMobileCall(call: IncomingBotCall, action: "answer" | "decline") {
@@ -341,11 +339,9 @@ export async function respondToMobileCall(call: IncomingBotCall, action: "answer
 
 async function drainNative() {
   const generation = currentSessionGeneration();
-  const startedFeed = feed;
-  const stale = () => feed !== startedFeed || !running || generation !== currentSessionGeneration();
   const state = await native?.incomingState();
   // A sign-out during the read belongs to the old session; the new one drains for itself.
-  if (!state || stale()) return;
+  if (!state || !running || generation !== currentSessionGeneration()) return;
   try {
     // Answers first: an answer expires with its ring, while showing other rings can wait for the roster.
     for (const action of state.actions) {
@@ -377,15 +373,13 @@ async function drainNative() {
   }
   for (const ring of state.ringing ?? []) {
     if (!callIsRinging(ring)) continue;
-    const bot = await bestEffort(
-      "look up a native ringing caller",
-      callerFor(ring.botId, ring.callId),
-    );
-    if (stale()) return;
+    // A failed roster load only leaves this ring unshown.
+    if (!roster.has(ring.botId)) await loadRoster().catch(() => undefined);
     // A ring the stream listed and then dropped has ended, for example answered on another
     // phone while the answers above were joining; the older native state must not bring it back.
     pruneEndedCalls();
     if (endedInStream.has(ring.callId)) continue;
+    const bot = roster.get(ring.botId);
     if (bot) update(bot, { ...ring, reason: "", opening: "" });
   }
 }
@@ -495,7 +489,7 @@ export function startIncomingCalls() {
             });
         }
         // A pending answer must not wait for the roster: callerFor races it with the stream.
-        void loadRoster();
+        void loadRoster().catch(() => undefined);
         await drainNative();
       })
       .catch(() => undefined);

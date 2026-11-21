@@ -135,6 +135,9 @@ describe("unavailable space", () => {
       [{ id: "shared-home", name: "Shared" }],
     );
     await leaveUnavailableSpace("shared-home");
+    const [request, init] = vi.mocked(globalThis.fetch).mock.calls[0]!;
+    expect(request).toHaveProperty("url", expect.stringMatching(/\/rpc\/organizations\/list$/));
+    expect(new Headers(init?.headers).has("x-rakazo-space-id")).toBe(false);
     expect(items.get("rakazo:space-id")).toBe("shared-home");
     expect(reload).not.toHaveBeenCalled();
   });

@@ -23,9 +23,9 @@ const organizationName = spaceName;
 
 export const spacesRpc = {
   spaces: {
-    list: oc.output(SpaceNavigationSchema),
-    /** Names of the signed-in user's Spaces for account-wide availability controls. */
-    accessible: oc.output(z.array(z.object({ id: Id, name: z.string() }))),
+    list: oc
+      .input(SpaceNavigationSchema.pick({ scope: true }).optional())
+      .output(SpaceNavigationSchema),
     create: oc.input(z.object({ name: spaceName })).output(SpaceSchema),
     rename: oc
       .input(z.object({ spaceId: Id, name: spaceName }))

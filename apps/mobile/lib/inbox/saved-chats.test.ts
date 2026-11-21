@@ -191,6 +191,24 @@ it("round trips only what the inbox shows", () => {
   expect(saved).not.toHaveProperty("cursor");
 });
 
+it("only restores other Spaces when the server scoped the saved inbox", () => {
+  const spaces: MobileSpaceNavigation["spaces"] = ["space-a", "space-b"].map((id) => ({
+    id,
+    name: id,
+    isDefault: id === "space-a",
+    hasContent: false,
+    bots: [],
+    groups: [],
+    botSections: [],
+    externalConversations: [],
+  }));
+  writeSavedInbox(scope, { ...navigation, spaces }, me);
+  expect(readSavedInbox(scope)?.spaces.map((space) => space.id)).toEqual(["space-a"]);
+
+  writeSavedInbox(scope, { ...navigation, scope: "selection", spaces }, me);
+  expect(readSavedInbox(scope)?.spaces.map((space) => space.id)).toEqual(["space-a", "space-b"]);
+});
+
 it.each([{ apiBase: "https://other.example.test" }, { userId: "user-b" }, { spaceId: "space-b" }])(
   "never reads another scope %j",
   (change) => {

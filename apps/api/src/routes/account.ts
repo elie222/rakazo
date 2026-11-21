@@ -486,10 +486,6 @@ export function accountRoutes(ctx: RouterContext) {
           else if (next.spaceId === spaceId) yield { type: "alert" as const, alert: next };
         }
       }),
-      incomingCalls: authed.notifications.incomingCalls.handler(({ context }) => {
-        if (!deps.env?.phoneCallsEnabled) throw new ORPCError("NOT_FOUND");
-        return loadUserIncomingCalls(deps.prisma, context.actor.userId);
-      }),
       subscribeCalls: authed.notifications.subscribeCalls.handler(async function* ({ context }) {
         const { followIncomingCalls } = deps.events;
         if (!deps.env?.phoneCallsEnabled || !followIncomingCalls) throw new ORPCError("NOT_FOUND");

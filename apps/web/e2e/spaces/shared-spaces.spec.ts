@@ -120,7 +120,11 @@ test("an owner invites someone by link and both see the space's members", async 
     "aria-current",
     "true",
   );
+  await expect(destinations.locator('[aria-current="true"]')).toHaveCount(1);
   await destinations.getByRole("button", { name: "Work", exact: true }).click();
+  await expect(inviteePage.getByPlaceholder("Message Work Assistant")).toBeVisible();
+  await expect(familyRow(inviteePage)).toHaveCount(0);
+  await inviteePage.reload();
   await expect(inviteePage.getByPlaceholder("Message Work Assistant")).toBeVisible();
   await expect(familyRow(inviteePage)).toHaveCount(0);
   destinations = await switcherMenu();

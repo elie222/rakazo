@@ -688,27 +688,31 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     const workId = work.json.id as string;
     organizations.push(workId);
 
-    const listed = await call(invitee.actor, "spaces/list", {});
-    expect(listed.status).toBe(200);
-    expect(listed.json.spaces).toEqual([
-      expect.objectContaining({ id: invitee.spaceId, shared: false, isDefault: true }),
-    ]);
-    const fromWork = await call(inSpace(invitee.actor, workId), "spaces/list", {});
-    expect(fromWork.json.spaces).toEqual([expect.objectContaining({ id: workId })]);
-    const accessible = await call(inSpace(invitee.actor, workId), "spaces/accessible", {});
-    expect(accessible.json).toEqual(
-      expect.arrayContaining([
-        { id: invitee.spaceId, name: "Personal" },
-        { id: workId, name: "Work" },
-        { id: home, name: "Home" },
-        { id: another, name: "Another shared space" },
-      ]),
+    const workActor = inSpace(invitee.actor, workId);
+    const project = await call(workActor, "spaces/create", { name: "Project" });
+    expect(project.status).toBe(200);
+    const projectId = project.json.id as string;
+    const legacy = await call(workActor, "spaces/list", {});
+    expect(legacy.status).toBe(200);
+    expect(legacy.json).not.toHaveProperty("scope");
+    expect(legacy.json.spaces).toHaveLength(4);
+    expect(legacy.json.spaces).toEqual(
+      expect.arrayContaining(
+        [workId, projectId, home, another].map((id) => expect.objectContaining({ id })),
+      ),
     );
-    expect(accessible.json).toHaveLength(4);
-    const fromShared = await call(inSpace(invitee.actor, home), "spaces/list", {});
-    expect(fromShared.json.spaces).toEqual([
-      expect.objectContaining({ id: home, name: "Home", shared: true, canRename: false }),
-    ]);
+
+    const selection = { scope: "selection" };
+    const fromWork = await call(workActor, "spaces/list", selection);
+    expect(fromWork.json).toMatchObject({
+      scope: "selection",
+      spaces: [expect.objectContaining({ id: workId }), expect.objectContaining({ id: projectId })],
+    });
+    const fromShared = await call(inSpace(invitee.actor, home), "spaces/list", selection);
+    expect(fromShared.json).toMatchObject({
+      scope: "selection",
+      spaces: [expect.objectContaining({ id: home, name: "Home", shared: true, canRename: false })],
+    });
     const organizationList = await call(inSpace(invitee.actor, home), "organizations/list", {});
     expect(organizationList.json).toMatchObject({
       guestSpaces: expect.arrayContaining([
@@ -717,7 +721,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       ]),
       organizations: [
         expect.objectContaining({ id: invitee.organizationId, spaceIds: [invitee.spaceId] }),
-        expect.objectContaining({ id: workId, spaceIds: [workId] }),
+        expect.objectContaining({ id: workId, spaceIds: [workId, projectId] }),
       ],
     });
     const ownerList = await call(owner.actor, "spaces/list", {});
