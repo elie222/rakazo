@@ -386,7 +386,7 @@ class CodexConfigTest(unittest.TestCase):
             self.assertNotIn("browser_evaluate", allowed)
             self.assertNotIn("browser_file_upload", allowed)
             self.assertEqual(config["mcp_servers"]["playwright"]["default_tools_approval_mode"], "approve")
-            self.assertEqual(json.loads((root / "schema.json").read_text())["required"], ["screenshots", "complete"])
+            self.assertEqual(json.loads((root / "schema.json").read_text())["required"], ["screenshots", "complete", "blocker"])
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 self.assertEqual(shots.main(["x", "contract"]), 0)
