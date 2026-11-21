@@ -6,7 +6,7 @@ import { artifactPreviewKind } from "@rakazo/contracts";
 import type { File } from "expo-file-system";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,12 +18,15 @@ import {
   Text,
   View,
 } from "react-native";
+import { ArtifactMediaPager } from "../components/media/artifact-media-pager";
 import { PdfPreview } from "../components/media/pdf-preview";
 import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
 import { VideoPreview } from "../components/media/video-preview";
 import { NativeSymbol } from "../components/native/native-symbol";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
+import { downloadArtifactToDevice } from "../lib/artifacts/artifact-download";
+import { isMediaArtifact, parseArtifactGallery } from "../lib/artifacts/artifact-gallery";
 import { shareLocalFile, writeArtifactCacheFile } from "../lib/artifacts/artifact-open";
 import {
   artifactThreadTarget,
@@ -47,10 +50,22 @@ type PreviewContent =
   | { kind: "video"; uri: string }
   | { kind: "unsupported" };
 
-type ContentState =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; artifact: ArtifactWithContent; file: File; preview: PreviewContent };
+type LoadedArtifact = Omit<ArtifactWithContent, "contentBase64">;
+
+type ReadyContent = {
+  status: "ready";
+  artifact: LoadedArtifact;
+  file: File;
+  preview: PreviewContent;
+};
+
+type ContentState = { status: "loading" } | { status: "error"; message: string } | ReadyContent;
+
+type LoadedPage = {
+  versions: ArtifactVersion[];
+  selectedVersionId: string;
+  content: ReadyContent;
+};
 
 /** Past this a plain-text view gets slow to lay out; share the file to read the rest. */
 const TEXT_PREVIEW_LIMIT = 100_000;
@@ -79,18 +94,67 @@ async function computePreview(mimeType: string, file: File): Promise<PreviewCont
   }
 }
 
+function withoutContent(artifact: ArtifactWithContent): LoadedArtifact {
+  const { contentBase64: _contentBase64, ...loaded } = artifact;
+  return loaded;
+}
+
+async function loadContent(versionId: string): Promise<ReadyContent> {
+  const artifact = await getArtifactById(versionId);
+  const file = writeArtifactCacheFile(artifact.id, artifact.mimeType, artifact.contentBase64);
+  const preview = await computePreview(artifact.mimeType, file);
+  return { status: "ready", artifact: withoutContent(artifact), file, preview };
+}
+
+/** Refetch a version whose cached file the OS purged; the download writes to the same path. */
+async function liveContent(content: ReadyContent): Promise<ReadyContent> {
+  return content.file.exists ? content : loadContent(content.artifact.id);
+}
+
+async function loadPage(familyId: string, exactVersionId: string | null): Promise<LoadedPage> {
+  let versions: ArtifactVersion[] = [];
+  try {
+    versions = await listArtifactVersions(familyId);
+  } catch {
+    // The version list is optional; the content may still be fetched by the family id.
+  }
+  // A chat attachment opens its own version; the Files list opens the newest.
+  const attached = exactVersionId && versions.some((version) => version.id === exactVersionId);
+  const selectedVersionId = (attached ? exactVersionId : null) ?? versions[0]?.id ?? familyId;
+  return { versions, selectedVersionId, content: await loadContent(selectedVersionId) };
+}
+
 export default function ArtifactDetailScreen() {
-  const { artifactId, exact } = useLocalSearchParams<{ artifactId: string; exact?: string }>();
+  const {
+    artifactId,
+    exact,
+    gallery: galleryParam,
+  } = useLocalSearchParams<{
+    artifactId: string;
+    exact?: string;
+    gallery?: string | string[];
+  }>();
   const navigation = useNavigation();
   const router = useRouter();
   const deletionContext = useRef<object | null>(null);
+  const pages = useRef(new Map<string, LoadedPage>());
+  const downloading = useRef<string | null>(null);
+  const gallery = useMemo(() => parseArtifactGallery(galleryParam), [galleryParam]);
+  // Only a list page with more than one media artifact can swipe; deep links and chat stay single.
+  const pagerGallery = useMemo(
+    () => (gallery.length > 1 && gallery.some((item) => item.id === artifactId) ? gallery : null),
+    [artifactId, gallery],
+  );
+  const [activeId, setActiveId] = useState(artifactId);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   useFocusEffect(
     useCallback(() => {
       deletionContext.current = {};
       return () => {
         deletionContext.current = null;
       };
-    }, [artifactId]),
+    }, [activeId]),
   );
   const headerInset = useFloatingHeaderInset();
   const { t } = useLingui();
@@ -98,52 +162,103 @@ export default function ArtifactDetailScreen() {
   const styles = useThemedStyles(createStyles);
 
   const [versions, setVersions] = useState<ArtifactVersion[] | null>(null);
+  const versionsRef = useRef<ArtifactVersion[] | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const selectedVersionRef = useRef<string | null>(null);
   const [content, setContent] = useState<ContentState>({ status: "loading" });
 
-  useEffect(() => {
-    let cancelled = false;
-    setVersions(null);
-    setSelectedVersionId(null);
-    void listArtifactVersions(artifactId)
-      .then((list) => {
-        if (cancelled) return;
-        setVersions(list);
-        // A chat attachment opens its own version; the Files list opens the newest.
-        const attached = exact === "1" && list.some((version) => version.id === artifactId);
-        setSelectedVersionId(attached ? artifactId : (list[0]?.id ?? artifactId));
-      })
-      .catch(() => {
-        if (!cancelled) setSelectedVersionId(artifactId);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [artifactId, exact]);
+  const applyPage = useCallback((page: LoadedPage) => {
+    versionsRef.current = page.versions;
+    setVersions(page.versions);
+    selectedVersionRef.current = page.selectedVersionId;
+    setSelectedVersionId(page.selectedVersionId);
+    setContent(page.content);
+  }, []);
 
   useEffect(() => {
-    if (!selectedVersionId) return;
-    let cancelled = false;
+    activeIdRef.current = artifactId;
+    setActiveId(artifactId);
+    versionsRef.current = null;
+    selectedVersionRef.current = null;
+    setVersions(null);
+    setSelectedVersionId(null);
     setContent({ status: "loading" });
-    void getArtifactById(selectedVersionId)
-      .then(async (artifact) => {
-        const file = writeArtifactCacheFile(artifact.id, artifact.mimeType, artifact.contentBase64);
-        const preview = await computePreview(artifact.mimeType, file);
-        if (cancelled) return;
-        setContent({ status: "ready", artifact, file, preview });
-      })
-      .catch((error: unknown) => {
+  }, [artifactId]);
+
+  useEffect(() => {
+    // The reset effect above already pointed the ref at the new route id; applying
+    // this render's stale id would show the previous artifact and start a wasted load.
+    if (activeIdRef.current !== activeId) return;
+    let cancelled = false;
+    const exactVersionId = exact === "1" && activeId === artifactId ? artifactId : null;
+    const cached = pages.current.get(activeId);
+    if (cached && (!exactVersionId || cached.selectedVersionId === exactVersionId)) {
+      applyPage(cached);
+      return;
+    }
+    versionsRef.current = null;
+    setVersions(null);
+    setSelectedVersionId(null);
+    setContent({ status: "loading" });
+    void loadPage(activeId, exactVersionId).then(
+      (page) => {
+        pages.current.set(activeId, page);
+        if (!cancelled) applyPage(page);
+      },
+      (error: unknown) => {
         if (!cancelled) {
           setContent({
             status: "error",
             message: errorText(error, t`Could not load this artifact.`),
           });
         }
-      });
+      },
+    );
     return () => {
       cancelled = true;
     };
-  }, [selectedVersionId, t]);
+  }, [activeId, applyPage, artifactId, exact, t]);
+
+  const changeActive = useCallback((id: string) => {
+    if (id === activeIdRef.current) return;
+    activeIdRef.current = id;
+    setActiveId(id);
+    versionsRef.current = null;
+    selectedVersionRef.current = null;
+    setVersions(null);
+    setSelectedVersionId(null);
+    setContent({ status: "loading" });
+  }, []);
+
+  const selectVersion = useCallback(
+    (versionId: string) => {
+      const familyId = activeIdRef.current;
+      const pageVersions = versionsRef.current ?? [];
+      selectedVersionRef.current = versionId;
+      setSelectedVersionId(versionId);
+      setContent({ status: "loading" });
+      void loadContent(versionId).then(
+        (loaded) => {
+          if (activeIdRef.current !== familyId || selectedVersionRef.current !== versionId) return;
+          pages.current.set(familyId, {
+            versions: pageVersions,
+            selectedVersionId: versionId,
+            content: loaded,
+          });
+          setContent(loaded);
+        },
+        (error: unknown) => {
+          if (activeIdRef.current === familyId && selectedVersionRef.current === versionId) {
+            setContent({
+              status: "error",
+              message: errorText(error, t`Could not load this artifact.`),
+            });
+          }
+        },
+      );
+    },
+    [t],
+  );
 
   const confirmDelete = useCallback(() => {
     if (content.status !== "ready") return;
@@ -164,7 +279,7 @@ export default function ArtifactDetailScreen() {
           style: "destructive",
           onPress: () => {
             if (!isCurrent()) return;
-            void removeArtifact(artifactId)
+            void removeArtifact(activeId)
               .then(() => {
                 if (isCurrent()) router.back();
               })
@@ -177,7 +292,7 @@ export default function ArtifactDetailScreen() {
         },
       ],
     );
-  }, [artifactId, content, router, t, versions]);
+  }, [activeId, content, router, t, versions]);
 
   // The full-screen viewer fetches through the thread the artifact belongs to.
   const imageTarget = content.status === "ready" ? artifactThreadTarget(content.artifact) : null;
@@ -205,7 +320,7 @@ export default function ArtifactDetailScreen() {
       colorScheme,
       actions: versions.map((version) => ({
         text: `v${version.version} (${formatActivityRelativeTime(version.createdAt)})`,
-        onPress: () => setSelectedVersionId(version.id),
+        onPress: () => selectVersion(version.id),
       })),
     });
   }
@@ -213,18 +328,56 @@ export default function ArtifactDetailScreen() {
   const share = useCallback(async () => {
     if (content.status !== "ready") return;
     try {
-      await shareLocalFile(content.file.uri, content.artifact.mimeType, content.artifact.name);
+      const loaded = await liveContent(content);
+      await shareLocalFile(loaded.file.uri, content.artifact.mimeType, content.artifact.name);
     } catch (error) {
       Alert.alert(t`Could not share this artifact`, errorText(error, t`Try again.`));
     }
   }, [content, t]);
 
+  const download = useCallback(async () => {
+    if (content.status !== "ready" || downloading.current === content.artifact.id) return;
+    const pageId = activeId;
+    const artifact = content.artifact;
+    downloading.current = artifact.id;
+    try {
+      const loaded = await liveContent(content);
+      const result = await downloadArtifactToDevice(
+        loaded.file.uri,
+        artifact.mimeType,
+        artifact.name,
+      );
+      if (result === "saved" && activeIdRef.current === pageId) Alert.alert(t`Saved to Photos`);
+    } catch (error) {
+      if (activeIdRef.current === pageId) {
+        Alert.alert(t`Could not download this artifact`, errorText(error, t`Try again.`));
+      }
+    } finally {
+      if (downloading.current === artifact.id) downloading.current = null;
+    }
+  }, [activeId, content, t]);
+
+  const downloadable = content.status === "ready" && isMediaArtifact(content.artifact);
+  const activeGalleryItem = pagerGallery?.find((item) => item.id === activeId) ?? null;
+  const title =
+    content.status === "ready" ? content.artifact.name : (activeGalleryItem?.name ?? "");
+
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: content.status === "ready" ? content.artifact.name : "",
+      title,
       headerRight: () =>
         content.status === "ready" ? (
           <View style={styles.headerActions}>
+            {downloadable ? (
+              <Pressable
+                accessibilityLabel={t`Download`}
+                hitSlop={8}
+                onPress={() => void download()}
+                style={styles.headerButton}
+              >
+                <NativeSymbol ios="arrow.down.circle" android="download-outline" size={19} />
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityLabel={t`Share`}
               hitSlop={8}
@@ -253,6 +406,16 @@ export default function ArtifactDetailScreen() {
             unstable_headerRightItems: () =>
               content.status === "ready"
                 ? [
+                    ...(downloadable
+                      ? [
+                          {
+                            type: "button" as const,
+                            label: t`Download`,
+                            icon: { type: "sfSymbol" as const, name: "arrow.down.circle" },
+                            onPress: () => void download(),
+                          },
+                        ]
+                      : []),
                     {
                       type: "button" as const,
                       label: t`Share`,
@@ -271,7 +434,7 @@ export default function ArtifactDetailScreen() {
           }
         : {}),
     });
-  }, [confirmDelete, content, navigation, share, styles, t]);
+  }, [confirmDelete, content, downloadable, download, navigation, share, styles, t, title]);
 
   const scrolling =
     content.status === "ready" &&
@@ -293,25 +456,40 @@ export default function ArtifactDetailScreen() {
       </View>
     ) : null;
 
+  const activePreview =
+    content.status === "loading" ? (
+      <View style={styles.centered}>
+        <ActivityIndicator color={native.secondaryLabel} />
+      </View>
+    ) : content.status === "error" ? (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>{content.message}</Text>
+      </View>
+    ) : (
+      <ArtifactPreview
+        key={content.artifact.id}
+        preview={content.preview}
+        scrollHeader={scrolling ? versionPicker : undefined}
+        name={content.artifact.name}
+        onOpenImage={openImage}
+      />
+    );
+
   return (
     <View style={[styles.screen, { paddingTop: scrolling ? 0 : headerInset }]}>
       {scrolling ? null : versionPicker}
       <View style={styles.body}>
-        {content.status === "loading" ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color={native.secondaryLabel} />
-          </View>
-        ) : content.status === "error" ? (
-          <View style={styles.centered}>
-            <Text style={styles.errorText}>{content.message}</Text>
-          </View>
-        ) : (
-          <ArtifactPreview
-            preview={content.preview}
-            scrollHeader={scrolling ? versionPicker : undefined}
-            name={content.artifact.name}
-            onOpenImage={openImage}
+        {pagerGallery ? (
+          <ArtifactMediaPager
+            gallery={pagerGallery}
+            activeId={activeId}
+            onActiveIdChange={changeActive}
+            renderPage={(_item, active) =>
+              active ? activePreview : <View style={styles.pagePlaceholder} />
+            }
           />
+        ) : (
+          activePreview
         )}
       </View>
     </View>
@@ -437,5 +615,6 @@ function createStyles() {
       backgroundColor: native.fill,
     },
     image: { width: "100%", height: "100%" },
+    pagePlaceholder: { flex: 1, backgroundColor: native.fill },
   });
 }

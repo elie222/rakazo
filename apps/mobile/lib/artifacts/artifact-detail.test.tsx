@@ -16,8 +16,14 @@ const state = vi.hoisted(() => ({
   back: vi.fn(),
   alert: vi.fn(),
   remove: vi.fn(),
-  options: {} as { headerRight?: () => ReactNode },
+  download: vi.fn(),
+  getArtifact: vi.fn(),
+  mimeType: "text/plain",
+  fileUri: "file:///test",
+  fileExists: true,
+  options: {} as { headerRight?: () => ReactNode; title?: string },
 }));
+vi.mock("expo", () => ({ requireOptionalNativeModule: () => null }));
 vi.mock("expo-secure-store", () => ({
   getItem: () => null,
   getItemAsync: async () => null,
@@ -53,6 +59,7 @@ vi.mock("react-native", () => {
     ScrollView: component,
     Pressable: component,
     Image: component,
+    FlatList: component,
     ActivityIndicator: () => null,
     Platform: { OS: "android" },
     StyleSheet: { create: (value: unknown) => value },
@@ -66,21 +73,22 @@ vi.mock("../../components/media/sandboxed-html-preview", () => ({
   SandboxedHtmlPreview: () => null,
 }));
 vi.mock("../../components/media/video-preview", () => ({ VideoPreview: () => null }));
+vi.mock("../../components/media/artifact-media-pager", () => ({ ArtifactMediaPager: () => null }));
 vi.mock("./artifacts", () => ({
   listArtifactVersions: async (id: string) => [{ id }],
-  getArtifactById: async (id: string) => ({
-    id,
-    name: id,
-    mimeType: "text/plain",
-    contentBase64: "",
-  }),
+  getArtifactById: (id: string) => state.getArtifact(id),
   artifactThreadTarget: () => null,
   removeArtifact: state.remove,
 }));
 vi.mock("./artifact-open", () => ({
-  writeArtifactCacheFile: () => ({ text: async () => "text", uri: "file:///test" }),
+  writeArtifactCacheFile: () => ({
+    text: async () => "text",
+    uri: state.fileUri,
+    exists: state.fileExists,
+  }),
   shareLocalFile: vi.fn(),
 }));
+vi.mock("./artifact-download", () => ({ downloadArtifactToDevice: state.download }));
 vi.mock("../layout/floating-header", () => ({ useFloatingHeaderInset: () => 0 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../native/native-controls", () => ({ iosAtLeast: () => false }));
@@ -102,6 +110,17 @@ beforeEach(() => {
   state.back.mockReset();
   state.alert.mockReset();
   state.remove.mockReset();
+  state.download.mockReset();
+  state.getArtifact.mockReset();
+  state.getArtifact.mockImplementation(async (id: string) => ({
+    id,
+    name: id,
+    mimeType: state.mimeType,
+    contentBase64: "",
+  }));
+  state.mimeType = "text/plain";
+  state.fileUri = "file:///test";
+  state.fileExists = true;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -114,6 +133,15 @@ afterEach(() => {
 });
 async function render() {
   await act(async () => root.render(<ArtifactDetail />));
+}
+async function pressHeader(label: string) {
+  const node = document.createElement("div");
+  const buttons = createRoot(node);
+  act(() => buttons.render(state.options.headerRight?.()));
+  await act(async () => node.querySelector<HTMLElement>(`[aria-label="${label}"]`)!.click());
+  act(() => {
+    buttons.unmount();
+  });
 }
 async function startDelete() {
   const pending = deferred();
@@ -171,4 +199,78 @@ it("ignores a failure after leaving the artifact", async () => {
   await render();
   await act(async () => pending.reject(new Error("offline")));
   expect(state.alert).not.toHaveBeenCalled();
+});
+it("offers Download for an image and saves its cached file", async () => {
+  state.mimeType = "image/png";
+  state.download.mockResolvedValue("saved");
+  await render();
+  const node = document.createElement("div");
+  const buttons = createRoot(node);
+  act(() => buttons.render(state.options.headerRight?.()));
+  await act(async () => node.querySelector<HTMLElement>('[aria-label="Download"]')!.click());
+  expect(state.download).toHaveBeenCalledWith("file:///test", "image/png", "a");
+  expect(state.alert).toHaveBeenCalledWith("Saved to Photos");
+  act(() => {
+    buttons.unmount();
+  });
+});
+it("does not offer Download for a text artifact", async () => {
+  await render();
+  const node = document.createElement("div");
+  const buttons = createRoot(node);
+  act(() => buttons.render(state.options.headerRight?.()));
+  expect(node.querySelector('[aria-label="Download"]')).toBeNull();
+  expect(node.querySelector('[aria-label="Share"]')).not.toBeNull();
+  act(() => {
+    buttons.unmount();
+  });
+});
+it("reloads a purged cached file before saving", async () => {
+  state.mimeType = "image/png";
+  state.fileUri = "file:///gone";
+  state.fileExists = false;
+  state.download.mockResolvedValue("saved");
+  await render();
+  state.fileUri = "file:///fresh";
+  await pressHeader("Download");
+  expect(state.download).toHaveBeenCalledWith("file:///fresh", "image/png", "a");
+});
+it("keeps a save from reporting over the next artifact", async () => {
+  state.mimeType = "image/png";
+  const saving = deferred<"saved">();
+  state.download.mockReturnValue(saving.promise);
+  await render();
+  await pressHeader("Download");
+  state.id = "b";
+  await render();
+  await act(async () => saving.resolve("saved"));
+  expect(state.alert).not.toHaveBeenCalled();
+});
+it("starts the next artifact's save while one is pending", async () => {
+  state.mimeType = "image/png";
+  const saving = deferred<"saved">();
+  state.download.mockReturnValueOnce(saving.promise).mockResolvedValue("shared");
+  await render();
+  await pressHeader("Download");
+  state.id = "b";
+  await render();
+  await pressHeader("Download");
+  expect(state.download).toHaveBeenCalledTimes(2);
+  await act(async () => saving.resolve("saved"));
+  expect(state.alert).not.toHaveBeenCalled();
+});
+it("does not load the artifact the route left", async () => {
+  const slow = deferred<{ id: string; name: string; mimeType: string; contentBase64: string }>();
+  state.getArtifact.mockImplementation((id: string) =>
+    id === "a"
+      ? slow.promise
+      : Promise.resolve({ id, name: id, mimeType: state.mimeType, contentBase64: "" }),
+  );
+  await render();
+  state.id = "b";
+  await render();
+  expect(state.getArtifact.mock.calls.map(([id]) => id)).toEqual(["a", "b"]);
+  await act(async () =>
+    slow.resolve({ id: "a", name: "a", mimeType: state.mimeType, contentBase64: "" }),
+  );
 });

@@ -236,13 +236,19 @@ export async function shareLocalFile(uri: string, mimeType: string, name: string
   await shareNamedFile(new File(uri), mimeType, name);
 }
 
-async function shareNamedFile(source: File, mimeType: string, name: string): Promise<void> {
+/** A cache copy named for the destination, which takes its filename from the path. */
+export function namedArtifactFile(source: File, mimeType: string, name: string): File {
   const root = new Directory(Paths.cache, "artifact-shares");
   if (!root.exists) root.create();
   const dir = new Directory(root, source.name || "attachment");
   if (!dir.exists) dir.create();
-  const shared = new File(dir, artifactShareFileName(name, mimeType));
-  source.copySync(shared, { overwrite: true });
+  const named = new File(dir, artifactShareFileName(name, mimeType));
+  source.copySync(named, { overwrite: true });
+  return named;
+}
+
+async function shareNamedFile(source: File, mimeType: string, name: string): Promise<void> {
+  const shared = namedArtifactFile(source, mimeType, name);
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(shared.uri, { mimeType });
     return;

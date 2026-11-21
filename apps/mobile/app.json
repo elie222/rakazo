@@ -38,6 +38,14 @@
       ],
       "expo-localization",
       [
+        "expo-media-library",
+        {
+          "photosPermission": "Rakazo uses your photo library so you can attach images to a bot message.",
+          "savePhotosPermission": "Rakazo saves photos and videos you download from Artifacts to your photo library.",
+          "granularPermissions": []
+        }
+      ],
+      [
         "expo-calendar",
         {
           "calendarPermission": "Allow Rakazo to read and add events in calendars you choose for your bots.",
