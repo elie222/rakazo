@@ -5,7 +5,9 @@ vi.mock("./fold-regions", () => ({ useFoldRegions: () => [] }));
 vi.mock("react-native", () => ({ useWindowDimensions: () => ({ width: 0, height: 0 }) }));
 vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
 
-const { closesSplitPane, inboxPaneWidth, splitsWindow } = await import("./split-view");
+const { closesSplitPane, inboxPaneWidth, inboxPaneWidthDuringDrag, splitsWindow } = await import(
+  "./split-view"
+);
 
 describe("split view", () => {
   it.each([
@@ -47,6 +49,22 @@ describe("split view", () => {
     expect(inboxPaneWidth(750, 320)).toBe(320);
     expect(inboxPaneWidth(750, 100)).toBe(240);
     expect(inboxPaneWidth(750, 600)).toBe(390);
+  });
+
+  it("moves the split divider with a physical drag in both layout directions", () => {
+    expect(inboxPaneWidthDuringDrag(1_000, 300, -60, false)).toBe(240);
+    expect(inboxPaneWidthDuringDrag(1_000, 300, 60, false)).toBe(360);
+    expect(inboxPaneWidthDuringDrag(1_000, 300, -60, true)).toBe(360);
+    expect(inboxPaneWidthDuringDrag(1_000, 300, 60, true)).toBe(240);
+    expect(inboxPaneWidthDuringDrag(1_000, 300, 0, true)).toBe(300);
+  });
+
+  it.each([false, true])("clamps a drag at both bounds when RTL is %s", (rtl) => {
+    const towardContent = rtl ? -1_000 : 1_000;
+    expect(inboxPaneWidthDuringDrag(1_000, 300, towardContent, rtl)).toBe(640);
+    expect(inboxPaneWidthDuringDrag(1_000, 300, -towardContent, rtl)).toBe(240);
+    expect(inboxPaneWidthDuringDrag(600, 240, towardContent, rtl)).toBe(240);
+    expect(inboxPaneWidthDuringDrag(600, 240, -towardContent, rtl)).toBe(240);
   });
 });
 

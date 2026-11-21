@@ -13,6 +13,7 @@ let account = deferred<unknown>();
 vi.mock("../../lib/query/rpc", () => ({
   selectedSpaceId: () => null,
   rpc: {
+    onboarding: { firstBot: vi.fn() },
     me: vi.fn(() => {
       account = deferred();
       return account.promise;
@@ -87,7 +88,10 @@ it("marks onboarding as usable for the desktop only once a step shows", async ()
   act(() => root.unmount());
 });
 
-it("finds and searches a long custom endpoint list during onboarding", async () => {
+it("recovers a failed discovery and searches a long custom endpoint list during onboarding", async () => {
+  const probe = vi.mocked(rpc.models.probeOpenAiCompatible);
+  probe.mockClear();
+  probe.mockRejectedValueOnce(new Error("Temporary discovery failure"));
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(async () =>
     root.render(
@@ -116,12 +120,16 @@ it("finds and searches a long custom endpoint list during onboarding", async () 
   };
   await change("OpenAI-compatible server URL", "https://models.example.test/v1");
   await act(async () =>
+    vi.waitFor(() => expect(rpc.models.probeOpenAiCompatible).toHaveBeenCalled()),
+  );
+  expect(document.body.textContent).toContain("Temporary discovery failure");
+  await act(async () =>
     [...document.querySelectorAll("button")]
-      .find((button) => button.textContent === "Find models")!
+      .find((button) => button.textContent === "Try again")!
       .click(),
   );
-  // Onboarding probes the endpoint the same way model settings does.
-  expect(rpc.models.probeOpenAiCompatible).toHaveBeenCalledWith(
+  expect(probe).toHaveBeenCalledTimes(2);
+  expect(probe).toHaveBeenLastCalledWith(
     expect.objectContaining({
       baseUrl: "https://models.example.test/v1",
       apiProtocol: "chat-completions",
@@ -170,5 +178,36 @@ it.each([
 
   await act(async () => settle());
   expect(router.pathname).toBe("/sign-in");
+  act(() => root.unmount());
+});
+
+it.each([
+  ["opens the first bot the server made", "chief-1", "/app/chief-1"],
+  ["opens the Space as it is when the server made none", null, "/app"],
+])("%s", async (_name, botId, path) => {
+  vi.mocked(rpc.onboarding.firstBot).mockResolvedValue({ botId });
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  let pathname = "";
+  function Location() {
+    pathname = useLocation().pathname;
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/onboarding"]}>
+        <Routes>
+          <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+          <Route path="/app/*" element={null} />
+        </Routes>
+        <Location />
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () =>
+    account.resolve({ needsModel: false, needsSignupSurvey: false, billingEnabled: false }),
+  );
+  await vi.waitFor(() => expect(pathname).toBe(path));
+  expect(rpc.onboarding.firstBot).toHaveBeenCalledOnce();
   act(() => root.unmount());
 });

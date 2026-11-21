@@ -274,6 +274,27 @@ describe("page kit", () => {
     expect(phrases).toContain('<th scope="col">Rebate</th>');
   });
 
+  it("renders table sort controls only for columns with headers", () => {
+    const columns = ["", "Q2", <strong key="q3">Q3</strong>, "  ", false, 0, []];
+    const rows = [["One", 8, 4, "Other", "Hidden", 10, "Blank", "Padded"]];
+    const markup = html(<Table columns={columns} rows={rows} sortable />);
+    const heads = markup.match(/<th\b[^>]*>.*?<\/th>/g) ?? [];
+    expect(heads.map((head) => head.includes('class="rk-sort"'))).toEqual([
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+    ]);
+    expect(heads[1]).toContain(">Q2<span");
+    expect(heads[2]).toContain("<strong>Q3</strong>");
+    expect(heads[5]).toContain(">0<span");
+    expect(html(<Table columns={columns} rows={rows} />)).not.toContain('class="rk-sort"');
+  });
+
   it("marks a line chart's floor, middle and ceiling and thins x labels to fit", () => {
     const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const markup = html(

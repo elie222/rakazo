@@ -3,8 +3,8 @@ import { recordUsage } from "@rakazo/db";
 import type { AutoReviewChecker } from "../../approvals/auto-review.js";
 import {
   autoReviewTimeoutMs,
+  includedReviewChecker,
   isAutoReviewCheckerConfigured,
-  resolveAutoReviewChecker,
   resolveAutoReviewProviderKind,
 } from "../../approvals/auto-review.js";
 import { createAutoReviewProvider } from "../../approvals/auto-review-factory.js";
@@ -20,28 +20,25 @@ import {
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { modelCreditBillingEnabled, resolveModelKey } from "./run-model.js";
 
-/**
- * The deployment's operator-funded reviewer, when hosted credits include one. It needs no
- * connection or credits of the member's, so it can still decide when their own choice cannot.
- */
+/** The deployment's operator-funded reviewer, when hosted credits include one. */
 export async function includedAutoReviewChecker(
   deps: Pick<ExecutorDeps, "prisma" | "billingEnabled">,
 ): Promise<AutoReviewChecker | null> {
-  if (!(await modelCreditBillingEnabled(deps))) return null;
-  const checker = resolveAutoReviewChecker(process.env, true);
-  if (
-    !checker ||
-    !decisionModel(checker.provider, checker.model) ||
-    !isAutoReviewCheckerConfigured({ checker })
-  )
-    return null;
-  return { ...checker, included: true };
+  return includedReviewChecker(await modelCreditBillingEnabled(deps));
 }
 
 /** The Auto Review provider that judges a run's action with one checker choice. */
 export async function autoReviewCheckerProvider(
   deps: ExecutorDeps,
-  scope: { runId: string; spaceId: string; userId: string; botId: string; threadId: string },
+  scope: {
+    runId: string;
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    /** Names the reviewed action on the review's usage records. */
+    operationId: string;
+  },
   options: {
     injectedReview?: AutoReviewProvider;
     memberChecker: boolean;
@@ -49,7 +46,7 @@ export async function autoReviewCheckerProvider(
   },
   checker: AutoReviewChecker,
 ): Promise<AutoReviewProvider> {
-  const { runId, spaceId, userId, botId, threadId } = scope;
+  const { runId, spaceId, userId, botId, threadId, operationId } = scope;
   const { injectedReview, memberChecker, registerSecrets } = options;
   if (injectedReview) return injectedReview;
   const deploymentChoice = !memberChecker && !checker.credentialId && !checker.creditOfferingId;
@@ -87,7 +84,7 @@ export async function autoReviewCheckerProvider(
         botId,
         runId,
         parentRunId: runId,
-        operationId: `auto-review:${runId}`,
+        operationId,
         operationKind: "setup",
       })
     : undefined;
@@ -98,7 +95,7 @@ export async function autoReviewCheckerProvider(
       botId,
       parentRunId: runId,
       runId,
-      operationId: `auto-review:${runId}`,
+      operationId,
       operationKind: "setup",
       fundingSource: operatorFunded ? "operator" : "customer",
     });
@@ -137,19 +134,20 @@ export async function autoReviewCheckerProvider(
         },
       );
   const callObserver = operatorObserver ?? judgeKey?.callObserver;
-  if (decision && judgeKey?.zeroDataRetention) {
-    // The decision endpoint has no way to restrict routing, so it is never used for this connection.
+  if (decision && judgeKey?.zeroDataRetention && !decision.dataRetentionControl) {
     throw new DataRetentionRefusedError("Selected checker cannot restrict data retention");
   }
   if (decision)
     return new DecisionAutoReviewProvider({
       provider: decision.create({
         apiKey: deploymentKey ?? judgeKey?.apiKey ?? "",
+        ...(judgeKey?.zeroDataRetention ? { zeroDataRetention: true } : {}),
         callObserver,
         onUsage: operatorFunded ? undefined : onUsage,
       }),
       providerId: checker.provider,
       model: checker.model,
+      calibration: decision.calibration,
     });
   if (!judgeKey) throw new CheckerConnectionUnavailableError();
   return createAutoReviewProvider("llm", {
@@ -159,6 +157,7 @@ export async function autoReviewCheckerProvider(
       checker,
       apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
       callObserver,
+      billing: judgeKey.billing,
       accountId: judgeKey.accountId,
       gatewayId: judgeKey.gatewayId,
       projectId: judgeKey.projectId,

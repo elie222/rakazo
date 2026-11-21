@@ -17,7 +17,7 @@ import type {
   UnreferencedMachine,
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
-import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import { SandboxFileTooLargeError, SandboxUnavailableError } from "@rakazo/adapter-kit";
 import { cancelResponseBody, ResponseTooLargeError } from "@rakazo/core";
 import {
   browserProfilePathForScreen,
@@ -1495,7 +1495,7 @@ raise SystemExit(1)
       if (current && !TRANSITIONAL_CREATEOS_STATUSES.has(current.status)) return current;
       await delay(1_000, undefined, { signal: context.signal });
     }
-    throw new Error("CreateOS sandbox did not settle");
+    throw new SandboxUnavailableError({ cause: new Error("CreateOS sandbox did not settle") });
   }
 
   /**

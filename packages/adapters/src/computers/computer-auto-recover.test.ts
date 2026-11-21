@@ -13,7 +13,7 @@ import {
 } from "../providers/computer/boat/boat-sandbox.test-support.js";
 import { InMemoryJobQueue } from "../runs/wakeups/wakeup.js";
 import { LocalAgentHomeStore } from "../storage/home.js";
-import { provisionComputer } from "./computer-lifecycle.js";
+import { ComputerRecoveryRequiredError, provisionComputer } from "./computer-lifecycle.js";
 
 // Boat's polling waits advance a virtual clock instead of sleeping.
 vi.mock("node:timers/promises", async (importOriginal) => ({
@@ -92,6 +92,7 @@ async function damagedComputer(damage: "resume_heals" | "persists" = "resume_hea
     updatedAt: new Date(),
   };
   const computer = {
+    findUnique: vi.fn().mockResolvedValue(null),
     findUniqueOrThrow: vi.fn(async () => ({ ...row })),
     updateMany: vi.fn(async ({ where, data }) => {
       const matches = ["id", "state", "providerRef", "kind", "updatedAt"].every(
@@ -154,6 +155,20 @@ describe("a computer whose system is damaged", () => {
     ]);
   });
 
+  it("is recovered when its damage first shows while laying out the workspace", async () => {
+    const { api, deps, row, first } = await damagedComputer();
+    // Already prepared in this process, so only a team computer's layout runs a command.
+    vi.spyOn(deps.sandbox, "prepare").mockResolvedValueOnce(undefined);
+    row.scope = "team";
+
+    const ref = await provisionComputer(deps, row.id, context);
+
+    expect(ref).toMatchObject({ providerRef: first.providerRef, started: true });
+    expect(api.state(first.id)).toBe("ready");
+    expect(row).toMatchObject({ state: "running" });
+    expect(row.autoRecoveredAt).toBeInstanceOf(Date);
+  });
+
   it("is replaced from its saved workspace when that is newer than the provider's snapshot", async () => {
     const { api, deps, row, first } = await damagedComputer();
     row.homeRevisionAt = new Date();
@@ -195,10 +210,10 @@ describe("a computer whose system is damaged", () => {
     expect(text(await deps.sandbox.readFile(ref, "saved.txt", context))).toBe("saved.txt");
   });
 
-  it("is left to Recover when it comes back damaged, without trying again", async () => {
+  it("is stopped and left to Recover when it comes back damaged, without trying again", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
-    const { deps, row, first, stop, resume } = await damagedComputer("persists");
+    const { api, deps, row, first, stop, resume } = await damagedComputer("persists");
 
     await expect(provisionComputer(deps, row.id, context)).rejects.toBeInstanceOf(
       SandboxDamagedError,
@@ -207,18 +222,63 @@ describe("a computer whose system is damaged", () => {
       ["warn", "stop"],
       ["warn", "failed"],
     ]);
-    expect(row).toMatchObject({ state: "running", providerRef: first.providerRef });
+    // Nothing is saved from it over the stored workspace, and it does not bill while it waits.
+    expect(row).toMatchObject({
+      state: "quarantined",
+      providerRef: first.providerRef,
+      restorePending: true,
+    });
+    expect(api.state(first.id)).toBe("archived");
     const stops = stop.mock.calls.length;
     const resumes = resume.mock.calls.length;
-    expect(stops).toBeGreaterThan(0);
     expect(resumes).toBe(1);
 
     await expect(provisionComputer(deps, row.id, context)).rejects.toBeInstanceOf(
-      SandboxDamagedError,
+      ComputerRecoveryRequiredError,
     );
     expect(stop).toHaveBeenCalledTimes(stops);
     expect(resume).toHaveBeenCalledTimes(resumes);
     expect(recoverySteps(sink)).toHaveLength(2);
+  });
+
+  it("lets go of screen control when it is left to Recover, so Recover is not held off", async () => {
+    const { deps, row } = await damagedComputer("persists");
+    const draftRecordingsOfLease = vi.fn(async () => undefined);
+    deps.events = { draftRecordingsOfLease } as unknown as ThreadEvents;
+    Object.assign(row, {
+      controlHolder: "user",
+      controlLeaseId: "lease-1",
+      controlUserId: "user",
+      controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(provisionComputer(deps, row.id, context)).rejects.toBeInstanceOf(
+      SandboxDamagedError,
+    );
+
+    expect(row).toMatchObject({
+      state: "quarantined",
+      controlHolder: "none",
+      controlLeaseId: null,
+      controlUserId: null,
+      controlLeaseExpiresAt: null,
+    });
+    expect(draftRecordingsOfLease).toHaveBeenCalledWith({ spaceId: "space", leaseId: "lease-1" });
+  });
+
+  it("is recovered once when it starts damaged from a stop, then left to Recover", async () => {
+    const { api, deps, row, first, resume } = await damagedComputer("persists");
+    await deps.sandbox.stop(first, context, { discardUnsaved: true });
+    row.state = "stopped";
+    resume.mockClear();
+
+    await expect(provisionComputer(deps, row.id, context)).rejects.toBeInstanceOf(
+      SandboxDamagedError,
+    );
+
+    expect(resume).toHaveBeenCalledTimes(2);
+    expect(row).toMatchObject({ state: "quarantined", restorePending: true });
+    expect(api.state(first.id)).toBe("archived");
   });
 
   it("is recovered again once a save after the last recovery shows it worked", async () => {

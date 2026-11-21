@@ -34,7 +34,6 @@
   "packages/adapters/src/runtime/pi/pi-runtime.ts": 1,
   "packages/adapters/src/runtime/pi/tools/pi-runtime-tools.ts": 1,
   "packages/adapters/src/runtime/scripted-runtime.ts": 1,
-  "packages/adapters/src/secrets/bot-secrets.ts": 1,
   "packages/adapters/src/tools/fleet-tools.ts": 1,
   "packages/adapters/src/tools/schedule-tools.ts": 1,
   "packages/auth/src/index.ts": 1,

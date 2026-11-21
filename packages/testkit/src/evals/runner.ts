@@ -1254,8 +1254,8 @@ export async function runTrial(
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
-    // Kept so a new rubric can grade the trial again without running the bot.
-    if (scenario.judge || scenario.observe) result.evidence = evidenceSnapshot(evidence, secrets);
+    // Kept so a changed check or rubric can grade the trial again without running the bot.
+    result.evidence = evidenceSnapshot(evidence, secrets);
     const grading = { judge: options.judge, deadline, secrets };
     await judgeOutcome(scenario, evidence, result, grading);
     if (handles.harnessIssues?.length) result.harnessIssues = [...handles.harnessIssues];

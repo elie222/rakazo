@@ -193,7 +193,7 @@ docker compose --env-file .env -f docker-compose.images.yml exec api \
 
 当 `WEB_ORIGIN` 是 HTTPS 域名（或开发环境的 `localhost`）时，通行密钥自动开启；依赖方是该 origin 的主机，因此 `WEB_ORIGIN` 必须保持同一域名，已有通行密钥才能继续使用。SSO-only 部署关闭密码登录时，通行密钥也关闭。网页上，拥有平台认证器的浏览器会提示使用。macOS 桌面应用使用系统通行密钥面板，它只服务发布版本关联的域名（`app.rakazo.com`），因此对其他服务器会隐藏通行密钥。
 
-原生应用只有在域名为它背书且应用为该域名构建时，才能使用该域名的通行密钥。iOS 应用的关联域名来自构建时的 `EXPO_PUBLIC_API_URL`。macOS 桌面构建来自 `RAKAZO_PASSKEY_RP_ID`（默认 `app.rakazo.com`）：`pnpm build` 和 `scripts/passkey-entitlements.ts` 都要设置为同一域名，然后用该脚本输出作为 electron-builder 的 `-c.mac.entitlements`，并用带 Associated Domains 能力的 App ID profile 作为 `-c.mac.provisioningProfile`，与发布流程相同。缺少任一项，macOS 都会忽略关联，应用会隐藏通行密钥。当 Apple CDN 无法访问服务器（私网或 Tailscale 等 VPN）时，任一构建还要设置 `RAKAZO_PASSKEY_DEVELOPER_MODE=1`：开发签名应用会自行获取关联文件，前提是开启关联域名开发者模式（iOS 在 Settings > Developer，macOS 运行 `sudo swcutil developer-mode -e true`，且应用必须位于 `/Applications`）。要让构建使用这个服务器的通行密钥，请设置：
+原生应用只有在域名为它背书且应用为该域名构建时，才能使用该域名的通行密钥。iOS 应用的关联域名来自构建时的 `EXPO_PUBLIC_API_URL`。macOS 桌面构建来自 `RAKAZO_PASSKEY_RP_ID`（默认 `app.rakazo.com`）：`pnpm build` 和 `apps/desktop/scripts/passkey-entitlements.ts` 都要设置为同一域名，然后用该脚本输出作为 electron-builder 的 `-c.mac.entitlements`，并用带 Associated Domains 能力的 App ID profile 作为 `-c.mac.provisioningProfile`，与发布流程相同。缺少任一项，macOS 都会忽略关联，应用会隐藏通行密钥。当 Apple CDN 无法访问服务器（私网或 Tailscale 等 VPN）时，任一构建还要设置 `RAKAZO_PASSKEY_DEVELOPER_MODE=1`：开发签名应用会自行获取关联文件，前提是开启关联域名开发者模式（iOS 在 Settings > Developer，macOS 运行 `sudo swcutil developer-mode -e true`，且应用必须位于 `/Applications`）。要让构建使用这个服务器的通行密钥，请设置：
 
 ```bash
 # iOS 和 macOS 桌面应用（dev.rakazo.desktop）：<Apple Team ID>.<bundle id>，逗号分隔。

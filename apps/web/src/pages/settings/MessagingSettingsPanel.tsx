@@ -29,7 +29,7 @@ import {
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckIcon, ChevronDownIcon, EllipsisIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, EllipsisIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 
@@ -376,7 +376,6 @@ export function MessagingSettingsPanel() {
           render={<Button size="sm" variant="outline" aria-label={ariaLabel} />}
         >
           {label}
-          <ChevronDownIcon data-icon="inline-end" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-44">
           <DropdownMenuGroup>
