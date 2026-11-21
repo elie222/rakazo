@@ -113,6 +113,7 @@ import {
 } from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
 import { ArchivedChats } from "./shell/sidebar/archived-chats";
+import { focusChatListRestore } from "./shell/sidebar/focus-chat-list";
 import { focusSidebarSearch, ShellSidebar } from "./shell/sidebar/shell-sidebar";
 import { ShellSidebarFooter } from "./shell/sidebar/shell-sidebar-footer";
 import { BotsSidebarLayout } from "./shell/sidebar/sidebar-layout";
@@ -383,7 +384,11 @@ function SpaceShell() {
       if (computerOpen) return false;
       if (shortcut.type === "toggle-sidebar") {
         if (isMobileSidebar) setMobileSidebarOpen((open) => !open);
-        else setBotsSidebarCollapsedPref(!botsSidebarCollapsed);
+        else {
+          const collapsing = !botsSidebarCollapsed;
+          setBotsSidebarCollapsedPref(collapsing);
+          if (collapsing) focusChatListRestore();
+        }
         return true;
       }
       if (shortcut.type === "search") {
@@ -1089,7 +1094,6 @@ function SpaceShell() {
         chatMenu={chatMenu}
         roster={
           <SidebarRoster
-            mini={railOnScreen && botsSidebarCollapsed}
             sidebarGroups={sidebarGroups}
             collapsedSidebarSections={collapsedSidebarSections}
             bootstrapMe={bootstrapMe}
