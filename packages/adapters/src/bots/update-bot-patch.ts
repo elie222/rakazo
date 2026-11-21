@@ -2,6 +2,7 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   ComputerModeSchema,
+  DisabledBuiltinToolsSchema,
   UpdateBotInput,
 } from "@rakazo/contracts";
 import { argumentGiven } from "@rakazo/core";
@@ -84,6 +85,7 @@ export type BotSettingsPatch = Pick<
 export const ChildBotSettingsSchema = z
   .object({
     ...UpdateBotInput.shape,
+    disableTools: DisabledBuiltinToolsSchema,
     computerMode: ComputerModeSchema,
   })
   .pick({
@@ -91,7 +93,7 @@ export const ChildBotSettingsSchema = z
     teamChatAmbientEnabled: true,
     teamChatRules: true,
     memoryScope: true,
-    disabledBuiltinTools: true,
+    disableTools: true,
     autoSpeak: true,
     voiceId: true,
     computerMode: true,
@@ -116,7 +118,8 @@ export function parseBotSettingsPatch(
     botId: bot.id,
     replyMode: given("replyMode"),
     teamChatAmbientEnabled: given("teamChatAmbientEnabled"),
-    teamChatRules: given("teamChatRules"),
+    // Empty rules clear them, as in Settings.
+    teamChatRules: typeof args.teamChatRules === "string" ? args.teamChatRules : undefined,
     memoryScope: given("memoryScope"),
     disabledBuiltinTools: added.length ? [...bot.disabledBuiltinTools, ...added] : undefined,
   });

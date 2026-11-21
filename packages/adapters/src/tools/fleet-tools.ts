@@ -899,7 +899,7 @@ export async function updateChildBot(
   }
   const approved = ChildBotSettingsSchema.safeParse(args.settings ?? {});
   if (!approved.success) return { error: "The approved change is incomplete." };
-  const { computerMode, ...settings } = approved.data;
+  const { computerMode, disableTools, ...settings } = approved.data;
   if (Object.keys(patch).length === 0 && args.settings === undefined) {
     return {
       error: "Provide at least one of name, description, notify_on_finish, or color.",
@@ -918,7 +918,15 @@ export async function updateChildBot(
       throw error;
     }
   }
-  if (Object.keys(patch).length || Object.keys(settings).length)
+  const data: Omit<Prisma.BotUncheckedUpdateInput, "instructions"> = { ...patch, ...settings };
+  if (disableTools?.length) {
+    const live = await deps.prisma.bot.findUniqueOrThrow({
+      where: { id: child.id },
+      select: { disabledBuiltinTools: true },
+    });
+    data.disabledBuiltinTools = [...new Set([...live.disabledBuiltinTools, ...disableTools])];
+  }
+  if (Object.keys(data).length)
     await commitBotUpdate({
       prisma: deps.prisma,
       notify: (threadId, seq) => deps.events.notify(threadId, seq),
@@ -926,7 +934,7 @@ export async function updateChildBot(
       threadId: child.thread.id,
       botId: child.id,
       emitBotUpdated: true,
-      data: { ...patch, ...settings },
+      data,
     });
   return { ok: true };
 }

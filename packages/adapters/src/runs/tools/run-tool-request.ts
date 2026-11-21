@@ -492,8 +492,11 @@ export async function prepareToolRequest(
         );
         if ("error" in prepared) return refusal("bot_management_request_invalid", prepared.error);
         args = prepared.canonical;
-        request.fleetSummary = prepared.summary;
-        request.heldForApproval = true;
+        // A call that repeats every setting is only a profile edit, which needs no card.
+        if (args.settings !== undefined) {
+          request.fleetSummary = prepared.summary;
+          request.heldForApproval = true;
+        }
       }
     }
   }

@@ -5,6 +5,7 @@ import type { FleetCardSummary } from "../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../approvals/approval-ask.js";
 import type { FleetPrepareDeps, FleetRun } from "../tools/fleet-tools.js";
 import { cardName, credentialField, NOT_FOUND, resolveBot } from "../tools/fleet-tools.js";
+import { resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { prepareOwnBotSettings } from "./own-bot-settings.js";
 import type { ChildBotSettings } from "./update-bot-patch.js";
 import {
@@ -63,16 +64,31 @@ export async function prepareChildBotUpdate(
   const child = await resolveBot(deps.prisma, run, { bot_id: args.bot_id });
   if ("error" in child) return child;
   if (!child.thread) return { error: NOT_FOUND };
+  if (child.id === run.botId) return { error: "Change your own settings without bot_id." };
+  let color: string | undefined;
+  if (argumentGiven(args.color)) {
+    const avatar = await resolveUpdateBotAvatar({
+      color: args.color,
+      sourceImageArtifactIds: [],
+      loadArtifact: async () => null,
+    });
+    if ("error" in avatar) return avatar;
+    color = avatar.color;
+  }
   const current = await deps.prisma.bot.findUniqueOrThrow({
     where: { id: child.id },
     select: { disabledBuiltinTools: true, computer: { select: { scope: true } } },
   });
+  let voices: VoiceInfo[] | null = null;
   const voice = await prepareOwnBotSettings(
     deps,
     run,
     child,
     { readAloud: args.readAloud, voice: args.voice },
-    deps.listVoices,
+    async () => {
+      voices = await deps.listVoices();
+      return voices;
+    },
   );
   if ("error" in voice) return voice;
   const work = parseBotSettingsPatch(args, {
@@ -80,13 +96,25 @@ export async function prepareChildBotUpdate(
     disabledBuiltinTools: current.disabledBuiltinTools,
   });
   if ("error" in work) return work;
-  const settings: ChildBotSettings = { ...work.patch, ...voice.data };
+  // Only the tools to turn off are stored: replay adds them to the list as it is then, so a change
+  // the owner makes while the card waits stays.
+  const { disabledBuiltinTools, ...rest } = work.patch;
+  const disableTools = disabledBuiltinTools?.filter(
+    (name) => !current.disabledBuiltinTools.includes(name),
+  );
+  const settings: ChildBotSettings = {
+    ...rest,
+    ...(disableTools?.length ? { disableTools } : {}),
+    ...voice.data,
+  };
   if (computer?.success) {
     if (!current.computer) return { error: "That bot has no computer to change." };
     const mode = current.computer.scope === "dedicated" ? "dedicated" : "team";
     if (mode !== computer.data) settings.computerMode = computer.data;
   }
-  if (!Object.keys(settings).length) return { error: "That bot already has these settings." };
+  const changesSettings = Object.keys(settings).length > 0;
+  if (!changesSettings && !profileGiven && color === undefined)
+    return { error: "That bot already has these settings." };
 
   const lines: string[] = [];
   const { patch } = profile;
@@ -96,9 +124,12 @@ export async function prepareChildBotUpdate(
     lines.push(`Notify when done: ${onOff(patch.notifyOnFinish)}`);
   if (patch.dailyCheckIns !== undefined)
     lines.push(`Daily check-ins: ${onOff(patch.dailyCheckIns)}`);
-  if (argumentGiven(args.color)) lines.push(`Avatar: ${String(args.color)}`);
+  if (color !== undefined) lines.push(`Avatar: ${color}`);
   if (settings.autoSpeak !== undefined) lines.push(`Read aloud: ${onOff(settings.autoSpeak)}`);
-  if (settings.voiceId !== undefined) lines.push(`Voice: ${String(args.voice).trim()}`);
+  if (settings.voiceId !== undefined) {
+    const chosen = (voices as VoiceInfo[] | null)?.find((entry) => entry.id === settings.voiceId);
+    lines.push(`Voice: ${chosen?.label ?? "Default"}`);
+  }
   if (settings.replyMode)
     lines.push(
       settings.replyMode === "messages" ? "Replies: only messages it sends" : "Replies: in chat",
@@ -110,15 +141,10 @@ export async function prepareChildBotUpdate(
         : "Team chat: only when mentioned",
     );
   if (settings.teamChatRules !== undefined)
-    lines.push(`Team chat rules: ${settings.teamChatRules}`);
+    lines.push(`Team chat rules: ${settings.teamChatRules || "none"}`);
   if (settings.memoryScope)
     lines.push(settings.memoryScope === "shared" ? "Memory: shared" : "Memory: its own");
-  if (settings.disabledBuiltinTools) {
-    const off = settings.disabledBuiltinTools.filter(
-      (name) => !current.disabledBuiltinTools.includes(name),
-    );
-    lines.push(`Turn off: ${off.join(", ")}`);
-  }
+  if (settings.disableTools) lines.push(`Turn off: ${settings.disableTools.join(", ")}`);
   if (settings.computerMode)
     lines.push(
       settings.computerMode === "dedicated" ? "Computer: its own" : "Computer: the team computer",
@@ -137,8 +163,8 @@ export async function prepareChildBotUpdate(
       ...(patch.description !== undefined ? { description: patch.description } : {}),
       ...(patch.notifyOnFinish !== undefined ? { notifyOnFinish: patch.notifyOnFinish } : {}),
       ...(patch.dailyCheckIns !== undefined ? { dailyCheckIns: patch.dailyCheckIns } : {}),
-      ...(argumentGiven(args.color) ? { color: args.color } : {}),
-      settings,
+      ...(color !== undefined ? { color } : {}),
+      ...(changesSettings ? { settings } : {}),
     },
     summary,
   };

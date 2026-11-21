@@ -2952,7 +2952,7 @@ describe("bot management approvals", () => {
     const asked = { bot_id: "bot-a", replyMode: "messages", disableTools: ["web_search"] };
     const stored = {
       bot_id: "bot-a",
-      settings: { replyMode: "messages", disabledBuiltinTools: ["web_search"] },
+      settings: { replyMode: "messages", disableTools: ["web_search"] },
     };
     f.setCalls([{ args: asked, executionId: "call-1" }]);
     await f.run();
@@ -2976,7 +2976,10 @@ describe("bot management approvals", () => {
     await f.run();
     expect(f.results.at(-1)).toEqual({ ok: true });
     expect(f.prisma.bot.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "bot-a" }, data: stored.settings }),
+      expect.objectContaining({
+        where: { id: "bot-a" },
+        data: { replyMode: "messages", disabledBuiltinTools: ["web_search"] },
+      }),
     );
   });
 

@@ -26,7 +26,7 @@ function deps(current: Current) {
   };
   const prisma = {
     bot: {
-      findMany: vi.fn(async () => [child]),
+      findMany: vi.fn(async ({ where }: { where: { id: string } }) => [{ ...child, id: where.id }]),
       findUniqueOrThrow: vi.fn(async () => current),
     },
   };
@@ -71,7 +71,7 @@ describe("prepareChildBotUpdate", () => {
           voiceId: "voice-1",
           teamChatAmbientEnabled: false,
           memoryScope: "shared",
-          disabledBuiltinTools: ["shell", "web_search"],
+          disableTools: ["web_search"],
           computerMode: "dedicated",
         },
       },
@@ -80,7 +80,7 @@ describe("prepareChildBotUpdate", () => {
         lines: [
           "Name: Scout",
           "Read aloud: on",
-          "Voice: rachel",
+          "Voice: Rachel",
           "Team chat: only when mentioned",
           "Memory: shared",
           "Turn off: web_search",
@@ -93,6 +93,7 @@ describe("prepareChildBotUpdate", () => {
   it.each([
     [{ model: "Claude Sonnet" }, "Change another bot's model with set_child_bot_model."],
     [{ computer: "team" }, "That bot already has these settings."],
+    [{ bot_id: "bot-self", replyMode: "messages" }, "Change your own settings without bot_id."],
     [{ disableTools: ["shell"] }, "That bot already has these settings."],
     [{ computer: "anywhere" }, "computer must be team or dedicated."],
     [{ replyMode: "quiet" }, expect.stringMatching(/^replyMode: /)],
@@ -100,6 +101,26 @@ describe("prepareChildBotUpdate", () => {
     [{ teamChatRules: "Use sk-test-fixture" }, "teamChatRules cannot contain credentials."],
   ])("refuses %o", async (args, error) => {
     expect(await prepare(args, undefined, ["sk-test-fixture"])).toEqual({ error });
+  });
+
+  it("lets a profile edit through when every setting is already set", async () => {
+    expect(await prepare({ name: "Scout", computer: "team", color: " #8B5CF6 " })).toMatchObject({
+      ok: true,
+      canonical: { bot_id: "bot-child", name: "Scout", color: "#8B5CF6" },
+    });
+  });
+
+  it("clears team chat rules with an empty text", async () => {
+    expect(await prepare({ teamChatRules: "" })).toMatchObject({
+      canonical: { settings: { teamChatRules: "" } },
+      summary: { lines: ["Team chat rules: none"] },
+    });
+  });
+
+  it("refuses an invalid avatar before the card", async () => {
+    expect(await prepare({ replyMode: "messages", color: "red" })).toEqual({
+      error: expect.any(String),
+    });
   });
 
   it("refuses a computer change for a bot without a computer", async () => {
