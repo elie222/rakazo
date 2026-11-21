@@ -55,11 +55,11 @@ export function SettingsRow({
     <Field
       data-slot="settings-row"
       orientation="horizontal"
-      className="min-h-9 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
+      className="flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
     >
       {/* A plain block, not FieldContent: the horizontal field pins a content child to the top,
           which leaves the label high beside a taller select or button. */}
-      <div className="flex min-w-0 flex-auto flex-col justify-center gap-0.5 leading-snug">
+      <div className="flex min-h-9 min-w-0 flex-auto flex-col justify-center gap-0.5 leading-snug">
         {htmlFor ? (
           <FieldLabel htmlFor={htmlFor} className="w-full text-body font-normal text-foreground">
             {label}

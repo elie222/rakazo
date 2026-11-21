@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { cn } from "@rakazo/ui-web";
+import { buttonVariants, cn } from "@rakazo/ui-web";
 import {
   Bell,
   FolderOpen,
@@ -340,14 +340,18 @@ function RailItem({
   onClick?: () => void;
   testId?: string;
 }) {
-  const className = cn(
-    "app-no-drag group/rail-item flex h-8 min-w-0 select-none items-center overflow-hidden rounded-full text-start outline-none transition-[background-color,color,box-shadow] duration-(--motion-micro) ease-(--ease-standard) focus-visible:ring-2 focus-visible:ring-ring/50 motion-reduce:transition-none",
-    expanded ? "w-full gap-2" : "w-8",
-    active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-muted-foreground",
-    expanded && !active && "hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-    !expanded &&
-      "hover:w-max hover:bg-primary hover:pe-2.5 hover:text-primary-foreground hover:shadow-md focus-visible:w-max focus-visible:bg-primary focus-visible:pe-2.5 focus-visible:text-primary-foreground focus-visible:shadow-md",
-  );
+  const className = buttonVariants({
+    variant: "ghost",
+    size: "icon",
+    className: cn(
+      "app-no-drag group/rail-item min-w-0 shrink-0 select-none justify-start overflow-hidden rounded-full px-0 text-start",
+      expanded
+        ? "w-full gap-2"
+        : "hover:w-max hover:bg-primary hover:pe-2.5 hover:text-primary-foreground hover:shadow-md focus-visible:w-max focus-visible:bg-primary focus-visible:pe-2.5 focus-visible:text-primary-foreground focus-visible:shadow-md",
+      active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-muted-foreground",
+      expanded && !active && "hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+    ),
+  });
   const content = (
     <>
       <span className="ms-1.5 flex size-5 shrink-0 items-center justify-center">{icon}</span>
