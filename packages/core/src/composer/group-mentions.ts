@@ -166,10 +166,15 @@ type GroupTargetInput = {
 export function mentionedGroupBotIds(input: GroupTargetInput): string[] {
   const membersById = new Map(input.members.map((member) => [member.id, member]));
   const targetIds = new Set<string>();
+  const selectedNamePatterns: RegExp[] = [];
+  const exactNamePattern = (name: string) => new RegExp(`^${escapeRegExp(name.trim())}$`, "iu");
 
   for (const mentionId of input.explicitMentions ?? []) {
     // Out-of-chat bots stay as @Name in the prompt; only members are woken here.
-    if (membersById.has(mentionId)) targetIds.add(mentionId);
+    const member = membersById.get(mentionId);
+    if (!member) continue;
+    targetIds.add(member.id);
+    selectedNamePatterns.push(exactNamePattern(member.name));
   }
 
   const memberNames = input.members.map((member) => member.name);
@@ -177,7 +182,7 @@ export function mentionedGroupBotIds(input: GroupTargetInput): string[] {
   // Read each mention once, with its longest name, so a full name cannot also wake its prefix.
   const mentions = groupMentionNames(input.text, memberNames);
   const isMentioned = (name: string) => {
-    const exactName = new RegExp(`^${escapeRegExp(name.trim())}$`, "iu");
+    const exactName = exactNamePattern(name);
     return mentions.some((mention) => exactName.test(mention));
   };
 
@@ -185,7 +190,11 @@ export function mentionedGroupBotIds(input: GroupTargetInput): string[] {
     for (const member of input.members) targetIds.add(member.id);
   } else {
     for (const member of input.members) {
-      if (isMentioned(member.name)) targetIds.add(member.id);
+      // The chip already identifies the intended bot for this name.
+      const name = member.name.trim();
+      if (isMentioned(name) && !selectedNamePatterns.some((pattern) => pattern.test(name))) {
+        targetIds.add(member.id);
+      }
     }
   }
 

@@ -74,6 +74,14 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   const single = settings.getByTestId("organization-settings");
   await expect(single.getByLabel("Name")).toHaveValue("Personal");
   await expect(single.getByRole("button")).toHaveText([/^Members/]);
+  // The options menu is in the page header, next to the close button.
+  await settings
+    .getByTestId("settings-header")
+    .getByRole("button", { name: "Organization options" })
+    .click();
+  await expect(page.getByRole("menuitem", { name: "Activity log" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Delete organization" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await captureScreenshot(page, testInfo, "org-settings-single");
   await page.keyboard.press("Escape");
 
@@ -147,17 +155,14 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await captureScreenshot(page, testInfo, "org-menu-two-orgs");
   await closeAvatarMenu(page);
 
-  // Work has no bot yet, so its first visit finishes onboarding there.
-  await switchFromAvatarMenu(page, "Work", work.defaultSpaceId);
-  const workChat = new URL(page.url()).pathname;
-  await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
-
-  // A link to a chat in another organization opens it there.
-  await page.goto(workChat);
+  // Work starts empty: the account already has chats, so no Chief is made there.
+  menu = await openOrganizationMenu(page);
+  await menu.getByRole("button", { name: "Work", exact: true }).click();
   await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
-  await expect(page).toHaveURL((url) => url.pathname === workChat);
+  await expect(
+    page.locator("main").getByRole("button", { name: "New bot", exact: true }),
+  ).toBeVisible();
 
-  // So does a link to a group chat there.
   const inWork = async <T>(procedure: string, json: unknown) => {
     const response = await page.request.post(`/rpc/${procedure}`, {
       headers: { "x-rakazo-space-id": work.defaultSpaceId },
@@ -170,9 +175,25 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     name: "Scout",
     computerMode: "team",
   });
+  const helper = await inWork<{ id: string }>("bots/create", {
+    name: "Helper",
+    computerMode: "team",
+  });
+  const workChat = `/app/${scout.id}`;
+  // Open Scout first, so the roster settling on the new bots cannot pass for the switch away.
+  await page.goto(workChat);
+  await expect(page.getByPlaceholder("Message Scout")).toBeVisible();
+  await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
+
+  // A link to a chat in another organization opens it there.
+  await page.goto(workChat);
+  await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
+  await expect(page).toHaveURL((url) => url.pathname === workChat);
+
+  // So does a link to a group chat there.
   const standup = await inWork<{ id: string }>("groups/create", {
     name: "Standup",
-    botIds: [workChat.split("/")[2], scout.id],
+    botIds: [scout.id, helper.id],
   });
   await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
   await page.goto(`/app/g/${standup.id}`);
@@ -195,7 +216,11 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     )
     .toEqual(["Personal", "Acme"]);
 
-  await organization.getByRole("button", { name: "Delete organization" }).click();
+  await settings
+    .getByTestId("settings-header")
+    .getByRole("button", { name: "Organization options" })
+    .click();
+  await page.getByRole("menuitem", { name: "Delete organization" }).click();
   const confirm = page.getByRole("alertdialog", { name: "Delete Acme?" });
   const remove = confirm.getByRole("button", { name: "Delete", exact: true });
   await expect(remove).toBeDisabled();
@@ -215,4 +240,33 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     "aria-current",
     "true",
   );
+});
+
+test("an organization owner opens the activity log from the organization menu", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `audit-log-${Date.now()}@rakazo.test`, "password12", "Audit Owner");
+  await completeOnboarding(page);
+  await rpc(page, "spaces/create", { name: "Audited space" });
+
+  const settings = await openUserSettings(page, "organization");
+  // The organization page stays about the organization; the log is behind the header menu.
+  await expect(settings.getByTestId("audit-log")).toHaveCount(0);
+  await settings
+    .getByTestId("settings-header")
+    .getByRole("button", { name: "Organization options" })
+    .click();
+  await page.getByRole("menuitem", { name: "Activity log" }).click();
+
+  const log = settings.getByTestId("audit-log");
+  await expect(log.getByRole("heading", { name: "Activity log" })).toBeVisible();
+  await expect(log.getByRole("button", { name: "Export" })).toBeEnabled();
+  await expect(log.getByRole("listitem").filter({ hasText: "space.created" })).toContainText(
+    "Audited space",
+  );
+  await captureScreenshot(page, testInfo, "audit-log");
+
+  await log.getByRole("button", { name: "Back" }).click();
+  await expect(settings.getByTestId("organization-settings")).toBeVisible();
+  await expect(settings.getByTestId("audit-log")).toHaveCount(0);
 });

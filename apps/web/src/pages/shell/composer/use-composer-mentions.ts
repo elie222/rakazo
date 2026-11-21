@@ -2,12 +2,12 @@ import { useLingui } from "@lingui/react/macro";
 import type { Bot, Connection, ConnectionCatalogItem, Group, Routine } from "@rakazo/contracts";
 import {
   buildComposerMentionOptions,
+  connectedAppMarks,
   createRoutineMentionBatcher,
   mentionConnectorsFrom,
 } from "@rakazo/core";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { connectedAppMarks } from "../../../lib/integrations/connected-apps";
 import type { SpaceQueries } from "../../../lib/query/query";
 import { queryClient } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";

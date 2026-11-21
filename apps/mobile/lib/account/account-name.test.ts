@@ -153,3 +153,12 @@ it("opens the Android dialog prefilled", () => {
   expect(editor.setNameError).toHaveBeenCalledWith(null);
   expect(editor.setNameDialogOpen).toHaveBeenCalledWith(true);
 });
+
+it("does not resubmit a failed iOS draft when Save supplies no value", async () => {
+  const editor = nameEditor("ios");
+  editor.updateAccountName.mockRejectedValue(new Error("offline"));
+  await editor.saveName("New name");
+  await editor.Alert.prompt.mock.lastCall![2][1].onPress(undefined);
+  expect(editor.updateAccountName).toHaveBeenCalledOnce();
+  expect(editor.setNameDialogOpen).toHaveBeenCalledWith(false);
+});

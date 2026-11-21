@@ -40,6 +40,16 @@ export function inboxPaneWidth(windowWidth: number, chosenWidth: number | null =
   return Math.round(Math.min(widest, Math.max(INBOX_MIN_WIDTH, preferred)));
 }
 
+/** Drag translation uses physical X; the RTL inbox grows towards the left. */
+export function inboxPaneWidthDuringDrag(
+  windowWidth: number,
+  startWidth: number,
+  translationX: number,
+  rtl: boolean,
+): number {
+  return inboxPaneWidth(windowWidth, startWidth + (rtl ? -translationX : translationX));
+}
+
 /** Hides the chat list so the open chat fills a wide window, or brings it back. */
 export function setInboxHidden(hidden: boolean) {
   if (state.hidden !== hidden) update({ hidden });

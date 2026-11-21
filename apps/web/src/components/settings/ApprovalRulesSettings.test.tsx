@@ -457,6 +457,7 @@ it("shows why adding a rule failed", async () => {
     await vi.waitFor(() => expect(button(container, "Add rule")!.disabled).toBe(false));
     await act(async () => button(container, "Shell")!.click());
     await vi.waitFor(() => expect(container.textContent).toContain("Could not save"));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not save");
     expect(container.querySelector('[data-testid^="approval-rules-"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());

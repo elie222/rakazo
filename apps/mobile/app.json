@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -43,6 +43,13 @@
           "photosPermission": "Rakazo uses your photo library so you can attach images to a bot message.",
           "savePhotosPermission": "Rakazo saves photos and videos you download from Artifacts to your photo library.",
           "granularPermissions": []
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow Rakazo to read and add events in calendars you choose for your bots.",
+          "remindersPermission": "Allow Rakazo to create and complete reminders in lists you choose for your bots."
         }
       ],
       "@react-native-vector-icons/ionicons",
@@ -107,7 +114,8 @@
     ],
     "locales": {
       "es": "./locales/es.json",
-      "pl": "./locales/pl.json"
+      "pl": "./locales/pl.json",
+      "th": "./locales/th.json"
     },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",

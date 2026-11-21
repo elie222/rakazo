@@ -2,6 +2,7 @@ import type {
   AgentModelOAuthCredential,
   AgentRunRequest,
   AgentRuntime,
+  ModelBilling,
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
 } from "@rakazo/adapter-kit";
@@ -39,15 +40,21 @@ import {
   retireToReconnectMarker,
   withModelCredentialLock,
 } from "../../models/model-credential-refresh.js";
+import {
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../../models/model-provider-allowlist.js";
 import { resolveMemberMainModel, selectConfiguredModel } from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
-import { parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
+import { modelBilling, parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
   hasHostedModelCredits,
   ModelConnectionGoneError,
   PINNED_PROVIDER_NOT_CONNECTED,
+  UNKNOWN_PROVIDER_MODEL,
   UnavailableModelForAuthError,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
@@ -148,7 +155,7 @@ function assertCompatibleModelEnabled(
   if (secret.kind !== "openai_compatible") return;
   if (secret.enabledModelIds !== undefined) {
     if (!enabledOpenAiCompatibleModelIds(secret, credential.defaultModel).includes(modelId)) {
-      throw new UnavailableModelForAuthError("Unknown model for that provider");
+      throw new UnavailableModelForAuthError(UNKNOWN_PROVIDER_MODEL);
     }
     return;
   }
@@ -225,6 +232,8 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
     (!operatorFunded && !credential
       ? approvedModelCreditOffering(provider, args[5])?.id
       : undefined);
+  if (callObserver || fundingOfferingId) material.billing = modelBilling({ credits: true });
+  material.billing ??= modelBilling({});
   return {
     ...material,
     apiKey,
@@ -258,6 +267,7 @@ async function resolveModelKeyMaterial(
   gatewayId?: string;
   projectId?: string;
   region?: string;
+  zeroDataRetention?: boolean;
   baseUrl?: string;
   apiProtocol?: AgentRunRequest["model"]["apiProtocol"];
   headers?: Record<string, string>;
@@ -278,11 +288,14 @@ async function resolveModelKeyMaterial(
   ) => Promise<boolean | undefined>;
   /** The key is the user's own stored connection, not the deployment's. */
   ownCredential?: true;
+  billing?: ModelBilling;
   redact: string[];
 }> {
   if (credential) {
     if (canonicalPiProviderId(credential.provider) !== canonicalPiProviderId(provider))
       throw new UnavailableModelForAuthError("Model connection does not match provider");
+    if (!modelProviderAllowed(modelProviderAllowlist(), credential.provider))
+      throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
     return withModelCredentialLock(credential.secretId, async () => {
       const row = await deps.prisma.secret.findFirst({
         where: { id: credential.secretId, userId, spaceId: null },
@@ -293,7 +306,7 @@ async function resolveModelKeyMaterial(
         if (requireStoredSecret)
           throw new ModelConnectionGoneError("Backup model credential is no longer available");
         if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-          throw new UnavailableModelForAuthError("Unknown model for that provider");
+          throw new UnavailableModelForAuthError(UNKNOWN_PROVIDER_MODEL);
         }
         cloudflareProviderEnv({ provider });
         return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
@@ -370,12 +383,15 @@ async function resolveModelKeyMaterial(
       cloudflareProviderEnv({ provider, accountId, gatewayId });
       const projectId = resolved.secret.kind === "api_key" ? resolved.secret.projectId : undefined;
       const region = resolved.secret.kind === "api_key" ? resolved.secret.region : undefined;
+      const zeroDataRetention =
+        resolved.secret.kind === "api_key" ? resolved.secret.zeroDataRetention : undefined;
       return {
         apiKey: resolved.apiKey,
         accountId,
         gatewayId,
         projectId,
         region,
+        zeroDataRetention,
         baseUrl,
         apiProtocol:
           resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
@@ -408,6 +424,7 @@ async function resolveModelKeyMaterial(
           : undefined,
         retireOAuth: retire,
         ownCredential: true,
+        billing: modelBilling({ secret: resolved.secret }),
         redact: [...secretValuesToRedact(resolved.secret), resolved.apiKey].filter(
           (value): value is string => Boolean(value),
         ),
@@ -419,6 +436,9 @@ async function resolveModelKeyMaterial(
   if (modelCreditOfferings() && !operatorFunded) {
     if (!(await modelCreditBillingEnabled(deps)))
       throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
+    // Credits a member chose follow the allowlist like their own connections do.
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider))
+      throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
     const material = await approvedModelCreditMaterial(
       deps.prisma,
       deps.secretStore,
@@ -438,12 +458,14 @@ export function resolvedModelRunFields(
 ): Omit<AgentRunRequest["model"], "provider" | "id" | "thinkingLevel"> {
   return {
     connectionId: resolved.connectionId,
+    billing: resolved.billing,
     apiKey: resolved.oauth ? undefined : resolved.apiKey,
     callObserver: resolved.callObserver,
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),
     ...(resolved.projectId ? { projectId: resolved.projectId } : {}),
     ...(resolved.region ? { region: resolved.region } : {}),
+    ...(resolved.zeroDataRetention ? { zeroDataRetention: true } : {}),
     baseUrl: resolved.baseUrl,
     apiProtocol: resolved.apiProtocol,
     headers: resolved.headers,
@@ -478,6 +500,11 @@ export async function resolveConnectedModelKey(
   requireStoredSecret = false,
   credentialId?: string,
 ) {
+  // Before validation, which can probe a stored connection's live catalog: a refused
+  // provider is not contacted, and its refusal is not replaced by a failed probe.
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+    throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
+  }
   const creditOfferingId = creditOfferingFromConnectionId(credentialId);
   if (creditOfferingId) {
     const resolved = await resolveModelKey(

@@ -236,6 +236,33 @@ describe("current image send admission", () => {
     },
   );
 
+  it("never probes a connection the allowlist refuses", async () => {
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
+    try {
+      const { tx, send } = fixture();
+      tx.bot.findFirst.mockResolvedValue({
+        id: "bot-1",
+        modelProvider: "openai-codex",
+        modelId: "gpt-6.1-terra",
+      });
+      tx.userModelCredential.findFirst.mockResolvedValue({
+        id: "credential-1",
+        provider: "openai-codex",
+        secretId: "secret-1",
+        defaultModel: "gpt-6.1-terra",
+      });
+      const configuration = {
+        deployment: null,
+        secrets: { load: vi.fn() },
+        codexCatalog: { read: vi.fn() },
+      };
+      await expect(send(configuration)).resolves.toMatchObject({ runId: "run-1" });
+      expect(configuration.codexCatalog.read).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("keeps a bundled Codex model's images when the account omits input modalities", async () => {
     const { tx, send } = fixture();
     tx.bot.findFirst.mockResolvedValue({

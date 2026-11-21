@@ -45,8 +45,10 @@ describe("connections.begin", () => {
         return fn(tx);
       }),
     } as unknown as PrismaClient;
+    const analytics = { capture: vi.fn(), flush: vi.fn() };
     const deps = {
       prisma,
+      analytics,
       connectors: {
         managed: vi.fn(() => ({ begin })),
       },
@@ -92,6 +94,14 @@ describe("connections.begin", () => {
     expect(vi.mocked(prisma.$transaction).mock.calls.map((call) => call[1])).toEqual([
       { timeout: 60_000 },
       { timeout: 60_000 },
+    ]);
+    // Keyed to the reused row's creation, so a reconnect repeats the earlier event and is deduped.
+    expect(analytics.capture.mock.calls).toEqual([
+      [
+        "user-1",
+        { name: "tool_connected", app: "gmail" },
+        { id: "conn-old", at: new Date("2026-08-26T00:00:00.000Z") },
+      ],
     ]);
     expect(create).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledWith({
@@ -891,5 +901,35 @@ describe("connection tool listing", () => {
         }),
       );
     }
+  });
+
+  it("does not report a listing the client cancelled", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const controller = new AbortController();
+    const listAppTools = vi.fn(async () => {
+      controller.abort();
+      throw new Error("Request was aborted.");
+    });
+    const client = createRouterClient(
+      createRouter({
+        prisma: { connection: { findFirst: async () => ({ id: "connection-1" }) } },
+        connectors: { managed: () => ({ discoverTools: vi.fn(), listAppTools }) },
+      } as unknown as RouterDeps),
+      {
+        context: {
+          actor: { spaceId: "workspace-1", userId: "user-1" },
+          signal: controller.signal,
+        } as never,
+      },
+    );
+    expect(await client.connections.tools({ connectorId: "example", provider: "example" })).toEqual(
+      [],
+    );
+    expect(listAppTools).toHaveBeenCalled();
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "warn", message: "connections.tools cancelled" }),
+    );
   });
 });

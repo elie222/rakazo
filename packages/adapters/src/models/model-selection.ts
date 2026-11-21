@@ -53,6 +53,11 @@ import {
 } from "./endpoints/openai-compatible-url.js";
 import type { modelCredentialDto } from "./model-connect.js";
 import { compatibleModelThinkingLevels } from "./model-connect.js";
+import {
+  MODEL_PROVIDER_NOT_ALLOWED_ERROR,
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "./model-provider-allowlist.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
@@ -155,6 +160,7 @@ export function defaultCatalogModelId(
 
 /** A run pinned to a provider the user has no connection for. */
 export const PINNED_PROVIDER_NOT_CONNECTED = "Connect that model provider first";
+export const UNKNOWN_PROVIDER_MODEL = "Unknown model for that provider";
 
 export class UnavailableModelForAuthError extends Error {
   constructor(message = UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE) {
@@ -223,6 +229,7 @@ export async function modelCredentialAuthKindsForSpace(
   scope: Pick<Actor, "userId" | "spaceId">,
   hostedProvider?: string,
 ): Promise<SpaceCatalogAuth> {
+  const allowlist = modelProviderAllowlist();
   const providers =
     modelCreditOfferings()?.offerings.map((entry) => entry.provider) ??
     (hostedProvider ? [hostedProvider] : []);
@@ -233,42 +240,38 @@ export async function modelCredentialAuthKindsForSpace(
             (await hasHostedModelCredits(prisma, scope, provider)) ? provider : null,
           ),
         )
-      ).filter((provider): provider is string => provider !== null)
+      ).filter(
+        (provider): provider is string =>
+          provider !== null && modelProviderAllowed(allowlist, provider),
+      )
     : [];
   const hosted = hostedProvider && managedProviders.includes(hostedProvider);
-  const [credentials, preferences] = await Promise.all([
-    prisma.userModelCredential.findMany({
-      where: { userId: scope.userId },
-      select: {
-        id: true,
-        provider: true,
-        secretId: true,
-        updatedAt: true,
-        createdAt: true,
+  // Start with connections so a concurrent detach can only leave an empty list of preferences.
+  const accountRows = await prisma.userModelCredential.findMany({
+    where: { userId: scope.userId },
+    select: {
+      id: true,
+      provider: true,
+      secretId: true,
+      updatedAt: true,
+      createdAt: true,
+      userPreferences: {
+        select: { modelId: true, thinkingLevel: true, updatedAt: true },
       },
-    }),
-    prisma.userModelPreference.findMany({
-      where: { userId: scope.userId },
-      select: {
-        modelId: true,
-        thinkingLevel: true,
-        updatedAt: true,
-        credential: {
-          select: {
-            id: true,
-            provider: true,
-            secretId: true,
-            updatedAt: true,
-            createdAt: true,
-          },
-        },
-      },
-    }),
-  ]);
-  const connectedProviders = new Set([
-    ...credentials.map((credential) => canonicalPiProviderId(credential.provider)),
-    ...preferences.map((preference) => canonicalPiProviderId(preference.credential.provider)),
-  ]);
+    },
+  });
+  // Filter refused providers before loading secrets for catalog choices.
+  const rows =
+    allowlist === null
+      ? accountRows
+      : accountRows.filter((row) => modelProviderAllowed(allowlist, row.provider));
+  const credentials = rows.map(({ userPreferences, ...credential }) => credential);
+  const preferences = rows.flatMap(({ userPreferences, ...credential }) =>
+    userPreferences.map((preference) => ({ ...preference, credential })),
+  );
+  const connectedProviders = new Set(
+    credentials.map((credential) => canonicalPiProviderId(credential.provider)),
+  );
   const selections: Array<{
     provider: string;
     modelId: string;
@@ -793,6 +796,9 @@ export async function validateBotModelChange(
   const { provider, model } = input;
   const changing = provider !== input.current?.provider || model !== input.current?.model;
   if (changing && provider && model) {
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+      return { ok: false, error: MODEL_PROVIDER_NOT_ALLOWED_ERROR };
+    }
     const hosted =
       Boolean(deps.hostedProvider) && (await hasHostedModelCredits(deps.prisma, scope, provider));
     const credential = hosted
@@ -841,7 +847,7 @@ export async function validateBotModelChange(
       );
       if (error) return { ok: false, error };
     } else if (!inCatalog && credential.defaultModel !== model) {
-      return { ok: false, error: "Unknown model for that provider" };
+      return { ok: false, error: UNKNOWN_PROVIDER_MODEL };
     }
     if (inCatalog) {
       const authError = await validateStoredModelAuth(
@@ -979,7 +985,7 @@ export async function validateConnectedModelChoice(
         : isCatalogModelChoice(provider, modelId)
     )
       ? undefined
-      : "Unknown model for that provider";
+      : UNKNOWN_PROVIDER_MODEL;
   }
   const credential = await findConnectedModelCredential(
     prisma,
@@ -1010,7 +1016,7 @@ async function validateSelectedModelChoice(
   resolution: ConnectedModelResolution,
 ) {
   if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
-  if (!usableModelId(modelId)) return "Unknown model for that provider";
+  if (!usableModelId(modelId)) return UNKNOWN_PROVIDER_MODEL;
   // Compatible catalog entries are placeholders, not evidence that this
   // connection enables that id. Only legacy connections keep that exception.
   if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -1026,7 +1032,7 @@ async function validateSelectedModelChoice(
         resolution.reads,
       ))
       ? undefined
-      : "Unknown model for that provider";
+      : UNKNOWN_PROVIDER_MODEL;
   }
   const savedChoice = await prisma.userModelPreference.findFirst({
     where: {
@@ -1048,7 +1054,7 @@ async function validateSelectedModelChoice(
   if (secret?.kind === "openai_compatible" && secret.enabledModelIds === undefined)
     return undefined;
   const enabled = secret && enabledOpenAiCompatibleModelIds(secret, credential.defaultModel);
-  return enabled?.includes(modelId.trim()) ? undefined : "Unknown model for that provider";
+  return enabled?.includes(modelId.trim()) ? undefined : UNKNOWN_PROVIDER_MODEL;
 }
 
 export type ModelChoice = {
@@ -1130,7 +1136,7 @@ export function pinnedModelCredentialError(
     !liveCatalogEntry(choice.modelProvider, modelId) &&
     credential.defaultModel !== modelId
   ) {
-    return "Unknown model for that provider";
+    return UNKNOWN_PROVIDER_MODEL;
   }
   return undefined;
 }

@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens, resolveMobileAppearance } from "../../lib/appearance/appearance";
 import type { CreateAction } from "../../lib/inbox/create-chooser";
 import { createMenuActions, isCreateAction } from "../../lib/inbox/create-chooser";
+import { setInboxHidden, useSplitView } from "../../lib/layout/split-view";
 import { useThemedStyles } from "../../lib/native/native";
 import { GlassSurface } from "../native/glass-surface";
 import { NativeSymbol } from "../native/native-symbol";
@@ -41,6 +42,7 @@ export function InboxHeader({
   const { t } = useLingui();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { foldActive } = useSplitView();
   return (
     <View
       style={[
@@ -57,11 +59,27 @@ export function InboxHeader({
         },
       ]}
     >
-      <GlassSurface shape="circle" style={styles.headerCircle} fallbackStyle={styles.headerFill}>
-        <HeaderButton accessibilityLabel={t`Account`} onPress={() => router.push("/account")}>
-          <Text style={styles.profileInitials}>{initials}</Text>
-        </HeaderButton>
-      </GlassSurface>
+      {/* Beside a chat the account sits at the foot of the list, and this corner hides the list
+          unless a fold keeps it in place. */}
+      {embedded ? (
+        foldActive ? null : (
+          <GlassSurface
+            shape="circle"
+            style={styles.headerCircle}
+            fallbackStyle={styles.headerFill}
+          >
+            <HeaderButton accessibilityLabel={t`Hide chats`} onPress={() => setInboxHidden(true)}>
+              <NativeSymbol ios="sidebar.left" android="expand-outline" size={19} />
+            </HeaderButton>
+          </GlassSurface>
+        )
+      ) : (
+        <GlassSurface shape="circle" style={styles.headerCircle} fallbackStyle={styles.headerFill}>
+          <HeaderButton accessibilityLabel={t`Account`} onPress={() => router.push("/account")}>
+            <Text style={styles.profileInitials}>{initials}</Text>
+          </HeaderButton>
+        </GlassSurface>
+      )}
       {/* The title gives way to the buttons when the column is narrow. */}
       {title ? <View style={styles.headerTitle}>{title}</View> : null}
       <View style={styles.headerActions}>

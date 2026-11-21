@@ -90,6 +90,19 @@ describe("classifyUpdaterFailure", () => {
     }
   });
 
+  it("stays silent when the release host fails or rate limits the feed", () => {
+    for (const statusCode of [429, 500, 502, 503]) {
+      const error = Object.assign(new Error(`${statusCode} \nmethod: GET url: <feed>`), {
+        statusCode,
+      });
+      expect(classifyUpdaterFailure(error)).toEqual({ kind: "offline", message: null });
+    }
+    const forbidden = Object.assign(new Error("403 \nmethod: GET url: <feed>"), {
+      statusCode: 403,
+    });
+    expect(classifyUpdaterFailure(forbidden).kind).toBe("other");
+  });
+
   it("treats an unreachable Linux signature fetch as offline, not a fault", () => {
     expect(classifyUpdaterFailure(new SignatureUnreachableError())).toEqual({
       kind: "offline",
@@ -121,6 +134,7 @@ describe("classifyUpdaterFailure", () => {
     for (const message of [
       "ditto: /private/update/Rakazo.app/x.js.map: No space left on device\nditto: Couldn't read pkzip signature.",
       "未能完成该操作。设备上无剩余空间: 设备上无剩余空间",
+      "No se pudo completar la operación. No queda espacio en el dispositivo: No queda espacio en el dispositivo",
     ]) {
       expect(classifyUpdaterFailure(new Error(message)), message).toEqual({
         kind: "disk-full",
@@ -501,6 +515,54 @@ describe("DesktopUpdateController", () => {
       expect(await controller.check(true)).toMatchObject({ phase: "idle", message: null });
       const successful = controller.state();
       expect(await controller.check(true)).toBe(successful);
+      expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each([
+    ["manual", true, "Could not reach the update server."],
+    ["background", false, null],
+  ] as const)(
+    "handles a %s offline check only once when the updater both emits and rejects",
+    async (_name, userInitiated, message) => {
+      let now = 1_000;
+      let attempts = 0;
+      const error = new Error("net::ERR_INTERNET_DISCONNECTED");
+      const fake = fakeUpdater({
+        checkForUpdates: vi.fn(async () => {
+          fake.emit("checking-for-update");
+          if (attempts++ === 0) fake.emit("error", error);
+          throw error;
+        }),
+      });
+      const controller = new DesktopUpdateController(packaged, async () => fake.updater, {
+        now: () => now,
+        iso: () => NOW,
+      });
+      const changes: Array<[string, string | null]> = [];
+      controller.subscribe((state) => changes.push([state.phase, state.message]));
+
+      expect(await controller.check(userInitiated)).toMatchObject({
+        phase: "idle",
+        message,
+        checkedAt: NOW,
+      });
+      expect(changes).toEqual([
+        ["checking", null],
+        ["idle", message],
+      ]);
+
+      // Even if the updater reuses the Error object, a later rejection is a different check.
+      changes.length = 0;
+      now += MIN_CHECK_INTERVAL_MS;
+      expect(await controller.check(true)).toMatchObject({
+        phase: "idle",
+        message: "Could not reach the update server.",
+      });
+      expect(changes).toEqual([
+        ["checking", null],
+        ["idle", "Could not reach the update server."],
+      ]);
       expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
     },
   );
