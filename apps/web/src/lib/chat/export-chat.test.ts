@@ -1,4 +1,5 @@
 import type { Bot, Group, ThreadMessage } from "@rakazo/contracts";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { isConnectionFailure } from "@rakazo/core/user-error";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RpcClient } from "../query/rpc";
@@ -43,7 +44,7 @@ const labels = {
   system: "System",
   routineEvent: (change: string, name: string) => `${change} routine "${name}"`,
   attachment: "Attachment",
-  deletedBot: "Deleted bot",
+  bot: "bot",
   ask: {
     answer: "Answer",
     expired: "Expired",
@@ -75,6 +76,32 @@ const labels = {
     setupComplete: "Setup complete",
     phoneCall: "Phone call",
     incomingCall: "Incoming call",
+    connected: "Connected",
+    declined: "Declined",
+    needsYou: "Needs you",
+    skipped: "Skipped",
+    done: "Done",
+    cloudAgent: {
+      running: "running",
+      finished: "finished",
+      failed: "failed",
+      cancelled: "cancelled",
+      expired: "expired",
+    },
+  },
+  cards: {
+    computer: "Computer",
+    pullRequest: "Pull request",
+    connectMcpServer: (name: string) => `Connect MCP server “${name}”`,
+    draftSkill: "Draft skill",
+    skillName: "Name",
+    whenToUse: "When to use",
+    inputs: "Inputs",
+    steps: "Steps",
+    howToCheck: "How to check",
+    whatToReturn: "What to return",
+    approvalBoundaries: "Approval boundaries",
+    failureHandling: "Failure handling",
   },
 };
 const time = (createdAt: string) => createdAt.slice(11, 16);
@@ -187,6 +214,77 @@ describe("exportChat", () => {
     });
     expect(exported().text).toContain("- Morning digest");
   });
+  it("runs at most four setup checks at once, and checks every checklist", async () => {
+    const lists = Array.from({ length: 6 }, (_, i) => ({
+      kind: "import_setup" as const,
+      items: [{ kind: "routine" as const, routineId: `r_${i}`, name: `Routine ${i}` }],
+    }));
+    const answers = lists.map(() =>
+      deferred<{ providers: object; serverIds: object; routineIds: object }>(),
+    );
+    let running = 0;
+    let most = 0;
+    const importSetupState = vi.fn(async (_input: unknown) => {
+      running += 1;
+      most = Math.max(most, running);
+      const index = importSetupState.mock.calls.length - 1;
+      try {
+        return await answers[index]!.promise;
+      } finally {
+        running -= 1;
+      }
+    });
+    const messages = vi.fn(async (_input: unknown) => ({
+      threadId: "t_1",
+      messages: [message("", { blocks: lists })],
+      olderCursor: null,
+    }));
+    const rpc = { threads: { messages }, bots: { importSetupState } } as unknown as RpcClient;
+    const exporting = exportChat({
+      rpc,
+      target: { kind: "bot", chat: bot },
+      labels,
+      time,
+      memberName: noMembers,
+    });
+    await vi.waitFor(() => expect(importSetupState).toHaveBeenCalledTimes(4));
+    await flush();
+    expect(importSetupState).toHaveBeenCalledTimes(4);
+    for (const [i, answer] of answers.entries()) {
+      answer.resolve({ providers: {}, serverIds: {}, routineIds: { [`r_${i}`]: true } });
+      await flush();
+    }
+    await exporting;
+    expect(importSetupState).toHaveBeenCalledTimes(6);
+    expect(most).toBe(4);
+    expect(exported().text).not.toContain("Routine");
+  });
+
+  it("names both sides of a handoff in a one-bot chat as the chat row does", async () => {
+    const { rpc } = rpcWith([
+      {
+        messages: [
+          message("", {
+            blocks: [
+              { kind: "handoff", fromBotId: "bot-1", toBotId: "bot-9", text: "Over to you" },
+            ],
+          }),
+        ],
+        olderCursor: null,
+      },
+    ]);
+    await exportChat({
+      rpc,
+      target: { kind: "bot", chat: bot },
+      labels,
+      time,
+      memberName: (botId) =>
+        resolveTranscriptMemberName({ botId, members: undefined, bots: [bot], archivedBots: [] }),
+    });
+    expect(exported().text).toContain("↪ bot ← bot\n\nOver to you");
+    expect(exported().text).not.toContain("Deleted bot");
+  });
+
   it("reads every page of history and writes it oldest first", async () => {
     const first = message(
       "Hi",

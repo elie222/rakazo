@@ -7,8 +7,8 @@ import { ContextMenu, toast } from "@rakazo/ui-web";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Suspense, useEffect } from "react";
 import { lazyOverlay } from "../../../components/ErrorBoundary";
-import { ChatTooLongError, exportChat } from "../../../lib/chat/export-chat";
 import { reportClientError } from "../../../lib/platform/monitoring";
+import { importChunk } from "../../../lib/platform/preload-recovery";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import type { ShellDialogsState } from "../shell-dialogs";
 import type { SnoozeChat } from "../sidebar/use-chat-snooze";
@@ -186,62 +186,96 @@ export function ChatContextMenu({
         if (exportingChats.has(exportId)) return;
         exportingChats.add(exportId);
         toast.loading(t`Exporting chat…`, { id: exportId });
-        void exportChat({
-          rpc,
-          target,
-          labels: {
-            you: t`You`,
-            system: t`System`,
-            routineEvent,
-            ask: {
-              answer: t`Answer`,
-              expired: t`Expired`,
-              more: (count) => t`${count} more`,
-              total: t`Total`,
-              onTheButton: t`On the button`,
-              to: t`To`,
-              subject: t`Subject`,
-              updateInstructions: t`Update instructions?`,
-              instructionsUpdated: t`Instructions updated`,
-              settingsUpdated: t`Settings updated`,
-              readFromPage: t`Read from the page, not checked`,
-              buttonReadFromPage: (button) =>
-                t`Button “${button}”. Read from the page, not checked`,
-              approved: t`Approved`,
-              discarded: t`Discarded`,
-              commandVariable: t`Command variable`,
-              codeFrom: (host) => t`Only enter a code ${host} sent you.`,
+        // A chat past the page limit gets the generic failure, but it is not reported as a bug.
+        let tooLong = false;
+        const run = async () => {
+          // Loaded on click: the transcript writer is not needed until someone exports.
+          const { exportChat, ChatTooLongError } = await importChunk(
+            () => import("../../../lib/chat/export-chat"),
+          );
+          await exportChat({
+            rpc,
+            target,
+            labels: {
+              you: t`You`,
+              system: t`System`,
+              routineEvent,
+              ask: {
+                answer: t`Answer`,
+                expired: t`Expired`,
+                more: (count) => t`${count} more`,
+                total: t`Total`,
+                onTheButton: t`On the button`,
+                to: t`To`,
+                subject: t`Subject`,
+                updateInstructions: t`Update instructions?`,
+                instructionsUpdated: t`Instructions updated`,
+                settingsUpdated: t`Settings updated`,
+                readFromPage: t`Read from the page, not checked`,
+                buttonReadFromPage: (button) =>
+                  t`Button “${button}”. Read from the page, not checked`,
+                approved: t`Approved`,
+                discarded: t`Discarded`,
+                commandVariable: t`Command variable`,
+                codeFrom: (host) => t`Only enter a code ${host} sent you.`,
+              },
+              status: {
+                saved: t`Saved`,
+                sent: t`Sent`,
+                dismissed: t`Dismissed`,
+                running: t`Running`,
+                completed: t`Completed`,
+                failed: t`Failed`,
+                stopped: t`Stopped`,
+                archived: t`archived`,
+                deleted: t`deleted`,
+                setupComplete: t`Setup complete`,
+                phoneCall: t`Phone call`,
+                incomingCall: t`Incoming call`,
+                connected: t`Connected`,
+                declined: t`Declined`,
+                needsYou: t`Needs you`,
+                skipped: t`Skipped`,
+                done: t`Done`,
+                cloudAgent: {
+                  running: t`running`,
+                  finished: t`finished`,
+                  failed: t`failed`,
+                  cancelled: t`cancelled`,
+                  expired: t`expired`,
+                },
+              },
+              cards: {
+                computer: t`Computer`,
+                pullRequest: t`Pull request`,
+                connectMcpServer: (name) => t`Connect MCP server “${name}”`,
+                draftSkill: t`Draft skill`,
+                skillName: t`Name`,
+                whenToUse: t`When to use`,
+                inputs: t`Inputs`,
+                steps: t`Steps`,
+                howToCheck: t`How to check`,
+                whatToReturn: t`What to return`,
+                approvalBoundaries: t`Approval boundaries`,
+                failureHandling: t`Failure handling`,
+              },
+              bot: t`bot`,
+              attachment: t`Attachment`,
             },
-            status: {
-              saved: t`Saved`,
-              sent: t`Sent`,
-              dismissed: t`Dismissed`,
-              running: t`Running`,
-              completed: t`Completed`,
-              failed: t`Failed`,
-              stopped: t`Stopped`,
-              archived: t`archived`,
-              deleted: t`deleted`,
-              setupComplete: t`Setup complete`,
-              phoneCall: t`Phone call`,
-              incomingCall: t`Incoming call`,
-            },
-            deletedBot: t`Deleted bot`,
-            attachment: t`Attachment`,
-          },
-          meId,
-          time: (createdAt) =>
-            i18n.date(new Date(createdAt), { dateStyle: "medium", timeStyle: "short" }),
-          memberName: (botId) =>
-            resolveTranscriptMemberName({ botId, members: group?.members, bots, archivedBots }),
-        })
+            meId,
+            time: (createdAt) =>
+              i18n.date(new Date(createdAt), { dateStyle: "medium", timeStyle: "short" }),
+            memberName: (botId) =>
+              resolveTranscriptMemberName({ botId, members: group?.members, bots, archivedBots }),
+          }).catch((error: unknown) => {
+            tooLong = error instanceof ChatTooLongError;
+            throw error;
+          });
+        };
+        void run()
           .catch((error: unknown) => {
             // The API logs its own failures, and a dropped connection is the network, not a bug.
-            if (
-              !(error instanceof ORPCError) &&
-              !(error instanceof ChatTooLongError) &&
-              !isConnectionFailure(error)
-            ) {
+            if (!(error instanceof ORPCError) && !tooLong && !isConnectionFailure(error)) {
               reportClientError(error, "chat.export");
             }
             toast.error(t`Could not export chat`);

@@ -45,6 +45,33 @@ const cardStatus = {
   setupComplete: "Setup complete",
   phoneCall: "Phone call",
   incomingCall: "Incoming call",
+  connected: "Connected",
+  declined: "Declined",
+  needsYou: "Needs you",
+  skipped: "Skipped",
+  done: "Done",
+  cloudAgent: {
+    running: "running",
+    finished: "finished",
+    failed: "failed",
+    cancelled: "cancelled",
+    expired: "expired",
+  },
+};
+
+const cardLabels = {
+  computer: "Computer",
+  pullRequest: "Pull request",
+  connectMcpServer: (name: string) => `Connect MCP server “${name}”`,
+  draftSkill: "Draft skill",
+  skillName: "Name",
+  whenToUse: "When to use",
+  inputs: "Inputs",
+  steps: "Steps",
+  howToCheck: "How to check",
+  whatToReturn: "What to return",
+  approvalBoundaries: "Approval boundaries",
+  failureHandling: "Failure handling",
 };
 
 const transcript = (messages: ThreadMessage[]) =>
@@ -56,6 +83,7 @@ const transcript = (messages: ThreadMessage[]) =>
     routineEvent: (change, name) => `${change} routine "${name}"`,
     askWords,
     cardStatus,
+    cardLabels,
     memberName: (botId: string) => botId,
     attachment: "Attachment",
     isSetupComplete: () => false,
@@ -213,6 +241,7 @@ describe("chatTranscriptMarkdown", () => {
       routineEvent: (change, name) => `${change} ${name}`,
       askWords,
       cardStatus,
+      cardLabels,
       memberName: (botId: string) => botId,
       attachment: "Attachment",
       isSetupComplete: () => false,
@@ -491,6 +520,7 @@ describe("chatTranscriptMarkdown", () => {
       routineEvent: (change, name) => `${change} ${name}`,
       askWords: { ...askWords, updateInstructions: "Atualizar instruções?" },
       cardStatus,
+      cardLabels,
       memberName: (botId: string) => botId,
       attachment: "Attachment",
       isSetupComplete: () => false,
@@ -736,6 +766,7 @@ describe("chatTranscriptMarkdown", () => {
       routineEvent: (change, name) => `${change} ${name}`,
       askWords,
       cardStatus,
+      cardLabels,
       memberName: (botId) => (botId === "b_lee" ? "Lee" : "Ada"),
       attachment: "Attachment",
       isSetupComplete: () => false,
@@ -836,6 +867,7 @@ describe("chatTranscriptMarkdown", () => {
         routineEvent: (change, name) => `${change} ${name}`,
         askWords,
         cardStatus,
+        cardLabels,
         memberName: (botId: string) => botId,
         attachment: "Attachment",
         isSetupComplete: (block) => isSetupComplete(block),
@@ -843,6 +875,111 @@ describe("chatTranscriptMarkdown", () => {
     expect(render((block) => block === checklist)).toContain("Setup complete");
     expect(render((block) => block === checklist)).not.toContain("Morning digest");
     expect(render(() => false)).toContain("- Morning digest");
+  });
+
+  it("writes each card's state and context as the card shows them", () => {
+    const one = (block: ThreadMessage["blocks"][number]) =>
+      transcript([message("bot", [block])])
+        .split("10:00\n\n")[1]
+        ?.trimEnd();
+    const agent = { kind: "cloud_agent" as const, agentId: "a_1", title: "Fix login", url: "" };
+    expect(one({ ...agent, status: "running", branch: "fix/login" })).toBe(
+      "Fix login · running\n\nfix/login",
+    );
+    expect(
+      one({ ...agent, status: "finished", branch: "fix/login", prUrl: "https://example.com/pr/1" }),
+    ).toBe("Fix login · finished\n\nPull request");
+    expect(one({ ...agent, status: "failed" })).toBe("Fix login · failed");
+    const app = { kind: "app_connect" as const, provider: "p", name: "Mail", logo: null };
+    expect(one({ ...app, description: "Read and send mail", status: "pending" })).toBe(
+      "Mail\n\nRead and send mail",
+    );
+    expect(one({ ...app, description: "Read and send mail", status: "connected" })).toBe(
+      "Mail\n\nRead and send mail\n\nConnected",
+    );
+    const server = {
+      kind: "mcp_approval" as const,
+      name: "Docs",
+      serverId: "s_1",
+      needsOAuth: false,
+    };
+    expect(
+      one({ ...server, transport: "sse", endpoint: "https://docs.example.com", status: "pending" }),
+    ).toBe("Connect MCP server “Docs”\n\nhttps://docs.example.com");
+    expect(one({ ...server, transport: "stdio", endpoint: null, status: "connected" })).toBe(
+      "Connect MCP server “Docs”\n\nstdio (stdio)\n\nConnected",
+    );
+    expect(one({ ...server, transport: "stdio", endpoint: null, status: "dismissed" })).toContain(
+      "\n\nDismissed",
+    );
+    const question = {
+      kind: "tool_question" as const,
+      question: { source: "Calendar", message: "Which day?", fields: [] },
+      expiresAt: "2026-03-05T10:00:00.000Z",
+      publicKey: "k",
+    };
+    expect(one({ ...question, status: "accepted" })).toBe("Calendar\n\nWhich day?\n\nSent");
+    expect(one({ ...question, status: "declined" })).toContain("Which day?\n\nDeclined");
+    expect(one({ ...question, status: "expired" })).toContain("Which day?\n\nExpired");
+    expect(one({ kind: "computer", state: "Done", text: "Sign in to the bank" })).toBe(
+      "Computer · Done\n\nSign in to the bank",
+    );
+    expect(one({ kind: "computer", state: "Needs you", text: "Solve the *captcha*" })).toBe(
+      "Computer · Needs you\n\nSolve the *captcha*",
+    );
+    const draft = one({
+      kind: "skill_draft",
+      skillId: "sk_1",
+      name: "Weekly *report*",
+      goal: "Summarize the week",
+      playbook: {
+        whenToUse: "Fridays",
+        inputs: ["Inbox", "Calendar"],
+        steps: ["Read mail", "Write summary"],
+        howToCheck: "",
+        whatToReturn: "A short note",
+        approvalBoundaries: "",
+        failureHandling: "Say what failed",
+      },
+      status: "saved",
+    });
+    expect(draft).toBe(
+      [
+        "**Draft skill**",
+        "Summarize the week",
+        "Name: Weekly \\*report\\*",
+        "When to use:\\\nFridays",
+        "Inputs:\\\nInbox\\\nCalendar",
+        "Steps:\\\nRead mail\\\nWrite summary",
+        "What to return:\\\nA short note",
+        "Failure handling:\\\nSay what failed",
+        "Saved",
+      ].join("\n\n"),
+    );
+  });
+
+  it("keeps a bot's indented code as typed, with no backslash before its tags", () => {
+    const text = transcript([
+      message("bot", [{ kind: "text", text: "Markup:\n\n    <div>\n\n    </div>\nThen <b>bold" }]),
+    ]);
+    expect(text).toContain("Markup:\n\n    <div>\n\n    </div>\nThen \\<b>bold");
+    // An indented line in a list item continues the item's text, so its tag is escaped.
+    const listed = transcript([
+      message("bot", [{ kind: "text", text: "1. Step\n\n    Use <b>bold\n\nAfter\n\n    <i>" }]),
+    ]);
+    expect(listed).toContain("    Use \\<b>bold");
+    expect(listed).toContain("After\n\n    <i>");
+    // An item's later paragraph keeps the list open, so a deeper line is still the item's text.
+    for (const text of [
+      "1. Step\n\n   More text\n\n    Use <b>bold",
+      "- a\n\n  b\n\n    <b>bold",
+    ]) {
+      expect(transcript([message("bot", [{ kind: "text", text }])])).toContain("\\<b>bold");
+    }
+    // An indented line that continues a paragraph is text, not code, so its tag is escaped.
+    expect(transcript([message("bot", [{ kind: "text", text: "Text\n    <b>x" }])])).toContain(
+      "Text\n    \\<b>x",
+    );
   });
 
   it("is just the title for an empty chat", () => {

@@ -5,7 +5,7 @@ import type {
   RoutineEventChange,
   ThreadMessage,
 } from "@rakazo/contracts";
-import type { AskWords, CardStatusWords } from "@rakazo/core";
+import type { AskWords, CardLabels, CardStatusWords } from "@rakazo/core";
 import {
   chatTranscriptMarkdown,
   deadlineSignal,
@@ -13,6 +13,7 @@ import {
   isImportSetupComplete,
   isRetiredImportSetup,
   loadPeerHistory,
+  mapConcurrent,
   otherAuthor,
 } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
@@ -25,6 +26,8 @@ const MAX_PAGES = 2000;
 const TOTAL_TIMEOUT_MS = 5 * 60_000;
 /** One checklist's setup check; a check that never answers shows its list rather than holding the export. */
 const SETUP_CHECK_TIMEOUT_MS = 15_000;
+/** Setup checks running at once, so a chat with many checklists does not send them all together. */
+const SETUP_CHECK_CONCURRENCY = 4;
 
 export type ChatToExport = { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group };
 
@@ -33,7 +36,11 @@ export class ChatTooLongError extends Error {
   override name = "ChatTooLongError";
 }
 
-/** `ada-chat.md`: the chat's name as a file name, in any script; `chat.md` when it has no letters. */
+/**
+ * `ada-chat.md`: the chat's name as a file name, in any script; `chat.md` when it has no letters.
+ * Not page-kit's `slugify`, which strips accents and cuts at 64 characters for heading anchors:
+ * a file keeps the chat's name as it is written.
+ */
 export function chatExportFileName(name: string): string {
   const slug = name
     .normalize("NFKC")
@@ -92,14 +99,13 @@ async function completedSetups(
     }
   }
   // A check that fails or never answers leaves the card's full list on show, so the export keeps it too.
-  const states = await Promise.all(
-    checks.map(({ botId, block }) =>
-      bestEffort(
-        "import setup state",
-        rpc.bots.importSetupState(importSetupStateInput(botId, block), {
-          signal: deadlineSignal(SETUP_CHECK_TIMEOUT_MS),
-        }),
-      ),
+  // Each check's deadline starts when the check does, not while it waits for a free slot.
+  const states = await mapConcurrent(checks, SETUP_CHECK_CONCURRENCY, ({ botId, block }) =>
+    bestEffort(
+      "import setup state",
+      rpc.bots.importSetupState(importSetupStateInput(botId, block), {
+        signal: deadlineSignal(SETUP_CHECK_TIMEOUT_MS),
+      }),
     ),
   );
   const done = new Set<ImportSetupBlock>();
@@ -120,7 +126,9 @@ export async function exportChat(options: {
     routineEvent: (change: RoutineEventChange, name: string) => string;
     ask: AskWords;
     status: CardStatusWords;
-    deletedBot: string;
+    cards: CardLabels;
+    /** What the chat calls a bot it cannot name, such as a handoff's bots in a one-bot chat. */
+    bot: string;
     attachment: string;
   };
   time: (createdAt: string) => string;
@@ -139,7 +147,9 @@ export async function exportChat(options: {
     routineEvent: labels.routineEvent,
     askWords: labels.ask,
     cardStatus: labels.status,
-    memberName: (botId) => memberName(botId) ?? labels.deletedBot,
+    cardLabels: labels.cards,
+    // As the chat row: a group names a bot that left itself; a one-bot chat has no roster.
+    memberName: (botId) => memberName(botId) ?? labels.bot,
     attachment: labels.attachment,
     isSetupComplete: (block) => completed.has(block),
     speaker: (message) => {

@@ -4,9 +4,15 @@ import { resolveAskChoice } from "../asks/answerable-ask.js";
 import { isSecretAskBlock } from "../asks/ask-kind.js";
 import { separateAskAnswers } from "../asks/ask-replies.js";
 import { callDurationText } from "../calls/voice-chat-groups.js";
+import { cloudAgentHttpsUrl } from "../integrations/cloud-agent.js";
 import { receiptItems } from "../runs/action-approval.js";
 import { helperCardState } from "../runs/run-state.js";
 import { isRetiredImportSetup, isToolActivityBlock } from "../runs/tool-activity.js";
+import {
+  TAKEOVER_COMPUTER_DONE_STATE,
+  TAKEOVER_COMPUTER_PENDING_STATE,
+  TAKEOVER_COMPUTER_SKIPPED_STATE,
+} from "../threads/thread-message-updates.js";
 import { projectMessageReactions } from "./message-reactions.js";
 import { channelMessageLine } from "./message-text.js";
 import { foldPeerReplies } from "./message-visibility.js";
@@ -61,6 +67,33 @@ export type CardStatusWords = {
   phoneCall: string;
   /** The label on the card of an answered call the bot placed, before its length. */
   incomingCall: string;
+  /** A connection or server the person connected. */
+  connected: string;
+  /** A tool's question the person declined. */
+  declined: string;
+  /** A computer request's states: waiting on the person, skipped or done. */
+  needsYou: string;
+  skipped: string;
+  done: string;
+  /** A cloud agent's badge, lower case as the card shows it. */
+  cloudAgent: Record<Extract<MessageBlock, { kind: "cloud_agent" }>["status"], string>;
+};
+
+/** The labels the chat's cards show around their content, in the reader's language. */
+export type CardLabels = {
+  computer: string;
+  pullRequest: string;
+  connectMcpServer: (name: string) => string;
+  draftSkill: string;
+  /** A skill draft's field labels, in the order its card shows them. */
+  skillName: string;
+  whenToUse: string;
+  inputs: string;
+  steps: string;
+  howToCheck: string;
+  whatToReturn: string;
+  approvalBoundaries: string;
+  failureHandling: string;
 };
 
 /** Markdown that only character escapes can make, the same in every CommonMark reader. */
@@ -127,11 +160,34 @@ function closeOpenFence(markdown: string): string {
   // The closing fence sits in the opener's column (indentation, list or quote markers), so an
   // indented code block or list item stays the one it was.
   let closer = "";
+  // Indented code (four spaces or a tab, after a blank line or more indented code) is shown as
+  // typed, so its "<" stays as it is, like a fence's. The start of the message counts as blank.
+  // Inside a list item or quote the same indent continues the item's text, which stays escaped, so
+  // indented code counts only once a plain paragraph after a blank line has ended any list.
+  let afterBlank = true;
+  let inIndentedCode = false;
+  let inContainer = false;
   const lines = markdown.split("\n").map((line) => {
     // One optional list or quote marker before the fence; no nested repeats, so a long run of spaces cannot backtrack.
     const fence = /^([ \t]*(?:(?:[-+*]|\d+[.)]|>)[ \t]+)?)(`{3,}|~{3,})(.*)$/.exec(line);
-    if (!fence) return open ? line : escapeHtml(line);
+    const blank = line.trim() === "";
+    const wasAfterBlank = afterBlank;
+    afterBlank = blank;
+    if (!fence) {
+      if (open) return line;
+      if (blank) return line;
+      const indented = /^(?: {4}|\t)/.test(line);
+      if (!indented) {
+        if (/^ {0,3}(?:[-+*]|\d+[.)])(?:[ \t]|$)|^ {0,3}>/.test(line)) inContainer = true;
+        // Only a line at the margin ends a list: an item's own later paragraphs sit a few spaces in.
+        else if (wasAfterBlank && !/^[ \t]/.test(line)) inContainer = false;
+      }
+      inIndentedCode = indented && !inContainer && (wasAfterBlank || inIndentedCode);
+      return inIndentedCode ? line : escapeHtml(line);
+    }
+    inIndentedCode = false;
     const lead = fence[1] ?? "";
+    if (/\S/.test(lead)) inContainer = true;
     const mark = fence[2] ?? "";
     const rest = fence[3] ?? "";
     if (!open) {
@@ -356,6 +412,39 @@ function siteHostOf(origin: string): string {
   return URL.canParse(origin) ? new URL(origin).host.replace(/^www\./, "") : origin;
 }
 
+/**
+ * A skill draft as its card shows it: the heading and goal, then each field under its label, and
+ * Saved once it is saved. The fields are plain text boxes, so they are written as typed.
+ */
+function skillDraftMarkdown(
+  block: Extract<MessageBlock, { kind: "skill_draft" }>,
+  labels: CardLabels,
+  status: CardStatusWords,
+): string {
+  const { playbook } = block;
+  const fields: [string, string][] = [
+    [labels.whenToUse, playbook.whenToUse],
+    [labels.inputs, playbook.inputs.join("\n")],
+    [labels.steps, playbook.steps.join("\n")],
+    [labels.howToCheck, playbook.howToCheck],
+    [labels.whatToReturn, playbook.whatToReturn],
+    [labels.approvalBoundaries, playbook.approvalBoundaries],
+    [labels.failureHandling, playbook.failureHandling],
+  ];
+  return [
+    `**${oneLine(labels.draftSkill)}**`,
+    block.goal.trim() ? literal(block.goal) : "",
+    block.name.trim() ? `${oneLine(labels.skillName)}: ${oneLine(block.name)}` : "",
+    ...fields.map(([label, value]) =>
+      // A backslash ends the label's line, so the value starts on the next one.
+      value.trim() ? `${oneLine(label)}:\\\n${literal(trimAsciiEdges(value))}` : "",
+    ),
+    block.status === "saved" ? status.saved : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /** A protected answer's outcome, worded as its card words it. */
 function secretOutcome(block: AskBlock, status: CardStatusWords): string {
   if (block.dismissed) return status.dismissed;
@@ -374,6 +463,7 @@ function blockMarkdown(
     routineEvent: (change: RoutineEventChange, name: string) => string;
     ask: AskWords;
     status: CardStatusWords;
+    labels: CardLabels;
     memberName: (botId: string) => string;
     attachment: string;
     isSetupComplete: (block: Extract<MessageBlock, { kind: "import_setup" }>) => boolean;
@@ -386,8 +476,21 @@ function blockMarkdown(
     case "text":
       return role === "user" ? literal(block.text) : closeOpenFence(block.text);
     case "progress":
-    case "computer":
       return closeOpenFence(block.text);
+    case "computer": {
+      // The card names the computer and the request's state, then what was asked.
+      const state =
+        block.state === TAKEOVER_COMPUTER_PENDING_STATE
+          ? words.status.needsYou
+          : block.state === TAKEOVER_COMPUTER_SKIPPED_STATE
+            ? words.status.skipped
+            : block.state === TAKEOVER_COMPUTER_DONE_STATE
+              ? words.status.done
+              : block.state;
+      return [oneLine(`${words.labels.computer} · ${state}`), closeOpenFence(block.text)]
+        .filter(Boolean)
+        .join("\n\n");
+    }
     case "ask":
       return askMarkdown(block, words.ask, words.status, answeredInOwnMessage);
     case "meta":
@@ -418,8 +521,19 @@ function blockMarkdown(
     case "card":
       return block.lines.map((line) => `- ${oneLine(line.k)} → ${oneLine(line.v)}`).join("\n");
     case "page":
-    case "cloud_agent":
       return oneLine(block.title);
+    case "cloud_agent":
+      // The card's title with its state badge, then a pull request or, failing that, the branch.
+      return [
+        oneLine(`${block.title} · ${words.status.cloudAgent[block.status]}`),
+        cloudAgentHttpsUrl(block.prUrl)
+          ? oneLine(words.labels.pullRequest)
+          : block.branch
+            ? oneLine(block.branch)
+            : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
     case "voice_call": {
       // A call the bot placed ends with this marker under its request's id: its card reads Incoming
       // call and takes the length from the request when the marker has none (the bot hung up).
@@ -470,14 +584,47 @@ function blockMarkdown(
           : `${block.name} · ${block.status === "archived" ? words.status.archived : words.status.deleted}`,
       );
     case "chart":
-    case "app_connect":
-    case "mcp_approval":
-    case "skill_draft":
       return oneLine(block.name);
+    case "app_connect":
+      // The card shows the app, what it is for and, once connected, that it is; a pending one
+      // shows only its Connect button.
+      return [
+        oneLine(block.name),
+        oneLine(block.description),
+        block.status === "connected" ? words.status.connected : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+    case "mcp_approval":
+      // The server and where it runs, then its decision; a pending one shows only buttons.
+      return [
+        oneLine(words.labels.connectMcpServer(block.name)),
+        oneLine(block.endpoint ?? `stdio (${block.transport})`),
+        block.status === "connected"
+          ? words.status.connected
+          : block.status === "dismissed"
+            ? words.status.dismissed
+            : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+    case "skill_draft":
+      return skillDraftMarkdown(block, words.labels, words.status);
     case "app":
       return oneLine(`${block.server}: ${block.tool}`);
     case "tool_question":
-      return [literal(block.question.source), literal(block.question.message)]
+      // An answered question shows its outcome under the question, as its card does.
+      return [
+        literal(block.question.source),
+        literal(block.question.message),
+        block.status === "accepted"
+          ? words.status.sent
+          : block.status === "declined"
+            ? words.status.declined
+            : block.status === "expired"
+              ? words.ask.expired
+              : "",
+      ]
         .filter(Boolean)
         .join("\n\n");
     case "import_setup":
@@ -511,6 +658,8 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   askWords: AskWords;
   /** A card's state words (saved, running, archived and so on), in the reader's words. */
   cardStatus: CardStatusWords;
+  /** The labels around a card's content (a skill draft's fields), in the reader's words. */
+  cardLabels: CardLabels;
   /** A group bot's name as the chat shows it, for a handoff between bots. */
   memberName: (botId: string) => string;
   /** The label before an attached file's name, in the reader's words. */
@@ -528,6 +677,7 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
     routineEvent: options.routineEvent,
     ask: options.askWords,
     status: options.cardStatus,
+    labels: options.cardLabels,
     memberName: options.memberName,
     attachment: options.attachment,
     isSetupComplete: options.isSetupComplete,
