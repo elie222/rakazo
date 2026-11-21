@@ -201,6 +201,7 @@ export function ComposerActions({
   running,
   showTalk,
   talkDisabled,
+  sending,
   sendDisabled,
   stopDisabled,
   sendColors,
@@ -215,6 +216,7 @@ export function ComposerActions({
   /** Hold-to-talk shows beside Send while the draft is empty. */
   showTalk: boolean;
   talkDisabled: boolean;
+  sending: boolean;
   sendDisabled: boolean | undefined;
   stopDisabled: boolean;
   /** The bot's color, as your messages to it wear it; the send button matches them. */
@@ -249,6 +251,7 @@ export function ComposerActions({
           <Button
             size="icon"
             aria-label={t`Send`}
+            loading={sending}
             disabled={sendDisabled}
             onClick={onSend}
             style={sendStyle}
@@ -273,6 +276,7 @@ export function ComposerActions({
           <Button
             size="icon"
             aria-label={t`Send`}
+            loading={sending}
             disabled={sendDisabled}
             onClick={onSend}
             style={sendStyle}

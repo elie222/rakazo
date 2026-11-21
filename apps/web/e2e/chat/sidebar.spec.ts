@@ -27,6 +27,10 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
   await expect(chats).toHaveAttribute("aria-current", "page");
   await expect(activity).toBeVisible();
   await expect(rail.getByRole("link", { name: "Artifacts" })).toBeVisible();
+  const chatRow = page.locator("[data-roster-bot-id]").first();
+  const rowBox = await chatRow.boundingBox();
+  expect(rowBox).not.toBeNull();
+  expect(rowBox!.height).toBeGreaterThanOrEqual(56);
   // The rail's labels fold away without taking the list with them.
   await rail.getByRole("button", { name: "Collapse sidebar" }).click();
   await expect(rail.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
@@ -47,6 +51,9 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
   // The list can go away; the rail remains and brings it back.
   await page.getByRole("button", { name: "Hide chat list" }).click();
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  const list = page.getByTestId("bots-sidebar");
+  await expect(list).toHaveAttribute("aria-hidden", "true");
+  await expect(list).toHaveAttribute("inert", "");
   await expect(rail).toBeVisible();
   await rail.getByRole("button", { name: "Show chat list" }).click();
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
@@ -75,6 +82,16 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
   expect(hideBox!.x).toBeGreaterThanOrEqual(220);
   expect(hideBox!.x + hideBox!.width).toBeLessThanOrEqual(536);
 
+  // Activity from another page returns to the chat shell, where its list lives.
+  await rail.getByRole("link", { name: "Artifacts" }).click();
+  await expect(page).toHaveURL(/\/app\/artifacts/);
+  await activity.click();
+  await expect(page).toHaveURL(/\/app$/);
+  await expect(
+    page.getByTestId("bots-sidebar").getByText("Activity", { exact: true }).first(),
+  ).toBeVisible();
+  await chats.click();
+
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
       (value) => document.documentElement.setAttribute("data-theme", value),
@@ -82,4 +99,14 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
     );
     await captureScreenshot(page, testInfo, `chat-sidebar-${theme}`);
   }
+
+  // Below md the rail is gone, so the drawer keeps its own Activity entry.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const mobileActivity = page.getByRole("button", { name: "Activity" });
+  await expect(mobileActivity).toBeVisible();
+  await mobileActivity.click();
+  await expect(
+    page.getByTestId("bots-sidebar").getByText("Activity", { exact: true }).first(),
+  ).toBeVisible();
 });

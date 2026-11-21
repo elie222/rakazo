@@ -69,6 +69,17 @@ describe("ListRow", () => {
     expect(host.querySelector('[data-slot="list-row-status"]')?.textContent).toContain("Running");
     act(() => root.unmount());
   });
+
+  it("uses the page surface instead of sidebar colors when asked", () => {
+    const { host, root } = render(
+      <ListRow tone="surface">
+        <ListRowLink href="/run">Run</ListRowLink>
+      </ListRow>,
+    );
+    expect(host.querySelector('[data-slot="list-row"]')?.className).toContain("hover:bg-accent");
+    expect(host.querySelector('[data-slot="list-row"]')?.className).not.toContain("sidebar-accent");
+    act(() => root.unmount());
+  });
 });
 
 describe("list foundations", () => {

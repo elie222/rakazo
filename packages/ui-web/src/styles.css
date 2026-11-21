@@ -71,6 +71,55 @@
   box-shadow: var(--shadow-dialog);
 }
 
+/* A message that lands while the chat is open rises into place once; history stays still. */
+@keyframes message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+
+[data-enter="pop"] {
+  animation: message-enter var(--motion-pop) var(--ease-out) both;
+}
+
+/* A live reply keeps every word on screen; a faint band sweeps over it as text arrives. */
+@keyframes stream-sweep {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+[data-streaming]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  pointer-events: none;
+  background-image: linear-gradient(
+    100deg,
+    transparent 35%,
+    color-mix(in oklch, var(--foreground) 7%, transparent) 50%,
+    transparent 65%
+  );
+  background-size: 220% 100%;
+  animation: stream-sweep var(--motion-sweep) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-enter="pop"] {
+    animation: none;
+  }
+
+  [data-streaming]::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-dialog: var(--dialog);

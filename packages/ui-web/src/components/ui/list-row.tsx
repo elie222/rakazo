@@ -12,6 +12,7 @@ const ListRowActiveContext = createContext(false);
  */
 function ListRow({
   active = false,
+  tone = "sidebar",
   actions,
   fade = "32px",
   className,
@@ -20,6 +21,8 @@ function ListRow({
   ...props
 }: ComponentProps<"div"> & {
   active?: boolean;
+  /** The surface the row sits on: the sidebar, or a page body. */
+  tone?: "sidebar" | "surface";
   actions?: ReactNode;
   /** How much of the row's end fades under the revealed actions. */
   fade?: string;
@@ -32,8 +35,12 @@ function ListRow({
         className={cn(
           "group/list-row relative rounded-lg transition-colors duration-(--motion-micro) ease-(--ease-standard)",
           active
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : "hover:bg-sidebar-accent/60 focus-within:bg-sidebar-accent/60",
+            ? tone === "sidebar"
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "bg-accent text-accent-foreground"
+            : tone === "sidebar"
+              ? "hover:bg-sidebar-accent/60 focus-within:bg-sidebar-accent/60"
+              : "hover:bg-accent focus-within:bg-accent",
           className,
         )}
         style={

@@ -62,6 +62,7 @@ import { isEditableTarget } from "../shell-shortcuts";
 import { TimeSeparator, UnreadDivider } from "./chat-context";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
+import { useEnteringMessages } from "./use-entering-messages";
 import { useReplyAnnouncement } from "./use-reply-announcement";
 
 /** Bubbles stop at a readable line length instead of stretching with wide windows. */
@@ -205,6 +206,7 @@ export const Transcript = memo(function Transcript({
     () => expandPeerReplies(transcript, expandedPeerMarkers),
     [transcript, expandedPeerMarkers],
   );
+  const entering = useEnteringMessages(messages);
   const announcement = useReplyAnnouncement(
     messages,
     (message) =>
@@ -688,6 +690,7 @@ export const Transcript = memo(function Transcript({
               ) : null}
               <div
                 data-message-id={message.id}
+                data-enter={entering.has(message.id) ? "pop" : undefined}
                 className={peerReceipt ? "relative" : "group/message relative hover:z-[1]"}
               >
                 <div
@@ -699,6 +702,7 @@ export const Transcript = memo(function Transcript({
                 >
                   <div
                     data-testid={peerReceipt ? undefined : "message-bubble-frame"}
+                    data-streaming={message.id.startsWith("progress:") ? "" : undefined}
                     className={
                       peerReceipt
                         ? undefined

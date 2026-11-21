@@ -216,7 +216,7 @@ function PromptAskCard({
       : undefined;
   if (undo)
     return (
-      <BuiCard className="px-5 py-4">
+      <BuiCard className="p-4">
         <div className="flex items-center gap-2 text-body">
           {undo.label}
           <Button
@@ -252,7 +252,7 @@ function PromptAskCard({
             : undefined
       }
       className={cn(
-        "w-full min-w-0 max-w-xl px-5 py-4",
+        "w-full min-w-0 max-w-xl p-4",
         answeredQuestion && "opacity-50 [&_button:disabled]:opacity-100",
       )}
     >

@@ -745,7 +745,7 @@ function ArtifactCard({
     <div className="group relative">
       <Link
         to={`/app/artifacts/${artifact.id}`}
-        className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 text-foreground hover:bg-accent/40"
+        className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 text-foreground shadow-control hover:bg-accent/40"
       >
         <div className="flex items-start justify-between">
           <span className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">
