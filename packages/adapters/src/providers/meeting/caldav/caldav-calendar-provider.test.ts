@@ -11,6 +11,7 @@ const origin = "https://caldav.example.test";
 const home = `${origin}/123/calendars/`;
 const work = `${home}work/`;
 const reminders = `${home}tasks/`;
+const personal = `${home}personal/`;
 const standupUrl = `${work}standup.ics`;
 const reviewUrl = `${work}review.ics`;
 
@@ -111,12 +112,20 @@ function fakeServer(password = "app-password") {
             '<resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype><displayname xmlns="DAV:">Work</displayname><supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name="VEVENT"/><comp name="VTODO"/></supported-calendar-component-set>',
           ),
           response(
+            "/123/calendars/personal/",
+            "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>",
+          ),
+          response(
             "/123/calendars/tasks/",
             '<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><c:supported-calendar-component-set><c:comp name="VTODO"/></c:supported-calendar-component-set>',
           ),
         ),
         { status: 207 },
       );
+    }
+    if (method === "REPORT" && url.href === personal) {
+      // A calendar with nothing in range answers with an empty multistatus.
+      return new Response('<?xml version="1.0"?>\n<multistatus xmlns="DAV:"/>', { status: 207 });
     }
     if (method === "REPORT" && url.href === work) {
       expect(body).toContain('start="20261118T100000Z"');

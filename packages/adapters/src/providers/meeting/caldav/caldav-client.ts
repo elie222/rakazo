@@ -83,8 +83,13 @@ function multistatus(body: string): { href: string; props: Node }[] {
   } catch {
     throw new CalDavProtocolError("The calendar server returned unreadable XML.");
   }
-  const root = asNode(asNode(document)?.multistatus);
-  if (!root) throw new CalDavProtocolError("The calendar server did not return a multistatus.");
+  const top = asNode(document);
+  if (!top || !("multistatus" in top)) {
+    throw new CalDavProtocolError("The calendar server did not return a multistatus.");
+  }
+  // An empty <multistatus/>, such as a calendar with no events in range, parses as "".
+  const root = asNode(top.multistatus);
+  if (!root) return [];
   return asArray(root.response).flatMap((response) => {
     const node = asNode(response);
     const href = asArray(node?.href).map(text).find(Boolean);
