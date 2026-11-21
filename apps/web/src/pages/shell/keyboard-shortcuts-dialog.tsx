@@ -10,12 +10,15 @@ export function KeyboardShortcutsDialog({
   onOpenChange,
   host,
   dictation,
+  modelPicker,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   host: ShortcutHost;
   /** Whether the composer offers the microphone, which Cmd/Ctrl+D starts. */
   dictation: boolean;
+  /** Whether the composer shows the model, which Cmd/Ctrl+Shift+M opens and Cmd/Ctrl+Shift+E steps the thinking of. */
+  modelPicker: boolean;
 }) {
   const { t } = useLingui();
   const mod = host.apple ? "⌘" : "Ctrl";
@@ -32,8 +35,10 @@ export function KeyboardShortcutsDialog({
     { label: t`Focus message`, keys: [[mod, "I"]] },
     { label: t`Quote selection`, keys: [quoteShortcutKeys(host)] },
     dictation && { label: t`Dictate`, keys: [[mod, "D"]] },
+    modelPicker && { label: t`Switch model`, keys: [[mod, shift, "M"]] },
+    modelPicker && { label: t`Next thinking level`, keys: [[mod, shift, "E"]] },
     { label: t`Chat details`, keys: [[mod, shift, ","]] },
-    { label: t`Connect apps`, keys: [[mod, shift, "M"]] },
+    host.desktop && { label: t`Connect apps`, keys: [[mod, shift, "A"]] },
     host.desktop && { label: t`Go to bot`, keys: [[mod, "1–9"]] },
     {
       label: t`Next or previous bot`,

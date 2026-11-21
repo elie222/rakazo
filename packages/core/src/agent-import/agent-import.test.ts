@@ -1053,6 +1053,18 @@ describe("renameSkillMd", () => {
     expect(renameSkillMd(original.join(newline), "New")).toBe(expected.join(newline));
   });
 
+  it("renames a file with leading blank lines, leading spaces, or a trailing-space fence", () => {
+    expect(renameSkillMd("\n---\nname: Old\ndescription: d\n---\nBody", "New")).toBe(
+      "\n---\nname: New\ndescription: d\n---\nBody",
+    );
+    expect(renameSkillMd("  --- \nname: Old\ndescription: d\n---  \nBody", "New")).toBe(
+      "  --- \nname: New\ndescription: d\n---  \nBody",
+    );
+    expect(renameSkillMd("\uFEFF\n---\nname: Old\ndescription: d\n----\n---\nBody", "New")).toBe(
+      "\uFEFF\n---\nname: New\ndescription: d\n----\n---\nBody",
+    );
+  });
+
   it("stays fast on a long indented block", () => {
     const content = `---\nname: >\n${"\t".repeat(200_000)}\u2028\n---\n`;
     expectLinearTime(() => renameSkillMd(content, "New"));

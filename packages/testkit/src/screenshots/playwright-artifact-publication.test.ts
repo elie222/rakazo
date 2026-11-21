@@ -335,8 +335,8 @@ else:
       }
       if (isPr) {
         expect(readFileSync(env.GITHUB_OUTPUT, "utf8")).toContain("latest_pr_run=true");
-        const changedPaths = path.join(root, "changed-paths.txt");
-        write(changedPaths, "apps/web/src/example.tsx\n");
+        const changedFiles = path.join(root, "changed-files.jsonl");
+        write(changedFiles, `${JSON.stringify({ filename: "apps/web/src/example.tsx" })}\n`);
         const comment = execFileSync(
           process.execPath,
           [
@@ -344,7 +344,7 @@ else:
             "tsx",
             "packages/testkit/src/screenshots/build-playwright-pr-screenshot-comment.ts",
             path.join(checkout, ".tmp/playwright-dashboard/screenshots/review.json"),
-            changedPaths,
+            changedFiles,
           ],
           {
             cwd: checkout,

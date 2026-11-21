@@ -35,11 +35,14 @@ import { desktopBridge } from "../../lib/platform/desktop";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
+import { useAppRail } from "../shell/app-rail";
 import { useTicketPriorityLabels } from "./ticket-priority";
 import { useTicketStatusLabels } from "./ticket-status";
 
 export function BoardPage() {
   const { t } = useLingui();
+  // From md up the rail holds the window controls and the way back to chats.
+  const rail = useAppRail();
   const statuses = useTicketStatusLabels();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -109,7 +112,7 @@ export function BoardPage() {
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="app-drag flex items-center gap-3 border-b px-4 py-3">
         {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
-        {desktopBridge() ? <WindowChrome /> : null}
+        {desktopBridge() ? <WindowChrome className={rail ? "md:hidden" : undefined} /> : null}
         <div className="flex min-w-0 flex-1 items-center gap-1">
           <IconTooltip label={t`Back`}>
             <Link
@@ -118,7 +121,7 @@ export function BoardPage() {
               className={buttonVariants({
                 variant: "ghost",
                 size: "icon",
-                className: "app-no-drag text-muted-foreground",
+                className: `app-no-drag text-muted-foreground ${rail ? "md:hidden" : ""}`,
               })}
             >
               <ChevronLeft />

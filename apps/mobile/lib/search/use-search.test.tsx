@@ -103,3 +103,29 @@ it("cancels the running search when the query is cleared or the screen unmounts"
   await act(async () => root.render(null));
   expect(requests[1]!.signal.aborted).toBe(true);
 });
+
+it.each(["first ", " first"])(
+  "keeps the current hits and sends no request when only the spaces around the query change (%j)",
+  async (spaced) => {
+    await search("first");
+    await act(async () => requests[0]!.resolve([hit("Fresh")]));
+    expect(latest.hits).toEqual([hit("Fresh")]);
+
+    await search(spaced);
+    expect(requests).toHaveLength(1);
+    expect(latest.hits).toEqual([hit("Fresh")]);
+    expect(latest.loading).toBe(false);
+    expect(latest.error).toBeNull();
+  },
+);
+
+it("searches again and clears the hits when a retry is requested", async () => {
+  await search("first");
+  await act(async () => requests[0]!.resolve([hit("Fresh")]));
+
+  await act(async () => latest.retry());
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(requests.map((request) => request.q)).toEqual(["first", "first"]);
+  expect(latest.hits).toEqual([]);
+  expect(latest.loading).toBe(true);
+});

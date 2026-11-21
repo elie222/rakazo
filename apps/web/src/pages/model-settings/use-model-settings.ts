@@ -131,7 +131,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     pasteCode,
     setPasteCode,
     oauthPending,
-    popupBlocked,
     cancelOAuthAttempt,
     reportSignInStep,
     startSubscriptionSignIn,
@@ -312,7 +311,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     presetBaseUrl?: string,
     targetCredentialId: string | null = null,
   ) {
-    cancelOAuthAttempt();
+    cancelOAuthAttempt("replaced");
     formRevisionRef.current += 1;
     selectionRevisionRef.current += 1;
     const nextCredential = targetCredentialId
@@ -422,7 +421,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   }
 
   function handleClose() {
-    cancelOAuthAttempt(false);
+    cancelOAuthAttempt("left", false);
     onClose();
   }
 
@@ -481,7 +480,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     openAiCompatibleReady,
     pasteCode,
     pending,
-    popupBlocked,
     selectedConnectionName,
     selectedProviderName,
     selectionRevisionRef,
