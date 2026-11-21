@@ -27,6 +27,7 @@ export function useRoutineEditor({
   timezone,
   setBots,
   refreshThread,
+  openGroup,
   setPanel,
   messageProviders,
 }: {
@@ -37,6 +38,7 @@ export function useRoutineEditor({
   messageProviders: string[];
   setBots: Dispatch<SetStateAction<Bot[]>>;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
+  openGroup: (groupId: string) => void;
   setPanel: (panel: Panel) => void;
 }) {
   const { t } = useLingui();
@@ -386,8 +388,13 @@ export function useRoutineEditor({
           setRunningRoutine(true);
           setRoutineError(null);
           try {
-            await rpc.routines.testRun({ routineId: targetRoutine.id });
-            await refreshThread(targetBotId);
+            const { groupId } = await rpc.routines.testRun({ routineId: targetRoutine.id });
+            // A group routine runs in its group; follow it there unless they've moved on.
+            if (groupId) {
+              if (activeBotId.current === targetBotId) openGroup(groupId);
+            } else {
+              await refreshThread(targetBotId);
+            }
           } catch (error) {
             if (activeBotId.current === targetBotId) {
               setRoutineError(errorText(error, t`Could not run routine`));

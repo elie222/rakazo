@@ -1148,7 +1148,9 @@ test("specific people review a version and lose access when removed", async ({
       .getByRole("textbox", { name: "Comment", exact: true })
       .fill("Add the rollout date.");
     await reviewer.getByRole("button", { name: "Post comment" }).click();
-    await expect(reviewer.getByText("Add the rollout date.", { exact: true })).toBeVisible();
+    await expect(
+      reviewer.getByRole("listitem").getByText("Add the rollout date.", { exact: true }),
+    ).toBeVisible();
     const { items } = await rpc<{ items: PageComment[] }>(reviewer, "pageReviews/comments", {
       pageId,
     });

@@ -6,6 +6,7 @@ import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
+import type { Mock } from "vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   kickModelCredentialRefresh,
@@ -1680,9 +1681,39 @@ describe("PiOAuthLogins", () => {
     expect(promptSettled).toBe(true);
     await expect(logins.complete(started.loginId, actor)).resolves.toEqual({
       status: "error",
-      error: "Callback completed elsewhere",
+      error: "Sign-in failed. Start again.",
       provider: "anthropic",
     });
+  });
+
+  it("shows a fixed message for a provider failure and keeps the provider's words out", async () => {
+    const ended: PiOAuthEnded[] = [];
+    const logins = new PiOAuthLogins<string>(
+      async (_provider, _type, interaction) => {
+        interaction.notify({
+          type: "device_code",
+          userCode: "ABCD-1234",
+          verificationUri: "https://example.com/device",
+        });
+        await flushMicrotasks();
+        throw new Error("Device auth failed with status 503: <html>upstream trace 7f3a</html>");
+      },
+      undefined,
+      (end) => ended.push(end),
+    );
+    const actor = { userId: "u", spaceId: "w" };
+    const started = await logins.begin({
+      ...actor,
+      provider: CHATGPT_OAUTH_PROVIDER,
+      persist: keep,
+    });
+    await flushMicrotasks();
+
+    await expect(logins.complete(started.loginId, actor)).resolves.toMatchObject({
+      status: "error",
+      error: "Sign-in is unavailable right now. Try again in a minute.",
+    });
+    expect(ended).toMatchObject([{ reason: "provider_refused", errorClass: "unavailable" }]);
   });
 
   it("rejects non-HTTPS authorization URLs", async () => {
@@ -2542,6 +2573,35 @@ describe("PiOAuthLogins across API processes", () => {
     });
   });
 
+  it.each([
+    ["the app's reason", "left"],
+    ["a shutdown", "interrupted"],
+  ] as const)(
+    "reports a sign-in stopped before its row was stored with why it stopped: %s",
+    async (_case, expected) => {
+      const { store } = handoffStore();
+      const create = (store as unknown as { prisma: { modelOAuthSession: { create: Mock } } })
+        .prisma.modelOAuthSession.create;
+      const stored = create.getMockImplementation()!;
+      const held = deferred<void>();
+      create.mockImplementationOnce(async (args: unknown) => {
+        await held.promise;
+        return stored(args);
+      });
+      const ended: PiOAuthEnded[] = [];
+      const process = apiProcess(store, ended);
+      const started = process.logins.begin({ ...member, provider: "anthropic", persist: keep });
+      await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+      const loginId = (create.mock.calls[0]![0] as { data: { id: string } }).data.id;
+      if (expected === "left") await process.logins.cancel(loginId, member, "left");
+      else await process.logins.abortAll();
+      held.resolve();
+      await started;
+
+      expect(ended.map((end) => end.reason)).toEqual([expected]);
+    },
+  );
+
   it("reports a sign-in another process cancels once, and not again when it runs out", async () => {
     vi.useFakeTimers();
     const { store } = handoffStore();
@@ -2574,7 +2634,7 @@ describe("PiOAuthLogins across API processes", () => {
     ]);
   });
 
-  it("reports a stored sign-in nobody finished in time as timed out", async () => {
+  it("reports a stored sign-in nobody finished in time as timed out, and says it expired", async () => {
     vi.useFakeTimers();
     const { rows, store } = handoffStore();
     const ended: PiOAuthEnded[] = [];
@@ -2587,10 +2647,19 @@ describe("PiOAuthLogins across API processes", () => {
     await vi.advanceTimersByTimeAsync(started.expiresInSeconds * 1000);
 
     expect(ended.map((end) => end.reason)).toEqual(["timed_out"]);
+    const after = apiProcess(store);
+    await expect(after.logins.submit(started.loginId, member, "the-code", keep)).rejects.toThrow(
+      "This code expired. Start again.",
+    );
+    await expect(after.logins.complete(started.loginId, member)).resolves.toMatchObject({
+      status: "error",
+      error: "This code expired. Start again.",
+    });
     expect(rows.has(started.loginId)).toBe(false);
+    expect(after.seen).toEqual([]);
   });
 
-  it("does not resume an expired sign-in", async () => {
+  it("does not resume an expired sign-in, and says it expired", async () => {
     const { rows, store } = handoffStore();
     const started = await apiProcess(store).logins.begin({
       ...member,
@@ -2601,7 +2670,7 @@ describe("PiOAuthLogins across API processes", () => {
     if (row) row.createdAt = new Date(Date.now() - 16 * 60_000);
     const after = apiProcess(store);
     await expect(after.logins.submit(started.loginId, member, "the-code", keep)).rejects.toThrow(
-      /not found/,
+      "This code expired. Start again.",
     );
     expect(after.seen).toEqual([]);
   });
@@ -2823,7 +2892,7 @@ describe("PiOAuthLogins across API processes", () => {
     expect(save.saved).toEqual(["access-token"]);
   });
 
-  it("drops an expired device-code sign-in at once on every process", async () => {
+  it("ends an expired device-code sign-in at once on every process, and says it expired", async () => {
     vi.useFakeTimers();
     const { rows, store } = handoffStore();
     const a = deviceCodeProcess(store);
@@ -2834,10 +2903,11 @@ describe("PiOAuthLogins across API processes", () => {
     });
     await vi.advanceTimersByTimeAsync(15 * 60_000 + 1);
     expect(a.stopped).toBe(true);
-    expect(rows.has(started.loginId)).toBe(false);
+    expect(rows.get(started.loginId)?.status).toBe("failed");
     await expect(
       deviceCodeProcess(store).logins.complete(started.loginId, member),
-    ).resolves.toMatchObject({ status: "error", error: expect.stringMatching(/not found/) });
+    ).resolves.toMatchObject({ status: "error", error: "This code expired. Start again." });
+    expect(rows.has(started.loginId)).toBe(false);
   });
 
   it("lets a save under way finish before shutdown completes", async () => {
