@@ -180,6 +180,8 @@ export type CronLabels = {
   weekdayNames: readonly string[];
   interval(n: number, unit: CronUnit): { lead: string; detail: string };
   atTime(time: string): string;
+  /** Several times of day, in order; without it such schedules keep the cron fallback. */
+  atTimes?(times: string[]): string;
   /** The monthly preset always runs on the 1st, so it gets its own phrase. */
   onThe1stAt(time: string): string;
   onDayAt(day: number, time: string): string;
@@ -205,6 +207,7 @@ export const ENGLISH_CRON_LABELS: CronLabels = {
     detail: `${n} ${n === 1 ? CRON_UNIT_SINGULAR[unit] : unit}`,
   }),
   atTime: (time) => `at ${time}`,
+  atTimes: (times) => `at ${times.slice(0, -1).join(", ")} and ${times.at(-1)}`,
   onThe1stAt: (time) => `on the 1st at ${time}`,
   onDayAt: (day, time) => `on the ${ordinal(day)} at ${time}`,
   hourAtMinute: (minute) => `Every hour at :${String(minute).padStart(2, "0")}`,
@@ -323,15 +326,25 @@ function describeCronFields(cron: string, labels: CronLabels): string | null {
     return m >= 1 && m <= 59 ? labels.hourAtMinute(m) : null;
   }
   // Only steps that divide the day repeat evenly; "*/5" restarts at midnight after four hours.
-  const hours = stepValue(hour);
-  if (hours && day === "*" && dow === "*" && isInt(minute)) {
+  const step = stepValue(hour);
+  if (step && day === "*" && dow === "*" && isInt(minute)) {
     const m = Number(minute);
-    return labels.hoursAtMinute && hours >= 2 && hours < 24 && 24 % hours === 0 && m >= 1 && m <= 59
-      ? labels.hoursAtMinute(hours, m)
+    return labels.hoursAtMinute && step >= 2 && step < 24 && 24 % step === 0 && m >= 1 && m <= 59
+      ? labels.hoursAtMinute(step, m)
       : null;
   }
-  if (!isCronClock(minute, hour)) return null;
-  const time = formatClock(Number(hour), Number(minute));
+  const hours = cronHours(hour);
+  if (!hours || !isInt(minute) || Number(minute) > 59) return null;
+  const times = hours.map((h) => formatClock(h, Number(minute)));
+  const [time = ""] = times;
+  if (times.length > 1) {
+    // onDayAt takes one time, so a monthly schedule at several keeps the cron fallback.
+    const at = labels.atTimes?.(times);
+    if (!at || day !== "*") return null;
+    if (dow === "*") return `${labels.everyDay} ${at}`;
+    const days = cronWeekdays(dow);
+    return days ? `${describeWeekdays(days, labels)} ${at}` : null;
+  }
   if (day === "*" && dow !== "*") {
     const days = cronWeekdays(dow);
     return days ? `${describeWeekdays(days, labels)} ${labels.atTime(time)}` : null;
@@ -340,6 +353,17 @@ function describeCronFields(cron: string, labels: CronLabels): string | null {
     return `${labels.monthly} ${labels.onDayAt(Number(day), time)}`;
   }
   return null;
+}
+
+// The hour field as hours of the day in order, from single hours and lists.
+// Ranges and steps return null: they read better as cron than as a long list.
+function cronHours(field: string): number[] | null {
+  const hours = new Set<number>();
+  for (const part of field.split(",")) {
+    if (!isInt(part) || Number(part) > 23) return null;
+    hours.add(Number(part));
+  }
+  return [...hours].sort((a, b) => a - b);
 }
 
 // The day-of-week field as a set of days (0 = Sunday) from single days, lists

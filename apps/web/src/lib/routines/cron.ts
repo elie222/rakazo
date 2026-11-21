@@ -89,6 +89,11 @@ export function cronLabels(locale: string): CronLabels {
       const preset = { time: localizedClock(time, locale) };
       return t`at ${preset.time}`;
     },
+    atTimes: (clocks) => {
+      const times = clocks.map((time) => localizedClock(time, locale));
+      const last = times.at(-1) ?? "";
+      return t`at ${times.slice(0, -1).join(", ")} and ${last}`;
+    },
     onThe1stAt: (time) => {
       const preset = { time: localizedClock(time, locale) };
       return t`on the 1st at ${preset.time}`;
