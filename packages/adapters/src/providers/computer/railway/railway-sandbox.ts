@@ -14,9 +14,14 @@ import type {
   TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
-import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { anySignal } from "@rakazo/core";
+import {
+  SandboxFileTooLargeError,
+  SandboxRateLimitError,
+  WorkspaceTooLargeError,
+} from "@rakazo/adapter-kit";
+import { anySignal, cancelResponseBody, parseRetryAfter } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import type * as Railway from "railway";
@@ -370,7 +375,11 @@ export class RailwaySandboxProvider implements SandboxProvider {
     });
   }
 
-  async *exportWorkspace(computer: ComputerRef, context: AdapterContext) {
+  async *exportWorkspace(
+    computer: ComputerRef,
+    context: AdapterContext,
+    limits?: WorkspaceExportLimits,
+  ) {
     await this.desktops.stopBrowsers(computer, context);
     const result = await this.run(
       computer,
@@ -392,15 +401,21 @@ export class RailwaySandboxProvider implements SandboxProvider {
     type ExportFile = { path: string; executable: boolean; size: number };
     const batches: ExportFile[][] = [];
     const batcher = new PortableFileBatcher<ExportFile>(4, (file) => file.size);
+    let listedFiles = 0;
+    let listedBytes = 0;
     for (let index = 0; index + 2 < entries.length; index += 3) {
       const filePath = entries[index];
       const mode = entries[index + 1];
       if (!filePath || !mode || shouldSkipPortableWorkspaceFile(filePath)) continue;
       const size = Number(entries[index + 2]);
-      if (!Number.isSafeInteger(size) || size < 0 || size > this.maxWorkspaceFileBytes)
-        throw new Error(
-          `Railway workspace file exceeds ${this.maxWorkspaceFileBytes} bytes or has an invalid size`,
-        );
+      if (!Number.isSafeInteger(size) || size < 0)
+        throw new Error("Railway workspace file has an invalid size");
+      // The listing sizes every file, so the save's limits are checked before any file is read.
+      if (size > this.maxWorkspaceFileBytes) throw new WorkspaceTooLargeError("bytes");
+      listedFiles += 1;
+      listedBytes += size;
+      if (limits && listedFiles > limits.maxFiles) throw new WorkspaceTooLargeError("files");
+      if (limits && listedBytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
       const full = batcher.add({
         path: filePath,
         size,
@@ -421,7 +436,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
               length: file.size + 1,
             });
             if (content.byteLength > this.maxWorkspaceFileBytes)
-              throw new Error(`Railway workspace file exceeds ${this.maxWorkspaceFileBytes} bytes`);
+              throw new WorkspaceTooLargeError("bytes");
             if (content.byteLength > file.size) {
               growing.push({ path: file.path, executable: file.executable });
               return undefined;
@@ -444,7 +459,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
           length: this.maxWorkspaceFileBytes + 1,
         });
         if (content.byteLength > this.maxWorkspaceFileBytes)
-          throw new Error(`Railway workspace file exceeds ${this.maxWorkspaceFileBytes} bytes`);
+          throw new WorkspaceTooLargeError("bytes");
         yield { ...file, content };
       } catch (error) {
         if (!(error instanceof SandboxFileNotFoundError)) throw error;
@@ -715,6 +730,14 @@ async function railwayFetch(
   const deadline = AbortSignal.timeout(30_000);
   const signal = init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline;
   const response = await fetch(input, { ...init, signal, redirect: "error" });
+  // Railway's own rate limit is a computer limit, not a server failure. It is checked before the
+  // body, so a plain-text 429 is classified too, and it is thrown so the SDK never sees a reply.
+  if (response.status === 429) {
+    cancelResponseBody(response);
+    throw new SandboxRateLimitError({
+      retryAfterMs: parseRetryAfter(response.headers.get("retry-after")),
+    });
+  }
   const bytes = await readBodyCapped(response, MAX_RESPONSE_BYTES, signal);
   let body: { data?: { sandboxCreate?: { id?: unknown } }; errors?: unknown[] };
   try {

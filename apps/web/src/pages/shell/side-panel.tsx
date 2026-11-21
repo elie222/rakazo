@@ -36,6 +36,7 @@ export function ShellSidePanel({
   onClearBot,
   discardChatAttachments,
   onCoversChat,
+  onOverlays,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   panel: Panel;
@@ -59,6 +60,7 @@ export function ShellSidePanel({
   /** Drops a deleted chat's pending attachments with their previews. */
   discardChatAttachments: (threadKey: string) => void;
   onCoversChat: (covers: boolean) => void;
+  onOverlays: (overlays: boolean) => void;
 }) {
   const { t } = useLingui();
   const open = Boolean(panel && (active || activeGroup));
@@ -75,7 +77,13 @@ export function ShellSidePanel({
   }
 
   return (
-    <ResizableSidePanel open={open} panel={panel ?? "closed"} onCoversChat={onCoversChat}>
+    <ResizableSidePanel
+      open={open}
+      panel={panel ?? "closed"}
+      onCoversChat={onCoversChat}
+      onOverlays={onOverlays}
+      onEscape={panel === "settings" && !computerOpen ? () => setPanel(null) : undefined}
+    >
       {open ? (
         <div className="rk-scroll h-full w-full overflow-y-auto px-5 pt-3.5 pb-[17px]">
           {!(botView && active) &&

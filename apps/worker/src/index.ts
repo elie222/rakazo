@@ -301,6 +301,7 @@ async function main() {
       },
     });
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
+    pageRevisionRuntime: new PiAgentRuntime(),
     mediaGeneration,
     meetingWork: meetings?.work.bind(meetings),
     meetingCalendarSync:

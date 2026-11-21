@@ -1,5 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
-import type { AnalyticsModelSignInStep, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
+import type {
+  AnalyticsModelSignInStep,
+  ModelOAuthBegin,
+  ModelSignInCancelReason,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import { clampCatalogThinkingLevel } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import type { RefObject } from "react";
@@ -99,26 +105,35 @@ export function useSubscriptionSignIn({
     [reportSignInStep],
   );
 
-  const cancelOAuth = useCallback(() => {
-    const loginId = oauthLoginIdRef.current;
-    oauthLoginIdRef.current = null;
-    cancelModelOAuthAttempt(oauthAbortRef, () => {
-      setOauth(null);
-      setOauthPending(false);
-    });
-    if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
-  }, [rpc]);
+  /** Stops the sign-in in progress; `reason` says why for measurement only. */
+  const cancelOAuth = useCallback(
+    (reason: ModelSignInCancelReason = "cancelled") => {
+      const loginId = oauthLoginIdRef.current;
+      oauthLoginIdRef.current = null;
+      oauthCodeSubmittingRef.current = false;
+      cancelModelOAuthAttempt(oauthAbortRef, () => {
+        setOauth(null);
+        setOauthPending(false);
+      });
+      if (loginId) void rpc("models/cancelOAuth", { loginId, reason }).catch(() => undefined);
+    },
+    [rpc],
+  );
 
-  /** Cancels a sign-in in progress and the pending reset of the Copied label. */
-  const cancelSignIn = useCallback(() => {
-    cancelOAuth();
+  /** Stops a sign-in the person left and the pending reset of the Copied label. */
+  const leaveSignIn = useCallback(() => {
+    cancelOAuth("left");
     if (codeCopiedTimerRef.current) clearTimeout(codeCopiedTimerRef.current);
   }, [cancelOAuth]);
 
-  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal, rpc);
+  async function finishSubscriptionSignIn(login: ModelOAuthBegin, controller: AbortController) {
+    await waitForModelOAuth(login, controller.signal, rpc);
     if (controller.signal.aborted) return;
-    const saved = await rpc("models/finishOAuth", { loginId }, { signal: controller.signal });
+    const saved = await rpc(
+      "models/finishOAuth",
+      { loginId: login.loginId },
+      { signal: controller.signal },
+    );
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     credentialIdRef.current = saved.id;
@@ -161,14 +176,17 @@ export function useSubscriptionSignIn({
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
       setOauth(started);
-      await openSignInPage(started.verificationUri);
+      // A device code must be read before its page opens, so the person opens that page.
+      if (started.mode === "auth-url") await openSignInPage(started.verificationUri);
       waitingForCode = started.mode === "auth-url";
-      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
+      if (!waitingForCode) await finishSubscriptionSignIn(started, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
-      if (loginId) void rpc("models/cancelOAuth", { loginId }).catch(() => undefined);
+      if (loginId) {
+        void rpc("models/cancelOAuth", { loginId, reason: "interrupted" }).catch(() => undefined);
+      }
       publishFeedback("connection", {
         error: errorText(err, t`Could not start sign-in`),
       });
@@ -199,13 +217,15 @@ export function useSubscriptionSignIn({
         },
       );
       submitted = true;
-      await finishSubscriptionSignIn(oauth.loginId, controller);
+      await finishSubscriptionSignIn(oauth, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (submitted) {
         oauthLoginIdRef.current = null;
         setOauth(null);
-        void rpc("models/cancelOAuth", { loginId: oauth.loginId }).catch(() => undefined);
+        void rpc("models/cancelOAuth", { loginId: oauth.loginId, reason: "interrupted" }).catch(
+          () => undefined,
+        );
       } else {
         retryable = true;
         setPasteCode(code);
@@ -214,12 +234,25 @@ export function useSubscriptionSignIn({
         error: errorText(err, t`Could not finish sign-in`),
       });
     } finally {
-      oauthCodeSubmittingRef.current = false;
+      // A newer sign-in started by Start over owns the guard now; leave it alone.
+      if (oauthAbortRef.current === controller) oauthCodeSubmittingRef.current = false;
       if (!retryable) {
         finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
       }
     }
   }
+
+  // Nothing asks the server about a code waiting to be pasted, so the card ends on the code's
+  // own clock. A device code's expiry arrives with its status.
+  useTimeout(
+    () => {
+      if (oauthCodeSubmittingRef.current) return;
+      cancelOAuth("interrupted");
+      publishFeedback("connection", { error: t`This code expired. Start again.` });
+    },
+    oauth?.mode === "auth-url" ? oauth.expiresInSeconds * 1000 : null,
+    oauth?.loginId,
+  );
 
   return {
     oauth,
@@ -229,7 +262,7 @@ export function useSubscriptionSignIn({
     codeCopied,
     copyOAuthCode,
     cancelOAuth,
-    cancelSignIn,
+    leaveSignIn,
     openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,
