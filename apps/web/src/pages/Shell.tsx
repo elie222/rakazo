@@ -562,6 +562,7 @@ function SpaceShell() {
     timezone: bootstrapMe?.timezone,
     setBots,
     refreshThread,
+    openGroup: (id) => navigate(`/app/g/${id}`),
     setPanel,
     messageProviders: messagingProviders,
   });

@@ -36,6 +36,7 @@ export * from "./bots/display-name.js";
 export * from "./bots/identity-display.js";
 export { identitySource } from "./bots/identity-source.js";
 export * from "./bots/instruction-diff.js";
+export * from "./bots/open-work-list.js";
 export * from "./bots/room-settings.js";
 export * from "./calls/barge-in.js";
 export * from "./calls/call-nonce.js";
@@ -123,7 +124,12 @@ export * from "./primitives/response-bytes.js";
 export * from "./primitives/retry.js";
 export * from "./primitives/retry-policy.js";
 export * from "./primitives/search.js";
-export { validTimezoneOrUtc, wallClock, zonedDateTime } from "./primitives/time.js";
+export {
+  formatShortHistoryDate,
+  validTimezoneOrUtc,
+  wallClock,
+  zonedDateTime,
+} from "./primitives/time.js";
 export * from "./primitives/user-error.js";
 export * from "./primitives/utf8.js";
 export * from "./routines/inbound-routine.js";

@@ -89,6 +89,7 @@ const breakdown = {
       totalTokens: model.totalTokens - 12,
       costUsd: model.costUsd - 0.001,
       modelCalls: model.modelCalls - 1,
+      cachedTokens: 0,
     })),
     {
       provider: "retired",
@@ -98,6 +99,7 @@ const breakdown = {
       totalTokens: 12,
       costUsd: 0.001,
       modelCalls: 1,
+      cachedTokens: 0,
     },
   ],
   overTimeUnit: "day",
@@ -128,6 +130,19 @@ const breakdown = {
     },
   ],
 };
+
+const monthlyUsage = Array.from({ length: 30 }, (_, index) => {
+  const day = index + 1;
+  const totalTokens = 12_000 + (day % 7) * 6_000 + (day % 4) * 4_000;
+  return {
+    date: `2026-11-${String(day).padStart(2, "0")}`,
+    inputTokens: totalTokens * 0.9,
+    outputTokens: totalTokens * 0.1,
+    totalTokens,
+    costUsd: totalTokens / 237_000,
+    modelCalls: 6,
+  };
+});
 
 async function enableBilling(route: Route, path: "me" | "bootstrap") {
   const response = await route.fetch();
@@ -186,10 +201,13 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
         json: {
           ...breakdown,
           range: input.range,
+          overTime: input.range === "30d" ? monthlyUsage : breakdown.overTime,
           ...(filtered
             ? {
-                totals: { ...point, runs: 14 },
-                models: [{ provider: "subscription", model: "example-large", ...point }],
+                totals: { ...point, runs: 14, tokensPartial: true },
+                models: [
+                  { provider: "subscription", model: "example-large", ...point, cachedTokens: 0 },
+                ],
                 overTime: [point],
               }
             : {}),
@@ -239,6 +257,12 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   );
   await expect(settings.getByText("Usage over time")).toBeVisible();
   await captureScreenshot(page, testInfo, "usage-limits-settings");
+  const bars = settings.getByTestId("usage-bars");
+  const axis = settings.getByTestId("usage-axis");
+  await expect(bars.getByRole("button")).toHaveCount(30);
+  await expect(axis.locator(":scope > span")).toHaveText(["Nov 1", "Nov 30"]);
+  await axis.locator("..").scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "usage-over-time-30-days");
 
   const requests: string[] = [];
   page.on("request", (request) => {
@@ -254,7 +278,9 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
     .poll(() => requests.some((body) => body.includes('"botId":"bot-1"') && body.includes('"7d"')))
     .toBe(true);
   const totals = settings.getByTestId("usage-settings").locator("dl");
-  await expect(totals).toContainText("330,000");
+  // One call in this range reported no token count, so the total is marked as a lower bound.
+  await expect(totals).toContainText("330,000+");
+  await captureScreenshot(page, testInfo, "usage-tokens-partial");
   await expect(totals).toContainText("$1.40");
   await expect(settings.getByRole("row").filter({ hasText: "Example Large" })).toContainText(
     "300,000",

@@ -27,6 +27,7 @@ import type { ContextBudget } from "../../context/context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "../../context/context-selection.js";
 import type { RejectedProviderRequest } from "../../provider-request-shape.js";
 import { withRejectedRequestCapture } from "../../provider-request-shape.js";
+import { LOCAL_PROVIDER_ID } from "../models/pi-local-provider-id.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
 
@@ -42,7 +43,7 @@ const reportedValues = new WeakMap<ReportedUsageFields, Map<keyof AgentUsage, nu
 const cacheInclusivePrompts = new WeakSet<ReportedUsageFields>();
 export function normalizePiUsage(
   usage: Partial<Usage> | undefined,
-  model: Pick<Model<Api>, "cost">,
+  model: Pick<Model<Api>, "cost" | "provider">,
   reported: ReportedUsageFields = new Set(),
 ): AgentUsage {
   // A rejected request never generated, so every token count is zero — even if the
@@ -87,6 +88,8 @@ export function normalizePiUsage(
       cacheInclusivePrompts.has(reported)) &&
     (model.cost.cacheWrite === 0 || cacheWriteTokens !== null);
   const providerCost = reportedCosts.get(reported);
+  // A local server has no price, so its calls cost nothing rather than an unknown amount.
+  const free = model.provider === LOCAL_PROVIDER_ID && providerCost === undefined && !rejected;
   return {
     providerRequestId: reportedRequestIds.get(reported) ?? null,
     inputTokens,
@@ -97,17 +100,19 @@ export function normalizePiUsage(
     reasoningTokens: token(usage?.reasoning, "reasoningTokens"),
     totalTokens,
     costUsd:
-      (rejected ? 0 : providerCost) ??
+      (rejected || free ? 0 : providerCost) ??
       (costKnown && typeof usage?.cost?.total === "number" && Number.isFinite(usage.cost.total)
         ? usage.cost.total
         : null),
     costSource: rejected
       ? "provider-rejection"
-      : providerCost !== undefined
-        ? "provider-reported"
-        : costKnown
-          ? "pi-catalog-estimate"
-          : null,
+      : free
+        ? "free-endpoint"
+        : providerCost !== undefined
+          ? "provider-reported"
+          : costKnown
+            ? "pi-catalog-estimate"
+            : null,
     pricingSnapshot: model.cost ? JSON.parse(JSON.stringify(model.cost)) : null,
     pricingVersion:
       rejected || providerCost !== undefined ? null : costKnown ? "pi-ai-1.3.0" : null,

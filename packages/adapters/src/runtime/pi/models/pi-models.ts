@@ -3,6 +3,7 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
   CompatibleEndpointPreset,
+  ModelCatalogEntry,
   ModelOAuthSignInMode,
   ModelRoutingField,
   ThinkingLevel,
@@ -55,7 +56,7 @@ export type PiCatalogEntry = {
   authHint?: string;
   subscription: boolean;
   signIn?: ModelOAuthSignInMode;
-  signInSetup?: { label: string; url: string };
+  signInSetup?: ModelCatalogEntry["signInSetup"];
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
   defaultCapabilities?: { images?: boolean; reasoning?: boolean; thinkingLevels?: ThinkingLevel[] };

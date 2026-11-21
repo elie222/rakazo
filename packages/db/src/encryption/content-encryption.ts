@@ -52,7 +52,7 @@ interface ModelSpec {
   space: { column: "spaceId" } | { parent: SpaceSource };
   /** Relation field for the owner column (ROW_OWNER), for `connect` writes. */
   ownerRelation: string;
-  searchTokens?: boolean;
+  searchTokens?: "prefix" | "han-pairs";
 }
 
 /** Further content columns (external messages, steering, skills, …) add an entry here. */
@@ -62,7 +62,7 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     fields: { blocks: { plainKeys: MESSAGE_BLOCK_PLAIN_KEYS }, toolHistory: { hidden: true } },
     space: { parent: "threads" },
     ownerRelation: "thread",
-    searchTokens: true,
+    searchTokens: "han-pairs",
   },
   Event: {
     table: "events",
@@ -104,13 +104,20 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     space: { column: "spaceId" },
     ownerRelation: "user",
   },
+  /** The text that starts a run: often the person's own words, answers to a bot's questions included. */
+  Task: {
+    table: "tasks",
+    fields: { prompt: {} },
+    space: { column: "spaceId" },
+    ownerRelation: "thread",
+  },
   /** A bot's inbox. Recipients and file names stay plaintext; `key` and `messageId` are lookups. */
   BotEmailMessage: {
     table: "bot_email_messages",
     fields: { fromAddress: {}, fromName: {}, subject: {}, text: {} },
     space: { column: "spaceId" },
     ownerRelation: "bot",
-    searchTokens: true,
+    searchTokens: "prefix",
   },
 };
 
@@ -426,7 +433,11 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     }
     // Tokens cover the fields written here: indexed models write all of them together.
     if (spec.searchTokens && fields.some((field) => !spec.fields[field]!.hidden))
-      next.searchTokens = searchTokens(key, { words: words.join("\n"), strings });
+      next.searchTokens = searchTokens(
+        key,
+        { words: words.join("\n"), strings },
+        { hanPairs: spec.searchTokens === "han-pairs" },
+      );
     ring.remember(spec.table, rowId, context);
     return next;
   }

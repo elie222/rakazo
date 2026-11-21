@@ -33,10 +33,13 @@ export function BotCreatePicker({
     if (!needle) return bots;
     return bots.filter((bot) => bot.name.toLowerCase().includes(needle));
   }, [bots, needle]);
+  const createLabel = t`New bot`;
+  const terms = needle.split(/\s+/);
   const showCreate =
     !needle ||
-    "new bot".includes(needle) ||
-    needle.split(/\s+/).every((part) => "new bot".includes(part));
+    [createLabel.toLowerCase(), "new bot"].some((label) =>
+      terms.every((part) => label.includes(part)),
+    );
 
   return (
     <div data-testid="bot-create-picker" className="w-[min(320px,calc(100vw-2rem))]">
@@ -71,7 +74,7 @@ export function BotCreatePicker({
                 <span className="flex size-[22px] shrink-0 items-center justify-center">
                   <Plus size={16} strokeWidth={1.8} aria-hidden="true" />
                 </span>
-                <Trans>New bot</Trans>
+                {createLabel}
               </CommandItem>
             ) : null}
             <CommandItem
