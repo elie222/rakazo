@@ -6,6 +6,7 @@ import {
   workspacePath,
 } from "../../../computers/screens/computer-support.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
+import { daytonaRateLimitError } from "./daytona-rate-limit.js";
 import type { DaytonaSandbox } from "./daytona-sandbox.js";
 
 export function isDaytonaExecutable(mode: string, permissions: string): boolean {
@@ -67,6 +68,8 @@ async function listDaytonaFolder(sandbox: DaytonaSandbox, root: string, director
   try {
     return await sandbox.fs.listFiles(workspacePath(root, directory));
   } catch (error) {
+    const limited = await daytonaRateLimitError(error);
+    if (limited) throw limited;
     if (directory && (await isVanishedEntry(sandbox, root, error))) return undefined;
     throw error;
   }
@@ -77,6 +80,8 @@ async function downloadDaytonaFile(sandbox: DaytonaSandbox, root: string, relati
   try {
     return await sandbox.fs.downloadFile(workspacePath(root, relative));
   } catch (error) {
+    const limited = await daytonaRateLimitError(error);
+    if (limited) throw limited;
     if (await isVanishedEntry(sandbox, root, error)) return undefined;
     throw error;
   }
