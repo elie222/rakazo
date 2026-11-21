@@ -1,10 +1,13 @@
 import { ORPCError } from "@orpc/server";
 import {
   BUILTIN_AGENT_SKILLS,
+  MAX_SKILL_FILES,
+  MAX_SKILL_FILES_BYTES,
   renameSkillInRoutines,
   signalRenamedRoutines,
 } from "@rakazo/adapters";
 import type { Actor, AgentSkill, AgentSkillSource } from "@rakazo/contracts";
+import { UpdateAgentSkillInput } from "@rakazo/contracts";
 import type { SkillSource } from "@rakazo/core";
 import {
   buildSkillMd,
@@ -21,9 +24,15 @@ import {
   availableInSpace,
   IsolationError,
   isUniqueViolation,
+  JsonObject,
+  Prisma,
+  readJsonColumn,
   runAsSystemInTransaction,
   spaceAvailability,
+  TransactionConflictError,
+  withTransactionRetry,
 } from "@rakazo/db";
+import { z } from "zod";
 import { userAddedAvailability } from "../spaces/name-claims.js";
 
 type AgentSkillRow = {
@@ -130,17 +139,102 @@ export function resolveSkillContent(input: {
   };
 }
 
+// Preserve the original keys. A record parser can silently drop "__proto__".
+const StoredSkillFiles = z.custom<Record<string, string>>((value) => {
+  const parsed = JsonObject.safeParse(value);
+  return (
+    parsed.success &&
+    !Object.hasOwn(parsed.data, "__proto__") &&
+    Object.values(parsed.data).every((content) => typeof content === "string")
+  );
+});
+
 export function createAgentSkillsService(
   prisma: PrismaClient,
   events?: Pick<ThreadEvents, "publishSpaceChange">,
 ) {
-  async function owned(actor: Actor, skillId: string) {
-    const row = await prisma.agentSkill.findFirst({
+  async function owned(actor: Actor, skillId: string, db: Prisma.TransactionClient = prisma) {
+    const row = await db.agentSkill.findFirst({
+      where: { id: skillId, ...availableInSpace(actor) },
+      omit: { files: true },
+      include: { availableIn: AVAILABILITY_SELECT },
+    });
+    if (!row) throw new IsolationError();
+    return row;
+  }
+
+  async function ownedWithFiles(
+    actor: Actor,
+    skillId: string,
+    db: Prisma.TransactionClient = prisma,
+  ) {
+    const row = await db.agentSkill.findFirst({
       where: { id: skillId, ...availableInSpace(actor) },
       include: { availableIn: AVAILABILITY_SELECT },
     });
     if (!row) throw new IsolationError();
     return row;
+  }
+
+  async function updateFile(
+    actor: Actor,
+    skillId: string,
+    file: NonNullable<UpdateAgentSkillInput["file"]>,
+  ): Promise<AgentSkill> {
+    return withTransactionRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const existing = await ownedWithFiles(actor, skillId, tx);
+        if (existing.source !== "user") {
+          throw new ClientError("BAD_REQUEST", "Only personal skills can have files updated.");
+        }
+        const current =
+          existing.files === null
+            ? {}
+            : readJsonColumn(
+                StoredSkillFiles,
+                existing.files,
+                { table: "agent_skills", column: "files", id: skillId },
+                "reject",
+              );
+        if (Object.hasOwn(current, file.path) && current[file.path] === file.content) {
+          return mapAgentSkill(existing);
+        }
+
+        const files = { ...current, [file.path]: file.content };
+        const contents = Object.values(files);
+        // Use the same storage budget as plugin skill companions.
+        if (contents.length > MAX_SKILL_FILES) {
+          throw new ClientError(
+            "BAD_REQUEST",
+            `A skill can have at most ${MAX_SKILL_FILES} files.`,
+          );
+        }
+        if (
+          contents.reduce((bytes, text) => bytes + Buffer.byteLength(text), 0) >
+          MAX_SKILL_FILES_BYTES
+        ) {
+          throw new ClientError(
+            "BAD_REQUEST",
+            `Skill files can use at most ${MAX_SKILL_FILES_BYTES} UTF-8 bytes in total.`,
+          );
+        }
+
+        // Compare the file map itself. Document edits can commit without invalidating this write.
+        const updated = await tx.agentSkill.updateMany({
+          where: {
+            id: skillId,
+            ...availableInSpace(actor),
+            source: "user",
+            files: { equals: existing.files ?? Prisma.AnyNull },
+          },
+          data: { files },
+        });
+        if (updated.count !== 1) {
+          throw new TransactionConflictError("The skill changed while saving its file. Try again.");
+        }
+        return mapAgentSkill(await owned(actor, skillId, tx));
+      }),
+    );
   }
 
   return {
@@ -178,6 +272,7 @@ export function createAgentSkillsService(
       const name = input.name?.trim() ?? "";
       const rows = await prisma.agentSkill.findMany({
         where: availableInSpace(actor),
+        omit: { files: true },
         include: { availableIn: AVAILABILITY_SELECT },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       });
@@ -226,16 +321,17 @@ export function createAgentSkillsService(
       }
     },
 
-    async update(
-      actor: Actor,
-      input: {
-        skillId: string;
-        content?: string;
-        name?: string;
-        description?: string;
-        body?: string;
-      },
-    ): Promise<AgentSkill> {
+    async update(actor: Actor, input: UpdateAgentSkillInput): Promise<AgentSkill> {
+      if (input.file !== undefined) {
+        const validated = UpdateAgentSkillInput.safeParse(input);
+        if (!validated.success || !validated.data.file) {
+          throw new ClientError(
+            "BAD_REQUEST",
+            validated.error?.issues[0]?.message ?? "Invalid skill file.",
+          );
+        }
+        return updateFile(actor, validated.data.skillId, validated.data.file);
+      }
       const existing = await owned(actor, input.skillId);
       if (isSkillReadOnly(asSource(existing.source) as SkillSource)) {
         throw new ORPCError("BAD_REQUEST", { message: "Builtin and plugin skills are read-only." });
