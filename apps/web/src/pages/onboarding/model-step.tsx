@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@rakazo/ui-web";
 import type { LucideIcon } from "lucide-react";
-import { Coins, KeyRound, LogIn } from "lucide-react";
+import { KeyRound, LogIn, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
@@ -272,7 +272,7 @@ function ConnectWayChoice({ model, fieldId }: { model: OnboardingModel; fieldId:
   const { connectWay, chooseConnectWay, providerOptions, providerValue } = model;
   const subscriptions = providerOptions.subscriptions;
   const ways: Array<{ value: ConnectWay; icon: LucideIcon; title: ReactNode }> = [
-    { value: "credits", icon: Coins, title: <Trans>Rakazo credits</Trans> },
+    { value: "credits", icon: Wallet, title: <Trans>Rakazo credits</Trans> },
     ...(subscriptions.length
       ? [{ value: "subscription" as const, icon: LogIn, title: <Trans>Use a subscription</Trans> }]
       : []),
