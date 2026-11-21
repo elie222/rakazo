@@ -54,6 +54,7 @@ import {
   openAiCompatAllowPublicHosts,
   PiAgentRuntime,
   PostgresRealtimeFanout,
+  PrismaMeetingCalendarAccounts,
   PrismaPushTokenStore,
   RUN_DRAIN_MS,
   RunJobPublisher,
@@ -267,8 +268,11 @@ async function main() {
   const lifecycleEmail = accountEmail
     ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
     : undefined;
-  const { meeting: meetingProvider, calendar: calendarProvider } =
-    await configuredMeetingProviders();
+  const calendarAccounts = new PrismaMeetingCalendarAccounts(prisma, env.encryptionKey);
+  const { meeting: meetingProvider, calendar: calendarProvider } = await configuredMeetingProviders(
+    process.env,
+    calendarAccounts,
+  );
   const meetingMedia = meetingProvider && configuredMeetingMedia();
   const meetings =
     meetingProvider &&
@@ -287,6 +291,7 @@ async function main() {
       prisma,
       jobs,
       provider: calendarProvider,
+      accounts: calendarAccounts,
       webOrigin: process.env.WEB_ORIGIN?.trim() || "http://127.0.0.1:5173",
       oauthStateKey: resolveMeetingSigningKey(),
       enabled: (spaceId) => meetings.enabled(spaceId),

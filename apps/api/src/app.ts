@@ -70,6 +70,7 @@ import {
   PiAgentRuntime,
   PiOAuthLogins,
   PostgresRealtimeFanout,
+  PrismaMeetingCalendarAccounts,
   PrismaPushTokenStore,
   piSessionsRoot,
   RUN_DRAIN_MS,
@@ -689,8 +690,11 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const { meeting: meetingProvider, calendar: calendarProvider } =
-    await configuredMeetingProviders();
+  const calendarAccounts = new PrismaMeetingCalendarAccounts(prisma, env.encryptionKey);
+  const { meeting: meetingProvider, calendar: calendarProvider } = await configuredMeetingProviders(
+    process.env,
+    calendarAccounts,
+  );
   const meetingMediaConfig = meetingProvider && configuredMeetingMedia();
   const meetings = new MeetingService({
     prisma,
@@ -706,6 +710,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       prisma,
       jobs,
       provider: calendarProvider,
+      accounts: calendarAccounts,
       webOrigin: env.webOrigin,
       oauthStateKey: resolveMeetingSigningKey(),
       enabled: (spaceId) => meetings.enabled(spaceId),

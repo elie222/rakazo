@@ -24,11 +24,13 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
+  Input,
+  Label,
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, ChevronDown, Ellipsis } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ErrorNotice } from "../../../components/ErrorNotice";
 import { connectMeetingCalendar } from "../../../lib/integrations/meeting-calendar-connect";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
@@ -36,7 +38,11 @@ import { errorDetails } from "../../../lib/query/user-error";
 import { useEventListener } from "../../../lib/use-event-listener";
 
 type Selection = { eventId: string; action: MeetingCalendarAction };
-type Action = Selection | { action: "connect" | "disconnect" };
+type Account = { serverUrl: string; username: string; password: string };
+type Action =
+  | Selection
+  | { action: "connect" | "disconnect" }
+  | ({ action: "connectAccount" } & Account);
 
 export function MeetingCalendar({
   botId,
@@ -71,6 +77,13 @@ export function MeetingCalendar({
             if (connect.current === controller) connect.current = undefined;
           }
         }
+        case "connectAccount":
+          return rpc.meetingCalendar.connectAccount({
+            botId,
+            serverUrl: input.serverUrl,
+            username: input.username,
+            password: input.password,
+          });
         case "disconnect":
           return rpc.meetingCalendar.disconnect({});
         case "skip":
@@ -221,6 +234,11 @@ export function MeetingCalendar({
                 {list.data.disconnecting ? t`Try again` : t`Disconnect calendar`}
               </Button>
             </>
+          ) : list.data.signIn === "password" ? (
+            <CalendarAccountForm
+              pending={save.pending}
+              onConnect={(account) => save.run({ action: "connectAccount", ...account })}
+            />
           ) : (
             <>
               <p className="text-body text-muted-foreground">
@@ -269,5 +287,83 @@ export function MeetingCalendar({
         </AlertDialogContent>
       </AlertDialog>
     </section>
+  );
+}
+
+function CalendarAccountForm({
+  pending,
+  onConnect,
+}: {
+  pending: boolean;
+  onConnect: (account: Account) => void;
+}) {
+  const id = useId();
+  const [serverUrl, setServerUrl] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  return (
+    <form
+      className="flex flex-col gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending || !serverUrl.trim() || !username.trim() || !password) return;
+        onConnect({ serverUrl, username, password });
+        setPassword("");
+      }}
+    >
+      <p className="text-body text-muted-foreground">
+        <Trans>
+          Connect a CalDAV calendar, such as iCloud, with an app password made for Rakazo. Rakazo
+          reads your upcoming meetings, and you choose which ones your bot joins.
+        </Trans>
+      </p>
+      <div className="flex flex-col gap-1">
+        <Label htmlFor={`${id}-server`}>
+          <Trans>Server address</Trans>
+        </Label>
+        <Input
+          id={`${id}-server`}
+          type="url"
+          inputMode="url"
+          autoComplete="url"
+          placeholder="https://caldav.icloud.com"
+          value={serverUrl}
+          onChange={(event) => setServerUrl(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <Label htmlFor={`${id}-username`}>
+          <Trans>Username</Trans>
+        </Label>
+        <Input
+          id={`${id}-username`}
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <Label htmlFor={`${id}-password`}>
+          <Trans>App password</Trans>
+        </Label>
+        <Input
+          id={`${id}-password`}
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+      </div>
+      <Button
+        type="submit"
+        className="self-start"
+        size="sm"
+        disabled={pending || !serverUrl.trim() || !username.trim() || !password}
+      >
+        <Trans>Connect calendar</Trans>
+      </Button>
+    </form>
   );
 }

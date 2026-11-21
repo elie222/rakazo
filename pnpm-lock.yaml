@@ -1012,9 +1012,15 @@ importers:
       d3-dsv:
         specifier: 3.0.2
         version: 3.0.2
+      fast-xml-parser:
+        specifier: 5.12.0
+        version: 5.12.0
       graphile-worker:
         specifier: 0.18.0
         version: 0.18.0(supports-color@8.1.1)(typescript@7.0.2)
+      ical.js:
+        specifier: 2.2.1
+        version: 2.2.1
       jsdom:
         specifier: 30.1.3
         version: 30.1.3(@noble/hashes@2.3.0)
@@ -9615,6 +9621,9 @@ packages:
 
   hyphenate-style-name@1.1.0:
     resolution: {integrity: sha512-WDC/ui2VVRrz3jOVi+XtjqkDjiVjTtFaAGiW37k6b+ohyQ5wYDOGkvCZa8+H0nx3gyvv0+BST9xuOgIyGQ00gw==}
+
+  ical.js@2.2.1:
+    resolution: {integrity: sha512-yK/UlPbEs316igb/tjRgbFA8ZV75rCsBJp/hWOatpyaPNlgw0dGDmU+FoicOcwX4xXkeXOkYiOmCqNPFpNPkQg==}
 
   iconv-lite@0.6.3:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
@@ -23319,6 +23328,8 @@ snapshots:
   hyperlinker@1.0.0: {}
 
   hyphenate-style-name@1.1.0: {}
+
+  ical.js@2.2.1: {}
 
   iconv-lite@0.6.3:
     dependencies:

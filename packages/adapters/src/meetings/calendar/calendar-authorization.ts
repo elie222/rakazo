@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
-import type { BackgroundJob } from "@rakazo/adapter-kit";
+import type { BackgroundJob, MeetingCalendarAccount } from "@rakazo/adapter-kit";
 import {
   MeetingCalendarConnectRejected,
   MeetingCalendarConnectUnavailable,
@@ -34,7 +34,7 @@ export class CalendarAuthorization {
   constructor(
     private readonly options: Pick<
       MeetingCalendarOptions,
-      "prisma" | "jobs" | "provider" | "webOrigin" | "oauthStateKey" | "enabled"
+      "prisma" | "jobs" | "provider" | "webOrigin" | "oauthStateKey" | "enabled" | "accounts"
     >,
     private readonly scheduler: {
       backup: (connectionId: string, workMs: number) => CalendarSyncJob;
@@ -54,6 +54,12 @@ export class CalendarAuthorization {
   ) {
     if (!this.options.enabled(spaceId))
       throw new ClientError("FORBIDDEN", "Calendar scheduling is unavailable in this Space.");
+    if (this.options.provider.signIn === "password") {
+      throw new ClientError(
+        "BAD_REQUEST",
+        "Connect this calendar with its server and app password.",
+      );
+    }
     const { prisma, webOrigin } = this.options;
     if (
       await prisma.meetingCalendarConnection.findFirst({
@@ -259,6 +265,68 @@ export class CalendarAuthorization {
         });
       },
     );
+    await bestEffort("reconcile newly connected calendar", this.scheduler.run(backup));
+  }
+
+  /** Connects a calendar account reached with a password, such as CalDAV with an app password. */
+  async connectAccount(actor: Owner, account: MeetingCalendarAccount) {
+    if (!this.options.enabled(actor.spaceId))
+      throw new ClientError("FORBIDDEN", "Calendar scheduling is unavailable in this Space.");
+    const { prisma, provider, accounts } = this.options;
+    if (provider.signIn !== "password" || !provider.verifyAccount || !accounts) {
+      throw new ClientError("BAD_REQUEST", "This calendar connects through its sign-in page.");
+    }
+    const scope = { spaceId: actor.spaceId, userId: actor.userId };
+    if (await prisma.meetingCalendarConnection.findFirst({ where: scope })) {
+      throw new ClientError(
+        "CONFLICT",
+        "Disconnect the current calendar before connecting another.",
+      );
+    }
+    let details: string;
+    try {
+      details = await provider.verifyAccount(account, deadlineSignal(CONNECT_TIMEOUT_MS));
+    } catch (error) {
+      if (error instanceof MeetingCalendarConnectRejected)
+        throw new ClientError("BAD_REQUEST", error.message);
+      throw new ClientError(
+        "SERVICE_UNAVAILABLE",
+        "Could not reach the calendar server. Try again shortly.",
+        undefined,
+        { cause: error },
+      );
+    }
+    const connectionId = randomUUID();
+    const accountCiphertext = await accounts.seal(connectionId, details, scope);
+    const backup = this.scheduler.backup(connectionId, CONNECT_TIMEOUT_MS);
+    await prisma.$transaction(async (tx) => {
+      if (await tx.meetingCalendarConnection.findUnique({ where: { spaceId_userId: scope } })) {
+        throw new ClientError("CONFLICT", "A calendar is already connected in this Space.");
+      }
+      // Same access check as OAuth sign-in: revocation either precedes it or sees this row.
+      const [member] = await tx.$queryRaw<{ id: string }[]>`
+        SELECT sm.id
+        FROM space_members sm
+        JOIN "user" u ON u.id = sm."userId"
+        JOIN spaces s ON s.id = sm."spaceId"
+        WHERE sm."spaceId" = ${scope.spaceId} AND sm."userId" = ${scope.userId}
+          AND u."deactivatedAt" IS NULL AND s."deletionClaimId" IS NULL
+        FOR SHARE OF sm, u, s
+      `;
+      if (!member) throw new ClientError("FORBIDDEN", "Calendar access is no longer available.");
+      await tx.meetingCalendarConnection.create({
+        data: {
+          ...scope,
+          id: connectionId,
+          provider: provider.id,
+          // The account is the calendar: there is no provider-side resource to recover.
+          externalCalendarId: randomUUID(),
+          accountCiphertext,
+          createdAt: this.now(),
+        },
+      });
+      await this.options.jobs.enqueueIn(tx, backup);
+    });
     await bestEffort("reconcile newly connected calendar", this.scheduler.run(backup));
   }
 

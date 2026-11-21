@@ -50,6 +50,16 @@ Send `calendar.update` and `calendar.sync_events` webhooks to `/api/meetings/cal
 
 In a bot's **Meetings** view, open **Auto-join**, connect Google Calendar, and choose a single meeting or its recurring series. **Skip this meeting** overrides a series for that occurrence. **Stop joining this series** also clears individually selected occurrences for that bot in the series. The **Scheduled** label confirms the provider has reserved a bot. Guest admission and capture permissions still apply. Rakazo reserves meetings within the next 14 days and extends a recurring series as that window moves. Each Space can use or reserve up to 20 meetings per UTC day. A manual join also counts meetings in the past 24 hours. **Space limit reached** marks a selected event that still needs a reservation. Linked calendars with the same selected bot share one scheduled participant per occurrence. The session owner's selection controls whether the final transcript appears in the Space's Artifacts. If they withdraw before the bot starts joining, Rakazo can pass the reservation to an active member who still has that occurrence booked.
 
+### Use a CalDAV calendar instead
+
+Members whose meetings live in iCloud, Fastmail, Nextcloud, or another CalDAV server can connect that calendar instead of Google Calendar. Set `MEETING_CALENDAR_PROVIDER=caldav` on the API and worker, with `MEETING_PROVIDER=recall` and the same `MEETING_SIGNING_KEY`. The Google OAuth settings and calendar webhook are not used.
+
+In **Auto-join**, each member enters the server's CalDAV address, their username, and an app password created for Rakazo. For iCloud, the address is `https://caldav.icloud.com` and the username is the Apple Account email; create the app password at [account.apple.com](https://account.apple.com) under **Sign-In and Security**. Rakazo checks the account, then stores the address, username, and app password on the calendar connection, sealed with `ENCRYPTION_KEY`. Disconnecting deletes them, and revoking the app password disconnects the calendar at the next check.
+
+Rakazo reads every event calendar in the account. It finds the Zoom, Google Meet, or Microsoft Teams link in an event's URL, location, or notes, and reserves a meeting bot with the provider's scheduled-join API. CalDAV servers send no change notifications, so Rakazo reads each connected calendar every 10 minutes and before each scheduled meeting. Selections, limits, and transcript sharing work as described above. An invitation the member declined is skipped when their username is the email address the invitation was sent to.
+
+Rakazo applies the same address checks to CalDAV servers as to remote connectors. To allow a server on a private network, set `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker.
+
 Before removing calendar credentials or switching meeting providers, disconnect the calendars associated with the old credentials. Account, organization, and Space deletion require confirmed calendar cleanup before cancelling billing or removing content. If billing cancellation fails and you keep the account or organization, reconnect the calendar and select its meetings again.
 
 To exercise connection and scheduling with the local emulator, run:
