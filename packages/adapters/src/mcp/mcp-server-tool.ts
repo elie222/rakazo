@@ -2,11 +2,12 @@ import type { McpTransport, MessageBlock } from "@rakazo/contracts";
 import { McpRemoteEndpointSchema, McpTransportSchema } from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
 import type { McpServer } from "@rakazo/db";
-import { isUniqueViolation } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { availableInSpace, isUniqueViolation } from "@rakazo/db";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { toStringRecord } from "../memory/memory-provider-factory.js";
 import { persistMessageInTransaction, runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
+import { removeMcpServerInTransaction } from "./mcp-server-removal.js";
 import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "./remote-mcp.js";
 
 export { deriveMcpSlug } from "@rakazo/core";
@@ -256,4 +257,48 @@ export async function addMcpServerFromTool(
       ? `An approval card is in the chat. End your turn with one short sentence asking the user to ${oauthLikely ? "authorize" : "approve"} it there; the card already shows the server's details. You will be told when they connect it.`
       : "The server was registered without assigning it to this bot.",
   };
+}
+
+/** remove_mcp_server: removes one of the run owner's remote servers available in the run's space. */
+export async function removeMcpServerFromTool(
+  deps: Pick<ExecutorDeps, "prisma" | "events">,
+  run: { spaceId: string; userId: string },
+  args: Record<string, unknown>,
+) {
+  const name = typeof args.name === "string" ? args.name.trim() : "";
+  if (!name) return { error: "Give the name of the MCP server to remove." };
+  const servers = await deps.prisma.mcpServer.findMany({
+    where: availableInSpace(run),
+    select: { id: true, name: true, slug: true, transport: true, secretId: true },
+  });
+  const named = servers.filter((server) => server.name.toLowerCase() === name.toLowerCase());
+  const slug = deriveMcpSlug(name);
+  const matches = named.length > 0 ? named : servers.filter((server) => server.slug === slug);
+  const remote = servers.filter((server) => server.transport !== "stdio");
+  if (matches.length === 0) {
+    return {
+      error: `No MCP server named "${name}". Remote servers here: ${
+        remote.map((server) => server.name).join(", ") || "none"
+      }.`,
+    };
+  }
+  if (matches.length > 1) {
+    return {
+      error: `More than one MCP server matches "${name}"; ask the user to remove it in Settings.`,
+    };
+  }
+  const [server] = matches as [(typeof matches)[number]];
+  if (server.transport === "stdio") {
+    return { error: "Local (stdio) MCP servers are removed in Settings." };
+  }
+  const seqs = await deps.prisma.$transaction((tx) =>
+    removeMcpServerInTransaction(tx, run, server),
+  );
+  for (const event of seqs) {
+    await bestEffort(
+      "MCP server removal notification",
+      deps.events.notify(event.threadId, event.seq),
+    );
+  }
+  return { ok: true, removed: server.name };
 }
