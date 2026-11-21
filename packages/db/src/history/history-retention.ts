@@ -2,17 +2,15 @@ import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { createRetentionPruner } from "../account/security-events.js";
 import type { PrismaClient } from "../database/client.js";
-import { parsePositiveInteger } from "../database/client.js";
 import { runAsSystem } from "../database/row-security.js";
 import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "../database/transaction-retry.js";
 import { conversationRunsWhere } from "../runs/cancel-runs.js";
+import { parseRetentionDays } from "./retention-days.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** About a century: far enough to mean never, and well inside the range of a date. */
-const MAX_DAYS = 36_500;
 const THREAD_PAGE_SIZE = 200;
 /** Rows one transaction deletes, so a very old chat is cleared over several short ones. */
 const CHUNK_SIZE = 500;
@@ -23,14 +21,11 @@ const CHUNK_SIZE = 500;
  * operator believes it is pruned.
  */
 export function chatHistoryRetentionDays(source: NodeJS.ProcessEnv = process.env): number | null {
-  const raw = source.CHAT_HISTORY_RETENTION_DAYS?.trim();
-  if (!raw) return null;
-  const days = /^\d+$/.test(raw) ? parsePositiveInteger(raw, 0) : 0;
-  if (days === 0 || days > MAX_DAYS)
-    throw new Error(
-      `CHAT_HISTORY_RETENTION_DAYS must be a whole number of days, at most ${MAX_DAYS}`,
-    );
-  return days;
+  return parseRetentionDays(
+    "CHAT_HISTORY_RETENTION_DAYS",
+    source.CHAT_HISTORY_RETENTION_DAYS,
+    null,
+  );
 }
 
 /**

@@ -22,6 +22,7 @@ type Row = [
   storedHomeIsBackup: boolean,
   readStoppedFiles?: true,
   sizedUsage?: true,
+  maxFileBytes?: number,
 ];
 
 // What the per-kind id lists in shared code answered before providers declared these themselves,
@@ -41,7 +42,19 @@ const EXPECTED: Record<KnownSandboxKind, Row> = {
   incus: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   "local-vm": [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   wuying: [false, false, true, false, DEFAULT_SCREEN, "never", false, true],
-  desktop: [false, false, true, true, DEFAULT_SCREEN, "never", false, true],
+  desktop: [
+    false,
+    false,
+    true,
+    true,
+    DEFAULT_SCREEN,
+    "never",
+    false,
+    true,
+    undefined,
+    undefined,
+    8 * 1024 * 1024,
+  ],
   fake: [true, true, false, false, DEFAULT_SCREEN, "never", false, false],
 };
 const UNDECLARED: Row = [false, true, false, false, DEFAULT_SCREEN, "never", false, false];
@@ -57,6 +70,7 @@ function capabilities([
   storedHomeIsBackup,
   readStoppedFiles,
   sizedUsage,
+  maxFileBytes,
 ]: Row): SandboxKindCapabilities {
   return {
     terminal,
@@ -69,6 +83,7 @@ function capabilities([
     storedHomeIsBackup,
     ...(readStoppedFiles ? { readStoppedFiles } : {}),
     ...(sizedUsage ? { sizedUsage } : {}),
+    ...(maxFileBytes ? { maxFileBytes } : {}),
   };
 }
 

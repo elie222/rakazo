@@ -2,6 +2,7 @@ import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   auditEventDto,
+  auditEventRetentionDays,
   auditLogAccess,
   auditLogScope,
   installAuditEventStore,
@@ -478,4 +479,25 @@ describe("stored audit metadata", () => {
     expect(auditEventDto(row("audit-list", ["x"])).metadata).toEqual({});
     expect(auditEventDto(row("audit-none", null)).metadata).toEqual({});
   });
+});
+
+describe("auditEventRetentionDays", () => {
+  it("defaults to a year when unset or blank", () => {
+    expect(auditEventRetentionDays({})).toBe(365);
+    expect(auditEventRetentionDays({ AUDIT_EVENT_RETENTION_DAYS: " " })).toBe(365);
+  });
+
+  it("reads a whole number of days", () => {
+    expect(auditEventRetentionDays({ AUDIT_EVENT_RETENTION_DAYS: " 730 " })).toBe(730);
+    expect(auditEventRetentionDays({ AUDIT_EVENT_RETENTION_DAYS: "36500" })).toBe(36_500);
+  });
+
+  it.each(["0", "-1", "abc", "1.5", "2y", "730 days", "36501", "99999999999999"])(
+    "refuses %j instead of falling back or never pruning",
+    (value) => {
+      expect(() => auditEventRetentionDays({ AUDIT_EVENT_RETENTION_DAYS: value })).toThrow(
+        /AUDIT_EVENT_RETENTION_DAYS must be a whole number of days from 1 to 36500/,
+      );
+    },
+  );
 });

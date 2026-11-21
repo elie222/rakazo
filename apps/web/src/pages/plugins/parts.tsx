@@ -23,7 +23,10 @@ export function ConnectorIcon({ name, logo }: { name: string; logo?: string | nu
       className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
     />
   ) : (
-    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground">
+    <div
+      aria-hidden="true"
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground"
+    >
       {Array.from(name)[0]}
     </div>
   );
@@ -146,7 +149,7 @@ export function CatalogTile({
           {title}
         </>
       )}
-      <CatalogActions item={item} context={context} />
+      <CatalogActions item={item} label={label} context={context} />
     </div>
   );
   // Before connecting is when the two are mixed up; a connected app says it on its page.
@@ -178,7 +181,16 @@ export function ChatAppLink({ name, onOpen }: { name: string; onOpen: () => void
   );
 }
 
-function CatalogActions({ item, context }: { item: ConnectionCatalogItem; context: TileContext }) {
+function CatalogActions({
+  item,
+  label,
+  context,
+}: {
+  item: ConnectionCatalogItem;
+  label: string;
+  context: TileContext;
+}) {
+  const { t } = useLingui();
   const { connections, onOpenDetail } = context;
   const key = catalogItemKey(item);
   const connected = connections.itemConnected(item);
@@ -204,6 +216,7 @@ function CatalogActions({ item, context }: { item: ConnectionCatalogItem; contex
       type="button"
       variant="secondary"
       size="sm"
+      aria-label={connecting ? undefined : t`Add ${label}`}
       disabled={connecting}
       onClick={(event) => {
         event.stopPropagation();

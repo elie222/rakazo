@@ -3,11 +3,13 @@ import * as z from "zod";
 import { Id } from "../ids.js";
 import { botId } from "../rpc/inputs.js";
 import {
+  CloudComputersSchema,
   ComputerHomeVersionSchema,
   ComputerProviderSettingsSchema,
   ComputerProviderUpdateSchema,
   ComputerReleaseReasonSchema,
   ComputerScreenSchema,
+  ComputerSizeSchema,
   ComputerStatusSchema,
   ComputerUpdateSchema,
 } from "./computer.js";
@@ -23,6 +25,14 @@ export const computersRpc = {
       get: oc.output(ComputerProviderSettingsSchema),
       update: oc.input(ComputerProviderUpdateSchema).output(ComputerProviderSettingsSchema),
     },
+  },
+  /** Null where sizes cannot be chosen: no plan prices them or the provider has one size. */
+  cloudComputers: {
+    list: oc.output(CloudComputersSchema.nullable()),
+    /** Answers once the size is saved; callers read the list again on their own. */
+    setSize: oc
+      .input(z.object({ computerId: Id, size: ComputerSizeSchema }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),

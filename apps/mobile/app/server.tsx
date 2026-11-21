@@ -26,6 +26,7 @@ import { serverHeaders } from "../lib/api/server-headers";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { useSideInsets } from "../lib/layout/side-insets";
+import { announceToScreenReader } from "../lib/native/announce";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
 
@@ -61,6 +62,12 @@ export default function ServerScreen() {
     else router.replace("/sign-in");
   }
 
+  // Save keeps focus while the check runs, so each failure is spoken as well as shown.
+  function fail(message: string) {
+    setError(message);
+    announceToScreenReader(message);
+  }
+
   const parsedDraft = normalizeApiBase(draft);
   const warning = parsedDraft.ok ? apiBaseWarning(parsedDraft.url) : null;
 
@@ -77,13 +84,13 @@ export default function ServerScreen() {
       try {
         headers = target ? target.headers : serverHeadersFromRows(headerRows);
       } catch (headerError) {
-        setError(errorText(headerError));
+        fail(errorText(headerError));
         return;
       }
       const probed = await probeApiBase(target ? target.apiBase : draft, fetch, headers);
       if (!active.current) return;
       if (!probed.ok) {
-        setError(probed.error);
+        fail(probed.error);
         return;
       }
       // Asked once the switch can happen. Only a different server clears the device; the same
@@ -92,7 +99,7 @@ export default function ServerScreen() {
       if (!active.current) return;
       const saved = await saveApiBase(probed.url, headers);
       if (!saved.ok) {
-        setError(saved.error);
+        fail(saved.error);
         return;
       }
       close();
@@ -109,7 +116,7 @@ export default function ServerScreen() {
     removing.current.add(apiBase);
     try {
       if (!(await removeSavedServer(apiBase))) {
-        if (active.current) setError(t`Could not remove the server`);
+        if (active.current) fail(t`Could not remove the server`);
         return;
       }
       if (active.current) {
@@ -132,7 +139,7 @@ export default function ServerScreen() {
       const saved = await resetApiBase();
       if (!active.current) return;
       if (!saved.ok) {
-        setError(saved.error);
+        fail(saved.error);
         return;
       }
       close();
@@ -200,7 +207,11 @@ export default function ServerScreen() {
             }}
             disabled={pending}
           />
-          {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
+          {error ? (
+            <Text accessibilityRole="alert" style={{ color: tokens.destructive, marginTop: 12 }}>
+              {error}
+            </Text>
+          ) : null}
           <SettingsGroup label={t`Recent servers`}>
             {saved
               .filter((entry) => entry.apiBase !== current)

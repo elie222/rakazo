@@ -394,7 +394,7 @@ export function normalizeRunError(
   let recovery: RunErrorRecovery | undefined;
   let summary = translate("The model provider returned an error.");
   const financialQuota =
-    /insufficient[_ ](?:quota|balance)|credits?|funds|spend|budget|billing|openrouter_key_limit/i.test(
+    /insufficient[_ ](?:quota|balance)|(?<![a-z])current[_ ]quota|credits?|funds|spend|budget|billing|openrouter_key_limit/i.test(
       signals,
     );
   // A 429 that resets hours from now is a quota to wait out, not a short rate window.
@@ -414,7 +414,7 @@ export function normalizeRunError(
   } else if (
     status === 402 ||
     quotaResetAt !== undefined ||
-    /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|\b(?:quota|insufficient[_ ](?:quota|credits?|funds|balance)|credit[_ ]balance|(?:no|out of|more) credits?)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)|\blimit exceeded\b[\s\S]{0,120}\bupgrade to a paid account\b/i.test(
+    /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|(?<![a-z])current[_ ]quota|\b(?:quota|insufficient[_ ](?:quota|credits?|funds|balance)|credit[_ ]balance|(?:no|out of|more|any) credits?)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)|\blimit exceeded\b[\s\S]{0,120}\bupgrade to a paid account\b/i.test(
       signals,
     )
   ) {
