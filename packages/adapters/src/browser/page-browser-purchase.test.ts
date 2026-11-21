@@ -665,6 +665,185 @@ describe("a key on the screen", () => {
     expect(decoy.helper.paymentPage().purchase).toBeNull();
   });
 
+  it("does not read an acronym glued to Chinese text as a security code", () => {
+    const login = page(`<form><label>学号CSC编码<input name="sid"></label>
+      <label>密码<input type="password" name="pw"></label><button>登录</button></form>
+      <button type="button">取消</button>`);
+    expect(login.intent("登录")).toBeNull();
+    expect(login.intent("取消")).toBeNull();
+    expect(login.helper.paymentPage().purchase).toBeNull();
+  });
+
+  it("still finds a localized checkout by its card fields and keeps its pay button guarded", () => {
+    const zh =
+      page(`<form><label>卡号<input name="n"></label><label>安全码(CVV)<input name="c"></label>
+      <label>有效期<input name="e" placeholder="MM/YY"></label><button>支付</button></form>`);
+    expect(zh.intent("支付")?.reason).toBe("card_form");
+    const suffixed = page(
+      `<form><label>CVV码<input name="c"></label><button>下一步</button></form>`,
+    );
+    expect(suffixed.intent("下一步")?.reason).toBe("card_form");
+    const prefixed = page(
+      `<form><label>安全码CVV<input name="c"></label><button>下一步</button></form>`,
+    );
+    expect(prefixed.intent("下一步")?.reason).toBe("card_form");
+    for (const [label, pay] of [
+      ["信用卡", "付款"],
+      ["クレジットカード", "購入する"],
+      ["신용카드", "결제"],
+      ["Tarjeta de crédito", "Pagar"],
+      ["Carte bancaire", "Payer"],
+      ["Kreditkarte", "Bezahlen"],
+    ] as const) {
+      const local = page(
+        `<form><label>${label}<input name="n"></label><button>${pay}</button></form>`,
+      );
+      expect(local.intent(pay)?.reason).toBe("card_form");
+    }
+  });
+
+  it("reads a card security code acronym beside Chinese, Japanese or Korean text", () => {
+    for (const label of [
+      "验证码CVV",
+      "CVV安全码",
+      "CVC2安全码",
+      "卡背面CVV",
+      "カードCVV",
+      "카드CVC",
+      "ＣＶＶ",
+    ]) {
+      const form = page(
+        `<form><label>${label}<input name="c"></label><button>提交</button></form>`,
+      );
+      expect(form.intent("提交")?.reason, label).toBe("card_form");
+    }
+  });
+
+  it("keeps a localized order button guarded when it starts with a back or login word", () => {
+    const { intent } = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button">Anmelden und bestellen</button><button type="button">Se connecter et commander</button>
+      <button type="button">Iniciar sesión y reservar</button><button type="button">로그인 후 주문</button>
+      <button type="button">Zurück und bestellen</button>`);
+    for (const name of [
+      "Anmelden und bestellen",
+      "Se connecter et commander",
+      "Iniciar sesión y reservar",
+      "로그인 후 주문",
+      "Zurück und bestellen",
+    ]) {
+      expect(intent(name)?.reason, name).toBeDefined();
+    }
+  });
+
+  it("leaves back, cancel and login alone on a localized payment page, but not a pay button", () => {
+    const { intent } = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button">取消</button><button type="button">返回</button>
+      <button type="button">登錄</button><button type="button">キャンセル</button>
+      <button type="button">취소하기</button><button type="button">Volver</button>
+      <button type="button">Annuler</button><button type="button">Zurück</button>
+      <button type="button">Cancelar y pagar</button><button type="button">登录并支付</button>
+      <button type="button">确认</button><button type="button">支付</button>
+      <button type="button">注文を確定する</button><button type="button">Bestätigen</button>`);
+    for (const name of [
+      "取消",
+      "返回",
+      "登錄",
+      "キャンセル",
+      "취소하기",
+      "Volver",
+      "Annuler",
+      "Zurück",
+    ]) {
+      expect(intent(name), name).toBeNull();
+    }
+    for (const name of [
+      "Cancelar y pagar",
+      "登录并支付",
+      "确认",
+      "支付",
+      "注文を確定する",
+      "Bestätigen",
+    ]) {
+      expect(intent(name)?.reason, name).toBeDefined();
+    }
+  });
+
+  it("does not let a localized gift card or voucher field make a form a card form", () => {
+    const zh = page(`<form><input name="gc" aria-label="礼品卡 CVV"><button>使用</button></form>`);
+    expect(zh.intent("使用")).toBeNull();
+    const de = page(
+      `<input placeholder="Gutschein Kartennummer"><input placeholder="Sicherheitscode">`,
+    );
+    expect(de.helper.paymentPage().purchase).toBeNull();
+    const ja = page(`<input placeholder="ギフトカード番号 CVV">`);
+    expect(ja.helper.paymentPage().purchase).toBeNull();
+  });
+
+  it("does not read a membership card login as a payment card form", () => {
+    for (const label of [
+      "会员卡号",
+      "會員卡號",
+      "会員カード番号",
+      "회원카드 번호",
+      "Número de tarjeta de socio",
+      "Numéro de carte de fidélité",
+      "Mitgliedskarte Nummer",
+    ]) {
+      const login = page(`<form><label>${label}<input name="m"></label>
+        <label>安全码<input name="s"></label><button>登录</button></form>`);
+      expect(login.intent("登录"), label).toBeNull();
+      expect(login.helper.paymentPage().purchase, label).toBeNull();
+    }
+    const checkout = page(`<form><label>卡号<input name="m"></label>
+      <label>安全码<input name="s"></label><button>支付</button></form>`);
+    expect(checkout.intent("支付")?.reason).toBe("card_form");
+  });
+
+  it("keeps a French settle button guarded when it starts with a login word", () => {
+    const { intent } = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button">Se connecter et régler</button><button type="button">Connexion et règlement</button>
+      <button type="button">Anmelden und überweisen</button><button type="button">로그인 후 납부</button>
+      <button type="button">Iniciar sesión y abonar</button><button type="button">登录并缴费</button>`);
+    for (const name of [
+      "Se connecter et régler",
+      "Connexion et règlement",
+      "Anmelden und überweisen",
+      "로그인 후 납부",
+      "Iniciar sesión y abonar",
+      "登录并缴费",
+    ]) {
+      expect(intent(name)?.reason, name).toBeDefined();
+    }
+  });
+
+  it("does not let a non-paying name hide a pay label on the same control", () => {
+    const hidden = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button" aria-label="取消">支付</button><button type="button" aria-label="Annuler">Payer</button>`);
+    for (const button of hidden.win.document.querySelectorAll("button")) {
+      expect(hidden.helper.purchaseOfNode(button)?.reason).toBeDefined();
+    }
+    const plain = page(`<input autocomplete="cc-number" aria-label="Card">
+      <button type="button">取消</button>`);
+    expect(plain.intent("取消")).toBeNull();
+  });
+
+  it("reads a card security code acronym beside a card word, but not beside a student number", () => {
+    for (const label of ["カードCSC番号", "卡CSC码", "카드CSC", "安全码CSC", "CSC码"]) {
+      const form = page(
+        `<form><label>${label}<input name="c"></label><button>提交</button></form>`,
+      );
+      expect(form.intent("提交")?.reason, label).toBe("card_form");
+    }
+    const student = page(
+      `<form><label>学号CSC编码<input name="c"></label><button>提交</button></form>`,
+    );
+    expect(student.intent("提交")).toBeNull();
+    const saved = page(
+      `<form><label>カードCSC番号<input name="c"></label><button>購入する</button></form>`,
+    );
+    expect(saved.intent("購入する")?.reason).toBe("card_form");
+  });
+
   it("lists the order lines the checkout shows above its total, and nothing around them", () => {
     const { intent, helper } = page(`
       <header><a href="/cart">Cart · Socks $9.00</a></header>
@@ -789,5 +968,182 @@ describe("a key on the screen", () => {
     expect(intent("Place order")?.items).toEqual([
       { name: `Bananas ${"x".repeat(100)}`, amount: "$3.00" },
     ]);
+  });
+});
+
+/** The page helper's card-naming patterns, evaluated on their own from the script. */
+function cardPatterns() {
+  const source = readFileSync(
+    new URL("../../../../infra/sandboxes/computer/rakazo-page-browser", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("  const CJK = ");
+  const end = source.indexOf("\n", source.indexOf("  const NOT_A_CARD = "));
+  if (start < 0 || end < 0) throw new Error("card naming patterns were not found");
+  return vm.runInNewContext(`${source.slice(start, end)}\n({ CARD_NAMING, NOT_A_CARD })`) as {
+    CARD_NAMING: RegExp;
+    NOT_A_CARD: RegExp;
+  };
+}
+
+// The card naming pattern as one literal, from before it was composed of named pieces.
+const LITERAL_CARD_NAMING =
+  /(?:(?<!\p{L})|(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー]))(?:cvv2?|cvc2?|cvn2?)(?:(?!\p{L})|(?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー]))|(?:(?<![\p{L}\p{N}])|(?<=安全[码碼]|セキュリティコード|カード|卡|카드))csc(?:(?![\p{L}\p{N}])|(?=[码碼]|コード|번호|番号))|card[\s_-]*(?:security|verification)|(?:credit|debit)[\s_-]*card|信用卡|银行卡|銀行卡|借记卡|借記卡|クレジットカード|デビットカード|신용카드|tarjeta[\s_-]*de[\s_-]*(?:crédito|credito|débito|debito)|carte[\s_-]*(?:bancaire|de[\s_-]*crédit|de[\s_-]*credit)|kreditkarte|debitkarte|bankkarte|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|כרטיס[\s_-]*אשראי/iu;
+
+describe("card field naming", () => {
+  const { CARD_NAMING, NOT_A_CARD } = cardPatterns();
+
+  it("matches exactly what the single literal matched", () => {
+    const names = [
+      "CVV",
+      "cvv2",
+      "CVC",
+      "cvc2",
+      "cvn2",
+      "Card CVV",
+      "cvv number",
+      "xcvv",
+      "cvvx",
+      "cvvs",
+      "acvc",
+      "安全码 CVV",
+      "卡CVV",
+      "カードCVV",
+      "CVVコード",
+      "CVC码",
+      "csc",
+      "CSC",
+      "csc code",
+      "cscx",
+      "acsc",
+      "1csc",
+      "csc1",
+      "安全码csc",
+      "安全碼csc",
+      "セキュリティコードcsc",
+      "カードcsc",
+      "卡csc",
+      "카드csc",
+      "csc码",
+      "csc碼",
+      "cscコード",
+      "csc번호",
+      "csc番号",
+      "Card security code",
+      "card_verification",
+      "Credit card",
+      "credit-card-number",
+      "debit_card",
+      "Debit  Card",
+      "信用卡",
+      "银行卡",
+      "銀行卡",
+      "借记卡",
+      "借記卡",
+      "クレジットカード",
+      "デビットカード",
+      "신용카드",
+      "Tarjeta de crédito",
+      "tarjeta_de_debito",
+      "Carte bancaire",
+      "carte de crédit",
+      "carte-de-credit",
+      "Kreditkarte",
+      "Debitkarte",
+      "Bankkarte",
+      "Kreditkartennummer",
+      "4111 1111 1111 1111",
+      "4111-1111-1111",
+      "•••• •••• •••• 1234",
+      "**** **** ****",
+      "xxxx xxxx xxxx",
+      "12345 1234 1234",
+      "1234 1234",
+      "כרטיס אשראי",
+      "כרטיס_אשראי",
+      "מספר כרטיס",
+      "Card number",
+      "Membership card number",
+      "会员卡号",
+      "卡号",
+      "カード番号",
+      "Mitgliedskarte Nummer",
+      "Email",
+      "Password",
+      "Username",
+      "Gift card number",
+      "Loyalty card",
+      "Rewards credit card",
+      "Phone number",
+      "Cardholder name",
+      "Name on card",
+      "Expiry MM/YY",
+      "Security code",
+      "Código de seguridad",
+      "Sicherheitscode",
+      "登录",
+      "ログイン",
+      "로그인",
+      "cancel",
+      "キャンセル",
+      "取消",
+      "csc-id",
+      "csc_number",
+      "csc.x",
+      "CVV2 code",
+      "cvvé",
+      "éCVV",
+      "ソcvv",
+      "cvvソ",
+      "ーcvv",
+      "cvvー",
+    ];
+    for (const name of names) {
+      expect(CARD_NAMING.test(name), name).toBe(LITERAL_CARD_NAMING.test(name));
+    }
+    expect(CARD_NAMING.flags).toBe(LITERAL_CARD_NAMING.flags);
+  });
+
+  it("still names a payment card field", () => {
+    for (const name of [
+      "CVV",
+      "カードCVV",
+      "csc",
+      "Credit card",
+      "Kreditkarte",
+      "4111 1111 1111 1111",
+    ]) {
+      expect(CARD_NAMING.test(name), name).toBe(true);
+    }
+    for (const name of ["Email", "Password", "cvvs", "acsc", "Card number"]) {
+      expect(CARD_NAMING.test(name), name).toBe(false);
+    }
+  });
+
+  it("exempts a gift, loyalty or rewards number but not a rewards credit card", () => {
+    for (const name of [
+      "Gift card number",
+      "Rewards card number",
+      "Rewards number",
+      "rewards_id",
+      "Rewards points",
+      "Reward program",
+      "Treuepunkte",
+      "Punkte",
+      "Tarjeta regalo",
+    ]) {
+      expect(NOT_A_CARD.test(name), name).toBe(true);
+    }
+    for (const name of [
+      "Rewards credit card number",
+      "Credit card (earns rewards)",
+      "Card number, rewards",
+    ]) {
+      expect(NOT_A_CARD.test(name), name).toBe(false);
+    }
+    const checkout = page(
+      `<input placeholder="Rewards credit card number"><input placeholder="Sicherheitscode">`,
+    );
+    expect(checkout.helper.paymentPage().purchase).not.toBeNull();
   });
 });
