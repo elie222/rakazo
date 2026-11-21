@@ -2,7 +2,8 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { AuthInteraction, Credential, OAuthCredential } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { ModelOAuthBegin, SettingsScope } from "@rakazo/contracts";
+import type { ModelOAuthBegin, ModelSignInCancelReason, SettingsScope } from "@rakazo/contracts";
+import { retry } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -11,8 +12,16 @@ import type { ModelProviderDefinition } from "../../../models/model-provider-reg
 import { modelProviders } from "../../../models/model-provider-registry.js";
 import { logModelSignIn } from "./model-sign-in-log.js";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
+import { createChatGptDeviceCodeLogin } from "./pi-chatgpt-device-code.js";
+
 import type { PiOAuthEnd, PiOAuthEnded, PiOAuthMeasure, PiOAuthPending } from "./pi-oauth-ended.js";
-import { PENDING_SIGN_IN_COLUMNS, pendingSignInOfRow, signInFailure } from "./pi-oauth-ended.js";
+import {
+  PENDING_SIGN_IN_COLUMNS,
+  pendingSignInOfRow,
+  SIGN_IN_EXPIRED,
+  signInFailure,
+  signInFailureText,
+} from "./pi-oauth-ended.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
 export const COPILOT_OAUTH_PROVIDER = "github-copilot";
@@ -84,12 +93,12 @@ export type PiOAuthComplete =
   | { status: "pending" }
   | { status: "connected"; provider: string }
   /** The provider is known once a session existed, so the failure can be attributed. */
-  | { status: "error"; error: string; provider?: string; measure?: PiOAuthMeasure };
+  | { status: "error"; error: string; provider?: string };
 
 export type PiOAuthFinish<T> =
   | { status: "pending" }
   | { status: "connected"; value: T; provider: string }
-  | { status: "error"; error: string; provider?: string; measure?: PiOAuthMeasure };
+  | { status: "error"; error: string; provider?: string };
 
 export type PiOAuthBegin = ModelOAuthBegin;
 
@@ -180,12 +189,14 @@ type Session<T> = {
   expiresTimer?: ReturnType<typeof setTimeout>;
   /** The expiry timer fired while the credential was being saved. */
   expired?: boolean;
+  /** Why it was stopped, for a row stored only after that. */
+  stoppedAs?: PiOAuthEnd["reason"];
 };
 
 type Outcome<T> =
   | { status: "pending" }
   | { status: "connected"; provider: string; value: T }
-  | { status: "failed"; provider: string; error: string; measure?: PiOAuthMeasure };
+  | { status: "failed"; provider: string; error: string };
 
 type RowRef = Pick<Session<unknown>, "id" | "userId" | "spaceId">;
 
@@ -399,10 +410,12 @@ export class PiOAuthLogins<T = unknown> {
           session.expired = true;
           return;
         }
-        session.abort.abort(new Error("Sign-in expired."));
         // A stored outcome stays for whichever process the client asks next.
-        if (session.state === "pending") this.removeSession(session, "timed_out");
-        else this.detachSession(session);
+        if (session.state === "pending") void this.expire(session);
+        else {
+          session.abort.abort(new Error("Sign-in expired."));
+          this.detachSession(session);
+        }
       }, started.expiresInSeconds * 1000);
       session.expiresTimer.unref?.();
       return {
@@ -487,7 +500,7 @@ export class PiOAuthLogins<T = unknown> {
       // This sign-in replaces older ones for the same connection left open elsewhere, so
       // an older code cannot come back and retire it. A newer one is never touched.
       const older = { ...actor, scope: session.scope, createdAt: { lt: created.createdAt } };
-      await this.endRows(older, "cancelled");
+      await this.endRows(older, "replaced");
       await handoff.prisma.modelOAuthSession.deleteMany({
         where: { ...older, status: { not: "saving" } },
       });
@@ -496,7 +509,7 @@ export class PiOAuthLogins<T = unknown> {
     if (mode === "device-code") this.holdLease(session);
     // Cancelled, replaced or disconnected while saving: no process may resume it.
     if (this.pending.get(session.id) !== session) {
-      await this.forgetRow(session, { ended: "cancelled" });
+      await this.forgetRow(session, { ended: session.stoppedAs ?? "cancelled" });
     }
   }
 
@@ -509,7 +522,10 @@ export class PiOAuthLogins<T = unknown> {
     const normalizedCode = code.trim();
     let session = this.ownSession(loginId, actor);
     if (!session && normalizedCode) session = await this.resume(loginId, actor, persist);
-    if (!session) throw new ModelSignInError(SIGN_IN_NOT_FOUND);
+    if (!session) {
+      const outcome = await this.outcome(loginId, actor);
+      throw new ModelSignInError(outcome?.status === "failed" ? outcome.error : SIGN_IN_NOT_FOUND);
+    }
     if (session.error) throw new ModelSignInError(session.error);
     if (!normalizedCode) throw new ModelSignInError("Paste an authorization code or callback URL.");
     const resolve = session.submitCode;
@@ -693,17 +709,57 @@ export class PiOAuthLogins<T = unknown> {
     }
   }
 
+  /** The provider's message can quote its response: it is read here, and only a fixed text and
+   *  class leave. */
   private async fail(session: Session<T>, message: string): Promise<void> {
     if (session.state !== "pending") return;
+    const end = signInFailure(message);
     session.state = "failed";
-    session.error = message;
+    session.error = signInFailureText(end);
     this.releaseLease(session);
     await session.setup.promise;
     if (
       this.pending.get(session.id) === session &&
-      (await this.writeOutcome(session, { status: "failed", error: message }))
+      (await this.writeOutcome(session, { status: "failed", error: session.error }))
     ) {
-      this.report(this.pendingOf(session), signInFailure(message), session.id);
+      this.report(this.pendingOf(session), end, session.id);
+    }
+  }
+
+  /** The code ran out while waiting for the person. The sign-in reads as expired until the
+   *  client reads it; whichever process marks the row reports the end. */
+  private async expire(session: Session<T>): Promise<void> {
+    const owned = session.lease !== undefined;
+    const waiting = this.pendingOf(session);
+    session.abort.abort(new Error("Sign-in expired."));
+    session.state = "failed";
+    session.error = SIGN_IN_EXPIRED;
+    const handoff = this.handoff;
+    if (!handoff) {
+      this.report(waiting, { reason: "timed_out" }, session.id);
+      return;
+    }
+    this.detachSession(session);
+    if (!session.stored) return;
+    try {
+      // Unwritten, the row would read as pending and then as interrupted.
+      const expired = await retry(
+        () =>
+          runAsTenant({ userId: session.userId, spaceId: session.spaceId }, () =>
+            handoff.prisma.modelOAuthSession.updateMany({
+              // A pasted code another process received is that process's to finish.
+              where: owned ? { ...rowOf(session), status: "pending" } : unclaimedRow(session),
+              data: { status: "failed", error: SIGN_IN_EXPIRED, leaseExpiresAt: null },
+            }),
+          ),
+        {
+          attempts: OUTCOME_WRITE_ATTEMPTS,
+          delayMs: (attempt) => SAVE_WAIT_POLL_MS * (attempt + 1),
+        },
+      );
+      if (expired.count === 1) this.report(waiting, { reason: "timed_out" }, session.id);
+    } catch (error) {
+      getLogger().error("model sign-in expiry not stored", error);
     }
   }
 
@@ -734,10 +790,11 @@ export class PiOAuthLogins<T = unknown> {
   private async endRows(
     where: Prisma.ModelOAuthSessionWhereInput,
     reason: PiOAuthEnd["reason"],
+    statuses: string[] = ["pending"],
   ): Promise<void> {
     const handoff = this.handoff;
     if (!handoff) return;
-    const waiting = { ...where, status: "pending" };
+    const waiting = { ...where, status: { in: statuses } };
     const rows = await handoff.prisma.modelOAuthSession.findMany({
       where: waiting,
       select: PENDING_SIGN_IN_COLUMNS,
@@ -821,8 +878,8 @@ export class PiOAuthLogins<T = unknown> {
     if (!outcome) return { status: "error", error: SIGN_IN_NOT_FOUND };
     if (outcome.status === "failed") {
       await this.forget(loginId, actor);
-      const { error, provider, measure } = outcome;
-      return { status: "error", error, provider, measure };
+      const { error, provider } = outcome;
+      return { status: "error", error, provider };
     }
     if (outcome.status === "connected") return { status: "connected", provider: outcome.provider };
     return { status: "pending" };
@@ -839,7 +896,6 @@ export class PiOAuthLogins<T = unknown> {
           status: "error",
           error: outcome.error,
           provider: outcome.provider,
-          measure: outcome.measure,
         };
   }
 
@@ -857,7 +913,6 @@ export class PiOAuthLogins<T = unknown> {
           status: "failed",
           provider: session.provider,
           error: session.error ?? "Subscription sign-in failed.",
-          measure: session.measure,
         };
       }
       return { status: "pending" };
@@ -872,16 +927,11 @@ export class PiOAuthLogins<T = unknown> {
           result: true,
           leaseExpiresAt: true,
           createdAt: true,
-          ciphertext: true,
-          userId: true,
-          surface: true,
-          connectNumber: true,
         },
       }),
     );
     if (!row) return undefined;
     const { provider } = row;
-    const { measure } = pendingSignInOfRow(row);
     if (row.status === "connected") {
       return { status: "connected", provider, value: row.result as unknown as T };
     }
@@ -890,16 +940,17 @@ export class PiOAuthLogins<T = unknown> {
         status: "failed",
         provider,
         error: row.error ?? "Subscription sign-in failed.",
-        measure,
       };
     }
     if (row.leaseExpiresAt) {
       return row.leaseExpiresAt.getTime() < Date.now()
-        ? { status: "failed", provider, error: SIGN_IN_INTERRUPTED, measure }
+        ? { status: "failed", provider, error: SIGN_IN_INTERRUPTED }
         : { status: "pending" };
     }
-    // A pasted-code sign-in nobody finished in time is gone.
-    return row.createdAt < pastedCodeCutoff() ? undefined : { status: "pending" };
+    // A pasted-code sign-in nobody finished in time, on a process that has since stopped.
+    return row.createdAt < pastedCodeCutoff()
+      ? { status: "failed", provider, error: SIGN_IN_EXPIRED }
+      : { status: "pending" };
   }
 
   /** Drop a sign-in whose outcome the client has read. */
@@ -911,12 +962,20 @@ export class PiOAuthLogins<T = unknown> {
     }
     const handoff = this.handoff;
     if (!handoff) return;
-    await runAsTenant({ userId: actor.userId, spaceId: actor.spaceId }, () =>
-      handoff.prisma.modelOAuthSession.deleteMany({ where: rowOf({ id: loginId, ...actor }) }),
-    );
+    await runAsTenant({ userId: actor.userId, spaceId: actor.spaceId }, async () => {
+      // A row still waiting or saving here outlived the process that held it.
+      await this.endRows(rowOf({ id: loginId, ...actor }), "interrupted", ["pending", "saving"]);
+      await handoff.prisma.modelOAuthSession.deleteMany({
+        where: rowOf({ id: loginId, ...actor }),
+      });
+    });
   }
 
-  async cancel(loginId: string, actor: SignInActor): Promise<void> {
+  async cancel(
+    loginId: string,
+    actor: SignInActor,
+    reason: ModelSignInCancelReason = "cancelled",
+  ): Promise<void> {
     let waiting: PiOAuthPending | undefined;
     while (true) {
       const session = this.ownSession(loginId, actor);
@@ -926,15 +985,16 @@ export class PiOAuthLogins<T = unknown> {
         continue;
       }
       if (session.state === "pending") waiting = this.pendingOf(session);
+      session.stoppedAs = reason;
       session.abort.abort(new Error("Sign-in cancelled."));
       this.detachSession(session);
       break;
     }
     const ref = { id: loginId, userId: actor.userId, spaceId: actor.spaceId };
-    if (!this.handoff) this.report(waiting, { reason: "cancelled" }, loginId);
+    if (!this.handoff) this.report(waiting, { reason }, loginId);
     // Any process may hold it: that process sees its row go and stops. A save under way
     // finishes; the client has stopped asking for it.
-    await this.forgetRow(ref, { ended: "cancelled" });
+    await this.forgetRow(ref, { ended: reason });
   }
 
   private ownSession(loginId: string, actor: SignInActor): Session<T> | undefined {
@@ -986,7 +1046,7 @@ export class PiOAuthLogins<T = unknown> {
       session.abort.abort(
         new Error(cause === "replacement" ? "Sign-in replaced." : "Sign-in cancelled."),
       );
-      this.removeSession(session, "cancelled");
+      this.removeSession(session, cause === "replacement" ? "replaced" : "cancelled");
       return;
     }
   }
@@ -1054,6 +1114,7 @@ export class PiOAuthLogins<T = unknown> {
 
   /** Drops a sign-in the person or the clock ended, and reports it if it was still waiting. */
   private removeSession(session: Session<T>, ended: PiOAuthEnd["reason"]): void {
+    session.stoppedAs = ended;
     const owned = session.lease !== undefined;
     const waiting = session.state === "pending" ? this.pendingOf(session) : undefined;
     this.detachSession(session);
@@ -1109,6 +1170,7 @@ export class PiOAuthLogins<T = unknown> {
     );
     for (const session of sessions) {
       if (session.state === "finalizing") continue;
+      session.stoppedAs = "interrupted";
       this.detachSession(session);
       session.abort.abort();
     }
@@ -1117,9 +1179,12 @@ export class PiOAuthLogins<T = unknown> {
     }
     await Promise.all([
       ...saving,
-      ...interrupted.map((session) =>
-        this.writeOutcome(session, { status: "failed", error: SIGN_IN_INTERRUPTED }, "pending"),
-      ),
+      ...interrupted.map(async (session) => {
+        const failed = { status: "failed", error: SIGN_IN_INTERRUPTED } as const;
+        if (await this.writeOutcome(session, failed, "pending")) {
+          this.report(this.pendingOf(session), { reason: "interrupted" }, session.id);
+        }
+      }),
     ]);
     for (const session of sessions) {
       this.detachSession(session);
@@ -1157,6 +1222,7 @@ function defaultLogin(
       ...(verifier ? { createVerifier: () => verifier } : {}),
     })(interaction);
   }
+  if (providerId === CHATGPT_OAUTH_PROVIDER) return createChatGptDeviceCodeLogin()(interaction);
   return builtinModels().login(providerId, type, interaction);
 }
 

@@ -1,6 +1,6 @@
 import type { MemoryPromptBudget, MemoryPromptDocumentUse } from "@rakazo/contracts";
 import { BOT_MEMORY_MAX_BYTES, MEMORY_INDEX_PATH } from "@rakazo/contracts";
-import { byteLength, truncateUtf8 } from "@rakazo/core";
+import { byteLength, escapePromptData, truncateUtf8 } from "@rakazo/core";
 
 /** How much durable memory a prompt carries before the rest is left out. */
 export const AGENT_MEMORY_MAX_BYTES = 32 * 1024;
@@ -63,7 +63,7 @@ export function buildAgentMemoryPrompt(
       document.scope === "bot" && document.path === MEMORY_INDEX_PATH
         ? `, ${byteLength(document.content)} of ${BOT_MEMORY_MAX_BYTES} bytes`
         : "";
-    const heading = `${sections.length === 0 ? "" : "\n\n"}## ${SCOPE_LABELS[document.scope]}: ${document.path} (revision ${document.revision}${usage})\n`;
+    const heading = `${sections.length === 0 ? "" : "\n\n"}## ${SCOPE_LABELS[document.scope]}: ${escapePromptData(document.path)} (revision ${document.revision}${usage})\n`;
     const headingBytes = byteLength(heading);
     if (headingBytes > remainingBytes) {
       ranOut = true;
@@ -73,8 +73,10 @@ export function buildAgentMemoryPrompt(
     sections.push(heading);
     remainingBytes -= headingBytes;
 
+    // Memory is data inside the block: a closing tag in it must not end the block.
+    const escaped = escapePromptData(document.content);
     const content = truncateUtf8(
-      document.content,
+      escaped,
       remainingBytes,
       document.scope === "bot" ? "end" : "start",
     );
@@ -84,13 +86,13 @@ export function buildAgentMemoryPrompt(
       scope: document.scope,
       path: document.path,
       revision: document.revision,
-      totalBytes: byteLength(document.content),
+      totalBytes: byteLength(escaped),
       includedBytes: byteLength(content),
-      truncated: content !== document.content,
+      truncated: content !== escaped,
     });
     // Nothing starts after a split document: a partial one is the last thing
     // the prompt sees.
-    if (content !== document.content) ranOut = true;
+    if (content !== escaped) ranOut = true;
   }
 
   const text = `${PREAMBLE}${sections.join("")}${CLOSING}`;
@@ -103,7 +105,7 @@ function leaveOut(document: MemoryPromptDocument): MemoryPromptDocumentUse {
     scope: document.scope,
     path: document.path,
     revision: document.revision,
-    totalBytes: byteLength(document.content),
+    totalBytes: byteLength(escapePromptData(document.content)),
     includedBytes: 0,
     truncated: false,
   };

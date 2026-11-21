@@ -1437,17 +1437,61 @@ describe("updateScheduleFromTool", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
-  it("keeps a watch's own interval", async () => {
-    const { update } = setup({
-      ...weekly,
-      crons: [],
-      watch: { kind: "files", paths: ["inbox"], everyMinutes: 15 },
-    });
+  const fileWatch = { kind: "files", paths: ["inbox"], everyMinutes: 15, loud: false };
+  const watching = { ...weekly, crons: [], watch: fileWatch };
+
+  it("points a watch's retime at everyMinutes", async () => {
+    const { updateMany, update } = setup(watching);
     await expect(update({ schedule: { cron: "0 9 * * *" } })).resolves.toEqual({
-      error:
-        "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.",
+      error: expect.stringContaining("everyMinutes"),
     });
+    expect(updateMany).not.toHaveBeenCalled();
     await expect(update({ name: "Inbox" })).resolves.toMatchObject({ ok: true, name: "Inbox" });
+  });
+
+  it("changes how often a watch checks and checks again right away", async () => {
+    const { updateMany, enqueue, update } = setup(watching);
+    await expect(update({ everyMinutes: 60 })).resolves.toMatchObject({
+      ok: true,
+      everyMinutes: 60,
+      changes: { everyMinutes: { before: 15, after: 60 } },
+    });
+    const firstCheck = new Date(Date.now() + 2_000);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ watch: { equals: fileWatch }, nextRunAt: weekly.nextRunAt }),
+      data: expect.objectContaining({
+        watch: { ...fileWatch, everyMinutes: 60 },
+        nextRunAt: firstCheck,
+      }),
+    });
+    expect(enqueue).toHaveBeenCalledWith(routineWakeupJob("routine-1", firstCheck));
+  });
+
+  it("keeps a paused watch paused when its interval changes", async () => {
+    const { updateMany, enqueue, update } = setup({ ...watching, active: false, nextRunAt: null });
+    await expect(update({ everyMinutes: 30 })).resolves.toMatchObject({ ok: true, active: false });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.anything(),
+      data: expect.objectContaining({ watch: { ...fileWatch, everyMinutes: 30 }, nextRunAt: null }),
+    });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses an interval outside the watch bounds or on a non-watch", async () => {
+    const { updateMany, update } = setup(watching);
+    for (const everyMinutes of [4, 1441, 7.5, "often"]) {
+      await expect(update({ everyMinutes })).resolves.toEqual({
+        error: "everyMinutes must be a whole number from 5 to 1440.",
+      });
+    }
+    await expect(update({ everyMinutes: 15 })).resolves.toEqual({ error: "Nothing to update." });
+    await expect(setup().update({ everyMinutes: 30 })).resolves.toEqual({
+      error: "everyMinutes is only for a routine that watches for changes.",
+    });
+    await expect(update({ userId: "user-2", everyMinutes: 30 })).resolves.toMatchObject({
+      error: expect.stringContaining("Only the person who owns this routine"),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });
 
