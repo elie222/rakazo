@@ -9,6 +9,7 @@ import {
   isComputerAllowanceUsed,
 } from "@rakazo/contracts";
 import { ComputerRecoveryRequiredError } from "../../computers/computer-lifecycle.js";
+import { ComputerWaitTimedOutError } from "../../computers/run-computer-wait.js";
 import { isSandboxDamagedError } from "../../computers/sandbox/sandbox-errors.js";
 
 const COMPUTER_RUN_ERRORS = new Set([
@@ -47,6 +48,8 @@ export class RunComputerFailedError extends Error {
  *
  * Remote computers bill while they run, so a run that never touches its computer must not
  * create or resume one. A failed start is kept: every later use rethrows it as a setup failure.
+ * A wait for a busy computer that ran out is not a failed start: only that use fails, and the
+ * next one waits again.
  */
 export function lazyRunComputer(start: () => Promise<ComputerRef>, onFailure?: () => void) {
   let started: Promise<ComputerRef> | undefined;
@@ -61,6 +64,10 @@ export function lazyRunComputer(start: () => Promise<ComputerRef>, onFailure?: (
           return computer;
         },
         (error: unknown) => {
+          if (error instanceof ComputerWaitTimedOutError) {
+            started = undefined;
+            throw error;
+          }
           failed = true;
           failure = error;
           onFailure?.();

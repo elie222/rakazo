@@ -10,6 +10,7 @@ import { COMPUTER_DAMAGED_ERROR, COMPUTER_START_FAILED_ERROR } from "@rakazo/con
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
+import { ComputerWaitTimedOutError } from "../../computers/run-computer-wait.js";
 import { VaultKeyUnavailableError } from "../../secrets/bot-secrets.js";
 import * as runMessages from "../assembly/run-messages.js";
 import { createRunExecutor } from "./executor.js";
@@ -17,11 +18,12 @@ import { createRunExecutor } from "./executor.js";
 const sink = createTestSink();
 
 const provisionComputer = vi.hoisted(() => vi.fn());
+const waitForRunComputerLease = vi.hoisted(() => vi.fn(async () => null));
 
 vi.mock("../../computers/computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
-  waitForRunComputerLease: async () => null,
+  waitForRunComputerLease,
   acquireDedicatedScreenLeaseFence: async () => null,
   provisionComputer,
 }));
@@ -620,6 +622,27 @@ describe("run computer provisioning", () => {
 
     // One from starting the computer, one from the takeover request.
     expect(sleepJobs).toHaveLength(2);
+  });
+
+  it("fails only the tool call whose wait for a busy computer ran out", async () => {
+    waitForRunComputerLease.mockRejectedValueOnce(new ComputerWaitTimedOutError());
+
+    const { finalizeRun, sandbox, toolResults } = await runRoutine(
+      [
+        { name: "list_files", args: { path: "" } },
+        { name: "list_files", args: { path: "" } },
+      ],
+      { toolFailure: "recover" },
+    );
+
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(waitForRunComputerLease).toHaveBeenCalledTimes(2);
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(sandbox.listFiles).toHaveBeenCalledOnce();
+    expect(toolResults.at(-1)).toMatchObject({ entries: [{ path: "notes.txt" }] });
+    expect(sink.events).not.toContainEqual(
+      expect.objectContaining({ message: "run.setup_failed" }),
+    );
   });
 
   it("keeps setup-failure retry semantics when the computer cannot start", async () => {
