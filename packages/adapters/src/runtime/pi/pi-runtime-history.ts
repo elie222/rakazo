@@ -10,6 +10,8 @@ import {
 import { USE_TOOL } from "../../tools/builtin.tool-definition.js";
 import {
   CONVERSATION_START,
+  historyImageSeenNote,
+  historyImageSeenStamp,
   imageNotKeptNote,
   REPLAYED_SCREENSHOT_LEAD,
   toolNotAvailableNote,
@@ -29,7 +31,7 @@ export function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
  * Bump when the shape of replayed history changes (roles, labels, tool steps, images), so runs
  * record which replay format they used. Part of the prompt version.
  */
-export const HISTORY_FORMAT_VERSION = 3;
+export const HISTORY_FORMAT_VERSION = 4;
 
 /**
  * Provider, api and model stamped on replayed own replies. None matches a real model, so Pi
@@ -343,10 +345,12 @@ export function toHistory(
           : m.content;
     // Pictures ride on the human's turn only, never on a bot's.
     const images = m.role === "assistant" ? [] : toPiImages(m.images);
+    const seen = images.length ? historyImageSeenNote(historyImageSeenStamp(m.createdAt)) : "";
+    const labelled = seen ? (text.trim() ? `${seen}\n${text}` : seen) : text;
     return [
       {
         role: "user" as const,
-        content: images.length ? [{ type: "text" as const, text }, ...images] : text,
+        content: images.length ? [{ type: "text" as const, text: labelled }, ...images] : labelled,
         ...common,
       },
     ];
