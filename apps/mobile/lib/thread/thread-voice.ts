@@ -13,6 +13,10 @@ import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../calls/bot-switch";
 import {
+  autoLanguageNeedsTranscription,
+  loadCallAutoLanguage,
+} from "../calls/call-language-preference";
+import {
   getSnapshot as getCallSnapshot,
   setCallProviderTranscribe,
   startCall,
@@ -215,8 +219,11 @@ export function useThreadVoiceCall({
     voiceCallStarting.current = true;
     const loadVoiceStatus = () => rpc("voice/status");
     try {
+      const autoLanguage = await loadCallAutoLanguage();
+      if (setupSession !== currentSessionGeneration()) return;
       const [plan, callerName, greet] = await Promise.all([
         resolveVoiceCallPlan({
+          autoLanguage,
           loadDeviceVoiceEnabled,
           dictationAvailable,
           loadVoiceStatus,
@@ -232,7 +239,9 @@ export function useThreadVoiceCall({
       if (plan.kind === "dictation") {
         Alert.alert(
           t`Calls need transcription`,
-          t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
+          autoLanguage
+            ? autoLanguageNeedsTranscription()
+            : t`Allow speech recognition in Settings, or connect a voice provider that transcribes.`,
           [
             { text: t`Not now`, style: "cancel" },
             { text: t`Open Voice`, onPress: () => router.push("/voice") },
@@ -250,6 +259,7 @@ export function useThreadVoiceCall({
         botColor: mentionBots.find((bot) => bot.id === targetBotId)?.color,
         botAvatarSet: mentionBots.find((bot) => bot.id === targetBotId)?.avatarSet,
         transcribe: plan.transcribe,
+        autoLanguage,
         greeting: greet ? callGreeting(botName, callerName, switchedHere) : undefined,
         session: setupSession,
         requestContext,
@@ -260,7 +270,7 @@ export function useThreadVoiceCall({
         },
       });
       if (!startedCallId) return;
-      if (plan.kind === "device") {
+      if (plan.kind === "device" && !autoLanguage) {
         void probeProviderTranscribe(loadVoiceStatus)
           .then((enabled) => {
             if (enabled) setCallProviderTranscribe(true, startedCallId);

@@ -1,3 +1,6 @@
+/** Per-device opt-in to provider transcription without a language hint during calls. */
+export const CALL_AUTO_LANGUAGE_KEY = "rakazo.call-auto-language";
+
 /** Speech recognizers need regional BCP-47 tags for the app's UI locale codes. */
 const SPEECH_LOCALE_TAGS = {
   en: "en-US",

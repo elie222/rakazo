@@ -245,6 +245,11 @@ export class Dictation {
     return this.media?.state === "recording";
   }
 
+  /** A recorder still acquiring its track or capturing, not flushing its last audio. */
+  get recordingOrStarting(): boolean {
+    return this.recording || (!this.media && this.snapshot.status === "listening");
+  }
+
   private set(next: DictationSnapshot) {
     this.snapshot = next;
     for (const watcher of [...this.watchers]) watcher(next);
@@ -293,6 +298,7 @@ export class Dictation {
     mode: DictationMode;
     callId?: string;
     transcribe?: boolean;
+    autoLanguage?: boolean;
     endpointMs?: number;
     onFinal: (text: string) => void;
   }): Promise<void> {
@@ -300,6 +306,13 @@ export class Dictation {
     this.requestCallId = opts.callId;
     const mine = this.token;
     const spaceId = selectedSpaceId();
+    if (opts.autoLanguage && opts.transcribe === false) {
+      this.set({
+        ...IDLE,
+        error: t`Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings.`,
+      });
+      return;
+    }
     this.onFinal = opts.onFinal;
     this.mode = opts.mode;
     this.set({ status: "listening", transcript: "" });
@@ -307,8 +320,14 @@ export class Dictation {
     // Desktop system speech is a fallback for an unconfigured transcription provider.
     // An unknown capability is not a refusal: a device whose browser cannot hold the
     // microphone open goes to the server even before the voice status has loaded.
-    if (usesServerDictation(opts.transcribe)) {
-      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
+    if (opts.autoLanguage || usesServerDictation(opts.transcribe)) {
+      await this.listenRecorder(
+        mine,
+        opts.mode,
+        opts.endpointMs ?? ENDPOINT_SILENCE_MS,
+        spaceId,
+        opts.autoLanguage,
+      );
       return;
     }
     if (webSpeechAvailable()) {
@@ -488,6 +507,7 @@ export class Dictation {
     mode: DictationMode,
     endpointMs: number,
     spaceId: string | null,
+    autoLanguage = false,
   ) {
     let stream: MediaStream;
     try {
@@ -529,7 +549,7 @@ export class Dictation {
         for (const track of stream.getTracks()) track.stop();
         if (this.token !== mine) return;
         this.stopVad();
-        void this.transcribeChunks(mine, spaceId);
+        void this.transcribeChunks(mine, spaceId, autoLanguage);
       };
       media.start(mode === "endpoint" ? 250 : undefined);
       this.set({ ...this.snapshot });
@@ -621,7 +641,7 @@ export class Dictation {
     if (ctx) void ctx.close().catch(() => undefined);
   }
 
-  private async transcribeChunks(mine: number, spaceId: string | null) {
+  private async transcribeChunks(mine: number, spaceId: string | null, autoLanguage: boolean) {
     const requestCallId = this.requestCallId;
     if (this.token !== mine) return;
     // Whisper-style models invent text for silence, so a recording that never rose above
@@ -664,7 +684,7 @@ export class Dictation {
           body: JSON.stringify({
             audioBase64,
             mimeType: blob.type,
-            language: transcriptionLanguage(),
+            language: autoLanguage ? undefined : transcriptionLanguage(),
             callId: requestCallId,
           }),
           signal: abort.signal,
