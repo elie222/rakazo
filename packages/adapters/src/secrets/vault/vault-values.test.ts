@@ -297,6 +297,36 @@ describe("vault values under the envelope keys", () => {
     expect(forms).not.toContain("4242424242424242");
   });
 
+  it.each(["missing master key", "unreadable wrapped key"] as const)(
+    "refuses redaction and login replacement after a key failure (%s)",
+    async (failure) => {
+      const db = encryptedDatabase();
+      await save(db, login, loginValue());
+      await db.migrate();
+      const ciphertext = row(db, "site").ciphertext;
+      const old = db.keys[0]!;
+      const restored = { ...old };
+      // New writes can use the latest key. The existing login needs the older one.
+      await db.ring.rotate("user:user-1");
+      if (failure === "missing master key") old.masterKeyId = "retired-fixture";
+      else old.wrappedKey = (old.wrappedKey[0] === "A" ? "B" : "A") + old.wrappedKey.slice(1);
+      db.ring.clear();
+
+      await expect(
+        loadLoginPasswordRedactions(db.prisma, secretStore, scope),
+      ).rejects.toMatchObject({ name: "VaultKeyUnavailableError" });
+      await expect(save(db, login, loginValue("fake-new-password"))).rejects.toThrow(
+        "The saved login could not be read. Try again.",
+      );
+      expect(row(db, "site").ciphertext).toBe(ciphertext);
+
+      Object.assign(old, restored);
+      expect(await loadLoginPasswordRedactions(db.prisma, secretStore, scope)).toContain(
+        "fake-password-1",
+      );
+    },
+  );
+
   it("stops a run whose command variables can't be loaded while the key manager is down", async () => {
     const db = encryptedDatabase();
     const command = (name: string) =>

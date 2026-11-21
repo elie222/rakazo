@@ -37,6 +37,13 @@ export class ContentDecryptionError extends Error {
   }
 }
 
+/** A parse error for authenticated content. Its message never contains the plaintext. */
+export class EncryptedJsonSyntaxError extends SyntaxError {
+  constructor() {
+    super("Invalid encrypted JSON");
+  }
+}
+
 function contentAad(location: ContentLocation, spaceId: string): Buffer {
   return Buffer.from(
     [AAD_VERSION, location.table, location.column, location.rowId, location.owner, spaceId].join(
@@ -119,8 +126,17 @@ export function sealJson(
 
 /** Plaintext values pass through, so rows written before encryption stay readable. */
 export function openJson(value: unknown, open: (ciphertext: string) => string): unknown {
-  const one = (item: unknown) =>
-    isSealedJson(item) ? (JSON.parse(open(item[SEALED_FIELD])) as unknown) : item;
+  const one = (item: unknown) => {
+    if (!isSealedJson(item)) return item;
+    const plaintext = open(item[SEALED_FIELD]);
+    try {
+      return JSON.parse(plaintext) as unknown;
+    } catch (error) {
+      // A JSON parse error can quote the decrypted content.
+      if (error instanceof SyntaxError) throw new EncryptedJsonSyntaxError();
+      throw error;
+    }
+  };
   return Array.isArray(value) ? value.map(one) : one(value);
 }
 

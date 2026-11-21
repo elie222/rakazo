@@ -107,9 +107,10 @@ the existing 2-to-10-unit limit.
 
 Newly written encrypted messages use this index. Space search also checks
 the original word-prefix tokens for each space key so earlier encrypted rows
-retain their previous matches. Existing rows acquire the new tokens when their
-blocks are rewritten. Candidates are decrypted and verified against the literal
-query. Plaintext rows still use the full-text and substring predicates.
+retain their previous matches. Existing rows acquire the new tokens during the
+search backfill or when their blocks are rewritten. Candidates are decrypted
+and verified against the literal query. Plaintext rows still use the full-text
+and substring predicates.
 
 Tradeoffs:
 
@@ -130,6 +131,30 @@ Tradeoffs:
   reading batches when the result limit is reached. A message with enough
   distinct pairs can occupy every bucket, so an older compact match may fall outside its window.
   Agent history search pages through cursors.
+
+### Backfill encrypted message search
+
+Once all message writers use the new index, run the maintenance command against
+the deployment database with its content encryption keys. This example checks
+up to 500 messages in five batches.
+
+```bash
+pnpm --filter @rakazo/api content-encryption backfill-search --batch-size 100 --max-batches 5
+```
+
+The first run records the highest existing message ID as its stopping point.
+New messages receive their indexes on write, so the scan can finish while
+messages continue to arrive. Each batch commits its index updates and its
+progress together in PostgreSQL.
+
+Press Ctrl+C to pause after the current batch. Run the same command again to
+continue from the last committed batch, including after a process restart.
+Omit `--max-batches` to run through completion. The default batch size is 100.
+A planned batch limit exits with status 0. SIGINT exits with status 130 and
+SIGTERM with 143. A completed backfill exits immediately on subsequent runs.
+
+The command updates search tokens for encrypted chat messages whose indexes
+need refreshing. Their ciphertext, keys and message timestamps stay in place.
 
 ## Threat model
 

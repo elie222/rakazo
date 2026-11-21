@@ -1263,6 +1263,15 @@ model PrunedMessageNonce {
   @@map("pruned_message_nonces")
 }
 
+/// Durable progress for a deployment-wide encrypted message index backfill.
+model MessageSearchBackfill {
+  version   Int     @id
+  afterId   String?
+  throughId String?
+
+  @@map("message_search_backfill")
+}
+
 model Event {
   id        String   @id @default(cuid())
   spaceId   String

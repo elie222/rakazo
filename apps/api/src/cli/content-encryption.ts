@@ -1,4 +1,5 @@
 import { createWriteStream } from "node:fs";
+import { constants } from "node:os";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import {
@@ -18,6 +19,7 @@ import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { resolveContentEncryption, resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import type { ContentMigrationMode } from "@rakazo/db";
 import {
+  backfillMessageSearchIndex,
   contentEncryptionStatus,
   createDb,
   exportContent,
@@ -33,12 +35,15 @@ import { createSecretMigrationRepository } from "./secret-migration.js";
 loadRootEnv();
 await unwrapEnvFromKeyManager();
 
-const USAGE = `Usage: content-encryption <command> [--dry-run]
+const USAGE = `Usage: content-encryption <command> [options]
   status               Rows and artifacts still in plaintext, vault items under an older
                        key version, keys per master key
   migrate              Encrypt existing content, upgrade legacy credentials, move
                        vault values to the content keys and MCP server arguments
                        into their encrypted credentials
+  backfill-search [--batch-size N] [--max-batches N]
+                       Update old encrypted message search indexes in batches.
+                       Run again to resume after a batch limit or interruption.
   rotate [--reencrypt] Re-wrap space keys under the active master key; with
                        --reencrypt also add new data keys and re-encrypt content
                        and vault values
@@ -47,9 +52,18 @@ const USAGE = `Usage: content-encryption <command> [--dry-run]
   decrypt              Write plaintext back, after CONTENT_ENCRYPTION=off or
                        before rolling back to an older release
   export [--space <id>] [--thread <id>] [--bot <id>] [--output <file>]
-                       Write decrypted threads, messages and memory as JSON lines`;
+                       Write decrypted threads, messages and memory as JSON lines
+  --dry-run            Preview migrate, rotate, reencrypt, or decrypt`;
 
-const COMMANDS = ["status", "migrate", "rotate", "reencrypt", "decrypt", "export"];
+const COMMANDS = [
+  "status",
+  "migrate",
+  "backfill-search",
+  "rotate",
+  "reencrypt",
+  "decrypt",
+  "export",
+];
 const EXPORT_OPTIONS = ["space", "thread", "bot", "output"] as const;
 
 function parseCommand() {
@@ -58,6 +72,8 @@ function parseCommand() {
       allowPositionals: true,
       options: {
         "dry-run": { type: "boolean" },
+        "batch-size": { type: "string" },
+        "max-batches": { type: "string" },
         reencrypt: { type: "boolean" },
         space: { type: "string" },
         thread: { type: "string" },
@@ -67,12 +83,19 @@ function parseCommand() {
     });
     const [command, ...rest] = positionals;
     const exporting = command === "export";
+    const backfilling = command === "backfill-search";
+    const limits = [values["batch-size"], values["max-batches"]];
     if (
       !command ||
       !COMMANDS.includes(command) ||
       rest.length ||
       (values.reencrypt && command !== "rotate") ||
-      (values["dry-run"] && exporting) ||
+      (values["dry-run"] && (exporting || backfilling)) ||
+      limits.some(
+        (raw) =>
+          raw !== undefined &&
+          (!backfilling || !/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(Number(raw))),
+      ) ||
       (!exporting && EXPORT_OPTIONS.some((name) => values[name] !== undefined)) ||
       EXPORT_OPTIONS.some((name) => values[name] === "")
     )
@@ -102,8 +125,12 @@ const { prisma, pool, contentKeys } = createDb(process.env.DATABASE_URL, {
 });
 const artifacts = new LocalArtifactStore(process.env.DATA_DIR ?? "./data", contentKeys);
 const controller = new AbortController();
-process.once("SIGINT", () => controller.abort());
-process.once("SIGTERM", () => controller.abort());
+function interrupt(signal: NodeJS.Signals) {
+  if (command === "backfill-search") process.exitCode = 128 + constants.signals[signal];
+  controller.abort();
+}
+process.once("SIGINT", interrupt);
+process.once("SIGTERM", interrupt);
 const write = (line: string) => process.stdout.write(`${line}\n`);
 
 /** JSON lines to stdout, or to a new owner-only file; the export holds plaintext. */
@@ -288,6 +315,19 @@ try {
     } else if (command === "reencrypt") {
       await rewriteContent("reencrypt");
       await rewriteVaultValues("reencrypt");
+    } else if (command === "backfill-search") {
+      const progress = await backfillMessageSearchIndex(prisma, {
+        batchSize: flags["batch-size"] === undefined ? undefined : Number(flags["batch-size"]),
+        maxBatches: flags["max-batches"] === undefined ? undefined : Number(flags["max-batches"]),
+        signal: controller.signal,
+        report: ({ scanned, updated }) =>
+          write(`Checked ${scanned} messages, updated ${updated} search indexes this run.`),
+      });
+      write(
+        progress.complete
+          ? "Backfill complete."
+          : "Backfill paused. Run backfill-search again to resume.",
+      );
     } else if (command === "export") {
       await exportJsonLines();
     } else {

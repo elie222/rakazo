@@ -154,6 +154,11 @@ function stringsIn(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
+/** Keep search inputs identical when sealing message blocks and rebuilding their index. */
+export function messageBlockSearchInput(blocks: Prisma.JsonValue) {
+  return { words: historySearchText(blocks), strings: stringsIn(blocks) };
+}
+
 const ownerOf = (spec: ModelSpec) => ROW_OWNER[spec.table];
 
 /** Columns a row needs beside its encrypted fields to be decrypted and verified. */
@@ -420,8 +425,9 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
       const indexed = !spec.fields[field]!.hidden;
       if (value === null) next[field] = null;
       else if (plainKeys) {
-        words.push(historySearchText(value as Prisma.JsonValue));
-        strings.push(...stringsIn(value));
+        const input = messageBlockSearchInput(value as Prisma.JsonValue);
+        words.push(input.words);
+        strings.push(...input.strings);
         next[field] = sealJson(value, plainKeys, encrypt);
       } else if (typeof value === "string") {
         if (indexed) {

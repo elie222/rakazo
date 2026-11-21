@@ -43,6 +43,7 @@ export * from "./encryption/content-encryption.js";
 export * from "./encryption/content-keys.js";
 export * from "./encryption/content-migration.js";
 export * from "./encryption/credential-secrets.js";
+export * from "./encryption/message-search-backfill.js";
 export * from "./history/content-export.js";
 export * from "./history/history-retention.js";
 export * from "./history/history-retrieval.js";

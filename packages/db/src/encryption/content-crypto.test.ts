@@ -90,6 +90,13 @@ describe("content ciphertext", () => {
     expect(openJson(payload, () => "unused")).toBe(payload);
     expect(jsonKeyIds(payload)).toEqual([]);
   });
+
+  it("reports malformed decrypted JSON as a syntax error without quoting the value", () => {
+    const sealed = { $sealed: encryptText(key, location, "private invalid JSON fixture") };
+    const read = () => openJson(sealed, (value) => decryptText(key, location, value));
+    expect(read).toThrow(SyntaxError);
+    expect(read).toThrow(/^Invalid encrypted JSON$/);
+  });
 });
 
 describe("blind index tokens", () => {

@@ -5,6 +5,9 @@ import { createRowId } from "../database/row-id.js";
 import { runAsSystem } from "../database/row-security.js";
 import type { DataKey } from "./content-crypto.js";
 
+/** A missing or unreadable key can affect every item that uses it. */
+export class ContentKeyUnavailableError extends Error {}
+
 export interface MasterKey {
   id: string;
   key: Uint8Array;
@@ -102,7 +105,8 @@ export class LocalKeyProvider implements KeyProvider {
 
   async unwrap(wrapped: WrappedDataKey, context: KeyWrapContext): Promise<Uint8Array> {
     const master = this.keys.get(wrapped.masterKeyId);
-    if (!master) throw new Error(`Master key ${wrapped.masterKeyId} is not configured`);
+    if (!master)
+      throw new ContentKeyUnavailableError(`Master key ${wrapped.masterKeyId} is not configured`);
     const body = Buffer.from(wrapped.wrappedKey, "base64url");
     try {
       const decipher = createDecipheriv("aes-256-gcm", master, body.subarray(0, 12));
@@ -113,7 +117,9 @@ export class LocalKeyProvider implements KeyProvider {
         decipher.final(),
       ]);
     } catch {
-      throw new Error(`Space key could not be unwrapped with master key ${wrapped.masterKeyId}`);
+      throw new ContentKeyUnavailableError(
+        `Space key could not be unwrapped with master key ${wrapped.masterKeyId}`,
+      );
     }
   }
 }
@@ -439,7 +445,10 @@ export class ContentKeyRing {
     if (cached) return Promise.resolve(cached);
     return this.once(`key:${id}`, async () => {
       const record = await this.store.byId(id);
-      if (!record) throw new Error("Encrypted content names a space key that no longer exists");
+      if (!record)
+        throw new ContentKeyUnavailableError(
+          "Encrypted content names a space key that no longer exists",
+        );
       return this.unwrap(record);
     });
   }
