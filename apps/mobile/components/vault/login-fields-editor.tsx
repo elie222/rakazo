@@ -3,7 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { LOGIN_FIELD_LIMIT } from "@rakazo/contracts";
 import type { RefObject } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TextInputInstance } from "react-native";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
@@ -54,6 +54,22 @@ export function LoginFieldsEditor({
   const styles = useThemedStyles(createStyles);
   // Fields shown while typing; their saved Hidden setting is unchanged.
   const [shown, setShown] = useState<ReadonlySet<number>>(new Set());
+  const isShown = (field: LoginFieldRow) => shown.has(field.id);
+  // A field that is emptied (a failed save clears every value) is masked again, so what is typed
+  // next starts hidden.
+  const previous = useRef(fields);
+  useEffect(() => {
+    const emptied = fields
+      .filter(
+        (field) =>
+          field.value === "" &&
+          previous.current.some((before) => before.id === field.id && before.value !== ""),
+      )
+      .map((field) => field.id);
+    previous.current = fields;
+    if (emptied.length === 0) return;
+    setShown((current) => new Set([...current].filter((id) => !emptied.includes(id))));
+  }, [fields]);
   const toggleShown = (id: number) =>
     setShown((current) => {
       const next = new Set(current);
@@ -110,7 +126,7 @@ export function LoginFieldsEditor({
                 onChangeText={(value) => change(field.id, { value })}
                 placeholder={name}
                 placeholderTextColor={styles.placeholder.color}
-                secureTextEntry={field.hidden && !shown.has(field.id)}
+                secureTextEntry={field.hidden && !isShown(field)}
                 {...loginFieldTraits(field.hidden)}
                 autoCorrect={false}
                 autoCapitalize="none"
@@ -124,12 +140,10 @@ export function LoginFieldsEditor({
               {hiddenFixed && field.hidden ? (
                 <NativeActionButton
                   accessibilityLabel={
-                    shown.has(field.id)
-                      ? t`Hide ${ph({ field: name })}`
-                      : t`Show ${ph({ field: name })}`
+                    isShown(field) ? t`Hide ${ph({ field: name })}` : t`Show ${ph({ field: name })}`
                   }
                   icon={
-                    shown.has(field.id)
+                    isShown(field)
                       ? { ios: "eye.slash", android: "eye-off-outline" }
                       : { ios: "eye", android: "eye-outline" }
                   }

@@ -627,3 +627,18 @@ it("stays open while a dismissal is in flight, so its failure shows", async () =
   await act(async () => pending.reject(new Error("server detail")));
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not send answer");
 });
+
+it("masks a shown password again once a failed save clears it", async () => {
+  onSave.mockRejectedValue(new Error("rejected"));
+  await render();
+  await act(async () => button("Show Password").click());
+  await type("Username", "ada");
+  await type("Password", "example-password");
+  expect(field("Password").type).toBe("text");
+
+  await act(async () => button("Save").click());
+
+  expect(field("Password").value).toBe("");
+  expect(field("Password").type).toBe("password");
+  expect(buttonLabels()).toContain("Show Password");
+});
