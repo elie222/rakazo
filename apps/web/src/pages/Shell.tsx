@@ -37,6 +37,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import { CallCard, CallReturnBar } from "../components/call/CallCard";
 import { IncomingCall } from "../components/call/IncomingCall";
@@ -213,6 +214,7 @@ function SpaceShell() {
     listCollapsed: botsSidebarCollapsed,
     previewListCollapsed,
     railWidth,
+    railFooterNode,
     setListCollapsed: setBotsSidebarCollapsed,
   } = useAppSidebar();
   // The rail decides where the footer lives, so the two can never disagree at a breakpoint.
@@ -1145,6 +1147,7 @@ function SpaceShell() {
         }
         footer={railOnScreen ? null : sidebarFooter}
       />
+      {railOnScreen && railFooterNode ? createPortal(sidebarFooter, railFooterNode) : null}
       {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}
       <main
         data-space-switch="main"

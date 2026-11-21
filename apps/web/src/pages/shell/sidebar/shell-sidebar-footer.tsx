@@ -41,7 +41,8 @@ export function ShellSidebarFooter({
   openSettings: (section: SettingsSection) => void;
   openIntegrations: () => void;
   openSkills: () => void;
-  openSpaceChat: (spaceId: string, path: string) => void;
+  /** Omitted on pages without the chat shell, which owns the space-switch lifecycle. */
+  openSpaceChat?: (spaceId: string, path: string) => void;
 }) {
   const { t } = useLingui();
   const userId = useQueryUserId();
@@ -129,23 +130,33 @@ export function ShellSidebarFooter({
         }}
         signingOut={signingOut}
         logOutError={logOutError}
-        organizations={organizations}
+        organizations={openSpaceChat ? organizations : []}
         activeOrganizationId={activeOrganizationId}
-        onSwitchOrganization={(organization) => {
-          setMenuOpen(false);
-          if (organization.id !== activeOrganizationId)
-            void switchOrganization(userId, organization, openSpaceChat);
-        }}
-        onCreateOrganization={() => {
-          setMenuOpen(false);
-          setCreatingOrganization(true);
-        }}
+        onSwitchOrganization={
+          openSpaceChat
+            ? (organization) => {
+                setMenuOpen(false);
+                if (organization.id !== activeOrganizationId)
+                  void switchOrganization(userId, organization, openSpaceChat);
+              }
+            : undefined
+        }
+        onCreateOrganization={
+          openSpaceChat
+            ? () => {
+                setMenuOpen(false);
+                setCreatingOrganization(true);
+              }
+            : undefined
+        }
       />
-      <CreateOrganizationDialog
-        open={creatingOrganization}
-        onOpenChange={setCreatingOrganization}
-        openSpaceChat={openSpaceChat}
-      />
+      {openSpaceChat ? (
+        <CreateOrganizationDialog
+          open={creatingOrganization}
+          onOpenChange={setCreatingOrganization}
+          openSpaceChat={openSpaceChat}
+        />
+      ) : null}
       {referral ? (
         <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />
       ) : null}

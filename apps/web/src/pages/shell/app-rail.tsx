@@ -25,7 +25,7 @@ import {
   writeBotsSidebarCollapsed,
 } from "../../lib/preferences/bots-sidebar-pref";
 import { useQueryUserId } from "../../lib/query/query";
-import { rpc, selectSpace } from "../../lib/query/rpc";
+import { rpc } from "../../lib/query/rpc";
 import { useMediaQuery } from "../../lib/use-media-query";
 import type { ShellOverlay } from "./shell-overlay-url";
 import { withShellOverlay } from "./shell-overlay-url";
@@ -38,6 +38,8 @@ const AppSidebarContext = createContext<{
   setListCollapsed: (collapsed: boolean) => void;
   previewListCollapsed: (collapsed: boolean) => void;
   railWidth: number;
+  railFooterNode: HTMLDivElement | null;
+  setRailFooterNode: (node: HTMLDivElement | null) => void;
 } | null>(null);
 
 /** True when the rail is on screen from the md breakpoint up and holds the window controls there. */
@@ -82,6 +84,7 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
   const railVisible = useMediaQuery("(min-width: 48rem)");
   const [preference, setPreference] = useState<boolean | null>(() => readAppRailExpanded(userId));
   const [listCollapsed, setListCollapsedState] = useState(() => readBotsSidebarCollapsed(userId));
+  const [railFooterNode, setRailFooterNode] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setPreference(readAppRailExpanded(userId));
@@ -113,6 +116,8 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
           setListCollapsed,
           previewListCollapsed,
           railWidth,
+          railFooterNode,
+          setRailFooterNode,
         }}
       >
         <div
@@ -132,6 +137,7 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
               focusChatList();
             }}
             onToggle={toggle}
+            setRailFooterNode={setRailFooterNode}
           />
           <div className="h-full min-h-0 min-w-0 flex-1">
             {/* A page still loading leaves the rail on screen instead of blanking the window. */}
@@ -151,12 +157,14 @@ function PrimaryRail({
   listCollapsed,
   onShowChats,
   onToggle,
+  setRailFooterNode,
 }: {
   boardEnabled: boolean;
   expanded: boolean;
   listCollapsed: boolean;
   onShowChats: () => void;
   onToggle: () => void;
+  setRailFooterNode: (node: HTMLDivElement | null) => void;
 }) {
   const { t } = useLingui();
   const { pathname, search } = useLocation();
@@ -280,13 +288,14 @@ function PrimaryRail({
         />
       </div>
       <div
+        ref={setRailFooterNode}
         data-testid="app-rail-footer"
         className={cn(
           "app-no-drag mt-auto flex w-full flex-col px-3 py-3",
           expanded ? "items-start" : "items-center",
         )}
       >
-        <RailFooter boardEnabled={boardEnabled} />
+        {onChatShell ? null : <RailFooter boardEnabled={boardEnabled} />}
       </div>
     </nav>
   );
@@ -323,10 +332,6 @@ function RailFooter({ boardEnabled }: { boardEnabled: boolean }) {
       openSettings={(section) => openOverlay({ kind: "settings", section, spaceId: null })}
       openIntegrations={() => openOverlay({ kind: "integrations" })}
       openSkills={() => openOverlay({ kind: "skills" })}
-      openSpaceChat={(spaceId, path) => {
-        selectSpace(spaceId);
-        navigate(path);
-      }}
     />
   );
 }
