@@ -89,6 +89,7 @@ const breakdown = {
       totalTokens: model.totalTokens - 12,
       costUsd: model.costUsd - 0.001,
       modelCalls: model.modelCalls - 1,
+      cachedTokens: 0,
     })),
     {
       provider: "retired",
@@ -98,6 +99,7 @@ const breakdown = {
       totalTokens: 12,
       costUsd: 0.001,
       modelCalls: 1,
+      cachedTokens: 0,
     },
   ],
   overTimeUnit: "day",
@@ -203,7 +205,9 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
           ...(filtered
             ? {
                 totals: { ...point, runs: 14, tokensPartial: true },
-                models: [{ provider: "subscription", model: "example-large", ...point }],
+                models: [
+                  { provider: "subscription", model: "example-large", ...point, cachedTokens: 0 },
+                ],
                 overTime: [point],
               }
             : {}),
