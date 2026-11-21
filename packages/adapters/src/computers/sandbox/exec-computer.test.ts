@@ -4,6 +4,37 @@ import { describe, expect, it, vi } from "vitest";
 import type { RawExec } from "./exec-computer.js";
 import { ExecComputer, encodeTarEntry, TarReader } from "./exec-computer.js";
 
+describe("command request env", () => {
+  it("loads request env from stdin and keeps cache env and timeout in argv", async () => {
+    const secret = "super-secret-key";
+    let seen: string[] = [];
+    const exec: RawExec = async function* (_computer, command, _signal, _timeout, stdin) {
+      seen = command;
+      expect(stdin).toBeDefined();
+      const chunks: string[] = [];
+      for await (const chunk of stdin!) chunks.push(chunk.toString());
+      expect(chunks.join("")).toContain("FAKE_TOKEN=");
+      expect(chunks.join("")).toContain(secret);
+      yield { type: "exit", code: 0 };
+    };
+    const computer = new ExecComputer(exec, "test");
+    const context = { signal: new AbortController().signal } as AdapterContext;
+    const ref = { id: "computer-1" } as ComputerRef;
+    for await (const _event of computer.execute(
+      ref,
+      { argv: ["true"], env: { FAKE_TOKEN: secret } },
+      context,
+    )) {
+      // drain
+    }
+    const joined = seen.join(" ");
+    expect(joined).not.toContain(secret);
+    expect(joined).toContain("XDG_CACHE_HOME=/tmp/rakazo-cache/xdg");
+    expect(joined).toContain("timeout");
+    expect(joined).toContain("true");
+  });
+});
+
 describe("reading a file with a size limit", () => {
   it("refuses a file that grew past the limit after its size was checked, by type", async () => {
     const exec: RawExec = async function* (_computer, command) {

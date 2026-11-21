@@ -4,6 +4,7 @@ import {
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import { selectCodingCliTools } from "../../cli-models/coding-cli-tools-select.js";
 import { selectCloudAgentTools } from "../../cloud-agents/cloud-agent-tools-select.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { selectMemoryTools } from "../../memory/memory-tools.js";
@@ -130,6 +131,7 @@ export function selectBuiltinToolsForRun(options: {
   semanticMemoryReflects?: boolean;
   cloudAgentEnabled?: boolean;
   cloudAgentCleanupEnabled?: boolean;
+  codingCliEnabled?: boolean;
   /** The run's user connected a payment wallet. */
   paymentWalletEnabled?: boolean;
   mediaImagesEnabled?: boolean;
@@ -173,24 +175,27 @@ export function selectBuiltinToolsForRun(options: {
     !options.groupId &&
     !options.messagingChannelRun;
   const emailMailbox = Boolean(options.emailInbox) || emailClaimOffered;
-  return selectCloudAgentTools(
-    selectMemoryTools(
-      filterBuiltinToolsForRun(
-        filterBuiltinToolsForThread(
-          filterPageBrowserTools(
-            filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
-            options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
+  return selectCodingCliTools(
+    selectCloudAgentTools(
+      selectMemoryTools(
+        filterBuiltinToolsForRun(
+          filterBuiltinToolsForThread(
+            filterPageBrowserTools(
+              filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+              options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
+            ),
+            options.groupId,
           ),
-          options.groupId,
+          options.trigger,
         ),
-        options.trigger,
+        options.semanticMemoryEnabled,
+        Boolean(options.semanticMemoryForgets),
+        Boolean(options.semanticMemoryReflects),
       ),
-      options.semanticMemoryEnabled,
-      Boolean(options.semanticMemoryForgets),
-      Boolean(options.semanticMemoryReflects),
+      Boolean(options.cloudAgentEnabled),
+      Boolean(options.cloudAgentCleanupEnabled),
     ),
-    Boolean(options.cloudAgentEnabled),
-    Boolean(options.cloudAgentCleanupEnabled),
+    Boolean(options.codingCliEnabled),
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
