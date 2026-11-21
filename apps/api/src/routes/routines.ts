@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
+  firstWatchCheck,
   parseRoutineWatch,
   postRoutineNotice,
   RoutineWatchError,
@@ -25,7 +26,6 @@ import { listRoutineRuns } from "../routines/routine-runs.js";
 import {
   assertRoutineSchedule,
   createRoutineTestRun,
-  firstWatchCheck,
   listRoutinesDto,
   nextRoutineDate,
   routineNextRunAt,

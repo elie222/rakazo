@@ -545,6 +545,13 @@ describe("sign-in retry requests", () => {
     expect(isSignInRetryRequest(error)).toBe(true);
     expect(isTransientModelError(error)).toBe(false);
   });
+
+  it("recognises a sign-in error that carries the OAuth code itself", () => {
+    const error = Object.assign(new Error("Device sign-in failed (status 400)."), {
+      code: "request_failed",
+    });
+    expect(isSignInRetryRequest(error)).toBe(true);
+  });
 });
 
 describe("status codes in long messages", () => {
