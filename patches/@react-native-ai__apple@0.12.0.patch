@@ -1,5 +1,46 @@
+diff --git a/ios/transcription/AppleTranscription.mm b/ios/transcription/AppleTranscription.mm
+index c0f036ce7d9905cf7a54c80199e4d6039f64ef30..54d1d3680463080045f82304d5425df82d3563a4 100644
+--- a/ios/transcription/AppleTranscription.mm
++++ b/ios/transcription/AppleTranscription.mm
+@@ -66,6 +66,19 @@ - (void)installJSIBindingsWithRuntime:(facebook::jsi::Runtime &)rt callInvoker:(
+         
+         auto languageStr = args[1].asString(rt).utf8(rt);
+         NSString *language = [NSString stringWithUTF8String:languageStr.c_str()];
++
++        // Optional words to listen for, such as names the speech model does not know.
++        NSMutableArray<NSString *> *words = [NSMutableArray array];
++        if (count > 2 && args[2].isObject() && args[2].asObject(rt).isArray(rt)) {
++          auto list = args[2].asObject(rt).asArray(rt);
++          for (size_t i = 0; i < list.size(rt); i++) {
++            auto item = list.getValueAtIndex(rt, i);
++            if (item.isString()) {
++              NSString *word = [NSString stringWithUTF8String:item.asString(rt).utf8(rt).c_str()];
++              if (word) [words addObject:word];
++            }
++          }
++        }
+         
+         auto Promise = rt.global().getPropertyAsFunction(rt, "Promise");
+         
+@@ -73,14 +86,14 @@ - (void)installJSIBindingsWithRuntime:(facebook::jsi::Runtime &)rt callInvoker:(
+           rt,
+           jsi::PropNameID::forAscii(rt, "executor"),
+           2,
+-          [transcriptionModule, audioData, language, jsInvoker](jsi::Runtime& rt, const jsi::Value& thisVal, const jsi::Value* args, size_t count) -> jsi::Value {
++          [transcriptionModule, audioData, language, words, jsInvoker](jsi::Runtime& rt, const jsi::Value& thisVal, const jsi::Value* args, size_t count) -> jsi::Value {
+             using ResolveCallback = facebook::react::AsyncCallback<>;
+             using RejectCallback = facebook::react::AsyncCallback<NSString*, NSString*, NSError*>;
+             
+             auto resolve = ResolveCallback(rt, args[0].asObject(rt).asFunction(rt), jsInvoker);
+             auto reject = RejectCallback(rt, args[1].asObject(rt).asFunction(rt), jsInvoker);
+             
+-            [transcriptionModule transcribe:audioData language:language resolve:^(id result) {
++            [transcriptionModule transcribe:audioData language:language words:words resolve:^(id result) {
+               resolve.call([result](jsi::Runtime& rt, jsi::Function& resolveFunc) {
+                 auto jsResult = react::TurboModuleConvertUtils::convertObjCObjectToJSIValue(rt, result);
+                 resolveFunc.call(rt, jsResult);
 diff --git a/ios/transcription/AppleTranscriptionImpl.swift b/ios/transcription/AppleTranscriptionImpl.swift
-index 188371a5f55fadae19187108c4a688569d0223e3..3e1cdd77b0bb8ae6c97a40d29c1854200d931eee 100644
+index 188371a5f55fadae19187108c4a688569d0223e3..2b205a6cb58f89f66231d0a0dd0d08475b671870 100644
 --- a/ios/transcription/AppleTranscriptionImpl.swift
 +++ b/ios/transcription/AppleTranscriptionImpl.swift
 @@ -12,6 +12,11 @@ import UniformTypeIdentifiers
@@ -14,7 +55,43 @@ index 188371a5f55fadae19187108c4a688569d0223e3..3e1cdd77b0bb8ae6c97a40d29c185420
    
    @available(iOS 26, *)
    private func createTranscriber(for locale: Locale) -> SpeechTranscriber {
-@@ -41,7 +46,7 @@ public class AppleTranscriptionImpl: NSObject {
+@@ -24,6 +29,35 @@ public class AppleTranscriptionImpl: NSObject {
+       attributeOptions: preset.attributeOptions
+     )
+   }
++  /// The short-form model that honors taught words, or nil where the locale lacks it.
++  @available(iOS 26, *)
++  private func dictationTranscriber(for locale: Locale) async -> DictationTranscriber? {
++    guard let supported = await DictationTranscriber.supportedLocale(equivalentTo: locale) else { return nil }
++    return DictationTranscriber(
++      locale: supported,
++      contentHints: [],
++      transcriptionOptions: [.punctuation],
++      reportingOptions: [],
++      attributeOptions: [.audioTimeRange]
++    )
++  }
++
++  /// The short-form model, only once it is on the phone, so a transcription never waits on it.
++  @available(iOS 26, *)
++  private func installedDictation(for locale: Locale) async -> DictationTranscriber? {
++    guard let dictation = await dictationTranscriber(for: locale) else { return nil }
++    return await AssetInventory.status(forModules: [dictation]) == .installed ? dictation : nil
++  }
++
++  /// Fetches the short-form model in the background, so taught words work from a later dictation.
++  @available(iOS 26, *)
++  private func installDictation(for locale: Locale) {
++    Task.detached {
++      guard let dictation = await self.dictationTranscriber(for: locale) else { return }
++      try? await AssetInventory.assetInstallationRequest(supporting: [dictation])?.downloadAndInstall()
++    }
++  }
++
+   @objc
+   public func isAvailable(_ language: String) -> Bool {
+     if #available(iOS 26, *) {
+@@ -41,7 +75,7 @@ public class AppleTranscriptionImpl: NSObject {
            let locale = Locale(identifier: language)
            
            guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
@@ -23,11 +100,12 @@ index 188371a5f55fadae19187108c4a688569d0223e3..3e1cdd77b0bb8ae6c97a40d29c185420
              return
            }
            
-@@ -51,16 +56,14 @@ public class AppleTranscriptionImpl: NSObject {
+@@ -51,16 +85,17 @@ public class AppleTranscriptionImpl: NSObject {
            
            switch status {
            case .installed:
 -            resolve(nil)
++            installDictation(for: supportedLocale)
 +            resolve(supportedLocale.identifier)
            case .supported, .downloading:
 -            if let request = try? await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
@@ -37,6 +115,8 @@ index 188371a5f55fadae19187108c4a688569d0223e3..3e1cdd77b0bb8ae6c97a40d29c185420
 -            } else {
 -              resolve(nil)
              }
++            // Only after the model this dictation waits on, so the two never share the download.
++            installDictation(for: supportedLocale)
 +            resolve(supportedLocale.identifier)
            case .unsupported:
 -            reject("AppleTranscription", "Assets not supported for locale: \(supportedLocale.identifier)", nil)
@@ -44,15 +124,23 @@ index 188371a5f55fadae19187108c4a688569d0223e3..3e1cdd77b0bb8ae6c97a40d29c185420
            @unknown default:
              reject ("AppleTranscription", "Unknown asset inventory status", nil)
            }
-@@ -83,57 +86,77 @@ public class AppleTranscriptionImpl: NSObject {
+@@ -74,7 +109,7 @@ public class AppleTranscriptionImpl: NSObject {
+   }
+ 
+   @objc
+-  public func transcribe(_ audioData: Data, language: String, resolve: @escaping ([String: Any]) -> Void, reject: @escaping (String, String, Error?) -> Void) {
++  public func transcribe(_ audioData: Data, language: String, words: [String], resolve: @escaping ([String: Any]) -> Void, reject: @escaping (String, String, Error?) -> Void) {
+     if #available(iOS 26, *) {
+       let tempDirectory = FileManager.default.temporaryDirectory
+       let fileName = UUID().uuidString
+@@ -83,62 +118,144 @@ public class AppleTranscriptionImpl: NSObject {
        do {
          try audioData.write(to: fileURL)
          
 -        guard let audioFile = try? AVAudioFile(forReading: fileURL) else {
 -          reject("AppleTranscription", "Invalid audio data", nil)
-+        let audioFile: AVAudioFile
 +        do {
-+          audioFile = try AVAudioFile(forReading: fileURL)
++          _ = try AVAudioFile(forReading: fileURL)
 +        } catch {
 +          try? FileManager.default.removeItem(at: fileURL)
 +          reject("AppleTranscription", "Invalid audio data", error)
@@ -65,9 +153,9 @@ index 188371a5f55fadae19187108c4a688569d0223e3..3e1cdd77b0bb8ae6c97a40d29c185420
 +          }
 +
            do {
-             let transcriber = createTranscriber(for: Locale(identifier: language))
-             
-             let analyzer = SpeechAnalyzer(modules: [transcriber])
+-            let transcriber = createTranscriber(for: Locale(identifier: language))
+-            
+-            let analyzer = SpeechAnalyzer(modules: [transcriber])
 -            
 -            defer {
 -              try? FileManager.default.removeItem(at: fileURL)
@@ -76,64 +164,33 @@ index 188371a5f55fadae19187108c4a688569d0223e3..3e1cdd77b0bb8ae6c97a40d29c185420
 -            var segments: [[String: Any]] = []
 -            
 -            Task {
-+
-+            let collectorTask = Task { () throws -> [CollectedSegment] in
-+              var segments: [CollectedSegment] = []
-+
-               for try await result in transcriber.results {
-                 if result.isFinal {
+-              for try await result in transcriber.results {
+-                if result.isFinal {
 -                  let segment: [String: Any] = [
 -                    "text": String(result.text.characters),
 -                    "startSecond": CMTimeGetSeconds(result.range.start),
 -                    "endSecond": CMTimeGetSeconds(CMTimeRangeGetEnd(result.range))
 -                  ]
 -                  segments.append(segment)
-+                  segments.append(
-+                    CollectedSegment(
-+                      text: String(result.text.characters),
-+                      startSecond: CMTimeGetSeconds(result.range.start),
-+                      endSecond: CMTimeGetSeconds(CMTimeRangeGetEnd(result.range))
-+                    )
-+                  )
-                 }
-               }
-+
-+              return segments
-             }
+-                }
+-              }
+-            }
 -            
 -            let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile)
 -            
 -            if let lastSampleTime {
 -              try await analyzer.finalizeAndFinish(through: lastSampleTime)
 -            } else {
-+
+-              await analyzer.cancelAndFinishNow()
++            let locale = Locale(identifier: language)
++            let dictation = words.isEmpty ? nil : await installedDictation(for: locale)
++            let result: [String: Any]
 +            do {
-+              let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile)
-+
-+              if let lastSampleTime {
-+                try await analyzer.finalizeAndFinish(through: lastSampleTime)
-+              } else {
-+                await analyzer.cancelAndFinishNow()
-+              }
-+
-+              let segments: [[String: Any]] = try await collectorTask.value.map { segment in
-+                [
-+                  "text": segment.text,
-+                  "startSecond": segment.startSecond,
-+                  "endSecond": segment.endSecond
-+                ]
-+              }
-+              let totalDuration = if let lastSampleTime { CMTimeGetSeconds(lastSampleTime) } else { 0.0 }
-+
-+              resolve([
-+                "segments": segments,
-+                "duration": totalDuration
-+              ])
-+            } catch {
-+              collectorTask.cancel()
-               await analyzer.cancelAndFinishNow()
-+              _ = try? await collectorTask.value
-+              throw error
++              result = try await analyze(fileURL, locale: locale, dictation: dictation, words: words)
++            } catch where dictation != nil {
++              // Taught words only refine the transcript; if the pass with them fails, transcribe
++              // as before rather than lose the recording.
++              result = try await analyze(fileURL, locale: locale, dictation: nil, words: [])
              }
 -            
 -            let totalDuration = if let lastSampleTime { CMTimeGetSeconds(lastSampleTime) } else { 0.0 }
@@ -143,7 +200,7 @@ index 188371a5f55fadae19187108c4a688569d0223e3..3e1cdd77b0bb8ae6c97a40d29c185420
 -              "duration": totalDuration
 -            ]
 -            
--            resolve(result)
+             resolve(result)
            } catch {
              reject("AppleTranscription", "Transcription failed: \(error.localizedDescription)", error)
            }
@@ -153,13 +210,263 @@ index 188371a5f55fadae19187108c4a688569d0223e3..3e1cdd77b0bb8ae6c97a40d29c185420
          reject("AppleTranscription", "Failed to write audio data: \(error.localizedDescription)", error)
        }
      } else {
-@@ -141,4 +164,3 @@ public class AppleTranscriptionImpl: NSObject {
+       reject("AppleTranscription", "Not available on this platform", nil)
      }
    }
- }
--
+-}
+ 
++  /// One SpeechAnalyzer pass over the recording. With `dictation`, that model listens for `words`
++  /// alongside the long-form one, and `TaughtWords` swaps them into the long-form text.
++  @available(iOS 26, *)
++  private func analyze(
++    _ fileURL: URL, locale: Locale, dictation: DictationTranscriber?, words: [String]
++  ) async throws -> [String: Any] {
++    let transcriber = createTranscriber(for: locale)
++    let modules: [any SpeechModule] = [transcriber] + (dictation.map { [$0] } ?? [])
++    let analyzer = SpeechAnalyzer(modules: modules)
++    if dictation != nil {
++      let context = AnalysisContext()
++      context.contextualStrings[.general] = words
++      try await analyzer.setContext(context)
++    }
++
++    let collectorTask = Task { () throws -> (segments: [CollectedSegment], runs: [HeardRun]) in
++      var segments: [CollectedSegment] = []
++      var runs: [HeardRun] = []
++
++      for try await result in transcriber.results {
++        if result.isFinal {
++          runs += Self.heardRuns(result.text, segment: segments.count)
++          segments.append(
++            CollectedSegment(
++              text: String(result.text.characters),
++              startSecond: CMTimeGetSeconds(result.range.start),
++              endSecond: CMTimeGetSeconds(CMTimeRangeGetEnd(result.range))
++            )
++          )
++        }
++      }
++
++      return (segments, runs)
++    }
++    let dictatedTask = dictation.map { dictation in
++      Task { () throws -> [HeardRun] in
++        var runs: [HeardRun] = []
++        for try await result in dictation.results where result.isFinal {
++          runs += Self.heardRuns(result.text, segment: 0)
++        }
++        return runs
++      }
++    }
++
++    do {
++      let lastSampleTime = try await analyzer.analyzeSequence(from: try AVAudioFile(forReading: fileURL))
++
++      if let lastSampleTime {
++        try await analyzer.finalizeAndFinish(through: lastSampleTime)
++      } else {
++        await analyzer.cancelAndFinishNow()
++      }
++
++      var (collected, runs) = try await collectorTask.value
++      // Taught words only refine the transcript; a failed dictation pass keeps it as heard.
++      if let dictated = try? await dictatedTask?.value {
++        runs = TaughtWords.apply(to: runs, dictated: dictated, taught: words)
++        for index in collected.indices {
++          let text = runs.filter { $0.segment == index }.map(\.text).joined()
++          collected[index] = CollectedSegment(
++            text: text,
++            startSecond: collected[index].startSecond,
++            endSecond: collected[index].endSecond
++          )
++        }
++      }
++      let segments: [[String: Any]] = collected.map { segment in
++        [
++          "text": segment.text,
++          "startSecond": segment.startSecond,
++          "endSecond": segment.endSecond
++        ]
++      }
++      let totalDuration = if let lastSampleTime { CMTimeGetSeconds(lastSampleTime) } else { 0.0 }
++
++      return [
++        "segments": segments,
++        "duration": totalDuration
++      ]
++    } catch {
++      collectorTask.cancel()
++      dictatedTask?.cancel()
++      await analyzer.cancelAndFinishNow()
++      _ = try? await collectorTask.value
++      _ = try? await dictatedTask?.value
++      throw error
++    }
++  }
++
++  /// Every run of a result's text, timed where the transcriber reported audio for it.
++  @available(iOS 26, *)
++  private static func heardRuns(_ text: AttributedString, segment: Int) -> [HeardRun] {
++    text.runs.map { run in
++      let range = run.audioTimeRange
++      return HeardRun(
++        text: String(text[run.range].characters),
++        start: range.map { CMTimeGetSeconds($0.start) } ?? -1,
++        end: range.map { CMTimeGetSeconds(CMTimeRangeGetEnd($0)) } ?? -1,
++        segment: segment
++      )
++    }
++  }
++}
+diff --git a/ios/transcription/TaughtWords.swift b/ios/transcription/TaughtWords.swift
+new file mode 100644
+index 0000000000000000000000000000000000000000..a16da901f93d181288aa0d6c3454675303e7a6e4
+--- /dev/null
++++ b/ios/transcription/TaughtWords.swift
+@@ -0,0 +1,128 @@
++import Foundation
++
++/// One run of transcribed text and the audio it was heard in. Runs without a time range
++/// (spacing, punctuation) carry a negative start and are never replaced.
++struct HeardRun: Equatable, Sendable {
++  var text: String
++  let start: Double
++  let end: Double
++  /// The transcriber result the run belongs to, so segments can be rebuilt after a swap.
++  let segment: Int
++}
++
++/// Puts taught words into the long-form transcript. The short-form dictation model honors a
++/// list of words to listen for, but transcribes ordinary speech worse, so it only says where a
++/// taught word was heard: the long-form runs at that time are swapped for it when their
++/// spelling is close, and every other word stays as the long-form model heard it.
++enum TaughtWords {
++  /// Below this, the long-form words at that time are likely a different word, and stay.
++  static let minimumSimilarity = 0.4
++
++  static func apply(to runs: [HeardRun], dictated: [HeardRun], taught: [String]) -> [HeardRun] {
++    var out = runs
++    for heard in taughtWordsHeard(in: dictated, taught: taught) {
++      // Timing narrows the place; spelling picks the runs within it, so a neighbour the
++      // dictation range swallowed stays.
++      let hits = out.indices.filter {
++        guard out[$0].start >= 0 else { return false }
++        let middle = (out[$0].start + out[$0].end) / 2
++        return middle > heard.start && middle < heard.end
++      }
++      var best: (first: Int, last: Int, score: Double)?
++      for first in hits {
++        for last in hits where last >= first {
++          let score = similarity(key(out[first...last].map(\.text).joined()), key(heard.text))
++          if score > (best?.score ?? -1) { best = (first, last, score) }
++        }
++      }
++      guard let best, best.score >= minimumSimilarity else { continue }
++      // Spacing and punctuation around the matched words, such as "(" and ", ", stay as heard;
++      // punctuation the taught word itself starts or ends with (".github") belongs to it.
++      let word = heard.text
++      let joined = out[best.first...best.last].map(\.text).joined()
++      var lead = joined.prefix { $0.isWhitespace || $0.isPunctuation }
++      let leadMarks = lead.drop { $0.isWhitespace }
++      if let owned = (0...leadMarks.count).reversed().first(where: { word.hasPrefix(leadMarks.suffix($0)) }) {
++        lead = lead.dropLast(owned)
++      }
++      let rest = joined.dropFirst(lead.count)
++      var tail = Substring(rest.reversed().prefix { $0.isWhitespace || $0.isPunctuation }.reversed())
++      let tailMarks = tail.prefix { !$0.isWhitespace }
++      if let owned = (0...tailMarks.count).reversed().first(where: { word.hasSuffix(tailMarks.prefix($0)) }) {
++        tail = tail.dropFirst(owned)
++      }
++      let current = rest.dropLast(tail.count)
++      if current == word { continue }
++      // A plain taught word that is also ordinary speech ("Will", "every day") keeps the long-form
++      // casing and spacing; only a styled name ("PlatoChat", "gh-dash") restyles the same letters.
++      if key(String(current)) == key(word) && !isStyled(word) { continue }
++      out.replaceSubrange(
++        best.first...best.last,
++        with: [
++          HeardRun(
++            text: lead + word + tail,
++            start: out[best.first].start,
++            end: out[best.last].end,
++            segment: out[best.first].segment
++          )
++        ]
++      )
++    }
++    return out
++  }
++
++  /// Each taught word or phrase the dictation model heard, with the audio it spans. A phrase
++  /// such as a full name can arrive as one run per word, so the longest match wins.
++  static func taughtWordsHeard(in dictated: [HeardRun], taught: [String]) -> [HeardRun] {
++    let byKey = Dictionary(taught.map { (key($0), $0) }, uniquingKeysWith: { first, _ in first })
++    // A taught word can arrive split into pieces ("GH" + "Dash"), and a phrase one run per word.
++    let longest = taught.map { $0.split(whereSeparator: \.isWhitespace).count }.max().map { $0 + 3 } ?? 1
++    let timed = dictated.filter { $0.start >= 0 && !key($0.text).isEmpty }
++    var found: [HeardRun] = []
++    var index = 0
++    while index < timed.count {
++      var length = min(longest, timed.count - index)
++      while length > 0 {
++        let span = timed[index..<index + length]
++        if let word = byKey[key(span.map(\.text).joined())] {
++          found.append(HeardRun(text: word, start: span.first!.start, end: span.last!.end, segment: 0))
++          break
++        }
++        length -= 1
++      }
++      index += max(length, 1)
++    }
++    return found
++  }
++
++  /// Written in a way speech alone does not give: punctuation, or a capital inside the word.
++  static func isStyled(_ word: String) -> Bool {
++    let characters = Array(word)
++    return characters.contains { $0.isPunctuation }
++      || zip(characters, characters.dropFirst()).contains { $0.isLowercase && $1.isUppercase }
++  }
++
++  /// Letters and digits only, lowercased: "GH Dash", "gh-dash" and "ghdash" are one key.
++  static func key(_ text: String) -> String {
++    String(text.lowercased().filter { $0.isLetter || $0.isNumber })
++  }
++
++  /// One minus the edit distance over the longer length: 1 is the same, 0 shares nothing.
++  static func similarity(_ a: String, _ b: String) -> Double {
++    let a = Array(a), b = Array(b)
++    if a.isEmpty || b.isEmpty { return 0 }
++    var previous = Array(0...b.count)
++    for i in 1...a.count {
++      var current = [i] + Array(repeating: 0, count: b.count)
++      for j in 1...b.count {
++        current[j] = min(
++          previous[j] + 1,
++          current[j - 1] + 1,
++          previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)
++        )
++      }
++      previous = current
++    }
++    return 1 - Double(previous[b.count]) / Double(max(a.count, b.count))
++  }
++}
+diff --git a/lib/module/NativeAppleTranscription.js b/lib/module/NativeAppleTranscription.js
+index 23dba3e51dc635c5928f971401ef02c695b4b585..6ab43f47df6ec3417cf02efcafe3273d85e8e9f2 100644
+--- a/lib/module/NativeAppleTranscription.js
++++ b/lib/module/NativeAppleTranscription.js
+@@ -3,7 +3,7 @@
+ import { TurboModuleRegistry } from 'react-native';
+ const NativeAppleTranscription = TurboModuleRegistry.getEnforcing('NativeAppleTranscription');
+ export default {
+-  transcribe: (data, language) => globalThis.__apple__llm__transcribe__(data, language),
++  transcribe: (data, language, words) => globalThis.__apple__llm__transcribe__(data, language, words),
+   prepare: NativeAppleTranscription.prepare,
+   isAvailable: NativeAppleTranscription.isAvailable
+ };
 diff --git a/lib/typescript/NativeAppleTranscription.d.ts b/lib/typescript/NativeAppleTranscription.d.ts
-index 985b6b3593a884c41d689346be9d73d86c55eae1..86e7936f23a8673d099f7fe18af9a31abae5a13a 100644
+index 985b6b3593a884c41d689346be9d73d86c55eae1..bd4902a980d9370a9719528798499cf5145ba189 100644
 --- a/lib/typescript/NativeAppleTranscription.d.ts
 +++ b/lib/typescript/NativeAppleTranscription.d.ts
 @@ -10,14 +10,14 @@ export interface TranscriptionResult {
@@ -170,20 +477,22 @@ index 985b6b3593a884c41d689346be9d73d86c55eae1..86e7936f23a8673d099f7fe18af9a31a
 +    prepare(language: string): Promise<string>;
  }
  declare global {
-     function __apple__llm__transcribe__(data: ArrayBufferLike, language: string): Promise<TranscriptionResult>;
+-    function __apple__llm__transcribe__(data: ArrayBufferLike, language: string): Promise<TranscriptionResult>;
++    function __apple__llm__transcribe__(data: ArrayBufferLike, language: string, words?: string[]): Promise<TranscriptionResult>;
  }
  declare const _default: {
-     transcribe: (data: ArrayBufferLike, language: string) => Promise<TranscriptionResult>;
+-    transcribe: (data: ArrayBufferLike, language: string) => Promise<TranscriptionResult>;
 -    prepare: (language: string) => Promise<void>;
++    transcribe: (data: ArrayBufferLike, language: string, words?: string[]) => Promise<TranscriptionResult>;
 +    prepare: (language: string) => Promise<string>;
      isAvailable: (language: string) => boolean;
  };
  export default _default;
 diff --git a/src/NativeAppleTranscription.ts b/src/NativeAppleTranscription.ts
-index 13332a0176000b60b6f6f043de681db55a7b4bef..5389fb4b3a53de48721c307d2145b6770624c852 100644
+index 13332a0176000b60b6f6f043de681db55a7b4bef..19eea67b01012dca584e408624ce2089dccf2adf 100644
 --- a/src/NativeAppleTranscription.ts
 +++ b/src/NativeAppleTranscription.ts
-@@ -14,7 +14,7 @@ export interface TranscriptionResult {
+@@ -14,13 +14,14 @@ export interface TranscriptionResult {
  
  export interface Spec extends TurboModule {
    isAvailable(language: string): boolean
@@ -192,3 +501,22 @@ index 13332a0176000b60b6f6f043de681db55a7b4bef..5389fb4b3a53de48721c307d2145b677
  }
  
  declare global {
+   function __apple__llm__transcribe__(
+     data: ArrayBufferLike,
+-    language: string
++    language: string,
++    words?: string[]
+   ): Promise<TranscriptionResult>
+ }
+ 
+@@ -29,8 +30,8 @@ const NativeAppleTranscription = TurboModuleRegistry.getEnforcing<Spec>(
+ )
+ 
+ export default {
+-  transcribe: (data: ArrayBufferLike, language: string) =>
+-    globalThis.__apple__llm__transcribe__(data, language),
++  transcribe: (data: ArrayBufferLike, language: string, words?: string[]) =>
++    globalThis.__apple__llm__transcribe__(data, language, words),
+   prepare: NativeAppleTranscription.prepare,
+   isAvailable: NativeAppleTranscription.isAvailable,
+ }

@@ -5,6 +5,7 @@ import {
   requestDeadline,
   VOICE_RESPONSE_TIMEOUT_MS,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, AppState } from "react-native";
@@ -23,6 +24,9 @@ import { QUIET_LEVELS, withLevel } from "./dictation-levels";
 
 /** A pause long enough to think in; one this long, or a mic that never hears anything, ends it. */
 const DICTATION_PAUSE_MS = 30_000;
+
+/** A short wait: a slow server must not hold up words already recorded. */
+const WORDS_TIMEOUT_MS = 3_000;
 
 /** `preparing`: the phone readies its speech model before the mic opens; a tap still cancels. */
 export type ComposerDictationStatus = "idle" | "preparing" | "listening" | "transcribing";
@@ -173,6 +177,14 @@ export function useComposerDictation({
     if (session.current !== mine) return;
     if (transcribe) {
       if (!(await goLive(mine))) return;
+      // Names to listen for load while the person speaks; without them it still transcribes.
+      const words = bestEffort(
+        "load dictation words",
+        rpc("voice/words", undefined, {
+          timeoutMs: WORDS_TIMEOUT_MS,
+          signal: mine.cancel.signal,
+        }),
+      );
       const stopped = new AbortController();
       mine.finish = () => {
         stopped.abort();
@@ -191,7 +203,9 @@ export function useComposerDictation({
         if (session.current !== mine) return;
         markTranscribing(mine);
         mine.finish = () => {};
-        const text = await transcribe(audio.uri);
+        const taught = (await words)?.words ?? [];
+        if (session.current !== mine) return;
+        const text = await transcribe(audio.uri, taught);
         if (end(mine) && text) onWordsRef.current(text);
       } finally {
         deleteQuietly(audio.uri);

@@ -135,6 +135,8 @@ export const modelsRpc = {
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
     status: oc.input(settingsScopeInput.optional()).output(VoiceStatusSchema),
+    /** Names the phone's recognizer listens for when dictating; they never leave the phone. */
+    words: oc.output(z.object({ words: z.array(z.string()) })),
     credentials: oc.input(settingsScopeInput.optional()).output(z.array(VoiceCredentialSchema)),
     connect: oc
       .input(

@@ -58,3 +58,34 @@ export async function withNewestThreadMessages<T extends { thread: { id: string 
       : null,
   }));
 }
+
+/**
+ * The newest `perThread` messages of a member's own chats in `spaceIds` that were written to most
+ * recently, skipping background helper threads, in two indexed reads.
+ */
+export async function newestMessagesOfActiveThreads(
+  prisma: PrismaClient,
+  owner: { userId: string; spaceIds: string[] },
+  threadCount: number,
+  perThread: number,
+): Promise<SidebarPreviewMessage[]> {
+  if (owner.spaceIds.length === 0) return [];
+  const active = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT t.id
+    FROM threads t
+    CROSS JOIN LATERAL (
+      SELECT "createdAt" FROM messages WHERE "threadId" = t.id ORDER BY seq DESC LIMIT 1
+    ) m
+    WHERE t."spaceId" = ANY(${owner.spaceIds}::text[])
+      AND t."userId" = ${owner.userId}
+      AND t."helperBotId" IS NULL
+    ORDER BY m."createdAt" DESC
+    LIMIT ${threadCount}
+  `);
+  const loaded = await withNewestThreadMessages(
+    prisma,
+    active.map((row) => ({ thread: { id: row.id } })),
+    perThread,
+  );
+  return loaded.flatMap((row) => row.thread?.messages ?? []);
+}

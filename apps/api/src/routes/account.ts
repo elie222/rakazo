@@ -79,6 +79,7 @@ import {
   startModelConnect,
 } from "../models/model-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
+import { dictationWords } from "../voice/dictation-words.js";
 import type { RouterContext } from "./context.js";
 import { HEARTBEAT, meDto, mergeStreams, withHeartbeats } from "./shared.js";
 
@@ -599,6 +600,9 @@ export function accountRoutes(ctx: RouterContext) {
       status: authed.voice.status.handler(async ({ context, input }) => {
         return effectiveVoiceStatus(deps, context.actor, input?.scope);
       }),
+      words: authed.voice.words.handler(async ({ context }) => ({
+        words: await dictationWords(deps.prisma, context.actor),
+      })),
       credentials: authed.voice.credentials.handler(async ({ context, input }) => {
         const target = await voicePreferenceTarget(deps.prisma, context.actor, input?.scope);
         const [rows, preferences] = await Promise.all([

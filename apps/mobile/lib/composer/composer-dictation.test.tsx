@@ -236,16 +236,19 @@ it("records until the second tap, then transcribes on the phone in one pass", as
   expect(container.textContent).toBe("listening");
   await act(async () => toggle());
   await vi.waitFor(() => expect(words).toEqual(["Pick up milk, then call Sam."]));
-  expect(transcribe).toHaveBeenCalledWith("file:///clip.m4a");
+  expect(transcribe).toHaveBeenCalledWith("file:///clip.m4a", []);
   expect(voice.deleteQuietly).toHaveBeenCalledWith("file:///clip.m4a");
   expect(dictation.listen).not.toHaveBeenCalled();
 });
 
-it("dictates on the phone at full quality even when a hosted voice reads replies", async () => {
+it("dictates on the phone at full quality with taught words, even when a hosted voice reads replies", async () => {
   const { resolveVoiceCallPlan } = await import("../calls/voice-call-entry");
   const dictation = await import("../voice/dictation");
+  const { rpc } = await import("../api/api");
+  vi.mocked(rpc).mockResolvedValueOnce({ words: ["Rakazo", "gh-dash"] });
   // The default mocks: device voice off, a provider that transcribes.
-  voice.appleTranscriber.mockResolvedValueOnce(vi.fn(async () => "Ship it on Thursday."));
+  const transcribe = vi.fn(async () => "Ship it on Thursday.");
+  voice.appleTranscriber.mockResolvedValueOnce(transcribe);
   voice.recordAudio.mockImplementationOnce(
     async (_cancel: AbortSignal, until: AbortSignal, options?: { onRecording?: () => void }) => {
       options?.onRecording?.();
@@ -258,6 +261,9 @@ it("dictates on the phone at full quality even when a hosted voice reads replies
   expect(voice.recordAudio.mock.calls[0]?.[2]).toMatchObject({ onDevice: true });
   await act(async () => toggle());
   await vi.waitFor(() => expect(words).toEqual(["Ship it on Thursday."]));
+  // The phone listens for the names the server knows this person uses.
+  expect(rpc).toHaveBeenCalledWith("voice/words", undefined, expect.anything());
+  expect(transcribe).toHaveBeenCalledWith("file:///clip.m4a", ["Rakazo", "gh-dash"]);
   expect(resolveVoiceCallPlan).not.toHaveBeenCalled();
   expect(voice.recordClip).not.toHaveBeenCalled();
   expect(dictation.available).not.toHaveBeenCalled();

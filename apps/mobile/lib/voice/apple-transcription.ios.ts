@@ -7,7 +7,7 @@ import { File } from "expo-file-system";
  */
 export async function appleTranscriber(
   lang: string,
-): Promise<((uri: string) => Promise<string>) | null> {
+): Promise<((uri: string, words: string[]) => Promise<string>) | null> {
   if (!AppleTranscription.isAvailable(lang)) return null;
   // isAvailable ignores the language. prepare rejects one SpeechAnalyzer lacks, so the live
   // recognizer takes it, and otherwise names the locale whose model it installed. Builds from
@@ -17,8 +17,14 @@ export async function appleTranscriber(
     () => null,
   );
   if (!locale) return null;
-  return async (uri) => {
-    const result = await AppleTranscription.transcribe(await new File(uri).arrayBuffer(), locale);
+  // `words` are names to listen for, such as bots and repositories. A build from before the
+  // patch that reads them ignores the extra argument and transcribes as before.
+  return async (uri, words) => {
+    const result = await AppleTranscription.transcribe(
+      await new File(uri).arrayBuffer(),
+      locale,
+      words,
+    );
     return result.segments
       .map((segment) => segment.text)
       .join(" ")

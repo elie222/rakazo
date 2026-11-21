@@ -48,6 +48,13 @@ collecting final segments finished, so the last words of a dictation could be
 lost, and it built its transcriber from the raw language tag rather than the
 locale `prepare` installed. The patch awaits the collector, returns the
 supported locale from `prepare`, and cleans up the temporary audio file on every
-path. Ported from T3 Code's patch for the same release. Drop only once an
-upgrade both awaits the results collector and returns the supported locale
-from `prepare`.
+path. Ported from T3 Code's patch for the same release.
+
+It also teaches dictation the person's own names: `transcribe` takes an optional
+word list, and when the short-form dictation model is installed, one pass runs it
+alongside the long-form transcriber with the words as contextual strings.
+`TaughtWords.swift` swaps each taught word it heard into the long-form text, and
+a failed pass retries without words. `prepare` fetches that model in the
+background. Drop only once an upgrade awaits the results collector, returns the
+supported locale from `prepare`, and gives the long-form transcript a word list
+of its own.

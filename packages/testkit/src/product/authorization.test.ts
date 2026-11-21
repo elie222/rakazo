@@ -549,6 +549,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["search/query", { q: "anything" }],
       ["voice/catalog"],
       ["voice/status"],
+      ["voice/words"],
       ["voice/credentials"],
       ["voice/connect", { provider: "elevenlabs", apiKey: "not-a-real-key" }],
       ["voice/disconnect", { provider: "elevenlabs" }],
