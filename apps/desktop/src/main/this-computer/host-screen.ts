@@ -12,6 +12,8 @@ import {
 import { createCuaHostScreen, cuaDriverConnector } from "@rakazo/adapters/cua-host-screen";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { HostScreenError } from "@rakazo/adapters/host-screen";
+import type { AppAccessibility } from "./app-accessibility/app-accessibility.js";
+import { isNamed, userProcesses } from "./app-accessibility/processes.js";
 
 export const SCREEN_LOCKED_MESSAGE =
   "The user's screen is locked, so their apps can't be seen or used. Ask them to unlock it, then try again.";
@@ -63,20 +65,30 @@ export const SCREEN_DRIVER_RELEASES = {
     driver: "agent-desktop.exe",
     driverSha256: "409e58cbdd6aed47e29771ffa60bc122a9843505a227af488cded85215943988",
   },
+  // The desktop ships for x64 Linux only.
+  linux: {
+    url: "https://github.com/vercel-labs/agent-desktop/releases/download/v1.0.2/agent-desktop-v1.0.2-x86_64-unknown-linux-gnu.tar.gz",
+    sha256: "ad661b7a3fd8f990a769243f4889a240ca0e2c8dab3ef5bddd6019086c71e0b4",
+    driver: "agent-desktop",
+    driverSha256: "05427281a6746489bc0e15c16698a70a86322125c76c7a9e2f4c2d7a12bf7c5b",
+  },
 } satisfies Partial<Record<NodeJS.Platform, ScreenDriverRelease>>;
 
 /** The screen driver this platform runs, if it has one. */
 export function screenDriverRelease(platform: NodeJS.Platform): ScreenDriverRelease | undefined {
-  return platform === "darwin" || platform === "win32"
+  return platform === "darwin" || platform === "win32" || platform === "linux"
     ? SCREEN_DRIVER_RELEASES[platform]
     : undefined;
 }
 
-// Both ship bsdtar: macOS in /usr/bin, Windows 10 1803 and later in System32.
+// macOS and Windows 10 1803 and later ship bsdtar (macOS in /usr/bin, Windows in System32).
+// Linux distributions ship GNU tar, which takes the same arguments, but not always in /usr/bin.
 const TAR =
   process.platform === "win32"
     ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
-    : "/usr/bin/tar";
+    : process.platform === "linux"
+      ? "tar"
+      : "/usr/bin/tar";
 
 async function fileSha256(file: string) {
   try {
@@ -142,6 +154,11 @@ export function screenDriverInstaller(options: {
   };
 }
 
+/** Whether this user runs a process named `name` in this login session. */
+export async function runningProcessNamed(name: string, proc = "/proc"): Promise<boolean> {
+  return (await userProcesses(proc)).some((running) => isNamed(running, name));
+}
+
 /**
  * Windows antivirus briefly holds a new executable open to scan it, which refuses a rename of
  * its folder until the scan ends.
@@ -158,18 +175,21 @@ async function renameSoon(from: string, to: string) {
   }
 }
 
-/** Screen control for this Mac or Windows PC, or undefined on other platforms. */
+/** Screen control for this Mac, Windows or Linux computer, or undefined on other platforms. */
 export function createDesktopHostScreen(options: {
   platform: NodeJS.Platform;
   /** Resolves to the driver executable, fetching it first if needed. */
   driver: () => Promise<string>;
   home: string;
-  /** macOS only: Windows asks no permission to read and drive apps at the user's own level. */
+  /** macOS only: Windows and Linux ask no permission to read and drive apps at the user's own level. */
   permissions: ScreenPermissionApi;
   /** A locked screen hides every window, so apps opened behind it show none. */
   locked: () => boolean;
   fitImage?: AgentDesktopHostScreenOptions["fitImage"];
+  /** Linux only: finds apps by launcher name and helps the user open up ones that stay hidden. */
+  accessibility?: Pick<AppAccessibility, "aliases" | "explain">;
 }): HostScreen | undefined {
+  const { accessibility } = options;
   let screen: HostScreen;
   if (options.platform === "darwin")
     screen = createCuaHostScreen({
@@ -178,13 +198,30 @@ export function createDesktopHostScreen(options: {
       permissions: () => ensureScreenPermissions(options.permissions),
       selfPid: process.pid,
     });
-  else if (options.platform === "win32")
+  else if (options.platform === "win32" || options.platform === "linux") {
+    const system = options.platform === "linux" ? "Linux" : "Windows";
     screen = createAgentDesktopHostScreen({
-      run: agentDesktopCli({ command: options.driver, home: options.home }),
+      run: agentDesktopCli({ command: options.driver, home: options.home, system }),
+      system,
+      ...(system === "Linux"
+        ? {
+            running: (app: string) => runningProcessNamed(app),
+            processIds: async (app: string) =>
+              (await userProcesses())
+                .filter((running) => isNamed(running, app))
+                .map((running) => running.pid),
+            ...(accessibility
+              ? {
+                  aliases: (app: string) => accessibility.aliases(app),
+                  unreadable: (app: string, message: string) => accessibility.explain(app, message),
+                }
+              : {}),
+          }
+        : {}),
       selfPid: process.pid,
       fitImage: options.fitImage,
     });
-  else return undefined;
+  } else return undefined;
   const unlocked = () => {
     if (options.locked()) throw new HostScreenError(SCREEN_LOCKED_MESSAGE);
   };
