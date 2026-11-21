@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { MeetingCalendarUpcoming } from "@rakazo/contracts";
+import type { AppBootstrap, MeetingCalendarUpcoming } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, signup } from "../helpers/helpers";
 
 test("a CalDAV calendar can be configured with an app password", async ({ page }, testInfo) => {
@@ -10,6 +10,19 @@ test("a CalDAV calendar can be configured with an app password", async ({ page }
     signIn: "password",
     events: [],
   };
+  await page.route("**/rpc/bootstrap", async (route) => {
+    const response = await route.fetch();
+    if (!response.ok()) {
+      await route.fulfill({ response });
+      return;
+    }
+    const body: { json: AppBootstrap } = await response.json();
+    body.json.me.meetingsEnabled = true;
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/meetings/list", (route) =>
+    route.fulfill({ json: { json: { enabled: true, meetings: [] } } }),
+  );
   await page.route("**/rpc/meetingCalendar/status", (route) =>
     route.fulfill({ json: { json: { available: true } } }),
   );
