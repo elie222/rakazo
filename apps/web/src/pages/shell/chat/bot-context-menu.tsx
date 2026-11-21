@@ -17,6 +17,7 @@ import {
   Check,
   Clock,
   Copy,
+  Download,
   Eraser,
   Folder,
   FolderPlus,
@@ -42,6 +43,7 @@ export function BotContextMenu({
   onSnooze,
   onEdit,
   onDuplicate,
+  onExportChat,
   onClear,
   onArchive,
   onDelete,
@@ -60,6 +62,7 @@ export function BotContextMenu({
   onSnooze: (until: string | null) => void;
   onEdit: () => void;
   onDuplicate: () => void;
+  onExportChat: () => void;
   onClear: () => void;
   onArchive: () => void;
   onDelete: () => void;
@@ -157,6 +160,10 @@ export function BotContextMenu({
       <ContextMenuItem onClick={onDuplicate}>
         <Copy />
         {t`Duplicate`}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={onExportChat}>
+        <Download />
+        {t`Export chat`}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem onClick={onClear}>

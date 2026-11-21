@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { VoiceChatGroup } from "@rakazo/core";
 import {
+  callDurationText,
   callRequestBlock,
   speechFromBlocks,
   voiceChatDuration,
@@ -31,7 +32,7 @@ export function VoiceChatCard({
   /** Present when the bot placed this call; the card then follows the call's outcome. */
   const request = callRequestBlock(group.messages[0]?.blocks);
   const seconds = voiceChatDuration(group);
-  const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const duration = callDurationText(seconds);
   // Re-render at the ring's end so the card turns missed without waiting for the server.
   const [now, setNow] = useState(() => Date.now());
   const ringEnd = request?.status === "ringing" ? request.expiresAt : undefined;

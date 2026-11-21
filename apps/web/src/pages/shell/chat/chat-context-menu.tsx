@@ -1,13 +1,28 @@
+import { useLingui } from "@lingui/react/macro";
+import { ORPCError } from "@orpc/client";
 import type { Bot, BotSection, Group } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
-import { ContextMenu } from "@rakazo/ui-web";
+import { isConnectionFailure } from "@rakazo/core/user-error";
+import { ContextMenu, toast } from "@rakazo/ui-web";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Suspense, useEffect } from "react";
 import { lazyOverlay } from "../../../components/ErrorBoundary";
+import {
+  approvalActionLabel,
+  onboardingFocusOptionLabel,
+  onboardingFocusQuestion,
+} from "../../../components/messages/card-wording";
+import { reportClientError } from "../../../lib/platform/monitoring";
+import { importChunk } from "../../../lib/platform/preload-recovery";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import type { ShellDialogsState } from "../shell-dialogs";
 import type { SnoozeChat } from "../sidebar/use-chat-snooze";
+import { useRoutineEventLabel } from "./routine-event-row";
+import { resolveTranscriptMemberName } from "./transcript-member-name";
 import type { useChatRead } from "./use-chat-read";
+
+/** Ids of the chats whose export is still reading their history, so each runs once at a time. */
+const exportingChats = new Set<string>();
 
 const BotContextMenu = lazyOverlay(() =>
   import("./bot-context-menu").then((module) => module.BotContextMenu),
@@ -70,6 +85,9 @@ export function ChatContextMenu({
   rpc,
   bot,
   group,
+  bots,
+  archivedBots,
+  meId,
   sections,
   spaceId,
   onClose,
@@ -83,6 +101,11 @@ export function ChatContextMenu({
   rpc: ReturnType<typeof createSpaceRpc>;
   bot: Bot | undefined;
   group: Group | undefined;
+  /** The Space's bots and archived bots, to name group messages from bots that left the group. */
+  bots: readonly Bot[];
+  archivedBots: readonly Bot[];
+  /** The signed-in person, so their own messages read as "You" as the chat shows them. */
+  meId?: string;
   sections: BotSection[];
   spaceId: string | undefined;
   onClose: () => void;
@@ -93,6 +116,8 @@ export function ChatContextMenu({
   openChatSettings: (kind: "bot" | "group", id: string) => void;
   navigate: (path: string) => void;
 }) {
+  const { t, i18n } = useLingui();
+  const routineEvent = useRoutineEventLabel();
   const chat = bot ?? group;
   if (!chat) return null;
   const target = bot
@@ -158,6 +183,126 @@ export function ChatContextMenu({
           await refreshBots();
           navigate(bot ? `/app/${copy.id}` : `/app/g/${copy.id}`);
         });
+      }}
+      onExportChat={() => {
+        onClose();
+        const exportId = `chat-export-${target.chat.id}`;
+        // A second click while this chat's history is still being read would read it all again.
+        if (exportingChats.has(exportId)) return;
+        exportingChats.add(exportId);
+        toast.loading(t`Exporting chat…`, { id: exportId });
+        // A chat past the page limit gets the generic failure, but it is not reported as a bug.
+        let tooLong = false;
+        const run = async () => {
+          // Loaded on click: the transcript writer is not needed until someone exports.
+          const { exportChat, ChatTooLongError } = await importChunk(
+            () => import("../../../lib/chat/export-chat"),
+          );
+          await exportChat({
+            rpc,
+            target,
+            labels: {
+              you: t`You`,
+              system: t`System`,
+              routineEvent,
+              ask: {
+                answer: t`Answer`,
+                expired: t`Expired`,
+                more: (count) => t`${count} more`,
+                total: t`Total`,
+                onTheButton: t`On the button`,
+                to: t`To`,
+                subject: t`Subject`,
+                updateInstructions: t`Update instructions?`,
+                instructionsUpdated: t`Instructions updated`,
+                settingsUpdated: t`Settings updated`,
+                readFromPage: t`Read from the page, not checked`,
+                buttonReadFromPage: (button) =>
+                  t`Button “${button}”. Read from the page, not checked`,
+                approved: t`Approved`,
+                discarded: t`Discarded`,
+                commandVariable: t`Command variable`,
+                codeFrom: (host) => t`Only enter a code ${host} sent you.`,
+                answered: t`Answered`,
+                created: t`Created`,
+                cancelled: t`Cancelled`,
+                allowedInSpace: t`Allowed in this space`,
+                allowedOnce: t`Allowed once`,
+                alwaysAllowed: t`Always allowed`,
+                denied: t`Denied`,
+                answeredWith: (answer) => t`Answered: ${answer}`,
+                actionLabel: approvalActionLabel,
+              },
+              status: {
+                saved: t`Saved`,
+                sent: t`Sent`,
+                dismissed: t`Dismissed`,
+                running: t`Running`,
+                completed: t`Completed`,
+                failed: t`Failed`,
+                stopped: t`Stopped`,
+                archived: t`archived`,
+                deleted: t`deleted`,
+                setupComplete: t`Setup complete`,
+                phoneCall: t`Phone call`,
+                incomingCall: t`Incoming call`,
+                callingYou: t`Calling you…`,
+                missedCall: t`Missed call`,
+                youDeclined: t`You declined`,
+                connected: t`Connected`,
+                declined: t`Declined`,
+                needsYou: t`Needs you`,
+                skipped: t`Skipped`,
+                done: t`Done`,
+                cloudAgent: {
+                  running: t`running`,
+                  finished: t`finished`,
+                  failed: t`failed`,
+                  cancelled: t`cancelled`,
+                  expired: t`expired`,
+                },
+              },
+              cards: {
+                computer: t`Computer`,
+                pullRequest: t`Pull request`,
+                connectMcpServer: (name) => t`Connect MCP server “${name}”`,
+                draftSkill: t`Draft skill`,
+                skillName: t`Name`,
+                whenToUse: t`When to use`,
+                inputs: t`Inputs`,
+                steps: t`Steps`,
+                howToCheck: t`How to check`,
+                whatToReturn: t`What to return`,
+                approvalBoundaries: t`Approval boundaries`,
+                failureHandling: t`Failure handling`,
+                choiceQuestion: onboardingFocusQuestion,
+                choiceOption: onboardingFocusOptionLabel,
+              },
+              bot: t`bot`,
+              attachment: t`Attachment`,
+            },
+            meId,
+            time: (createdAt) =>
+              i18n.date(new Date(createdAt), { dateStyle: "medium", timeStyle: "short" }),
+            memberName: (botId) =>
+              resolveTranscriptMemberName({ botId, members: group?.members, bots, archivedBots }),
+          }).catch((error: unknown) => {
+            tooLong = error instanceof ChatTooLongError;
+            throw error;
+          });
+        };
+        void run()
+          .catch((error: unknown) => {
+            // The API logs its own failures, and a dropped connection is the network, not a bug.
+            if (!(error instanceof ORPCError) && !tooLong && !isConnectionFailure(error)) {
+              reportClientError(error, "chat.export");
+            }
+            toast.error(t`Could not export chat`);
+          })
+          .finally(() => {
+            exportingChats.delete(exportId);
+            toast.dismiss(exportId);
+          });
       }}
       onClear={() => {
         dialogs.setClearTarget(target);
