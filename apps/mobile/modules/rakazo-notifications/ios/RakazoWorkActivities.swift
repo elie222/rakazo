@@ -53,17 +53,11 @@ final class WorkActivities {
     Task { @MainActor [weak self] in
       for await activity in Activity<WorkActivityAttributes>.activityUpdates {
         guard let self else { return }
-        // One card for all of the user's work: one started by push as this phone started its own
-        // goes again, and the card the server already follows stays.
-        let others = Activity<WorkActivityAttributes>.activities.filter {
-          $0.id != activity.id && $0.activityState == .active && !self.ending.contains($0.id)
-        }
-        if !others.isEmpty {
-          self.ending.insert(activity.id)
-          await activity.end(nil, dismissalPolicy: .immediate)
-          self.ending.remove(activity.id)
-          continue
-        }
+        guard activity.activityState == .active, !self.ending.contains(activity.id) else { continue }
+        // One card for all of the user's work, and the newest stays: the server starts one only
+        // on a phone where it follows none, so a card already here is out of its reach, such as one
+        // it started while the app could not run to hand over its token. Nothing would end it.
+        self.endOthers(than: activity)
         self.watch(activity)
       }
     }
@@ -78,9 +72,13 @@ final class WorkActivities {
   /// work, such as when the app opens after its last update went missing. False with no card.
   @discardableResult
   func refresh() -> Bool {
-    guard let current = Activity<WorkActivityAttributes>.activities.first(where: {
+    // iOS lists cards oldest first, so the newest stays. Either way the server follows the one kept
+    // from its token and brings it up to date.
+    guard let current = Activity<WorkActivityAttributes>.activities.last(where: {
       $0.activityState == .active && !ending.contains($0.id)
     }) else { return false }
+    // Cards left from work the server could not follow would show it forever.
+    endOthers(than: current)
     if let token = current.pushToken, let onToken {
       request += 1
       onToken(hex(token), request)
@@ -88,6 +86,18 @@ final class WorkActivities {
     // A card from an earlier launch may still change its token.
     watch(current)
     return true
+  }
+
+  /// Ends every card but `kept` straight away.
+  private func endOthers(than kept: Activity<WorkActivityAttributes>) {
+    for other in Activity<WorkActivityAttributes>.activities
+    where other.id != kept.id && other.activityState == .active && !ending.contains(other.id) {
+      ending.insert(other.id)
+      Task { @MainActor [weak self] in
+        await other.end(nil, dismissalPolicy: .immediate)
+        self?.ending.remove(other.id)
+      }
+    }
   }
 
   private func watch(_ activity: Activity<WorkActivityAttributes>) {
