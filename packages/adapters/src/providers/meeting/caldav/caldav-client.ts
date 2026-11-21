@@ -44,7 +44,9 @@ export class CalDavProtocolError extends Error {
 
 const parser = new XMLParser({
   removeNSPrefix: true,
-  ignoreAttributes: true,
+  // Keep attributes: supported components are named in <comp name="VEVENT"/>.
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
   parseTagValue: false,
   trimValues: true,
   // Servers often escape the CR of iCalendar line endings as a character reference.
@@ -162,7 +164,7 @@ export class CalDavClient {
       const components = asArray(asNode(props["supported-calendar-component-set"])?.comp);
       // Without the property, a calendar accepts every component type.
       const names = components.map((component) =>
-        String(asNode(component)?.name ?? "").toUpperCase(),
+        String(asNode(component)?.["@_name"] ?? "").toUpperCase(),
       );
       if (components.length && !names.includes("VEVENT")) continue;
       // Each request goes through the same address checks, wherever the server points.

@@ -107,7 +107,8 @@ function fakeServer(password = "app-password") {
           response("/123/calendars/", "<d:resourcetype><d:collection/></d:resourcetype>"),
           response(
             "/123/calendars/work/",
-            "<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Work</d:displayname>",
+            // iCloud style: default namespaces and the components the calendar holds.
+            '<resourcetype xmlns="DAV:"><collection/><calendar xmlns="urn:ietf:params:xml:ns:caldav"/></resourcetype><displayname xmlns="DAV:">Work</displayname><supported-calendar-component-set xmlns="urn:ietf:params:xml:ns:caldav"><comp name="VEVENT"/><comp name="VTODO"/></supported-calendar-component-set>',
           ),
           response(
             "/123/calendars/tasks/",
