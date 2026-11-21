@@ -43,6 +43,8 @@ const mocks = vi.hoisted(() => ({
   alert: vi.fn(),
   prompt: vi.fn(),
   completeOAuth: vi.fn(),
+  copyCode: vi.fn(async (_code: string) => true),
+  openURL: vi.fn(async (_url: string) => undefined),
   submitOAuthCode: vi.fn(),
   pasteBackSignIn: false,
   rpc: vi.fn(),
@@ -100,7 +102,7 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => createElement("div", {}, children),
 }));
 vi.mock("../layout/floating-header", () => ({ useFloatingHeaderInset: () => mocks.headerInset }));
-vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
+vi.mock("expo-clipboard", () => ({ setStringAsync: mocks.copyCode }));
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../messages/message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 vi.mock("../notifications/live-notifications", () => ({
@@ -345,7 +347,7 @@ vi.mock("react-native", () => {
     },
     Keyboard: { dismiss: mocks.dismissKeyboard },
     Alert: { alert: mocks.alert, prompt: mocks.prompt },
-    Linking: { openURL: vi.fn() },
+    Linking: { openURL: mocks.openURL },
     StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
     ScrollView: view,
     View: view,
@@ -1016,6 +1018,39 @@ describe("provider connection screen", () => {
     await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
   });
+
+  it("copies before opening the browser and keeps the code available if opening fails", async () => {
+    mocks.connected = false;
+    mocks.platform = "android";
+    mocks.subscriptionSignIn = true;
+    const completeSignIn = deferred<{ status: "ready" }>();
+    const copied = deferred<boolean>();
+    mocks.completeOAuth.mockReturnValueOnce(completeSignIn.promise);
+    mocks.copyCode.mockReturnValueOnce(copied.promise);
+    mocks.openURL.mockRejectedValueOnce(new Error("Browser unavailable"));
+    await renderConnection();
+    await act(async () => buttonWithText("Sign in")!.click());
+
+    await act(async () => buttonWithText("Copy code and open")!.click());
+    expect(mocks.copyCode).toHaveBeenCalledOnce();
+    expect(mocks.openURL).not.toHaveBeenCalled();
+    await act(async () => copied.resolve(true));
+    expect(container.textContent).toContain("Could not open the sign-in page. Try again.");
+    expect(mocks.rpc).not.toHaveBeenCalledWith("models/cancelOAuth", expect.anything());
+    expect(mocks.rpc).not.toHaveBeenCalledWith("analytics/modelSignInStep", {
+      loginId: "login-fixture",
+      step: "page_opened",
+    });
+
+    await act(async () => buttonWithText("Copy code and open")!.click());
+    expect(mocks.openURL).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain("Could not open the sign-in page. Try again.");
+    expect(mocks.rpc).toHaveBeenCalledWith("analytics/modelSignInStep", {
+      loginId: "login-fixture",
+      step: "page_opened",
+    });
+  });
+
   it("lets a new sign-in submit its code while the one it replaced is still submitting", async () => {
     mocks.connected = false;
     mocks.subscriptionSignIn = true;
