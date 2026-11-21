@@ -162,8 +162,11 @@ it.each(["Recover computer", "Dismiss"])(
     const request = action === "Dismiss" ? computer.dismissUpdate : computer.recover;
     await openFailed();
     const alerts = dialog()?.querySelectorAll('[role="alert"]');
-    expect(alerts).toHaveLength(2);
-    const actionAlert = alerts?.[1];
+    expect(alerts).toHaveLength(1);
+    expect(dialog()?.textContent).toContain(
+      "Recovery restores the last saved workspace. Unsaved work may be lost.",
+    );
+    const actionAlert = alerts?.[0];
     expect(actionAlert?.textContent).toBe("");
 
     for (const message of [
@@ -174,7 +177,8 @@ it.each(["Recover computer", "Dismiss"])(
       request.mockRejectedValueOnce(new Error(message));
       await click(action);
       expect(failureShown(message)).toBe(true);
-      expect(dialog()?.querySelectorAll('[role="alert"]')[1]).toBe(actionAlert);
+      expect(dialog()?.querySelectorAll('[role="alert"]')).toHaveLength(1);
+      expect(dialog()?.querySelector('[role="alert"]')).toBe(actionAlert);
     }
   },
 );

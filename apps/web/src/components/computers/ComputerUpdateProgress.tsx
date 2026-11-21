@@ -130,10 +130,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
               </ol>
             ) : null}
             {computerUpdateNeedsAttention(selected) ? (
-              <p
-                role="alert"
-                className="mx-6 my-6 rounded-xl bg-muted px-4 py-4 text-body text-muted-foreground"
-              >
+              <p className="mx-6 my-6 rounded-xl bg-muted px-4 py-4 text-body text-muted-foreground">
                 {selected.status === "interrupted" ? (
                   <Trans>Recovery is unavailable until the previous operation has stopped.</Trans>
                 ) : (
