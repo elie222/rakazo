@@ -7,7 +7,7 @@ export function localizeModelEntry<
   return entry.subscriptionName
     ? {
         ...entry,
-        subscriptionName: i18n._({
+        subscriptionName: /* lingui-extract-ignore */ i18n._({
           id: entry.subscriptionNameId ?? entry.subscriptionName,
           message: entry.subscriptionName,
         }),

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { CSSProperties, ReactNode, Ref } from "react";
@@ -81,6 +82,7 @@ const WORK_CREDENTIAL_ID = "credential-work";
 const catalog = Array.from({ length: 11 }, (_, index) => ({
   provider: "openrouter",
   providerName: "OpenRouter",
+  subscriptionName: "Example subscription",
   id: `vendor/model-${index + 1}`,
   label: `Model ${index + 1}`,
   billing: "",
@@ -217,7 +219,11 @@ vi.mock("../api/api", () => ({
                     : entry.label,
             }))
           : mocks.subscriptionSignIn
-            ? catalog.map((entry) => ({ ...entry, signIn: "device-code" }))
+            ? catalog.map((entry) => ({
+                ...entry,
+                auth: "both",
+                signIn: "device-code",
+              }))
             : [
                 ...catalog.map((entry) => ({
                   ...entry,
@@ -682,6 +688,25 @@ describe("chat model list", () => {
       options.headerSearchBarOptions.onChangeText({ nativeEvent: { text } });
     });
   const rows = () => [...container.querySelectorAll("li button")];
+
+  it.each([
+    [true, "Example Abonnement"],
+    [false, "OpenRouter"],
+  ])(
+    "names the serving connection in the model list (subscription: %s)",
+    async (subscription, name) => {
+      mocks.subscriptionSignIn = subscription;
+      i18n.load("de", { "Example subscription": "Example Abonnement" });
+      i18n.activate("de");
+      try {
+        mocks.params = { botId: "bot-fixture", value: "" };
+        await act(async () => root.render(<BotModelScreen />));
+        expect(container.querySelector("h2")?.textContent).toBe(name);
+      } finally {
+        i18n.activate("en");
+      }
+    },
+  );
 
   it("checks the current model, filters by name or id, and returns the pick", async () => {
     mocks.params = { botId: "bot-fixture", value: "openrouter::vendor/model-2" };

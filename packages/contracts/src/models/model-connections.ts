@@ -3,6 +3,8 @@ import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema } from "../settings-scope.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 
+const optionalText = z.string().optional();
+
 /** Default maximum number of completion tokens for an OpenAI-compatible connection. */
 export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
 
@@ -122,17 +124,17 @@ export const ModelCredentialSchema = z.object({
   hasKey: z.boolean(),
   isDefault: z.boolean(),
   headerNames: z.array(z.string()).optional(),
-  baseUrl: z.string().optional(),
+  baseUrl: optionalText,
   /** The hosted service at `baseUrl`, when it is one the catalog offers by name. */
-  endpointName: z.string().optional(),
+  endpointName: optionalText,
   apiProtocol: ModelApiProtocolSchema.optional(),
-  accountId: z.string().optional(),
-  gatewayId: z.string().optional(),
-  projectId: z.string().optional(),
-  region: z.string().optional(),
+  accountId: optionalText,
+  gatewayId: optionalText,
+  projectId: optionalText,
+  region: optionalText,
   /** Requests only reach endpoints that keep no prompts or replies. Absent means off. */
   zeroDataRetention: z.boolean().optional(),
-  modelId: z.string().optional(),
+  modelId: optionalText,
   reasoning: z.boolean().optional(),
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
   maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).optional(),
@@ -288,23 +290,23 @@ export const ModelConnectInputSchema = z
   .object({
     ...ModelContextLimitsSchema.shape,
     provider: z.string(),
-    apiKey: z.string().optional(),
-    accountId: z.string().optional(),
-    gatewayId: z.string().optional(),
-    projectId: z.string().optional(),
-    region: z.string().optional(),
+    apiKey: optionalText,
+    accountId: optionalText,
+    gatewayId: optionalText,
+    projectId: optionalText,
+    region: optionalText,
     /** Omitted keeps the saved choice; false turns it off. */
     zeroDataRetention: z.boolean().optional(),
     headers: ModelHeadersSchema.optional(),
-    baseUrl: z.string().optional(),
+    baseUrl: optionalText,
     apiProtocol: ModelApiProtocolSchema.optional(),
-    label: z.string().optional(),
+    label: optionalText,
     /**
      * The connection this save updates; null adds another connection for the provider.
      * Older apps omit it and update the provider's newest connection.
      */
     credentialId: ModelConnectionTargetSchema,
-    modelId: z.string().optional(),
+    modelId: optionalText,
     reasoning: z.boolean().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
     /** False keeps the current main model; omitted means true. */
@@ -395,7 +397,7 @@ export type ModelOAuthBegin = z.infer<typeof ModelOAuthBeginSchema>;
 /** A hosted OpenAI-compatible service offered by name. It always needs a key. */
 export const CompatibleEndpointPresetSchema = z.object({
   /** Stable id a deployment allowlist addresses this preset by. */
-  id: z.string().optional(),
+  id: optionalText,
   name: z.string(),
   baseUrl: z.string(),
   /** The model list can be loaded before the connection has a key. */
@@ -414,16 +416,16 @@ export const ModelCatalogEntrySchema = z.object({
   managed: z.boolean().optional(),
   creditOfferingId: Id.optional(),
   provider: z.string(),
-  providerName: z.string().optional(),
+  providerName: optionalText,
   /** What a signed-in connection is called, by the plan people pay for. */
-  subscriptionName: z.string().optional(),
-  subscriptionNameId: z.string().optional(),
+  subscriptionName: optionalText,
+  subscriptionNameId: optionalText,
   id: z.string(),
   label: z.string(),
   billing: z.string(),
   auth: z.enum(["api-key", "oauth", "both"]).optional(),
-  oauthLabel: z.string().optional(),
-  authHint: z.string().optional(),
+  oauthLabel: optionalText,
+  authHint: optionalText,
   subscription: z.boolean().optional(),
   signIn: ModelOAuthSignInModeSchema.optional(),
   /** A setting the provider makes the user turn on before its sign-in can work. */
