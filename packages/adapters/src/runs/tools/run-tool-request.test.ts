@@ -88,6 +88,7 @@ describe("private task tools after shared-channel messages", () => {
     "skill_create",
     "skill_update",
     "skill_delete",
+    "remove_mcp_server",
   ])("refuses %s for original and claimed shared-channel messages", async (name) => {
     for (const originalChannel of [true, false]) {
       const ctx = {
