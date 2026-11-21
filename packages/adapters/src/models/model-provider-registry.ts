@@ -1,5 +1,5 @@
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
-import type { ModelOAuthSignInMode, ModelRoutingField } from "@rakazo/contracts";
+import type { ModelCatalogEntry, ModelOAuthSignInMode, ModelRoutingField } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
 import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
@@ -45,7 +45,7 @@ export interface ModelProviderDefinition {
     hint: string;
     billing: string;
     /** A setting the account must turn on first, or the provider refuses the sign-in. */
-    setup?: { label: string; url: string; note?: string };
+    setup?: ModelCatalogEntry["signInSetup"];
   };
   /** Ids each connection supplies to route its requests. */
   routingFields?: ModelRoutingField[];
