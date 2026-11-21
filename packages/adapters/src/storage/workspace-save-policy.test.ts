@@ -16,6 +16,7 @@ describe("home save exclusions", () => {
     ".cache",
     ".npm",
     ".pnpm-store",
+    ".local/share/pnpm/store",
     ".yarn/cache",
     "node_modules",
     ".venv",

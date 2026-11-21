@@ -1,4 +1,5 @@
 import type { ComputerSize } from "@rakazo/contracts";
+import type { ConnectedCalendarProvider } from "./personal-calendar.js";
 import type {
   AdapterContext,
   AdapterDescriptor,
@@ -322,6 +323,7 @@ export interface ConnectionAuthProvider {
 export interface ManagedConnectorProvider
   extends ConnectorProvider,
     Omit<ConnectionAuthProvider, "describe"> {
+  calendarProvider?: ConnectedCalendarProvider;
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
   /** The actions one app offers, to show people what connecting it gives bots. */
   listAppTools?(context: AdapterContext, externalId: string): Promise<ConnectorTool[]>;
@@ -803,7 +805,8 @@ export interface BrowserProvider {
   ): Promise<BrowserActResult>;
   /**
    * Whether these clicks, or a click or key on the screen, would complete a purchase, without acting.
-   * A browser that cannot tell, such as an older computer image, answers none.
+   * A browser that cannot tell, such as an older computer image, answers none. A check that started
+   * and could not read the page throws, and the press is refused.
    */
   purchaseCheck?(
     computer: ComputerRef,

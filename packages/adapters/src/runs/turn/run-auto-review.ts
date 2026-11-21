@@ -157,6 +157,7 @@ export async function autoReviewCheckerProvider(
       checker,
       apiKey: judgeKey.oauth ? undefined : judgeKey.apiKey,
       callObserver,
+      billing: judgeKey.billing,
       accountId: judgeKey.accountId,
       gatewayId: judgeKey.gatewayId,
       projectId: judgeKey.projectId,

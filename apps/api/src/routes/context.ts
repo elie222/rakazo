@@ -104,6 +104,7 @@ export function createRouterContext(deps: RouterDeps) {
     actor: Actor | null;
     /** The signed-in session, so a push token ends with the session that registered it. */
     sessionId?: string;
+    nativeSessionId?: string;
     signal?: AbortSignal;
     /** Re-runs the request's auth so a long-lived stream notices sign-out and revocation. */
     stillAuthorized?: () => Promise<boolean>;
@@ -122,7 +123,7 @@ export function createRouterContext(deps: RouterDeps) {
     prepareMcpServer,
     insertMcpServer,
     announceMcpServer,
-  } = createMcpServers(deps, onboardingDeps, mcpOAuth);
+  } = createMcpServers(deps, mcpOAuth);
   const announceRoutine = createRoutineAnnouncer(deps);
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
   const { verifyModelConnection, connectModelCredential } = createModelConnector(
@@ -610,7 +611,7 @@ export function createRouterContext(deps: RouterDeps) {
     home: deps.home,
     dataDir: deps.dataDir,
   });
-  const agentSkills = createAgentSkillsService(deps.prisma);
+  const agentSkills = createAgentSkillsService(deps.prisma, deps.events);
 
   const signedIn = os.middleware(async ({ context, next }) => {
     const actor = context.actor;

@@ -1,4 +1,4 @@
-import type { AppBootstrap, LabFeature } from "@rakazo/contracts";
+import type { AppBootstrap, LabFeature, Me } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, attachmentMaxBytes, parseLabs } from "@rakazo/contracts";
 import { displayIdentityResult } from "@rakazo/core";
 import { initialBootstrapTarget } from "./bootstrap-target";
@@ -116,8 +116,13 @@ function requestBootstrap(botId?: string, spaceId?: string, groupId?: string) {
 }
 
 function applyCapabilities(bootstrap: AppBootstrap): AppBootstrap {
-  labs = parseLabs(bootstrap.me.labs);
-  maxUploadSizeBytes = attachmentMaxBytes(bootstrap.me);
-  for (const listener of capabilityListeners) listener();
+  applyAccountCapabilities(bootstrap.me);
   return bootstrap;
+}
+
+/** Applies what the account allows (Labs, upload size), as a bootstrap does. */
+export function applyAccountCapabilities(me: Me) {
+  labs = parseLabs(me.labs);
+  maxUploadSizeBytes = attachmentMaxBytes(me);
+  for (const listener of capabilityListeners) listener();
 }

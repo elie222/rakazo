@@ -30,3 +30,12 @@ describe("bot profile patch", () => {
     expect(patch).toEqual({ description: "" });
   });
 });
+
+describe("bot profile patch emoji limit", () => {
+  it("does not cut an emoji in half at the description limit", () => {
+    const limit = BOT_DESCRIPTION_MAX_LENGTH - 1;
+    expect(botProfilePatch("short", `${"D".repeat(limit)}😀 tail`)).toEqual({
+      description: "D".repeat(limit),
+    });
+  });
+});

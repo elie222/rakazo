@@ -811,18 +811,56 @@ class PurchaseTest(unittest.TestCase):
             self.assertEqual(use_tab.called, used)
             self.assertEqual(json.loads(printed.call_args.args[0])["ok"], not used)
 
-    def test_a_failed_purchase_check_fails_even_with_an_alert_open(self):
+    def check_that_fails(self, dialog):
+        """What a purchase check that could not read the page answers, with `dialog` open on it."""
         listing = [{"type": "page", "id": "tab-1", "url": "https://shop.example.test/pay"}]
-        alert = {"hasDialog": True, "type": "alert", "message": "Hi"}
+        browser = FakeAgentBrowser()
+        browser.dialog = dialog
         with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
                 patch.object(helper, "http_get_json", return_value=listing), \
-                patch.object(helper, "AgentBrowser", return_value=FakeAgentBrowser()), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True) as use_tab, \
                 patch.object(helper.PageBrowser, "purchase_check", side_effect=RuntimeError("page gone")), \
-                patch.object(helper.PageBrowser, "dialog", return_value=alert) as dialog, \
                 patch("builtins.print") as printed:
             helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
-        dialog.assert_not_called()
-        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], False)
+        return json.loads(printed.call_args.args[0]), use_tab, browser
+
+    def test_a_check_that_cannot_read_the_page_because_a_dialog_is_open_names_its_type(self):
+        # Every type is reported as it is; the adapter decides which ones a press may answer.
+        for kind in ("alert", "beforeunload", "confirm", "prompt"):
+            with self.subTest(kind=kind):
+                result, use_tab, browser = self.check_that_fails({"type": kind, "message": "Sure?"})
+                self.assertEqual(result, {"ok": True, "url": "", "title": "", "site": "", "purchase": None,
+                                          "dialog": kind})
+                # On the tab the check read, and the dialog is left for the press to answer.
+                use_tab.assert_called_once_with("tab-1")
+                self.assertIsNotNone(browser.dialog)
+                self.assertNotIn(["dialog", "dismiss"], browser.sent)
+
+    def test_a_check_that_cannot_read_the_page_with_no_dialog_known_to_be_open_fails(self):
+        result, _, _ = self.check_that_fails(None)
+        self.assertEqual((result["ok"], result["error"]), (False, "page gone"))
+        self.assertNotIn("dialog", result)
+        # agent-browser that cannot answer about dialogs leaves the check failed.
+        with patch.object(FakeAgentBrowser, "answer", side_effect=helper.AbError("gone")):
+            result, _, _ = self.check_that_fails({"type": "confirm", "message": "Sure?"})
+        self.assertEqual(result["ok"], False)
+
+    def test_an_unreadable_page_in_a_check_that_ran_names_an_open_dialog_and_its_type(self):
+        FakePurchases.on_desktop = dict(helper.UNREADABLE_PURCHASE)
+        browser = FakeAgentBrowser()
+        with patch.object(browser, "use_tab", create=True):
+            self.assertEqual(page(browser).purchase_check({"desktop": True})["purchase"]["reason"], "unreadable")
+            browser.dialog = {"type": "confirm", "message": "Leave?"}
+            self.assertEqual(page(browser).purchase_check({"desktop": True}),
+                             {"ok": True, "url": "", "title": "", "site": "", "purchase": None, "dialog": "confirm"})
+        # A readable check never asks agent-browser about dialogs: a slow one must not hold it up.
+        FakePurchases.on_desktop = None
+        browser = FakeAgentBrowser()
+        with patch.object(browser, "use_tab", create=True) as use_tab:
+            page(browser).purchase_check({"desktop": True})
+        use_tab.assert_not_called()
+        self.assertNotIn(["dialog", "status"], browser.sent)
 
     def test_a_purchase_check_with_no_page_or_a_browser_page_showing_finds_nothing_to_buy(self):
         for listing in ([], [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]):

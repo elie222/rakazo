@@ -149,12 +149,16 @@ export function LoginFieldsInput({
               disabled={disabled}
               onChange={(hidden) => update(index, { hidden })}
             />
+            <span id={`${ids}-${index}-label`} className="sr-only">
+              {label}
+            </span>
             {fields.length > 1 ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 aria-label={t`Remove`}
+                aria-describedby={`${ids}-${index}-label`}
                 className="shrink-0 text-muted-foreground"
                 disabled={disabled}
                 onClick={() => onChange(fields.filter((_, at) => at !== index))}

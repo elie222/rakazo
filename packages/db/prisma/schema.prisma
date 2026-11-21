@@ -23,8 +23,11 @@ model AiDataConsent {
 
 model User {
   meetingSessions MeetingSession[]
+  nativeCalendarRequests NativeCalendarRequest[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
+  pageGrants PageGrant[]
+  pageComments PageComment[]
   id                          String                       @id
   name                        String
   email                       String
@@ -1225,6 +1228,8 @@ model Message {
   replies          Message[] @relation("MessageReplies")
   runId            String?
   clientNonce      String?
+  nativeCalendarSessionId String?
+  nativeCalendarDeviceDigest String?
   /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
   searchTokens     Int[]
   /// A bot reply's tool calls as sent and returned (JSON, see ToolHistorySchema), encrypted like
@@ -1350,6 +1355,7 @@ model Run {
   updatedAt            DateTime          @updatedAt
   attempts             Attempt[]
   effects              ExternalEffect[]
+  nativeCalendarRequests NativeCalendarRequest[]
   steeringMessages     SteeringMessage[]
   externalMessage      ExternalMessage?
 
@@ -1534,6 +1540,26 @@ model Purchase {
   @@index([nextPollAt])
   @@index([spaceId, userId, createdAt])
   @@map("purchases")
+}
+
+model NativeCalendarRequest {
+  id        String   @id
+  runId     String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  spaceId   String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  deviceDigest String
+  status    String
+  operation Json?
+  result    Json?
+  expiresAt DateTime
+  @@index([sessionId, status, expiresAt])
+  @@index([expiresAt])
+  @@index([runId])
+  @@index([userId])
+  @@map("native_calendar_requests")
 }
 
 model ExternalEffect {
@@ -2094,6 +2120,8 @@ model Page {
   /// Set when the page's content or title changes; pinning or sharing it is not an update.
   updatedAt      DateTime      @default(now())
   versions       PageVersion[]
+  grants         PageGrant[]
+  comments       PageComment[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2114,6 +2142,62 @@ model PageVersion {
 
   @@unique([pageId, version])
   @@map("page_versions")
+}
+
+model PageGrant {
+  id             String @id @default(cuid())
+  pageId         String
+  page           Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  recipientEmail String
+  userId         String?
+  user           User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// Retains the binding when the account is deleted. It takes a fresh grant to share the address again.
+  bound          Boolean @default(false)
+  firstVersion   Int
+
+  @@unique([pageId, recipientEmail])
+  @@index([userId, pageId])
+  @@map("page_grants")
+}
+
+model PageComment {
+  id         String @id @default(cuid())
+  pageId     String
+  page       Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  version    Int
+  section    String
+  sectionOccurrence Int?
+  body       String
+  createdAt  DateTime @default(now())
+  resolvedAt DateTime?
+  requests   PageRevisionRequest[]
+
+  @@index([pageId, createdAt, id])
+  @@map("page_comments")
+}
+
+model PageRevisionRequest {
+  id          String @id @default(cuid())
+  commentId   String
+  /// A reviewer can explicitly retry a terminal request once. Replays reuse the same retry.
+  retryOf     String? @unique
+  comment     PageComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  requesterId String
+  /// The requester's Space whose AI-sharing permission covers this request.
+  consentSpaceId String?
+  /// The exact grant at submission. A later grant does not reinstate work from this one.
+  grantId     String?
+  status      String @default("pending")
+  createdAt   DateTime @default(now())
+  draftSource String?
+  draftCode   String?
+  resultVersion Int?
+
+  @@index([grantId])
+  @@index([commentId, createdAt])
+  @@map("page_revision_requests")
 }
 
 model UsageRecord {
@@ -2149,6 +2233,8 @@ model UsageRecord {
   callId             String?  @unique
   operationId        String?
   operationKind      String   @default("answer")
+  /// Who paid: subscription, api_key, custom_endpoint, credits or deployment; null before it was recorded.
+  billing            String?
   /// Durable attribution, deliberately without lifecycle foreign keys.
   parentRunId        String?
   agentId            String?
