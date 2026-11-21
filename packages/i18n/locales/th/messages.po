@@ -9613,7 +9613,7 @@ msgstr "ปรับขนาดแผง"
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Resolve"
-msgstr "แก้ไขแล้ว"
+msgstr "ปิดประเด็น"
 
 #: packages/i18n/src/page-review.ts
 msgid "Resolved"

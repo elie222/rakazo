@@ -5373,7 +5373,7 @@ msgstr "草稿已就緒"
 
 #: apps/mobile/app/page-review.tsx
 msgid "Draft revision"
-msgstr "草擬修訂"
+msgstr "修訂草稿"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "Draft skill"

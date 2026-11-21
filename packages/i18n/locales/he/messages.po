@@ -9619,7 +9619,7 @@ msgstr "שינוי גודל החלונית"
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 msgid "Resolve"
-msgstr "סימון כפתור"
+msgstr "סימון כנפתר"
 
 #: packages/i18n/src/page-review.ts
 msgid "Resolved"
