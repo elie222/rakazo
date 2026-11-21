@@ -869,6 +869,32 @@ function editField(label: string, value: string) {
 }
 
 describe("provider connection screen", () => {
+  it.each([
+    [true, "Example Abonnement"],
+    [false, "OpenRouter"],
+  ])("keeps list and page names consistent (subscription: %s)", async (subscription, name) => {
+    mocks.subscriptionSignIn = subscription;
+    mocks.secondConnection = true;
+    i18n.load("de", { "Example subscription": "Example Abonnement" });
+    i18n.activate("de");
+    try {
+      await renderModels();
+      const rows = [...container.querySelectorAll("[data-settings-row]")].map((row) =>
+        row.getAttribute("aria-label"),
+      );
+      expect(rows).toEqual(expect.arrayContaining([name, "OpenRouter (Work)"]));
+      mocks.setOptions.mockClear();
+      await renderConnection();
+      expect(mocks.setOptions).toHaveBeenCalledWith({ title: name });
+      act(() => root.render(null));
+      mocks.setOptions.mockClear();
+      await renderConnection({ credentialId: WORK_CREDENTIAL_ID });
+      expect(mocks.setOptions).toHaveBeenCalledWith({ title: "OpenRouter (Work)" });
+    } finally {
+      i18n.activate("en");
+    }
+  });
+
   it("connects a provider with only its connection controls", async () => {
     mocks.connected = false;
     await renderConnection({ makeDefault: true });

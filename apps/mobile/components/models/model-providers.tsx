@@ -3,9 +3,8 @@ import { useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
-  connectionDisplayName,
   MAX_MODEL_CONNECTION_LABEL,
-  providerDisplayName,
+  modelConnectionNames,
 } from "@rakazo/contracts";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { Alert, Platform } from "react-native";
@@ -37,12 +36,10 @@ export function ModelProviders({
   const rows = credentials
     .map((credential) => {
       const entry = catalogEntry(credential);
-      const provider = entry
-        ? providerDisplayName(localizeModelEntry(entry), credential.authKind)
-        : credential.provider;
-      const name = connectionDisplayName(credential, provider, [
-        entry?.providerName ?? credential.provider,
-      ]);
+      const { providerName: provider, connectionName: name } = modelConnectionNames(
+        localizeModelEntry(entry ?? { provider: credential.provider }),
+        credential,
+      );
       return {
         credential,
         name,

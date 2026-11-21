@@ -4,8 +4,8 @@ import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
-  connectionDisplayName,
   matchCompatibleEndpointPreset,
+  modelConnectionNames,
   modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -282,14 +282,10 @@ export default function ModelConnection() {
     }, [cancelInFlightWork, load]),
   );
 
-  const providerName = selected
-    ? providerDisplayName(localizeModelEntry(selected), credential?.authKind)
-    : "";
+  const selectedEntry = localizeModelEntry(selected ?? { provider, providerName: "" });
   const selectedProviderLabel = credential
-    ? connectionDisplayName(credential, providerName, [
-        selected?.providerName ?? selected?.provider ?? "",
-      ])
-    : (endpointPreset?.name ?? providerName);
+    ? modelConnectionNames(selectedEntry, credential).connectionName
+    : (endpointPreset?.name ?? providerDisplayName(selectedEntry));
   useScreenHeader({ title: selectedProviderLabel || undefined });
   const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
     selected?.routingFields,

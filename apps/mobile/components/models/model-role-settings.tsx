@@ -16,7 +16,6 @@ import type {
 import {
   backupChoiceKey,
   connectedBackupOptions,
-  connectionDisplayName,
   MAX_MODEL_BACKUPS,
   modelConnectionNames,
   modelRoleChoiceKey,
@@ -155,35 +154,29 @@ export function ModelRoleSettings({
     options.find((option) => backupChoiceKey(option) === backupChoiceKey(choice));
   const modelLabel = (choice: ModelRoleChoice) =>
     entryFor(choice)?.label ?? optionFor(choice)?.label ?? choice.modelId;
-  const providerName = (choice: ModelRoleChoice) => {
-    const entry = entryFor(choice);
-    return entry
-      ? modelConnectionNames(
-          localizeModelEntry(entry),
-          choice.credentialId ? connectionFor(choice) : undefined,
-        ).providerName
-      : providerNameFallback(choice);
-  };
   const providerNameFallback = (choice: ModelRoleChoice) =>
     optionFor(choice)?.providerName ??
     providers.find((provider) => provider.id === choice.provider)?.name ??
     choice.provider;
+  /** The row's own connection, or the provider's newest for rows that name none. */
+  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
+  const namesFor = (choice: ModelRoleChoice) =>
+    modelConnectionNames(
+      localizeModelEntry(
+        entryFor(choice) ?? {
+          provider: choice.provider,
+          providerName: providerNameFallback(choice),
+        },
+      ),
+      choice.credentialId ? connectionFor(choice) : undefined,
+    );
   // What runs when the member chose no first model; named in the empty row.
   const deployment = state.settings?.deploymentPrimary ?? null;
   const deploymentName = deployment ? modelLabel(deployment) : null;
   // The deployment pays for its default, so it reads as included rather than as a provider bill.
   const included = state.settings?.deploymentIncluded ? t`Included` : undefined;
-  /** The row's own connection, or the provider's newest for rows that name none. */
-  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
-  const connectionName = (choice: ModelRoleChoice) => {
-    if (choice.creditOfferingId) return t`Rakazo credits`;
-    const connection = choice.credentialId ? connectionFor(choice) : undefined;
-    return connection
-      ? connectionDisplayName(connection, providerName(choice), [
-          entryFor(choice)?.providerName ?? choice.provider,
-        ])
-      : providerName(choice);
-  };
+  const connectionName = (choice: ModelRoleChoice) =>
+    choice.creditOfferingId ? t`Rakazo credits` : namesFor(choice).connectionName;
   const isPrimarySlot = (slot: Slot) => slot === "empty" || (slot === 0 && primary !== null);
 
   const thinkingLevels =
@@ -401,7 +394,7 @@ export function ModelRoleSettings({
           key="empty"
           leading={ordered ? number(0) : undefined}
           title={deploymentName ?? defaultLabel}
-          detail={deployment ? (included ?? providerName(deployment)) : undefined}
+          detail={deployment ? (included ?? namesFor(deployment).providerName) : undefined}
           disabled={busy}
           onPress={() => pick("empty")}
         />
