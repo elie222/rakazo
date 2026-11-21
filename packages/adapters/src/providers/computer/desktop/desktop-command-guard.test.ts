@@ -696,3 +696,16 @@ it("guards by the computer a run actually uses", () => {
   ).toBe(true);
   expect(desktopGuardApplies({ graphical: true, stored: { kind: "wuying" } })).toBe(false);
 });
+
+describe("killall5", () => {
+  // killall5 signals every process outside its own session, so it ends the browser and desktop like killall.
+  it.each([
+    "killall5 -9",
+    "killall5",
+    "sudo killall5 -15",
+    'bash -c "killall5 -9"',
+    'k"illall5" -9',
+  ])("refuses %s", (command) => {
+    expect(protectedComputerLifecycleRefusal(command)).toBe("protected command killall5");
+  });
+});
