@@ -83,6 +83,12 @@ describe("spaceInvitee", () => {
     ])
       expect(spaceInvitee(list, partial)).toBeNull();
     expect(spaceInvitee(list, " ANA@example.test ")).toEqual({ kind: "member" });
+    expect(
+      spaceInvitee(
+        { members: [{ ...person("u3", "cy@gmail.com"), role: "member" as const }] },
+        "cy@googlemail.com",
+      ),
+    ).toEqual({ kind: "member" });
     expect(spaceInvitee(list, "ben@example.test")).toEqual({ kind: "addable", userId: "u2" });
     expect(spaceInvitee(list, "cy@example.test")).toEqual({ kind: "outside" });
     expect(spaceInvitee({ members: [] }, "ben@example.test")).toEqual({ kind: "outside" });

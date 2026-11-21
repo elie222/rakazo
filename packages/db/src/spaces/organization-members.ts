@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { OrganizationRole } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
+import { ClientError, canonicalEmail, emailSpellings } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole, LIVE_ORGANIZATION } from "../billing/billing.js";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
@@ -138,10 +138,6 @@ async function requireManager(
   if (!role) throw new IsolationError();
   if (role === "member") throw new OrganizationAdminRequiredError();
   return role;
-}
-
-export function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
 }
 
 export async function listOrganizationMembers(
@@ -295,7 +291,7 @@ export async function createOrganizationInvitation(
   /** Whether to email it now; false past the address's limit or without email delivery. */
   send: boolean;
 }> {
-  const email = normalizeEmail(input.email);
+  const email = canonicalEmail(input.email);
   const recipient = input.recipientKey(email);
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
@@ -305,7 +301,8 @@ export async function createOrganizationInvitation(
         where: {
           organizationId: input.organizationId,
           role: { not: GUEST_ROLE },
-          user: { email: { equals: email, mode: "insensitive" } },
+          // An account kept under another spelling of the same mailbox is still this person.
+          user: { email: { in: emailSpellings(email), mode: "insensitive" } },
         },
         select: { id: true },
       });
@@ -430,7 +427,7 @@ async function findInvitation(
     where: { id: input.userId },
     select: { email: true, emailVerified: true },
   });
-  if (!user || normalizeEmail(user.email) !== invitation.email)
+  if (!user || canonicalEmail(user.email) !== invitation.email)
     throw new OrganizationInvitationEmailError();
   if (input.requireVerifiedEmail && !user.emailVerified)
     throw new OrganizationInvitationEmailError(true);
@@ -611,7 +608,7 @@ export async function revokeOrganizationMember(
       await tx.invitation.updateMany({
         where: {
           organizationId: input.organizationId,
-          email: normalizeEmail(removed.email),
+          email: canonicalEmail(removed.email),
           status: PENDING,
         },
         data: { status: "canceled" },

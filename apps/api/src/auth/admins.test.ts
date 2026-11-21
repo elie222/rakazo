@@ -6,6 +6,7 @@ describe("isAdmin", () => {
   const users = [
     { id: "verified", email: "Admin@Example.test", emailVerified: true },
     { id: "unverified", email: "admin@example.test", emailVerified: false },
+    { id: "gmail", email: "owner@gmail.com", emailVerified: true },
   ];
   const prisma = {
     user: {
@@ -19,5 +20,7 @@ describe("isAdmin", () => {
     expect(await isAdmin(deps, "verified")).toBe(true);
     expect(await isAdmin(deps, "unverified")).toBe(false);
     expect(await isAdmin({ prisma, env: {} as never }, "verified")).toBe(false);
+    const listed = { prisma, env: { adminEmails: ["owner@googlemail.com"] } as never };
+    expect(await isAdmin(listed, "gmail")).toBe(true);
   });
 });

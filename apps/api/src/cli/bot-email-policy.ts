@@ -1,8 +1,11 @@
 // Operator-only: bot-email-policy.js status <email> | limit <email> <0..1000> | replies <email> on|off | allow|deny <email> <recipient>
+
 import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { BotEmailRecipientSchema } from "@rakazo/contracts";
+import { canonicalEmail } from "@rakazo/core";
 import { createDb, runAsSystem } from "@rakazo/db";
 import { loadEnv } from "../env.js";
+import { accountByEmail } from "./account-by-email.js";
 
 const [action, address, value, ...extra] = process.argv.slice(2);
 const recipient = BotEmailRecipientSchema.safeParse(value?.trim());
@@ -28,13 +31,9 @@ const { prisma, pool } = createDb(env.databaseUrl, { keyProvider: contentKeyProv
 try {
   await runAsSystem("manage an account's bot email sending policy", () =>
     prisma.$transaction(async (tx) => {
-      const matches = await tx.user.findMany({
-        where: { email: { equals: address.trim(), mode: "insensitive" } },
-        select: { id: true },
-        take: 2,
-      });
-      if (matches.length !== 1) throw new Error("No single account has that email");
-      const userId = matches[0]!.id;
+      const account = await accountByEmail(tx, address);
+      if (!account) throw new Error("No single account has that email");
+      const userId = account.id;
       await tx.$queryRaw`SELECT id FROM "user" WHERE id=${userId} FOR NO KEY UPDATE`;
       const select = {
         botEmailDailyLimit: true,
@@ -45,7 +44,7 @@ try {
         where: { id: userId },
         select: { ...select, email: true },
       });
-      if (previous.email.toLowerCase() !== address.trim().toLowerCase())
+      if (canonicalEmail(previous.email) !== canonicalEmail(address))
         throw new Error("Account email changed while waiting; no policy change was applied");
       const policy =
         action === "status"

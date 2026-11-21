@@ -1,4 +1,5 @@
 import type { SignInProvider } from "@rakazo/contracts";
+import { canonicalEmail } from "@rakazo/core";
 import type { AppleProfile } from "better-auth/social-providers";
 import { appleSigningKey } from "./apple-client-secret.js";
 import { socialPresentation } from "./social-presentation.js";
@@ -190,7 +191,7 @@ export async function appleUserInfo(
   const profile = jwtPayload(token.idToken);
   const subject = profile?.sub;
   if (!profile || typeof subject !== "string" || !subject.trim()) return null;
-  const claimEmail = typeof profile.email === "string" ? profile.email.trim() : undefined;
+  const claimEmail = typeof profile.email === "string" ? canonicalEmail(profile.email) : undefined;
   let email = claimEmail || undefined;
   const verifiedClaim = profile.email_verified === true || profile.email_verified === "true";
   // Historical verification of an external mailbox does not establish current ownership.
