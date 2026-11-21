@@ -3,6 +3,7 @@ import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
+import { findRoutinesTarget } from "../../routines/routine-target.js";
 import {
   addScratchpadItemFromTool,
   completeScratchpadItemFromTool,
@@ -18,7 +19,6 @@ import {
   listBoardTickets,
   updateTicket,
 } from "../../tasks/ticket-tools.js";
-import { reachesManagedRoutines, resolveBot } from "../../tools/fleet-tools.js";
 import {
   cancelScheduleFromTool,
   commandWatchFromTool,
@@ -344,26 +344,7 @@ export const taskTools: ToolHandlers = {
   },
 };
 
-/**
- * Whose routines a schedule tool reaches: this bot's, limited to the group's thread in a group, or
- * a bot it manages (the request gate has checked bot management), across all of that bot's
- * threads, as its owner sees them.
- */
-async function routinesTarget(
-  ctx: RunContext,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<{ botId: string; threadId: string; groupThreadId?: string } | { error: string }> {
-  const { bot, thread } = ctx;
-  const own = {
-    botId: bot.id,
-    threadId: thread.id,
-    ...(thread.groupId ? { groupThreadId: thread.id } : {}),
-  };
-  if (!reachesManagedRoutines(name, args)) return own;
-  const managed = await resolveBot(ctx.deps.prisma, ctx.fleetRun, args);
-  if ("error" in managed) return { error: managed.error };
-  // Naming itself keeps a group run to the group's routines.
-  if (managed.id === bot.id) return own;
-  return { botId: managed.id, threadId: managed.thread?.id ?? thread.id };
+function routinesTarget(ctx: RunContext, name: string, args: Record<string, unknown>) {
+  const { deps, fleetRun, bot, thread } = ctx;
+  return findRoutinesTarget({ prisma: deps.prisma, fleetRun, botId: bot.id, thread }, name, args);
 }

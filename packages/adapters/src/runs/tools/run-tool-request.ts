@@ -29,6 +29,7 @@ import {
   purchaseApprovalOf,
   purchaseCardSummary,
 } from "../../payments/purchase-gate.js";
+import { reachesManagedRoutines } from "../../routines/routine-target.js";
 import { canonicalToolEvents } from "../../routines/routine-triggers.js";
 import { listVaultItems } from "../../secrets/bot-secrets.js";
 import type { VaultCardUse, VaultLoginUse } from "../../secrets/vault/vault-card-use.js";
@@ -40,12 +41,7 @@ import {
   vaultCardUseOf,
   vaultLoginUseOf,
 } from "../../secrets/vault/vault-card-use.js";
-import {
-  isFleetApprovalTool,
-  modelLabel,
-  prepareFleetRequest,
-  reachesManagedRoutines,
-} from "../../tools/fleet-tools.js";
+import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "../../tools/fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "../../tools/lazy-tool-catalog.js";
 import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";

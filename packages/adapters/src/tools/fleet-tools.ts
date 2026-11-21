@@ -1199,14 +1199,6 @@ async function resolveBots(
   return members;
 }
 
-/** A schedule_list, schedule_update or schedule_cancel call on another bot's routines. */
-export function reachesManagedRoutines(name: string, args: Record<string, unknown>): boolean {
-  return (
-    (name === "schedule_list" || name === "schedule_update" || name === "schedule_cancel") &&
-    (argumentGiven(args.bot_id) || argumentGiven(args.bot_name))
-  );
-}
-
 /** One active bot in the current user’s space, by `bot_id` or exact `bot_name`. */
 export async function resolveBot(
   prisma: PrismaClient,
