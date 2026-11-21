@@ -112,12 +112,12 @@
   -webkit-mask-image: linear-gradient(
     to left,
     transparent var(--row-reveal-fade, 32px),
-    #000 calc(var(--row-reveal-fade, 32px) + 20px)
+    var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
   );
   mask-image: linear-gradient(
     to left,
     transparent var(--row-reveal-fade, 32px),
-    #000 calc(var(--row-reveal-fade, 32px) + 20px)
+    var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
   );
 }
 
@@ -128,12 +128,12 @@
   -webkit-mask-image: linear-gradient(
     to right,
     transparent var(--row-reveal-fade, 32px),
-    #000 calc(var(--row-reveal-fade, 32px) + 20px)
+    var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
   );
   mask-image: linear-gradient(
     to right,
     transparent var(--row-reveal-fade, 32px),
-    #000 calc(var(--row-reveal-fade, 32px) + 20px)
+    var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
   );
 }
 
@@ -150,12 +150,12 @@
     -webkit-mask-image: linear-gradient(
       to left,
       transparent var(--row-reveal-fade, 32px),
-      #000 calc(var(--row-reveal-fade, 32px) + 20px)
+      var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
     );
     mask-image: linear-gradient(
       to left,
       transparent var(--row-reveal-fade, 32px),
-      #000 calc(var(--row-reveal-fade, 32px) + 20px)
+      var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
     );
   }
 
@@ -166,12 +166,12 @@
     -webkit-mask-image: linear-gradient(
       to right,
       transparent var(--row-reveal-fade, 32px),
-      #000 calc(var(--row-reveal-fade, 32px) + 20px)
+      var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
     );
     mask-image: linear-gradient(
       to right,
       transparent var(--row-reveal-fade, 32px),
-      #000 calc(var(--row-reveal-fade, 32px) + 20px)
+      var(--foreground) calc(var(--row-reveal-fade, 32px) + 20px)
     );
   }
 }
@@ -267,8 +267,8 @@
   --scroll-fade-block: linear-gradient(
     to bottom,
     transparent 0,
-    #000 var(--scroll-fade-t, 0px),
-    #000 calc(100% - var(--scroll-fade-b, 0px)),
+    var(--foreground) var(--scroll-fade-t, 0px),
+    var(--foreground) calc(100% - var(--scroll-fade-b, 0px)),
     transparent 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
@@ -307,8 +307,8 @@
   --scroll-fade-block: linear-gradient(
     to bottom,
     transparent 0,
-    #000 var(--scroll-fade-t, 0px),
-    #000 calc(100% - var(--scroll-fade-b, 0px)),
+    var(--foreground) var(--scroll-fade-t, 0px),
+    var(--foreground) calc(100% - var(--scroll-fade-b, 0px)),
     transparent 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask, var(--scroll-fade-block));
@@ -347,16 +347,16 @@
   --scroll-fade-inline: linear-gradient(
     to right,
     transparent 0,
-    #000 var(--scroll-fade-s, 0px),
-    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    var(--foreground) var(--scroll-fade-s, 0px),
+    var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
     transparent 100%
   );
   &:where([dir="rtl"], [dir="rtl"] *) {
     --scroll-fade-inline: linear-gradient(
       to left,
       transparent 0,
-      #000 var(--scroll-fade-s, 0px),
-      #000 calc(100% - var(--scroll-fade-e, 0px)),
+      var(--foreground) var(--scroll-fade-s, 0px),
+      var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
       transparent 100%
     );
   }
@@ -392,8 +392,8 @@
   --scroll-fade-mask: linear-gradient(
     to bottom,
     transparent 0,
-    #000 var(--scroll-fade-t, 0px),
-    #000 100%
+    var(--foreground) var(--scroll-fade-t, 0px),
+    var(--foreground) 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask);
   mask-image: var(--scroll-fade-mask);
@@ -421,8 +421,8 @@
   );
   --scroll-fade-mask: linear-gradient(
     to bottom,
-    #000 0,
-    #000 calc(100% - var(--scroll-fade-b, 0px)),
+    var(--foreground) 0,
+    var(--foreground) calc(100% - var(--scroll-fade-b, 0px)),
     transparent 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask);
@@ -452,8 +452,8 @@
   --scroll-fade-mask: linear-gradient(
     to right,
     transparent 0,
-    #000 var(--scroll-fade-s, 0px),
-    #000 100%
+    var(--foreground) var(--scroll-fade-s, 0px),
+    var(--foreground) 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask);
   mask-image: var(--scroll-fade-mask);
@@ -481,8 +481,8 @@
   );
   --scroll-fade-mask: linear-gradient(
     to right,
-    #000 0,
-    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    var(--foreground) 0,
+    var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
     transparent 100%
   );
   -webkit-mask-image: var(--scroll-fade-mask);
@@ -512,15 +512,15 @@
   --scroll-fade-mask: linear-gradient(
     to right,
     transparent 0,
-    #000 var(--scroll-fade-s, 0px),
-    #000 100%
+    var(--foreground) var(--scroll-fade-s, 0px),
+    var(--foreground) 100%
   );
   &:where([dir="rtl"], [dir="rtl"] *) {
     --scroll-fade-mask: linear-gradient(
       to left,
       transparent 0,
-      #000 var(--scroll-fade-s, 0px),
-      #000 100%
+      var(--foreground) var(--scroll-fade-s, 0px),
+      var(--foreground) 100%
     );
   }
   -webkit-mask-image: var(--scroll-fade-mask);
@@ -549,15 +549,15 @@
   );
   --scroll-fade-mask: linear-gradient(
     to right,
-    #000 0,
-    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    var(--foreground) 0,
+    var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
     transparent 100%
   );
   &:where([dir="rtl"], [dir="rtl"] *) {
     --scroll-fade-mask: linear-gradient(
       to left,
-      #000 0,
-      #000 calc(100% - var(--scroll-fade-e, 0px)),
+      var(--foreground) 0,
+      var(--foreground) calc(100% - var(--scroll-fade-e, 0px)),
       transparent 100%
     );
   }

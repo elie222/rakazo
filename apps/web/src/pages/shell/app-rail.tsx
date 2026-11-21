@@ -13,6 +13,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { createContext, Suspense, use, useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
+import { RouteLoading } from "../../components/RouteLoading";
 import { WindowChrome } from "../../components/WindowChrome";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { activityModePreference } from "../../lib/preferences/activity-mode";
@@ -122,7 +123,7 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
           />
           <div className="h-full min-h-0 min-w-0 flex-1">
             {/* A page still loading leaves the rail on screen instead of blanking the window. */}
-            <Suspense fallback={null}>
+            <Suspense fallback={<RouteLoading />}>
               <Outlet />
             </Suspense>
           </div>
