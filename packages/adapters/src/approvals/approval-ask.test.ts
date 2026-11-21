@@ -256,6 +256,8 @@ describe("bot management approval cards", () => {
         },
       },
     );
+    // Approving a child bot's instruction replacement applies it, so its allow says Apply now.
+    const allowLabel = toolName === "set_child_instructions" ? "Apply now" : "Allow once";
     expect(block).toEqual({
       kind: "ask",
       approvalEffectId: "effect-1",
@@ -266,14 +268,30 @@ describe("bot management approval cards", () => {
       actions:
         toolName === "set_child_instructions"
           ? [
-              { id: "allow", label: "Allow once" },
+              { id: "allow", label: allowLabel },
               { id: "deny", label: "Deny" },
             ]
           : [
-              { id: "allow", label: "Allow once" },
+              { id: "allow", label: allowLabel },
               { id: "always", label: "Always allow this tool" },
               { id: "deny", label: "Deny" },
             ],
+    });
+  });
+
+  it("says Apply now on the card that replaces another bot's instructions", () => {
+    const block = buildApprovalAskBlock("effect-1", "set_child_instructions", {}, [], {
+      summary: {
+        title: "Replace the instructions of Scout?",
+        lines: ["Old length: 0 characters", "New length: 16 characters", "", "Plan the offsite"],
+      },
+    });
+    expect(block).toMatchObject({
+      text: "Replace the instructions of Scout?",
+      actions: [
+        { id: "allow", label: "Apply now" },
+        { id: "deny", label: "Deny" },
+      ],
     });
   });
 
