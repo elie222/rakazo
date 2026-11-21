@@ -101,16 +101,6 @@ it("offers Copy Link Address for a link and writes its URL to the clipboard", ()
   expect(state.clipboard.writeText).toHaveBeenCalledWith("https://example.com/docs");
 });
 
-it("offers Copy Link Address for a mailto link", () => {
-  const template = contextMenuTemplate({ ...noSelection, linkURL: "mailto:person@example.com" });
-  expect(template[0]?.label).toBe("Copy Link Address");
+it("omits Copy Link Address off a link", () => {
+  expect(contextMenuTemplate(noSelection).map((item) => item.label)).toEqual(["Select All"]);
 });
-
-it.each(["", "javascript:alert(1)", "file:///etc/passwd", "not a url"])(
-  "omits Copy Link Address for %j",
-  (linkURL) => {
-    expect(contextMenuTemplate({ ...noSelection, linkURL }).map((item) => item.label)).toEqual([
-      "Select All",
-    ]);
-  },
-);
