@@ -2,12 +2,19 @@ import type { SecretStore } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { serializeModelSecret } from "../models/model-secret.js";
-import type { VoiceKeyDeps } from "./voice-model-connection.js";
+import type { DefaultVoiceDeps, VoiceKeyDeps } from "./voice-model-connection.js";
 import {
+  loadDefaultVoice,
   modelConnectionVoiceSecret,
   parseModelConnectionVoiceSecret,
   resolveVoiceKey,
 } from "./voice-model-connection.js";
+
+const db = vi.hoisted(() => ({ findDefaultVoiceCredential: vi.fn() }));
+vi.mock("@rakazo/db", async (original) => ({
+  ...(await original<typeof import("@rakazo/db")>()),
+  findDefaultVoiceCredential: db.findDefaultVoiceCredential,
+}));
 
 const scope = { userId: "user-1", spaceId: "space-1" };
 
@@ -187,5 +194,37 @@ describe("parseModelConnectionVoiceSecret", () => {
     ]) {
       expect(parseModelConnectionVoiceSecret(key)).toBeUndefined();
     }
+  });
+});
+
+describe("loadDefaultVoice", () => {
+  it("speaks through the model connection the voice connection names, not the newest", async () => {
+    const credentials = [credential("old", 1_000), credential("new", 2_000)];
+    const { prisma, deps: d } = deps({
+      credentials,
+      secrets: {
+        "secret-voice": modelConnectionVoiceSecret("old"),
+        "secret-old": "xai-old-model-key",
+        "secret-new": "xai-new-model-key",
+      },
+    });
+    const findFirst = vi.fn(
+      async ({ where }: { where: { id: string } }) =>
+        credentials
+          .filter((row) => row.id === where.id)
+          .map((row) => ({ ...row, userPreferences: [] }))[0] ?? null,
+    );
+    Object.assign(prisma.userModelCredential, { findFirst });
+    db.findDefaultVoiceCredential.mockResolvedValue({
+      provider: "xai",
+      secretId: "secret-voice",
+      voiceId: "voice-1",
+      speechModel: "",
+    });
+    const voice = await loadDefaultVoice(d as unknown as DefaultVoiceDeps, scope);
+    expect(voice).toMatchObject({ apiKey: "xai-old-model-key", linked: true });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "old" }) }),
+    );
   });
 });

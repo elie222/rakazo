@@ -5,6 +5,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   chatAppConnectNote,
   HELPER_RESULT_TRIGGER,
+  isBackgroundRunTrigger,
   isCallClientNonce,
   isOwnerStartedRun,
   messagingChannelPrivacyBlock,
@@ -57,6 +58,7 @@ import {
 import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
 import { TASK_CATALOG_GUIDANCE } from "../../tasks/task-catalog.prompt.js";
 import { agentConnectionTools, builtinAgentTools } from "../../tools/builtin.tool-definition.js";
+import { hasVoiceForMessages, voiceMessageRequestedByOwner } from "../../voice/voice-message.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { APPROVED_EFFECT_REPLAY_ORDER } from "../lifecycle/run-effects.js";
 import { createRunWorkspaceCheckpoint, failRunBeforeTurn } from "../lifecycle/run-lifecycle.js";
@@ -738,6 +740,18 @@ export async function selectRunTools(
       semanticMemoryReflects: Boolean(semanticMemory?.reflect),
       mediaImagesEnabled: Boolean(deps.artifacts && parts.media.image),
       mediaVideoEnabled: Boolean(deps.artifacts && parts.media.video),
+      voiceMessagesEnabled:
+        Boolean(deps.artifacts) &&
+        !isBackgroundRunTrigger(run.trigger) &&
+        voiceMessageRequestedByOwner(run.trigger, {
+          ownerStartedRun,
+          messagingChannelRun: nonOwnerChatRun,
+        }) &&
+        (await hasVoiceForMessages(
+          deps.prisma,
+          { userId: run.userId, spaceId: run.spaceId },
+          bot.voiceId,
+        )),
       paidServicesEnabled: Boolean(paidServices),
       cloudAgentEnabled: Boolean(cloudAgent),
       cloudAgentCleanupEnabled,

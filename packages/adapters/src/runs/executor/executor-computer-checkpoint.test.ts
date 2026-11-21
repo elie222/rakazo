@@ -332,6 +332,7 @@ function fixture(runId = "run-1") {
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     spaceSettingOverride: { findUnique: async () => null },
+    userVoicePreference: { findFirst: async () => null },
     userActionApprovalRule: {
       findMany: vi.fn(async () => [
         { effect: "require_approval", matchKind: "tool", matchValue: "browser_act" },

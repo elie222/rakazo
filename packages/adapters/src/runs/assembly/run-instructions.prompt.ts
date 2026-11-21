@@ -432,6 +432,8 @@ export function userTurnInstructions(parts: {
   offeredFleetTools?: readonly string[];
   /** The run can set its own follow-ups (see followUpsOffered). */
   followUpsOffered?: boolean;
+  /** The run was offered voice_message: the person has a voice to speak with. */
+  voiceMessagesOffered?: boolean;
   /** Whether this turn may start a background helper (only in the bot's own app chat). */
   backgroundHelpersAllowed?: boolean;
   userComputer?: UserComputerState;
@@ -492,6 +494,9 @@ export function userTurnInstructions(parts: {
       "render_plot",
       'For charts and data visualization, use the render_plot tool: it renders bar, line, scatter, histogram, heatmap, faceted and many more chart types from a JSON spec and attaches the PNG to the chat. Call render_plot with {"help": true} before your first chart to read the full guide.',
     ),
+    parts.voiceMessagesOffered
+      ? "voice_message speaks text in the person's chosen voice and attaches the recording, which also reaches them in a messaging app. Use it whenever they ask for a voice message, audio, a recording, or to hear your answer, instead of saying you cannot; this holds even if an earlier reply in this chat said you could not send audio. Write the spoken text short and natural, and add a written line only when it helps."
+      : undefined,
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "save_page",

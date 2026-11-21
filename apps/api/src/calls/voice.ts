@@ -16,6 +16,8 @@ import {
   serializeOpenAiCompatibleVoiceSecret,
   VoiceProviderUnavailableError,
   voiceCatalogEntry,
+  voiceProviderMayUsePrivateEndpoint,
+  withVoiceConnection as withSharedVoiceConnection,
 } from "@rakazo/adapters";
 import type { Actor, SettingsScope, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
 import { ConnectionSetupError, SettingsScopeSchema } from "@rakazo/contracts";
@@ -61,9 +63,7 @@ export interface VoiceDeps {
 
 /** A self-hosted speech server on a private address is limited like model endpoints. */
 async function voiceMayUsePrivateEndpoint(deps: VoiceDeps, provider: string) {
-  return (
-    provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID && deps.env?.mcpAllowPrivateEndpoint === true
-  );
+  return voiceProviderMayUsePrivateEndpoint(provider, deps.env?.mcpAllowPrivateEndpoint);
 }
 
 /** The voice adapter for a credential, with the caller's private-endpoint decision. */
@@ -280,52 +280,18 @@ export async function loadDefaultVoiceCredential(
   return loadVoiceCredential(deps, actor, undefined, scope, signal, operation);
 }
 
-/** Keep refresh failures and linked-connection refusals safe for display. */
+/** The shared connection handling; an outage was logged there, so its 5xx is expected. */
 export async function withVoiceConnection<T>(
   provider: string,
   linked: boolean,
   run: () => Promise<T>,
 ): Promise<T> {
   try {
-    return await run();
+    return await withSharedVoiceConnection(provider, linked, run);
   } catch (error) {
-    const outage = voiceOutage(error);
-    if (outage) {
-      getLogger().warn("voice provider unavailable", {
-        provider,
-        reason: outage.cause instanceof Error ? outage.cause.name : "server error",
-      });
-      markExpectedFailure();
-      throw outage;
-    }
-    if (!linked) throw error;
-    const name = voiceCatalogEntry(provider)?.name ?? provider;
-    if (error instanceof VoiceAccountError) {
-      if (error.code === "VOICE_KEY_REJECTED") {
-        throw new VoiceAccountError(
-          error.code,
-          `${name} didn't accept the Models connection for voice. Disconnect and paste an API key.`,
-        );
-      }
-      throw error;
-    }
-    getLogger().warn("voice could not use the model connection", {
-      provider,
-      reason: error instanceof Error ? error.name : "unknown",
-    });
-    throw new VoiceAccountError(
-      undefined,
-      `Couldn't use the ${name} connection from Models. Try again.`,
-    );
+    if (error instanceof VoiceProviderUnavailableError) markExpectedFailure();
+    throw error;
   }
-}
-
-/** A provider outage or a request it left unanswered past its deadline, as one error to wait out. */
-function voiceOutage(error: unknown): VoiceProviderUnavailableError | undefined {
-  if (error instanceof VoiceProviderUnavailableError) return error;
-  if (error instanceof Error && error.name === "TimeoutError")
-    return new VoiceProviderUnavailableError(undefined, { cause: error });
-  return undefined;
 }
 
 /** The connection and the bearer its provider takes, read from a model connection if linked. */

@@ -40,6 +40,8 @@ then review or send the text.
 - To hear one reply, choose **Speak this reply** on the message.
 - To hear every reply from a bot, open its settings, expand **Advanced**, and turn on
   **Read replies aloud**. The **Voice** next to it overrides your default voice for that bot.
+- To get a recording, ask the bot for a voice message. It attaches the audio to the chat, so it
+  also reaches you in a [messaging app](/docs/messaging-apps/) that receives files.
 
 ## Call a bot
 

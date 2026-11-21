@@ -1698,6 +1698,29 @@ describe("userTurnInstructions", () => {
     expect(toolLine()).toBe(computerLine);
   });
 
+  it("names voice_message only when the run is offered it", () => {
+    const instructions = (voiceMessagesOffered?: boolean) =>
+      userTurnInstructions({
+        ...base,
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        voiceMessagesOffered,
+      })
+        .filter(Boolean)
+        .join("\n");
+    expect(instructions(true)).toContain("voice_message speaks text");
+    expect(instructions(false)).not.toContain("voice_message");
+    expect(instructions()).not.toContain("voice_message");
+  });
+
   it("states bot management rules only when the run is offered bot management write tools", () => {
     const clauseFor = (
       trigger: string,

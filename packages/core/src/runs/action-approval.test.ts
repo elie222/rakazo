@@ -1174,6 +1174,12 @@ describe("toolResultTaintsRun", () => {
       expect(toolResultTaintsRun(tool)).toBe(false);
     }
   });
+
+  it("does not taint on confirmations of the bot's own attachments and recordings", () => {
+    for (const tool of ["attach_file", "feedback", "voice_message"]) {
+      expect(toolResultTaintsRun(tool)).toBe(false);
+    }
+  });
 });
 
 it("classifies schedule_update like schedule_create", () => {
