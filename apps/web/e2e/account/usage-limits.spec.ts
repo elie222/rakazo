@@ -69,7 +69,10 @@ const breakdown = {
       modelCalls: 180,
     },
   ],
-  modelOptions: [{ provider: "subscription", model: "example-large" }],
+  modelOptions: [
+    { provider: "subscription", model: "example-large" },
+    { provider: "retired", model: "opaque-legacy-id" },
+  ],
   totals: {
     runs: 42,
     inputTokens: 910_000,
@@ -78,7 +81,25 @@ const breakdown = {
     costUsd: 4.2,
     modelCalls: 180,
   },
-  models: summary.models,
+  models: [
+    ...summary.models.map((model) => ({
+      ...model,
+      inputTokens: model.inputTokens - 10,
+      outputTokens: model.outputTokens - 2,
+      totalTokens: model.totalTokens - 12,
+      costUsd: model.costUsd - 0.001,
+      modelCalls: model.modelCalls - 1,
+    })),
+    {
+      provider: "retired",
+      model: "opaque-legacy-id",
+      inputTokens: 10,
+      outputTokens: 2,
+      totalTokens: 12,
+      costUsd: 0.001,
+      modelCalls: 1,
+    },
+  ],
   overTimeUnit: "day",
   overTime: [
     {
@@ -135,6 +156,25 @@ const creditStatus: BillingStatus = {
 test("account menu shows the usage hint and Usage shows allowances and credits only when present", async ({
   page,
 }, testInfo) => {
+  await page.route("**/rpc/models/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: unknown[] };
+    await route.fulfill({
+      response,
+      json: {
+        json: [
+          ...body.json,
+          {
+            provider: "subscription",
+            providerName: "Example Provider",
+            id: "example-large",
+            label: "Example Large",
+            billing: "subscription",
+          },
+        ],
+      },
+    });
+  });
   await page.route("**/rpc/usage/limits", (route) => route.fulfill({ json: { json: plans } }));
   await page.route("**/rpc/usage/summary", (route) => route.fulfill({ json: { json: summary } }));
   await page.route("**/rpc/usage/breakdown", (route) => {
@@ -179,7 +219,15 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   );
   await expect(cards.nth(1)).toContainText("work@example.com");
   await expect(settings.getByTestId("credit-balance")).toHaveCount(0);
-  await expect(settings.getByRole("cell", { name: /example-large/ })).toBeVisible();
+  await expect(settings.getByRole("cell", { name: /Example Large/ })).toBeVisible();
+  await expect(settings.getByRole("cell", { name: /Example Large/ })).toContainText(
+    "Example Provider",
+  );
+  const unlisted = settings.getByRole("cell", { name: "Unlisted model", exact: true });
+  await expect(unlisted).toBeVisible();
+  await expect(settings).not.toContainText("opaque-legacy-id");
+  await unlisted.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "usage-model-labels");
   const botFilter = settings.getByRole("combobox", { name: "Bot" });
   await expect(botFilter).toHaveText("All bots");
   await botFilter.click();
@@ -208,14 +256,14 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   const totals = settings.getByTestId("usage-settings").locator("dl");
   await expect(totals).toContainText("330,000");
   await expect(totals).toContainText("$1.40");
-  await expect(settings.getByRole("row").filter({ hasText: "example-large" })).toContainText(
+  await expect(settings.getByRole("row").filter({ hasText: "Example Large" })).toContainText(
     "300,000",
   );
   await expect(settings.getByRole("button", { name: "Nov 12: 330,000 tokens, $1.40" })).toHaveCount(
     1,
   );
   await captureScreenshot(page, testInfo, "usage-limits-settings-filtered");
-  await settings.getByRole("cell", { name: /example-large/ }).scrollIntoViewIfNeeded();
+  await settings.getByRole("cell", { name: /Example Large/ }).scrollIntoViewIfNeeded();
   const bar = settings.getByRole("button", { name: "Nov 12: 330,000 tokens, $1.40" });
   await bar.focus();
   await page.keyboard.press("Shift+Tab");

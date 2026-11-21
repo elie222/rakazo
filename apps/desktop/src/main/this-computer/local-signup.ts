@@ -1,6 +1,8 @@
 import { LOCAL_SIGNUP_COOKIE, localSignupKey } from "@rakazo/core/node/local-signup";
 import type { Session } from "electron";
 
+const LOCAL_SIGNUP_PATH = "/api/auth";
+
 /**
  * Lets this app's window create accounts on the server the app runs. The page cannot read the
  * cookie, and only the auth routes receive it, so a browser or another user reaching the same
@@ -13,12 +15,13 @@ export async function syncLocalSignup(
   stackToken: string | null,
 ) {
   const url = new URL(localWebUrl).origin;
-  if (stackToken === null) return value.cookies.remove(url, LOCAL_SIGNUP_COOKIE);
+  if (stackToken === null)
+    return value.cookies.remove(url + LOCAL_SIGNUP_PATH, LOCAL_SIGNUP_COOKIE);
   await value.cookies.set({
     url,
     name: LOCAL_SIGNUP_COOKIE,
     value: localSignupKey(stackToken),
-    path: "/api/auth",
+    path: LOCAL_SIGNUP_PATH,
     httpOnly: true,
     sameSite: "lax",
   });
