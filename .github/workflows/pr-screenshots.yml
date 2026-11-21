@@ -315,8 +315,10 @@ jobs:
             echo "::$resume::"
             exit "$status"
           fi
-          # Tool names and outcomes only, so an incomplete run says which step failed without echoing page text.
-          grep -E '^mcp: [a-z_./]+( started| \(failed\)| \(completed\))?$' "$log" | tail -n 40 || true
+          # Tool names and outcomes only, so an incomplete run says which step failed without echoing
+          # page text or the commands the agent ran.
+          grep -E '^mcp: [a-z_./]+( started| \(failed\)| \(completed\))?$|^ (succeeded|exited -?[0-9]+|failed) in [0-9.]+m?s:?$' "$log" \
+            | sed -E 's/^ (.*) in .*/shell: \1/' | tail -n 60 || true
           result=$(sudo -n -u codex-screenshots head -c 65537 /srv/pr-screenshot-agent/result.json | jq -c .)
           echo "result=$result" >> "$GITHUB_OUTPUT"
       - name: Persist refreshed subscription login
