@@ -332,14 +332,17 @@ export function VaultItemEditor({
                 </View>
               )}
               {keyUnreadable ? (
-                <Text style={styles.error}>{t`This authenticator key can't be read.`}</Text>
+                <Text accessibilityLiveRegion="polite" style={styles.error}>
+                  {t`This authenticator key can't be read.`}
+                </Text>
               ) : null}
               {login && typedSites === "invalid" ? (
                 <Text
+                  accessibilityLiveRegion="polite"
                   style={styles.error}
                 >{t`Enter each site as an HTTPS address a login can be saved for.`}</Text>
               ) : login && typedSites === "too_many" ? (
-                <Text style={styles.error}>
+                <Text accessibilityLiveRegion="polite" style={styles.error}>
                   {t`Up to ${ph({ limit: VAULT_ALSO_ON_LIMIT })} sites.`}
                 </Text>
               ) : null}
