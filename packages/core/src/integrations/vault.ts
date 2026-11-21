@@ -9,6 +9,7 @@ import {
   authenticatorKey,
   BLOCKED_ITEM_ANSWER,
   encodeLoginSecret,
+  FULL_VAULT_ANSWER,
   hasAuthenticatorKey,
   hasVaultAccess,
   LoginSecretValue,
@@ -20,13 +21,15 @@ import {
  * Which fixed refusal a secret answer's server error is. Its other errors could echo the value,
  * so they are never shown.
  */
-export function secretAnswerRefusal(error: unknown): "blocked" | "unchosen" | undefined {
+export function secretAnswerRefusal(error: unknown): "blocked" | "unchosen" | "full" | undefined {
   const message = error && typeof error === "object" && "message" in error ? error.message : "";
   return message === BLOCKED_ITEM_ANSWER
     ? "blocked"
     : message === UNCHOSEN_ITEM_ANSWER
       ? "unchosen"
-      : undefined;
+      : message === FULL_VAULT_ANSWER
+        ? "full"
+        : undefined;
 }
 
 /** Which of the owner's bots may use an item: every one, or those in `botIds`. */
