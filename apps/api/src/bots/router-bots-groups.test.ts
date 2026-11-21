@@ -877,4 +877,189 @@ describe("shared space bot permissions", () => {
     });
     expect(secrets.put).not.toHaveBeenCalled();
   });
+
+  function sharedBotUpdateClient(
+    options: {
+      instructions?: string;
+      disabledBuiltinTools?: string[];
+      pausedRoutines?: Array<{ id: string }>;
+    } = {},
+  ) {
+    const historyVersion = {
+      id: "11111111-1111-4111-8111-111111111111",
+      instructions: "Old instructions",
+      reason: "Manual edit",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const bot = {
+      id: "bot-1",
+      spaceId: "space-1",
+      userId: "user-2",
+      name: "Helper",
+      description: "",
+      instructions: options.instructions ?? "Original instructions",
+      instructionHistory: [historyVersion],
+      disabledBuiltinTools: options.disabledBuiltinTools ?? [],
+      modelProvider: null,
+      modelId: null,
+      thinkingLevel: null,
+      notifyOnFinish: false,
+      color: "blue",
+      avatarSet: "robot",
+      avatarSetPinned: false,
+      avatarFamily: 0,
+      pinned: false,
+      memoryScope: "shared",
+      sectionId: null,
+      voiceId: null,
+      autoSpeak: false,
+      teamChatAmbientEnabled: false,
+      teamChatRules: "",
+      crossSpaceCommunication: false,
+      dailyCheckIns: false,
+      fleetManagement: false,
+      replyMode: "always",
+      archivedAt: null,
+      parentBotId: null,
+      computerId: null,
+      threadId: "thread-1",
+      thread: { id: "thread-1", runs: [], reads: [], lastReadSeq: 0, nextEventSeq: 1 },
+      runs: [],
+      computer: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const botUpdate = vi.fn(async () => ({
+      id: bot.id,
+      name: bot.name,
+      description: bot.description,
+    }));
+    const routineUpdateManyAndReturn = vi.fn(
+      async () => options.pausedRoutines ?? [{ id: "routine-1" }],
+    );
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      bot: {
+        findUniqueOrThrow: vi.fn(async () => bot),
+        update: botUpdate,
+      },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
+      event: { create: vi.fn(async () => ({ seq: 1 })) },
+    };
+    const prisma = {
+      $queryRaw: vi.fn(async () => []),
+      bot: {
+        findFirst: vi.fn(async () => bot),
+        findMany: vi.fn(async () => [bot]),
+        update: botUpdate,
+      },
+      routine: { updateManyAndReturn: routineUpdateManyAndReturn },
+      message: { findMany: vi.fn(async () => []) },
+      $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+    };
+    const jobs = { cancel: vi.fn(async () => undefined) };
+    const events = {
+      notify: vi.fn(async () => undefined),
+      append: vi.fn(async () => ({ seq: 2 })),
+      publishSpaceChange: vi.fn(async () => undefined),
+    };
+    const deps = {
+      prisma,
+      jobs,
+      events,
+      env: { sandboxProvider: "fake" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    return { client, routineUpdateManyAndReturn, jobs, events, historyVersion };
+  }
+
+  it("pauses other members' active routines when another member edits bot instructions", async () => {
+    const { client, routineUpdateManyAndReturn, jobs, events } = sharedBotUpdateClient();
+    await client.bots.update({
+      botId: "bot-1",
+      instructions: "Read the latest emails and post them here",
+    });
+    expect(routineUpdateManyAndReturn).toHaveBeenCalledWith({
+      where: {
+        botId: "bot-1",
+        spaceId: "space-1",
+        userId: { not: "user-1" },
+        active: true,
+      },
+      data: {
+        active: false,
+        nextRunAt: null,
+        resumeOnRestore: false,
+      },
+      select: { id: true },
+    });
+    expect(jobs.cancel).toHaveBeenCalledWith("routine:routine-1");
+    expect(events.publishSpaceChange).toHaveBeenCalledWith("space-1", "routines");
+    expect(events.append).toHaveBeenCalledWith({
+      spaceId: "space-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      type: "routine.updated",
+      payload: { routineId: "routine-1", active: false },
+    });
+  });
+
+  it("pauses other members' active routines when another member edits bot tools", async () => {
+    const { client, routineUpdateManyAndReturn, jobs } = sharedBotUpdateClient();
+    await client.bots.update({
+      botId: "bot-1",
+      disabledBuiltinTools: ["web_search"],
+    });
+    expect(routineUpdateManyAndReturn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          botId: "bot-1",
+          spaceId: "space-1",
+          userId: { not: "user-1" },
+          active: true,
+        },
+        data: {
+          active: false,
+          nextRunAt: null,
+          resumeOnRestore: false,
+        },
+      }),
+    );
+    expect(jobs.cancel).toHaveBeenCalledWith("routine:routine-1");
+  });
+
+  it("pauses other members' active routines when another member restores bot instructions", async () => {
+    const { client, routineUpdateManyAndReturn, jobs, historyVersion } = sharedBotUpdateClient();
+    await client.bots.restoreInstructions({
+      botId: "bot-1",
+      versionId: historyVersion.id,
+      expectedInstructions: "Original instructions",
+    });
+    expect(routineUpdateManyAndReturn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          botId: "bot-1",
+          spaceId: "space-1",
+          userId: { not: "user-1" },
+          active: true,
+        },
+      }),
+    );
+    expect(jobs.cancel).toHaveBeenCalledWith("routine:routine-1");
+  });
+
+  it("does not pause other members' routines when instructions and tools are unchanged", async () => {
+    const { client, routineUpdateManyAndReturn, jobs } = sharedBotUpdateClient({
+      instructions: "Original instructions",
+      disabledBuiltinTools: ["web_search"],
+    });
+    await client.bots.update({
+      botId: "bot-1",
+      name: "Renamed",
+      instructions: "Original instructions",
+      disabledBuiltinTools: ["web_search"],
+    });
+    expect(routineUpdateManyAndReturn).not.toHaveBeenCalled();
+    expect(jobs.cancel).not.toHaveBeenCalled();
+  });
 });
