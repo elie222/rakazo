@@ -9,6 +9,11 @@
       "development": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./best-effort": {
+      "types": "./src/best-effort.ts",
+      "development": "./src/best-effort.ts",
+      "default": "./src/best-effort.ts"
+    },
     "./hono": {
       "types": "./src/hono.ts",
       "development": "./src/hono.ts",

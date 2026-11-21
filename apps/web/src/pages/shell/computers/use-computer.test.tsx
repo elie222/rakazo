@@ -24,6 +24,8 @@ vi.mock("../../../components/computers/ComputerMaintenanceActions", () => ({
   ComputerMaintenanceActions: () => <button type="button">Recover computer</button>,
 }));
 
+import { ComposerReplyPreview } from "../chat/chat-context";
+
 import type { ComputerState } from "./use-computer";
 import { useComputerControls, useComputerState } from "./use-computer";
 
@@ -40,15 +42,20 @@ const singleUseScreen = (signIn: string, view: "view" | "control" = "view"): Scr
 const nextSingleUseScreen = () => singleUseScreen(`code-${++codes}`);
 let screenAnswer: () => ScreenAnswer = nextSingleUseScreen;
 const screenUrl = vi.fn(async () => screenAnswer());
+/** The bot whose chat is open, and the screen each render drew for it. */
+let activeId = "bot-1";
+const activeBotId = { current: activeId };
+let drawn: Array<{ botId: string; url: string | null }> = [];
 
 /** The hook with the frame the panel draws: gone while an error replaces the screen. */
 function Harness() {
   state = useComputerState({
     rpc: { computer: { screenUrl } } as never,
     panel: "settings",
-    activeId: "bot-1",
-    activeBotId: { current: "bot-1" },
+    activeId,
+    activeBotId,
   });
+  drawn.push({ botId: activeId, url: state.screenUrl });
   if (!state.screenUrl || state.screenLoadError) return null;
   // Drawn as the panel and overlay draw it: a held predecessor first, then the live frame.
   return screenFrames(state.screenFrameKey, state.screenUrl, state.heldScreen).map((frame) => (
@@ -82,6 +89,9 @@ async function report(rakazoScreen: string) {
 beforeEach(async () => {
   vi.useFakeTimers();
   codes = 0;
+  activeId = "bot-1";
+  activeBotId.current = activeId;
+  drawn = [];
   screenAnswer = nextSingleUseScreen;
   screenUrl.mockClear();
   vi.stubGlobal(
@@ -161,6 +171,43 @@ it("shows a single-use screen's error only after its reloads stop connecting", a
 it("never caches a single-use screen URL", async () => {
   await read();
   expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBeNull();
+});
+
+it("never draws the previous bot's screen for the bot switched to", async () => {
+  // The panel shows the screen; the full window is closed, and its bot follows the chat.
+  await act(async () => {
+    state.setComputerOpen(false);
+    state.setComputerBotId("bot-1");
+  });
+  screenAnswer = () => ({ url: "embedded-screen://first-bot" });
+  await read();
+  expect(state.screenUrl).toBe("embedded-screen://first-bot");
+  // The chat changes first. The new bot's screen is set after that render, while the opened
+  // computer's bot still names the previous one, as the app does.
+  activeId = "bot-2";
+  activeBotId.current = activeId;
+  drawn = [];
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.showCachedComputer("bot-2"));
+  await act(async () => state.setComputerBotId("bot-2"));
+  expect(drawn.length).toBeGreaterThan(0);
+  expect(drawn.every((render) => render.botId === "bot-2" && render.url === null)).toBe(true);
+  screenAnswer = () => ({ url: "embedded-screen://second-bot" });
+  await act(async () => {
+    await state.refreshComputerScreen("bot-2");
+  });
+  expect(state.screenUrl).toBe("embedded-screen://second-bot");
+  // Going back shows the first bot's own cached screen again.
+  activeId = "bot-1";
+  activeBotId.current = activeId;
+  drawn = [];
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.showCachedComputer("bot-1"));
+  expect(drawn.some((render) => render.url === "embedded-screen://second-bot")).toBe(false);
+  // Its cached screen shows at once, before the opened computer's bot has caught up.
+  expect(state.screenUrl).toBe("embedded-screen://first-bot");
+  await act(async () => state.setComputerBotId("bot-1"));
+  expect(state.screenUrl).toBe("embedded-screen://first-bot");
 });
 
 it("replaces a live single-use frame once the server names another screen", async () => {
@@ -258,6 +305,80 @@ it("shows a proxied screen's error only after its reloads stop connecting", asyn
   }
   expect(state.screenLoadError).toBe("Could not connect to the computer screen");
   expect(container.querySelector("iframe")).toBeNull();
+});
+
+/** The frame a viewer sees: the held predecessor is drawn aria-hidden beneath the live one. */
+const liveFrame = () => container.querySelector<HTMLIFrameElement>("iframe:not([aria-hidden])");
+
+it("reads a fresh screen URL when a reconnect probe refuses the stale one", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stale/vnc.html" });
+  await read();
+  await report("connected");
+  // The screen rotated its sign-in: the stale page is refused, and the screen now names another.
+  screenAnswer = () => ({ url: "/novnc/session/view/2.fresh/vnc.html" });
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+  expect(liveFrame()?.dataset.src).toContain("2.fresh");
+});
+
+it("remounts a dropped screen whose probe loads, without a fresh read", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.restart/vnc.html" });
+  await read();
+  await report("connected");
+  const before = liveFrame();
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(1);
+  expect(liveFrame()).not.toBe(before);
+  expect(liveFrame()?.dataset.src).toContain("1.restart");
+});
+
+it("remounts the stale screen when a refused reconnect reads the same URL", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stale/vnc.html" });
+  await read();
+  await report("connected");
+  const before = liveFrame();
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screenUrl).toHaveBeenCalledTimes(2);
+  expect(liveFrame()).not.toBe(before);
+  expect(liveFrame()?.dataset.src).toContain("1.stale");
+});
+
+it("remounts the stale screen when a refused reconnect's fresh read never settles", async () => {
+  screenAnswer = () => ({ url: "/novnc/session/view/1.stale/vnc.html" });
+  await read();
+  await report("connected");
+  const before = liveFrame();
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 403 }));
+  screenUrl.mockImplementationOnce(() => new Promise<ScreenAnswer>(() => undefined));
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000 + SCREEN_FRAME_LOAD_TIMEOUT_MS);
+  });
+  expect(liveFrame()).not.toBe(before);
+  // A later drop reconnects again rather than waiting on the hung read: the same link loads
+  // in a new frame once its probe answers.
+  const remounted = liveFrame();
+  await report("connected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(SCREEN_RECONNECT_STABLE_MS);
+  });
+  await report("disconnected");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5_000);
+  });
+  expect(liveFrame()).not.toBe(remounted);
+  expect(screenUrl).toHaveBeenCalledTimes(2);
 });
 
 it("keeps one reconnect while its screen read is still pending", async () => {
@@ -624,6 +745,7 @@ it("reads no screen for a failed control call of a bot that is no longer shown",
 });
 
 it("closes the computer view on Escape, but not on the Escape that ends an IME composition", async () => {
+  const dismissReply = vi.fn();
   function Controls() {
     state = useComputerState({
       rpc: {} as never,
@@ -647,7 +769,12 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
       onUpgrade: vi.fn(),
     });
     // Stands in for the view's "Teach a task" goal box, whose popover lets a composing Escape bubble.
-    return <textarea aria-label="Goal" />;
+    return (
+      <>
+        <textarea aria-label="Goal" />
+        <ComposerReplyPreview author="Helper" text="Quote" onDismiss={dismissReply} />
+      </>
+    );
   }
   await act(async () => root.render(<Controls />));
   await act(async () => state.setComputerOpen(true));
@@ -656,11 +783,19 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
     act(async () => {
       goal.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, ...init }));
     });
+  const consume = (event: Event) => event.preventDefault();
+  goal.addEventListener("keydown", consume);
+  await press({ cancelable: true });
+  goal.removeEventListener("keydown", consume);
+  expect(state.computerOpen).toBe(true);
   await press({ isComposing: true });
   await press({ keyCode: 229 });
   expect(state.computerOpen).toBe(true);
-  await press();
+  await press({ cancelable: true });
   expect(state.computerOpen).toBe(false);
+  expect(dismissReply).not.toHaveBeenCalled();
+  await press({ cancelable: true });
+  expect(dismissReply).toHaveBeenCalledOnce();
 });
 
 it("reads a running computer's screen for the bot panel without keeping it awake or waking it", async () => {

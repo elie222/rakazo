@@ -10,6 +10,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@rakazo/ui-web";
+import { ChevronDown } from "lucide-react";
 import { useRef, useState } from "react";
 import { useListSearch } from "../../lib/use-list-search";
 
@@ -42,10 +43,11 @@ export function FoundModelPicker({
       }}
     >
       <PopoverTrigger
-        render={<Button variant="outline" className="mt-2 w-full justify-start" />}
+        render={<Button variant="outline" className="mt-2 w-full justify-between" />}
         aria-label={t`Models from server`}
       >
-        {value}
+        <span className="min-w-0 truncate">{value}</span>
+        <ChevronDown aria-hidden="true" className="size-4 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent
         initialFocus={showSearch ? searchRef : undefined}

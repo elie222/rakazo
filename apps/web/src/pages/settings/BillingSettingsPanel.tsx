@@ -1,8 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { BillingStatus } from "@rakazo/contracts";
 import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ModelCreditsSettings } from "../../components/billing/ModelCredits";
 import { billingDateLabel, formatBillingPrice } from "../../lib/billing/billing";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
@@ -14,28 +12,17 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
   const locale = i18n.locale || "en";
   const queryClient = useQueryClient();
   const queries = useSpaceQueries();
-  const [status, setStatus] = useState<BillingStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const statusRead = useQuery({
+    ...queries.billing.status.queryOptions(),
+    queryFn: () => client.billing.status(),
+  });
+  const status = statusRead.data;
+  const error = statusRead.isError && !status;
   // Desktop opens the URL in the system browser and this page stays, so the button comes back.
   const portal = useSave({
-    save: (_: void, rpc) => rpc.billing.portal(),
+    save: (_, rpc) => rpc.billing.portal(),
     onSaved: ({ url }) => window.location.assign(url),
   });
-
-  useEffect(() => {
-    let active = true;
-    client.billing
-      .status()
-      .then((next) => {
-        if (active) setStatus(next);
-      })
-      .catch(() => {
-        if (active) setError(t`Could not load billing`);
-      });
-    return () => {
-      active = false;
-    };
-  }, [client, t]);
 
   const stateLabel = status
     ? status.state === "trialing"
@@ -59,7 +46,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
       <ModelCreditsSettings
         status={status}
         refresh={async () => {
-          setStatus(await client.billing.status());
+          await statusRead.refetch({ throwOnError: true });
           await queryClient.invalidateQueries({
             queryKey: queries.billing.computerUsage.queryKey(),
           });
@@ -96,10 +83,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
             variant="secondary"
             size="sm"
             disabled={portal.pending}
-            onClick={() => {
-              setError(null);
-              portal.run();
-            }}
+            onClick={() => portal.run()}
           >
             <Trans>Manage</Trans>
           </Button>
@@ -107,7 +91,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
       </div>
       {portal.error || error ? (
         <p role="alert" className="mt-3 text-body text-destructive">
-          {portal.error ? t`Could not open billing` : error}
+          {portal.error ? t`Could not open billing` : t`Could not load billing`}
         </p>
       ) : null}
     </div>

@@ -8,7 +8,9 @@
     "./bot-removal": "./src/bot-removal.ts",
     "./computer-preview": "./src/computer-preview.ts",
     "./computer-usage": "./src/computer-usage.ts",
+    "./model-provider": "./src/model-provider.ts",
     "./meeting": "./src/meeting.ts",
+    "./page-review": "./src/page-review.ts",
     "./run-error": "./src/run-error.ts",
     "./vault": "./src/vault.ts",
     "./locales/*": "./locales/*"

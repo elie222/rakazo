@@ -18,7 +18,7 @@ import type {
   ToolStepCall,
 } from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
-import { createStreamingRedactor } from "@rakazo/core";
+import { createStreamingRedactor, toolResultTaintsRun } from "@rakazo/core";
 import {
   isToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -34,6 +34,7 @@ import {
   approvalPausedToolResult,
   approvedEffectOccurrence,
 } from "../../approvals/approval-effect.js";
+import { appendOutsideText } from "../../approvals/review-target-sources.js";
 import type { ComputerExecutionLease } from "../../computers/computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "../../computers/screens/computer-tools.js";
 import type { selectRunConnections } from "../../integrations/connection-context.js";
@@ -214,6 +215,12 @@ export interface RunState {
    */
   tainted: boolean;
   /**
+   * The text of the outside content this run read (tool results, the task of a run someone else
+   * started, replayed history), normalized and capped, so Auto Review can tell which targets of a call only that
+   * content named (see outsideOnlyTargets).
+   */
+  outsideText: string;
+  /**
    * The instructions this attempt's model works from: the attempt-start snapshot its prompt
    * was built with, restored from the turn checkpoint on resume, and advanced only after a
    * successful own-instruction write in this attempt. Own instruction writes guard on it, so
@@ -230,6 +237,11 @@ export interface RunState {
   walletHosts: Set<string>;
   /** Where the page browser last said its page was, which picks a login's site to fill on. */
   pageUrl?: string;
+  /**
+   * A desktop action ran since the page browser last reported `pageUrl`, so the page may have
+   * changed: Auto Review treats what a page action types as going to a site the run was not given.
+   */
+  pageUrlUncertain?: boolean;
   vaultUses: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
@@ -431,9 +443,14 @@ export async function isRunTainted(ctx: RunContext) {
   return state.tainted;
 }
 
-/** Fresh outside input applies the existing action protections for this run. */
-export async function markReadOutsideContent(ctx: RunContext) {
+/**
+ * Fresh outside input applies the existing action protections for this run, and its text is kept
+ * so Auto Review can tell which targets of a later call only it named.
+ */
+export async function markReadOutsideContent(ctx: RunContext, content?: unknown) {
   ctx.state.tainted = true;
+  if (content !== undefined)
+    ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, content);
 }
 
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */
@@ -534,6 +551,10 @@ export function restoreTurnCheckpointEffects(
   const effects = ctx.state.effects;
   try {
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
+    // The saved turn's tool results are outside content this run already read.
+    for (const message of saved.messages)
+      if (message.role === "toolResult" && toolResultTaintsRun(message.toolName))
+        ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, message.content);
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
     const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
     const available = new Set(namedTools.map((tool) => tool.name));

@@ -19,6 +19,7 @@ import {
   shade,
   Venn,
 } from "./dataviz.js";
+import { wordsFor } from "./labels.js";
 import { Page } from "./layout.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -467,6 +468,24 @@ describe("charts", () => {
     expect(root.querySelectorAll(".rk-matrix-quadrant")).toHaveLength(4);
   });
 
+  it("keeps matrix geometry left to right on an RTL page and lets each label pick its direction", () => {
+    const root = mount(
+      <div dir="rtl">
+        <Matrix2x2
+          axes={{ x: ["מאמץ נמוך", "מאמץ גבוה"], y: ["השפעה נמוכה", "השפעה גבוהה"] }}
+          quadrants={["מהיר", "חשוב", "משני", "מורכב"]}
+          points={[{ label: "תכנון", x: 0.2, y: 0.25 }]}
+        />
+      </div>,
+    );
+    expect(root.querySelector(".rk-matrix")?.getAttribute("dir")).toBe("ltr");
+    const labels = root.querySelectorAll(
+      ".rk-matrix-quadrant, .rk-matrix-label, .rk-matrix-x > span:first-child, .rk-matrix-y > span:first-child",
+    );
+    expect([...labels].map((l) => l.getAttribute("dir"))).toEqual(Array(7).fill("auto"));
+    expect(root.querySelectorAll(".rk-matrix-x bdi, .rk-matrix-y bdi")).toHaveLength(2);
+  });
+
   it("dates a source as live, as a snapshot, while updating, or after a failed refresh", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-31T12:00:00Z"));
@@ -534,6 +553,15 @@ describe("charts", () => {
         throw new Error("bad");
       }),
     ).toBe("3k");
+  });
+
+  it("puts a currency symbol after the minus sign in every locale", () => {
+    expect(formatValue(1234.5, "$", undefined, wordsFor("en"))).toBe("$1,234.5");
+    expect(formatValue(-1234.5, "$", undefined, wordsFor("en"))).toBe("-$1,234.5");
+    // Hebrew puts a left-to-right mark before the sign; the symbol still follows the sign.
+    expect(formatValue(-1234.5, "$", undefined, wordsFor("he"))).toBe("\u200E-$1,234.5");
+    // Swedish uses a true minus sign and a no-break space as the group separator.
+    expect(formatValue(-1234.5, "$", undefined, wordsFor("sv"))).toBe("\u2212$1\u00A0234,5");
   });
 });
 

@@ -108,7 +108,6 @@
   "packages/adapters/src/runtime/pi/pi-session.ts": 1,
   "packages/adapters/src/runtime/pi/stream/pi-runtime-stream.ts": 1,
   "packages/adapters/src/runtime/pi/tools/pi-runtime-tools.ts": 1,
-  "packages/adapters/src/secrets/bot-secrets.ts": 1,
   "packages/adapters/src/secrets/secret-store-factory.ts": 1,
   "packages/adapters/src/storage/artifacts.ts": 2,
   "packages/adapters/src/storage/home-object-store.ts": 3,
