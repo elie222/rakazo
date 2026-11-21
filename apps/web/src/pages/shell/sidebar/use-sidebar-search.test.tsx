@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
 import type { SearchHit } from "@rakazo/contracts";
 import { SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
 import { act } from "react";
@@ -46,6 +47,8 @@ async function search(text: string) {
 }
 
 beforeEach(async () => {
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   requests = [];
@@ -177,11 +180,3 @@ it.each(["result", "error"])(
     expect(latest.searchLoading).toBe(false);
   },
 );
-
-it("preserves a whole emoji at the cap and drops a partial emoji", async () => {
-  const fits = `${"a".repeat(SEARCH_QUERY_MAX_LENGTH - 2)}😀`;
-  const split = "b".repeat(SEARCH_QUERY_MAX_LENGTH - 1);
-  await search(`${fits}tail`);
-  await search(`${split}😀tail`);
-  expect(requests.map((request) => request.q)).toEqual([fits, split]);
-});

@@ -20,11 +20,11 @@ export function useSidebarSearch({
 }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchResult, setSearchResult] = useState<
-    | { request: object; hits: SearchHit[]; error?: never }
-    | { request: object; hits?: never; error: string }
-    | null
-  >(null);
+  const [searchResult, setSearchResult] = useState<{
+    request: object;
+    hits: SearchHit[];
+    error: string | null;
+  } | null>(null);
   const [searchAttempt, setSearchAttempt] = useState(0);
   const activityMode = activityModePreference.use();
   const [activityFilters, setActivityFilters] = useState<ActivityListFilters>(emptyActivityFilters);
@@ -69,10 +69,11 @@ export function useSidebarSearch({
           { signal: abort.signal },
         )
         .then((result) => {
-          if (!abort.signal.aborted) setSearchResult({ request, hits: result.hits });
+          if (!abort.signal.aborted) setSearchResult({ request, hits: result.hits, error: null });
         })
         .catch((error: unknown) => {
-          if (!abort.signal.aborted) setSearchResult({ request, error: errorText(error) });
+          if (!abort.signal.aborted)
+            setSearchResult({ request, hits: [], error: errorText(error) });
         });
     },
     request ? 200 : null,
