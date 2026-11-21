@@ -67,6 +67,7 @@ describe("pending routine timer coalescing", () => {
       taskId: `old-task-${index}`,
       leaseFence: 0,
       updatedAt,
+      createdAt: updatedAt,
       task: { prompt: "an earlier prompt" },
     }));
     findMany.mockResolvedValueOnce(older as never).mockResolvedValueOnce([
@@ -79,7 +80,10 @@ describe("pending routine timer coalescing", () => {
       },
     ] as never);
     expect(await findPendingRoutineTick(tx, config)).toEqual({ id: "run-1", taskId: "task-1" });
-    expect(findMany.mock.calls[1]![0]).toMatchObject({ cursor: { id: "old-99" }, skip: 1 });
+    expect(findMany.mock.calls[1]![0]!.where!.OR).toEqual([
+      { createdAt: { gt: updatedAt } },
+      { createdAt: updatedAt, id: { gt: "old-99" } },
+    ]);
   });
   it("looks past a page whose only match holds the computer", async () => {
     const { tx, findMany } = fixture();
@@ -89,6 +93,7 @@ describe("pending routine timer coalescing", () => {
       taskId: `held-task-${index}`,
       leaseFence: 0,
       updatedAt,
+      createdAt: updatedAt,
       task: { prompt: index === 0 ? config.prompt : "an earlier prompt" },
     }));
     findMany.mockResolvedValueOnce(first as never).mockResolvedValueOnce([

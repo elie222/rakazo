@@ -70,20 +70,29 @@ export async function findPendingRoutineTick(
   // at a time until one keeps a match, so work under an older prompt never hides it.
   let retained: { id: string; taskId: string } | null = null;
   const cancelledEvents: { threadId: string; seq: number }[] = [];
-  let cursor: string | undefined;
+  // Keyset paging: a cursor row claimed by dispatch between pages would make `skip` drop a run.
+  let after: { createdAt: Date; id: string } | undefined;
   while (!retained) {
     const page = await tx.run.findMany({
-      where: pristine,
+      where: after
+        ? {
+            ...pristine,
+            OR: [
+              { createdAt: { gt: after.createdAt } },
+              { createdAt: after.createdAt, id: { gt: after.id } },
+            ],
+          }
+        : pristine,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: {
         id: true,
         taskId: true,
         leaseFence: true,
         updatedAt: true,
+        createdAt: true,
         task: { select: { prompt: true } },
       },
       take: PAGE,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
     const candidates = page.filter(({ task }) => task.prompt === config.prompt);
     const leases = candidates.length
@@ -135,7 +144,7 @@ export async function findPendingRoutineTick(
       cancelledEvents.push({ threadId: config.threadId, seq: event.seq });
     }
     if (page.length < PAGE) break;
-    cursor = page.at(-1)!.id;
+    after = page.at(-1)!;
   }
   return retained && { ...retained, ...(cancelledEvents.length ? { cancelledEvents } : {}) };
 }
