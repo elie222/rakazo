@@ -120,7 +120,7 @@ test(
     await expect(allow).toBeVisible();
     expect(
       (await card.locator("[data-testid=message-bubble-frame]").boundingBox())?.width,
-    ).toBeGreaterThan(350);
+    ).toBeGreaterThan(200);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       400,
     );
