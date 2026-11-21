@@ -75,8 +75,11 @@ export function RoutineEditor({
   // Going back or closing with unsaved edits asks first; a clean editor leaves at once.
   const [leaving, setLeaving] = useState<(() => void) | null>(null);
   // The run time a one-time routine starts with is made from the clock, so remember it per routine.
-  const [opened, setOpened] = useState({ editing, runAtLocal: draft.runAtLocal });
-  if (opened.editing !== editing) setOpened({ editing, runAtLocal: draft.runAtLocal });
+  // Only an unarmed one-time routine starts with one; any other keeps an edit made while saving.
+  const openedRunAt = () =>
+    editing && routineNeedsOneShotArm(editing, editing.crons) ? draft.runAtLocal : "";
+  const [opened, setOpened] = useState(() => ({ editing, runAtLocal: openedRunAt() }));
+  if (opened.editing !== editing) setOpened({ editing, runAtLocal: openedRunAt() });
   const leave = (exit: () => void) =>
     routineDraftDirty(draft, editing, opened.runAtLocal) ? setLeaving(() => exit) : exit();
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();

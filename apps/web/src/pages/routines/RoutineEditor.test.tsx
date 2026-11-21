@@ -195,3 +195,18 @@ it("counts an edited run time of a one-time routine as unsaved", async () => {
   expect(onClose).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain("Discard unsaved changes?");
 });
+
+it("keeps a run time edited while saving a one-time routine as unsaved", async () => {
+  const oneShot = { ...routine, crons: [ONCE_ROUTINE_CRON] } as Routine;
+  await render(oneShot);
+  const input = host.querySelector("input[type=datetime-local]") as HTMLInputElement;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, "2031-05-06T07:08");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  // The save finishes and arms the routine, keeping the edit made while it was in flight.
+  await render({ ...oneShot, nextRunAt: "2031-01-01T00:00:00.000Z" } as Routine);
+  await act(async () => button("Close").click());
+  expect(onClose).not.toHaveBeenCalled();
+});
