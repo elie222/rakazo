@@ -82,6 +82,7 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "forget_memory",
   "delete_shared_memory",
   "skill_delete",
+  "remove_mcp_server",
   // Permanent, and only for mail the bot received; its owner may still want it.
   "delete_email",
   "cloud_agent_launch",
