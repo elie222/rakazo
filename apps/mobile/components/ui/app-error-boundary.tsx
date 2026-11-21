@@ -30,6 +30,9 @@ export class AppErrorBoundary extends Component<Props, State> {
     const tokens = mobileTokens();
     return (
       <View style={[styles.screen, { backgroundColor: tokens.background }]}>
+        <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
+          {t`Could not load`}
+        </Text>
         <Pressable
           accessibilityRole="button"
           onPress={() => this.setState({ failed: false })}
@@ -49,6 +52,7 @@ export class AppErrorBoundary extends Component<Props, State> {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, alignItems: "center", justifyContent: "center", gap: 18, padding: 28 },
+  title: { fontSize: 18, fontWeight: "600", textAlign: "center" },
   action: { borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12 },
   actionText: { fontSize: 15, fontWeight: "600" },
 });
