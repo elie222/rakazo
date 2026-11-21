@@ -9,6 +9,7 @@ import { recordSecurityEvent, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
+import { isNamedHostScreenAction } from "../screens/host-screen.js";
 import type { HostComputerFrame, HostComputerRequest } from "./host-computer-protocol.js";
 import {
   HOST_COMPUTER_MAX_BYTES,
@@ -21,6 +22,7 @@ import type {
   UserDeviceRevokeReason,
 } from "./user-device-protocol.js";
 import {
+  USER_DEVICE_NAMED_CONTROLS_HEADER,
   USER_DEVICE_REVOKED_HEADER,
   userDeviceClientMessage,
   userDeviceRevokeReason,
@@ -109,6 +111,7 @@ interface AuthenticatedDevice {
 
 interface LiveDevice {
   device: AuthenticatedDevice;
+  namedControls: boolean;
   connectionId: string;
   socket: UserDeviceSocket;
   pending: Map<string, FrameQueue>;
@@ -277,7 +280,11 @@ export class UserDeviceHub {
         if (!device) return reject(401, "Unauthorized", reason);
         socket.off("error", onError);
         this.wss.handleUpgrade(request, socket, head, (ws) => {
-          void this.attach(device, ws).catch((error) => {
+          void this.attach(
+            device,
+            ws,
+            request.headers[USER_DEVICE_NAMED_CONTROLS_HEADER] === "1",
+          ).catch((error) => {
             getLogger().error("user device attach failed", error);
             ws.close(1011, "Unavailable");
           });
@@ -290,9 +297,20 @@ export class UserDeviceHub {
   };
 
   /** Registers a connected device socket; a newer socket for the same device replaces the older. */
-  async attach(device: AuthenticatedDevice, socket: UserDeviceSocket): Promise<string> {
+  async attach(
+    device: AuthenticatedDevice,
+    socket: UserDeviceSocket,
+    namedControls = false,
+  ): Promise<string> {
     const connectionId = randomUUID();
-    const entry: LiveDevice = { device, connectionId, socket, pending: new Map(), alive: true };
+    const entry: LiveDevice = {
+      device,
+      namedControls,
+      connectionId,
+      socket,
+      pending: new Map(),
+      alive: true,
+    };
     const previous = this.live.get(device.id);
     this.live.set(device.id, entry);
     if (previous) this.drop(previous, DISCONNECTED_MESSAGE, [4000, "Replaced"]);
@@ -355,6 +373,17 @@ export class UserDeviceHub {
     const entry = this.live.get(route.deviceId);
     if (!entry || !this.holds(route)) throw new UserDeviceOfflineError();
     signal.throwIfAborted();
+    // Older clients drop requests with action kinds they cannot parse.
+    if (
+      request.method === "screenAct" &&
+      !entry.namedControls &&
+      request.actions.some(isNamedHostScreenAction)
+    ) {
+      yield {
+        error: "Observe and use element numbers, or update the desktop app for named controls.",
+      };
+      return;
+    }
     const id = randomUUID();
     const queue = new FrameQueue();
     entry.pending.set(id, queue);

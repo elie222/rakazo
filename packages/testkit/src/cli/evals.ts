@@ -101,6 +101,7 @@ import {
   TOOL_CHOICE_JUDGE_VERSION,
 } from "../evals/suites/tool-choice.js";
 import { TOOL_CHOICE_CASES } from "../evals/suites/tool-choice-cases.js";
+import { WINDOWS_SCREEN_SUITE } from "../evals/suites/windows-screen.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
@@ -202,6 +203,7 @@ async function main() {
       judge: { version: INITIATIVE_JUDGE_VERSION, calibration: INITIATIVE_JUDGE_CALIBRATION },
     },
     "routine-mode": ROUTINE_MODE_SUITE,
+    "windows-screen": WINDOWS_SCREEN_SUITE,
     memory: {
       cases: MEMORY_EVAL_CASES,
       fixtureVersion: MEMORY_FIXTURE_VERSION,
@@ -863,6 +865,7 @@ async function main() {
                 composio,
                 messaging,
                 web: composio.web,
+                userDevices: witnesses.userDevices,
                 ...(wakesRoutines(scenario) ? witnesses : {}),
                 messagingOpenSignup: false,
                 defaultProvider: connection.provider,

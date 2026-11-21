@@ -4,6 +4,7 @@ import type { HostComputerRequest } from "./host-computer-protocol.js";
 import { hostComputerRequest } from "./host-computer-protocol.js";
 
 export const userDeviceRevokeReason = z.enum(["session-ended"]);
+export const USER_DEVICE_NAMED_CONTROLS_HEADER = "x-rakazo-device-named-controls";
 /** Carries the revoke reason on a refused connection, which has no message to put it in. */
 export const USER_DEVICE_REVOKED_HEADER = "x-rakazo-device-revoked";
 export type UserDeviceRevokeReason = z.infer<typeof userDeviceRevokeReason>;

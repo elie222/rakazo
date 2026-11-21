@@ -53,16 +53,30 @@ describe("host screen requests", () => {
   it("observes and acts through the computer's screen, scoped to the bot", async () => {
     const screen = fakeScreen();
     await expect(
-      send(screen, { method: "screenObserve", botId: "bot-1", app: "TextEdit", query: "Save" }),
+      send(screen, {
+        method: "screenObserve",
+        botId: "bot-1",
+        app: "TextEdit",
+        query: "Save",
+        includeScreenshot: true,
+      }),
     ).resolves.toEqual({ outcome: "finished", frames: [{ value: observation }, { done: true }] });
     expect(screen.observe).toHaveBeenCalledWith(
       { botId: "bot-1", signal: expect.any(AbortSignal) },
       "TextEdit",
-      { query: "Save" },
+      { query: "Save", includeScreenshot: true },
     );
     const actions = [{ kind: "menu", path: ["File", "New"] }];
-    await send(screen, { method: "screenAct", botId: "bot-1", app: "TextEdit", actions });
-    expect(screen.act).toHaveBeenCalledWith(expect.anything(), "TextEdit", actions);
+    await send(screen, {
+      method: "screenAct",
+      botId: "bot-1",
+      app: "TextEdit",
+      actions,
+      includeScreenshot: true,
+    });
+    expect(screen.act).toHaveBeenCalledWith(expect.anything(), "TextEdit", actions, {
+      includeScreenshot: true,
+    });
   });
 
   it.each([

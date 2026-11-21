@@ -12,6 +12,7 @@ import {
   HOST_SCREEN_MAX_ELEMENTS,
   HOST_SCREEN_MAX_IMAGE_DIMENSION,
   HostScreenError,
+  isNamedHostScreenAction,
 } from "./host-screen.js";
 
 /** What the driver returns for one tool call: MCP content blocks and structured output. */
@@ -353,7 +354,11 @@ export function createCuaHostScreen(options: CuaHostScreenOptions): HostScreen {
     async observe(scope, app, observeOptions) {
       return observeTarget(await target(app, scope.signal), scope.signal, observeOptions?.query);
     },
-    act(scope, app, actions) {
+    async act(scope, app, actions) {
+      if (actions.some(isNamedHostScreenAction))
+        throw new HostScreenError(
+          "Named control actions are available on Windows. Use element numbers here.",
+        );
       // Find the front window again each time: the last action may have closed the one it
       // acted on or opened another, like File > New replacing an Open panel.
       return actThenObserve(

@@ -503,6 +503,38 @@ describe("user device gateway from another process", () => {
     ]);
   });
 
+  it("rejects named actions for an older socket and sends them after a capable reconnect", async () => {
+    const { hub, prisma } = setup();
+    const windows = { ...device, platform: "win32" };
+    const legacy = new FakeSocket();
+    await hub.attach(windows, legacy);
+    const { fetcher } = forwarding(hub);
+    const worker = new UserDevices({ prisma, forwardSecret: secret, fetch: fetcher });
+    const signal = AbortSignal.timeout(5_000);
+    const request: HostComputerRequest = {
+      method: "screenAct",
+      botId: "bot-1",
+      app: "notepad",
+      actions: [
+        { kind: "click", element: 1 },
+        { kind: "clickControl", name: "File", role: "menuitem" },
+      ],
+    };
+    await expect(collect(worker.request(device.userId, request, signal))).rejects.toThrow(
+      "Observe and use element numbers",
+    );
+    expect(legacy.sent).toHaveLength(0);
+
+    const updated = new FakeSocket();
+    await hub.attach(windows, updated, true);
+    const result = collect(worker.request(device.userId, request, signal));
+    const sent = await updated.nextRequest();
+    expect(sent.request).toEqual(request);
+    updated.reply(sent.id, { value: { completed: 2 } });
+    updated.reply(sent.id, { done: true });
+    await expect(result).resolves.toEqual([{ completed: 2 }]);
+  });
+
   it("carries a device disconnect back as an error", async () => {
     const { hub, prisma } = setup();
     const socket = new FakeSocket();

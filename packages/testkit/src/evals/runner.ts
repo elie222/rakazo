@@ -24,7 +24,7 @@ import { hostOverMcp } from "../apps/mcp-host.js";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
-import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
+import type { EvalCase, Evidence, SettingsSnapshot, UserComputerFixture } from "./cases.js";
 import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
 import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
 import type { HistoryMessage } from "./history-fixtures.js";
@@ -82,6 +82,7 @@ export type TrialOptions = {
       notifications: CapturingNotificationProvider;
       realtime: SilenceObserver;
       now: () => Date;
+      userDevices?: UserComputerFixture["gateway"];
     },
   ) => Promise<EvalApp>;
 };
@@ -185,7 +186,13 @@ export async function runTrial(
     // A forced wake runs now; the agent is told it is the routine's due time instead.
     let clockShiftMs = 0;
     const now = () => new Date(Date.now() + clockShiftMs);
-    handles = await options.createApp(services, messaging, { notifications, realtime, now });
+    const userComputer = scenario.userComputer?.();
+    handles = await options.createApp(services, messaging, {
+      notifications,
+      realtime,
+      now,
+      userDevices: userComputer?.gateway,
+    });
     const prisma = asSystem(handles.prisma);
     db = prisma;
     realtime.attach(prisma);
@@ -335,6 +342,8 @@ export async function runTrial(
       messaging.resetWitnesses();
       // Ask mode asks before any change, so the write stops at its approval card.
       if (scenario.approvalTool) await rpc(app, cookie, "autoReview/set", { mode: "ask" });
+      else if (userComputer?.allowWithoutApproval)
+        await rpc(app, cookie, "autoReview/set", { mode: "never" });
       for (const tool of scenario.alwaysAllowTools ?? [])
         await rpc(app, cookie, "approvalRules/set", {
           effect: "always_allow",
@@ -1173,6 +1182,7 @@ export async function runTrial(
         : undefined;
     const evidence: Evidence = {
       text: lastText,
+      ...(userComputer ? { userComputer: userComputer.snapshot() } : {}),
       ...(delegation ? { delegation } : {}),
       ...(historySummary ? { historySummary } : {}),
       replies,

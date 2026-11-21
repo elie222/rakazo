@@ -11,6 +11,7 @@ import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
+import type { HostScreen } from "../screens/host-screen.js";
 import type { UserDeviceClient } from "./user-device-client.js";
 import { startUserDeviceClient, USER_DEVICE_MAX_MESSAGE_BYTES } from "./user-device-client.js";
 
@@ -75,13 +76,14 @@ describe("user device client", () => {
     await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
   });
 
-  function start(authorize: () => Promise<boolean> = async () => true) {
+  function start(authorize: () => Promise<boolean> = async () => true, screen?: HostScreen) {
     client = startUserDeviceClient({
       serverUrl,
       token,
       root,
       onRevoked: revoked,
       authorize,
+      screen,
       retryMs: { min: 20, max: 40 },
     });
   }
@@ -105,6 +107,33 @@ describe("user device client", () => {
     serverUrl = remote.href;
     expect(() => start()).toThrow("Local computer access requires HTTPS or loopback");
     expect(upgrades).toHaveLength(0);
+  });
+
+  it("keeps screenshots for old servers and honors an explicit request for rows", async () => {
+    const observation = { app: "Notepad", tree: "Window" };
+    const observe = vi.fn(async () => observation);
+    const act = vi.fn(async () => ({ completed: 1, observation }));
+    start(async () => true, { observe, act, close: async () => {} });
+    const ws = await connection();
+    const received = frames(ws);
+    const app = "Notepad";
+    const actions = [{ kind: "click", element: 1 }];
+    for (const [method, args] of [
+      ["screenObserve", {}],
+      ["screenAct", { actions }],
+    ] as const) {
+      for (const includeScreenshot of [undefined, false]) {
+        const id = `${method}-${includeScreenshot}`;
+        const request = { method, botId: "bot", app, ...args, includeScreenshot };
+        ws.send(JSON.stringify({ type: "request", id, request }));
+        await until(() => received.some((frame) => frame.id === id && "done" in frame.frame));
+      }
+    }
+    for (const [i, includeScreenshot] of [true, false].entries()) {
+      const scope = { botId: "bot", signal: expect.any(AbortSignal) };
+      expect(observe).toHaveBeenNthCalledWith(i + 1, scope, app, { includeScreenshot });
+      expect(act).toHaveBeenNthCalledWith(i + 1, scope, app, actions, { includeScreenshot });
+    }
   });
 
   it("authenticates outbound and streams request frames back by id", async () => {
