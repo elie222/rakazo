@@ -1,6 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import type { Prisma } from "@rakazo/db";
-import { appendEventInTransaction, changeMessageBlocks, itemSecretIn } from "@rakazo/db";
+import { appendEventInTransaction, changeMessageBlocks } from "@rakazo/db";
 
 type OwnerScope = { spaceId: string; userId: string };
 type ApprovalBlock = Extract<MessageBlock, { kind: "mcp_approval" }>;
@@ -60,8 +60,9 @@ export async function removeMcpServerInTransaction(
 ): Promise<Array<{ threadId: string; seq: number }>> {
   const seqs = await dismissMcpServerApprovals(tx, scope, server.id);
   await tx.mcpServer.delete({ where: { id: server.id } });
+  // The credential may sit in the server's home space, not the one removing it.
   if (server.secretId) {
-    await tx.secret.deleteMany({ where: { id: server.secretId, ...itemSecretIn(scope) } });
+    await tx.secret.deleteMany({ where: { id: server.secretId, userId: scope.userId } });
   }
   return seqs;
 }
