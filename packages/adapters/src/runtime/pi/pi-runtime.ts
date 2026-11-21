@@ -16,6 +16,7 @@ import type {
   AgentRuntimeEvent,
   AgentSteeringMessage,
   AgentUsage,
+  ConnectorTool,
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
 import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
@@ -105,6 +106,10 @@ import {
   computerTransitionTool,
   restoreComputerModels,
 } from "./tools/pi-runtime-computer-mode.js";
+import {
+  matchToolDeclarations,
+  modelToolDeclarations,
+} from "./tools/pi-runtime-tool-declarations.js";
 import type { ToolCallBudget, ToolHost } from "./tools/pi-runtime-tools.js";
 import {
   agentToolDefinitions,
@@ -329,6 +334,13 @@ export class PiAgentRuntime implements AgentRuntime {
           [...toolsByAgentName.keys()].filter((name) => !offeredToolNames.has(name)),
         );
         let tools = allTools;
+        let declarations: ReadonlyMap<string, ConnectorTool> | undefined;
+        let switchedMode = false;
+        let modelTools = tools;
+        const refreshModelTools = (offered = request.getBuiltinToolDeclarations?.()) => {
+          declarations = offered;
+          modelTools = modelToolDeclarations(tools, toolsByAgentName, offered);
+        };
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
         let hasCurrentImages = Boolean(
@@ -621,7 +633,9 @@ export class PiAgentRuntime implements AgentRuntime {
               if (mode === "computer")
                 fallbackState.messagesBeforeSwitch = agent.state.messages.length;
               tools = modeTools();
-              agent.state.tools = tools;
+              switchedMode = true;
+              refreshModelTools();
+              agent.state.tools = modelTools;
             },
             signal,
           );
@@ -639,6 +653,7 @@ export class PiAgentRuntime implements AgentRuntime {
           ];
         };
         tools = modeTools();
+        refreshModelTools();
         if (computer) {
           fallbackState = mode === "computer" ? computerFallbackState! : mainFallbackState;
           setTarget(activeStreamTarget);
@@ -662,6 +677,14 @@ export class PiAgentRuntime implements AgentRuntime {
               ),
               toolCallIds,
             ),
+          // Pi has appended the model's tool declarations by this point. Validate calls
+          // against the original schemas so the executor still decides access.
+          prepareRequest: ({ context }) => {
+            const executable = matchToolDeclarations(context.tools, modelTools, tools);
+            return executable === context.tools
+              ? undefined
+              : { context: { ...context, tools: executable } };
+          },
           getApiKey:
             hasBackups || computer
               ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
@@ -709,29 +732,39 @@ export class PiAgentRuntime implements AgentRuntime {
               agent.steer({ role: "user", content: finishedShells, timestamp: Date.now() });
           },
           prepareNextTurnWithContext: async (turn) => {
-            const update = computer
-              ? {
-                  context: {
-                    ...turn.context,
-                    tools,
-                    messages:
-                      mode === "main" && computerSpan
-                        ? withoutThinkingFrom(turn.context.messages, ...computerSpan)
-                        : turn.context.messages,
-                  },
-                  model: activeStreamTarget.model,
-                  thinkingLevel: thinkingLevelFor(
-                    activeStreamTarget.model,
-                    activeStreamTarget.config.thinkingLevel,
-                  ),
-                }
-              : undefined;
-            if (!request.claimSteering) return update;
             // The turn is ending at a terminating result that aborted the agent; no
             // model request would answer a follow-up claimed now, and a completed run
             // deletes its claimed steering. Leave the message queued for the next run.
-            if (terminatedReply && !host.pausePending) return update;
-            const steering = await request.claimSteering([...seenSteeringIds]);
+            const steering =
+              request.claimSteering && (!terminatedReply || host.pausePending)
+                ? await request.claimSteering([...seenSteeringIds])
+                : [];
+            const offered = request.getBuiltinToolDeclarations?.();
+            if (declarations !== offered) refreshModelTools(offered);
+            const update =
+              computer || modelTools !== tools
+                ? {
+                    context: {
+                      ...turn.context,
+                      tools:
+                        switchedMode && turn.context.tools?.length
+                          ? modelTools
+                          : matchToolDeclarations(turn.context.tools, tools, modelTools),
+                      messages:
+                        mode === "main" && computerSpan
+                          ? withoutThinkingFrom(turn.context.messages, ...computerSpan)
+                          : turn.context.messages,
+                    },
+                    ...(computer && {
+                      model: activeStreamTarget.model,
+                      thinkingLevel: thinkingLevelFor(
+                        activeStreamTarget.model,
+                        activeStreamTarget.config.thinkingLevel,
+                      ),
+                    }),
+                  }
+                : undefined;
+            switchedMode = false;
             if (steering.length === 0) return update;
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) representedHistoryIds.add(item.messageId);
@@ -768,7 +801,7 @@ export class PiAgentRuntime implements AgentRuntime {
             thinkingLevel: computer
               ? thinkingLevelFor(activeStreamTarget.model, activeStreamTarget.config.thinkingLevel)
               : thinkingLevel,
-            tools,
+            tools: modelTools,
             messages: history,
           },
         });

@@ -739,6 +739,8 @@ export interface AgentRunRequest {
   /** Server verified legacy attachment bytes remain available to file tools. */
   currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
+  /** Read the current model-facing definitions. The map changes only when the offer changes. */
+  getBuiltinToolDeclarations?: () => ReadonlyMap<string, ConnectorTool> | undefined;
   /** Why each built-in tool this run was not offered is unavailable, keyed by tool name. */
   unavailableToolReasons?: Readonly<Record<string, string>>;
   model: AgentRunModel;

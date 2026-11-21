@@ -7,6 +7,7 @@ import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js
 import { personSpeaker } from "../../runtime/context/history-speakers.js";
 import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
+import { thisChatHistoryDeclaration } from "../../tools/builtin-memory.tool-definition.js";
 import { promptVersion } from "../assembly/prompt-version.js";
 import type { AssembledTurn } from "../assembly/run-assembly.js";
 import {
@@ -24,6 +25,7 @@ import { completeRun } from "../lifecycle/run-complete.js";
 import { failRun, handoffEndedTurn, requeueRunAfterDatabaseOutage } from "../lifecycle/run-fail.js";
 import { followUpsOffered, offeredFleetTools } from "../tools/run-tool-selection.js";
 import { applyTool } from "../tools/run-tools.js";
+import { historyMyChatsAvailable } from "../tools/run-tools-memory.js";
 import { consumeRunEvents } from "./run-turn.js";
 import { claimRunSteering } from "./run-turn-images.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
@@ -63,7 +65,7 @@ export async function runModelTurn(
         }),
       )
       .catch((error: unknown) => getLogger().warn("run.prompt_version_failed", { error }));
-    const runtimeEvents = deps.runtime.run(modelTurnRequest(services, hold, turn), {
+    const runtimeEvents = deps.runtime.run(await modelTurnRequest(services, hold, turn), {
       ...context,
       signal: AbortSignal.any([context.signal, ctx.runtimeAbortController.signal]),
     });
@@ -92,11 +94,11 @@ export async function runModelTurn(
   }
 }
 
-function modelTurnRequest(
+async function modelTurnRequest(
   services: RunExecutorServices,
   hold: RunHold,
   turn: AssembledTurn,
-): AgentRunRequest {
+): Promise<AgentRunRequest> {
   const { contextStrategy, resolveConnectedModel } = services;
   const { deps, run, runId, workerId, fence, secrets: runSecrets } = hold;
   const { takeoverResume } = hold.takeover;
@@ -156,6 +158,9 @@ function modelTurnRequest(
   const { ctx } = turn;
   const { script, state } = turn.ctx;
   const { effects } = turn.ctx.state;
+  const offersHistory =
+    !scripted && tools.some((tool) => tool.name === "search_history" && !tool.route);
+  let myChatsAvailable = offersHistory && (await historyMyChatsAvailable(ctx));
   // The scripted runtime interprets the prompt as fixture commands.
   const currentTurnDataInPrompt =
     !scripted && (run.trigger === "user" || run.trigger === "follow_up");
@@ -258,6 +263,9 @@ function modelTurnRequest(
         !turnBlocks?.some((block) => block.kind === "image" && block.imageHandling === "confirm"),
     ),
     tools,
+    getBuiltinToolDeclarations: offersHistory
+      ? () => (myChatsAvailable ? undefined : thisChatHistoryDeclaration)
+      : undefined,
     unavailableToolReasons,
     // The live array: secrets learned later in the run redact too.
     secrets: runSecrets,
@@ -363,8 +371,8 @@ function modelTurnRequest(
       );
       return audited;
     },
-    claimSteering: (seenIds) =>
-      claimRunSteering(
+    claimSteering: async (seenIds) => {
+      const steering = await claimRunSteering(
         deps,
         {
           threadId: thread.id,
@@ -380,6 +388,10 @@ function modelTurnRequest(
           messageId: currentTurnMessage?.id,
           hasImages: Boolean(currentTurnImages?.length),
         },
-      ),
+      );
+      if (steering.length && myChatsAvailable)
+        myChatsAvailable = await historyMyChatsAvailable(ctx);
+      return steering;
+    },
   };
 }

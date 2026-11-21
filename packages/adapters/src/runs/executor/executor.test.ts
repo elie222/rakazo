@@ -81,7 +81,7 @@ describe("bot tool permissions", () => {
     });
     const search = tools.find((tool) => tool.name === "search_history")!;
     expect(search.description).toContain("2–4 keyword variants");
-    expect(search.description).toContain("direct human app run");
+    expect(search.description).toContain("scope my_chats");
     expect(search.inputSchema).toMatchObject({
       properties: { queries: { maxItems: 5 }, scope: { enum: ["this_chat", "my_chats"] } },
       oneOf: [{ required: ["query"] }, { required: ["queries"] }, { required: ["kinds"] }],

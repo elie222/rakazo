@@ -1,9 +1,11 @@
 import type { AssistantMessage, Context, Model, ToolCall } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "../../../tools/builtin.tool-definition.js";
+import { thisChatHistoryDeclaration } from "../../../tools/builtin-memory.tool-definition.js";
 
 const fake = vi.hoisted(() => ({ stream: vi.fn() }));
 vi.mock("@earendil-works/pi-ai/providers/all", () => ({
@@ -33,11 +35,12 @@ vi.mock("../models/pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "../pi-runtime.js";
+import * as toolParameters from "../tools/pi-runtime-tool-parameters.js";
 import { releaseToolCallBudget } from "../tools/pi-runtime-tools.js";
 
 /**
  * Each model call answers with the next step: a call to list_files at `path`, a question for
- * "ask", or the reply.
+ * "ask", a cross-chat history search for "search", or the reply.
  */
 function script(steps: Array<string | undefined>) {
   fake.stream.mockImplementation((target: Model<"openai-completions">) => {
@@ -46,7 +49,9 @@ function script(steps: Array<string | undefined>) {
     const call: Pick<ToolCall, "name" | "arguments"> =
       path === "ask"
         ? { name: "ask_user", arguments: { question: "Which?", options: ["a", "b"] } }
-        : { name: "list_files", arguments: { path: path ?? "" } };
+        : path === "search"
+          ? { name: "search_history", arguments: { query: "report", scope: "my_chats" } }
+          : { name: "list_files", arguments: { path: path ?? "" } };
     const message: AssistantMessage = {
       role: "assistant",
       api: target.api,
@@ -107,6 +112,101 @@ const calledPaths = (input: AgentRunRequest) =>
 
 beforeEach(() => {
   fake.stream.mockReset();
+});
+
+describe("search_history scope declarations", () => {
+  const searchHistory = builtinAgentTools.find((tool) => tool.name === "search_history")!;
+  const thisChatSearchHistory = thisChatHistoryDeclaration.get("search_history")!;
+  const currentSearch = (index: number) =>
+    getCurrentTools((fake.stream.mock.calls[index]![1] as Context).messages).find(
+      (tool) => tool.name === "search_history",
+    );
+
+  it.each([0, 1])(
+    "narrows before model request %i when outside steering is claimed",
+    async (index) => {
+      const input = request(new AbortController());
+      input.tools.push(searchHistory);
+      let claims = 0;
+      let restricted = false;
+      input.getBuiltinToolDeclarations = () =>
+        restricted ? thisChatHistoryDeclaration : undefined;
+      input.claimSteering = async () => {
+        if (claims++ !== index) return [];
+        restricted = true;
+        return [{ id: "steering", messageId: "incoming", origin: "webhook", text: "Update" }];
+      };
+      script(["a", "b", undefined]);
+      await run(input);
+
+      if (index === 1) {
+        expect(currentSearch(0)?.parameters).toMatchObject({
+          properties: { scope: { enum: ["this_chat", "my_chats"] } },
+        });
+        const firstMessages = (fake.stream.mock.calls[0]![1] as Context).messages;
+        const nextMessages = (fake.stream.mock.calls[1]![1] as Context).messages;
+        expect(nextMessages.slice(0, firstMessages.length)).toEqual(firstMessages);
+      }
+      for (let call = index; call < 3; call++) {
+        expect(currentSearch(call)?.description).not.toContain("my_chats");
+        expect(currentSearch(call)?.parameters).toMatchObject({
+          properties: { scope: { enum: ["this_chat"] } },
+        });
+      }
+    },
+  );
+
+  it("reuses the restricted model schema on later steps", async () => {
+    const input = request(new AbortController());
+    input.tools.push(searchHistory);
+    input.getBuiltinToolDeclarations = () => thisChatHistoryDeclaration;
+    const conversions = vi.spyOn(toolParameters, "parametersFor");
+    try {
+      script(["a", "b", undefined]);
+      await run(input);
+      expect(fake.stream).toHaveBeenCalledTimes(3);
+      expect(
+        conversions.mock.calls.filter(([tool]) => tool === thisChatSearchHistory),
+      ).toHaveLength(1);
+    } finally {
+      conversions.mockRestore();
+    }
+  });
+
+  it("uses the narrowed declaration on resume and still sends pending arguments to the executor", async () => {
+    const input = request(new AbortController(), "never");
+    input.instructions = "Saved instructions.";
+    input.tools.push(searchHistory);
+    let checkpoint = "";
+    input.onCheckpoint = async (capture) => {
+      checkpoint = capture();
+    };
+    script(["search", undefined]);
+    await run(input);
+    expect(checkpoint).not.toBe("");
+
+    const resumed = {
+      ...request(new AbortController(), "never"),
+      runId: input.runId,
+      turnCheckpoint: checkpoint,
+      instructions: "New instructions.",
+    };
+    resumed.tools.push(searchHistory);
+    resumed.getBuiltinToolDeclarations = () => thisChatHistoryDeclaration;
+    script(["search", undefined]);
+    const events = await run(resumed);
+
+    expect(vi.mocked(resumed.executeTool!).mock.calls.map(([name, args]) => [name, args])).toEqual([
+      ["search_history", { query: "report", scope: "my_chats" }],
+      ["search_history", { query: "report", scope: "my_chats" }],
+    ]);
+    expect(currentSearch(2)?.parameters).toMatchObject({
+      properties: { scope: { enum: ["this_chat"] } },
+    });
+    const resumedContext = fake.stream.mock.calls[2]![1] as Context;
+    expect(getCurrentSystemPrompt(resumedContext.messages)).toBe("Saved instructions.");
+    expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+  });
 });
 
 describe("a turn whose process starts stopping", () => {
