@@ -188,6 +188,7 @@ export async function speechAllowancePlan(
             status: true,
             cancelAtPeriodEnd: true,
             currentPeriodStartsAt: true,
+            currentPeriodEndsAt: true,
             byokInterval: true,
             byokTier: true,
             byokPriceCents: true,
@@ -199,15 +200,15 @@ export async function speechAllowancePlan(
   if (!settings?.modelCreditsEnabled) return null;
   const billing = organization?.billing;
   const { live, since } = allowancePeriod(billing, now);
-  const tier = ByokTierSchema.safeParse(billing?.byokTier).data ?? "standard";
+  // A paid tier counts only while its subscription is live; a lapsed one pays for nothing.
+  const tier = byokTierOf(null, billing);
+  const ended = billing?.currentPeriodEndsAt != null && billing.currentPeriodEndsAt <= now;
   const planCents =
-    billing?.status === "trialing"
-      ? billing.cancelAtPeriodEnd
-        ? 0
-        : (BYOK_TIERS.standard.monthlyPriceCents ?? 0)
-      : !live
-        ? 0
-        : billing?.byokPriceCents
+    !live || ended || (billing?.status === "trialing" && billing.cancelAtPeriodEnd)
+      ? 0
+      : billing?.status === "trialing"
+        ? (BYOK_TIERS.standard.monthlyPriceCents ?? 0)
+        : tier
           ? (BYOK_TIERS[tier].monthlyPriceCents ?? 0)
           : (billing?.creditAmountCents ?? 0);
   // One cent is 10,000 micros, so a percent of it is 100.

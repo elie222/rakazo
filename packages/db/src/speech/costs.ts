@@ -20,7 +20,7 @@ export interface SpeechPrice {
  * organization's Spaces since the period began counts.
  */
 export async function remainingSpeechAllowance(
-  prisma: Pick<PrismaClient, "space" | "deploymentSettings" | "organization" | "$queryRaw">,
+  prisma: Pick<PrismaClient, "space" | "deploymentSettings" | "organization" | "speechCost">,
   spaceId: string,
   now = new Date(),
 ): Promise<bigint | null> {
@@ -32,11 +32,11 @@ export async function remainingSpeechAllowance(
     if (!space) return 0n;
     const plan = await speechAllowancePlan(prisma, space.organizationId, now);
     if (!plan) return null;
-    const [row] = await prisma.$queryRaw<Array<{ used: bigint | null }>>`
-      SELECT SUM(c."accountedMicros")::bigint AS used FROM speech_costs AS c
-      JOIN spaces AS s ON s.id = c."spaceId"
-      WHERE s."organizationId" = ${space.organizationId} AND c."createdAt" >= ${plan.since}`;
-    return plan.limitMicros - (row?.used ?? 0n);
+    const used = await prisma.speechCost.aggregate({
+      where: { organizationId: space.organizationId, createdAt: { gte: plan.since } },
+      _sum: { accountedMicros: true },
+    });
+    return plan.limitMicros - (used._sum.accountedMicros ?? 0n);
   });
 }
 
@@ -66,9 +66,10 @@ export async function admitSpeech(
         throw new ClientError("TOO_MANY_REQUESTS", "Speech allowance unavailable.");
       await tx.$executeRaw`
       INSERT INTO speech_costs
-        (id, "userId", "spaceId", "callId", provider, operation, model, unit,
+        (id, "userId", "spaceId", "organizationId", "callId", provider, operation, model, unit,
          "reservedMicros", "accountedMicros", "pricingSource", "pricingVersion", "microsPerUnit")
-      VALUES (${id}, ${scope.userId}, ${scope.spaceId}, ${scope.callId ?? null}, ${provider},
+      VALUES (${id}, ${scope.userId}, ${scope.spaceId},
+        (SELECT "organizationId" FROM spaces WHERE id = ${scope.spaceId}), ${scope.callId ?? null}, ${provider},
         ${operation}, ${price.model}, ${price.unit}, ${BigInt(price.maxRequestMicros)},
         ${BigInt(price.maxRequestMicros)}, ${price.source}, ${price.version}, ${price.microsPerUnit})`;
     }),

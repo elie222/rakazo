@@ -245,6 +245,18 @@ suite("operator speech costs (PostgreSQL)", () => {
       billableUnits: { inputTokens: 30, outputTokens: 10 },
     });
   });
+  it("keeps counting a deleted Space's speech against its organization", async () => {
+    await admit();
+    const otherSpaceId = `${actor.spaceId}-other`;
+    await system.space.create({ data: { id: otherSpaceId, organizationId, name: "Other" } });
+    try {
+      await system.space.delete({ where: { id: actor.spaceId } });
+      expect(await remainingSpeechAllowance(system, otherSpaceId)).toBe(limit - 1_000_000n);
+    } finally {
+      await system.space.deleteMany({ where: { id: otherSpaceId } });
+      await system.space.create({ data: { id: actor.spaceId, organizationId, name: "General" } });
+    }
+  });
   it("counts observed overruns, renews with the plan's period and refuses without a plan", async () => {
     const id = await admit();
     await runAsTenant(actor, () =>
@@ -261,10 +273,23 @@ suite("operator speech costs (PostgreSQL)", () => {
     ).toBe(limit);
     await system.billingAccount.update({
       where: { organizationId },
-      data: { status: "canceled", currentPeriodStartsAt: new Date(Date.now() - 86_400_000) },
+      data: {
+        currentPeriodStartsAt: new Date(Date.now() - 31 * 86_400_000),
+        currentPeriodEndsAt: new Date(Date.now() - 86_400_000),
+      },
     });
     try {
       await system.speechCost.deleteMany({ where: { spaceId: actor.spaceId } });
+      // A subscription still marked active after its period ended pays for nothing more.
+      await expect(admit()).rejects.toThrow("allowance unavailable");
+      await system.billingAccount.update({
+        where: { organizationId },
+        data: {
+          status: "canceled",
+          currentPeriodStartsAt: new Date(Date.now() - 86_400_000),
+          currentPeriodEndsAt: new Date(Date.now() + 29 * 86_400_000),
+        },
+      });
       await expect(admit()).rejects.toThrow("allowance unavailable");
       await system.deploymentSettings.update({
         where: { id: "default" },
