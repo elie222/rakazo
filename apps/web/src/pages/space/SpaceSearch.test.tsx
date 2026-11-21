@@ -203,3 +203,23 @@ it("says the search failed instead of no results, ignoring superseded and cleare
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(query).toHaveBeenCalledTimes(6);
 });
+
+it("announces a running search and an empty result through one polite status region", async () => {
+  const results = (loading: boolean) => (
+    <SpaceSearchResults
+      hits={[]}
+      loading={loading}
+      error={null}
+      onRetry={() => {}}
+      onSelect={() => {}}
+    />
+  );
+  await act(async () => root.render(results(true)));
+  const status = container.querySelector('[role="status"]');
+  expect(status?.textContent).toBe("Searching…");
+
+  await act(async () => root.render(results(false)));
+  // The same region changes its text, so screen readers announce the update.
+  expect(container.querySelector('[role="status"]')).toBe(status);
+  expect(status?.textContent).toBe("No results");
+});

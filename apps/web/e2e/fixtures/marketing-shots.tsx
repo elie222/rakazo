@@ -194,6 +194,8 @@ function RoutineShot() {
         onBack={() => undefined}
         onClose={() => undefined}
         onSave={() => undefined}
+        onSetActive={() => undefined}
+        onCopy={() => undefined}
         onTestRun={() => undefined}
         onDelete={() => undefined}
         onEnsureWebhook={async () => undefined}

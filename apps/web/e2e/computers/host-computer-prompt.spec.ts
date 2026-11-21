@@ -110,6 +110,64 @@ for (const platform of ["darwin", "linux"]) {
   });
 }
 
+test("a failed host choice does not show on the next opening", async ({ page }, testInfo) => {
+  await signup(page, `host-choice-reopen-${Date.now()}@rakazo.test`, "password12", "Host Tester");
+  await completeOnboarding(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "rakazoDesktop", {
+      value: {
+        platform: "darwin",
+        computer: {
+          managesHostChoice: true,
+          requestAccess: async () => {
+            throw new Error("Local computer access was refused");
+          },
+          revokeAccess: async () => {},
+          onConfigure: (listener: () => void) => {
+            window.addEventListener("test-computer-configure", listener);
+            return () => window.removeEventListener("test-computer-configure", listener);
+          },
+        },
+        window: {
+          close: async () => {},
+          minimize: async () => {},
+          toggleMaximize: async () => {},
+          state: async () => ({ minimized: false, maximized: false, fullScreen: false }),
+        },
+        oauth: { onCallback: () => () => {} },
+        update: {
+          state: async () => ({ phase: "idle", currentVersion: "0.1.0" }),
+        },
+      },
+    });
+  });
+  await page.route(/\/rpc\/(me|bootstrap)$/, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const me = route.request().url().endsWith("/me") ? body.json : body.json.me;
+    me.canChooseHostComputer = true;
+    me.computerHost = "docker";
+    await route.fulfill({ response, json: body });
+  });
+  await page.reload();
+  const dialog = page.getByRole("dialog", { name: "Where should bots run?" });
+  // The listener is registered as the shell mounts, so retry the event until the dialog opens.
+  const openFromMenu = () =>
+    expect(async () => {
+      await page.evaluate(() => window.dispatchEvent(new Event("test-computer-configure")));
+      await expect(dialog).toBeVisible({ timeout: 1000 });
+    }).toPass();
+  await openFromMenu();
+  await dialog.getByRole("button", { name: "Use this Mac", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await openFromMenu();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Check again", exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "host-computer-reopened-after-failure");
+});
+
 test("a saved host choice closes when refreshing the profile fails", async ({ page }) => {
   await signup(page, `host-choice-refresh-${Date.now()}@rakazo.test`, "password12", "Host Tester");
   await completeOnboarding(page);

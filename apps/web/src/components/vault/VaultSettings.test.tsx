@@ -959,6 +959,31 @@ describe("an older server", () => {
     expect(buttonIn(editor(), "Save")!.disabled).toBe(false);
   });
 
+  it("marks the authenticator key and other sites invalid, described by their messages", async () => {
+    await render();
+    await startNew("login");
+    await click(buttonIn(editor(), "Add an authenticator key")!);
+    const key = field("Authenticator key");
+    expect(key.getAttribute("aria-invalid")).toBeNull();
+    expect(key.getAttribute("aria-describedby")).toBeNull();
+    await type(key, "not a key");
+    expect(key.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(key.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "This authenticator key can't be read.",
+    );
+    await type(key, "");
+    expect(key.getAttribute("aria-invalid")).toBeNull();
+    await click(buttonIn(editor(), "Add other sites")!);
+    const sites = field("Also on");
+    await type(sites, "http://www.github.com");
+    expect(sites.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(sites.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "Enter each site as an HTTPS address a login can be saved for.",
+    );
+    await type(sites, "https://www.github.com");
+    expect(sites.getAttribute("aria-invalid")).toBeNull();
+  });
+
   it("keeps a typed authenticator key when the save fails", async () => {
     vault.put.mockRejectedValueOnce(new Error("offline"));
     await render();

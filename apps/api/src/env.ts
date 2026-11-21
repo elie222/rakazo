@@ -9,6 +9,7 @@ import {
   apnsVoipConfig,
   autoReviewMinConfidence,
   deploymentLabsFromEnv,
+  liveModelCatalogEnabled,
   mcpStdioOptionsFromEnv,
   messagingEnvFromProcess,
   openAiCompatAllowPublicHosts,
@@ -31,6 +32,10 @@ import {
   SIGNUPS_ENABLED_VALUES,
   uploadSizeFromEnv,
 } from "@rakazo/core";
+import {
+  MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+  sandboxCommandTimeoutExceedsMax,
+} from "@rakazo/core/node/sandbox-command";
 import {
   resolveAuthSecret,
   resolveContentEncryption,
@@ -191,6 +196,11 @@ export function withEnvOverrides(env: AppEnv, overrides: Partial<AppEnv>): AppEn
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   secretStoreOptionsFromEnv(source);
+  if (sandboxCommandTimeoutExceedsMax(source)) {
+    getLogger().warn("SANDBOX_COMMAND_TIMEOUT_MS is above the maximum; using the maximum", {
+      maximumMs: MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+    });
+  }
   const issuer = optional(source.OIDC_ISSUER);
   const clientId = optional(source.OIDC_CLIENT_ID);
   const clientSecret = optional(source.OIDC_CLIENT_SECRET);
@@ -227,6 +237,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   openAiCompatAllowPublicHosts(source);
   // Fail at boot rather than on the first review, which would quietly ask every time.
   autoReviewMinConfidence(source);
+  liveModelCatalogEnabled(source);
   const passwordAuth = source.AUTH_PASSWORD_ENABLED !== "false";
   if (!passwordAuth && !issuer)
     throw new Error("AUTH_PASSWORD_ENABLED=false requires OIDC configuration");

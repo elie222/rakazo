@@ -16,7 +16,7 @@ type SnapshotClient = Pick<
 >;
 
 /** A slow snapshot lookup should give way to the normal live read. */
-const STOPPED_READ_TIMEOUT_MS = 15_000;
+const STOPPED_READ_TIMEOUT_MS = 30_000;
 
 type Step = "get" | "latest" | "stop" | "file" | "read";
 

@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Alert, Modal, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { lengthLimitMessage, promptText } from "../../lib/dialogs/text-prompt";
 import { native, useMobileTokens } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
@@ -24,22 +25,24 @@ export function useTextEditDialog(
     onCommit: (next: string) => void;
   } | null>(null);
   function commit(next: string, onCommit: (next: string) => void) {
-    if (next.length > maxLength) return;
+    const trimmed = next.trim();
+    if (trimmed.length > maxLength) {
+      if (Platform.OS === "ios") prompt(next, onCommit, lengthLimitMessage(maxLength));
+      return;
+    }
     setAsked(null);
-    onCommit(next.trim());
+    onCommit(trimmed);
+  }
+  function prompt(value: string, onCommit: (next: string) => void, message?: string) {
+    promptText(Alert, {
+      title: label,
+      message,
+      value,
+      onSave: (next) => commit(next ?? value, onCommit),
+    });
   }
   function ask(value: string, onCommit: (next: string) => void) {
-    if (Platform.OS === "ios")
-      Alert.prompt(
-        label,
-        undefined,
-        [
-          { text: t`Cancel`, style: "cancel" },
-          { text: t`Save`, onPress: (next?: string) => commit(next ?? value, onCommit) },
-        ],
-        "plain-text",
-        value,
-      );
+    if (Platform.OS === "ios") prompt(value, onCommit);
     else setAsked({ draft: value, onCommit });
   }
   const dialog =

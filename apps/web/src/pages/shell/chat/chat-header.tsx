@@ -53,6 +53,7 @@ export function ChatHeader({
         <Button
           variant="floating"
           size="icon-lg"
+          data-navigation-trigger=""
           aria-label={t`Open navigation`}
           onClick={onOpenNavigation}
           className="app-no-drag md:hidden"

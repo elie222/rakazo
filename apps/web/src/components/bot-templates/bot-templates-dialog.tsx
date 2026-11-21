@@ -121,7 +121,7 @@ export function BotTemplatesDialog({
               aria-labelledby={titleId}
               aria-describedby={summaryId}
               onClick={() => setOpenId(template.id)}
-              className={`flex min-w-0 flex-col gap-3 rounded-2xl border border-border/70 p-4 text-start focus-visible:outline-none ${ROW_HOVER}`}
+              className={`flex min-w-0 flex-col gap-3 rounded-2xl border border-border/70 p-4 text-start focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${ROW_HOVER}`}
             >
               <span className="flex min-w-0 items-center gap-3">
                 <TemplateIcon id={template.id} />
@@ -314,7 +314,7 @@ function TemplateDetail({
                   type="button"
                   aria-expanded={isOpen}
                   onClick={() => setExpanded(isOpen ? null : row.key)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-start focus-visible:outline-none"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-start focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
                 >
                   <Icon size={16} className="shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
