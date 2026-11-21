@@ -18,7 +18,13 @@ import {
   catalogApprovalRequest,
 } from "../../approvals/approval-effect.js";
 import { prepareAgentConnectionResponse } from "../../bots/agent-connections.js";
-import { argumentGiven, dropUnchangedOwnBotArgs } from "../../bots/update-bot-patch.js";
+import { childSettingsGiven, prepareChildBotUpdate } from "../../bots/child-bot-settings.js";
+import { listDefaultVoices } from "../../bots/own-bot-settings.js";
+import {
+  argumentGiven,
+  BOT_SETTING_ARGS,
+  dropUnchangedOwnBotArgs,
+} from "../../bots/update-bot-patch.js";
 import { validCloudAgentArgs } from "../../cloud-agents/cloud-agent-tools.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { paidRequestEffect, restorePaidRequest } from "../../payments/paid-request.js";
@@ -495,6 +501,32 @@ export async function prepareToolRequest(
       args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
     }
   }
+  if (name === "update_bot" && argumentGiven(args.bot_id)) {
+    // An approved replay runs the stored request, whose settings were checked before the card.
+    if (nextApprovedTool === name) request.heldForApproval = args.settings !== undefined;
+    else {
+      const { settings: _stored, ...given } = args;
+      args = given;
+      if (childSettingsGiven(given)) {
+        const prepared = await prepareChildBotUpdate(
+          {
+            ...(await fleetPrepareDeps(deps, run)),
+            listVoices: () => listDefaultVoices(deps, run, ctx.context),
+          },
+          ctx.fleetRun,
+          given,
+          ctx.secrets,
+        );
+        if ("error" in prepared) return refusal("bot_management_request_invalid", prepared.error);
+        args = prepared.canonical;
+        // A call that repeats every setting is only a profile edit, which needs no card.
+        if (args.settings !== undefined) {
+          request.fleetSummary = prepared.summary;
+          request.heldForApproval = true;
+        }
+      }
+    }
+  }
   if (name === "update_preferences") request.settingsChange = true;
   if (name === "save_page") {
     const refused = await holdSharedPageSave(ctx, request);
@@ -681,10 +713,16 @@ function uncheckedPress(why: UncheckedPress): { error: string } {
   }
 }
 
-/** Settings that change what this bot runs on or how it speaks; only the owner's chat sets them. */
-const OWNER_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud"];
+/**
+ * Settings that change what this bot runs on, how it speaks or how it works; only the owner's chat
+ * sets them, and Auto Review checks them after outside content.
+ */
+const OWNER_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud", ...BOT_SETTING_ARGS];
 
-/** Everything a bot may change on itself. Credentials, tools and access stay in Settings. */
+/**
+ * Everything a bot may change on itself. Credentials, access, approvals and turning tools back
+ * on stay in Settings.
+ */
 const OWN_FIELDS = new Set([
   ...OWNER_SETTINGS,
   "name",
@@ -754,6 +792,11 @@ async function prepareOwnBotUpdate(
       thinkingLevel: true,
       autoSpeak: true,
       voiceId: true,
+      replyMode: true,
+      teamChatAmbientEnabled: true,
+      teamChatRules: true,
+      memoryScope: true,
+      disabledBuiltinTools: true,
     },
   });
   const args = current
@@ -776,12 +819,23 @@ async function prepareOwnBotUpdate(
       "owner_only_settings",
       `Only the owner can change ${settingsOnly.join(", ")}, in Settings.`,
     );
+  if (
+    typeof args.teamChatRules === "string" &&
+    redactSecrets(args.teamChatRules, ctx.secrets) !== args.teamChatRules
+  )
+    return refusal(
+      "team_chat_rules_contain_credentials",
+      "teamChatRules cannot contain credentials.",
+    );
+  // Shared memory widens what this bot reads, so only the owner grants it.
+  if (args.memoryScope === "shared")
+    return refusal("owner_only_settings", "Only the owner can share your memory, in Settings.");
   const unguarded = await neverAsks(ctx);
   if (OWNER_SETTINGS.some((key) => argumentGiven(args[key]))) {
     if (isSubagentToolExecution(executionId) || (!unguarded && !ctx.source.ownerStartedRun))
       return refusal(
         "owner_only_model_settings",
-        "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
+        "Only the owner can change your settings, from their own chat.",
       );
     request.settingsChange = true;
   }
