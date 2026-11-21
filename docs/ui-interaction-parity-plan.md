@@ -36,7 +36,7 @@
 
 ## 1.2 PR 2 结果
 
-- 已落地桌面 rail + 二级列表：56px（浏览器）/ 64px（Electron）图标态、220px 标签态；列表 offcanvas。
+- 已落地桌面 rail + 二级列表：56px（浏览器）/ 72px（Electron）图标态、220px 标签态；列表 offcanvas。
 - 账户菜单 portal 到 rail 底部；套餐提示保留在列表底部；Artifacts/Board/NavLink 移入 rail 布局。
 - Activity 保留为列表模式，Integrations 保留在账户菜单；移动端 rail 推迟到 PR 5。
 - 新增 `chat/sidebar.spec.ts`，单条 E2E 通过并产出明暗截图。

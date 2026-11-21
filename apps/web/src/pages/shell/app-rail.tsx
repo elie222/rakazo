@@ -28,6 +28,7 @@ const AppRailContext = createContext(false);
 const AppSidebarContext = createContext<{
   listCollapsed: boolean;
   setListCollapsed: (collapsed: boolean) => void;
+  previewListCollapsed: (collapsed: boolean) => void;
   railFooterNode: HTMLDivElement | null;
   setRailFooterNode: (node: HTMLDivElement | null) => void;
 } | null>(null);
@@ -71,17 +72,27 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
     setListCollapsedState(collapsed);
     writeBotsSidebarCollapsed(userId, collapsed);
   }
+  /** A drag previews the collapse without saving it; release commits through `setListCollapsed`. */
+  function previewListCollapsed(collapsed: boolean) {
+    setListCollapsedState(collapsed);
+  }
 
   return (
     <AppRailContext value>
       <AppSidebarContext
-        value={{ listCollapsed, setListCollapsed, railFooterNode, setRailFooterNode }}
+        value={{
+          listCollapsed,
+          setListCollapsed,
+          previewListCollapsed,
+          railFooterNode,
+          setRailFooterNode,
+        }}
       >
         <div
           className="flex h-full min-h-0"
           style={
             {
-              "--app-rail-width": expanded ? "220px" : desktopBridge() ? "64px" : "56px",
+              "--app-rail-width": expanded ? "220px" : desktopBridge() ? "72px" : "56px",
             } as CSSProperties
           }
         >
@@ -171,6 +182,7 @@ function PrimaryRail({
             expanded={expanded}
             icon={<PanelLeft className="size-5" strokeWidth={1.75} aria-hidden="true" />}
             label={t`Show chat list`}
+            testId="show-chat-list"
             onClick={onShowChats}
           />
         ) : null}
@@ -193,7 +205,7 @@ function PrimaryRail({
           onClick={() => {
             // From another page the first press opens Activity there; on the chat shell it toggles.
             activityModePreference.set(onChatShell ? !activityMode : true);
-            navigate("/app");
+            if (!onChatShell) navigate("/app");
             if (listCollapsed) onShowChats();
           }}
         />
@@ -244,6 +256,7 @@ function RailItem({
   label,
   to,
   onClick,
+  testId,
 }: {
   active: boolean;
   expanded: boolean;
@@ -251,9 +264,10 @@ function RailItem({
   label: string;
   to?: string;
   onClick?: () => void;
+  testId?: string;
 }) {
   const className = cn(
-    "app-no-drag flex h-10 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-start outline-none transition-colors duration-(--motion-micro) ease-(--ease-standard) focus-visible:ring-2 focus-visible:ring-ring/50",
+    "app-no-drag flex h-10 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-start outline-none transition-[color,background-color,transform] duration-(--motion-micro) ease-(--ease-standard) focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-[0.97] motion-reduce:active:scale-100",
     expanded ? "w-full" : "w-10 justify-center",
     active
       ? "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -270,6 +284,7 @@ function RailItem({
       to={to}
       aria-current={active ? "page" : undefined}
       aria-label={label}
+      data-testid={testId}
       className={className}
       onClick={onClick}
     >
@@ -280,6 +295,7 @@ function RailItem({
       type="button"
       aria-pressed={active}
       aria-label={label}
+      data-testid={testId}
       className={className}
       onClick={onClick}
     >

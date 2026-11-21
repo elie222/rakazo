@@ -10,7 +10,7 @@
 
 已落地：
 
-- 桌面主 rail：Chats / Activity / Artifacts / Board，宽度 56px（浏览器）或 64px（Electron 窗口控件）收起、220px 展开。
+- 桌面主 rail：Chats / Activity / Artifacts / Board，宽度 56px（浏览器）或 72px（Electron 窗口控件）收起、220px 展开。
 - 二级列表改为 offcanvas：标题、搜索、创建、隐藏列表；rail 上提供“Show chat list”恢复。
 - 账户菜单通过 portal 放到 rail 底部；列表底部保留套餐提示、归档和 Passkey 提示。
 - Artifacts、Board、NavLink 页面移入 app rail 布局，切页时 rail 常驻。

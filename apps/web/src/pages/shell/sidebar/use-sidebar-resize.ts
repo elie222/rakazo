@@ -66,6 +66,17 @@ export function useSidebarResize({
     onCollapsedChange(false);
   }
 
+  /** A keyboard collapse removes the focused handle, so focus moves to the rail's restore action. */
+  function commitFromKeyboard(next: number) {
+    const collapsing = next < BOTS_SIDEBAR_SNAP_WIDTH;
+    commit(next);
+    if (collapsing) {
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>('[data-testid="show-chat-list"]')?.focus();
+      });
+    }
+  }
+
   function release(event: PointerEvent<HTMLElement>) {
     drag.current = null;
     setDragWidth(null);
@@ -142,7 +153,7 @@ export function useSidebarResize({
         event.preventDefault();
         const step = (event.key === "ArrowRight" ? 32 : -32) * direction();
         const next = width + step;
-        commit(
+        commitFromKeyboard(
           step < 0 && next < BOTS_SIDEBAR_MIN_WIDTH
             ? BOTS_SIDEBAR_MINI_WIDTH
             : next < BOTS_SIDEBAR_SNAP_WIDTH && step > 0
@@ -151,7 +162,7 @@ export function useSidebarResize({
         );
       } else if (event.key === "Home") {
         event.preventDefault();
-        commit(BOTS_SIDEBAR_MINI_WIDTH);
+        commitFromKeyboard(BOTS_SIDEBAR_MINI_WIDTH);
       } else if (event.key === "End") {
         event.preventDefault();
         commit(maxWidth);

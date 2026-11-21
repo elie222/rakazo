@@ -206,6 +206,7 @@ function SpaceShell() {
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   const {
     listCollapsed: botsSidebarCollapsed,
+    previewListCollapsed,
     railFooterNode,
     setListCollapsed: setBotsSidebarCollapsed,
   } = useAppSidebar();
@@ -1015,7 +1016,7 @@ function SpaceShell() {
       userId={userId}
       collapsed={botsSidebarCollapsed}
       onCollapsedChange={setBotsSidebarCollapsedPref}
-      onPreviewCollapsedChange={() => {}}
+      onPreviewCollapsedChange={previewListCollapsed}
       computerOpen={computerOpen}
       data-testid="shell-root"
       data-ready={shellReady}
@@ -1068,7 +1069,7 @@ function SpaceShell() {
         chatMenu={chatMenu}
         roster={
           <SidebarRoster
-            mini={botsSidebarCollapsed}
+            mini={botsSidebarCollapsed && !isMobileSidebar}
             sidebarGroups={sidebarGroups}
             collapsedSidebarSections={collapsedSidebarSections}
             bootstrapMe={bootstrapMe}

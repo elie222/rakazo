@@ -279,6 +279,25 @@ export const tokens = darkTokens;
 
 export const RADIUS = "0.75rem";
 
+/**
+ * Depth tokens, written to `tokens.css` beside the palette so both themes stay in one source.
+ * `outline` is the hairline, `control` a pressed surface, `popover`/`dialog` floating layers.
+ */
+export const SHADOWS = {
+  dark: {
+    outline: "0 0 0 1px rgb(255 255 255 / 0.08)",
+    control: "0 1px 2px rgb(0 0 0 / 0.4)",
+    popover: "0 4px 16px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3)",
+    dialog: "0 16px 48px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4)",
+  },
+  light: {
+    outline: "0 0 0 1px rgb(0 0 0 / 0.06)",
+    control: "0 1px 2px rgb(0 0 0 / 0.06)",
+    popover: "0 4px 16px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04)",
+    dialog: "0 16px 48px rgb(0 0 0 / 0.14), 0 2px 8px rgb(0 0 0 / 0.06)",
+  },
+} as const;
+
 export const fontWeight = { regular: "400", medium: "500", semibold: "600" } as const;
 
 /**
@@ -501,7 +520,10 @@ function renderBlock(selector: string, colorScheme: ResolvedAppearance, palette:
   const lines = (Object.keys(palette) as (keyof WebColorTokens)[]).map(
     (token) => `  ${cssVariableName(token)}: ${palette[token].toLowerCase()};`,
   );
-  return `${selector} {\n  color-scheme: ${colorScheme};\n${lines.join("\n")}\n  --radius: ${RADIUS};\n}`;
+  const shadows = Object.entries(SHADOWS[colorScheme]).map(
+    ([name, value]) => `  --shadow-${name}: ${value};`,
+  );
+  return `${selector} {\n  color-scheme: ${colorScheme};\n${lines.join("\n")}\n${shadows.join("\n")}\n  --radius: ${RADIUS};\n}`;
 }
 
 /** The CSS in `tokens.css` (web and Electron). Generated from the web palettes so both stay in sync. */

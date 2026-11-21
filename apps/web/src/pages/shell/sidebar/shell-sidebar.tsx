@@ -11,7 +11,7 @@ import {
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
 import type { ReactNode, UIEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PasskeyOffer } from "../../../components/account/PasskeyOffer";
 import { useUsageHint } from "../../../components/billing/PlanUsage";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
@@ -126,6 +126,10 @@ export function ShellSidebar({
   } = search;
   // A closed drawer and a collapsed desktop list are both off screen, so neither may keep focus.
   const listHidden = isMobile ? !mobileOpen : collapsed;
+  // Activity replaces the roster; a search left over from Chats would replace its results later.
+  useEffect(() => {
+    if (activityMode) setQuery("");
+  }, [activityMode, setQuery]);
   return (
     <>
       <button
@@ -177,7 +181,13 @@ export function ShellSidebar({
             setSearchOpen(true);
             focusSidebarSearch();
           }}
-          onCollapse={() => setCollapsedPref(true)}
+          onCollapse={() => {
+            setCollapsedPref(true);
+            // The Hide button is about to become inert; hand focus to the rail's restore action.
+            requestAnimationFrame(() => {
+              document.querySelector<HTMLElement>('[data-testid="show-chat-list"]')?.focus();
+            });
+          }}
           onCloseMobile={() => setMobileOpen(false)}
           bots={bots}
           setPanel={setPanel}
