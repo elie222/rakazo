@@ -11,6 +11,7 @@ import {
   SettingsInputRow,
   SettingsRow,
 } from "../components/settings/settings-group";
+import { LoadFailure } from "../components/ui/load-failure";
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
@@ -50,7 +51,11 @@ export default function MeetingsScreen() {
     stale: [read.queryKey],
   });
   const busy = join.pending || leave.pending;
-  const error = join.error ?? leave.error ?? list.error;
+  const actionError = join.error ?? leave.error;
+  const error = actionError ?? list.error;
+  const errorMessage = error ? errorText(error, t`Could not update meetings`) : null;
+  const firstReadFailed =
+    Boolean(botId) && !actionError && !list.data && Boolean(list.error) && !list.isFetching;
   useScreenHeader({ title: t`Meetings` });
 
   return (
@@ -92,9 +97,14 @@ export default function MeetingsScreen() {
       ) : list.data || !botId ? (
         <Text style={styles.note}>{t`Meeting joins are unavailable.`}</Text>
       ) : null}
-      {error ? (
+      {firstReadFailed && errorMessage ? (
+        <LoadFailure
+          message={errorMessage}
+          onRetry={() => void list.refetch({ cancelRefetch: false })}
+        />
+      ) : errorMessage ? (
         <Text accessibilityRole="alert" style={styles.error}>
-          {errorText(error, t`Could not update meetings`)}
+          {errorMessage}
         </Text>
       ) : null}
       {!list.error && list.data?.meetings.length ? (
