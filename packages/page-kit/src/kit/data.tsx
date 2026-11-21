@@ -323,7 +323,13 @@ function sortKey(cell: TableCell): number | string {
   const raw = cellText(cell).trim();
   if (FIGURE.test(raw)) {
     const scale = /k$/i.test(raw) ? 1e3 : /M$/.test(raw) ? 1e6 : /B$/.test(raw) ? 1e9 : 1;
-    const number = Number.parseFloat(raw.replace(/[^\d.\-\u2212]/g, "").replace("\u2212", "-"));
+    const literal = raw.replace(/[^\d,.\-\u2212]/g, "").replace("\u2212", "-");
+    // Keep a lone three-digit group such as "1,234" as thousands; only flip clear decimals.
+    const decimalComma = /^-?(?:\d+,\d{1,2}|\d{1,3}(?:\.\d{3})+,\d+)$/.test(literal);
+    const normalized = decimalComma
+      ? literal.replaceAll(".", "").replace(",", ".")
+      : literal.replaceAll(",", "");
+    const number = Number.parseFloat(normalized);
     if (Number.isFinite(number)) return number * scale;
   }
   return raw.toLowerCase();
