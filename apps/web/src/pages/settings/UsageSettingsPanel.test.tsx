@@ -123,6 +123,10 @@ async function renderPanel(entries: typeof catalog.entries = []) {
     [...container.querySelectorAll("button")].find((node) => node.textContent === text)!;
   return {
     container,
+    refetchCatalog: async () => {
+      await act(async () => client.refetchQueries({ queryKey: ["models-list"] }));
+      await settle();
+    },
     chosen: (label: string) => trigger(label).textContent,
     totals: () => [...container.querySelectorAll("dd")].map((node) => node.textContent),
     options: async (label: string) => {
@@ -380,6 +384,33 @@ it("keeps a known provider name when the recorded model is no longer listed", as
     );
     expect(panel.container.textContent).not.toContain("retired-opaque-id");
     expect(await panel.options("Model")).toEqual(["All models", "Unlisted model"]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("keeps cached catalog names and unlisted labels after a failed refresh", async () => {
+  const panel = await renderPanel([
+    { provider: "p:1", id: "m1", label: "Known model", providerName: "Known provider" },
+  ]);
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      models: [
+        { provider: "p:1", model: "m1", ...point(1, 10, 0.001) },
+        { provider: "p", model: "m2", ...point(1, 10, 0.001) },
+      ],
+    }));
+    await panel.pick("7 days");
+    catalog.entries = new Error("catalog refresh failed");
+    await panel.refetchCatalog();
+    expect(
+      [...panel.container.querySelectorAll("tbody tr")].map(
+        (row) => row.querySelector("td")?.textContent,
+      ),
+    ).toEqual(["Known modelKnown provider", "Unlisted model"]);
+    expect(await panel.options("Model")).toEqual(["All models", "Known model", "Unlisted model"]);
+    expect(panel.container.textContent).not.toContain("Model name unavailable");
   } finally {
     await panel.unmount();
   }

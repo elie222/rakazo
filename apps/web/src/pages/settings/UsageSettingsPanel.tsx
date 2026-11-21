@@ -50,11 +50,12 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
 
   const catalogQuery = useQuery(queries.models.list.queryOptions());
   const catalog = catalogQuery.data ?? NO_CATALOG;
-  const fallbackLabel = catalogQuery.isError
-    ? t`Model name unavailable`
-    : catalogQuery.isPending
-      ? t`Loading model name…`
-      : t`Unlisted model`;
+  const fallbackLabel =
+    catalogQuery.data !== undefined
+      ? t`Unlisted model`
+      : catalogQuery.isError
+        ? t`Model name unavailable`
+        : t`Loading model name…`;
 
   const count = new Intl.NumberFormat(i18n.locale);
   const usd = new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" });
