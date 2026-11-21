@@ -69,6 +69,7 @@ vi.mock("../native/native", () => ({
   useResolvedAppearance: () => "light",
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
+vi.mock("../native/announce", () => ({ announceToScreenReader: vi.fn() }));
 vi.mock("../native/native-controls", () => ({ iosAtLeast: () => state.headerMenu }));
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({

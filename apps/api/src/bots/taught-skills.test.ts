@@ -111,3 +111,55 @@ it("starts a skill test run even when waking it fails", async () => {
     expect.objectContaining({ level: "error", message: "run wake failed", "run.id": "run-1" }),
   ]);
 });
+
+it("treats a blank or whitespace-only skill name as no name", async () => {
+  const draft = {
+    id: "skill-1",
+    botId: "bot-1",
+    userId: "user-1",
+    status: "draft",
+    name: "",
+    goal: "  File expenses  ",
+    playbook: null,
+    recording: null,
+    startedAt: null,
+    expiresAt: null,
+    stoppedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  let skill = draft;
+  const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    skill = { ...skill, ...data };
+    return skill;
+  });
+  const prisma = {
+    taughtSkill: { findFirst: vi.fn(async () => skill), update },
+    // No bot thread, so there is no draft card or saved event to update.
+    bot: { findUnique: vi.fn(async () => null) },
+  };
+  const skills = createTaughtSkillsService({ prisma } as unknown as TaughtSkillsDeps);
+
+  await expect(skills.save(actor, "skill-1", "   ")).resolves.toMatchObject({
+    name: "File expenses",
+  });
+  await expect(skills.save(actor, "skill-1", "")).resolves.toMatchObject({
+    name: "File expenses",
+  });
+  const playbook = {
+    whenToUse: "",
+    inputs: [],
+    steps: [],
+    howToCheck: "",
+    whatToReturn: "",
+    approvalBoundaries: "",
+    failureHandling: "",
+  };
+  await expect(
+    skills.updateDraft(actor, "skill-1", { name: " \t", playbook }),
+  ).resolves.toMatchObject({ name: "File expenses" });
+  await expect(skills.save(actor, "skill-1", "  Expense report  ")).resolves.toMatchObject({
+    name: "Expense report",
+  });
+  expect(skill.name).toBe("Expense report");
+});
