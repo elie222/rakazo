@@ -20,15 +20,20 @@ export function useSidebarResize({
   collapsed,
   onCollapsedChange,
   onPreviewCollapsedChange,
+  reservedWidth = 0,
 }: {
   userId: string | null | undefined;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   onPreviewCollapsedChange: (collapsed: boolean) => void;
+  /** Width the primary rail takes from the viewport, so the list never squeezes the chat. */
+  reservedWidth?: number;
 }) {
   const [preferredWidth, setPreferredWidth] = useState(() => readBotsSidebarWidth(userId));
   // Only the limit is kept, so resizing the window re-renders the shell only when it changes.
-  const [maxWidth, setMaxWidth] = useState(() => maximumBotsSidebarWidth(window.innerWidth));
+  const [maxWidth, setMaxWidth] = useState(() =>
+    maximumBotsSidebarWidth(window.innerWidth, reservedWidth),
+  );
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const drag = useRef<{
     pointerId: number;
@@ -53,7 +58,13 @@ export function useSidebarResize({
     setDragWidth(null);
   }, [userId]);
 
-  useEventListener(window, "resize", () => setMaxWidth(maximumBotsSidebarWidth(window.innerWidth)));
+  useEffect(() => {
+    setMaxWidth(maximumBotsSidebarWidth(window.innerWidth, reservedWidth));
+  }, [reservedWidth]);
+
+  useEventListener(window, "resize", () =>
+    setMaxWidth(maximumBotsSidebarWidth(window.innerWidth, reservedWidth)),
+  );
 
   function commit(next: number) {
     if (next < BOTS_SIDEBAR_SNAP_WIDTH) {

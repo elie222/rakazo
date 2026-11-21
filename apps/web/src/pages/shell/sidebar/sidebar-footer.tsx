@@ -328,6 +328,19 @@ export function SidebarFooter({
           />
         </Button>
       ) : null}
+      {mini ? (
+        <IconTooltip label={t`Connect apps`}>
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            aria-label={t`Connect apps`}
+            onClick={onIntegrations}
+            className="rounded-full text-muted-foreground"
+          >
+            <Plug aria-hidden="true" strokeWidth={1.75} />
+          </Button>
+        </IconTooltip>
+      ) : null}
       {update.available ? (
         <IconTooltip label={t`Install update`}>
           <Button

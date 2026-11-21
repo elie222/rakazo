@@ -207,6 +207,7 @@ function SpaceShell() {
   const {
     listCollapsed: botsSidebarCollapsed,
     previewListCollapsed,
+    railWidth,
     railFooterNode,
     setListCollapsed: setBotsSidebarCollapsed,
   } = useAppSidebar();
@@ -1017,6 +1018,7 @@ function SpaceShell() {
       collapsed={botsSidebarCollapsed}
       onCollapsedChange={setBotsSidebarCollapsedPref}
       onPreviewCollapsedChange={previewListCollapsed}
+      reservedWidth={railWidth}
       computerOpen={computerOpen}
       data-testid="shell-root"
       data-ready={shellReady}

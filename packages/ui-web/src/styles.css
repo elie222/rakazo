@@ -54,6 +54,23 @@
   --font-weight-normal: 420;
 }
 
+/* Shadow utilities read the generated tokens; naming them in `@theme` would self-reference. */
+@utility shadow-outline {
+  box-shadow: var(--shadow-outline);
+}
+
+@utility shadow-control {
+  box-shadow: var(--shadow-control);
+}
+
+@utility shadow-popover {
+  box-shadow: var(--shadow-popover);
+}
+
+@utility shadow-dialog {
+  box-shadow: var(--shadow-dialog);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-dialog: var(--dialog);
@@ -100,10 +117,6 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
-  --shadow-outline: var(--shadow-outline);
-  --shadow-control: var(--shadow-control);
-  --shadow-popover: var(--shadow-popover);
-  --shadow-dialog: var(--shadow-dialog);
   --animate-caret-blink: caret-blink 1.25s ease-out infinite;
 
   @keyframes caret-blink {

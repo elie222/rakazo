@@ -29,6 +29,7 @@ const AppSidebarContext = createContext<{
   listCollapsed: boolean;
   setListCollapsed: (collapsed: boolean) => void;
   previewListCollapsed: (collapsed: boolean) => void;
+  railWidth: number;
   railFooterNode: HTMLDivElement | null;
   setRailFooterNode: (node: HTMLDivElement | null) => void;
 } | null>(null);
@@ -53,6 +54,7 @@ export function useAppSidebar() {
 export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
   const userId = useQueryUserId();
   const wide = useMediaQuery("(min-width: 64rem)");
+  const railVisible = useMediaQuery("(min-width: 48rem)");
   const [preference, setPreference] = useState<boolean | null>(() => readAppRailExpanded(userId));
   const [listCollapsed, setListCollapsedState] = useState(() => readBotsSidebarCollapsed(userId));
   const [railFooterNode, setRailFooterNode] = useState<HTMLDivElement | null>(null);
@@ -63,6 +65,7 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
   }, [userId]);
 
   const expanded = preference ?? wide;
+  const railWidth = railVisible ? (expanded ? 220 : desktopBridge() ? 72 : 56) : 0;
   function toggle() {
     const next = !expanded;
     setPreference(next);
@@ -84,6 +87,7 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
           listCollapsed,
           setListCollapsed,
           previewListCollapsed,
+          railWidth,
           railFooterNode,
           setRailFooterNode,
         }}
@@ -92,7 +96,7 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
           className="flex h-full min-h-0"
           style={
             {
-              "--app-rail-width": expanded ? "220px" : desktopBridge() ? "72px" : "56px",
+              "--app-rail-width": `${railWidth}px`,
             } as CSSProperties
           }
         >
