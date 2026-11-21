@@ -42,7 +42,7 @@ jobs:
       pull-requests: write
     with:
       head_sha: ${{ needs.head.outputs.sha }}
-      pull_request: ${{ inputs.pr }}
+      pull_request: ${{ fromJSON(inputs.pr) }}
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
