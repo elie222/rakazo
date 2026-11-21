@@ -26,7 +26,7 @@ import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { TeamChatBridge } from "./team-chat-bridge.js";
 import { createTeamChatInboundHandler } from "./team-chat-inbound.js";
 import type { TeamRoomPolicy } from "./team-chat-startup.js";
-import { prefersTeamChatSurface } from "./team-chat-startup.js";
+import { allowsPersonalLinking, prefersTeamChatSurface } from "./team-chat-startup.js";
 
 /**
  * Messaging and team chat for one API process; `stopReceiving` ends polling while replies still
@@ -169,10 +169,10 @@ export async function startMessagingRuntime({
         await handleTeamChatInbound(bridgeFor(event.provider, botId), event);
         return;
       }
-      // A room the platform declares as a team room is only ever one. Without the bot
-      // that owns it nothing can answer there, and the personal channel-linking flow
-      // has no inviter to ask: the room would only get the one-time intro note.
-      if (!event.isDirect && teamRooms(event.provider)) {
+      // A room that cannot also be a linked group needs the bot that owns it: without
+      // it nothing can answer there, and the personal channel-linking flow has no
+      // inviter to ask, so the room would only get the one-time intro note.
+      if (!event.isDirect && !allowsPersonalLinking(event.provider, teamRooms)) {
         warnRoomWithoutBot(event);
         return;
       }

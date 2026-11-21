@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "skipLibCheck": true, "incremental": false },
+  "include": ["src/providers/messaging/slack/*.ts"],
+  "exclude": ["node_modules"]
+}

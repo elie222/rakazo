@@ -130,8 +130,6 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
   private implementation: LoadedDiscordAdapter | undefined;
   private listening: ReturnType<typeof setInterval> | undefined;
   private window: AbortController | undefined;
-  private startRetry: ReturnType<typeof setTimeout> | undefined;
-  private readonly retries = new Set<ReturnType<typeof setTimeout>>();
   /** Aborted when polling stops, so no retry wait outlives the listener it belongs to. */
   private stopSignal = new AbortController();
   // Channel name by channel id, learned once per channel. Discord's gateway message
@@ -333,12 +331,8 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
     clearInterval(this.listening);
     this.listening = undefined;
     this.stopSignal.abort();
-    clearTimeout(this.startRetry);
-    this.startRetry = undefined;
     this.window?.abort();
     this.window = undefined;
-    for (const timer of this.retries) clearTimeout(timer);
-    this.retries.clear();
   }
 
   private startListening(adapter: LoadedDiscordAdapter) {
@@ -350,58 +344,54 @@ export class LazyDiscordAdapter implements Adapter<DiscordThreadId> {
         void bestEffort("Discord gateway delivery", task);
       },
     };
-    const listen = (attempt = 0) => {
-      if (!this.listening) return;
-      clearTimeout(this.startRetry);
-      this.startRetry = undefined;
-      // Abort the window this one replaces: two Gateway clients logged in at once
-      // would each receive every message and mint threads the other cannot stop.
-      this.window?.abort();
-      // A fresh window each time keeps abort listeners from piling up on one signal.
-      const window = new AbortController();
-      this.window = window;
-      adapter
-        .startGatewayListener(options, DISCORD_LISTEN_WINDOW_MS, window.signal)
-        .then((response) => {
-          if (response.ok) return;
-          getLogger().warn("discord inbound listener did not start", {
-            status: response.status,
-            retrying: attempt < DISCORD_START_RETRY_DELAYS_MS.length,
-          });
-          retryStart(attempt, window);
-        })
-        .catch((error: unknown) => {
-          getLogger().warn("discord inbound listener failed", {
-            error: String(error),
-            retrying: attempt < DISCORD_START_RETRY_DELAYS_MS.length,
-          });
-          retryStart(attempt, window);
-        });
-    };
+    // The window this run owns; a newer run replaces it, and the old one stops trying.
+    let owned: AbortController | undefined;
     /**
-     * A start that failed retries on its own, unless a newer window replaced it. The
-     * failed start names its own window: a replacement is healthy, and checking the
-     * current window would let a superseded listener retry over it.
+     * One start, on a fresh window. A window is always aborted before the one that
+     * replaces it: two Gateway clients logged in at once would each receive every
+     * message and mint threads the other cannot stop. Keeping the controller per run
+     * also keeps abort listeners from piling up on one signal.
      */
-    const retryStart = (attempt: number, window: AbortController) => {
-      const delay = DISCORD_START_RETRY_DELAYS_MS[attempt];
-      if (delay === undefined || !this.listening) return;
-      if (window.signal.aborted || this.window !== window) return;
-      clearTimeout(this.startRetry);
-      const timer = setTimeout(() => {
-        this.retries.delete(timer);
-        this.startRetry = undefined;
-        // Still the owner of the window, and still listening, when the wait ends.
-        if (window.signal.aborted || this.window !== window) return;
-        listen(attempt + 1);
-      }, delay);
-      timer.unref?.();
-      this.retries.add(timer);
-      this.startRetry = timer;
+    const listen = () => {
+      // This run's own window: a newer run replaces it, and the superseded one stops
+      // trying rather than aborting the healthy replacement.
+      let window: AbortController | undefined;
+      const start = async () => {
+        if (!this.listening) return;
+        owned?.abort();
+        window = new AbortController();
+        owned = window;
+        this.window = window;
+        const response = await adapter.startGatewayListener(
+          options,
+          DISCORD_LISTEN_WINDOW_MS,
+          window.signal,
+        );
+        if (!response.ok) {
+          throw new Error(`discord listener did not start: ${response.status}`);
+        }
+      };
+      return bestEffort(
+        "Discord gateway start",
+        retry(start, {
+          attempts: DISCORD_START_RETRY_DELAYS_MS.length + 1,
+          delayMs: DISCORD_START_RETRY_DELAYS_MS,
+          // Still this run's window, and still listening, before another try.
+          retryable: () => Boolean(this.listening) && this.window === window,
+          signal: this.stopSignal.signal,
+          onRetry: (error: unknown, attempt: number, delayMs: number) => {
+            getLogger().warn("discord inbound listener did not start", {
+              error: String(error),
+              attempt: attempt + 1,
+              retryInMs: delayMs,
+            });
+          },
+        }),
+      );
     };
-    this.listening = setInterval(listen, DISCORD_LISTEN_WINDOW_MS);
+    this.listening = setInterval(() => void listen(), DISCORD_LISTEN_WINDOW_MS);
     this.listening.unref?.();
-    listen();
+    void listen();
   }
 
   async handleWebhook(request: Request, options?: WebhookOptions) {

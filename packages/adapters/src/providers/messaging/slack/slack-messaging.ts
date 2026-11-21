@@ -47,7 +47,9 @@ export const slackMessaging = defineMessagingPlatform({
       provider: "slack",
       capabilities: { direct: true, groups: true, receipt: "reaction" },
       // A channel is a team room, and only ever a room inside a workspace.
-      teamRooms: { requiresWorkspace: true },
+      // A Slack channel could be linked as a personal group before team chat
+      // existed, and still can when no team-chat bot is configured.
+      teamRooms: { requiresWorkspace: true, personalLinking: true },
       adapter,
       enrichTeamRoom: enrichSlackTeamRoom,
       redeliveryKeys: slackRedeliveryKeys,

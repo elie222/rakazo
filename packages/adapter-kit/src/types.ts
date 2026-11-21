@@ -1288,6 +1288,13 @@ export interface MessagingCapabilities {
 export interface MessagingTeamRooms {
   /** Rooms exist only inside a workspace (a Slack workspace, a Discord guild). */
   requiresWorkspace: boolean;
+  /**
+   * Whether a room may also be a personally linked group when no team-chat bot
+   * owns it. A platform whose rooms always belong to the deployment (Discord,
+   * where a guild has no member to approve a link) leaves this off, and a message
+   * in one is dropped rather than given a link note nobody can accept.
+   */
+  personalLinking?: boolean;
 }
 
 export interface MessagingPlatformDescriptor {

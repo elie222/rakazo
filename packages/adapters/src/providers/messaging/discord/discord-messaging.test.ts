@@ -43,7 +43,7 @@ const fake = vi.hoisted(() => ({
     fake.chat = chat;
   }),
   postMessage: vi.fn(async () => ({ id: "msg-1", raw: {} })),
-  fetchChannelInfo: vi.fn(async () => ({ name: "launch" })),
+  fetchChannelInfo: vi.fn(async (): Promise<{ name?: string | undefined }> => ({ name: "launch" })),
 }));
 
 vi.mock("@chat-adapter/discord", () => ({

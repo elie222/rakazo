@@ -56,7 +56,13 @@ describe("startMessagingRuntime", () => {
 
 describe("inbound routing", () => {
   /** Starts the runtime far enough to capture the handler the messaging surface calls. */
-  async function inboundHandler(env: Record<string, unknown>) {
+  async function inboundHandler(
+    env: Record<string, unknown>,
+    platform: { provider: string; teamRooms: Record<string, unknown> } = {
+      provider: "discord",
+      teamRooms: { requiresWorkspace: true },
+    },
+  ) {
     const handlers: ((event: unknown) => Promise<void>)[] = [];
     const messaging = {
       onInbound: (handler: (event: unknown) => Promise<void>) => handlers.push(handler),
@@ -65,9 +71,8 @@ describe("inbound routing", () => {
       // What a mounted room-style platform declares about its rooms.
       platforms: () => [
         {
-          provider: "discord",
+          ...platform,
           capabilities: { direct: true, groups: true, receipt: "reaction" },
-          teamRooms: { requiresWorkspace: true },
         },
       ],
       acknowledge: vi.fn(),
@@ -114,6 +119,24 @@ describe("inbound routing", () => {
 
     // Nothing answers, and nothing posts the personal-linking intro into the channel.
     expect(directMessages.inbound).not.toHaveBeenCalled();
+  });
+
+  it("keeps routing a Slack channel to personal linking with no team-chat bot", async () => {
+    // A Slack channel could be linked as a personal group before team chat existed,
+    // and a deployment with no team-chat bot must not lose that.
+    const handle = await inboundHandler(
+      {},
+      { provider: "slack", teamRooms: { requiresWorkspace: true, personalLinking: true } },
+    );
+    await handle({
+      ...guildMessage,
+      provider: "slack",
+      threadId: "slack:C1",
+      workspaceId: "T1",
+      conversationKey: "slack:C1",
+    });
+
+    expect(directMessages.inbound).toHaveBeenCalledOnce();
   });
 
   it("still routes a Discord direct message to personal linking", async () => {
