@@ -97,7 +97,10 @@ function fakePrisma() {
     },
     session: {
       findFirst: async ({ where }: { where: { id?: string; userId?: string } }) => {
-        if (where.id) return signedIn(where.id) ? { id: where.id } : null;
+        if (where.id) {
+          const expiry = signedIn(where.id);
+          return expiry && expiry > new Date() ? { id: where.id } : null;
+        }
         return signedOutUsers.has(where.userId!) ? null : { id: `${where.userId}-session` };
       },
       findMany: async ({
@@ -504,11 +507,11 @@ describe("device sessions", () => {
     expect(rows[0]).toMatchObject({ sessionId: "desktop-ended", revokedBy: "session" });
   });
 
-  it("never accepts a device paired by a sign-in that already ended", async () => {
-    const { pair, hub, rows } = setup();
-    const { token } = await (await pair("user-1", { session: "desktop-ended" })).json();
-    expect(rows[0]!.revokedAt).toBeNull();
-    await expect(hub.authenticate(`Bearer ${token}`)).resolves.toBeNull();
+  it("refuses a pairing whose sign-in ended after request authentication", async () => {
+    const { pair, rows } = setup();
+    const response = await pair("user-1", { session: "desktop-ended" });
+    expect(response.status).toBe(401);
+    expect(rows).toEqual([]);
   });
 
   it("stops accepting a device once the sign-in that paired it expires", async () => {
