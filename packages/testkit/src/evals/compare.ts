@@ -28,7 +28,10 @@ const ReportSchema = z.looseObject({
   provider: z.string().nullable(),
   // Reports from before the reply-mode option always ran in chat mode.
   replyMode: z.enum(["chat", "messages"]).default("chat"),
-  cacheCapabilities: z.unknown().optional().transform((value) => value ?? null),
+  cacheCapabilities: z
+    .unknown()
+    .optional()
+    .transform((value) => value ?? null),
   judge: z
     .object({
       provider: z.string(),
