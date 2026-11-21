@@ -32,12 +32,12 @@ test("the app rail and chat list keep one navigation hierarchy", async ({ page }
   const rowBox = await chatRow.boundingBox();
   expect(rowBox).not.toBeNull();
   expect(rowBox!.height).toBeGreaterThanOrEqual(56);
-  // The rail's labels fold away without taking the list with them.
-  await rail.getByRole("button", { name: "Collapse sidebar" }).click();
-  await expect(rail.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+  // The rail starts as icons; its labels fold out without taking the list with them.
   await rail.getByRole("button", { name: "Expand sidebar" }).click();
   await expect(rail.getByRole("button", { name: "Collapse sidebar" })).toBeVisible();
   await expect(rail.getByText("Chats", { exact: true })).toBeVisible();
+  await rail.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(rail.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
 
   // Activity is a list mode; returning to Chats restores the roster.
   await activity.click();

@@ -7,6 +7,7 @@ import {
   PanelLeft,
   PanelLeftClose,
   PanelLeftOpen,
+  Plug,
   SquareKanban,
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
@@ -23,6 +24,7 @@ import {
 } from "../../lib/preferences/bots-sidebar-pref";
 import { useQueryUserId } from "../../lib/query/query";
 import { useMediaQuery } from "../../lib/use-media-query";
+import { withShellOverlay } from "./shell-overlay-url";
 import { focusChatList } from "./sidebar/focus-chat-list";
 
 const AppRailContext = createContext(false);
@@ -148,9 +150,10 @@ function PrimaryRail({
   setRailFooterNode: (node: HTMLDivElement | null) => void;
 }) {
   const { t } = useLingui();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const activityMode = activityModePreference.use();
+  const integrationsOpen = new URLSearchParams(search).has("integrations");
   const onChatShell =
     pathname === "/app" ||
     pathname.startsWith("/app/g/") ||
@@ -161,6 +164,10 @@ function PrimaryRail({
   const onChats = !activityMode && onChatShell;
   const onArtifacts = pathname === "/app/artifacts" || pathname.startsWith("/app/artifacts/");
   const onBoard = pathname === "/app/board" || pathname === "/app/board/";
+  function openIntegrations() {
+    const params = withShellOverlay(new URLSearchParams(search), { kind: "integrations" });
+    navigate({ pathname, search: params.toString() });
+  }
 
   return (
     <nav
@@ -261,6 +268,13 @@ function PrimaryRail({
             onClick={() => activityModePreference.set(false)}
           />
         ) : null}
+        <RailItem
+          active={integrationsOpen}
+          expanded={expanded}
+          icon={<Plug className="size-5" strokeWidth={1.75} aria-hidden="true" />}
+          label={t`Connect apps`}
+          onClick={openIntegrations}
+        />
       </div>
       <div
         ref={setRailFooterNode}
