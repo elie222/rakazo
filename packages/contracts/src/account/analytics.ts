@@ -76,13 +76,26 @@ export const AnalyticsModelSignInStep = z.enum(["page_opened", "code_copied"]);
 export const AnalyticsModelSignInEndReason = z.enum([
   // The provider said the code ran out.
   "expired",
-  // The person closed it, went back, started again, or picked another provider.
+  // The person chose Cancel, or an older app that sends no reason stopped it.
   "cancelled",
+  // A newer try, or another provider, method or model, took its place.
+  "replaced",
+  // The person left the screen or closed it.
+  "left",
   "provider_refused",
   // The wait for the person ran out.
   "timed_out",
   // The provider accepted the sign-in, and saving the connection failed.
   "save_failed",
+  // Its server stopped, or the app gave up on its own error.
+  "interrupted",
+]);
+/** The reasons an app gives when it stops a sign-in itself. */
+export const ModelSignInCancelReason = AnalyticsModelSignInEndReason.extract([
+  "cancelled",
+  "replaced",
+  "left",
+  "interrupted",
 ]);
 /** What the provider refused, as a class. Never its message. */
 export const AnalyticsModelSignInErrorClass = z.enum([
@@ -141,8 +154,8 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
   z.object({ name: z.literal("model_connect_code_issued"), ...modelSignIn }).strict(),
   z.object({ name: z.literal("model_connect_page_opened"), ...modelSignIn }).strict(),
   z.object({ name: z.literal("model_connect_code_copied"), ...modelSignIn }).strict(),
-  // Every sign-in that issued a link or code and did not connect. One whose person was
-  // still watching and saw an error also sends model_connect_failed, as it always has.
+  // Every sign-in that issued a link or code and did not connect, once. Its failures are
+  // counted here only: model_connect_failed covers a try that never issued a link or code.
   z
     .object({
       name: z.literal("model_connect_ended"),
@@ -214,4 +227,5 @@ export type AnalyticsSurface = z.infer<typeof AnalyticsSurface>;
 export type AnalyticsModelSignInFlow = z.infer<typeof AnalyticsModelSignInFlow>;
 export type AnalyticsModelSignInStep = z.infer<typeof AnalyticsModelSignInStep>;
 export type AnalyticsModelSignInEndReason = z.infer<typeof AnalyticsModelSignInEndReason>;
+export type ModelSignInCancelReason = z.infer<typeof ModelSignInCancelReason>;
 export type AnalyticsModelSignInErrorClass = z.infer<typeof AnalyticsModelSignInErrorClass>;

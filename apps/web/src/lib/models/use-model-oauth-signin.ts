@@ -3,6 +3,7 @@ import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type {
   AnalyticsModelSignInStep,
   ModelOAuthBegin,
+  ModelSignInCancelReason,
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
@@ -76,7 +77,8 @@ export function useModelOAuthSignIn(options: {
     oauthCaptureRef.current = null;
   }
 
-  function cancelOAuthAttempt(resetState = true) {
+  /** Stops the sign-in in progress; `reason` says why for measurement only. */
+  function cancelOAuthAttempt(reason: ModelSignInCancelReason = "cancelled", resetState = true) {
     releaseOAuthCapture();
     oauthCodeSubmittingRef.current = false;
     const loginId = oauthLoginIdRef.current;
@@ -87,7 +89,7 @@ export function useModelOAuthSignIn(options: {
         setOauthPending(false);
       }
     });
-    if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+    if (loginId) void rpc.models.cancelOAuth({ loginId, reason }).catch(() => undefined);
   }
 
   async function finishSubscriptionSignIn(login: ModelOAuthBegin, controller: AbortController) {
@@ -134,7 +136,9 @@ export function useModelOAuthSignIn(options: {
       if (submitted) {
         oauthLoginIdRef.current = null;
         setOauth(null);
-        void rpc.models.cancelOAuth({ loginId: attempt.loginId }).catch(() => undefined);
+        void rpc.models
+          .cancelOAuth({ loginId: attempt.loginId, reason: "interrupted" })
+          .catch(() => undefined);
       } else {
         retryable = true;
         setPasteCode(code);
@@ -213,7 +217,9 @@ export function useModelOAuthSignIn(options: {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
-      if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+      if (loginId) {
+        void rpc.models.cancelOAuth({ loginId, reason: "interrupted" }).catch(() => undefined);
+      }
       onErrorRef.current(errorText(err, "Could not start sign-in"));
       setOauth(null);
     } finally {
@@ -229,14 +235,14 @@ export function useModelOAuthSignIn(options: {
   useTimeout(
     () => {
       if (oauthCodeSubmittingRef.current) return;
-      cancelOAuthAttempt();
+      cancelOAuthAttempt("interrupted");
       onErrorRef.current(t`This code expired. Start again.`);
     },
     oauth?.mode === "auth-url" ? oauth.expiresInSeconds * 1000 : null,
     oauth?.loginId,
   );
 
-  useEffect(() => () => cancelOAuthAttempt(false), []);
+  useEffect(() => () => cancelOAuthAttempt("left", false), []);
 
   return {
     oauth,
