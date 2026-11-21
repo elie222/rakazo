@@ -1,85 +1,293 @@
 import { useLingui } from "@lingui/react/macro";
-import { buttonVariants } from "@rakazo/ui-web";
-import { MessagesSquare, SquareKanban } from "lucide-react";
-import type { ReactNode } from "react";
-import { createContext, Suspense, use } from "react";
-import { Link, Outlet, useMatch } from "react-router-dom";
+import { Button, cn } from "@rakazo/ui-web";
+import {
+  Bell,
+  FolderOpen,
+  MessagesSquare,
+  PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
+  SquareKanban,
+} from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { createContext, Suspense, use, useEffect, useState } from "react";
+import { Link, Outlet, useLocation } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
 import { WindowChrome } from "../../components/WindowChrome";
 import { desktopBridge } from "../../lib/platform/desktop";
+import { activityModePreference } from "../../lib/preferences/activity-mode";
+import { readAppRailExpanded, writeAppRailExpanded } from "../../lib/preferences/app-rail-pref";
+import {
+  readBotsSidebarCollapsed,
+  writeBotsSidebarCollapsed,
+} from "../../lib/preferences/bots-sidebar-pref";
+import { useQueryUserId } from "../../lib/query/query";
+import { useMediaQuery } from "../../lib/use-media-query";
 
 const AppRailContext = createContext(false);
+const AppSidebarContext = createContext<{
+  listCollapsed: boolean;
+  setListCollapsed: (collapsed: boolean) => void;
+  railFooterNode: HTMLDivElement | null;
+  setRailFooterNode: (node: HTMLDivElement | null) => void;
+} | null>(null);
 
 /** True when the rail is on screen from the md breakpoint up and holds the window controls there. */
 export function useAppRail() {
   return use(AppRailContext);
 }
 
-/** Chats and Board share one frame, so switching between them keeps the rail in place. */
-export function AppRailLayout({ enabled }: { enabled: boolean }) {
-  if (!enabled) return <Outlet />;
+/** The secondary list's collapse state, shared by the rail's restore action and the list. */
+export function useAppSidebar() {
+  const context = use(AppSidebarContext);
+  if (!context) throw new Error("useAppSidebar must be used within AppRailLayout.");
+  return context;
+}
+
+/**
+ * The app shell: a primary rail for destinations and the page (which owns the secondary
+ * list) beside it. The rail stays in place when the page changes, so Artifacts and Board
+ * keep the same navigation as Chats.
+ */
+export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
+  const userId = useQueryUserId();
+  const wide = useMediaQuery("(min-width: 64rem)");
+  const [preference, setPreference] = useState<boolean | null>(() => readAppRailExpanded(userId));
+  const [listCollapsed, setListCollapsedState] = useState(() => readBotsSidebarCollapsed(userId));
+  const [railFooterNode, setRailFooterNode] = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setPreference(readAppRailExpanded(userId));
+    setListCollapsedState(readBotsSidebarCollapsed(userId));
+  }, [userId]);
+
+  const expanded = preference ?? wide;
+  function toggle() {
+    const next = !expanded;
+    setPreference(next);
+    writeAppRailExpanded(userId, next);
+  }
+  function setListCollapsed(collapsed: boolean) {
+    setListCollapsedState(collapsed);
+    writeBotsSidebarCollapsed(userId, collapsed);
+  }
+
   return (
     <AppRailContext value>
-      <div className="flex h-full min-w-0">
-        <AppRail />
-        <div className="h-full min-w-0 flex-1">
-          {/* A page still loading leaves the rail on screen instead of blanking the window. */}
-          <Suspense fallback={null}>
-            <Outlet />
-          </Suspense>
+      <AppSidebarContext
+        value={{ listCollapsed, setListCollapsed, railFooterNode, setRailFooterNode }}
+      >
+        <div
+          className="flex h-full min-h-0"
+          style={
+            {
+              "--app-rail-width": expanded ? "220px" : desktopBridge() ? "64px" : "56px",
+            } as CSSProperties
+          }
+        >
+          <PrimaryRail
+            boardEnabled={boardEnabled}
+            expanded={expanded}
+            listCollapsed={listCollapsed}
+            onShowChats={() => setListCollapsed(false)}
+            onToggle={toggle}
+            setRailFooterNode={setRailFooterNode}
+          />
+          <div className="h-full min-h-0 min-w-0 flex-1">
+            {/* A page still loading leaves the rail on screen instead of blanking the window. */}
+            <Suspense fallback={null}>
+              <Outlet />
+            </Suspense>
+          </div>
         </div>
-      </div>
+      </AppSidebarContext>
     </AppRailContext>
   );
 }
 
-/** As wide as the macOS window controls, which sit at its top on desktop. */
-function AppRail() {
+function PrimaryRail({
+  boardEnabled,
+  expanded,
+  listCollapsed,
+  onShowChats,
+  onToggle,
+  setRailFooterNode,
+}: {
+  boardEnabled: boolean;
+  expanded: boolean;
+  listCollapsed: boolean;
+  onShowChats: () => void;
+  onToggle: () => void;
+  setRailFooterNode: (node: HTMLDivElement | null) => void;
+}) {
   const { t } = useLingui();
-  // Matched like the route itself, so a trailing slash still marks the Board.
-  const onBoard = useMatch("/app/board") !== null;
+  const { pathname } = useLocation();
+  const activityMode = activityModePreference.use();
+  const onChats =
+    !activityMode &&
+    (pathname === "/app" ||
+      pathname.startsWith("/app/g/") ||
+      (pathname.startsWith("/app/") &&
+        !pathname.startsWith("/app/board") &&
+        !pathname.startsWith("/app/artifacts") &&
+        !pathname.startsWith("/app/x/")));
+  const onArtifacts = pathname === "/app/artifacts" || pathname.startsWith("/app/artifacts/");
+  const onBoard = pathname === "/app/board" || pathname === "/app/board/";
+
   return (
     <nav
       data-testid="app-rail"
       aria-label={t`Sections`}
-      className="app-drag hidden w-18 shrink-0 flex-col items-center gap-2 border-e border-sidebar-border bg-sidebar pt-4 pb-3 md:flex"
+      className="app-drag hidden w-(--app-rail-width) shrink-0 flex-col border-e border-sidebar-border bg-sidebar pb-3 transition-[width] duration-(--motion-layout) ease-(--ease-standard) motion-reduce:transition-none md:flex"
     >
-      {desktopBridge() ? <WindowChrome className="mb-2" /> : null}
-      <RailLink to="/app" label={t`Chats`} active={!onBoard}>
-        <MessagesSquare strokeWidth={1.75} />
-      </RailLink>
-      <RailLink to="/app/board" label={t`Board`} active={onBoard}>
-        <SquareKanban strokeWidth={1.75} />
-      </RailLink>
+      <div className={cn("flex shrink-0 flex-col gap-2 pt-4", expanded ? "px-4" : "items-center")}>
+        {desktopBridge() ? <WindowChrome className="self-start" /> : null}
+        <div className={cn("flex items-center gap-2", expanded ? "w-full" : "justify-center")}>
+          {expanded ? <RailBrand /> : null}
+          <IconTooltip label={expanded ? t`Collapse sidebar` : t`Expand sidebar`} side="inline-end">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={expanded ? t`Collapse sidebar` : t`Expand sidebar`}
+              aria-expanded={expanded}
+              onClick={onToggle}
+              className="app-no-drag shrink-0 text-muted-foreground"
+            >
+              {expanded ? (
+                <PanelLeftClose className="size-5" strokeWidth={1.75} aria-hidden="true" />
+              ) : (
+                <PanelLeftOpen className="size-5" strokeWidth={1.75} aria-hidden="true" />
+              )}
+            </Button>
+          </IconTooltip>
+        </div>
+      </div>
+
+      <div className={cn("mt-4 flex flex-col gap-1", expanded ? "px-3" : "items-center px-2")}>
+        {listCollapsed ? (
+          <RailItem
+            active={false}
+            expanded={expanded}
+            icon={<PanelLeft className="size-5" strokeWidth={1.75} aria-hidden="true" />}
+            label={t`Show chat list`}
+            onClick={onShowChats}
+          />
+        ) : null}
+        <RailItem
+          active={onChats}
+          expanded={expanded}
+          icon={<MessagesSquare className="size-5" strokeWidth={1.75} aria-hidden="true" />}
+          label={t`Chats`}
+          to="/app"
+          onClick={() => {
+            activityModePreference.set(false);
+            if (listCollapsed) onShowChats();
+          }}
+        />
+        <RailItem
+          active={activityMode}
+          expanded={expanded}
+          icon={<Bell className="size-5" strokeWidth={1.75} aria-hidden="true" />}
+          label={t`Activity`}
+          onClick={() => {
+            activityModePreference.set(!activityMode);
+            if (listCollapsed) onShowChats();
+          }}
+        />
+        <RailItem
+          active={onArtifacts}
+          expanded={expanded}
+          icon={<FolderOpen className="size-5" strokeWidth={1.75} aria-hidden="true" />}
+          label={t`Artifacts`}
+          to="/app/artifacts"
+          onClick={() => activityModePreference.set(false)}
+        />
+        {boardEnabled ? (
+          <RailItem
+            active={onBoard}
+            expanded={expanded}
+            icon={<SquareKanban className="size-5" strokeWidth={1.75} aria-hidden="true" />}
+            label={t`Board`}
+            to="/app/board"
+            onClick={() => activityModePreference.set(false)}
+          />
+        ) : null}
+      </div>
+      <div
+        ref={setRailFooterNode}
+        data-testid="app-rail-footer"
+        className="app-no-drag mt-auto flex w-full justify-center px-2 pb-1"
+      />
     </nav>
   );
 }
 
-function RailLink({
-  to,
-  label,
-  active,
-  children,
-}: {
-  to: string;
-  label: string;
-  active: boolean;
-  children: ReactNode;
-}) {
+function RailBrand() {
   return (
+    <span className="flex min-w-0 flex-1 items-center gap-2" aria-hidden="true">
+      <span className="flex size-7 items-center justify-center gap-1 rounded-full bg-card">
+        <span className="h-3 w-[5px] rounded-full bg-primary" />
+        <span className="h-3 w-[5px] rounded-full bg-primary" />
+      </span>
+      <span className="truncate text-body-lg font-medium">Rakazo</span>
+    </span>
+  );
+}
+
+function RailItem({
+  active,
+  expanded,
+  icon,
+  label,
+  to,
+  onClick,
+}: {
+  active: boolean;
+  expanded: boolean;
+  icon: ReactNode;
+  label: string;
+  to?: string;
+  onClick?: () => void;
+}) {
+  const className = cn(
+    "app-no-drag flex h-10 min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-start outline-none transition-colors duration-(--motion-micro) ease-(--ease-standard) focus-visible:ring-2 focus-visible:ring-ring/50",
+    expanded ? "w-full" : "w-10 justify-center",
+    active
+      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+  );
+  const content = (
+    <>
+      <span className="flex size-5 shrink-0 items-center justify-center">{icon}</span>
+      {expanded ? <span className="min-w-0 truncate text-body">{label}</span> : null}
+    </>
+  );
+  const control = to ? (
+    <Link
+      to={to}
+      aria-current={active ? "page" : undefined}
+      aria-label={label}
+      className={className}
+      onClick={onClick}
+    >
+      {content}
+    </Link>
+  ) : (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={label}
+      className={className}
+      onClick={onClick}
+    >
+      {content}
+    </button>
+  );
+  return expanded ? (
+    control
+  ) : (
     <IconTooltip label={label} side="inline-end">
-      <Link
-        to={to}
-        aria-label={label}
-        aria-current={active ? "page" : undefined}
-        className={buttonVariants({
-          variant: "ghost",
-          size: "icon-lg",
-          className: `app-no-drag ${active ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-muted-foreground"}`,
-        })}
-      >
-        {children}
-      </Link>
+      {control}
     </IconTooltip>
   );
 }

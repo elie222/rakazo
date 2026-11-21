@@ -64,6 +64,7 @@ import { desktopBridge } from "../../lib/platform/desktop";
 import { createStoredPreference } from "../../lib/preferences/stored-preference";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
+import { useAppRail } from "../shell/app-rail";
 import { useRedrawAtMidnight } from "../shell/chat/use-redraw-at-midnight";
 
 type ViewMode = "grid" | "list";
@@ -116,6 +117,7 @@ function matchesCalendarDateFilter(
 }
 
 export function ArtifactsPage() {
+  const rail = useAppRail();
   const { artifactId } = useParams<{ artifactId?: string }>();
   const navigate = useNavigate();
   const today = useRedrawAtMidnight();
@@ -253,7 +255,7 @@ export function ArtifactsPage() {
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground/90">
       <header className="app-drag flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3">
         {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
-        {desktopBridge() ? <WindowChrome /> : null}
+        {desktopBridge() ? <WindowChrome className={rail ? "md:hidden" : undefined} /> : null}
         <div className="flex min-w-fit flex-1 items-center gap-1">
           <IconTooltip label={t`Back`}>
             <Link

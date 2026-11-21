@@ -34,6 +34,9 @@ vi.mock("@rakazo/ui-web", () => ({
   Button: ({ children, ...props }: { children: ReactNode }) => (
     <button {...props}>{children}</button>
   ),
+  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipContent: () => null,
+  TooltipTrigger: ({ render }: { render: ReactNode }) => <>{render}</>,
 }));
 vi.mock("@rakazo/core", async (importOriginal) => ({
   ...(await importOriginal<typeof CoreModule>()),

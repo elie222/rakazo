@@ -330,7 +330,7 @@ function SessionApp() {
                   )
                 }
               >
-                <Route element={<AppRailLayout enabled={boardEnabled} />}>
+                <Route element={<AppRailLayout boardEnabled={boardEnabled} />}>
                   <Route path="/app" element={<ShellPage />} />
                   <Route path="/app/g/:groupId" element={<ShellPage />} />
                   <Route path="/app/:botId" element={<ShellPage />} />
@@ -339,12 +339,14 @@ function SessionApp() {
                       <Route path="/app/board" element={<BoardPage />} />
                     </Route>
                   ) : null}
+                  <Route element={<CallLayout />}>
+                    <Route path="/app/artifacts" element={<ArtifactsPage />} />
+                    <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
+                    <Route path="/app/x/:linkId" element={<NavLinkPage />} />
+                  </Route>
                 </Route>
                 <Route element={<CallLayout />}>
                   <Route path="/onboarding/:step?" element={<OnboardingPage />} />
-                  <Route path="/app/artifacts" element={<ArtifactsPage />} />
-                  <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
-                  <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 </Route>
               </Route>
               <Route path="*" element={<NotFoundPage />} />
