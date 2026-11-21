@@ -22,9 +22,6 @@ async function main(args: string[]) {
   const differences = Object.entries(baseline.configuration)
     .filter(([key, value]) => !isDeepStrictEqual(value, candidate.configuration[key]))
     .map(([key]) => key);
-  if (baseline.suite && candidate.suite && baseline.suite !== candidate.suite) {
-    differences.push("suite");
-  }
   if (
     baseline.trials.size !== candidate.trials.size ||
     [...baseline.trials.keys()].some((key) => !candidate.trials.has(key))
@@ -112,6 +109,7 @@ async function readReport(path: string, label: string) {
     throw new Error(`${label} report has invalid judge configuration.`);
   }
   const configuration: Record<string, unknown> = {
+    suite,
     fixtureVersion,
     caseFixtureVersions,
     "controls.trials": controls.trials,
@@ -173,7 +171,7 @@ async function readReport(path: string, label: string) {
   ) {
     throw new Error(`${label} report has an invalid workflow cost.`);
   }
-  return { configuration, trials, costUsd, suite };
+  return { configuration, trials, costUsd };
 }
 
 function formatTrial({ caseId, strategy, trial }: Trial) {

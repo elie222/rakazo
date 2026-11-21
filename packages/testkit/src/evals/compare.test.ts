@@ -12,6 +12,7 @@ function trial(caseId: string, strategy: string, trial: number, status: TrialRes
 const baseline = {
   version: 2,
   kind: "real-model-product-eval",
+  suite: "history",
   startedAt: "2026-10-01T00:00:00.000Z",
   model: "synthetic-model",
   provider: "synthetic-provider",
@@ -45,7 +46,6 @@ const baseline = {
 
 const candidate = {
   ...baseline,
-  suite: "history",
   replyMode: "chat",
   startedAt: "2026-10-02T00:00:00.000Z",
   codeRevision: "synthetic-after",
@@ -65,12 +65,12 @@ const candidate = {
   ],
 };
 
-function compareReports(after: object = candidate) {
+function compareReports(after: object = candidate, before: object = baseline) {
   const dir = mkdtempSync(path.join(tmpdir(), "eval-compare-"));
   try {
     const beforePath = path.join(dir, "before.json");
     const afterPath = path.join(dir, "after.json");
-    writeFileSync(beforePath, JSON.stringify(baseline));
+    writeFileSync(beforePath, JSON.stringify(before));
     writeFileSync(afterPath, JSON.stringify(after));
     const result = spawnSync(
       process.execPath,
@@ -110,6 +110,7 @@ it.each([
     change: { controls: { ...candidate.controls, timeoutMs: 10_000 } },
   },
   { field: "fixtureVersion", change: { fixtureVersion: "fixture-v2" } },
+  { field: "suite", change: { suite: "product" } },
   { field: "replyMode", change: { replyMode: "messages" } },
   { field: "promptOrder", change: { promptOrder: "Stable guidance after changing context" } },
   {
@@ -125,8 +126,24 @@ it.each([
   expect(stderr).toContain(field);
 });
 
+it("rejects a comparison when only one report records the suite", () => {
+  const { stdout, stderr, status } = compareReports({ ...candidate, suite: undefined });
+  expect(status).toBe(1);
+  expect(stdout).toBe("");
+  expect(stderr).toContain("Reports cannot be directly compared. Differences: suite.");
+});
+
 it("reports missing workflow cost as unknown", () => {
   const { stdout, stderr, status } = compareReports({ ...candidate, workflowTotals: undefined });
   expect(status, stderr).toBe(0);
   expect(stdout).toContain("Workflow cost (USD): 0 -> unknown");
+});
+
+it("compares legacy reports that both omit suite", () => {
+  const { stdout, stderr, status } = compareReports(
+    { ...candidate, suite: undefined },
+    { ...baseline, suite: undefined },
+  );
+  expect(status, stderr).toBe(0);
+  expect(stdout).toContain("Regressions (passed -> failed):");
 });

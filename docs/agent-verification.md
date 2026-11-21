@@ -346,7 +346,9 @@ passed-to-failed transitions and planned trials marked as not run. Reused or
 regraded results are marked on transitions. Workflow cost shows the report's
 recorded spend and displays `unknown` when unavailable. A completed comparison
 exits with status 0. If recorded settings or trial plans differ, the command
-names the differences and exits with status 1.
+names the differences and exits with status 1. This includes a suite recorded
+on only one side. Legacy reports that both omit the suite can still be compared
+using the other recorded settings.
 
 The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied
