@@ -140,7 +140,9 @@ describe("server image publish workflow", () => {
     expect(workflow.on).toHaveProperty("workflow_call");
     const publish = ci.jobs["publish-server-image"];
     expect(publish?.uses).toBe("./.github/workflows/publish-server-image.yml");
-    expect(publish?.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
+    expect(publish?.if).toBe(
+      "github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.repository.fork",
+    );
     expect(ci.jobs["deploy-production"]?.needs).toEqual(["tests", "publish-server-image"]);
     expect(ci.jobs["publish-mobile-update"]?.needs).toBe("tests");
     expect(ci.jobs.tests?.uses).toBe("./.github/workflows/test-suites.yml");
@@ -189,7 +191,7 @@ describe("server image publish workflow", () => {
 
   it("keeps pull requests read-only and external actions pinned to a commit", () => {
     const validate = workflow.jobs.validate;
-    expect(validate.if).toBe("github.event_name == 'pull_request'");
+    expect(validate.if).toBe("github.event_name == 'pull_request' && !github.event.repository.fork");
     expect(validate.permissions).toEqual({ contents: "read" });
     expect(workflow.jobs.publish.if).toContain("github.event_name != 'pull_request'");
     const build = validate.steps.find((step) => step.uses?.startsWith("docker/build-push-action@"));
