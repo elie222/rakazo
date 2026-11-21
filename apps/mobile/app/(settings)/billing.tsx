@@ -51,7 +51,7 @@ function formatDate(iso: string) {
 export default function BillingScreen() {
   const sideInsets = useSideInsets();
   const stacked = useStackedSettings();
-  const { t, i18n } = useLingui();
+  const { t } = useLingui();
   const router = useRouter();
   const [amount, setAmount] = useState<HeldCreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
   // This screen shows the Space it opened in; its reads and saves stay there.
@@ -336,11 +336,9 @@ export default function BillingScreen() {
         >
           <SettingsRow
             title={t`Available credits`}
-            value={new Intl.NumberFormat(i18n.locale, {
+            value={new Intl.NumberFormat(dateLocaleForUi(), {
               style: "currency",
               currency: "USD",
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
             }).format(status.balanceUsd ?? 0)}
           />
           {status.canManage && recurring ? (

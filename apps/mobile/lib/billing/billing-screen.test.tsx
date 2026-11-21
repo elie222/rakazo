@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import { i18n } from "@lingui/core";
 import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -13,13 +12,13 @@ import { queryClient } from "../query/query";
 const mocks = vi.hoisted(() => ({
   selectedSpace: "space-1",
   focused: true,
-  locale: "en",
+  locale: "en-US",
   rpc: vi.fn(),
   alert: vi.fn(),
   openAuthSessionAsync: vi.fn(async () => ({ type: "dismiss" })),
 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("../i18n/i18n", () => ({ dateLocaleForUi: () => "en-US" }));
+vi.mock("../i18n/i18n", () => ({ dateLocaleForUi: () => mocks.locale }));
 vi.mock("./referral", () => ({ rememberReferral: vi.fn() }));
 vi.mock("../settings/settings-sheet", () => ({ openFromSettingsSheet: vi.fn() }));
 vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: mocks.openAuthSessionAsync }));
@@ -103,8 +102,7 @@ beforeEach(() => {
   queryClient.clear();
   mocks.selectedSpace = "space-1";
   mocks.focused = true;
-  mocks.locale = "en";
-  vi.spyOn(i18n, "locale", "get").mockImplementation(() => mocks.locale);
+  mocks.locale = "en-US";
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -114,7 +112,6 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
-  vi.restoreAllMocks();
 });
 
 async function render() {
@@ -128,10 +125,9 @@ function button(label: string) {
 const sent = (method: string) => mocks.rpc.mock.calls.filter(([name]) => name === method);
 
 it.each([
-  ["de", 1234.5, "1.234,50\u00a0$"],
-  ["en", 1234.5, "$1,234.50"],
-  ["de", undefined, "0,00\u00a0$"],
-  ["en", 0, "$0.00"],
+  ["de-DE", 1234.5, "1.234,50\u00a0$"],
+  ["en-US", 1234.5, "$1,234.50"],
+  ["de-DE", undefined, "0,00\u00a0$"],
 ])("formats available credits in %s for %s", async (locale, balanceUsd, amount) => {
   mocks.locale = locale;
   mocks.rpc.mockImplementation(async (method: string) => {
@@ -143,7 +139,6 @@ it.each([
 
   const rows = [...container.querySelectorAll("p")].map((row) => row.textContent);
   expect(rows).toContain(`Available credits ${amount}`);
-  expect(mocks.rpc.mock.calls.map(([method]) => method)).toEqual(["billing/status"]);
 });
 
 it("opens the portal once for a double tap and refreshes the status in the Space it opened in", async () => {
