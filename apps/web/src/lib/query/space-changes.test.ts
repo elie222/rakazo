@@ -60,3 +60,31 @@ it("re-reads a completed run when its signal arrives during the first Activity r
     client.clear();
   }
 });
+
+it("keeps a saved page edit when cancelling an older read and the refresh fails", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const first = deferred<{ title: string }>();
+  const read = vi
+    .fn()
+    .mockImplementationOnce(() => first.promise)
+    .mockRejectedValue(new Error("offline"));
+  const queryKey = key("pages", "get");
+  const observer = new QueryObserver(client, {
+    queryKey,
+    queryFn: read,
+    initialData: { title: "Before" },
+  });
+  const stop = observer.subscribe(() => {});
+  try {
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    client.setQueriesData({ queryKey }, { title: "Saved edit" });
+    const changed = spaceChanged("pages", client);
+    first.resolve({ title: "Before" });
+    await changed;
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    expect(client.getQueryData(queryKey)).toEqual({ title: "Saved edit" });
+  } finally {
+    stop();
+    client.clear();
+  }
+});
