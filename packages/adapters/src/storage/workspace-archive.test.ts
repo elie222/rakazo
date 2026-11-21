@@ -3,10 +3,11 @@ import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import type { PortableFile } from "@rakazo/adapter-kit";
+import type { PortableFile, SkippedWorkspaceFile } from "@rakazo/adapter-kit";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it } from "vitest";
-import { readWorkspaceArchive } from "./workspace-archive.js";
+import type { WorkspaceTarOptions } from "./workspace-archive.js";
+import { readWorkspaceArchive, readWorkspaceTar } from "./workspace-archive.js";
 import type { TarEntry } from "./workspace-archive.test-support.js";
 import { paxRecord, tarBytes, workspaceArchive } from "./workspace-archive.test-support.js";
 
@@ -266,5 +267,83 @@ describe("readWorkspaceArchive", () => {
     for await (const _file of readWorkspaceArchive(source())) break;
     await new Promise((resolve) => setImmediate(resolve));
     expect(cancelled).toBe(true);
+  });
+});
+
+describe("readWorkspaceTar", () => {
+  const MiB = 1024 * 1024;
+
+  /** Every file in an uncompressed tar, read in odd-sized packets, with its bytes. */
+  async function readTar(bytes: Uint8Array, options?: WorkspaceTarOptions) {
+    const files: Array<{ path: string; content: Buffer; streamed: boolean }> = [];
+    for await (const file of readWorkspaceTar(chunks(bytes, 65_521), options)) {
+      if (!("body" in file)) {
+        files.push({ path: file.path, content: Buffer.from(file.content), streamed: false });
+        continue;
+      }
+      const parts: Uint8Array[] = [];
+      for await (const part of file.body) parts.push(part);
+      files.push({ path: file.path, content: Buffer.concat(parts), streamed: true });
+    }
+    return files;
+  }
+
+  it("reads every file, streaming large ones, when no per-file limit is set", async () => {
+    const large = Buffer.alloc(6 * MiB + 7, 0x5a);
+    const files = await readTar(
+      tarBytes([
+        { name: "./small.txt", content: Buffer.from("small") },
+        { name: "./large.bin", content: large },
+      ]),
+    );
+    expect(files.map((file) => [file.path, file.streamed])).toEqual([
+      ["small.txt", false],
+      ["large.bin", true],
+    ]);
+    expect(files[1]!.content.equals(large)).toBe(true);
+  });
+
+  it("leaves out a file over the per-file limit, reports it, and reads the files after it", async () => {
+    const oversized = Buffer.alloc(9 * MiB + 1, 0xab);
+    const streamed = Buffer.alloc(6 * MiB + 7, 0x5a);
+    const last = Buffer.alloc(513, 1);
+    const deep = `${"deep/".repeat(25)}oversized.so`;
+    const skipped: SkippedWorkspaceFile[] = [];
+    const files = await readTar(
+      tarBytes([
+        { name: "./before.txt", content: Buffer.from("before") },
+        { name: "PaxHeader", type: "x", content: Buffer.from(paxRecord("path", deep)) },
+        { name: "./placeholder", content: oversized },
+        { name: "./streamed.bin", content: streamed },
+        { name: "./last.bin", content: last },
+      ]),
+      { maxFileBytes: 8 * MiB, onSkippedFile: (file) => skipped.push(file) },
+    );
+    expect(skipped).toEqual([
+      { path: deep, reason: "too_large", bytes: oversized.length, limit: 8 * MiB },
+    ]);
+    expect(files.map((file) => file.path)).toEqual(["before.txt", "streamed.bin", "last.bin"]);
+    expect(files[0]!.content.toString()).toBe("before");
+    expect(files[1]!.content.equals(streamed)).toBe(true);
+    expect(files[2]!.content.equals(last)).toBe(true);
+  });
+
+  it("applies the per-file limit to regular files only", async () => {
+    const long = `${"directory/".repeat(15)}kept.txt`;
+    const skipped: SkippedWorkspaceFile[] = [];
+    const files = await readTar(
+      tarBytes([
+        { name: "./folder/", type: "5" },
+        // An extended header larger than the limit describes the next file; it is not one.
+        { name: "PaxHeader", type: "x", content: Buffer.from(paxRecord("path", long)) },
+        { name: "./placeholder", content: Buffer.from("0123456789") },
+        { name: "./over.txt", content: Buffer.from("0123456789a") },
+      ]),
+      { maxFileBytes: 10, onSkippedFile: (file) => skipped.push(file) },
+    );
+    expect(files.map((file) => [file.path, file.content.toString()])).toEqual([
+      [long, "0123456789"],
+    ]);
+    expect(skipped.map((file) => file.path)).toEqual(["over.txt"]);
   });
 });

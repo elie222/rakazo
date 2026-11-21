@@ -14,7 +14,9 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
+  StreamedPortableFile,
   TerminalRequest,
+  WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
 import { LinuxDesktop, onBotScreen } from "../screens/linux-desktop.js";
 import type { RawExec } from "./exec-computer.js";
@@ -208,9 +210,10 @@ export abstract class ImageComputerSandbox implements SandboxProvider {
   async *exportWorkspace(
     computer: ComputerRef,
     context: AdapterContext,
-  ): AsyncIterable<PortableFile> {
+    limits?: WorkspaceExportLimits,
+  ): AsyncIterable<PortableFile | StreamedPortableFile> {
     await this.desktops.stopBrowsers(computer, context);
-    yield* this.shell.exportWorkspace(computer, context);
+    yield* this.shell.exportWorkspace(computer, context, limits);
   }
 
   async importWorkspace(
