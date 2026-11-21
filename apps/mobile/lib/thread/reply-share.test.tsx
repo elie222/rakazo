@@ -21,6 +21,26 @@ vi.mock("../api/user-error", () => ({ errorText: (_: unknown, fallback: string) 
 vi.mock("../query/query", () => ({
   accountRpcQuery: (path: string) => ({ queryKey: ["account", path] }),
   queryClient: { invalidateQueries: state.invalidate },
+  // biome-ignore lint/suspicious/noExplicitAny: test mock
+  useSave: (options: any) => ({
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    run: (input: any) => {
+      // biome-ignore lint/suspicious/noExplicitAny: test mock
+      const send = (proc: string, body: any) => state.rpc(proc, body);
+      void (async () => {
+        try {
+          const saved = await options.save(input, send);
+          await Promise.all(
+            (options.stale ?? []).map((queryKey: unknown) => state.invalidate({ queryKey })),
+          );
+          await options.onSaved?.(saved, input);
+        } catch (cause) {
+          options.onFailed?.(cause, input);
+        }
+      })();
+    },
+    pending: false,
+  }),
 }));
 
 import { useReplyShare } from "./reply-share";
