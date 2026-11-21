@@ -184,11 +184,6 @@ export interface ContentEncryption {
     query: string,
     domain: SearchTokenDomain,
   ): Promise<number[][]>;
-  /** Separate prefix and pair alternatives for each version of the space's key. */
-  spaceMessageSearchTokens(
-    spaceId: string,
-    query: string,
-  ): Promise<Array<{ prefix: number[]; pairs: number[] }>>;
 }
 
 /** Undefined for clients built without content encryption (fakes and temp-table tests). */
@@ -592,13 +587,6 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     async messageSearchTokens(spaceId, query, domain) {
       const keys = await ring.allFresh(spaceId);
       return keys.map((key) => querySearchTokens(key, query, domain));
-    },
-    async spaceMessageSearchTokens(spaceId, query) {
-      const keys = await ring.allFresh(spaceId);
-      return keys.map((key) => ({
-        prefix: querySearchTokens(key, query, "prefix"),
-        pairs: querySearchTokens(key, query, "han-pair"),
-      }));
     },
   };
 

@@ -103,7 +103,8 @@ Tradeoffs:
 
 - Someone with the database but not the keys can see which encrypted messages
   in the same space share a word, prefix or Han pair, and how often tokens repeat.
-  They cannot recover the indexed text without the space key.
+  The tokens do not reveal text directly, but frequency analysis can guess
+  common ones, especially Han pairs, which come from a small, well-known set.
 - Encrypted words without Han characters still use prefix matching. Queries
   with no indexable terms scan the 200 most recent messages.
 - Chat writes add at most 512 distinct pair tokens per message. A query whose

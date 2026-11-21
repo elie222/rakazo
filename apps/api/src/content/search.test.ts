@@ -91,8 +91,8 @@ describe("search saturation", () => {
     { direct: 0, grouped: 0, conversations: 0, artifactReads: 2, routineReads: 1 },
   ])("stops lower-priority reads when the content budget fills: %j", async (scenario) => {
     const { prisma, artifacts, groupArtifacts } = fixture(25);
-    const spaceMessageSearchTokens = vi.fn().mockResolvedValue([]);
-    Object.assign(prisma, { $contentEncryption: () => ({ spaceMessageSearchTokens }) });
+    const messageSearchTokens = vi.fn().mockResolvedValue([]);
+    Object.assign(prisma, { $contentEncryption: () => ({ messageSearchTokens }) });
     prisma.bot.findMany.mockResolvedValue(
       Array.from({ length: scenario.conversations }, (_, i) => ({ id: `bot-${i}`, name: "Bot" })),
     );
@@ -130,7 +130,7 @@ describe("search saturation", () => {
     );
     expect(prisma.artifact.findMany).toHaveBeenCalledTimes(scenario.artifactReads);
     expect(prisma.routine.findMany).toHaveBeenCalledTimes(scenario.routineReads);
-    expect(spaceMessageSearchTokens).not.toHaveBeenCalled();
+    expect(messageSearchTokens).not.toHaveBeenCalled();
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(
       1 +
         Number(scenario.direct > 0) +

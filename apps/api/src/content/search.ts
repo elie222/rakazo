@@ -45,15 +45,18 @@ async function messageMatch(
   const plaintext = Prisma.sql`m.blocks::text ILIKE ${`%${escapeJsonSearchWildcards(query)}%`}`;
   const encryption = contentEncryptionOf(prisma);
   if (!encryption) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
-  const keyTokens = await encryption.spaceMessageSearchTokens(spaceId, query);
+  const [prefixTokens, pairTokens] = await Promise.all([
+    encryption.messageSearchTokens(spaceId, query, "prefix"),
+    encryption.messageSearchTokens(spaceId, query, "han-pair"),
+  ]);
   // No keys: nothing in the space was ever encrypted (encryption off from the start).
-  if (!keyTokens.length) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
+  if (!prefixTokens.length) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
   const indexed = (sets: number[][]) =>
     sets
       .filter((tokens) => tokens.length)
       .map((tokens) => Prisma.sql`m."searchTokens" @> ${tokens}::int[]`);
-  const prefixes = indexed(keyTokens.map(({ prefix }) => prefix));
-  const pairs = indexed(keyTokens.map(({ pairs }) => pairs));
+  const prefixes = indexed(prefixTokens);
+  const pairs = indexed(pairTokens);
   if (!prefixes.length && !pairs.length)
     return {
       sql: Prisma.sql`(${INDEXED_MESSAGE} OR ${plaintext})`,
