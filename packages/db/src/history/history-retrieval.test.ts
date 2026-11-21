@@ -196,6 +196,18 @@ describe("local history retrieval", () => {
       );
     },
   );
+  it("preserves both query words when there is only room for part of the leading context", async () => {
+    const { mock, prisma } = db();
+    const original = `${"x".repeat(72)}😀${" ".repeat(7)}Aurora ${"status ".repeat(111)}deadline`;
+    mock.$queryRaw.mockResolvedValue([row(1, original)]);
+
+    const result = await searchHistory(prisma, scope, { query: "Aurora deadline" });
+    const message = result.messages[0]!;
+    expect(message.text).toContain("Aurora");
+    expect(message.text).toContain("deadline");
+    expect(message.textOffset).toBe(original.indexOf("😀") + "😀".length);
+    expect(message.text).toBe(original.slice(message.textOffset));
+  });
   it("restricts channel inputs and bot output using the run source, including neighbors", async () => {
     const { mock, prisma } = db();
     mock.$queryRaw.mockResolvedValueOnce([row(4)]).mockResolvedValueOnce([row(3), row(4)]);

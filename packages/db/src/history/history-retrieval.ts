@@ -243,38 +243,32 @@ function date(value: string | undefined): Date | undefined {
 function queryWordWindowOffset(text: string, query: string, maxLength: number): number | undefined {
   const words = new Set(searchTerms(query));
   if (words.size < 2 || text.toLowerCase().includes(query.toLowerCase())) return;
-  const hits: { word: string; start: number; end: number }[] = [];
-  for (const match of text.matchAll(/[\p{L}\p{N}\p{M}]+/gu)) {
-    for (const word of searchTerms(match[0])) {
-      if (words.has(word))
-        hits.push({ word, start: match.index, end: match.index + match[0].length });
-    }
-  }
-
-  const counts = new Map<string, number>();
-  let left = 0;
   let bestOffset: number | undefined;
   let bestCoverage = 1;
   let bestSpan = Number.POSITIVE_INFINITY;
-  const excerptStart = (start: number) => textBoundary(text, Math.max(0, start - 40));
-  for (let right = 0; right < hits.length; right += 1) {
-    const last = hits[right]!;
-    counts.set(last.word, (counts.get(last.word) ?? 0) + 1);
-    while (left <= right) {
-      const first = hits[left]!;
-      const count = counts.get(first.word)!;
-      if (last.end <= excerptStart(first.start) + maxLength && count === 1) break;
-      // Discard an out-of-range or redundant leftmost hit.
-      if (count === 1) counts.delete(first.word);
-      else counts.set(first.word, count - 1);
-      left += 1;
+  // A later hit for the same word can only shorten the span. Keep those latest hits in order.
+  const latest = new Map<string, number>();
+  for (const match of text.matchAll(/[\p{L}\p{N}\p{M}]+/gu)) {
+    const matchedWords = searchTerms(match[0]).filter((word) => words.has(word));
+    if (matchedWords.length === 0) continue;
+    for (const word of matchedWords) {
+      latest.delete(word);
+      latest.set(word, match.index);
     }
-    const coverage = counts.size;
+    const end = match.index + match[0].length;
+    const minimumStart = end - maxLength;
+    for (const [word, start] of latest) {
+      if (start >= minimumStart) break;
+      latest.delete(word);
+    }
+    const coverage = latest.size;
     if (coverage < 2) continue;
-    const first = hits[left]!;
-    const span = last.end - first.start;
+    const first = latest.values().next().value!;
+    const span = end - first;
     if (coverage > bestCoverage || (coverage === bestCoverage && span < bestSpan)) {
-      bestOffset = excerptStart(first.start);
+      const offset = textBoundary(text, Math.max(0, first - 40, minimumStart));
+      // If backing up to a surrogate boundary would drop the last hit, step past the pair.
+      bestOffset = offset < minimumStart ? minimumStart + 1 : offset;
       bestCoverage = coverage;
       bestSpan = span;
     }
