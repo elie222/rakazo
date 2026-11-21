@@ -1,4 +1,4 @@
-import { ResponseTooLargeError } from "@rakazo/core";
+import { ResponseTooLargeError, sliceWellFormed } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import type { LocalServiceConnection } from "../../../network/local-service-endpoint.js";
 import { fetchLocalService, parseServiceBaseUrl } from "../../../network/local-service-endpoint.js";
@@ -98,7 +98,7 @@ function parseSearchResults(data: unknown): SupermemoryResult[] {
     };
     const text =
       typeof row.memory === "string" ? row.memory : typeof row.chunk === "string" ? row.chunk : "";
-    const memory = text.trim().slice(0, MAX_MEMORY_CONTENT_CHARS);
+    const memory = sliceWellFormed(text.trim(), MAX_MEMORY_CONTENT_CHARS);
     if (!memory) continue;
     parsed.push({
       memory,
@@ -249,7 +249,7 @@ export async function saveSupermemoryMemory(
   config: SupermemoryConnectionConfig,
   signal?: AbortSignal,
 ): Promise<SupermemorySaveResponse> {
-  const memory = content.trim().slice(0, MAX_MEMORY_CONTENT_CHARS);
+  const memory = sliceWellFormed(content.trim(), MAX_MEMORY_CONTENT_CHARS);
   if (!memory) {
     return { ok: false, error: "Supermemory save skipped: memory content is empty." };
   }

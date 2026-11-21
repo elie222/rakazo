@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { SearchHit } from "@rakazo/contracts";
+import { SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -99,4 +100,16 @@ it("cancels the running search when the box is cleared or the sidebar unmounts",
   await search("second");
   await act(async () => root.render(null));
   expect(requests[1]!.signal.aborted).toBe(true);
+});
+
+it("sends at most the search query limit and searches the first part of a longer query", async () => {
+  const long = `${"a".repeat(SEARCH_QUERY_MAX_LENGTH)}tail`;
+  await search(long);
+  expect(requests[0]!.q).toBe("a".repeat(SEARCH_QUERY_MAX_LENGTH));
+  expect(latest.searchError).toBeNull();
+});
+
+it("sends a short query unchanged", async () => {
+  await search("  quarterly plan  ");
+  expect(requests[0]!.q).toBe("quarterly plan");
 });

@@ -25,9 +25,11 @@ function savedSkill(name: string, source = "user") {
   };
 }
 
-function setup(rows: ReturnType<typeof savedSkill>[] = []) {
+type SavedSkillRow = ReturnType<typeof savedSkill> & { allSpaces?: boolean };
+
+function setup(rows: SavedSkillRow[] = []) {
   type Where = { id?: string; spaceId?: string; userId: string; source?: string; OR?: object[] };
-  const matches = (row: ReturnType<typeof savedSkill>, where: object): boolean =>
+  const matches = (row: SavedSkillRow, where: object): boolean =>
     Object.entries(where).every(([key, value]) =>
       key === "OR"
         ? (value as object[]).some((branch) => matches(row, branch))
@@ -53,11 +55,35 @@ function setup(rows: ReturnType<typeof savedSkill>[] = []) {
       return { count: 1 };
     }),
   };
-  const tx = { agentSkill, $executeRaw: vi.fn(async () => 0), $queryRaw: vi.fn(async () => []) };
+  const routines = [
+    { id: "r1", userId: actor.userId, spaceId: actor.spaceId, prompt: "Run @Saved review." },
+    { id: "r2", userId: actor.userId, spaceId: "space-9", prompt: "Run @Saved review." },
+  ];
+  const routine = {
+    findMany: vi.fn(async ({ where }: { where: { spaceId?: { in: string[] } } }) =>
+      routines.filter((row) => !where.spaceId || where.spaceId.in.includes(row.spaceId)),
+    ),
+    updateMany: vi.fn(async ({ where, data }: { where: { id: string }; data: object }) => {
+      Object.assign(routines.find((row) => row.id === where.id) ?? {}, data);
+      return { count: 1 };
+    }),
+  };
+  const tx = {
+    agentSkill,
+    routine,
+    $executeRaw: vi.fn(async () => 0),
+    $queryRaw: vi.fn(async () => []),
+  };
   const $transaction = vi.fn(async (run: (client: typeof tx) => unknown) => run(tx));
+  const publishSpaceChange = vi.fn(async () => undefined);
   return {
     agentSkill,
-    service: createAgentSkillsService({ agentSkill, $transaction } as unknown as PrismaClient),
+    routines,
+    queryRaw: tx.$queryRaw,
+    publishSpaceChange,
+    service: createAgentSkillsService({ agentSkill, $transaction } as unknown as PrismaClient, {
+      publishSpaceChange,
+    }),
   };
 }
 
@@ -151,6 +177,57 @@ Write the notes.
     expect(parsed.description).toBe("Prepare weekly release notes");
     expect(parsed.body).toBe("Write the weekly notes.");
     expect(parsed.frontmatter.notes).toBe("First step\nSecond step\n\n");
+  });
+});
+
+describe("renaming a skill", () => {
+  it("points the routines that mention it at the new name", async () => {
+    const { service, routines, publishSpaceChange } = setup([savedSkill("Saved review")]);
+    await service.update(actor, { skillId: "saved-1", name: "Weekly review" });
+    expect(routines.map((row) => row.prompt)).toEqual([
+      "Run @Weekly review.",
+      "Run @Saved review.",
+    ]);
+    expect(publishSpaceChange.mock.calls).toEqual([[actor.spaceId, "routines"]]);
+  });
+
+  it("reaches routines in every space a skill available everywhere is renamed from", async () => {
+    const { service, routines, publishSpaceChange, queryRaw } = setup([
+      { ...savedSkill("Saved review"), allSpaces: true },
+    ]);
+    await service.update(actor, { skillId: "saved-1", name: "Weekly review" });
+    expect(routines.map((row) => row.prompt)).toEqual([
+      "Run @Weekly review.",
+      "Run @Weekly review.",
+    ]);
+    expect(publishSpaceChange.mock.calls).toEqual([
+      [actor.spaceId, "routines"],
+      ["space-9", "routines"],
+    ]);
+    // The other space's routines are read by owner, outside this request's Space.
+    expect(queryRaw).toHaveBeenCalled();
+  });
+
+  it("refuses a rename that lost a race and leaves routines alone", async () => {
+    const { service, agentSkill, routines, publishSpaceChange } = setup([
+      savedSkill("Saved review"),
+    ]);
+    agentSkill.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(
+      service.update(actor, { skillId: "saved-1", name: "Weekly review" }),
+    ).rejects.toMatchObject({ kind: "CONFLICT" });
+    expect(agentSkill.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ name: "Saved review" }) }),
+    );
+    expect(routines.map((row) => row.prompt)).toEqual(["Run @Saved review.", "Run @Saved review."]);
+    expect(publishSpaceChange).not.toHaveBeenCalled();
+  });
+
+  it("leaves routines alone when the name is unchanged", async () => {
+    const { service, routines, publishSpaceChange } = setup([savedSkill("Saved review")]);
+    await service.update(actor, { skillId: "saved-1", description: "Changed" });
+    expect(routines.map((row) => row.prompt)).toEqual(["Run @Saved review.", "Run @Saved review."]);
+    expect(publishSpaceChange).not.toHaveBeenCalled();
   });
 });
 

@@ -71,7 +71,7 @@ afterEach(() => {
   Reflect.deleteProperty(document, "execCommand");
 });
 
-it("confirms a copied message on the trigger without reopening the menu", async () => {
+it("reports a copied message separately and keeps the same More button usable", async () => {
   let copiedText = "";
   stubExecCommand((active) => {
     copiedText = active instanceof HTMLTextAreaElement ? active.value : "";
@@ -80,13 +80,21 @@ it("confirms a copied message on the trigger without reopening the menu", async 
   expect(navigator.clipboard).toBeUndefined();
 
   const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="More"]');
+  const status = container.querySelector('[role="status"]');
   await click(trigger);
   await click(menuItem("Copy"));
 
   expect(copiedText).toBe("Answer text");
   expect(trigger?.getAttribute("aria-expanded")).toBe("false");
-  expect(trigger?.getAttribute("aria-label")).toBe("Copied");
+  expect(trigger?.getAttribute("aria-label")).toBe("More");
   expect(trigger?.querySelector(".lucide-check")).not.toBeNull();
+  expect(container.querySelector('[role="status"]')).toBe(status);
+  expect(status?.textContent).toBe("Copied");
+  expect(trigger?.contains(status)).toBe(false);
+
+  await click(trigger);
+  expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+  expect(menuItem("Copy")).toBeDefined();
 });
 
 it("offers the message for manual copying when copying fails", async () => {
@@ -95,6 +103,7 @@ it("offers the message for manual copying when copying fails", async () => {
   await click(menuItem("Copy"));
   const field = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea');
   expect(field?.value).toBe("Answer text");
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("");
   await vi.waitFor(() => expect(document.activeElement).toBe(field));
 });
 
@@ -135,9 +144,10 @@ it("offers the text from the click when the message changes before the failure",
 it("drops the copied confirmation when the message changes before it ends", async () => {
   stubExecCommand(() => true);
   const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="More"]');
+  const status = container.querySelector('[role="status"]');
   await click(trigger);
   await click(menuItem("Copy"));
-  expect(trigger?.getAttribute("aria-label")).toBe("Copied");
+  expect(status?.textContent).toBe("Copied");
 
   const changed: ThreadMessage = { ...message, blocks: [{ kind: "text", text: "Changed text" }] };
   act(() =>
@@ -154,4 +164,33 @@ it("drops the copied confirmation when the message changes before it ends", asyn
 
   expect(trigger?.getAttribute("aria-label")).toBe("More");
   expect(trigger?.querySelector(".lucide-check")).toBeNull();
+  expect(container.querySelector('[role="status"]')).toBe(status);
+  expect(status?.textContent).toBe("");
+});
+
+it("names the action group after the message so each message's buttons are told apart", () => {
+  const group = container.querySelector('[role="group"]');
+  expect(group?.getAttribute("aria-label")).toMatch(/^Message actions, \S/);
+  expect(group?.querySelector('button[aria-label="Reply"]')).not.toBeNull();
+
+  const other = document.createElement("div");
+  document.body.appendChild(other);
+  const otherRoot = createRoot(other);
+  act(() =>
+    otherRoot.render(
+      <MessageHoverActions
+        message={{ ...message, id: "m2", createdAt: "2020-01-02T15:04:00.000Z" }}
+        side="start"
+        speakerName="Ada"
+        onReply={vi.fn()}
+        onMarkUnread={vi.fn()}
+        onReact={vi.fn<(message: ThreadMessage, reaction: MessageReaction) => Promise<void>>()}
+      />,
+    ),
+  );
+  const otherLabel = other.querySelector('[role="group"]')?.getAttribute("aria-label");
+  expect(otherLabel).toContain("Ada");
+  expect(otherLabel).not.toBe(group?.getAttribute("aria-label"));
+  act(() => otherRoot.unmount());
+  other.remove();
 });

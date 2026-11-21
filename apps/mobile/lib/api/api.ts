@@ -24,7 +24,7 @@ import {
 } from "../bots/logo-avatar-activity";
 import { resumeLiveNotifications } from "../notifications/live-notifications";
 import { reportMobileError } from "../platform/monitoring";
-import { promptAiConsent } from "../settings/ai-consent";
+import { promptAiConsent, promptPageRevisionConsent } from "../settings/ai-consent";
 import { clearUnsentSends } from "../thread/send/thread-feedback";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
@@ -683,17 +683,19 @@ async function request(
   const uses = aiDataUsesForProcedure(proc, body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
-  for (const consentTarget of aiConsentTargets(body)) {
+  for (const consentTarget of aiConsentTargets(body, proc)) {
     await ensureAiDataConsent({
       uses,
       status: () =>
         rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
-      prompt: promptAiConsent,
+      prompt: consentTarget.pageId ? promptPageRevisionConsent : promptAiConsent,
       allow: (input) =>
         allowPromptedAiConsent(
-          consentTarget.settingsScope
-            ? { ...input, settingsScope: consentTarget.settingsScope }
-            : input,
+          consentTarget.pageId
+            ? { ...input, pageId: consentTarget.pageId }
+            : consentTarget.settingsScope
+              ? { ...input, settingsScope: consentTarget.settingsScope }
+              : input,
           consentContext,
         ),
       coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,

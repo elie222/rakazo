@@ -12,7 +12,7 @@ import { errorText } from "../../../lib/query/user-error";
 type Change = { kind: "edit" } | { kind: "restore"; versionId: string } | { kind: "reload" };
 
 export function InstructionSettings({ bot }: { bot: Bot }) {
-  const { t } = useLingui();
+  const { i18n, t } = useLingui();
   const queries = useSpaceQueries();
   const id = useId();
   const [previousBot, setPreviousBot] = useState(bot);
@@ -74,13 +74,19 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
             >
               <History className="size-4 text-muted-foreground" />
             </PopoverTrigger>
-            <PopoverContent align="end" className="max-h-96 overflow-y-auto">
+            <PopoverContent
+              align="end"
+              className="max-h-96 overflow-y-auto"
+              aria-label={t`Instruction history`}
+            >
               {current.instructionHistory.map((version) => (
                 <div key={version.id} className="mt-2 text-body">
                   <Disclosure
                     summary={
                       <span className="inline-flex flex-wrap gap-x-2">
-                        <span>{new Date(version.createdAt).toLocaleString()}</span>
+                        <span>
+                          {new Date(version.createdAt).toLocaleString(i18n.locale || "en")}
+                        </span>
                         <span className="text-muted-foreground">{version.reason}</span>
                       </span>
                     }
