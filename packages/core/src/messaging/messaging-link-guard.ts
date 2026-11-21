@@ -3,8 +3,7 @@ type IssuanceState = { pending: object | null; listeners: Set<() => void> };
 const states = new WeakMap<object, Map<string | number, IssuanceState>>();
 
 /**
- * Link issuance is a narrow exception to useSave: its slot must survive screen remounts,
- * while picker changes invalidate picker-bound results but preserve workspace-bound codes.
+ * Link issuance is a narrow exception to useSave: its slot must survive screen remounts.
  * The save hooks own one mounted screen and cannot coordinate that credential lifetime.
  * Screens keep RPC, rendering and navigation lifecycle; this guard does not retry or cancel writes.
  */
@@ -24,7 +23,6 @@ export function createMessagingLinkGuard(scope: object = {}, session: string | n
     for (const listener of issuance.listeners) listener();
   };
   let current: object | null = null;
-  let fromPicker = true;
   return {
     isPending: () => issuance.pending !== null,
     subscribe(listener: () => void) {
@@ -33,13 +31,12 @@ export function createMessagingLinkGuard(scope: object = {}, session: string | n
         issuance.listeners.delete(listener);
       };
     },
-    begin(pickerBound = true) {
+    begin() {
       if (issuance.pending) return null;
       const request = {};
       current = request;
       issuance.pending = request;
       notify();
-      fromPicker = pickerBound;
       return {
         isCurrent: () => current === request,
         finish() {
@@ -50,12 +47,9 @@ export function createMessagingLinkGuard(scope: object = {}, session: string | n
         },
       };
     },
-    /** Picker changes must not discard workspace-bound pending or displayed codes. */
-    invalidate(pickerOnly = false) {
-      if (pickerOnly && !fromPicker) return false;
+    invalidate() {
       current = null;
       // An invalidated RPC still occupies the issuance slot until it settles.
-      return true;
     },
   };
 }

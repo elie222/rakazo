@@ -27,6 +27,7 @@ import { BotAvatar } from "../components/bots/bot-avatar";
 import { BotContextCards } from "../components/bots/bot-context-cards";
 import { BotLookPicker } from "../components/bots/bot-look-picker";
 import { ProfileEditDialog } from "../components/bots/profile-edit-dialog";
+import { useComputerHomeVersionRows } from "../components/computers/computer-home-versions";
 import { useComputerMaintenanceRows } from "../components/computers/computer-maintenance-actions";
 import { glassHeaderOptions } from "../components/native/glass-title";
 import { NativeActionButton } from "../components/native/native-action-button";
@@ -47,6 +48,7 @@ import { loadSessionToken } from "../lib/api/session";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
+import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
 import { thinkingLevelLabel } from "../lib/models/thinking-level";
@@ -63,6 +65,7 @@ export default function BotSettingsScreen() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useLingui();
+  const uiLocale = useUiLocale();
   const router = useRouter();
   const {
     botId,
@@ -104,6 +107,7 @@ export default function BotSettingsScreen() {
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const computerMaintenanceRows = useComputerMaintenanceRows(botId);
+  const computerHomeVersionRows = useComputerHomeVersionRows(botId);
   const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | undefined>();
@@ -653,6 +657,7 @@ export default function BotSettingsScreen() {
                 onChange={(value) => setComputerMode(value ? "dedicated" : "team")}
               />
               {computerMaintenanceRows}
+              {computerHomeVersionRows}
             </SettingsGroup>
             {changed?.readAloud || deviceVoiceEnabled ? (
               <SettingsGroup label={t`Voice`}>
@@ -722,7 +727,7 @@ export default function BotSettingsScreen() {
                       value=""
                       choices={bot.instructionHistory.map((version) => ({
                         key: version.id,
-                        label: `${new Date(version.createdAt).toLocaleString()} (${version.reason})`,
+                        label: `${new Date(version.createdAt).toLocaleString(dateLocaleForUi(uiLocale))} (${version.reason})`,
                       }))}
                       onChange={(versionId) => {
                         if (pendingRef.current || instructions !== bot.instructions) return;

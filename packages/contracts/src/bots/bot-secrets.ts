@@ -3,6 +3,9 @@ import { isCloudMetadataHost, isPrivateNetworkHost } from "../clients/network-ho
 import { Id } from "../ids.js";
 import { settingsScopeInput } from "../settings-scope.js";
 import { AGENT_SECRET_NAME_PATTERN } from "./agent-secret-name.js";
+import { isIdentifierLabel } from "./login-identifier-label.js";
+
+export { isIdentifierLabel };
 
 // An opaque reference handle: matched exactly by secret_request/forget_secret,
 // displayed in list_secrets. Never interpolated into shells, env, or URLs, so
@@ -403,105 +406,6 @@ export function decodeLoginSecret(plaintext: string): LoginSecretValue {
   };
 }
 
-// A field starts visible only when every word of its label is one of these and at least one is
-// an identifier. Any other word, a misspelling or a look-alike letter included, keeps it hidden.
-// English and Hebrew.
-const IDENTIFIER_WORDS = new Set([
-  "id",
-  "user",
-  "username",
-  "login",
-  "email",
-  "mail",
-  "phone",
-  "mobile",
-  "cell",
-  "tel",
-  "telephone",
-  "account",
-  "member",
-  "customer",
-  "זהות",
-  "תז",
-  "טלפון",
-  "נייד",
-  "פלאפון",
-  "סלולרי",
-  "מייל",
-  "אימייל",
-  "דואל",
-  "משתמש",
-  "חשבון",
-  "לקוח",
-  "חבר",
-]);
-const FILLER_WORDS = new Set([
-  "number",
-  "no",
-  "num",
-  "name",
-  "address",
-  "or",
-  "and",
-  "of",
-  "your",
-  "the",
-  "last",
-  "first",
-  "digit",
-  "digits",
-  "national",
-  "tax",
-  "employee",
-  "e",
-  "תעודת",
-  "מספר",
-  "שם",
-  "כתובת",
-  "או",
-  "של",
-  "ו",
-  "אחרונות",
-  "ספרות",
-  "לאומי",
-  "עובד",
-  "מס",
-]);
-
-function labelWords(label: string): string[] {
-  return (
-    label
-      .normalize("NFKC")
-      .normalize("NFD")
-      .replace(/[\p{M}\p{Cf}]/gu, "")
-      .toLowerCase()
-      // Spaces and punctuation separate words; any other symbol or emoji is a word of its own, so a
-      // label with one is not made only of known words.
-      .match(/[\p{L}\p{N}.'"׳״]+|[^\p{L}\p{N}\p{Z}\s\p{P}№]/gu)
-      ?.map((word) => word.replace(/[.'"׳״]/g, ""))
-      .filter(Boolean) ?? []
-  );
-}
-
-function knownWord(word: string, known: ReadonlySet<string>): boolean {
-  // Hebrew attaches "the" to a word: הטלפון.
-  return known.has(word) || (word.startsWith("ה") && known.has(word.slice(1)));
-}
-
-/** Whether a label is made only of identifier and plain filler words, such as "Phone number". */
-export function isIdentifierLabel(label: string): boolean {
-  const words = labelWords(label);
-  return (
-    words.some((word) => knownWord(word, IDENTIFIER_WORDS)) &&
-    words.every(
-      (word) =>
-        /^\p{N}+$/u.test(word) ||
-        knownWord(word, IDENTIFIER_WORDS) ||
-        knownWord(word, FILLER_WORDS),
-    )
-  );
-}
-
 /**
  * The empty fields a login card starts with. The default Username and Password card starts as
  * logins always have, Username visible. Fields the bot names start hidden, except those whose
@@ -800,7 +704,7 @@ export const VaultItemNote = z.string().trim().max(200);
 
 export const VAULT_ALSO_ON_LIMIT = 10;
 /** The most items one vault holds. */
-export const VAULT_ITEM_LIMIT = 100;
+export const VAULT_ITEM_LIMIT = 1_000;
 
 // A blocked item's value is still hidden in every run; a saved card still asks before each use.
 // "ask" is for a website login: each browser_act call that signs in with it asks the user first.

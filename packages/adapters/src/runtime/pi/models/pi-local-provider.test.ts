@@ -67,6 +67,27 @@ describe("local model provider", () => {
     expect(localProvider()?.getModels()[0]?.baseUrl).toBe("http://127.0.0.1:1234/v1");
   });
 
+  it("adds the /v1 path and drops trailing slashes, like the connection form", () => {
+    const expected = "http://host:11434/v1";
+    for (const value of [
+      "http://host:11434",
+      "http://host:11434/",
+      "http://host:11434/v1",
+      "http://host:11434/v1/",
+      " http://host:11434/v1 ",
+    ]) {
+      process.env.RAKAZO_LOCAL_MODELS_URL = value;
+      expect(localBaseUrl(), `endpoint "${value}"`).toBe(expected);
+    }
+  });
+
+  it("keeps a versioned path and names the variable when the URL holds credentials", () => {
+    process.env.RAKAZO_LOCAL_MODELS_URL = "http://host:1234/api/v1/";
+    expect(localBaseUrl()).toBe("http://host:1234/api/v1");
+    process.env.RAKAZO_LOCAL_MODELS_URL = "http://user:pass@host:11434/v1";
+    expect(() => localBaseUrl()).toThrow(/RAKAZO_LOCAL_MODELS_URL must not contain credentials/);
+  });
+
   it("rejects an invalid or non-HTTP endpoint", () => {
     for (const bad of ["not-a-url", "file:///tmp/model.sock", "ftp://127.0.0.1/models"]) {
       process.env.RAKAZO_LOCAL_MODELS_URL = bad;

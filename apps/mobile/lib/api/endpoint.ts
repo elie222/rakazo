@@ -28,7 +28,7 @@ export function normalizeApiBase(input: string): EndpointResult {
   }
   if (!parsed.hostname) return { ok: false, error: t`That URL is missing a host` };
   if (parsed.protocol === "http:" && !isPrivateNetworkHost(parsed.hostname)) {
-    return { ok: false, error: "Public servers need https://" };
+    return { ok: false, error: publicHttpMessage() };
   }
   const url = `${parsed.protocol}//${parsed.host}`;
   return { ok: true, url };
@@ -56,12 +56,16 @@ export function apiBaseWarning(url: string): string | null {
   try {
     const parsed = new URL(url);
     if (parsed.protocol === "http:" && !isPrivateNetworkHost(parsed.hostname)) {
-      return t`Public servers need https://. HTTP only works on your local network.`;
+      return publicHttpMessage();
     }
   } catch {
     return null;
   }
   return null;
+}
+
+function publicHttpMessage() {
+  return t`Public servers need https://. HTTP only works on your local network.`;
 }
 
 export async function probeApiBase(

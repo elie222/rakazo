@@ -385,6 +385,28 @@ const file = (n: number): MessageBlock => ({
 });
 
 describe("TeamChat.startAgentRun", () => {
+  it("settles a message whose run history retention already removed, so it stops retrying", async () => {
+    const chat = setup();
+    const message = chat.record({ content: "Status?" });
+    chat.sendUserMessage.mockImplementation(async () => ({
+      messageId: "message-pruned",
+      seq: 0,
+      taskId: null,
+      runId: null,
+      pruned: true,
+    }));
+
+    await chat.teamChat.startAgentRun(message.id, ["received"]);
+
+    expect(chat.row(message.id)).toMatchObject({
+      status: "ignored",
+      engagementReason: "history_pruned",
+      runId: null,
+    });
+    expect(chat.jobs.has(teamChatEngageJobKey(message.id))).toBe(false);
+    expect(chat.continued()).toEqual([]);
+  });
+
   it("claims the message and removes its backup job in the transaction that starts the run", async () => {
     const chat = setup();
     const message = chat.record({ content: "Can you review the launch plan?" });
@@ -610,6 +632,25 @@ describe("TeamChat.mirrorTranscript", () => {
       expect(chat.row(message.id)?.threadMessageId).toBe(visible[0]?.id);
     },
   );
+
+  it("completes a redelivery whose transcript history retention deleted, linking nothing", async () => {
+    const chat = setup();
+    const message = chat.record({ content: "Status?" });
+    chat.sendUserMessage.mockResolvedValueOnce({
+      messageId: "message-pruned",
+      seq: 0,
+      taskId: null,
+      runId: null,
+      pruned: true,
+    });
+    const update = vi.spyOn(chat.tables.externalMessage, "update");
+
+    await chat.teamChat.mirrorTranscript(chat.view(message.id));
+
+    expect(update).not.toHaveBeenCalled();
+    expect(chat.row(message.id)?.threadMessageId).toBeNull();
+    expect(chat.threadMessages.size).toBe(0);
+  });
 });
 
 describe("TeamChat.routeToAgent and drop", () => {

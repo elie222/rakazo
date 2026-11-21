@@ -205,6 +205,8 @@ export class TeamChat {
       clientNonce: `teamchat-transcript:${conversation.provider}:${message.providerEventId}`,
       createRun: false,
     });
+    // Its transcript was mirrored once and has since aged out of the chat; there is nothing to link.
+    if (visible.pruned) return;
     await this.deps.prisma.externalMessage.update({
       where: { id: message.id },
       data: { threadMessageId: visible.messageId },
@@ -286,6 +288,14 @@ export class TeamChat {
         return;
       }
       throw error;
+    }
+    // Its run started long ago and history retention has since removed it; nothing is left to do.
+    if (sent.pruned) {
+      await this.settle(message.id, from, {
+        status: "ignored",
+        engagementReason: "history_pruned",
+      });
+      return;
     }
     if (!sent.runId) throw new Error("Team chat message did not create an agent run");
     // A replayed send skipped its claim; one that committed without the link is linked now.

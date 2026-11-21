@@ -131,15 +131,19 @@ describePostgres("saved home retention (PostgreSQL)", () => {
   });
 
   it("warns once, then deletes only the stored copy of an unused computer", async () => {
+    // An earlier version kept for restoring goes with it.
+    const files = await mkdtemp(path.join(tmpdir(), "rakazo-retention-files-"));
+    await writeFile(path.join(files, "notes.md"), "newer");
+    await home.commit(id, files, context);
     await sweep();
     await sweep();
     expect(sent()).toHaveLength(1);
     expect(sent()[0]!.text).toContain("unless you choose a plan");
-    expect(await objects()).toHaveLength(1);
+    expect(await objects()).toHaveLength(2);
 
     travel(6);
     await sweep();
-    expect(await objects()).toHaveLength(1);
+    expect(await objects()).toHaveLength(2);
 
     travel(3);
     await sweep();
@@ -153,6 +157,7 @@ describePostgres("saved home retention (PostgreSQL)", () => {
       homeRevisionAt: null,
     });
     expect(await system.homeDeletionNotice.count({ where: { computerId: id } })).toBe(0);
+    expect(await system.computerHomeVersion.count({ where: { computerId: id } })).toBe(0);
     expect(sent()).toHaveLength(1);
   });
 

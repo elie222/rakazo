@@ -10,4 +10,5 @@ export const typesafeDecisionModel: DecisionModelDescriptor = {
   inputUsdPerMillion: 0.042,
   pricingVersion: "decision-pricing-2026-11-17",
   pricingUrl: "https://help.typesafe.ai/articles/5187202169-how-much-does-jev-cost",
+  calibration: { confidenceScale: "linear", minPassProbability: 0.75 },
 };
