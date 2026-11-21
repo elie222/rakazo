@@ -2,8 +2,10 @@ import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH,
+  BOT_MESSAGE_MAX_HOPS,
   BOT_MESSAGE_MAX_LENGTH,
   botMessageAllowsSilence,
+  botMessageHopExhausted,
   clampBotMessage,
   nextBotMessageHop,
   resolveBotAddress,
@@ -78,6 +80,22 @@ describe("hop numbering", () => {
     expect(nextBotMessageHop(1)).toBe(2);
     expect(nextBotMessageHop(5)).toBe(6);
     expect(nextBotMessageHop(6)).toBe(7);
+  });
+
+  it("lets a long handoff run and refuses only past the safety ceiling", () => {
+    expect(botMessageHopExhausted(7)).toBe(false);
+    expect(botMessageHopExhausted(BOT_MESSAGE_MAX_HOPS)).toBe(false);
+    expect(botMessageHopExhausted(BOT_MESSAGE_MAX_HOPS + 1)).toBe(true);
+  });
+
+  it("stops a two-bot volley in a bounded number of deliveries", () => {
+    let hop = nextBotMessageHop(undefined);
+    let delivered = 0;
+    while (!botMessageHopExhausted(hop)) {
+      delivered += 1;
+      hop = nextBotMessageHop(hop);
+    }
+    expect(delivered).toBe(BOT_MESSAGE_MAX_HOPS);
   });
 });
 

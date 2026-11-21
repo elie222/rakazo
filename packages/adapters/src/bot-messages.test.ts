@@ -1,3 +1,4 @@
+import { BOT_MESSAGE_MAX_HOPS } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -328,10 +329,16 @@ describe("messaging another bot", () => {
     expect(harness.enqueue).not.toHaveBeenCalled();
   });
 
-  it("keeps a chain going past six bot-to-bot messages", async () => {
+  it("stops a runaway chain at the safety ceiling", async () => {
     const harness = deps({
       hopBlocks: [
-        { kind: "bot_message_received", fromBotId: "b", fromBotName: "B", text: "hi", hop: 6 },
+        {
+          kind: "bot_message_received",
+          fromBotId: "b",
+          fromBotName: "B",
+          text: "hi",
+          hop: BOT_MESSAGE_MAX_HOPS,
+        },
       ],
     });
     const sent = await messageBot(
@@ -340,21 +347,11 @@ describe("messaging another bot", () => {
       sender,
       { bot_id: "bot-target", message: "again" },
     );
-    expect(sent.ok).toBe(true);
-    expect(harness.tx.run.create).toHaveBeenCalledOnce();
-    expect(harness.tx.message.create).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          threadId: "thread-target",
-          blocks: expect.arrayContaining([
-            expect.objectContaining({ kind: "bot_message_received", hop: 7 }),
-          ]),
-        }),
-      }),
-    );
+    expect(sent.ok).toBe(false);
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
   });
 
-  it("links a final result back to its request deep in a chain", async () => {
+  it("allows a final result back through after the request hop limit", async () => {
     const harness = deps({
       hopBlocks: [
         {
@@ -362,7 +359,7 @@ describe("messaging another bot", () => {
           fromBotId: "bot-target",
           fromBotName: "Analyst",
           text: "please finish",
-          hop: 6,
+          hop: BOT_MESSAGE_MAX_HOPS,
           intent: "request",
           returnToMessageId: "message-request",
         },
@@ -444,6 +441,105 @@ describe("messaging another bot", () => {
     expect(harness.tx.message.create).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ replyToMessageId: undefined }),
+      }),
+    );
+  });
+
+  it("does not exempt a terminal reply to another terminal reply", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Analyst",
+          text: "finished",
+          hop: BOT_MESSAGE_MAX_HOPS,
+          intent: "result",
+        },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-target", message: "acknowledged", intent: "result" },
+      { returnFrom: "ended" },
+    );
+    expect(sent.ok).toBe(false);
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it("does not let a result label bypass the hop limit toward an unrelated bot", async () => {
+    const harness = deps({
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-other", name: "Writer", title: "", thread: { id: "thread-other" } },
+      ],
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "please finish",
+          hop: BOT_MESSAGE_MAX_HOPS,
+          intent: "request",
+        },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-other", message: "keep going", intent: "result" },
+    );
+    expect(sent.ok).toBe(false);
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps model-supplied status updates subject to the hop limit", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "please finish",
+          hop: BOT_MESSAGE_MAX_HOPS,
+          intent: "request",
+        },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-target", message: "still working", intent: "status" },
+    );
+    expect(sent.ok).toBe(false);
+  });
+
+  it("keeps a chain going past six bot-to-bot messages", async () => {
+    const harness = deps({
+      hopBlocks: [
+        { kind: "bot_message_received", fromBotId: "b", fromBotName: "B", text: "hi", hop: 6 },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-target", message: "again" },
+    );
+    expect(sent.ok).toBe(true);
+    expect(harness.tx.run.create).toHaveBeenCalledOnce();
+    expect(harness.tx.message.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          threadId: "thread-target",
+          blocks: expect.arrayContaining([
+            expect.objectContaining({ kind: "bot_message_received", hop: 7 }),
+          ]),
+        }),
       }),
     );
   });
@@ -821,12 +917,12 @@ describe("waiting on the user", () => {
     fromBotId: "bot-target",
     fromBotName: "Coordinator",
     text: "research this",
-    hop: 6,
+    hop: BOT_MESSAGE_MAX_HOPS,
     intent: "request",
     returnToMessageId: "message-request",
   };
 
-  it("tells the requesting bot right away, deep in a chain", async () => {
+  it("tells the requesting bot right away, even at the hop limit", async () => {
     const harness = deps({ hopBlocks: [request] });
 
     await reportBotMessageWait(harness.deps, delegated, sender, "Which city?", "attempt-1");

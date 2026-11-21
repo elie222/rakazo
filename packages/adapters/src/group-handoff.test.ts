@@ -1,3 +1,4 @@
+import { BOT_MESSAGE_MAX_HOPS } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -204,6 +205,29 @@ describe("group handoff ownership", () => {
       }),
     );
     expect(runCreate).toHaveBeenCalledOnce();
+  });
+
+  it("stops a runaway handoff chain at the safety ceiling", async () => {
+    const { deps, runCreate } = harness([
+      {
+        kind: "handoff",
+        fromBotId: "bot-b",
+        toBotId: "bot-a",
+        text: "Revise again",
+        hop: BOT_MESSAGE_MAX_HOPS,
+      },
+    ]);
+
+    await expect(
+      handoffToGroupBot(deps as never, run, "group-1", {
+        bot_id: "bot-b",
+        message: "Revised",
+      }),
+    ).resolves.toEqual({
+      error:
+        "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
+    });
+    expect(runCreate).not.toHaveBeenCalled();
   });
 
   it("reuses the recorded transfer when a source run is retried", async () => {

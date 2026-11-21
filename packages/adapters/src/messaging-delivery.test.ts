@@ -16,6 +16,7 @@ import {
   RetryJobLaterError,
 } from "@rakazo/adapter-kit";
 import {
+  BOT_MESSAGE_MAX_HOPS,
   CHAT_APP_ASK_NOTE,
   CHAT_APP_TAKEOVER_NOTE,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -1769,6 +1770,21 @@ describe("deliverRun to a group", () => {
       expect.objectContaining({ name: "run.continue", payload: { runId: "run-wake" } }),
     ]);
     expect(peerContext(t)).toEqual([]);
+  });
+
+  it("only gives peers context once a runaway chain reaches the safety ceiling", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "@Helper again?")], { hop: BOT_MESSAGE_MAX_HOPS });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.events.sendUserMessage).not.toHaveBeenCalled();
+    expect(wakes(t)).toEqual([]);
+    expect(peerContext(t)).toEqual([
+      expect.objectContaining({
+        clientNonce: "messaging-peer:m-1:bot-2",
+        blocks: [expect.objectContaining({ hop: BOT_MESSAGE_MAX_HOPS + 1 })],
+      }),
+    ]);
   });
 
   it.each(["bot-1", "bot-2"])(

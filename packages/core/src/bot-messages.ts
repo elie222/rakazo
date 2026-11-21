@@ -6,6 +6,14 @@ export const BOT_MESSAGE_MAX_LENGTH = 8_000;
 /** Bots that hit the limit tend to resend the text in chunks; the error steers them to files. */
 export const BOT_MESSAGE_TOO_LONG = `message exceeds the ${BOT_MESSAGE_MAX_LENGTH} character limit. Nothing was sent. Save long content to a file and send it with files instead of splitting it across messages.`;
 
+/**
+ * How many bot-started deliveries may chain before the next one is refused. Messaging is
+ * fire-and-forget, so without it two bots could reply to each other forever. It is set far above
+ * any real handoff so it only stops a runaway loop. A person's own message always starts a
+ * fresh chain at hop 0.
+ */
+export const BOT_MESSAGE_MAX_HOPS = 100;
+
 /** Cap total description characters across the rendered teammate directory. */
 export const BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH = 8_000;
 
@@ -28,6 +36,10 @@ export function clampBotMessage(text: string): string {
  */
 export function nextBotMessageHop(sourceHop: number | undefined): number {
   return Number.isInteger(sourceHop) && (sourceHop as number) > 0 ? (sourceHop as number) + 1 : 1;
+}
+
+export function botMessageHopExhausted(hop: number): boolean {
+  return hop > BOT_MESSAGE_MAX_HOPS;
 }
 
 export type BotMessageContext = Extract<MessageBlock, { kind: "bot_message_received" }>;

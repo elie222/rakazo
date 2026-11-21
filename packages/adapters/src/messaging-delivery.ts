@@ -16,6 +16,8 @@ import {
 } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  BOT_MESSAGE_MAX_HOPS,
+  botMessageHopExhausted,
   chatAppAskText,
   chatAppTakeoverText,
   nextBotMessageHop,
@@ -1013,7 +1015,8 @@ export class MessagingDelivery {
 
   /**
    * Channel runs post to the group with an attribution prefix, then fan the post out internally
-   * to peer approved bots: context only by default, a waking run on @-mention.
+   * to peer approved bots: context only by default, a waking run on @-mention, bounded by the
+   * shared bot-message hop budget.
    */
   private async recordChannelRun(
     run: { id: string; botId: string },
@@ -1130,7 +1133,7 @@ export class MessagingDelivery {
         const mentioned = peerBot?.name
           ? new RegExp(`@${escapeRegExp(peerBot.name)}\\b`, "i").test(text)
           : false;
-        if (mentioned) {
+        if (mentioned && !botMessageHopExhausted(hop)) {
           const sent = await events
             .sendUserMessage({
               spaceId: peerIdentity.spaceId,
@@ -1309,9 +1312,7 @@ export class MessagingDelivery {
     const { prisma } = this.deps;
     let current: string | null = sourceMessageId;
     const visited = new Set<string>();
-    // Each step moves to an earlier run and `visited` stops a cycle, so the walk ends at the
-    // chain's first run however many bots it passed through.
-    while (current) {
+    for (let depth = 0; current && depth <= BOT_MESSAGE_MAX_HOPS; depth += 1) {
       const source = await prisma.message.findUnique({
         where: { id: current },
         select: { replyTo: { select: { runId: true } } },

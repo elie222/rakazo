@@ -3,6 +3,7 @@ import {
   BOT_MESSAGE_MAX_LENGTH,
   BOT_MESSAGE_TOO_LONG,
   botMessageContext,
+  botMessageHopExhausted,
   nextBotMessageHop,
   renderBotGroupDirectory,
   renderGroupMembersContext,
@@ -154,6 +155,12 @@ export async function handoffToGroupBot(
       (block): block is Extract<MessageBlock, { kind: "handoff" }> => block.kind === "handoff",
     );
     const hop = nextBotMessageHop(sourceHandoff?.hop ?? botMessageContext(sourceBlocks)?.hop);
+    if (botMessageHopExhausted(hop)) {
+      return {
+        error:
+          "group handoff limit reached for this chain; finish the current stage in the shared thread instead",
+      } as const;
+    }
 
     const handoffBlock: MessageBlock = {
       kind: "handoff",
