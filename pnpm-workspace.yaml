@@ -96,8 +96,3 @@ allowBuilds:
   protobufjs: false
   react-native-enriched-markdown: false
   ssh2: false
-minimumReleaseAgeExclude:
-  - "@earendil-works/pi-agent-core@1.6.0"
-  - "@earendil-works/pi-ai@1.6.0"
-  - "@earendil-works/pi-schema@1.6.0"
-  - "@earendil-works/pi-telemetry@1.6.0"
