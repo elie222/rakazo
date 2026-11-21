@@ -21,6 +21,7 @@ import { CallLayout } from "./components/call/CallLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarkdownLinkPrompt } from "./components/messages/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
+import { RouteLoading } from "./components/RouteLoading";
 import { authClient } from "./lib/auth/auth";
 import { hasSignedInBefore, rememberSignedIn } from "./lib/auth/returning-user";
 import {
@@ -190,7 +191,7 @@ function SessionApp() {
       <AiDataConsentPrompt key={user?.id ?? "anonymous"} />
       <MarkdownLinkPrompt>
         <div className="h-full" data-rakazo-app-state="ready">
-          <Suspense fallback={<PageLoading />}>
+          <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route
                 path="/"

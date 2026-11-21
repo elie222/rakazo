@@ -88,6 +88,66 @@
   }
 }
 
+/* Sidebar rows share one hover grammar: at rest only the title shows; hovering or focusing
+   fades the actions in over the row's end and masks the title underneath them. */
+@utility row-reveal-action {
+  opacity: 0;
+  scale: 0.92;
+  transition:
+    opacity var(--motion-micro) var(--ease-standard),
+    scale var(--motion-floating) var(--ease-out);
+}
+
+[data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"]))
+  > .row-reveal-action {
+  opacity: 1;
+  scale: 1;
+}
+
+[data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"]))
+  > [data-slot="list-row-link"]
+  > [data-slot="list-row-content"] {
+  -webkit-mask-image: linear-gradient(
+    to left,
+    transparent var(--row-reveal-fade, 32px),
+    #000 calc(var(--row-reveal-fade, 32px) + 20px)
+  );
+  mask-image: linear-gradient(
+    to left,
+    transparent var(--row-reveal-fade, 32px),
+    #000 calc(var(--row-reveal-fade, 32px) + 20px)
+  );
+}
+
+[dir="rtl"]
+  [data-slot="list-row"]:is(:hover, :focus-within, :has([aria-expanded="true"]))
+  > [data-slot="list-row-link"]
+  > [data-slot="list-row-content"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent var(--row-reveal-fade, 32px),
+    #000 calc(var(--row-reveal-fade, 32px) + 20px)
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent var(--row-reveal-fade, 32px),
+    #000 calc(var(--row-reveal-fade, 32px) + 20px)
+  );
+}
+
+@media (hover: none) {
+  [data-slot="list-row"] > .row-reveal-action {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-reveal-action {
+    transition: none;
+  }
+}
+
 /* scroll-fade */
 @property --scroll-fade-t {
   syntax: "<length-percentage>";

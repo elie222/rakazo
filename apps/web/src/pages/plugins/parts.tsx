@@ -173,7 +173,7 @@ export function ChatAppLink({ name, onOpen }: { name: string; onOpen: () => void
   return (
     <button
       type="button"
-      className="rounded-sm text-foreground underline underline-offset-2 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="rounded-sm text-foreground underline underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       onClick={onOpen}
     >
       <Trans>Chat from {name}</Trans>

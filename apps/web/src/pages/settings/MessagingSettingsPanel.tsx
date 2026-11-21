@@ -604,7 +604,7 @@ export function MessagingSettingsPanel() {
             <button
               type="button"
               onClick={installSlack}
-              className="flex w-full items-center gap-2 px-4 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="flex w-full items-center gap-2 px-4 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <PlusIcon className="size-4" aria-hidden />
               <Trans>Add workspace</Trans>

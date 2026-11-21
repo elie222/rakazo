@@ -376,7 +376,7 @@ export function BotShapePreview({
       aria-label={label ?? key}
       aria-pressed={selected ?? false}
       className={cn(
-        "relative flex size-11 items-center justify-center rounded-xl transition-transform hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
+        "relative flex size-11 items-center justify-center rounded-xl transition-transform hover:scale-105 active:scale-[0.97] motion-reduce:active:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover",
         selected
           ? "ring-2 ring-primary ring-offset-2 ring-offset-popover bg-white/10"
           : "hover:bg-white/5",

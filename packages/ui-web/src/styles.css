@@ -38,11 +38,34 @@
   --text-display: 32px;
   --text-display--line-height: 40px;
   --text-display--letter-spacing: -0.02em;
+
+  /* Motion: state changes and entrances share one curve, so every control moves alike. */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --motion-micro: 150ms;
+  --motion-floating: 150ms;
+  --motion-layout: 200ms;
+  --motion-pop: 450ms;
+  --motion-sweep: 1.6s;
+
+  /* Depth: an outline for hairlines, control for pressed surfaces, popover/dialog for floating. */
+  --shadow-outline: 0 0 0 1px rgb(0 0 0 / 0.06);
+  --shadow-control: 0 1px 2px rgb(0 0 0 / 0.06);
+  --shadow-popover: 0 4px 16px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / 0.14), 0 2px 8px rgb(0 0 0 / 0.06);
 }
 
 /* The system font reads light at 400 on macOS; regular text uses 420 there. Medium and semibold stay. */
 :root[data-os="mac"] {
   --font-weight-normal: 420;
+}
+
+/* Dark surfaces need a lighter hairline and a deeper shadow to read as raised. */
+[data-theme="dark"] {
+  --shadow-outline: 0 0 0 1px rgb(255 255 255 / 0.08);
+  --shadow-control: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-popover: 0 4px 16px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4);
 }
 
 @theme inline {
