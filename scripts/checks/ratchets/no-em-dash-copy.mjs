@@ -8,32 +8,42 @@ export const include = [
   "packages/{i18n,ui-web,chat-ui,page-kit}/src/**/*.{ts,tsx}",
 ];
 
-export const exclude = ["**/*.{test,spec}.*"];
+export const exclude = ["**/*.{test,spec}.*", "apps/desktop/src/main/locales/**"];
 
 const EM_DASH = /—|\\u2014|&mdash;/g;
 
-// The translatable strings: <Trans> children, <Plural> props, and t`` / msg`` templates.
-const MESSAGES =
-  /<Trans\b[\s\S]*?<\/Trans>|<Plural\b[\s\S]*?\/>|\b(?:t|msg)`(?:\\[\s\S]|[^`\\])*`/g;
+const STRING = String.raw`"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\x60(?:\\[\s\S]|[^\x60\\])*\x60`;
+
+// The translatable strings: <Trans> children, <Plural> props, t`` and msg`` templates, and the
+// strings passed to t(...), msg(...) or defineMessage(...), as in t("Save") or t({ message }).
+const MESSAGES = new RegExp(
+  [
+    String.raw`<Trans\b[\s\S]*?<\/Trans>`,
+    String.raw`<Plural\b[\s\S]*?\/>`,
+    String.raw`\b(?:t|msg)\x60(?:\\[\s\S]|[^\x60\\])*\x60`,
+    String.raw`\b(?:t|msg|defineMessage)\(\s*(?:${STRING}|\{[^}]*\})`,
+  ].join("|"),
+  "g",
+);
 
 export function count(text) {
   const hits = [];
-  for (const message of text.matchAll(MESSAGES)) {
-    const dashes = message[0].match(EM_DASH) ?? [];
-    if (dashes.length === 0 || isPlaceholder(message[0])) continue;
-    const line = text.slice(0, message.index).split("\n").length;
-    const firstLine = message[0].split("\n")[0].trim();
-    for (const _ of dashes) hits.push({ line, text: firstLine.slice(0, 160) });
+  for (const match of text.matchAll(MESSAGES)) {
+    const dashes = texts(match[0])
+      .filter((copy) => copy.replace(EM_DASH, "").trim() !== "")
+      .flatMap((copy) => copy.match(EM_DASH) ?? []);
+    if (dashes.length === 0) continue;
+    const line = text.slice(0, match.index).split("\n").length;
+    const firstLine = match[0].split("\n")[0].trim().slice(0, 160);
+    for (const _ of dashes) hits.push({ line, text: firstLine });
   }
   return hits;
 }
 
-/** A message that is nothing but the dash, as in t`—` for a missing value. */
-function isPlaceholder(source) {
-  const content = source.startsWith("<Trans")
-    ? source.slice(source.indexOf(">") + 1, -"</Trans>".length)
-    : source.startsWith("<Plural")
-      ? null
-      : source.slice(source.indexOf("`") + 1, -1);
-  return content !== null && content.trim() !== "" && content.replace(EM_DASH, "").trim() === "";
+/** The copy a message holds; one that is only the dash, as in t`—`, is a placeholder. */
+function texts(source) {
+  if (source.startsWith("<Trans"))
+    return [source.slice(source.indexOf(">") + 1, -"</Trans>".length)];
+  if (/^(?:t|msg)\x60/.test(source)) return [source.slice(source.indexOf("`") + 1, -1)];
+  return (source.match(new RegExp(STRING, "g")) ?? []).map((literal) => literal.slice(1, -1));
 }

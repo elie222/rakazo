@@ -25,7 +25,14 @@ const sources = {
     "const label = t`Couldn't refresh — showing saved messages.`;",
     "const missing = t`—`;",
     "const note = msg`Done \\u2014 sent.`;",
+    'const answer = t({ message: "Answer — now", context: "call" });',
+    'const empty = t({ message: "—" });',
   ].join("\n"),
+  "apps/desktop/src/main/setup/setup.ts": [
+    'throw new Error(t("Server is down — try again"));',
+    'const blank = t("—");',
+  ].join("\n"),
+  "apps/desktop/src/main/locales/ru.ts": '"Save": "Сохранить — сейчас",\n',
   "apps/web/src/pages/Files.test.tsx": "<Trans>Preview only — download it.</Trans>\n",
   "packages/adapters/src/tool.ts": "const error = t`Invalid — try again`;\n",
 };
@@ -40,7 +47,8 @@ test("counts em dashes inside translatable UI strings, but not placeholders, com
     Object.fromEntries([...found].map(([file, hits]) => [file, hits.map((hit) => hit.line)])),
     {
       "apps/web/src/pages/Files.tsx": [1, 2, 8],
-      "apps/mobile/components/notice.tsx": [1, 3],
+      "apps/mobile/components/notice.tsx": [1, 3, 4],
+      "apps/desktop/src/main/setup/setup.ts": [1],
     },
   );
 });
