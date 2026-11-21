@@ -16,7 +16,7 @@ describe("chatUserBubbleColors", () => {
   it("wears the bot's color under readable text", () => {
     const red = chatUserBubbleColors("#EF4444::shape_2", "bot-1");
     expect(red?.foreground).toBe("#FFFFFF");
-    expect(contrastRatio(red!.background, red!.foreground)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(red!.background, red!.foreground)).toBeGreaterThanOrEqual(4.5);
     // A bot saved with a color's earlier value wears that color's current bubble.
     expect(chatUserBubbleColors("#64748B", "bot-1")).toEqual(
       chatUserBubbleColors("#94A3B8", "bot-1"),
@@ -24,31 +24,40 @@ describe("chatUserBubbleColors", () => {
   });
 
   it.each(BOT_COLOR_LIST.filter((color) => color.id !== "white"))(
-    "keeps $name white text at 3:1 contrast",
+    "keeps $name white text at 4.5:1 contrast",
     ({ hex }) => {
       const bubble = chatUserBubbleColors(hex, "bot-1");
       expect(bubble).toBeDefined();
       expect(bubble!.foreground).toBe("#FFFFFF");
-      expect(contrastRatio(bubble!.background, bubble!.foreground)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(bubble!.background, bubble!.foreground)).toBeGreaterThanOrEqual(4.5);
     },
   );
 
   it("leaves colors that already read well as the avatar's own", () => {
-    expect(chatUserBubbleColors("#2A92FE", "bot-1")?.background).toBe("#2A92FE");
+    expect(chatUserBubbleColors("#1E40AF", "bot-1")?.background).toBe("#1E40AF");
   });
+
+  it.each(["#FFFF00", "#FFE066", "#FAFAFA", "#C9A8FF", "#F00", "#00FFFF"])(
+    "gives custom %s body-text contrast",
+    (color) => {
+      const bubble = chatUserBubbleColors(color, "bot-1")!;
+      expect(bubble.foreground).toBe("#FFFFFF");
+      expect(contrastRatio(bubble.background, bubble.foreground)).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 
   it("deepens bright colors without turning them muddy", () => {
     const orange = chatUserBubbleColors("#FF781C", "bot-1")!;
     // Darkening in RGB pulled orange toward brown; OKLCH keeps it orange.
-    expect(orange.background).toBe("#F16B00");
-    expect(contrastRatio(orange.background, orange.foreground)).toBeGreaterThanOrEqual(3);
+    expect(orange.background).toBe("#CD4A00");
+    expect(contrastRatio(orange.background, orange.foreground)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("deepens custom violet for readable white text", () => {
     const bubble = chatUserBubbleColors("#C9A8FF", "bot-1")!;
     expect(bubble.foreground).toBe("#FFFFFF");
     expect(bubble.background).not.toBe("#C9A8FF");
-    expect(contrastRatio(bubble.background, bubble.foreground)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(bubble.background, bubble.foreground)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("keeps the neutral bubble for a photo or the white bot", () => {
