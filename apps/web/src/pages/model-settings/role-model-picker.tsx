@@ -54,7 +54,7 @@ export function RoleModelPicker({
   providers: ConnectableProvider[];
   /** The deployment's model, offered to clear the slot back to it; `included` when it pays. */
   defaultOption?: { label: string; included?: boolean };
-  /** The model in use; its row is checked and active when the picker opens. */
+  /** The model in use; its row is checked and active when the picker opens, and picking it only closes. */
   current?: { provider: string; modelId: string; credentialId?: string; creditOfferingId?: string };
   disabled?: boolean;
   onPick: (option: RoleModelOption | null) => void;
@@ -225,7 +225,8 @@ export function RoleModelPicker({
                     value={optionValue(option)}
                     data-checked={optionValue(option) === currentValue}
                     onSelect={() => {
-                      onPick(option);
+                      // The model in use is already saved; picking it again changes nothing.
+                      if (optionValue(option) !== currentValue) onPick(option);
                       close();
                     }}
                   >

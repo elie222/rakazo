@@ -192,7 +192,7 @@ const rowState = () =>
       : [],
   );
 
-it("checks the model in use and starts on it, so Enter keeps it", async () => {
+it("checks the model in use and starts on it, so Enter keeps it without saving", async () => {
   const onPick = vi.fn();
   await renderCurrent(onPick);
   expect(rowState()).toEqual([["Older", "true", "true"]]);
@@ -201,13 +201,20 @@ it("checks the model in use and starts on it, so Enter keeps it", async () => {
       .querySelector<HTMLElement>("[cmdk-root]")!
       .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
-  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: "older" }));
+  expect(onPick).not.toHaveBeenCalled();
 });
 
 it("moves the active row to the first match when searching", async () => {
-  await renderCurrent(vi.fn());
+  const onPick = vi.fn();
+  await renderCurrent(onPick);
   await type("newest");
   expect(rowState()).toEqual([["Newest", "false", "true"]]);
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>("[cmdk-root]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: "newest" }));
 });
 
 it("returns the active row to the model in use when the search is cleared", async () => {
@@ -221,7 +228,7 @@ it("returns the active row to the model in use when the search is cleared", asyn
       .querySelector<HTMLElement>("[cmdk-root]")!
       .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
-  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: "older" }));
+  expect(onPick).not.toHaveBeenCalled();
 });
 
 it("does not mark or pick a connection of your own when the included model is in use", async () => {
@@ -286,5 +293,5 @@ it("checks a model saved under a provider's older id", async () => {
       .querySelector<HTMLElement>("[cmdk-root]")!
       .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
-  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: "saved" }));
+  expect(onPick).not.toHaveBeenCalled();
 });
