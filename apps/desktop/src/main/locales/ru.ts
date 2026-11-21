@@ -17,6 +17,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Redo: "Повторить",
   Cut: "Вырезать",
   Copy: "Скопировать",
+  "Copy Link Address": "Копировать адрес ссылки",
   Paste: "Вставить",
   "Paste and Match Style": "Вставить и согласовать стиль",
   Delete: "Удалить",

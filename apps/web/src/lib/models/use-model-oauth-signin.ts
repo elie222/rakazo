@@ -1,6 +1,9 @@
+import { t } from "@lingui/core/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type {
   AnalyticsModelSignInStep,
   ModelOAuthBegin,
+  ModelSignInCancelReason,
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
@@ -44,7 +47,6 @@ export function useModelOAuthSignIn(options: {
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [oauthPending, setOauthPending] = useState(false);
-  const [popupBlocked, setPopupBlocked] = useState(false);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
@@ -75,7 +77,8 @@ export function useModelOAuthSignIn(options: {
     oauthCaptureRef.current = null;
   }
 
-  function cancelOAuthAttempt(resetState = true) {
+  /** Stops the sign-in in progress; `reason` says why for measurement only. */
+  function cancelOAuthAttempt(reason: ModelSignInCancelReason = "cancelled", resetState = true) {
     releaseOAuthCapture();
     oauthCodeSubmittingRef.current = false;
     const loginId = oauthLoginIdRef.current;
@@ -84,16 +87,18 @@ export function useModelOAuthSignIn(options: {
       if (resetState) {
         setOauth(null);
         setOauthPending(false);
-        setPopupBlocked(false);
       }
     });
-    if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+    if (loginId) void rpc.models.cancelOAuth({ loginId, reason }).catch(() => undefined);
   }
 
-  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal, rpc);
+  async function finishSubscriptionSignIn(login: ModelOAuthBegin, controller: AbortController) {
+    await waitForModelOAuth(login, controller.signal, rpc);
     if (controller.signal.aborted) return;
-    const saved = await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
+    const saved = await rpc.models.finishOAuth(
+      { loginId: login.loginId },
+      { signal: controller.signal },
+    );
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     setOauth(null);
@@ -125,13 +130,15 @@ export function useModelOAuthSignIn(options: {
         { signal: controller.signal },
       );
       submitted = true;
-      await finishSubscriptionSignIn(attempt.loginId, controller);
+      await finishSubscriptionSignIn(attempt, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (submitted) {
         oauthLoginIdRef.current = null;
         setOauth(null);
-        void rpc.models.cancelOAuth({ loginId: attempt.loginId }).catch(() => undefined);
+        void rpc.models
+          .cancelOAuth({ loginId: attempt.loginId, reason: "interrupted" })
+          .catch(() => undefined);
       } else {
         retryable = true;
         setPasteCode(code);
@@ -154,7 +161,6 @@ export function useModelOAuthSignIn(options: {
   async function startSubscriptionSignIn(begin: ModelOAuthSignInBegin) {
     onClearErrorRef.current?.();
     setOauthPending(true);
-    setPopupBlocked(false);
     const controller = new AbortController();
     oauthAbortRef.current = controller;
     let waitingForCode = false;
@@ -168,8 +174,9 @@ export function useModelOAuthSignIn(options: {
           makeDefault: begin.makeDefault,
           ...(begin.scope ? { scope: begin.scope } : {}),
           label: begin.label,
-          // Desktop receives the loopback redirect; a browser tab cannot, so it gets a code page.
-          codePage: !desktopBridge(),
+          // A desktop that opens the browser itself receives the loopback redirect; anywhere
+          // else the person opens the page from a link, so it shows a code to paste.
+          codePage: !desktopBridge()?.oauth.open,
           surface: analyticsSurface(),
         },
         { signal: controller.signal },
@@ -178,6 +185,8 @@ export function useModelOAuthSignIn(options: {
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
       setOauth(started);
+      // Only desktop opens the page here; a browser blocks a tab opened after this await,
+      // so there the card's link opens it from the user's own click.
       if (started.mode === "auth-url") {
         // Subscribe before the popup exists: a provider that is already
         // authorized can redirect before React commits the state above.
@@ -186,45 +195,31 @@ export function useModelOAuthSignIn(options: {
           (code) => void submitOAuthCode(code, started),
           oauthStateOf(started.verificationUri),
         );
-      }
-      const browserAuth = desktopBridge()?.oauth;
-      if (browserAuth?.open) {
-        const cancelBrowser = () =>
-          void browserAuth.cancel?.(started.verificationUri).catch(() => undefined);
-        controller.signal.addEventListener("abort", cancelBrowser, { once: true });
-        const releaseCapture = oauthCaptureRef.current;
-        oauthCaptureRef.current = () => {
-          releaseCapture?.();
-          controller.signal.removeEventListener("abort", cancelBrowser);
-          cancelBrowser();
-        };
-        await browserAuth.open(started.verificationUri);
-        if (controller.signal.aborted) return;
-        reportSignInStep("page_opened", started.loginId);
-      } else {
-        // noopener returns null even when the tab opens. Detach a blank tab
-        // before navigating so the handle can distinguish a blocked popup.
-        const popup = window.open("about:blank", "_blank");
-        if (popup) {
-          popup.opener = null;
-          // A noreferrer link suppresses the navigation request's Referer header.
-          const link = popup.document.createElement("a");
-          link.href = started.verificationUri;
-          link.rel = "noreferrer";
-          popup.document.body.append(link);
-          link.click();
-          reportSignInStep("page_opened");
-        } else {
-          setPopupBlocked(true);
+        const browserAuth = desktopBridge()?.oauth;
+        if (browserAuth?.open) {
+          const cancelBrowser = () =>
+            void browserAuth.cancel?.(started.verificationUri).catch(() => undefined);
+          controller.signal.addEventListener("abort", cancelBrowser, { once: true });
+          const releaseCapture = oauthCaptureRef.current;
+          oauthCaptureRef.current = () => {
+            releaseCapture?.();
+            controller.signal.removeEventListener("abort", cancelBrowser);
+            cancelBrowser();
+          };
+          await browserAuth.open(started.verificationUri);
+          if (controller.signal.aborted) return;
+          reportSignInStep("page_opened", started.loginId);
         }
       }
       waitingForCode = started.mode === "auth-url";
-      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
+      if (!waitingForCode) await finishSubscriptionSignIn(started, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
-      if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+      if (loginId) {
+        void rpc.models.cancelOAuth({ loginId, reason: "interrupted" }).catch(() => undefined);
+      }
       onErrorRef.current(errorText(err, "Could not start sign-in"));
       setOauth(null);
     } finally {
@@ -235,14 +230,25 @@ export function useModelOAuthSignIn(options: {
     }
   }
 
-  useEffect(() => () => cancelOAuthAttempt(false), []);
+  // Nothing asks the server about a code waiting to be pasted, so the card ends on the code's
+  // own clock. A device code's expiry arrives with its status.
+  useTimeout(
+    () => {
+      if (oauthCodeSubmittingRef.current) return;
+      cancelOAuthAttempt("interrupted");
+      onErrorRef.current(t`This code expired. Start again.`);
+    },
+    oauth?.mode === "auth-url" ? oauth.expiresInSeconds * 1000 : null,
+    oauth?.loginId,
+  );
+
+  useEffect(() => () => cancelOAuthAttempt("left", false), []);
 
   return {
     oauth,
     pasteCode,
     setPasteCode,
     oauthPending,
-    popupBlocked,
     cancelOAuthAttempt,
     reportSignInStep,
     startSubscriptionSignIn,

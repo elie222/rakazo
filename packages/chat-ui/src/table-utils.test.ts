@@ -393,10 +393,31 @@ describe("serialization", () => {
       ["=Name", "+Note"],
       [
         ["=1+1", "+SUM(A1)"],
-        ["@lookup", "-9"],
+        ["@lookup", "-@x"],
       ],
     );
     for (const cell of csv.split(/[,\n]/)) expect(cell.startsWith("'")).toBe(true);
+  });
+
+  it("keeps plain numbers and a lone dash unquoted but still neutralizes formulas", () => {
+    expect(tableToCsv(["A"], [["-12.5"], ["-3%"], ["+4"], ["-1,234.5"], ["-"], [" -7"]])).toBe(
+      'A\n-12.5\n-3%\n+4\n"-1,234.5"\n-\n -7',
+    );
+    expect(tableToTsv(["A"], [["-12.5"], ["-"]])).toBe("A\n-12.5\n-");
+    for (const value of [
+      "-1+cmd|' /C calc'!A0",
+      "+SUM(1)",
+      "-@x",
+      "=1+1",
+      "+1 1",
+      "- 5",
+      "-$5",
+      "-5 5",
+      "-1e5",
+      "+1-1",
+    ]) {
+      expect(tableToCsv(["A"], [[value]])).toBe(`A\n'${value}`);
+    }
   });
 
   it("quotes CSV cells containing carriage returns", () => {
@@ -443,7 +464,7 @@ describe("serialization", () => {
     expect(tsv.split("\n")).toHaveLength(3);
     expect(tsv).toContain('a,b\t"say ""hi"""');
     expect(tsv).toContain("'=cmd\tline break");
-    expect(tableToTsv(["=A", "+B"], [["@x", "-9"]])).toBe("'=A\t'+B\n'@x\t'-9");
+    expect(tableToTsv(["=A", "+B"], [["@x", "-@y"]])).toBe("'=A\t'+B\n'@x\t'-@y");
   });
 
   it("pads short rows to the column count", () => {

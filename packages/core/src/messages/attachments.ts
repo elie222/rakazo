@@ -141,7 +141,7 @@ export function normalizeVoiceTranscript(value: string | null | undefined): stri
       return code >= 32 && !(code >= 0x7f && code <= 0x9f);
     })
     .join("");
-  return printable.trim().slice(0, VOICE_TRANSCRIPT_MAX_CHARS);
+  return sliceWellFormed(printable.trim(), VOICE_TRANSCRIPT_MAX_CHARS);
 }
 
 export function promptTextForAttachments(
