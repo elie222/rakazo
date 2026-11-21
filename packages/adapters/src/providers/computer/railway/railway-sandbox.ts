@@ -2,16 +2,11 @@ import path from "node:path";
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
   ComputerRef,
-  ControlLeaseRef,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
-  ScreenRequest,
-  TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
   WorkspaceExportLimits,
@@ -49,6 +44,7 @@ import {
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
+  LinuxDesktopSandbox,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "../../../computers/screens/linux-desktop.js";
@@ -77,12 +73,12 @@ export interface RailwaySandboxOptions {
   unreferencedMachines?: UnreferencedMachineRecords;
 }
 
-export class RailwaySandboxProvider implements SandboxProvider {
+export class RailwaySandboxProvider extends LinuxDesktopSandbox implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
 
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: WORKSPACE,
       workspaceDir: WORKSPACE,
@@ -120,6 +116,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     unreferencedMachines,
     ...options
   }: RailwaySandboxOptions) {
+    super();
     this.machines = unreferencedMachines;
     this.maxWorkspaceFileBytes = z.coerce
       .number()
@@ -296,44 +293,6 @@ export class RailwaySandboxProvider implements SandboxProvider {
       if (!context.signal.aborted) throw error;
       yield* abortedCommandEvents();
     }
-  }
-
-  async connectScreen(computer: ComputerRef, request: ScreenRequest, context: AdapterContext) {
-    return this.desktops.connectScreen(computer, request, context);
-  }
-
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, context);
-  }
-
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ) {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ) {
-    return this.desktops.sendInput(computer, input, context);
-  }
-
-  async observe(computer: ComputerRef, context: AdapterContext) {
-    return this.desktops.observe(computer, context);
-  }
-
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext) {
-    return this.desktops.releaseScreen(computer, context);
   }
 
   async listFiles(
@@ -517,11 +476,6 @@ export class RailwaySandboxProvider implements SandboxProvider {
           throw new Error("could not restore Railway workspace permissions");
       }
     }
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
   }
 
   async keepAlive(computer: ComputerRef) {

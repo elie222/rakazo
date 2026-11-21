@@ -5,16 +5,11 @@ import type { Boxd, Machine } from "@boxd-sh/sdk";
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
   ComputerRef,
-  ControlLeaseRef,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
-  ScreenRequest,
-  TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
   WorkspaceExportLimits,
@@ -56,6 +51,7 @@ import {
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
+  LinuxDesktopSandbox,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
@@ -108,12 +104,12 @@ interface BoxdCommandResult {
   aborted: boolean;
 }
 
-export class BoxdSandboxProvider implements SandboxProvider {
+export class BoxdSandboxProvider extends LinuxDesktopSandbox implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
 
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: HOME,
       workspaceDir: WORKSPACE,
@@ -156,6 +152,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     config: { org?: string; unreferencedMachines?: UnreferencedMachineRecords },
     client: BoxdSandboxClient,
   ) {
+    super();
     this.client = client;
     this.org = config.org;
     this.machines = config.unreferencedMachines;
@@ -370,44 +367,6 @@ export class BoxdSandboxProvider implements SandboxProvider {
     yield { type: "exit", code: result.exitCode };
   }
 
-  async connectScreen(computer: ComputerRef, request: ScreenRequest, context: AdapterContext) {
-    return this.desktops.connectScreen(computer, request, context);
-  }
-
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, context);
-  }
-
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ) {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ) {
-    return this.desktops.sendInput(computer, input, context);
-  }
-
-  async observe(computer: ComputerRef, context: AdapterContext) {
-    return this.desktops.observe(computer, context);
-  }
-
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext) {
-    return this.desktops.releaseScreen(computer, context);
-  }
-
   async listFiles(
     computer: ComputerRef,
     directory: string,
@@ -503,11 +462,6 @@ export class BoxdSandboxProvider implements SandboxProvider {
       if (full) await flush(full);
     }
     await flush(batcher.take());
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
   }
 
   /** Suspends the machine with its memory and disk; the next command wakes it in milliseconds. */

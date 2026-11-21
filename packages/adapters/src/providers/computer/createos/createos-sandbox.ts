@@ -48,6 +48,7 @@ import {
   workspaceCwd,
   workspacePath,
 } from "../../../computers/screens/computer-support.js";
+import { observationSnapshot } from "../../../computers/screens/linux-desktop.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
 import { readBodyCapped } from "../../../web/web-ssrf.js";
 
@@ -729,8 +730,7 @@ print(json.dumps(out))
   }
 
   async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
+    return observationSnapshot(await this.observe(computer, context));
   }
 
   async keepAlive(computer: ComputerRef): Promise<void> {

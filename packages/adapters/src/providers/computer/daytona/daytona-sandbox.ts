@@ -4,26 +4,19 @@ import type { CreateSandboxFromSnapshotParams, DaytonaConfig, Sandbox } from "@d
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
-  ComputerObservation,
   ComputerRef,
-  ControlLeaseRef,
   PageBrowserCommand,
   PageBrowserResult,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
-  ScreenRequest,
-  ScreenSession,
-  TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
-import { SandboxFileTooLargeError, SandboxRateLimitError } from "@rakazo/adapter-kit";
-import { abortableDelay, parseRetryAfter } from "@rakazo/core";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import { abortableDelay } from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -53,6 +46,7 @@ import {
 } from "../../../computers/screens/computer-support.js";
 import {
   LinuxDesktop,
+  LinuxDesktopSandbox,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "../../../computers/screens/linux-desktop.js";
@@ -111,7 +105,7 @@ export interface DaytonaSandboxSdk {
 
 type ProviderConfig = { snapshot?: string; unreferencedMachines?: UnreferencedMachineRecords };
 
-export class DaytonaSandboxProvider implements SandboxProvider {
+export class DaytonaSandboxProvider extends LinuxDesktopSandbox implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
@@ -125,7 +119,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   >();
   private readonly workspaceRoots = new Map<string, string>();
   private readonly prepared = new Set<string>();
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async (computer) => {
       const sandbox = await this.box(computer);
       return {
@@ -227,6 +221,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   private readonly machines: UnreferencedMachineRecords | undefined;
 
   constructor(config: ProviderConfig, client: DaytonaSandboxSdk) {
+    super();
     this.snapshotName =
       config.snapshot?.trim() || process.env.DAYTONA_SNAPSHOT?.trim() || undefined;
     this.client = client;
@@ -353,39 +348,6 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     }
   }
 
-  async connectScreen(
-    computer: ComputerRef,
-    request: ScreenRequest,
-    context: AdapterContext,
-  ): Promise<ScreenSession> {
-    return this.desktops.connectScreen(computer, request, context);
-  }
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, context);
-  }
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ): Promise<void> {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ): Promise<void> {
-    return this.desktops.sendInput(computer, input, context);
-  }
-  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    return this.desktops.observe(computer, context);
-  }
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
   async pageBrowser(
     computer: ComputerRef,
     request: PageBrowserCommand,
@@ -477,17 +439,8 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     // Browser profiles are imported without opening a shared browser.
   }
 
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
-  }
-
   async keepAlive(computer: ComputerRef): Promise<void> {
     await (await this.box(computer)).refreshActivity();
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    return this.desktops.releaseScreen(computer, context);
   }
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
