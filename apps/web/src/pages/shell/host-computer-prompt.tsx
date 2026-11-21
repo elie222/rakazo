@@ -8,15 +8,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@rakazo/ui-web";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { sandboxCheckFailureMessage } from "../../lib/computers/computer-sandbox";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { useSave } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
-
-/** A choice, and the opening of the dialog it was made in. */
-type Choice = { computerHost: "docker" | "this-mac"; opening: number };
 
 export function HostComputerPrompt({
   initialMe,
@@ -25,38 +22,9 @@ export function HostComputerPrompt({
   initialMe?: Me;
   onMeUpdated?: (me: Me) => void;
 }) {
-  const { t } = useLingui();
   const desktop = desktopBridge();
   const [configuring, setConfiguring] = useState(false);
   const [open, setOpen] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Counts each time the dialog closes, so a late failure can tell which opening it belongs to.
-  const openings = useRef(0);
-  const choice = useSave({
-    // Resolves false when the person declined access, which leaves the choice open.
-    save: async ({ computerHost }: Choice, client) => {
-      if (!desktop?.computer?.managesHostChoice)
-        throw new Error(t`Local computer access requires the latest desktop app.`);
-      if (computerHost === "this-mac") {
-        if (!(await desktop.computer.requestAccess())) return false;
-      } else {
-        await desktop.computer.revokeAccess();
-      }
-      try {
-        onMeUpdated?.(await client.me());
-      } catch {
-        // The choice is already saved. A failed refresh must not look like a failed save.
-      }
-      return true;
-    },
-    onSaved: (chosen) => {
-      if (chosen) setOpen(false);
-    },
-  });
-  const pending = choice.pending;
-  const mac = desktop?.platform === "darwin";
-  const hostLabel = mac ? t`this Mac` : t`this computer`;
 
   useEffect(
     () =>
@@ -88,10 +56,56 @@ export function HostComputerPrompt({
       .catch(() => undefined);
   }, [desktop, initialMe]);
 
+  // Each opening mounts a fresh dialog, so nothing from an earlier attempt shows in it.
   if (!open) return null;
+  return (
+    <HostComputerDialog
+      configuring={configuring}
+      onClose={() => setOpen(false)}
+      onMeUpdated={onMeUpdated}
+    />
+  );
+}
+
+function HostComputerDialog({
+  configuring,
+  onClose,
+  onMeUpdated,
+}: {
+  configuring: boolean;
+  onClose: () => void;
+  onMeUpdated?: (me: Me) => void;
+}) {
+  const { t } = useLingui();
+  const desktop = desktopBridge();
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const choice = useSave({
+    // Resolves false when the person declined access, which leaves the choice open.
+    save: async (computerHost: "docker" | "this-mac", client) => {
+      if (!desktop?.computer?.managesHostChoice)
+        throw new Error(t`Local computer access requires the latest desktop app.`);
+      if (computerHost === "this-mac") {
+        if (!(await desktop.computer.requestAccess())) return false;
+      } else {
+        await desktop.computer.revokeAccess();
+      }
+      try {
+        onMeUpdated?.(await client.me());
+      } catch {
+        // The choice is already saved. A failed refresh must not look like a failed save.
+      }
+      return true;
+    },
+    onSaved: (chosen) => {
+      if (chosen) onClose();
+    },
+  });
+  const pending = choice.pending;
+  const mac = desktop?.platform === "darwin";
+  const hostLabel = mac ? t`this Mac` : t`this computer`;
 
   async function refreshChoiceState() {
-    const opening = openings.current;
     setChecking(true);
     setError(null);
     choice.reset();
@@ -99,10 +113,10 @@ export function HostComputerPrompt({
       const me = await rpc.me();
       onMeUpdated?.(me);
       if (!me.canChooseHostComputer || me.computerHost != null) {
-        setOpen(false);
+        onClose();
       }
     } catch (err) {
-      if (opening === openings.current) setError(sandboxCheckFailureMessage(err));
+      setError(sandboxCheckFailureMessage(err));
     } finally {
       setChecking(false);
     }
@@ -110,14 +124,10 @@ export function HostComputerPrompt({
 
   function choose(computerHost: "docker" | "this-mac") {
     setError(null);
-    choice.run({ computerHost, opening: openings.current });
+    choice.run(computerHost);
   }
 
-  // A save's failure is shown only in the opening it was made in.
-  const shownError =
-    choice.error && choice.input?.opening === openings.current
-      ? errorText(choice.error, t`Could not save that choice`)
-      : error;
+  const shownError = choice.error ? errorText(choice.error, t`Could not save that choice`) : error;
 
   const busy = pending || checking;
 
@@ -126,14 +136,7 @@ export function HostComputerPrompt({
     <Dialog
       open
       onOpenChange={(next) => {
-        if (!configuring) return;
-        setOpen(next);
-        // Each opening starts clean: a failure that arrives after closing belongs to an earlier one.
-        if (!next) {
-          openings.current += 1;
-          setError(null);
-          choice.reset();
-        }
+        if (configuring && !next) onClose();
       }}
     >
       <DialogContent showCloseButton={configuring} className="rounded-2xl sm:max-w-[440px]">
