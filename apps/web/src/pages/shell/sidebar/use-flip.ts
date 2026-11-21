@@ -34,6 +34,11 @@ export function useFlip(container: RefObject<HTMLElement | null>, revision: stri
   useLayoutEffect(() => {
     const root = container.current;
     if (!root) return;
+    // A FLIP from the previous revision may still be running. Cancel it before measuring,
+    // otherwise the boxes below include that transform and a second reorder starts from a
+    // position the row never held in layout.
+    for (const animation of running.current.values()) animation.cancel();
+    running.current.clear();
     const nodes = Array.from(root.querySelectorAll<HTMLElement>(`[${FLIP_KEY}]`));
     const order = nodes
       .map((node) => node.getAttribute(FLIP_KEY))
@@ -57,11 +62,6 @@ export function useFlip(container: RefObject<HTMLElement | null>, revision: stri
       width: root.clientWidth,
       height: root.clientHeight,
     };
-    // A row that left the list keeps only its finished animation; drop it so a long-lived shell
-    // does not hold every row it has ever moved.
-    for (const key of running.current.keys()) {
-      if (!positions.has(key)) running.current.delete(key);
-    }
     if (
       !previous ||
       previous.order === order ||
@@ -80,7 +80,6 @@ export function useFlip(container: RefObject<HTMLElement | null>, revision: stri
       const dx = before.x - after.x;
       const dy = before.y - after.y;
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
-      running.current.get(key)?.cancel();
       const animation = node.animate(
         [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
         { duration: FLIP_DURATION, easing: FLIP_EASING },
