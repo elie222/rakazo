@@ -143,49 +143,31 @@ it("opens each time without the failure from the last attempt", async () => {
   expect(button("Check again")).toBeUndefined();
 });
 
-it("does not show a save that fails after the dialog closed", async () => {
+it("stays open while a choice or a check is still running", async () => {
   const save = deferred<void>();
+  const check = deferred<Me>();
   macWith({ revokeAccess: vi.fn(() => save.promise) });
-  vi.mocked(rpc.me).mockResolvedValueOnce(docker).mockResolvedValueOnce(docker);
+  vi.mocked(rpc.me).mockResolvedValueOnce(docker).mockReturnValueOnce(check.promise);
   await renderPrompt();
   await openFromMenu();
   await click("Docker");
-
   await act(async () => dialog.onOpenChange?.(false));
+  expect(dialogIsOpen()).toBe(true);
+
   await act(async () => {
     save.reject(new Error("Computer access was refused"));
     await flush();
   });
-  await openFromMenu();
-  expect(dialogIsOpen()).toBe(true);
-  expect(alertText()).toBeNull();
-});
-
-it("does not show a check that fails after the dialog closed", async () => {
-  const check = deferred<Me>();
-  macWith({
-    revokeAccess: vi.fn(async () => {
-      throw new Error("Computer access was refused");
-    }),
-  });
-  vi.mocked(rpc.me)
-    .mockResolvedValueOnce(docker)
-    .mockReturnValueOnce(check.promise)
-    .mockResolvedValueOnce(docker);
-  await renderPrompt();
-  await openFromMenu();
-  await click("Docker");
   await click("Check again");
-
   await act(async () => dialog.onOpenChange?.(false));
+  expect(dialogIsOpen()).toBe(true);
+
   await act(async () => {
     check.reject(new Error("Still refused"));
     await flush();
   });
-  await openFromMenu();
-  expect(dialogIsOpen()).toBe(true);
-  expect(alertText()).toBeNull();
-  expect(button("Check again")).toBeUndefined();
+  await act(async () => dialog.onOpenChange?.(false));
+  expect(dialogIsOpen()).toBe(false);
 });
 
 it("opens without a failed check from the last attempt", async () => {

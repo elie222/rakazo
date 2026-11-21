@@ -136,7 +136,8 @@ function HostComputerDialog({
     <Dialog
       open
       onOpenChange={(next) => {
-        if (configuring && !next) onClose();
+        // A choice still saving would land after one made in the next opening, so it holds the dialog.
+        if (configuring && !next && !busy) onClose();
       }}
     >
       <DialogContent showCloseButton={configuring} className="rounded-2xl sm:max-w-[440px]">
