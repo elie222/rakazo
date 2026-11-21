@@ -218,10 +218,16 @@ function PrimaryRail({
           icon={<Bell className="size-5" strokeWidth={1.75} aria-hidden="true" />}
           label={t`Activity`}
           onClick={() => {
+            // The list is hidden, so the active item only needs to bring it back, not toggle off.
+            if (listCollapsed) {
+              activityModePreference.set(true);
+              if (!onChatShell) navigate("/app");
+              onShowChats();
+              return;
+            }
             // From another page the first press opens Activity there; on the chat shell it toggles.
             activityModePreference.set(onChatShell ? !activityMode : true);
             if (!onChatShell) navigate("/app");
-            if (listCollapsed) onShowChats();
           }}
         />
         <RailItem

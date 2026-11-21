@@ -74,7 +74,7 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     >
-      {loading ? <Spinner className="size-4" aria-hidden="true" /> : null}
+      {loading ? <Spinner className="size-4" /> : null}
       {children}
     </ButtonPrimitive>
   );
