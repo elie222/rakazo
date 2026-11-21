@@ -95,26 +95,28 @@ function wordStart(text: string, start: number, match: number): number {
   return space < 0 ? start : start + space + 1;
 }
 
+/** Map an index in `lower` (the lowercase form of `text`) back to its original UTF-16 offset. */
+export function originalLowercaseOffset(text: string, lower: string, index: number): number {
+  if (index < 0 || lower.length === text.length) return index;
+  // Lowercasing can expand a character (İ → i + combining dot).
+  let lowerOffset = 0;
+  let originalOffset = 0;
+  for (const character of text) {
+    const lowerLength = character.toLowerCase().length;
+    if (lowerOffset + lowerLength > index) break;
+    lowerOffset += lowerLength;
+    originalOffset += character.length;
+  }
+  return originalOffset;
+}
+
 /** 按 UTF-16 长度生成搜索摘要，保持原有匹配逻辑并避免在边界切断代理对。 */
 export function snippetAroundMatch(text: string, query: string, maxLen = 120): string {
   const q = query.trim().toLowerCase();
   if (!q) return truncatePlainText(text, maxLen);
   const lower = text.toLowerCase();
-  const index = lower.indexOf(q);
-  if (index < 0) return truncatePlainText(text, maxLen);
-  let originalIndex = index;
-  if (lower.length !== text.length) {
-    // Lowercasing can expand a character (İ → i + combining dot).
-    // Map the match back to the original UTF-16 offset before slicing.
-    let lowerOffset = 0;
-    originalIndex = 0;
-    for (const character of text) {
-      const lowerLength = character.toLowerCase().length;
-      if (lowerOffset + lowerLength > index) break;
-      lowerOffset += lowerLength;
-      originalIndex += character.length;
-    }
-  }
+  const originalIndex = originalLowercaseOffset(text, lower, lower.indexOf(q));
+  if (originalIndex < 0) return truncatePlainText(text, maxLen);
   const start = wordStart(text, textBoundary(text, Math.max(0, originalIndex - 40)), originalIndex);
   const end = textBoundary(text, Math.min(text.length, start + maxLen));
   const prefix = start > 0 ? "…" : "";

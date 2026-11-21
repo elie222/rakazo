@@ -92,6 +92,7 @@ export const routinesRpc = {
           clientNonce: z.string().min(1).max(200).optional(),
         }),
       )
-      .output(z.object({ runId: Id })),
+      // groupId is the group chat the run went to, null when it ran in the bot's own chat.
+      .output(z.object({ runId: Id, groupId: Id.nullable() })),
   },
 };

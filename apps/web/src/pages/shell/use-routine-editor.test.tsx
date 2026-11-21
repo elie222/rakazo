@@ -43,12 +43,15 @@ let editor: ReturnType<typeof useRoutineEditor>;
 let finishUpdate: Deferred<Routine>;
 const update = vi.fn();
 const rotateWebhookSecret = vi.fn();
+const testRun = vi.fn();
+const openGroup = vi.fn();
+const refreshThread = vi.fn(async () => ({}) as never);
 let activeBot: Bot;
 const activeBotId = { current: "" };
 
 function Harness() {
   editor = useRoutineEditor({
-    rpc: { routines: { update }, bots: { rotateWebhookSecret } } as unknown as ReturnType<
+    rpc: { routines: { update, testRun }, bots: { rotateWebhookSecret } } as unknown as ReturnType<
       typeof createSpaceRpc
     >,
     active: activeBot,
@@ -56,7 +59,8 @@ function Harness() {
     timezone: "UTC",
     messageProviders: [],
     setBots: () => {},
-    refreshThread: async () => ({}) as never,
+    refreshThread,
+    openGroup,
     setPanel: () => {},
   });
   return null;
@@ -193,4 +197,35 @@ it("drops a key failure that arrives after switching to another bot", async () =
     await ensuring;
   });
   expect(editor.editorProps!.error).toBeNull();
+});
+
+it("opens the group a group routine's Run now went to", async () => {
+  testRun.mockResolvedValue({ runId: "run-1", groupId: "group-1" });
+  act(() => editor.editRoutine(routine));
+  await act(async () => {
+    await editor.editorProps!.onTestRun();
+  });
+  expect(testRun).toHaveBeenCalledWith({ routineId: "routine-1" });
+  expect(openGroup).toHaveBeenCalledWith("group-1");
+  expect(refreshThread).not.toHaveBeenCalled();
+});
+
+it("stays put when they moved to another chat before the run was accepted", async () => {
+  testRun.mockResolvedValue({ runId: "run-1", groupId: "group-1" });
+  act(() => editor.editRoutine(routine));
+  activeBotId.current = "bot-2";
+  await act(async () => {
+    await editor.editorProps!.onTestRun();
+  });
+  expect(openGroup).not.toHaveBeenCalled();
+});
+
+it("refreshes the bot's chat when Run now ran there", async () => {
+  testRun.mockResolvedValue({ runId: "run-1", groupId: null });
+  act(() => editor.editRoutine(routine));
+  await act(async () => {
+    await editor.editorProps!.onTestRun();
+  });
+  expect(refreshThread).toHaveBeenCalledWith("bot-1");
+  expect(openGroup).not.toHaveBeenCalled();
 });

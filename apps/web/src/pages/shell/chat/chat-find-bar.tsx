@@ -4,6 +4,8 @@ import { Button, Input } from "@rakazo/ui-web";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import type { RefObject } from "react";
 import { useEffect, useLayoutEffect, useState } from "react";
+import { useEventListener } from "../../../lib/use-event-listener";
+import { isComposingKey } from "../shell-shortcuts";
 import { findTextRanges, sameStart } from "./chat-find";
 
 const MATCHES = "rk-find";
@@ -133,18 +135,19 @@ export function ChatFindBar({
     if (range) reveal(range);
   }
 
+  // On window, bubbling, so a menu or dialog that consumes Escape first keeps the bar open, and
+  // the key closes it from anywhere in the chat, not only from inside the bar. Escape first
+  // cancels a half-typed IME word; only a plain Escape closes the bar.
+  useEventListener(window, "keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented || isComposingKey(event)) return;
+    event.preventDefault();
+    onClose();
+  });
+
   return (
     <search
       className="flex items-center gap-1 rounded-xl border border-border bg-popover p-1 shadow-md"
       data-testid="chat-find"
-      onKeyDown={(event) => {
-        // Escape first cancels a half-typed IME word; only a plain Escape closes the bar.
-        if (event.key !== "Escape" || event.nativeEvent.isComposing || event.keyCode === 229) {
-          return;
-        }
-        event.preventDefault();
-        onClose();
-      }}
     >
       <Input
         ref={inputRef}

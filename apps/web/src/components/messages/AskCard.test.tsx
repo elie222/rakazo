@@ -389,14 +389,60 @@ it("keeps an accepted question choice answered until the block updates", async (
   await act(async () => button("AParis")!.click());
 
   expect(onAnswer).toHaveBeenCalledWith("paris");
-  expect(container.textContent).not.toContain("Answered");
+  expect(container.querySelector(".sr-only")?.textContent).toBe("Answered");
   expect(button("AParis")!.getAttribute("aria-pressed")).toBe("true");
   expect(button("BLondon")!.disabled).toBe(true);
   expect(container.querySelector(".text-destructive")).toBeNull();
 
   await render({ ...block, status: "answered", answer: "london" });
   expect(button("BLondon")!.getAttribute("aria-pressed")).toBe("true");
-  expect(button("AParis")!.hasAttribute("aria-pressed")).toBe(false);
+  expect(button("AParis")!.getAttribute("aria-pressed")).toBe("false");
+});
+
+it("announces an answered question's state and marks only the chosen option", async () => {
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "london",
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
+  });
+  expect(container.querySelector(".sr-only")?.textContent).toBe("Answered");
+  expect(button("AParis")!.getAttribute("aria-pressed")).toBe("false");
+  expect(button("BLondon")!.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("announces an expired question as expired with no option chosen", async () => {
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    expired: true,
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
+  });
+  expect(container.querySelector(".sr-only")?.textContent).toBe("Expired");
+  expect(button("AParis")!.getAttribute("aria-pressed")).toBe("false");
+  expect(button("BLondon")!.getAttribute("aria-pressed")).toBe("false");
+});
+
+it("leaves an unanswered question's options as plain actions", async () => {
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
+  });
+  expect(container.querySelector("[aria-pressed]")).toBeNull();
+  expect(container.querySelector(".sr-only")).toBeNull();
 });
 
 it("dims a closed question's options without a status line", async () => {
@@ -452,6 +498,23 @@ it("sizes approval buttons like the other card buttons", async () => {
     expect(button(label)?.classList.contains("min-h-8")).toBe(true);
     expect(button(label)?.classList.contains("py-3")).toBe(false);
   }
+});
+
+it("says Apply now on the card whose approval replaces a bot's instructions", async () => {
+  await render({
+    kind: "ask",
+    approvalEffectId: "effect-1",
+    text: "Replace the instructions of Scout?",
+    detail: "Old length: 0 characters\nNew length: 16 characters\n\nPlan the offsite",
+    detailFormat: "code",
+    status: "pending",
+    actions: [
+      { id: "allow", label: "Apply now" },
+      { id: "deny", label: "Deny" },
+    ],
+  });
+  expect(button("Apply now")).toBeTruthy();
+  expect(button("Allow once")).toBeUndefined();
 });
 
 it("offers Always allow only when the approval card does", async () => {
@@ -818,7 +881,8 @@ it("dims the options a typed answer did not match", async () => {
   });
   expect(container.querySelector('[data-testid="ask-answer"]')).toBeNull();
   expect(container.textContent).not.toContain("Paris");
-  expect(container.querySelector("[aria-pressed]")).toBeNull();
+  expect(button("ABerlin")!.getAttribute("aria-pressed")).toBe("false");
+  expect(button("BSeoul")!.getAttribute("aria-pressed")).toBe("false");
 
   await render({
     kind: "ask",

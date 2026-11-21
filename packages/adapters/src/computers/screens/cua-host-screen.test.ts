@@ -1,3 +1,4 @@
+import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { CuaToolClient, CuaToolResult } from "./cua-host-screen.js";
 import { createCuaHostScreen } from "./cua-host-screen.js";
@@ -236,6 +237,35 @@ describe("Cua host screen", () => {
     );
     expect(client.close).toHaveBeenCalled();
     call.mockRestore();
+    await expect(screen.observe(scope, "TextEdit")).resolves.toMatchObject({ app: "TextEdit" });
+    expect(connect).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts one driver for calls that arrive before it is running", async () => {
+    const { screen, client, connect, permissions } = driver(runningTextEdit);
+    const granted = deferred<undefined>();
+    permissions.mockImplementationOnce(() => granted.promise);
+    const first = screen.observe(scope, "TextEdit");
+    const second = screen.observe(scope, "TextEdit");
+    granted.resolve(undefined);
+    await expect(Promise.all([first, second])).resolves.toMatchObject([
+      { app: "TextEdit" },
+      { app: "TextEdit" },
+    ]);
+    expect(permissions).toHaveBeenCalledOnce();
+    expect(connect).toHaveBeenCalledOnce();
+    await screen.close();
+    await vi.waitFor(() => expect(client.close).toHaveBeenCalledOnce());
+  });
+
+  it("retries the start for every waiting call after a failed connect", async () => {
+    const { screen, connect } = driver(runningTextEdit);
+    connect.mockRejectedValueOnce(new Error("spawn failed"));
+    const failures = await Promise.allSettled([
+      screen.observe(scope, "TextEdit"),
+      screen.observe(scope, "TextEdit"),
+    ]);
+    expect(failures.map((failure) => failure.status)).toEqual(["rejected", "rejected"]);
     await expect(screen.observe(scope, "TextEdit")).resolves.toMatchObject({ app: "TextEdit" });
     expect(connect).toHaveBeenCalledTimes(2);
   });
