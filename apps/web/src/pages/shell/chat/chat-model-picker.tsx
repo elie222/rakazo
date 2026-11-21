@@ -11,6 +11,9 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@rakazo/ui-web";
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -36,6 +39,10 @@ export function ChatModelPicker({
   staysOpen,
   onConnect,
   disabled,
+  open: openProp,
+  onOpenChange,
+  hint,
+  keyShortcuts,
 }: {
   id?: string;
   choices: readonly ChatModelChoice[];
@@ -55,10 +62,18 @@ export function ChatModelPicker({
   /** Offered at the end of the list, to connect a provider's models. */
   onConnect?: () => void;
   disabled?: boolean;
+  /** Controls whether the list is open, for a caller that also opens it from the keyboard. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Shown on hover over the compact button, such as its keyboard shortcuts. */
+  hint?: ReactNode;
+  /** The compact button's shortcuts, in `aria-keyshortcuts` form. */
+  keyShortcuts?: string;
 }) {
   const { t } = useLingui();
   const imagesHintId = useId();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpen] = useState(false);
+  const open = openProp ?? openState;
   const { query, setQuery, showSearch, visible } = useListSearch(choices, {
     text: modelChoiceSearchText,
   });
@@ -67,29 +82,44 @@ export function ChatModelPicker({
   const textOnly = selected?.images === false;
   const model = selectedLabel ?? selected?.label ?? "";
 
+  // A list closed by its owner (a keyboard shortcut) starts unfiltered next time too.
+  if (!open && query) setQuery("");
+
   function openChange(next: boolean) {
     setOpen(next);
-    if (!next) setQuery("");
+    onOpenChange?.(next);
   }
   const sidePanel = compact && open ? aside?.(() => openChange(false)) : null;
+  const compactTrigger = (
+    <PopoverTrigger
+      id={id}
+      disabled={disabled}
+      aria-label={detail ? t`Model: ${model}, ${detail}` : t`Model: ${model}`}
+      aria-describedby={textOnly ? imagesHintId : undefined}
+      aria-keyshortcuts={keyShortcuts}
+      className="flex h-8 min-w-0 max-w-64 items-center gap-1.5 rounded-full px-2.5 text-body-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+    >
+      <ModelMarkIcon mark={mark} className="size-3.5 shrink-0 text-foreground" />
+      <span className="min-w-0 truncate text-foreground">{model}</span>
+      {detail ? <span className="shrink-0">{detail}</span> : null}
+      {textOnly ? <TextOnlyMark /> : null}
+      <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden="true" />
+    </PopoverTrigger>
+  );
 
   return (
     <Popover open={open} onOpenChange={openChange}>
       <span id={imagesHintId} hidden>{t`Can't read images`}</span>
       {compact ? (
-        <PopoverTrigger
-          id={id}
-          disabled={disabled}
-          aria-label={detail ? t`Model: ${model}, ${detail}` : t`Model: ${model}`}
-          aria-describedby={textOnly ? imagesHintId : undefined}
-          className="flex h-8 min-w-0 max-w-64 items-center gap-1.5 rounded-full px-2.5 text-body-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-        >
-          <ModelMarkIcon mark={mark} className="size-3.5 shrink-0 text-foreground" />
-          <span className="min-w-0 truncate text-foreground">{model}</span>
-          {detail ? <span className="shrink-0">{detail}</span> : null}
-          {textOnly ? <TextOnlyMark /> : null}
-          <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden="true" />
-        </PopoverTrigger>
+        hint ? (
+          // The tooltip stays mounted so the button keeps its focus, and hides while the list is open.
+          <Tooltip>
+            <TooltipTrigger render={compactTrigger} />
+            {open ? null : <TooltipContent>{hint}</TooltipContent>}
+          </Tooltip>
+        ) : (
+          compactTrigger
+        )
       ) : (
         <PopoverTrigger
           id={id}

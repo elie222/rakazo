@@ -1,6 +1,8 @@
 import { t } from "@lingui/core/macro";
 import type { Alert } from "react-native";
 
+import { lengthLimitMessage, promptText } from "../dialogs/text-prompt";
+
 type Dependencies<T> = {
   currentName: string;
   pending: { current: boolean };
@@ -21,16 +23,12 @@ type Dependencies<T> = {
 export function createAccountNameEditor<T>(deps: Dependencies<T>) {
   const { pending } = deps;
   function prompt(value: string, message?: string) {
-    deps.Alert.prompt(
-      t`Edit name`,
+    promptText(deps.Alert, {
+      title: t`Edit name`,
       message,
-      [
-        { text: t`Cancel`, style: "cancel" },
-        { text: t`Save`, isPreferred: true, onPress: (draft?: string) => saveName(draft ?? "") },
-      ],
-      "plain-text",
       value,
-    );
+      onSave: (draft) => saveName(draft ?? ""),
+    });
   }
 
   async function saveName(value: string) {
@@ -41,7 +39,7 @@ export function createAccountNameEditor<T>(deps: Dependencies<T>) {
       return;
     }
     if (name.length > 80) {
-      const message = t`Use 80 characters or fewer`;
+      const message = lengthLimitMessage(80);
       if (deps.Platform.OS === "ios") prompt(value, message);
       else deps.setNameError(message);
       return;

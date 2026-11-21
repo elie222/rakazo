@@ -1,4 +1,4 @@
-import { ph } from "@lingui/core/macro";
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { AvailabilityKind, SpaceAvailability } from "@rakazo/contracts";
 import type { QueryKey } from "@tanstack/react-query";
@@ -53,12 +53,11 @@ export function SpaceAvailabilityPicker({
   if (spaces.length < 2 || !availability) return null;
   const several = !availability.allSpaces && availability.spaceIds.length > 1;
   const value = availability.allSpaces ? "all" : several ? "several" : availability.spaceIds[0]!;
+  const severalLabel = t`${plural(availability.spaceIds.length, { one: "# space", other: "# spaces" })}`;
   const choices = [
     { key: "all", label: t`All spaces` },
     ...spaces.map((space) => ({ key: space.id, label: space.name })),
-    ...(several
-      ? [{ key: "several", label: t`${ph({ count: availability.spaceIds.length })} spaces` }]
-      : []),
+    ...(several ? [{ key: "several", label: severalLabel }] : []),
   ];
   return (
     <View>

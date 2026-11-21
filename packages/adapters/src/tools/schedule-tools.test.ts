@@ -1,6 +1,5 @@
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
-import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ROUTINE_CHAT_TRIGGER_NOTE,
@@ -50,6 +49,48 @@ describe("resolveScheduleTiming", () => {
       ok: false,
       error: "minimum interval is 1 minute",
     });
+  });
+
+  it.each([
+    [90, "minutes", /1 hours? or every 2 hours/],
+    [120, "minutes", /exactly 2 hours: use every 2, unit "hours"/],
+    [1440, "minutes", /exactly 1 day: use every 1, unit "days"/],
+    [25, "hours", /1 days? or every 2 days/],
+    [48, "hours", /exactly 2 days: use every 2, unit "days"/],
+    [40, "days", /use cron/],
+    [756, "hours", /nearest is every 31 days \(/],
+    [1000, "hours", /use cron/],
+    [57600, "minutes", /use cron/],
+  ])("rejects every %i %s with the intervals that work", (every, unit, hint) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(`every ${every} ${unit} is out of range`);
+    expect(result.error).toMatch(hint);
+  });
+
+  it.each([
+    [1000, "hours"],
+    [57600, "minutes"],
+    [100000, "minutes"],
+  ])("never suggests more than 31 days for every %i %s", (every, unit) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toMatch(/unit "days"/);
+  });
+
+  it.each([
+    [7, "minutes", "*/7 * * * *"],
+    [45, "minutes", "*/45 * * * *"],
+    [59, "minutes", "*/59 * * * *"],
+    [60, "minutes", "*/60 * * * *"],
+    [23, "hours", "0 */23 * * *"],
+    [24, "hours", "0 */24 * * *"],
+    [31, "days", "0 0 */31 * *"],
+  ])("still accepts every %i %s", (every, unit, cron) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok && result.cron).toBe(cron);
   });
 
   it("accepts every 1 minute", () => {
@@ -1135,23 +1176,23 @@ describe("updateScheduleFromTool", () => {
     },
   );
 
-  it("takes over another member's schedule and restarts its watch baseline", async () => {
-    const { findFirst, updateMany, update } = setup();
+  it("refuses another member's change to what a schedule does", async () => {
+    const { updateMany, update } = setup();
     await expect(update({ userId: "user-2", prompt: "Order less" })).resolves.toMatchObject({
-      ok: true,
+      error: expect.stringContaining("Only the person who owns this routine"),
     });
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
-    });
+    await expect(
+      update({ userId: "user-2", schedule: { cron: "0 9 * * 1" } }),
+    ).resolves.toHaveProperty("error");
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("lets another member pause a schedule, which stays its owner's", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ userId: "user-2", active: false })).resolves.toMatchObject({ ok: true });
     expect(updateMany).toHaveBeenCalledWith({
-      where: {
-        spaceId: "ws-1",
-        botId: "bot-1",
-        userId: "user-1",
-        id: "routine-1",
-        bot: { archivedAt: null },
-      },
-      data: { userId: "user-2", watchState: Prisma.DbNull, prompt: "Order less" },
+      where: expect.objectContaining({ userId: "user-1", id: "routine-1" }),
+      data: { active: false, crons: ["0 10 * * 1"], timezone: "Europe/Berlin", nextRunAt: null },
     });
   });
 
@@ -1953,7 +1994,7 @@ describe("schedule tools with events", () => {
     expect(await update({})).toEqual({
       error: "A routine needs a schedule or an event. Cancel it instead.",
     });
-    // Another member's edit would take the routine over and leave its events off.
+    // Only the owner changes what it does; another member may still pause it, which keeps it theirs.
     expect(
       await updateScheduleFromTool(updateDeps, {
         ...owner,
@@ -1962,8 +2003,22 @@ describe("schedule tools with events", () => {
         prompt: "Summarize less",
         schedule: {},
       }),
-    ).toMatchObject({ error: expect.stringContaining("run only for the person who owns it") });
+    ).toMatchObject({ error: expect.stringContaining("Only the person who owns this routine") });
     expect(updateMany).not.toHaveBeenCalled();
+    await updateScheduleFromTool(updateDeps, {
+      ...owner,
+      userId: "user-2",
+      routineId: "routine-1",
+      active: false,
+      schedule: {},
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: "user-1" }),
+        data: expect.not.objectContaining({ userId: expect.anything() }),
+      }),
+    );
+    updateMany.mockClear();
 
     const result = await update({ git: true });
     expect(updateMany).toHaveBeenCalledWith(
