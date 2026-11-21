@@ -188,7 +188,7 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
           range: input.range,
           ...(filtered
             ? {
-                totals: { ...point, runs: 14 },
+                totals: { ...point, runs: 14, tokensPartial: true },
                 models: [{ provider: "subscription", model: "example-large", ...point }],
                 overTime: [point],
               }
@@ -254,7 +254,9 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
     .poll(() => requests.some((body) => body.includes('"botId":"bot-1"') && body.includes('"7d"')))
     .toBe(true);
   const totals = settings.getByTestId("usage-settings").locator("dl");
-  await expect(totals).toContainText("330,000");
+  // One call in this range reported no token count, so the total is marked as a lower bound.
+  await expect(totals).toContainText("330,000+");
+  await captureScreenshot(page, testInfo, "usage-tokens-partial");
   await expect(totals).toContainText("$1.40");
   await expect(settings.getByRole("row").filter({ hasText: "Example Large" })).toContainText(
     "300,000",
