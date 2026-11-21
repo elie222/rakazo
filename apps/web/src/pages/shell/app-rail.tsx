@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { buttonVariants, cn } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
   FolderOpen,
@@ -24,7 +25,7 @@ import {
   writeBotsSidebarCollapsed,
 } from "../../lib/preferences/bots-sidebar-pref";
 import { useQueryUserId } from "../../lib/query/query";
-import { selectSpace } from "../../lib/query/rpc";
+import { rpc, selectSpace } from "../../lib/query/rpc";
 import { useMediaQuery } from "../../lib/use-media-query";
 import type { ShellOverlay } from "./shell-overlay-url";
 import { withShellOverlay } from "./shell-overlay-url";
@@ -296,6 +297,13 @@ function RailFooter({ boardEnabled }: { boardEnabled: boolean }) {
   const { data } = authClient.useSession();
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
+  // The desktop renderer is not served from the deployment's origin, so custom pages are web-only.
+  const desktop = Boolean(desktopBridge());
+  const me = useQuery({
+    queryKey: ["me", "nav-links"],
+    queryFn: () => rpc.me(),
+    enabled: !desktop,
+  });
   function openOverlay(overlay: ShellOverlay) {
     const params = withShellOverlay(new URLSearchParams(search), overlay);
     navigate({
@@ -309,7 +317,7 @@ function RailFooter({ boardEnabled }: { boardEnabled: boolean }) {
       logos={[]}
       user={data?.user}
       boardEnabled={boardEnabled}
-      navLinks={[]}
+      navLinks={desktop ? [] : (me.data?.navLinks ?? [])}
       closeMobileSidebar={() => undefined}
       navigate={navigate}
       openSettings={(section) => openOverlay({ kind: "settings", section, spaceId: null })}
