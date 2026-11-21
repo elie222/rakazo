@@ -104,6 +104,7 @@ describe("prepareChildBotUpdate", () => {
     [{ replyMode: "quiet" }, expect.stringMatching(/^replyMode: /)],
     [{ disableTools: ["not_a_tool"] }, expect.stringMatching(/^disableTools: /)],
     [{ teamChatRules: "Use sk-test-fixture" }, "teamChatRules cannot contain credentials."],
+    [{ teamChatRules: "Be kind\u200b." }, "teamChatRules contains invisible characters."],
   ])("refuses %o", async (args, error) => {
     expect(await prepare(args, undefined, ["sk-test-fixture"])).toEqual({ error });
   });
@@ -113,6 +114,12 @@ describe("prepareChildBotUpdate", () => {
       ok: true,
       canonical: { bot_id: "bot-child", name: "Scout", color: "#8B5CF6" },
     });
+  });
+
+  it("shows the longest team chat rules beside other changes", async () => {
+    expect(
+      await prepare({ teamChatRules: "x".repeat(4_000), description: "Finds papers" }),
+    ).toMatchObject({ ok: true });
   });
 
   it("leaves out settings the bot already has", async () => {

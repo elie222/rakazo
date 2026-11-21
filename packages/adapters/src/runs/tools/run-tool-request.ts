@@ -792,6 +792,14 @@ async function prepareOwnBotUpdate(
       "owner_only_settings",
       `Only the owner can change ${settingsOnly.join(", ")}, in Settings.`,
     );
+  if (
+    typeof args.teamChatRules === "string" &&
+    redactSecrets(args.teamChatRules, ctx.secrets) !== args.teamChatRules
+  )
+    return refusal(
+      "team_chat_rules_contain_credentials",
+      "teamChatRules cannot contain credentials.",
+    );
   // Shared memory widens what this bot reads, so only the owner grants it.
   if (args.memoryScope === "shared")
     return refusal("owner_only_settings", "Only the owner can share your memory, in Settings.");

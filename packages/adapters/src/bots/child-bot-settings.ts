@@ -8,7 +8,14 @@ import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../approvals/
 import type { BotComputerSwitchDeps } from "../computers/bot-computer-switch.js";
 import { switchBotComputer } from "../computers/bot-computer-switch.js";
 import type { FleetDeps, FleetPrepareDeps, FleetRun } from "../tools/fleet-tools.js";
-import { actorOf, cardName, credentialField, NOT_FOUND, resolveBot } from "../tools/fleet-tools.js";
+import {
+  actorOf,
+  cardName,
+  credentialField,
+  invisibleField,
+  NOT_FOUND,
+  resolveBot,
+} from "../tools/fleet-tools.js";
 import { resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { prepareOwnBotSettings } from "./own-bot-settings.js";
 import type { ChildBotSettings, UpdateBotPatch } from "./update-bot-patch.js";
@@ -78,6 +85,10 @@ export async function prepareChildBotUpdate(
     secrets,
   );
   if (credential) return { error: credential };
+  // The owner approves the rules as the card shows them, so none may hide from it.
+  const hidden =
+    typeof args.teamChatRules === "string" && invisibleField({ teamChatRules: args.teamChatRules });
+  if (hidden) return { error: hidden };
   const child = await resolveBot(deps.prisma, run, { bot_id: args.bot_id });
   if ("error" in child) return child;
   if (!child.thread) return { error: NOT_FOUND };

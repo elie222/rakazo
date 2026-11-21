@@ -1244,7 +1244,7 @@ const INVISIBLE_CHARACTERS =
   /[\u{E0000}-\u{E007F}\u200B-\u200F\u2060-\u2064\u202A-\u202E\u2066-\u2069\uFEFF]/u;
 
 /** The first given text field holding characters the card would not show, as a refusal. */
-function invisibleField(fields: Record<string, string>): string | undefined {
+export function invisibleField(fields: Record<string, string>): string | undefined {
   const field = Object.entries(fields).find(([, value]) => INVISIBLE_CHARACTERS.test(value))?.[0];
   return field ? `${field} contains invisible characters.` : undefined;
 }

@@ -2540,6 +2540,13 @@ describe("own settings through update_bot", () => {
       }),
     );
   });
+  it("refuses a run credential in its own team chat rules", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, secrets: ["fake-credential-value"] });
+    f.setCalls([{ args: { teamChatRules: "Use fake-credential-value" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([{ error: "teamChatRules cannot contain credentials." }]);
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
   it("lets the approval model check a reply mode change after outside content in Auto", async () => {
     reviewMock.mockResolvedValue({ decision: "ask", reason: "Unasked", model: "mock" });
     const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
