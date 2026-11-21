@@ -79,7 +79,8 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     ),
     computerHost: computerHostFor(setup.settings?.computerHost, sandboxProvider),
     canChooseHostComputer:
-      Boolean(deps.env.desktopHostChoiceEnabled) && sandboxProvider === "docker",
+      Boolean(deps.env.desktopHostChoiceEnabled) &&
+      (sandboxProvider === "docker" || sandboxProvider === "local-vm"),
     // The deployment's provider: an account's own choice covers only its Team Computers.
     sandboxProvider,
     computerSettingsEnabled: Boolean(deps.env.computerSettingsEnabled),
@@ -106,7 +107,7 @@ function computerHostFor(
   stored: string | null | undefined,
   sandboxProvider: string,
 ): "docker" | "this-mac" | null {
-  if (sandboxProvider === "desktop") return "this-mac";
+  if (sandboxProvider === "desktop" || sandboxProvider === "local-vm") return "this-mac";
   if (sandboxProvider !== "docker") return null;
   if (stored === "this-mac" || stored === "docker") return stored;
   return null;
