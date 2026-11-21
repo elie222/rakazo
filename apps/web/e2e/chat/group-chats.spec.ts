@@ -265,13 +265,18 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
-  await expect(page.getByTestId("app-rail")).toHaveCount(0);
+  // The rail stays in the layout but folds away below the md breakpoint.
+  await expect(page.getByTestId("app-rail")).toBeHidden();
   const transcriptBox = await transcript.boundingBox();
   expect(transcriptBox?.x).toBeLessThanOrEqual(16);
   expect(transcriptBox?.width).toBeGreaterThan(390 - 24);
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await expect(page.getByRole("button", { name: "Close navigation" })).toBeVisible();
-  await page.getByRole("button", { name: "Close navigation" }).click();
+  // The drawer header and its backdrop both close it; use the header's control.
+  const closeNavigation = page
+    .getByTestId("bots-sidebar")
+    .getByRole("button", { name: "Close navigation" });
+  await expect(closeNavigation).toBeVisible();
+  await closeNavigation.click();
   await page.getByTestId("bot-settings-trigger").click();
   const settings = page.getByTestId("side-panel");
   await expect(settings).toHaveAttribute("data-panel", "group-settings");

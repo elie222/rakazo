@@ -13,7 +13,7 @@ function ButtonGroup({ className, ...props }: React.ComponentProps<"div">) {
       role="group"
       data-slot="button-group"
       className={cn(
-        "flex w-fit items-stretch rounded-lg [&>*]:focus-visible:relative [&>*]:focus-visible:z-10 [&>*:not(:first-child)]:rounded-l-none [&>*:not(:first-child)]:border-l-0 [&>*:not(:last-child)]:rounded-r-none [&>*:not(:first-child)_input]:rounded-l-none [&>*:not(:first-child)_input]:border-l-0 [&>*:not(:last-child)_input]:rounded-r-none *:data-[slot=button]:h-auto [&>input]:flex-1 [&>[data-slot=input-reveal]]:flex-1 [&_input]:focus-visible:border-input [&_input]:focus-visible:ring-0 has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50 [&_input[aria-invalid=true]]:focus-visible:border-destructive has-[input[aria-invalid=true]:focus-visible]:ring-destructive/20",
+        "flex w-fit items-stretch rounded-lg [&>*]:focus-visible:relative [&>*]:focus-visible:z-10 [&>*:not(:first-child)]:rounded-l-none [&>*:not(:first-child)]:border-l-0 [&>*:not(:last-child)]:rounded-r-none [&>*:not(:first-child)_input]:rounded-l-none [&>*:not(:first-child)_input]:border-l-0 [&>*:not(:last-child)_input]:rounded-r-none *:data-[slot=button]:h-auto [&>input]:flex-1 [&>[data-slot=input-reveal]]:flex-1 [&_input]:focus-visible:border-input [&_input]:focus-visible:ring-0 has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring/50 [&_input[aria-invalid=true]]:focus-visible:border-destructive has-[input[aria-invalid=true]:focus-visible]:ring-destructive/20",
         className,
       )}
       {...props}

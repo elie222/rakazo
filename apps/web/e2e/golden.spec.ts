@@ -365,10 +365,11 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
-    // Leaving a page closes the live streams it held open.
+    // Leaving a page closes the live streams and the usage probe it held open.
     if (
-      request.url().includes("/rpc/notifications/subscribe") &&
-      request.failure()?.errorText === "net::ERR_ABORTED"
+      request.failure()?.errorText === "net::ERR_ABORTED" &&
+      (request.url().includes("/rpc/notifications/subscribe") ||
+        request.url().includes("/rpc/usage/limits"))
     )
       return;
     failedRequests.push(

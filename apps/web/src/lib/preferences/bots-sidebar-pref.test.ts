@@ -53,6 +53,7 @@ describe("bots sidebar width preference", () => {
       store.set(botsSidebarWidthStorageKey("first")!, "NaN");
       expect(readBotsSidebarWidth("first")).toBe(316);
       expect(maximumBotsSidebarWidth(768)).toBe(448);
+      expect(maximumBotsSidebarWidth(800, 220)).toBe(260);
       expect(clampBotsSidebarWidth(480, maximumBotsSidebarWidth(768))).toBe(448);
     } finally {
       vi.unstubAllGlobals();

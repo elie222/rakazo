@@ -11,6 +11,8 @@ import {
   GroupAvatar,
   Input,
   Label,
+  ListRow,
+  ListRowLink,
   OptionSelect,
   SectionHeading,
   Spinner,
@@ -439,45 +441,49 @@ function ActivityRow({
   const activityLabel = t`${title}, ${label}`;
   const preview = activityPreview(run);
   return (
-    <button
-      type="button"
-      aria-label={activityLabel}
-      onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-start hover:bg-accent"
-    >
-      <BotAvatar
-        identity={run.botId}
-        color={bot?.color ?? ""}
-        avatarSet={bot?.avatarSet}
-        status={run.status}
-        size={28}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="flex min-w-0 gap-2 text-body font-medium">
-            <span className="truncate text-foreground">{run.botName}</span>
-            {run.groupName ? (
-              <span className="truncate text-muted-foreground">{run.groupName}</span>
+    <ListRow tone="surface">
+      <ListRowLink
+        render={<button type="button" />}
+        aria-label={activityLabel}
+        onClick={onOpen}
+        className="gap-3 px-2.5"
+      >
+        <BotAvatar
+          identity={run.botId}
+          color={bot?.color ?? ""}
+          avatarSet={bot?.avatarSet}
+          status={run.status}
+          size={28}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="flex min-w-0 gap-2 text-body font-medium">
+              <span className="truncate text-foreground">{run.botName}</span>
+              {run.groupName ? (
+                <span className="truncate text-muted-foreground">{run.groupName}</span>
+              ) : null}
+            </span>
+            {detailed ? (
+              <span className="shrink-0 text-label text-muted-foreground/80">
+                {formatRelativeTime(run.updatedAt)}
+              </span>
             ) : null}
-          </span>
-          {detailed ? (
-            <span className="shrink-0 text-label text-muted-foreground/80">
-              {formatRelativeTime(run.updatedAt)}
-            </span>
-          ) : null}
+          </div>
+          <div className="flex items-baseline gap-2">
+            {preview ? (
+              <span className="min-w-0 flex-1 truncate text-body-sm text-muted-foreground">
+                {preview}
+              </span>
+            ) : null}
+            {detailed ? (
+              <span className={`ms-auto shrink-0 text-label ${statusTone(run.status)}`}>
+                {label}
+              </span>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-baseline gap-2">
-          {preview ? (
-            <span className="min-w-0 flex-1 truncate text-body-sm text-muted-foreground">
-              {preview}
-            </span>
-          ) : null}
-          {detailed ? (
-            <span className={`ms-auto shrink-0 text-label ${statusTone(run.status)}`}>{label}</span>
-          ) : null}
-        </div>
-      </div>
-    </button>
+      </ListRowLink>
+    </ListRow>
   );
 }
 
@@ -495,24 +501,22 @@ function ChatRow({
   onOpen: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-start hover:bg-accent"
-    >
-      {avatar}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-body font-medium text-foreground">{name}</span>
-          <span className="shrink-0 text-label text-muted-foreground/80">
-            {formatRelativeTime(updatedAt)}
-          </span>
+    <ListRow tone="surface">
+      <ListRowLink render={<button type="button" />} onClick={onOpen} className="gap-3 px-2.5">
+        {avatar}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-body font-medium text-foreground">{name}</span>
+            <span className="shrink-0 text-label text-muted-foreground/80">
+              {formatRelativeTime(updatedAt)}
+            </span>
+          </div>
+          {preview ? (
+            <div className="truncate text-body-sm text-muted-foreground">{preview}</div>
+          ) : null}
         </div>
-        {preview ? (
-          <div className="truncate text-body-sm text-muted-foreground">{preview}</div>
-        ) : null}
-      </div>
-    </button>
+      </ListRowLink>
+    </ListRow>
   );
 }
 

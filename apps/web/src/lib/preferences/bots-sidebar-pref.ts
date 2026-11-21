@@ -31,10 +31,10 @@ export function botsSidebarWidthStorageKey(userId: string | null | undefined): s
   return userId ? `rakazo:bots-sidebar-width:${userId}` : null;
 }
 
-export function maximumBotsSidebarWidth(viewportWidth: number): number {
+export function maximumBotsSidebarWidth(viewportWidth: number, reservedWidth = 0): number {
   return Math.max(
     BOTS_SIDEBAR_MIN_WIDTH,
-    Math.min(BOTS_SIDEBAR_MAX_WIDTH, viewportWidth - MIN_CHAT_WIDTH),
+    Math.min(BOTS_SIDEBAR_MAX_WIDTH, viewportWidth - reservedWidth - MIN_CHAT_WIDTH),
   );
 }
 

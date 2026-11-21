@@ -185,7 +185,7 @@ function AddProvider({
         render={
           <button
             type="button"
-            className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="flex w-full items-center gap-2 rounded-b-xl px-3 py-3 text-start text-body text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <Plus className="size-4" aria-hidden />
             <Trans>Add provider</Trans>
@@ -261,7 +261,7 @@ export function SettingsListRow({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex min-h-[52px] w-full items-center gap-2.5 py-2 ps-3 pe-3 text-start outline-none first:rounded-t-xl hover:bg-accent/50 focus-visible:ring-3 focus-visible:ring-ring/50",
+        "flex min-h-[52px] w-full items-center gap-2.5 py-2 ps-3 pe-3 text-start outline-none first:rounded-t-xl hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring/50",
         className,
       )}
     >

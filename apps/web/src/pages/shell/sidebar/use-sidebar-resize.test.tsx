@@ -12,7 +12,13 @@ let current: ReturnType<typeof useSidebarResize>;
 let renders = 0;
 const commitCollapsed = vi.fn();
 
-function Harness({ userId = "user" }: { userId?: string }) {
+function Harness({
+  userId = "user",
+  reservedWidth = 0,
+}: {
+  userId?: string;
+  reservedWidth?: number;
+}) {
   const [collapsed, setCollapsed] = useState(false);
   renders += 1;
   current = useSidebarResize({
@@ -23,6 +29,7 @@ function Harness({ userId = "user" }: { userId?: string }) {
       setCollapsed(value);
     },
     onPreviewCollapsedChange: setCollapsed,
+    reservedWidth,
   });
   return <hr {...current.handleProps} aria-label="Resize bots" data-collapsed={collapsed} />;
 }
@@ -138,6 +145,12 @@ it("re-renders on viewport resize only when the sidebar's limit changes", async 
   await act(async () => window.dispatchEvent(new Event("resize")));
   expect(renders).toBeGreaterThan(before);
   expect(current.handleProps["aria-valuemax"]).toBe(380);
+});
+
+it("keeps room for the primary rail in narrow windows", async () => {
+  vi.stubGlobal("innerWidth", 800);
+  await act(async () => root.render(<Harness userId="user" reservedWidth={220} />));
+  expect(current.handleProps["aria-valuemax"]).toBe(260);
 });
 
 it("does not treat a drag back to its starting point as a toggle", async () => {
