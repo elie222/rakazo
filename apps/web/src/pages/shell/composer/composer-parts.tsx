@@ -257,7 +257,7 @@ export function ComposerActions({
             style={sendStyle}
             className={sendClassName}
           >
-            <ArrowUp size={16} strokeWidth={2.2} />
+            {sending ? null : <ArrowUp size={16} strokeWidth={2.2} />}
           </Button>
           <Button
             variant="outline"
@@ -282,7 +282,7 @@ export function ComposerActions({
             style={sendStyle}
             className={sendClassName}
           >
-            <ArrowUp size={16} strokeWidth={2.2} />
+            {sending ? null : <ArrowUp size={16} strokeWidth={2.2} />}
           </Button>
         </>
       )}
