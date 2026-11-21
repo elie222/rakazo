@@ -178,7 +178,7 @@ export const memoryTools: ToolHandlers = {
       { id: doc.id, scope: "user", path: doc.path },
       context,
     );
-    if (!removed) return call.finish({ error: `${path} changed while deleting; read it again.` });
+    if (!removed) return call.finish({ error: `${path} was already deleted.` });
     return call.finish({ ok: true, path: doc.path });
   },
   async recall_memory(ctx, call) {

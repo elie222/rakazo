@@ -131,10 +131,10 @@ describe("deleting a shared memory document", () => {
     expect(memory.remove).not.toHaveBeenCalled();
   });
 
-  it("says when the document changed before it was removed", async () => {
+  it("says when the document was deleted before it was removed", async () => {
     const { result } = del("team.md", [{ id: "doc-1", path: "team.md" }], false);
     await expect(result).resolves.toEqual({
-      error: "team.md changed while deleting; read it again.",
+      error: "team.md was already deleted.",
     });
   });
 });
