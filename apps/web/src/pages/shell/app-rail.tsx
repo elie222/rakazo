@@ -340,7 +340,7 @@ function RailBrand() {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-2" aria-hidden="true">
       <RailBrandMark className="size-6" />
-      <span className="min-w-0 flex-1 truncate text-center text-sm font-medium">Rakazo</span>
+      <span className="min-w-0 flex-1 truncate text-center text-body font-medium">Rakazo</span>
     </span>
   );
 }
@@ -422,9 +422,9 @@ function RailItem({
     <>
       <span className="ms-1.5 flex size-5 shrink-0 items-center justify-center">{icon}</span>
       {expanded ? (
-        <span className="min-w-0 truncate text-sm">{label}</span>
+        <span className="min-w-0 truncate text-body">{label}</span>
       ) : (
-        <span className="absolute start-[34px] top-1/2 -translate-y-1/2 whitespace-nowrap text-xs opacity-0 transition-opacity duration-(--motion-micro) ease-(--ease-standard) group-hover/rail-item:static group-hover/rail-item:translate-y-0 group-hover/rail-item:opacity-100 group-focus-visible/rail-item:static group-focus-visible/rail-item:translate-y-0 group-focus-visible/rail-item:opacity-100 motion-reduce:transition-none">
+        <span className="absolute start-[34px] top-1/2 -translate-y-1/2 whitespace-nowrap text-label opacity-0 transition-opacity duration-(--motion-micro) ease-(--ease-standard) group-hover/rail-item:static group-hover/rail-item:translate-y-0 group-hover/rail-item:opacity-100 group-focus-visible/rail-item:static group-focus-visible/rail-item:translate-y-0 group-focus-visible/rail-item:opacity-100 motion-reduce:transition-none">
           {label}
         </span>
       )}
