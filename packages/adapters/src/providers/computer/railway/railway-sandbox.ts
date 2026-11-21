@@ -238,6 +238,8 @@ export class RailwaySandboxProvider implements SandboxProvider {
         createdId = error.id;
       }
       if (createdId) await this.deleteUnreferenced(createdId, request.botId);
+      if (hasRailwayErrorCode(railway, error, "LIMIT_EXCEEDED"))
+        throw new SandboxRateLimitError({ cause: error });
       throw error;
     }
     if (context.signal.aborted) {
