@@ -112,10 +112,6 @@ export function SecretAskSheet({
     >
       <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
         <View style={styles.header}>
-          {/* Centered on the sheet, clear of the buttons on either side; read first. */}
-          <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
-            {title}
-          </Text>
           <SheetCloseButton onPress={cancel} />
           <NativeActionButton
             disabled={incomplete}
@@ -131,9 +127,12 @@ export function SecretAskSheet({
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
-          // A long site and replaced login at large text sizes can leave the fields under the keyboard.
+          // A long title and site at large text sizes can leave the fields under the keyboard.
           automaticallyAdjustKeyboardInsets
         >
+          <Text accessibilityRole="header" numberOfLines={2} style={styles.title}>
+            {title}
+          </Text>
           <Text style={styles.destination}>{destination}</Text>
           {replacedSite ? (
             <Text style={styles.replaced}>
@@ -195,17 +194,8 @@ function createStyles() {
     },
     headerAction: { alignSelf: "center" },
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 12 },
-    title: {
-      position: "absolute",
-      left: 96,
-      right: 96,
-      top: 11,
-      textAlign: "center",
-      color: tokens.foreground,
-      fontSize: 17,
-      fontWeight: "600",
-    },
-    destination: { color: tokens.mutedForeground, fontSize: 15, marginBottom: 8 },
+    title: { color: tokens.foreground, fontSize: 20, fontWeight: "600" },
+    destination: { color: tokens.mutedForeground, fontSize: 15, marginTop: -4, marginBottom: 8 },
     replaced: { color: tokens.mutedForeground, fontSize: 13, marginTop: -8, marginBottom: 8 },
     group: { backgroundColor: tokens.muted, borderRadius: 13, overflow: "hidden" },
     row: { flexDirection: "row", alignItems: "center", minHeight: 52, paddingHorizontal: 16 },
