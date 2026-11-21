@@ -148,6 +148,9 @@ export function SecretAskSheet({
           ) : null}
           <LoginFieldsEditor
             fields={fields}
+            // Username and Password are always right; fields the bot names may need switching, as
+            // a hidden value is typed only into a password field.
+            hiddenFixed={!loginFields}
             onChange={setFields}
             labels={labels}
             editable={!submitting && !closing}

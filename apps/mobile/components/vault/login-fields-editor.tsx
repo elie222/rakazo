@@ -24,14 +24,16 @@ export function emptyLoginField(fields: readonly LoginFieldRow[]): LoginFieldRow
 }
 
 /**
- * The values of a website login. With `labels` the fields are fixed, shown by those names, and
- * secret or not as their labels say, with an eye to check a secret one while typing. Without them
- * the person names, adds and removes fields, and a Hidden switch says which are secret.
+ * The values of a website login. With `labels` the fields are fixed and shown by those names;
+ * without them the person names, adds and removes fields. A Hidden switch says which values are
+ * typed only into password fields. `hiddenFixed` leaves it out where the labels can't be wrong (the
+ * default Username and Password) and gives each secret field an eye to check it while typing.
  */
 export function LoginFieldsEditor({
   fields,
   onChange,
   labels,
+  hiddenFixed = false,
   editable,
   inputs,
   onEndEditing,
@@ -40,6 +42,8 @@ export function LoginFieldsEditor({
   fields: readonly LoginFieldRow[];
   onChange: (update: (fields: LoginFieldRow[]) => LoginFieldRow[]) => void;
   labels?: readonly string[];
+  /** Fields keep the Hidden setting they start with; only for fixed `labels`. */
+  hiddenFixed?: boolean;
   editable: boolean;
   /** The value inputs by position, for focus and for clearing before the sheet closes. */
   inputs: RefObject<(TextInputInstance | null)[]>;
@@ -96,7 +100,7 @@ export function LoginFieldsEditor({
                 ) : null}
               </View>
             )}
-            <View style={[styles.row, labels ? undefined : styles.separated]}>
+            <View style={[styles.row, hiddenFixed ? undefined : styles.separated]}>
               <TextInput
                 ref={(node) => {
                   inputs.current[index] = node;
@@ -117,7 +121,7 @@ export function LoginFieldsEditor({
                 onEndEditing={(event) => onEndEditing(event.nativeEvent.text)}
                 style={styles.input}
               />
-              {labels && field.hidden ? (
+              {hiddenFixed && field.hidden ? (
                 <NativeActionButton
                   accessibilityLabel={
                     shown.has(field.id)
@@ -135,7 +139,7 @@ export function LoginFieldsEditor({
                 />
               ) : null}
             </View>
-            {labels ? null : (
+            {hiddenFixed ? null : (
               <View style={styles.row}>
                 <Text style={styles.switchLabel}>{t`Hidden`}</Text>
                 <NativeSwitch

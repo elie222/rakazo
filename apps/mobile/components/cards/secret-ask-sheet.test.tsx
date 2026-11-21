@@ -216,6 +216,10 @@ async function type(label: string, value: string) {
   });
 }
 
+function hiddenSwitches() {
+  return [...container.querySelectorAll<HTMLInputElement>('input[aria-label="Hidden"]')];
+}
+
 function buttonLabels() {
   return [...container.querySelectorAll("button")].map((item) => item.textContent);
 }
@@ -242,8 +246,8 @@ it("opens as a page sheet with the title, the default fields and the destination
   expect(password.type).toBe("password");
   expect(password.dataset.contentType).toBe("password");
   expect(password.dataset.autocomplete).toBe("current-password");
-  // Which fields are secret comes from their labels; no switch asks.
-  expect(container.querySelector('input[aria-label="Hidden"]')).toBeNull();
+  // Username and Password can't be wrong, so no switch asks.
+  expect(hiddenSwitches()).toEqual([]);
 });
 
 it("shows the default labels translated but saves them in English", async () => {
@@ -270,17 +274,17 @@ it("starts an ID and a phone visible and a PIN hidden", async () => {
     ["Phone number", "text"],
     ["PIN", "password"],
   ]);
-  expect(buttonLabels()).toContain("Show PIN");
-  expect(buttonLabels()).not.toContain("Show ID number");
+  expect(hiddenSwitches().map((input) => input.checked)).toEqual([false, false, true]);
 });
 
 it("starts every field hidden when no label names an identifier", async () => {
   await render(true, ["Memorable word", "Card number"]);
 
   expect(valueFields().map((input) => input.type)).toEqual(["password", "password"]);
+  expect(hiddenSwitches().map((input) => input.checked)).toEqual([true, true]);
 });
 
-it("shows a secret field while typing but still saves it as secret", async () => {
+it("lets the person hide or show a field the bot named, and saves it as chosen", async () => {
   onSave.mockResolvedValue();
   await render(true, ["Email", "PIN"]);
 
@@ -288,11 +292,10 @@ it("shows a secret field while typing but still saves it as secret", async () =>
   expect(field("Email").dataset.contentType).toBe("none");
   expect(field("PIN").type).toBe("password");
 
-  await act(async () => button("Show PIN").click());
-  expect(field("PIN").type).toBe("text");
-  await act(async () => button("Hide PIN").click());
-  expect(field("PIN").type).toBe("password");
-  await act(async () => button("Show PIN").click());
+  await act(async () => hiddenSwitches()[0]!.click());
+  expect(field("Email").type).toBe("password");
+  await act(async () => hiddenSwitches()[0]!.click());
+  expect(field("Email").type).toBe("text");
 
   await type("Email", "ada@example.test");
   await type("PIN", "1234");
@@ -302,6 +305,29 @@ it("shows a secret field while typing but still saves it as secret", async () =>
     [
       { label: "Email", value: "ada@example.test", hidden: false },
       { label: "PIN", value: "1234", hidden: true },
+    ],
+    true,
+  );
+});
+
+it("shows the password while typing but still saves it as secret", async () => {
+  onSave.mockResolvedValue();
+  await render();
+
+  await act(async () => button("Show Password").click());
+  expect(field("Password").type).toBe("text");
+  await act(async () => button("Hide Password").click());
+  expect(field("Password").type).toBe("password");
+  await act(async () => button("Show Password").click());
+
+  await type("Username", "ada");
+  await type("Password", "example-password");
+  await act(async () => button("Save").click());
+
+  expect(onSave).toHaveBeenCalledWith(
+    [
+      { label: "Username", value: "ada", hidden: false },
+      { label: "Password", value: "example-password", hidden: true },
     ],
     true,
   );
