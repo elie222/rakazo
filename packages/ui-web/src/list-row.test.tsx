@@ -49,6 +49,7 @@ describe("ListRow", () => {
     const actions = row.querySelector('[data-slot="row-actions"]')!;
 
     expect(row.getAttribute("data-active")).toBe("true");
+    expect(link.getAttribute("aria-current")).toBe("page");
     expect(link.contains(actions)).toBe(false);
     expect(link.getAttribute("href")).toBe("/chat");
     expect(host.querySelector('[data-slot="list-row-title"]')?.getAttribute("data-unread")).toBe(

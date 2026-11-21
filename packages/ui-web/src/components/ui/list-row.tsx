@@ -2,6 +2,9 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cn } from "@rakazo/ui-web/lib/utils";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
+import { createContext, useContext } from "react";
+
+const ListRowActiveContext = createContext(false);
 
 /**
  * A navigation row with a stable 56px rhythm. The row itself is a plain wrapper so the
@@ -22,27 +25,29 @@ function ListRow({
   fade?: string;
 }) {
   return (
-    <div
-      data-slot="list-row"
-      data-active={active || undefined}
-      className={cn(
-        "group/list-row relative rounded-lg transition-colors duration-(--motion-micro) ease-(--ease-standard)",
-        active
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "hover:bg-sidebar-accent/60 focus-within:bg-sidebar-accent/60",
-        className,
-      )}
-      style={
-        {
-          ...style,
-          "--row-reveal-fade": fade,
-        } as CSSProperties
-      }
-      {...props}
-    >
-      {children}
-      {actions}
-    </div>
+    <ListRowActiveContext value={active}>
+      <div
+        data-slot="list-row"
+        data-active={active || undefined}
+        className={cn(
+          "group/list-row relative rounded-lg transition-colors duration-(--motion-micro) ease-(--ease-standard)",
+          active
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            : "hover:bg-sidebar-accent/60 focus-within:bg-sidebar-accent/60",
+          className,
+        )}
+        style={
+          {
+            ...style,
+            "--row-reveal-fade": fade,
+          } as CSSProperties
+        }
+        {...props}
+      >
+        {children}
+        {actions}
+      </div>
+    </ListRowActiveContext>
   );
 }
 
@@ -53,12 +58,15 @@ function ListRow({
 function ListRowLink({
   className,
   render,
+  "aria-current": ariaCurrent,
   ...props
 }: useRender.ComponentProps<"a"> & ComponentProps<"a">) {
+  const active = useContext(ListRowActiveContext);
   return useRender({
     defaultTagName: "a",
     props: mergeProps<"a">(
       {
+        "aria-current": ariaCurrent ?? (active ? "page" : undefined),
         className: cn(
           "relative flex min-h-14 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-inherit outline-none",
           "focus-visible:ring-2 focus-visible:ring-ring/50",
