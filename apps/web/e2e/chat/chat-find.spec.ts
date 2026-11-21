@@ -110,6 +110,7 @@ test("the desktop app finds text in the open chat", async ({ page }, testInfo) =
   await find.fill("no such words anywhere");
   await expect(bar.getByText("No matches")).toBeVisible();
   await expect(bar.getByRole("button", { name: "Next match" })).toBeDisabled();
+  await captureScreenshot(page, testInfo, "chat-find-no-matches");
 
   await page.keyboard.press("Escape");
   await expect(bar).toBeHidden();
