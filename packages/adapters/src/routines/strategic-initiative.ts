@@ -93,6 +93,7 @@ export async function parkForgottenOpenWork(deps: {
         },
         data: { status: "parked" },
       });
+      if (count > 0) getLogger().info("open_work.parked", { "bot.id": bot.id, count });
       parked += count;
     }
   }
