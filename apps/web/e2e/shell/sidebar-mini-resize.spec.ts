@@ -160,8 +160,8 @@ test("sidebar resize follows RTL and reduced motion", async ({ page }, testInfo)
   const box = (await sidebar.boundingBox())!;
   expect(Math.round(box.x + box.width)).toBe(1300);
   await expect(sidebar.getByTestId("minimize-bots-sidebar").locator("svg")).toHaveCSS(
-    "scale",
-    "-1 1",
+    "rotate",
+    "180deg",
   );
 });
 

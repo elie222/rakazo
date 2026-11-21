@@ -11,7 +11,7 @@ import type { Panel } from "../right-panel-state";
 
 // A size class, since the Button sizes any svg without one to 16px.
 const ICON = "size-4.5";
-const TOGGLE_ICON = `${ICON} rtl:-scale-x-100`;
+const TOGGLE_ICON = `${ICON} rtl:rotate-180`;
 const STROKE = 1.75;
 
 export function SidebarHeader({
